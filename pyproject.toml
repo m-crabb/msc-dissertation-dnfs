@@ -22,8 +22,8 @@ discrete-flow-sampler = { path = ".", editable = true }
 
 [tool.pixi.tasks]
 test = "pytest tests/ -v"
-lint = "ruff check src/ experiments/"
-format = "ruff format src/ experiments/"
+lint = "ruff check src/ experiments/ tests/"
+format = "ruff format src/ experiments/ tests/"
 jupyter = "jupyter lab"
 
 [tool.pixi.dependencies]
@@ -41,6 +41,7 @@ torchvision = ">=0.26.0,<0.27"
 
 [tool.pixi.feature.dev.dependencies]
 pytest = "*"
+ruff = "*"
 
 [tool.pixi.environments]
 dev = { features = ["dev"], solve-group = "default" }
@@ -52,8 +53,8 @@ src = ["src", "experiments"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["discrete_flow_sampler"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[dependency-groups]
-dev = ["ruff", "pre-commit"]
