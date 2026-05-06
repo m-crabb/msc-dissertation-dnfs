@@ -13,10 +13,30 @@ import modal
 # Build the container image from the project's pyproject.toml so deps are
 # locked to whatever the local pixi env tracks. The repo itself is mounted
 # at /repo so imports resolve identically to a local checkout.
+#
+# Local-only directories (`.pixi/` env tree, past `results/`, `wandb/` run
+# logs, `.git`, caches) are excluded from the upload. They are large,
+# irrelevant on the remote (Modal builds a fresh image from pyproject),
+# and `.pixi/` in particular causes "modified during build" failures when
+# any local pixi-run command touches conda metadata while the Modal
+# uploader is still streaming bytes.
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_pyproject("pyproject.toml")
-    .add_local_dir(".", remote_path="/repo")
+    .add_local_dir(
+        ".",
+        remote_path="/repo",
+        ignore=[
+            ".pixi/**",
+            "results/**",
+            "wandb/**",
+            ".git/**",
+            "**/__pycache__/**",
+            "**/.pytest_cache/**",
+            ".venv/**",
+            "*.pdf",
+        ],
+    )
 )
 
 # Persistent volume for run artefacts (training_log.csv, checkpoints, eval
