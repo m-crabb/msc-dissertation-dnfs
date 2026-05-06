@@ -20,7 +20,7 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
 import modal
 
 PROJECT_DIR = "/repo"
-PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/dev/bin"
+PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
 
 # Build the container image from `pixi.lock`. The repo is added at /repo;
 # pixi installs the dev env in-place; PATH points at the pixi env's bin.
@@ -55,7 +55,7 @@ image = (
     )
     .run_commands(
         f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
-        "pixi install --environment dev --locked"
+        "pixi install --environment cuda --locked"
     )
     .env({"PATH": f"{PIXI_ENV_BIN}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"})
 )

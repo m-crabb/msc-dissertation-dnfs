@@ -46,8 +46,24 @@ einops = ">=0.8,<1"
 pytest = "*"
 ruff = "*"
 
+# ---------------------------------------------
+# CUDA Feature (used by the Modal image)
+# ---------------------------------------------
+# linux-64 only. Asserts cuda = 12.4 so pixi's solver picks the CUDA-
+# tagged pytorch build from the conda-forge / pytorch channels rather
+# than the CPU build the default solve picks. pytorch itself stays in
+# the workspace base [tool.pixi.dependencies] so the `dev` env keeps
+# its CPU torch on osx-arm64 and linux-64; the cuda feature only
+# changes which *build* of pytorch the linux-64 solve resolves.
+[tool.pixi.feature.cuda]
+platforms = ["linux-64"]
+
+[tool.pixi.feature.cuda.system-requirements]
+cuda = "12.4"
+
 [tool.pixi.environments]
 dev = { features = ["dev"], solve-group = "default" }
+cuda = { features = ["dev", "cuda"], solve-group = "cuda" }
 
 [tool.ruff]
 line-length = 88
