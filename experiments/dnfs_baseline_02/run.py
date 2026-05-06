@@ -4,11 +4,16 @@ Usage (local):
     pixi run -e dev python -m experiments.dnfs_baseline_02.run \\
         --cfg stage_1_d4 --seed 0
 
+Or, to recompute eval metrics from saved samples without re-training:
+    pixi run -e dev python -m experiments.dnfs_baseline_02.run \\
+        --eval-only --run-dir results/02_baseline/stage_1_d4_seed0_...
+
 The same `train(cfg_name, seed, ...)` function is also imported by
 `modal_app.py` for remote runs, so both paths share artefacts and metadata.
 """
 import argparse
 import json
+import math
 import platform
 import socket
 import subprocess
@@ -18,12 +23,25 @@ from pathlib import Path
 
 import torch
 
+from discrete_flow_sampler.diagnostics.metrics import (
+    enumerate_states,
+    ess_from_log_weights,
+    exact_log_probs,
+    kl,
+    log_prob_w1,
+    tvd,
+)
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
 from discrete_flow_sampler.samplers import log_z_estimators
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.training import train as train_loop
 from discrete_flow_sampler.targets.ising import IsingTarget
 from experiments.dnfs_baseline_02.configs import CONFIGS
+
+# State-count cutoff for exact-enumeration diagnostics. 2^20 ≈ 1M states
+# is the practical ceiling for in-memory enumeration on a single device;
+# the DNFS Ising scope hits this at D=4 (2^16) and skips it at D=10 (2^100).
+ENUMERATION_MAX_SPINS = 20
 
 
 def _git_commit() -> str:
@@ -51,6 +69,96 @@ def _build_estimator(name: str):
     if name == "naive_mc":
         return log_z_estimators.naive_mc
     raise ValueError(f"Unknown estimator: {name!r}")
+
+
+def _compute_eval_metrics(
+    eval_samples: torch.Tensor,
+    eval_log_weights: torch.Tensor,
+    target,
+) -> dict:
+    """Aggregate end-of-run diagnostics into a single JSON-friendly dict.
+
+    Always-on metrics (regardless of state-space size):
+    - `ess`, `ess_fraction`: importance-weight self-consistency (Eq. 15).
+      Pair-mandatory with a coverage metric -- ESS = N is achievable on a
+      sampler that confidently lands in spurious modes.
+
+    Enumeration-gated metrics (only when target.d ≤ ENUMERATION_MAX_SPINS):
+    - `tvd`: ½ Σ |p_model - p_target| against the partition-function-
+      normalised exact target. The headline coverage metric.
+    - `kl_forward`: KL(target ‖ model) -- "missing-mode" KL. +∞ when the
+      model misses target-supported states; emitted as `null` in JSON with
+      the `kl_forward_inf` flag set so a notebook can distinguish "no
+      coverage at all" from "not computed".
+    - `kl_reverse`: KL(model ‖ target) -- "spurious-mode" KL. Finite as
+      long as target has full support (true for σ > 0).
+    - `log_prob_w1`: 1-Wasserstein between log p̃ histograms of model and
+      exact-target multinomial samples. Coverage diagnostic that
+      generalises beyond enumeration to the D=10 regime when paired with
+      a Gibbs-oracle reference.
+
+    Args:
+        eval_samples: (N, d) tensor in {-1, +1}, on `target.device`.
+        eval_log_weights: (N,) IS log-weights from the same eval pass.
+        target: IsingTarget (or any duck with `.d`, `.device`, `.log_prob`).
+    """
+    device = target.device
+    metrics: dict = {
+        "n_eval_samples": int(eval_log_weights.numel()),
+        "ess": float(ess_from_log_weights(eval_log_weights).item()),
+    }
+    metrics["ess_fraction"] = metrics["ess"] / metrics["n_eval_samples"]
+
+    if target.d > ENUMERATION_MAX_SPINS:
+        metrics["enumeration_skipped_reason"] = (
+            f"target.d = {target.d} > {ENUMERATION_MAX_SPINS}; "
+            f"2^d states intractable to enumerate"
+        )
+        return metrics
+
+    states = enumerate_states(target.d).to(device)
+    log_p_target = exact_log_probs(target, states)
+
+    # Empirical model histogram over the same enumeration. The dict-keyed
+    # map runs once (O(2^d)) and is amortised over N_eval lookups.
+    state_to_idx = {
+        tuple(s.long().tolist()): i for i, s in enumerate(states.cpu())
+    }
+    counts = torch.zeros(states.shape[0])
+    for sample in eval_samples.cpu():
+        counts[state_to_idx[tuple(sample.long().tolist())]] += 1
+    p_model_emp = counts / counts.sum()
+    log_p_model_emp = torch.where(
+        counts > 0,
+        p_model_emp.log(),
+        torch.full_like(counts, float("-inf")),
+    )
+
+    log_p_target_cpu = log_p_target.cpu()
+    p_target_exact = log_p_target_cpu.exp()
+
+    metrics["tvd"] = float(tvd(p_model_emp, p_target_exact).item())
+
+    fwd_kl = kl(log_p_target_cpu, log_p_model_emp).item()
+    metrics["kl_forward"] = None if math.isinf(fwd_kl) else float(fwd_kl)
+    metrics["kl_forward_inf"] = bool(math.isinf(fwd_kl))
+
+    rev_kl = kl(log_p_model_emp, log_p_target_cpu).item()
+    metrics["kl_reverse"] = None if math.isinf(rev_kl) else float(rev_kl)
+
+    # Reference samples drawn from exact π via multinomial over the
+    # enumerated support. Same N as eval samples to keep the W1
+    # comparison balanced.
+    target_idx = torch.multinomial(
+        p_target_exact, metrics["n_eval_samples"], replacement=True
+    )
+    target_samples = states[target_idx].float()
+    metrics["log_prob_w1"] = float(
+        log_prob_w1(eval_samples.float(), target_samples, target).item()
+    )
+
+    metrics["n_states_enumerated"] = int(states.shape[0])
+    return metrics
 
 
 def train(
@@ -150,27 +258,90 @@ def train(
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
 
+    eval_metrics = _compute_eval_metrics(eval_samples, eval_log_weights, target)
+    (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
+
     if use_wandb:
         artifact = wandb.Artifact(
             f"eval_{cfg.name}_seed{seed}", type="evaluation"
         )
         artifact.add_file(str(eval_dir / "samples.pt"))
         artifact.add_file(str(eval_dir / "log_weights.pt"))
+        artifact.add_file(str(eval_dir / "metrics.json"))
         wandb.log_artifact(artifact)
+        # Numeric metrics only -- wandb chokes on the None / bool entries.
+        wandb.log(
+            {
+                f"eval/{key}": value
+                for key, value in eval_metrics.items()
+                if isinstance(value, (int, float))
+            }
+        )
         wandb.finish()
 
     return run_dir
 
 
+def eval_only(run_dir: str | Path) -> dict:
+    """Recompute eval metrics from a finished run's saved samples.
+
+    Loads `eval/samples.pt` + `eval/log_weights.pt`, reconstructs the
+    target from `config.json`, and writes / overwrites `eval/metrics.json`
+    in the run directory. Useful for backfilling diagnostics on older
+    runs whose training pre-dated the metrics-aggregation block.
+    """
+    run_dir = Path(run_dir)
+    cfg_dict = json.loads((run_dir / "config.json").read_text())
+    eval_samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True)
+    eval_log_weights = torch.load(
+        run_dir / "eval" / "log_weights.pt", weights_only=True
+    )
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    target = IsingTarget(
+        D=cfg_dict["ising"]["D"],
+        sigma=cfg_dict["ising"]["sigma"],
+        bias=cfg_dict["ising"]["bias"],
+        device=device,
+    )
+    eval_samples = eval_samples.to(device)
+    eval_log_weights = eval_log_weights.to(device)
+
+    eval_metrics = _compute_eval_metrics(eval_samples, eval_log_weights, target)
+    (run_dir / "eval" / "metrics.json").write_text(
+        json.dumps(eval_metrics, indent=2)
+    )
+    return eval_metrics
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--cfg", required=True, help="Config key from configs.py CONFIGS"
+        "--cfg", help="Config key from configs.py CONFIGS (training mode)"
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output-dir", default="results/02_baseline")
     parser.add_argument("--no-wandb", action="store_true")
+    parser.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="Skip training; recompute eval/metrics.json from saved samples",
+    )
+    parser.add_argument(
+        "--run-dir",
+        help="Run directory to re-evaluate (required with --eval-only)",
+    )
     args = parser.parse_args()
+
+    if args.eval_only:
+        if not args.run_dir:
+            parser.error("--eval-only requires --run-dir")
+        metrics = eval_only(args.run_dir)
+        print(json.dumps(metrics, indent=2))
+        return
+
+    if not args.cfg:
+        parser.error("--cfg is required for training mode")
     train(
         args.cfg,
         seed=args.seed,
