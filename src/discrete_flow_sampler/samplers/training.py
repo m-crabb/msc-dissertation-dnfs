@@ -53,6 +53,14 @@ def train(
             so it isn't a hard dependency for callers who set this False.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Create the checkpoint directory up-front so the rolling `latest.pt`
+    # save inside the eval block has somewhere to land. Without this, a
+    # SIGTERM mid-training leaves no recoverable model weights -- only the
+    # CSV log -- because the original `final.pt` save is the very last
+    # thing the function does.
+    ckpt_dir = output_dir / "checkpoints"
+    ckpt_dir.mkdir(exist_ok=True)
+
     torch.manual_seed(train_cfg.seed)
     optimiser = torch.optim.Adam(model.parameters(), lr=train_cfg.lr)
 
@@ -139,6 +147,15 @@ def train(
                     )
                     ess_value = ess_from_log_weights(log_weights).item()
 
+                # Rolling checkpoint at the same cadence as eval. Overwrites
+                # `latest.pt` so disk usage is bounded by one model size,
+                # but a SIGTERM / SIGINT / OOM kill leaves at most
+                # `eval_every` steps of training un-checkpointed instead of
+                # the entire run. Stage-tagged checkpoints aren't worth the
+                # disk for Stage 1 (whose whole point is to fail and be
+                # diagnosed); add them later if Stage 2/3 needs ablations.
+                torch.save(model.state_dict(), ckpt_dir / "latest.pt")
+
             writer.writerow(
                 [step, loss_value.item(), ess_value, var_integrand,
                  wall_clock_step_s]
@@ -156,9 +173,7 @@ def train(
                     step=step,
                 )
 
-    # Persist the final model. Not snapshotting intermediate checkpoints by
-    # default -- Stage 1's whole point is to fail at D = 10, so per-step
-    # snapshots aren't worth the disk.
-    ckpt_dir = output_dir / "checkpoints"
-    ckpt_dir.mkdir(exist_ok=True)
+    # End-of-run snapshot. `latest.pt` is also kept for debugging continuity
+    # (it equals `final.pt` here, but a future kill-and-resume code path
+    # would distinguish them).
     torch.save(model.state_dict(), ckpt_dir / "final.pt")
