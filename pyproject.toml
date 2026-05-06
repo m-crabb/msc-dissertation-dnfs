@@ -20,7 +20,7 @@ platforms = ["linux-64", "osx-arm64"]
 [tool.pixi.pypi-dependencies]
 discrete-flow-sampler = { path = ".", editable = true }
 wandb = ">=0.18,<1"
-modal = ">=0.66,<1"
+modal = ">=0.77"
 
 [tool.pixi.tasks]
 test = "pytest tests/ -v"
