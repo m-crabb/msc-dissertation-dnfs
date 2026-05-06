@@ -29,8 +29,6 @@ Signature convention:
     wiring a different function into the same call site -- no branching at
     the call site.
 """
-from __future__ import annotations
-
 from typing import Callable
 
 from torch import Tensor

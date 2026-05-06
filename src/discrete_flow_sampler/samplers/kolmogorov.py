@@ -40,8 +40,6 @@ Implementation notes
   (B*d, d) batched call. This is exactly the cost cliff that motivates
   the locally equivariant Transformer in Stage 3.
 """
-from __future__ import annotations
-
 import torch
 from torch import Tensor
 

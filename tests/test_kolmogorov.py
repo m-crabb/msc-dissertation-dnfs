@@ -11,8 +11,6 @@ Tests pinned here:
     2) Random rate matrix on a real Ising target -> residual non-zero.
     3) loss(...) == residual(...).pow(2).mean().
 """
-from __future__ import annotations
-
 import pytest
 import torch
 

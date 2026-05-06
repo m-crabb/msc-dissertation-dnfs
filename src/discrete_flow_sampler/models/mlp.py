@@ -28,8 +28,6 @@ Why a single MLP over the whole state (not site-wise):
 This is research-bearing -- the user implements the body. The interface,
 docstrings, and tests are scaffolding.
 """
-from __future__ import annotations
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

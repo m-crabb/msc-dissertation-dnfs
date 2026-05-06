@@ -13,8 +13,6 @@ Invariants pinned here:
     4) zero-rate trajectories still produce finite log-weights when a
        target is supplied (xi_t reduces to dt_log_p_tilde, which is finite).
 """
-from __future__ import annotations
-
 import pytest
 import torch
 

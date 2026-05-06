@@ -10,8 +10,6 @@ integration tests later. The point of these tests is to catch architecture
 mistakes (wrong output shape, missing softplus, t/x ignored) before training
 silently fails.
 """
-from __future__ import annotations
-
 import pytest
 import torch
 

@@ -12,8 +12,6 @@ The test pins unbiasedness on D=2 (16-state Ising), where we can:
 We do NOT test variance here -- the whole point of Stage 1 is that variance
 is high; that's the failure mode Stage 2 will address.
 """
-from __future__ import annotations
-
 import pytest
 import torch
 

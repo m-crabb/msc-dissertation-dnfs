@@ -15,8 +15,6 @@ One training step:
 Stage 1 / 2 / 3 differ only in which `model` and which `estimator` are
 passed in -- this module never branches on stage.
 """
-from __future__ import annotations
-
 import csv
 import time
 from pathlib import Path

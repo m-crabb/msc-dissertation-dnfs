@@ -12,8 +12,6 @@ for higher-S problems.
 Stage 1 / 2: MLPRateMatrix in `mlp.py`.
 Stage 3:    LocallyEquivariantTransformer (added in stage-3 plan).
 """
-from __future__ import annotations
-
 from typing import Protocol
 
 from torch import Tensor
