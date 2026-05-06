@@ -19,7 +19,7 @@ from torch import Tensor
 def tvd(p: Tensor, q: Tensor) -> Tensor:
     """Total variation distance between two probability vectors.
 
-        TVD(p, q) = ½ · Σ_i |p_i − q_i|
+        TVD(p, q) = ½ · Σ_i |p_i - q_i|
 
     Both inputs must be 1-D tensors that sum to one and share the same
     ordering of states (i.e. p[i] and q[i] refer to the same state).
@@ -34,7 +34,7 @@ def ess_from_log_weights(log_w: Tensor) -> Tensor:
     """Effective sample size from importance log-weights.
 
         ESS(w) = (Σ_n w_n)² / Σ_n w_n²
-               = exp( 2·logsumexp(log_w) − logsumexp(2·log_w) )
+               = exp( 2·logsumexp(log_w) - logsumexp(2·log_w) )
 
     where log_w is a 1-D tensor of importance log-weights
     log(p̃_1(x_n) / q_θ(x_n)). Computed in log-space because raw weights
@@ -52,7 +52,7 @@ def ess_from_log_weights(log_w: Tensor) -> Tensor:
 def enumerate_states(D: int) -> Tensor:
     """All 2^D binary spin states for a D-site lattice.
 
-    Each spin takes values in {−1, +1} (Ising convention, not the
+    Each spin takes values in {-1, +1} (Ising convention, not the
     {0, 1} software convention). Returns a (2^D, D) int64 tensor;
     ordering is lexicographic via itertools.product([-1, 1], repeat=D).
 

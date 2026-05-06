@@ -53,7 +53,7 @@ def test_log_p_tilde_at_t1_equals_log_prob():
 
 
 def test_dt_log_p_tilde_t_is_log_ratio():
-    """∂_t log p̃_t = log ρ − log η. Path is linear in log, so derivative is
+    """∂_t log p̃_t = log ρ - log η. Path is linear in log, so derivative is
     independent of t."""
     target = IsingTarget(D=4, sigma=0.1)
     x = torch.randint(0, 2, (8, 16)).float() * 2 - 1

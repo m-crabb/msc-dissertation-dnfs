@@ -8,9 +8,9 @@ derivation: the paper's J is symmetric (each edge contributes to BOTH J_ij
 and J_ji), so the terms in x^T J x involving x_i come to 2 x_i Σ_j J_ij x_j.
 Together with the bias term:
 
-    log p(x_i=+1 | x_{≠i}) − log p(x_i=−1 | x_{≠i})
+    log p(x_i=+1 | x_{≠i}) - log p(x_i=-1 | x_{≠i})
         = 2 · (+1) · Σ_j J_ij x_j + b · (+1)
-        − 2 · (−1) · Σ_j J_ij x_j − b · (−1)
+        - 2 · (-1) · Σ_j J_ij x_j - b · (-1)
         = 4 h + 2 b.
 
 So p(x_i=+1) = σ(4h + 2b). The textbook one-edge-per-pair convention gives
@@ -47,7 +47,7 @@ def gibbs_sample(
         site_order = torch.randperm(target.d, generator=generator, device=target.device)
         for site in site_order.tolist():
             local_field = spins @ target.J[:, site]                       # Σ_j J_ij x_j, shape (n_chains,)
-            log_odds_plus = 4 * local_field + 2 * target.bias              # log p(+1) − log p(−1)
+            log_odds_plus = 4 * local_field + 2 * target.bias              # log p(+1) - log p(-1)
             prob_plus = torch.sigmoid(log_odds_plus)
             uniform_draws = torch.rand(n_chains, generator=generator, device=target.device)
             spins[:, site] = (uniform_draws < prob_plus).to(spins.dtype) * 2 - 1
