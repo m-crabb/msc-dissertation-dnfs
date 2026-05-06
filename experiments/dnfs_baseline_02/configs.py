@@ -5,10 +5,18 @@ automatically in `run.py` via `--cfg <name>`. The dataclasses are frozen
 so a single config object cannot be mutated mid-run (any per-seed override
 goes through `dataclasses.replace`).
 
+Eval sample budget: `n_eval_samples = 5000` matches the paper's Figure 13
+energy-histogram pass (Appendix D.1) and is strictly ≥ the N = 2,048 used
+for the Table 2 numerical pass, so a single eval feeds both downstream
+artefacts. Across-seed std (paper Table 2 reports mean ± std over 10
+independent runs) is a multi-seed sweep planned for a later step.
+
 Stage layout:
-    stage_1_d4   -- D = 4 sanity gate (TVD < 0.05 target).
-    stage_1_d10  -- D = 10 main run; expected to expose the high-variance
-                    failure mode of the naive estimator.
+    stage_1_d4    -- D = 4 small-lattice sanity (16 spins, 65k joint states);
+                     enumeration-based exact F/E/S references available.
+    stage_1_d4_xl -- capacity / training-budget probe over the same target.
+    stage_1_d10   -- D = 10 paper-scale run; ESS + IS estimates of F/E/S
+                     against a (future) Gibbs / Ferdinand-Fisher reference.
 """
 from dataclasses import dataclass
 from typing import Literal
@@ -60,37 +68,36 @@ class StageCfg:
 
 
 CONFIGS: dict[str, StageCfg] = {
-    # Stage 1 sanity gate. Tiny lattice (16 states, 65k joint states), short
-    # training, generous eval budget. The whole point is exact-TVD < 0.05.
+    # Stage 1 small-lattice probe. D = 4 → 16 spins, 65k joint states;
+    # exact F/E/S references available via enumeration.
     "stage_1_d4": StageCfg(
         name="stage_1_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
         train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=0),
         ctmc=CTMCCfg(n_euler_steps=50),
-        eval=EvalCfg(eval_every=200, n_eval_samples=2_000),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2),
         estimator="naive_mc",
     ),
-    # Stage 1 D=4 retry with bigger MLP and longer training. The original
-    # `stage_1_d4` failed the TVD gate (0.90 vs <0.05 target) despite
-    # achieving high ESS (~75%) -- a failure mode of the naive estimator
-    # at low coupling where the loss landscape is weakly convex. This config
-    # is the "more capacity + more steps" probe to see whether the gate is
-    # achievable at all under the naive estimator, before deciding whether
-    # to drop the gate threshold or move acceptance to Stage 2.
+    # Capacity / training-budget probe over the same D = 4 target. The
+    # 4×-wider, 2×-deeper MLP at half the learning rate over 5× the steps
+    # rules out underfitting / budget exhaustion as the dominant failure
+    # mode for the naive MC estimator on this target.
     "stage_1_d4_xl": StageCfg(
         name="stage_1_d4_xl",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
         train=TrainCfg(n_steps=50_000, batch_size=128, lr=5e-4, seed=0),
         ctmc=CTMCCfg(n_euler_steps=50),
-        eval=EvalCfg(eval_every=500, n_eval_samples=2_000),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
         estimator="naive_mc",
     ),
-    # Stage 1 main run. D = 10 puts the joint state space at 2**100 -- way
-    # past exact enumeration; we judge by ESS, energy histogram and loss.
-    # The naive estimator is *expected* to struggle here; that's the
-    # baseline failure that motivates Stage 2 and Stage 3.
+    # Paper-scale main run. D = 10 → 100 spins, 2^100 joint states; far
+    # past enumeration. Eval reports ESS plus IS estimates of F/E/S; the
+    # exact-reference comparison uses Ferdinand & Fisher (1969) at this
+    # scale (reference helper TBD; not in this module yet). The naive
+    # estimator is expected to struggle here -- that's the baseline
+    # failure motivating Stage 2's control variate (paper Eq. 8).
     "stage_1_d10": StageCfg(
         name="stage_1_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
