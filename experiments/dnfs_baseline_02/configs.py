@@ -71,6 +71,22 @@ CONFIGS: dict[str, StageCfg] = {
         model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2),
         estimator="naive_mc",
     ),
+    # Stage 1 D=4 retry with bigger MLP and longer training. The original
+    # `stage_1_d4` failed the TVD gate (0.90 vs <0.05 target) despite
+    # achieving high ESS (~75%) -- a failure mode of the naive estimator
+    # at low coupling where the loss landscape is weakly convex. This config
+    # is the "more capacity + more steps" probe to see whether the gate is
+    # achievable at all under the naive estimator, before deciding whether
+    # to drop the gate threshold or move acceptance to Stage 2.
+    "stage_1_d4_xl": StageCfg(
+        name="stage_1_d4_xl",
+        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=128, lr=5e-4, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=500, n_eval_samples=2_000),
+        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
+        estimator="naive_mc",
+    ),
     # Stage 1 main run. D = 10 puts the joint state space at 2**100 -- way
     # past exact enumeration; we judge by ESS, energy histogram and loss.
     # The naive estimator is *expected* to struggle here; that's the
