@@ -32,7 +32,10 @@ app = modal.App("dnfs-baseline", image=image)
 
 
 @app.function(
-    gpu="A100",
+    # L4 is roughly the same wall-clock as A100 for Stage 1's MLP-bound
+    # workload, at about half the cost. Reconsider for Stage 3 (LeT) where
+    # attention layers benefit more from A100/H100-class compute.
+    gpu="L4",
     volumes={"/results": volume},
     secrets=[wandb_secret],
     # 24h is generous for D=10; tighten if cost matters.
