@@ -99,68 +99,50 @@ def _compute_eval_metrics(
       `entropy_per_site_bias`: estimate − exact, signed (positive ⇒
       estimate too high relative to truth).
 
-    The IS-estimator block raises NotImplementedError until the user
-    fills in the bodies in `metrics.py`. The ESS block runs first and
-    is reported regardless, so partial results land in `metrics.json`
-    even with the bodies still stubbed.
-
     Args:
         eval_samples: (N, d) tensor in {-1, +1}, on `target.device`.
         eval_log_weights: (N,) IS log-weights from the same eval pass.
         target: IsingTarget (or any duck with `.d`, `.device`, `.log_prob`,
             `.sigma`).
     """
-    metrics: dict = {
-        "n_eval_samples": int(eval_log_weights.numel()),
-        "ess": float(ess_from_log_weights(eval_log_weights).item()),
-    }
-    metrics["ess_fraction"] = metrics["ess"] / metrics["n_eval_samples"]
-
     sigma = float(target.sigma)
     D = int(target.d)
 
     log_p_tilde_eval = target.log_prob(eval_samples.float())
+    F_hat = free_energy_lb_estimate(eval_log_weights, sigma=sigma, D=D)
+    E_hat = internal_energy_estimate(
+        eval_log_weights, log_p_tilde_eval, sigma=sigma, D=D
+    )
+    S_hat = entropy_estimate(F_hat, E_hat, sigma=sigma)
 
-    try:
-        F_hat = free_energy_lb_estimate(
-            eval_log_weights, sigma=sigma, D=D
-        )
-        E_hat = internal_energy_estimate(
-            eval_log_weights, log_p_tilde_eval, sigma=sigma, D=D
-        )
-        S_hat = entropy_estimate(F_hat, E_hat, sigma=sigma)
-        metrics["free_energy_per_site"] = float(F_hat.item())
-        metrics["internal_energy_per_site"] = float(E_hat.item())
-        metrics["entropy_per_site"] = float(S_hat.item())
-    except NotImplementedError as err:
-        # Stubs are in place but bodies haven't been filled. Keep ESS in
-        # the JSON and surface the reason — eval pipeline still partially
-        # informative until the user lands the bodies.
-        metrics["is_estimators_pending"] = str(err)
+    metrics: dict = {
+        "n_eval_samples": int(eval_log_weights.numel()),
+        "ess": float(ess_from_log_weights(eval_log_weights).item()),
+        "free_energy_per_site": float(F_hat.item()),
+        "internal_energy_per_site": float(E_hat.item()),
+        "entropy_per_site": float(S_hat.item()),
+    }
+    metrics["ess_fraction"] = metrics["ess"] / metrics["n_eval_samples"]
 
     if D <= ENUMERATION_MAX_SPINS:
-        try:
-            F_exact = exact_free_energy(target, sigma=sigma, D=D)
-            E_exact = exact_internal_energy(target, sigma=sigma, D=D)
-            S_exact = entropy_estimate(F_exact, E_exact, sigma=sigma)
-            metrics["free_energy_per_site_exact"] = float(F_exact.item())
-            metrics["internal_energy_per_site_exact"] = float(E_exact.item())
-            metrics["entropy_per_site_exact"] = float(S_exact.item())
-            if "free_energy_per_site" in metrics:
-                metrics["free_energy_per_site_bias"] = (
-                    metrics["free_energy_per_site"]
-                    - metrics["free_energy_per_site_exact"]
-                )
-                metrics["internal_energy_per_site_bias"] = (
-                    metrics["internal_energy_per_site"]
-                    - metrics["internal_energy_per_site_exact"]
-                )
-                metrics["entropy_per_site_bias"] = (
-                    metrics["entropy_per_site"]
-                    - metrics["entropy_per_site_exact"]
-                )
-        except NotImplementedError as err:
-            metrics["exact_references_pending"] = str(err)
+        F_exact = exact_free_energy(target, sigma=sigma, D=D)
+        E_exact = exact_internal_energy(target, sigma=sigma, D=D)
+        S_exact = entropy_estimate(F_exact, E_exact, sigma=sigma)
+        metrics["free_energy_per_site_exact"] = float(F_exact.item())
+        metrics["internal_energy_per_site_exact"] = float(E_exact.item())
+        metrics["entropy_per_site_exact"] = float(S_exact.item())
+        metrics["free_energy_per_site_bias"] = (
+            metrics["free_energy_per_site"]
+            - metrics["free_energy_per_site_exact"]
+        )
+        metrics["internal_energy_per_site_bias"] = (
+            metrics["internal_energy_per_site"]
+            - metrics["internal_energy_per_site_exact"]
+        )
+        metrics["entropy_per_site_bias"] = (
+            metrics["entropy_per_site"]
+            - metrics["entropy_per_site_exact"]
+        )
 
     return metrics
 

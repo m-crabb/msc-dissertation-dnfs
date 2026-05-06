@@ -103,27 +103,29 @@ def test_free_energy_lb_uses_arithmetic_mean_of_log_weights():
 
 def test_internal_energy_uniform_weights_equals_mean_neg_log_p_tilde():
     """Uniform log-weights → softmax(w) is uniform → IS reduces to a plain
-    arithmetic mean of -log p̃ / D."""
+    arithmetic mean of -log p̃ / (2σD). The 2σ in the denominator is the
+    per-β conversion explained in `internal_energy_estimate` (E/D = u,
+    physics per-spin, not E_paper/D)."""
     K, sigma, D = 8, 0.1, 4
     log_weights = torch.zeros(K)
     log_p_tilde = torch.tensor([0.5, -1.0, 0.0, 2.0, -0.3, 0.7, 1.1, -1.4])
     E_per_site = internal_energy_estimate(
         log_weights, log_p_tilde, sigma=sigma, D=D
     )
-    expected = -log_p_tilde.mean().item() / D
+    expected = -log_p_tilde.mean().item() / (2 * sigma * D)
     assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
 def test_internal_energy_dominant_weight_picks_single_sample():
     """If log_weights[0] dominates, softmax(w) is essentially a one-hot at 0,
-    so E/D ≈ -log_p_tilde[0] / D."""
+    so E/D ≈ -log_p_tilde[0] / (2σD)."""
     sigma, D = 0.1, 4
     log_weights = torch.tensor([0.0, -100.0, -100.0, -100.0])
     log_p_tilde = torch.tensor([0.7, 0.0, 0.0, 0.0])
     E_per_site = internal_energy_estimate(
         log_weights, log_p_tilde, sigma=sigma, D=D
     )
-    expected = -log_p_tilde[0].item() / D
+    expected = -log_p_tilde[0].item() / (2 * sigma * D)
     assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
@@ -181,5 +183,5 @@ def test_exact_internal_energy_matches_pi_weighted_neg_log_p_tilde():
     states = enumerate_states(D).float()
     log_p_unnorm = target.log_prob(states)
     log_pi = log_p_unnorm - torch.logsumexp(log_p_unnorm, dim=0)
-    expected = -(log_pi.exp() * log_p_unnorm).sum().item() / D
+    expected = -(log_pi.exp() * log_p_unnorm).sum().item() / (2 * sigma * D)
     assert E_per_site.item() == pytest.approx(expected, abs=1e-6)

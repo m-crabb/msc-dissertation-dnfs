@@ -15,17 +15,17 @@ N = 5,000 (≥ 2,048 strictly) so a single eval pass feeds both.
 All other distance metrics from earlier drafts (TVD, KL, 1-D Wasserstein
 on log p̃) were off-paper and have been removed -- the paper does not
 report them, and TVD in particular was sample-size-floored at our budget
-(see auto-memory `project_tvd_floor_at_low_n`). The removal landed when
-the eval suite was re-aligned to the paper; see Stage 1 plan status at
-`docs/plans/2026-05-05-dnfs-stage-1-vanilla.md`.
+(see auto-memory `project_tvd_floor_at_low_n`).
 
-Authorship:
-- ESS (already implemented) and the small enumeration helpers are
-  plumbing.
-- `free_energy_lb_estimate`, `internal_energy_estimate`, and
-  `entropy_estimate` are research-bearing — bodies are written by the
-  user (per `CLAUDE.md`); Claude provides the interface stub, the
-  Eq.-anchored docstring, and the unit tests.
+Note on the σ factor in the per-spin internal energy. Paper Eq. 53
+defines E(x) := -σ x^T A x; paper Table 2's reported `E/D` is the
+standard physics per-spin internal energy u = ⟨H⟩/N with H = -½ x^T A x
+in J = 1 units, which equals -E_p[log p̃] / (2σD). The two differ by a
+factor of β = 2σ (the matrix form `x^T A x` double-counts edges; β is
+the inverse temperature). Cross-check against the reference repo
+J-zin/DNFS:main.py::evaluate confirms the per-β normalisation in their
+internal-energy expression. See `internal_energy_estimate` docstring
+for the derivation.
 """
 
 import itertools
@@ -95,8 +95,8 @@ def free_energy_lb_estimate(
     """Per-site free-energy lower-bound estimate F/D from CTMC IS weights.
 
     Implements paper Eq. 37 (Appendix D.1). The free energy of the Ising
-    model with p(x) ∝ exp(σ x^T A x) is F = -(1 / 2σ) · log Z; per the
-    paper's lower bound,
+    model with p(x) ∝ exp(σ x^T A x) is F = -(1 / 2σ) · log Z, equivalently
+    F = -log Z / β with β = 2σ. The paper's lower bound is
 
         log Z ≥ E_{x ~ Q}[ ∫₀¹ ∂_s log p̃_s(x_s)
                           − Σ_y R_s(x_s, y) p_s(y)/p_s(x_s) ds ]
@@ -105,7 +105,7 @@ def free_energy_lb_estimate(
     where w is the CTMC log-weight from Eq. 41. The Monte-Carlo estimate
     is the empirical mean
 
-        log Ẑ_lb = (1/K) Σ_k w_k = log_weights.mean()
+        log Ẑ_lb = (1/K) Σ_k w_k = log_weights.mean(),
 
     yielding F/D = -log Ẑ_lb / (2σD).
 
@@ -116,18 +116,11 @@ def free_energy_lb_estimate(
         D: total number of spins (D = D_lin² for a D_lin × D_lin lattice).
 
     Returns:
-        Scalar tensor: per-site free energy F/D in the paper's
-        convention. For Ising D = 10×10, σ = 0.1, the analytic optimum
-        per Ferdinand & Fisher (1969) is -3.6727 (Table 2 row 1).
-
-    Note (authorship): research-bearing per CLAUDE.md. Body intentionally
-    deferred to the user; this stub raises NotImplementedError so the
-    eval pipeline fails loudly until the body is filled in.
+        Scalar tensor: per-site free energy F/D in the paper's convention.
+        For Ising D = 10×10, σ = 0.1, the analytic optimum per Ferdinand
+        & Fisher (1969) is -3.6727 (Table 2 row 1).
     """
-    raise NotImplementedError(
-        "free_energy_lb_estimate body deferred to user (paper Eq. 37). "
-        "Stage 1 plan status, next-session todo step 2."
-    )
+    return -log_weights.mean() / (2 * sigma * D)
 
 
 def internal_energy_estimate(
@@ -138,50 +131,51 @@ def internal_energy_estimate(
 ) -> Tensor:
     """Per-site internal-energy estimate E/D via self-normalised IS.
 
-    Implements paper Eq. 38 (Appendix D.1). For Ising p(x) ∝ exp(σ x^T A x)
-    the energy in the paper's convention is E(x) = -log p̃(x) / 1
-    (since log p̃ = σ x^T A x = -E). The internal energy is
+    Implements paper Eq. 38 (Appendix D.1). The numerical quantity Table 2
+    reports as `E/D` is the standard physics per-spin internal energy
+    u = ⟨H⟩/N (Onsager value u_c ≈ -√2 at criticality), *not* the
+    paper-text-defined E_paper(x) := -σ x^T A x averaged over π. The two
+    differ by β = 2σ:
 
-        E_p[E(x)] = -E_p[log p̃(x)]
-                  ≈ -Σ_k softmax(w)_k · log p̃(x_t^(k))
+        log p̃(x)   = σ x^T A x       (paper's exponent)
+        E_paper(x) = -σ x^T A x = -log p̃(x)
+        H(x)       = -½ x^T A x       (J = 1 physics convention; pair sum)
+        E_paper    = β · H            (since β = 2σ, x^T A x = 2 Σ_<ij> s_i s_j)
 
-    where the right-hand side is the self-normalised IS estimate of the
-    test function φ = log p̃_t under the importance proposal Q (Eq. 38),
-    using `softmax(w_k) = exp(w_k) / Σ_j exp(w_j)`.
+    so u = ⟨H⟩/N = -E_p[log p̃]/(βN) = -E_p[log p̃]/(2σN). Eq. 38's
+    self-normalised IS estimate of E_p[log p̃] is
 
-    Per-site:
+        E_p[log p̃] ≈ Σ_k softmax(w)_k · log p̃(x_t^(k)),
 
-        E/D = E_p[E(x)] / D = -[ Σ_k softmax(w)_k · log p̃(x^(k)) ] / D
+    yielding
+
+        E/D = u = -[ Σ_k softmax(w)_k · log p̃(x^(k)) ] / (2σD).
 
     Args:
         log_weights: (K,) tensor of CTMC IS log-weights w_k.
         log_p_tilde: (K,) tensor of un-normalised target log-densities
             log p̃(x_t^(k)) for the same K eval samples (`target.log_prob`
             applied to the t = 1 sample slice).
-        sigma: Ising σ. (Carried for API symmetry with the F estimator
-            and S formula; cancels here once the formula resolves.)
+        sigma: Ising coupling parameter σ.
         D: total number of spins.
 
     Returns:
         Scalar tensor: per-site internal energy E/D. For Ising D = 10×10,
-        σ = 0.1, the analytic optimum is -0.4282 (Table 2 row 1).
-
-    Note (authorship): research-bearing per CLAUDE.md. Body deferred to
-    the user; stub raises NotImplementedError.
+        σ = 0.1, the analytic optimum is -0.4282 (Table 2 row 1); at
+        σ_c = 0.22305 it is -1.4763 ≈ -√2 (Onsager).
     """
-    raise NotImplementedError(
-        "internal_energy_estimate body deferred to user (paper Eq. 38). "
-        "Stage 1 plan status, next-session todo step 2."
-    )
+    softmax_weights = torch.softmax(log_weights, dim=0)
+    return -(softmax_weights * log_p_tilde).sum() / (2 * sigma * D)
 
 
 def entropy_estimate(F_per_site: Tensor, E_per_site: Tensor, sigma: float) -> Tensor:
     """Per-site entropy estimate S/D = 2σ(E - F) / D from F/D and E/D.
 
     Direct algebraic combination of the free-energy and internal-energy
-    estimates (paper Table 2 caption). Holds in expectation; downstream
-    std comes from the joint distribution of (F̂, Ê) over IS replicates,
-    not from a separate Monte-Carlo pass.
+    estimates (paper Table 2 caption: S = 2σ(E − F) = β(E − F), the
+    standard physics relation S = β(U − F) with β = 2σ). Holds in
+    expectation; downstream std comes from the joint distribution of
+    (F̂, Ê) over IS replicates, not a separate Monte-Carlo pass.
 
     Args:
         F_per_site: scalar tensor F/D from `free_energy_lb_estimate`.
@@ -191,14 +185,8 @@ def entropy_estimate(F_per_site: Tensor, E_per_site: Tensor, sigma: float) -> Te
     Returns:
         Scalar tensor: per-site entropy S/D. For Ising D = 10×10,
         σ = 0.1, the analytic optimum is 0.6489 (Table 2 row 1).
-
-    Note (authorship): trivial-derivation but research-adjacent. Body
-    deferred to the user for consistency with the F and E estimators.
     """
-    raise NotImplementedError(
-        "entropy_estimate body deferred to user (S/D = 2σ(E - F)/D, "
-        "Table 2 caption). Stage 1 plan status, next-session todo step 2."
-    )
+    return 2 * sigma * (E_per_site - F_per_site)
 
 
 def exact_free_energy(target, sigma: float, D: int) -> Tensor:
@@ -213,41 +201,46 @@ def exact_free_energy(target, sigma: float, D: int) -> Tensor:
         target: object with `log_prob(x: Tensor) -> Tensor` and a
             `device` attribute.
         sigma: Ising σ.
-        D: total number of spins. Asserted ≤ 20 for tractability.
+        D: total number of spins. Must be ≤ 20 for tractability.
 
     Returns:
         Scalar tensor: exact F/D.
-
-    Note (authorship): one-line wrapper over `exact_log_probs`. Body
-    deferred to user for symmetry with the IS estimator.
     """
-    raise NotImplementedError(
-        "exact_free_energy body deferred to user "
-        "(F/D = -logsumexp(log_p_tilde) / (2σD) by enumeration). "
-        "Stage 1 plan status, next-session todo step 2."
-    )
+    if D > 20:
+        raise ValueError(
+            f"exact_free_energy enumerates 2^D states; D={D} > 20 is "
+            "intractable. Use Ferdinand & Fisher (1969) at D = 10×10."
+        )
+    states = enumerate_states(D).to(target.device).float()
+    log_p_unnorm = target.log_prob(states)
+    log_Z = torch.logsumexp(log_p_unnorm, dim=0)
+    return -log_Z / (2 * sigma * D)
 
 
 def exact_internal_energy(target, sigma: float, D: int) -> Tensor:
-    """Exact E/D = -E_π[log p̃(x)] / D by enumeration of all 2^D states.
+    """Exact E/D = u = -E_π[log p̃(x)] / (2σD) by enumeration.
 
-    Uses the normalised exact distribution π(x) = softmax(log p̃(x))
-    over enumerated states and computes E_π[log p̃] in closed form.
-    Same scope caveat as `exact_free_energy`: D ≤ 20.
+    The standard physics per-spin internal energy under the exact
+    Boltzmann distribution π(x) = exp(log p̃(x)) / Z. The same σ-factor
+    derivation as `internal_energy_estimate` applies: u = ⟨H⟩/N with
+    H = -½ x^T A x and β = 2σ gives u = -E_π[log p̃] / (βN). Same scope
+    caveat: D ≤ 20.
 
     Args:
-        target: object with `log_prob(x: Tensor) -> Tensor`.
+        target: object with `log_prob(x: Tensor) -> Tensor` and a
+            `device` attribute.
         sigma: Ising σ.
-        D: total number of spins. Asserted ≤ 20.
+        D: total number of spins. Must be ≤ 20.
 
     Returns:
         Scalar tensor: exact E/D.
-
-    Note (authorship): one-line wrapper over `exact_log_probs`. Body
-    deferred to user for symmetry with the IS estimator.
     """
-    raise NotImplementedError(
-        "exact_internal_energy body deferred to user "
-        "(E/D = -Σ_x π(x) log p̃(x) / D by enumeration). "
-        "Stage 1 plan status, next-session todo step 2."
-    )
+    if D > 20:
+        raise ValueError(
+            f"exact_internal_energy enumerates 2^D states; D={D} > 20 is "
+            "intractable. Use Ferdinand & Fisher (1969) at D = 10×10."
+        )
+    states = enumerate_states(D).to(target.device).float()
+    log_p_unnorm = target.log_prob(states)
+    log_pi = log_p_unnorm - torch.logsumexp(log_p_unnorm, dim=0)
+    return -(log_pi.exp() * log_p_unnorm).sum() / (2 * sigma * D)
