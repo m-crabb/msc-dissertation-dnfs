@@ -4,7 +4,7 @@ import pytest
 from discrete_flow_sampler.targets.ising import IsingTarget
 from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
 from discrete_flow_sampler.diagnostics.metrics import (
-    enumerate_states, exact_log_probs, tvd,
+    enumerate_states, exact_log_probs,
 )
 
 
@@ -29,10 +29,16 @@ def test_z2_invariant_at_zero_bias(target_d4):
 
 
 def test_matches_exact_on_small_lattice():
-    """Long Gibbs run on D=2 (4 sites, 16 states, periodic torus) must match
-    exact enumeration in TVD < 0.02. D=2 keeps the state space small enough
-    that 1024-scale sample budgets can validate to a tight threshold; for
-    D=4 the budget needed for TVD<0.02 is ~|states|/ε² ≈ 2·10⁸, infeasible."""
+    """Long Gibbs run on D=2 (4 sites, 16 states, periodic torus) must
+    match the exact enumerated distribution to within total-variation
+    distance < 0.02. D=2 keeps the state space small enough that
+    1024-scale sample budgets can validate to a tight threshold; for D=4
+    the budget needed for TVD<0.02 is ~|states|/ε² ≈ 2·10⁸, infeasible.
+
+    TVD is computed inline (`½ Σ |p_emp - p_exact|`) rather than via a
+    diagnostics import — it is used here only as a unit-test correctness
+    check for the Gibbs sampler, not as a paper-headline metric.
+    """
     torch.manual_seed(0)
     target = IsingTarget(D=2, sigma=0.1)
     states = enumerate_states(D=4)             # 2^4 = 16 states
@@ -47,4 +53,5 @@ def test_matches_exact_on_small_lattice():
         counts[state_to_idx[tuple(s.long().tolist())]] += 1
     p_emp = counts / counts.sum()
 
-    assert tvd(p_emp, p_exact).item() < 0.02
+    tv_distance = 0.5 * (p_emp - p_exact).abs().sum().item()
+    assert tv_distance < 0.02

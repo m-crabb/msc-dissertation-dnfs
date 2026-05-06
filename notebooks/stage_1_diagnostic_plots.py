@@ -7,19 +7,25 @@ Reads `training_log.csv` and `eval/metrics.json` from each run dir under
   wall_clock_step) saved into `<run_dir>/diagnostic_summary.png`.
 - Cross-run comparison overlay (loss + var_dt_log_p_tilde + ESS-fraction
   on a shared x-axis) saved into `results/02_baseline/stage_1_comparison.png`.
+- A summary table printed to stdout reporting the paper-faithful eval
+  metrics (paper Appendix D.1, Table 2): ESS-fraction, F/D, E/D, S/D,
+  and (where available) bias-vs-exact at D ≤ 20.
 
 Usage:
     pixi run -e dev python notebooks/stage_1_diagnostic_plots.py
 
-The script is intentionally idempotent and discovery-driven: it picks up
-whichever runs are on disk, so re-running it after a fresh Modal pull
-just refreshes the figures.
+The script is idempotent and discovery-driven: it picks up whichever
+runs are on disk, so re-running it after a fresh Modal pull just
+refreshes the figures.
+
+Energy-histogram-vs-Gibbs (paper Figure 13) is a separate panel pending
+the D = 10×10 Gibbs reference run — added in a follow-up to this script.
 
 Stage 1's narrative claim: the naive ∂_t log Z_t estimator is too
-high-variance to train the flow. The figures here pin that claim to two
-empirical observations: (a) `var_dt_log_p_tilde` does not decrease over
-training, and (b) ESS climbs anyway -- the dishonest signal that paper
-§3.1 motivates Stage 2's control variate to repair.
+high-variance to train the flow. The figures here pin that claim to
+two empirical observations: (a) `var_dt_log_p_tilde` does not decrease
+over training, and (b) ESS climbs anyway -- the dishonest signal that
+paper §3 motivates Stage 2's control variate (Eq. 8) to repair.
 """
 import json
 from pathlib import Path
@@ -110,13 +116,19 @@ def _plot_per_run(run: dict) -> None:
 
     metrics = run["metrics"]
     title = f"{run['label']}  ({run['name']})"
-    if metrics is not None and "tvd" in metrics:
-        title += (
-            f"\nfinal TVD = {metrics['tvd']:.3f}  | ESS-frac = "
-            f"{metrics['ess_fraction']:.3f}  | reverse-KL = "
-            f"{metrics.get('kl_reverse'):.3f}  | logp-W1 = "
-            f"{metrics.get('log_prob_w1'):.3f}"
-        )
+    if metrics is not None and "ess_fraction" in metrics:
+        parts = [f"ESS-frac = {metrics['ess_fraction']:.3f}"]
+        if "free_energy_per_site" in metrics:
+            parts.append(f"F/D = {metrics['free_energy_per_site']:.4f}")
+        if "internal_energy_per_site" in metrics:
+            parts.append(f"E/D = {metrics['internal_energy_per_site']:.4f}")
+        if "entropy_per_site" in metrics:
+            parts.append(f"S/D = {metrics['entropy_per_site']:.4f}")
+        if "free_energy_per_site_bias" in metrics:
+            parts.append(
+                f"bias F/D = {metrics['free_energy_per_site_bias']:+.4f}"
+            )
+        title += "\n" + "  | ".join(parts)
     fig.suptitle(title, fontsize=11)
     fig.tight_layout()
     out_path = run["run_dir"] / "diagnostic_summary.png"
@@ -180,16 +192,30 @@ def _plot_comparison(runs: list[dict]) -> None:
 
 
 def _print_summary_table(runs: list[dict]) -> None:
-    """Tabular summary for cut-and-paste into the dissertation prose."""
+    """Tabular summary for cut-and-paste into the dissertation prose.
+
+    Columns mirror the paper-faithful suite (Appendix D.1, Table 2):
+    ESS-fraction (Eq. 42), F/D (Eq. 37), E/D (Eq. 38), S/D = 2σ(E - F)/D,
+    and where available the signed bias against the exact enumeration
+    reference (D ≤ 20). Training-side columns (loss, var_dt_log_p_tilde)
+    are kept as mechanism diagnostics; they're not paper-headline but
+    are the substance of Stage 2's claim that the integrand variance is
+    the optimisation bottleneck.
+    """
     print()
-    print("=" * 88)
+    print("=" * 110)
     print("STAGE 1 SUMMARY")
-    print("=" * 88)
+    print("=" * 110)
     rows = []
     for run in runs:
         log = run["log"]
         eval_rows = run["eval_rows"]
         metrics = run["metrics"] or {}
+
+        def _fmt(key: str, fmt: str = "{:.4f}") -> str:
+            value = metrics.get(key)
+            return fmt.format(value) if value is not None else "—"
+
         rows.append(
             {
                 "run": run["label"],
@@ -200,18 +226,11 @@ def _print_summary_table(runs: list[dict]) -> None:
                     f"{eval_rows.ess_fraction.iloc[-1]:.3f}"
                     if len(eval_rows) else "—"
                 ),
-                "tvd": (
-                    f"{metrics.get('tvd'):.3f}"
-                    if metrics.get("tvd") is not None else "—"
-                ),
-                "kl_reverse": (
-                    f"{metrics.get('kl_reverse'):.3f}"
-                    if metrics.get("kl_reverse") is not None else "—"
-                ),
-                "logp_w1": (
-                    f"{metrics.get('log_prob_w1'):.3f}"
-                    if metrics.get("log_prob_w1") is not None else "—"
-                ),
+                "F/D": _fmt("free_energy_per_site"),
+                "E/D": _fmt("internal_energy_per_site"),
+                "S/D": _fmt("entropy_per_site"),
+                "F/D_bias": _fmt("free_energy_per_site_bias", "{:+.4f}"),
+                "E/D_bias": _fmt("internal_energy_per_site_bias", "{:+.4f}"),
             }
         )
     df = pd.DataFrame(rows)

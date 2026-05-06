@@ -1,20 +1,31 @@
-"""Diagnostics for DNFS replication: TVD, KL, ESS, exact enumeration,
-and energy-distribution two-sample distances.
+"""Paper-faithful diagnostics for the DNFS Ising replication.
 
-These are stage-agnostic measurement utilities used across the project:
+The DNFS paper (Ou/Zhang/Li 2025, Appendix D.1 + Table 2) evaluates the
+Ising experiment with a single self-normalised IS pass, reporting:
 
-- `tvd` / `kl` and `exact_log_probs` provide D=4 / D=10 ground-truth
-  comparisons against the target's partition-function-normalised
-  distribution over enumerated state space.
-- `ess_from_log_weights` is the headline IS diagnostic of Ou et al.
-  (Eq. 15); a *self-consistency* metric, NOT a coverage metric -- a
-  proposal that lands confidently in spurious modes can have ESS = N.
-  Always pair it with a coverage metric like TVD / KL / energy-W1.
-- `wasserstein1_1d` and `log_prob_w1` give a coverage diagnostic that
-  scales beyond enumeration: compare the empirical distribution of a
-  scalar observable (default: log p̃) under model samples vs reference
-  (oracle / exact) samples. Catches "wrong magnetisation" failure modes
-  that ESS alone cannot.
+- Effective Sample Size (Eq. 42),
+- Free energy lower-bound estimate F/D = -log Z / (2σD) (Eq. 37),
+- Internal energy E/D = E_p[E(x)] / D (Eq. 38),
+- Entropy S/D = 2σ(E - F) / D (derived).
+
+Sample budget: N = 2,048 with std taken across 10 independent seeds for
+Table 2; N = 5,000 for the Figure 13 energy histogram. We standardise on
+N = 5,000 (≥ 2,048 strictly) so a single eval pass feeds both.
+
+All other distance metrics from earlier drafts (TVD, KL, 1-D Wasserstein
+on log p̃) were off-paper and have been removed -- the paper does not
+report them, and TVD in particular was sample-size-floored at our budget
+(see auto-memory `project_tvd_floor_at_low_n`). The removal landed when
+the eval suite was re-aligned to the paper; see Stage 1 plan status at
+`docs/plans/2026-05-05-dnfs-stage-1-vanilla.md`.
+
+Authorship:
+- ESS (already implemented) and the small enumeration helpers are
+  plumbing.
+- `free_energy_lb_estimate`, `internal_energy_estimate`, and
+  `entropy_estimate` are research-bearing — bodies are written by the
+  user (per `CLAUDE.md`); Claude provides the interface stub, the
+  Eq.-anchored docstring, and the unit tests.
 """
 
 import itertools
@@ -23,65 +34,21 @@ import torch
 from torch import Tensor
 
 
-def tvd(p: Tensor, q: Tensor) -> Tensor:
-    """Total variation distance between two probability vectors.
-
-        TVD(p, q) = ½ · Σ_i |p_i - q_i|
-
-    Both inputs must be 1-D tensors that sum to one and share the same
-    ordering of states (i.e. p[i] and q[i] refer to the same state).
-    No internal normalisation is performed; passing un-normalised vectors
-    yields an un-normalised "distance" that won't have the usual [0, 1]
-    range, so callers are responsible for normalising upstream.
-    """
-    return 0.5 * (p - q).abs().sum()
-
-
-def kl(log_p: Tensor, log_q: Tensor) -> Tensor:
-    """Kullback-Leibler divergence KL(p ‖ q) from log-probability vectors.
-
-        KL(p ‖ q) = Σ_i p_i · (log p_i - log q_i)
-
-    Asymmetric: order matters.
-
-    - `kl(log_p_target, log_p_model)` — "forward / missing-mode KL".
-      Penalises the model for assigning low mass where the target puts
-      high mass. +∞ when the model puts zero mass on a target-supported
-      state. Catches **missed modes**.
-    - `kl(log_p_model, log_p_target)` — "reverse / spurious-mode KL".
-      Penalises the model for putting mass where the target does not.
-      Catches **spurious modes** (the failure that hides behind high ESS).
-
-    Inputs are log-probabilities (1-D tensors over a shared, fixed
-    ordering of states) so `+∞` from `log(0)` is naturally represented
-    by `-inf`. The convention `0 · log 0 = 0` is enforced explicitly so
-    a state with `p_i = 0` contributes nothing regardless of `log_q_i`.
-
-    Returns a scalar Tensor in [0, +∞]. Returns `+inf` when q's support
-    fails to cover p's.
-    """
-    p = log_p.exp()
-    diff = log_p - log_q
-    # 0 · log(0/q) := 0  (probability-theoretic convention).  Without
-    # this guard, a zero-prob state with log_q = -inf produces 0 · inf
-    # = nan and contaminates the sum.
-    contribution = torch.where(p > 0, p * diff, torch.zeros_like(p))
-    return contribution.sum()
-
-
 def ess_from_log_weights(log_w: Tensor) -> Tensor:
-    """Effective sample size from importance log-weights.
+    """Effective sample size from importance log-weights (paper Eq. 42).
 
         ESS(w) = (Σ_n w_n)² / Σ_n w_n²
                = exp( 2·logsumexp(log_w) - logsumexp(2·log_w) )
 
-    where log_w is a 1-D tensor of importance log-weights
-    log(p̃_1(x_n) / q_θ(x_n)). Computed in log-space because raw weights
-    routinely span 100+ orders of magnitude early in training; computing
+    where log_w is a 1-D tensor of CTMC importance log-weights w_k =
+    ∫₀¹ ∂_s log p̃_s(x_s^(k)) − Σ_y R_s(x_s^(k), y) p_s(y)/p_s(x_s^(k)) ds
+    (Eq. 41). Computed in log-space because raw weights routinely span
+    100+ orders of magnitude early in training; computing
     (Σw)² / Σw² directly under-/overflows.
 
-    Returns a scalar tensor in [1, N]: N for uniform weights, 1 when one
-    sample dominates.
+    Returns a scalar tensor in [1, K]: K for uniform weights, 1 when one
+    sample dominates. Caller divides by K for the [1/K, 1] normalised
+    ESS the paper reports.
     """
     log_sum_w = torch.logsumexp(log_w, dim=0)
     log_sum_w_sq = torch.logsumexp(2 * log_w, dim=0)
@@ -95,9 +62,11 @@ def enumerate_states(D: int) -> Tensor:
     {0, 1} software convention). Returns a (2^D, D) int64 tensor;
     ordering is lexicographic via itertools.product([-1, 1], repeat=D).
 
-    Used for D=4 (16 states) and D=10 (1024 states) ground-truth
-    computations. Beyond D=20 this gets memory-bound and the function
-    should not be called.
+    Used for D ≤ 20 ground-truth computations (the analog of the
+    "Optimal Value" row in paper Table 2 at sub-paper-scale lattices
+    where direct enumeration is feasible). Beyond D = 20 this is memory-
+    bound; D = 10×10 in the paper uses analytical Ferdinand & Fisher
+    references instead, not enumeration.
     """
     bits = list(itertools.product([-1, 1], repeat=D))
     return torch.tensor(bits, dtype=torch.long)
@@ -120,84 +89,165 @@ def exact_log_probs(target, states: Tensor) -> Tensor:
     return log_p_unnorm - log_Z
 
 
-def wasserstein1_1d(samples_a: Tensor, samples_b: Tensor) -> Tensor:
-    """1-Wasserstein distance between two 1-D empirical distributions.
-
-        W₁(F_a, F_b) = ∫_ℝ |F_a(x) - F_b(x)| dx
-
-    For equal sample sizes this collapses to the closed form
-
-        W₁ = (1/N) · Σ_i |sorted(a)_i - sorted(b)_i|.
-
-    For unequal sample sizes the integral is evaluated by stitching the
-    two empirical CDFs onto a common axis and summing the staircase
-    differences.
-
-    Translation-invariant (W₁(a + c, b + c) = W₁(a, b)) and in the
-    natural units of the input — for log-probability inputs that's
-    "average displacement of one distribution to match the other in
-    nats". Stronger than KS for diagnosing distribution shifts because
-    KS is a sup-norm and ignores how far apart the CDFs are once the
-    max gap is fixed.
-
-    Args:
-        samples_a, samples_b: 1-D float tensors. Need not be equal-sized.
-    Returns:
-        Scalar tensor.
-    """
-    if samples_a.dim() != 1 or samples_b.dim() != 1:
-        raise ValueError(
-            f"wasserstein1_1d requires 1-D inputs; got shapes "
-            f"{tuple(samples_a.shape)} and {tuple(samples_b.shape)}."
-        )
-
-    sorted_a, _ = samples_a.sort()
-    sorted_b, _ = samples_b.sort()
-
-    if sorted_a.shape == sorted_b.shape:
-        return (sorted_a - sorted_b).abs().mean()
-
-    # Unequal sizes: stitch CDFs onto the merged-and-sorted x-axis and
-    # integrate |F_a(x) - F_b(x)|.  Each interval [x_k, x_{k+1}) sees a
-    # constant difference of CDFs, so the integral is a finite sum of
-    # rectangles.
-    n_a, n_b = sorted_a.numel(), sorted_b.numel()
-    all_x = torch.cat([sorted_a, sorted_b]).sort().values  # (n_a + n_b,)
-    deltas = all_x[1:] - all_x[:-1]                         # (n_a + n_b - 1,)
-    cdf_a = torch.searchsorted(sorted_a, all_x[:-1], right=True).float() / n_a
-    cdf_b = torch.searchsorted(sorted_b, all_x[:-1], right=True).float() / n_b
-    return ((cdf_a - cdf_b).abs() * deltas).sum()
-
-
-def log_prob_w1(
-    samples_a: Tensor,
-    samples_b: Tensor,
-    target,
+def free_energy_lb_estimate(
+    log_weights: Tensor, sigma: float, D: int
 ) -> Tensor:
-    """1-Wasserstein distance between log-prob distributions of two
-    sample sets under `target`.
+    """Per-site free-energy lower-bound estimate F/D from CTMC IS weights.
 
-    A coverage diagnostic that scales beyond enumeration: instead of
-    asking "do the two empirical distributions match across all 2^d
-    states?" (intractable for d ≥ 20), it asks "do the two distributions
-    of the scalar `log p̃(x)` match?". Two distributions on {-1, +1}^d
-    that agree on the law of every observable agree everywhere; in
-    practice we only check this single scalar -- a 1-D summary that's
-    nevertheless extremely sensitive to "wrong magnetisation" or
-    "wrong energy mode" failures because log p̃ is a sufficient
-    statistic for the Boltzmann family the target lives in.
+    Implements paper Eq. 37 (Appendix D.1). The free energy of the Ising
+    model with p(x) ∝ exp(σ x^T A x) is F = -(1 / 2σ) · log Z; per the
+    paper's lower bound,
 
-    For Stage 1 D=4 we can use samples_b drawn from the exact target
-    via multinomial; for Stage 1+ D=10 the same call works with
-    samples_b drawn from a Gibbs / heat-bath oracle.
+        log Z ≥ E_{x ~ Q}[ ∫₀¹ ∂_s log p̃_s(x_s)
+                          − Σ_y R_s(x_s, y) p_s(y)/p_s(x_s) ds ]
+              = E_{x ~ Q}[ w(x) ]
+
+    where w is the CTMC log-weight from Eq. 41. The Monte-Carlo estimate
+    is the empirical mean
+
+        log Ẑ_lb = (1/K) Σ_k w_k = log_weights.mean()
+
+    yielding F/D = -log Ẑ_lb / (2σD).
 
     Args:
-        samples_a, samples_b: (N, d) tensors in {-1, +1}.  Sample sizes
-            need not match.
-        target: object exposing `log_prob(x) -> (N,)`.
+        log_weights: (K,) tensor of CTMC IS log-weights from a single
+            eval pass over t = 0 → 1 trajectories.
+        sigma: Ising coupling parameter σ (matches `IsingTarget.sigma`).
+        D: total number of spins (D = D_lin² for a D_lin × D_lin lattice).
+
     Returns:
-        Scalar W₁ distance, in nats (units of log p̃).
+        Scalar tensor: per-site free energy F/D in the paper's
+        convention. For Ising D = 10×10, σ = 0.1, the analytic optimum
+        per Ferdinand & Fisher (1969) is -3.6727 (Table 2 row 1).
+
+    Note (authorship): research-bearing per CLAUDE.md. Body intentionally
+    deferred to the user; this stub raises NotImplementedError so the
+    eval pipeline fails loudly until the body is filled in.
     """
-    log_prob_a = target.log_prob(samples_a.float())
-    log_prob_b = target.log_prob(samples_b.float())
-    return wasserstein1_1d(log_prob_a, log_prob_b)
+    raise NotImplementedError(
+        "free_energy_lb_estimate body deferred to user (paper Eq. 37). "
+        "Stage 1 plan status, next-session todo step 2."
+    )
+
+
+def internal_energy_estimate(
+    log_weights: Tensor,
+    log_p_tilde: Tensor,
+    sigma: float,
+    D: int,
+) -> Tensor:
+    """Per-site internal-energy estimate E/D via self-normalised IS.
+
+    Implements paper Eq. 38 (Appendix D.1). For Ising p(x) ∝ exp(σ x^T A x)
+    the energy in the paper's convention is E(x) = -log p̃(x) / 1
+    (since log p̃ = σ x^T A x = -E). The internal energy is
+
+        E_p[E(x)] = -E_p[log p̃(x)]
+                  ≈ -Σ_k softmax(w)_k · log p̃(x_t^(k))
+
+    where the right-hand side is the self-normalised IS estimate of the
+    test function φ = log p̃_t under the importance proposal Q (Eq. 38),
+    using `softmax(w_k) = exp(w_k) / Σ_j exp(w_j)`.
+
+    Per-site:
+
+        E/D = E_p[E(x)] / D = -[ Σ_k softmax(w)_k · log p̃(x^(k)) ] / D
+
+    Args:
+        log_weights: (K,) tensor of CTMC IS log-weights w_k.
+        log_p_tilde: (K,) tensor of un-normalised target log-densities
+            log p̃(x_t^(k)) for the same K eval samples (`target.log_prob`
+            applied to the t = 1 sample slice).
+        sigma: Ising σ. (Carried for API symmetry with the F estimator
+            and S formula; cancels here once the formula resolves.)
+        D: total number of spins.
+
+    Returns:
+        Scalar tensor: per-site internal energy E/D. For Ising D = 10×10,
+        σ = 0.1, the analytic optimum is -0.4282 (Table 2 row 1).
+
+    Note (authorship): research-bearing per CLAUDE.md. Body deferred to
+    the user; stub raises NotImplementedError.
+    """
+    raise NotImplementedError(
+        "internal_energy_estimate body deferred to user (paper Eq. 38). "
+        "Stage 1 plan status, next-session todo step 2."
+    )
+
+
+def entropy_estimate(F_per_site: Tensor, E_per_site: Tensor, sigma: float) -> Tensor:
+    """Per-site entropy estimate S/D = 2σ(E - F) / D from F/D and E/D.
+
+    Direct algebraic combination of the free-energy and internal-energy
+    estimates (paper Table 2 caption). Holds in expectation; downstream
+    std comes from the joint distribution of (F̂, Ê) over IS replicates,
+    not from a separate Monte-Carlo pass.
+
+    Args:
+        F_per_site: scalar tensor F/D from `free_energy_lb_estimate`.
+        E_per_site: scalar tensor E/D from `internal_energy_estimate`.
+        sigma: Ising coupling parameter σ.
+
+    Returns:
+        Scalar tensor: per-site entropy S/D. For Ising D = 10×10,
+        σ = 0.1, the analytic optimum is 0.6489 (Table 2 row 1).
+
+    Note (authorship): trivial-derivation but research-adjacent. Body
+    deferred to the user for consistency with the F and E estimators.
+    """
+    raise NotImplementedError(
+        "entropy_estimate body deferred to user (S/D = 2σ(E - F)/D, "
+        "Table 2 caption). Stage 1 plan status, next-session todo step 2."
+    )
+
+
+def exact_free_energy(target, sigma: float, D: int) -> Tensor:
+    """Exact F/D = -log Z / (2σD) by enumeration of all 2^D states.
+
+    The "Optimal Value" analog at sub-paper-scale lattices (D ≤ 20).
+    For D = 10×10 the paper uses the Ferdinand & Fisher (1969)
+    analytical 2-D Ising solution instead; that helper is out of scope
+    for this module.
+
+    Args:
+        target: object with `log_prob(x: Tensor) -> Tensor` and a
+            `device` attribute.
+        sigma: Ising σ.
+        D: total number of spins. Asserted ≤ 20 for tractability.
+
+    Returns:
+        Scalar tensor: exact F/D.
+
+    Note (authorship): one-line wrapper over `exact_log_probs`. Body
+    deferred to user for symmetry with the IS estimator.
+    """
+    raise NotImplementedError(
+        "exact_free_energy body deferred to user "
+        "(F/D = -logsumexp(log_p_tilde) / (2σD) by enumeration). "
+        "Stage 1 plan status, next-session todo step 2."
+    )
+
+
+def exact_internal_energy(target, sigma: float, D: int) -> Tensor:
+    """Exact E/D = -E_π[log p̃(x)] / D by enumeration of all 2^D states.
+
+    Uses the normalised exact distribution π(x) = softmax(log p̃(x))
+    over enumerated states and computes E_π[log p̃] in closed form.
+    Same scope caveat as `exact_free_energy`: D ≤ 20.
+
+    Args:
+        target: object with `log_prob(x: Tensor) -> Tensor`.
+        sigma: Ising σ.
+        D: total number of spins. Asserted ≤ 20.
+
+    Returns:
+        Scalar tensor: exact E/D.
+
+    Note (authorship): one-line wrapper over `exact_log_probs`. Body
+    deferred to user for symmetry with the IS estimator.
+    """
+    raise NotImplementedError(
+        "exact_internal_energy body deferred to user "
+        "(E/D = -Σ_x π(x) log p̃(x) / D by enumeration). "
+        "Stage 1 plan status, next-session todo step 2."
+    )

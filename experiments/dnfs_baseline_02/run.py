@@ -13,7 +13,6 @@ The same `train(cfg_name, seed, ...)` function is also imported by
 """
 import argparse
 import json
-import math
 import platform
 import socket
 import subprocess
@@ -24,12 +23,12 @@ from pathlib import Path
 import torch
 
 from discrete_flow_sampler.diagnostics.metrics import (
-    enumerate_states,
+    entropy_estimate,
     ess_from_log_weights,
-    exact_log_probs,
-    kl,
-    log_prob_w1,
-    tvd,
+    exact_free_energy,
+    exact_internal_energy,
+    free_energy_lb_estimate,
+    internal_energy_estimate,
 )
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
 from discrete_flow_sampler.samplers import log_z_estimators
@@ -38,9 +37,11 @@ from discrete_flow_sampler.samplers.training import train as train_loop
 from discrete_flow_sampler.targets.ising import IsingTarget
 from experiments.dnfs_baseline_02.configs import CONFIGS
 
-# State-count cutoff for exact-enumeration diagnostics. 2^20 ≈ 1M states
-# is the practical ceiling for in-memory enumeration on a single device;
-# the DNFS Ising scope hits this at D=4 (2^16) and skips it at D=10 (2^100).
+# State-count cutoff for exact-enumeration "Optimal Value" references at
+# small D. Paper Table 2 row 1 lists analytical (Ferdinand & Fisher 1969)
+# optima for D = 10×10; for D ≤ 20 we use direct enumeration, the
+# small-lattice analog. Beyond D = 20 enumeration is memory-bound and
+# the analytical solution is the right call.
 ENUMERATION_MAX_SPINS = 20
 
 
@@ -76,88 +77,91 @@ def _compute_eval_metrics(
     eval_log_weights: torch.Tensor,
     target,
 ) -> dict:
-    """Aggregate end-of-run diagnostics into a single JSON-friendly dict.
+    """Aggregate end-of-run diagnostics into a JSON-friendly dict.
 
-    Always-on metrics (regardless of state-space size):
-    - `ess`, `ess_fraction`: importance-weight self-consistency (Eq. 15).
-      Pair-mandatory with a coverage metric -- ESS = N is achievable on a
-      sampler that confidently lands in spurious modes.
+    Paper-faithful suite (DNFS Appendix D.1, Table 2):
 
-    Enumeration-gated metrics (only when target.d ≤ ENUMERATION_MAX_SPINS):
-    - `tvd`: ½ Σ |p_model - p_target| against the partition-function-
-      normalised exact target. The headline coverage metric.
-    - `kl_forward`: KL(target ‖ model) -- "missing-mode" KL. +∞ when the
-      model misses target-supported states; emitted as `null` in JSON with
-      the `kl_forward_inf` flag set so a notebook can distinguish "no
-      coverage at all" from "not computed".
-    - `kl_reverse`: KL(model ‖ target) -- "spurious-mode" KL. Finite as
-      long as target has full support (true for σ > 0).
-    - `log_prob_w1`: 1-Wasserstein between log p̃ histograms of model and
-      exact-target multinomial samples. Coverage diagnostic that
-      generalises beyond enumeration to the D=10 regime when paired with
-      a Gibbs-oracle reference.
+    - `n_eval_samples`, `ess`, `ess_fraction`: importance-weight
+      self-consistency (Eq. 42). The paper reports the normalised ESS in
+      [1/K, 1]; `ess_fraction` is that value.
+    - `free_energy_per_site`: F/D = -log Ẑ_lb / (2σD) from
+      `free_energy_lb_estimate` (Eq. 37).
+    - `internal_energy_per_site`: E/D from self-normalised IS (Eq. 38).
+    - `entropy_per_site`: S/D = 2σ(E - F) / D (Table 2 caption).
+
+    Exact-reference fields (only when target.d ≤ ENUMERATION_MAX_SPINS,
+    i.e. D ≤ 20 -- the small-lattice analog of paper Table 2's "Optimal
+    Value" row, which at D = 10×10 uses Ferdinand & Fisher 1969 instead):
+
+    - `free_energy_per_site_exact`, `internal_energy_per_site_exact`,
+      `entropy_per_site_exact`: enumeration-based truths.
+    - `free_energy_per_site_bias`, `internal_energy_per_site_bias`,
+      `entropy_per_site_bias`: estimate − exact, signed (positive ⇒
+      estimate too high relative to truth).
+
+    The IS-estimator block raises NotImplementedError until the user
+    fills in the bodies in `metrics.py`. The ESS block runs first and
+    is reported regardless, so partial results land in `metrics.json`
+    even with the bodies still stubbed.
 
     Args:
         eval_samples: (N, d) tensor in {-1, +1}, on `target.device`.
         eval_log_weights: (N,) IS log-weights from the same eval pass.
-        target: IsingTarget (or any duck with `.d`, `.device`, `.log_prob`).
+        target: IsingTarget (or any duck with `.d`, `.device`, `.log_prob`,
+            `.sigma`).
     """
-    device = target.device
     metrics: dict = {
         "n_eval_samples": int(eval_log_weights.numel()),
         "ess": float(ess_from_log_weights(eval_log_weights).item()),
     }
     metrics["ess_fraction"] = metrics["ess"] / metrics["n_eval_samples"]
 
-    if target.d > ENUMERATION_MAX_SPINS:
-        metrics["enumeration_skipped_reason"] = (
-            f"target.d = {target.d} > {ENUMERATION_MAX_SPINS}; "
-            f"2^d states intractable to enumerate"
+    sigma = float(target.sigma)
+    D = int(target.d)
+
+    log_p_tilde_eval = target.log_prob(eval_samples.float())
+
+    try:
+        F_hat = free_energy_lb_estimate(
+            eval_log_weights, sigma=sigma, D=D
         )
-        return metrics
+        E_hat = internal_energy_estimate(
+            eval_log_weights, log_p_tilde_eval, sigma=sigma, D=D
+        )
+        S_hat = entropy_estimate(F_hat, E_hat, sigma=sigma)
+        metrics["free_energy_per_site"] = float(F_hat.item())
+        metrics["internal_energy_per_site"] = float(E_hat.item())
+        metrics["entropy_per_site"] = float(S_hat.item())
+    except NotImplementedError as err:
+        # Stubs are in place but bodies haven't been filled. Keep ESS in
+        # the JSON and surface the reason — eval pipeline still partially
+        # informative until the user lands the bodies.
+        metrics["is_estimators_pending"] = str(err)
 
-    states = enumerate_states(target.d).to(device)
-    log_p_target = exact_log_probs(target, states)
+    if D <= ENUMERATION_MAX_SPINS:
+        try:
+            F_exact = exact_free_energy(target, sigma=sigma, D=D)
+            E_exact = exact_internal_energy(target, sigma=sigma, D=D)
+            S_exact = entropy_estimate(F_exact, E_exact, sigma=sigma)
+            metrics["free_energy_per_site_exact"] = float(F_exact.item())
+            metrics["internal_energy_per_site_exact"] = float(E_exact.item())
+            metrics["entropy_per_site_exact"] = float(S_exact.item())
+            if "free_energy_per_site" in metrics:
+                metrics["free_energy_per_site_bias"] = (
+                    metrics["free_energy_per_site"]
+                    - metrics["free_energy_per_site_exact"]
+                )
+                metrics["internal_energy_per_site_bias"] = (
+                    metrics["internal_energy_per_site"]
+                    - metrics["internal_energy_per_site_exact"]
+                )
+                metrics["entropy_per_site_bias"] = (
+                    metrics["entropy_per_site"]
+                    - metrics["entropy_per_site_exact"]
+                )
+        except NotImplementedError as err:
+            metrics["exact_references_pending"] = str(err)
 
-    # Empirical model histogram over the same enumeration. The dict-keyed
-    # map runs once (O(2^d)) and is amortised over N_eval lookups.
-    state_to_idx = {
-        tuple(s.long().tolist()): i for i, s in enumerate(states.cpu())
-    }
-    counts = torch.zeros(states.shape[0])
-    for sample in eval_samples.cpu():
-        counts[state_to_idx[tuple(sample.long().tolist())]] += 1
-    p_model_emp = counts / counts.sum()
-    log_p_model_emp = torch.where(
-        counts > 0,
-        p_model_emp.log(),
-        torch.full_like(counts, float("-inf")),
-    )
-
-    log_p_target_cpu = log_p_target.cpu()
-    p_target_exact = log_p_target_cpu.exp()
-
-    metrics["tvd"] = float(tvd(p_model_emp, p_target_exact).item())
-
-    fwd_kl = kl(log_p_target_cpu, log_p_model_emp).item()
-    metrics["kl_forward"] = None if math.isinf(fwd_kl) else float(fwd_kl)
-    metrics["kl_forward_inf"] = bool(math.isinf(fwd_kl))
-
-    rev_kl = kl(log_p_model_emp, log_p_target_cpu).item()
-    metrics["kl_reverse"] = None if math.isinf(rev_kl) else float(rev_kl)
-
-    # Reference samples drawn from exact π via multinomial over the
-    # enumerated support. Same N as eval samples to keep the W1
-    # comparison balanced.
-    target_idx = torch.multinomial(
-        p_target_exact, metrics["n_eval_samples"], replacement=True
-    )
-    target_samples = states[target_idx].float()
-    metrics["log_prob_w1"] = float(
-        log_prob_w1(eval_samples.float(), target_samples, target).item()
-    )
-
-    metrics["n_states_enumerated"] = int(states.shape[0])
     return metrics
 
 

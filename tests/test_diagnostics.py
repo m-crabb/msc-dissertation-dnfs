@@ -1,23 +1,35 @@
+"""Tests for paper-faithful diagnostics (paper Appendix D.1, Table 2).
+
+Tests for the IS estimators (`free_energy_lb_estimate`,
+`internal_energy_estimate`, `entropy_estimate`) and their
+enumeration-based exact references encode "what correct looks like"
+before the user fills in the bodies. They start failing with
+NotImplementedError; they pass once each body lands.
+
+Tests for the off-paper utilities removed in the 2026-05 metric refactor
+(TVD, KL, 1-D Wasserstein, log_prob_w1) have been deleted alongside the
+function definitions.
+"""
 import math
 
-import torch
 import pytest
+import torch
 
 from discrete_flow_sampler.diagnostics.metrics import (
-    tvd, kl, ess_from_log_weights, enumerate_states, exact_log_probs,
-    wasserstein1_1d, log_prob_w1,
+    enumerate_states,
+    entropy_estimate,
+    ess_from_log_weights,
+    exact_free_energy,
+    exact_internal_energy,
+    exact_log_probs,
+    free_energy_lb_estimate,
+    internal_energy_estimate,
 )
 
 
-def test_tvd_zero_for_identical():
-    p = torch.tensor([0.25, 0.25, 0.25, 0.25])
-    assert tvd(p, p).item() == pytest.approx(0.0)
-
-
-def test_tvd_one_for_disjoint():
-    p = torch.tensor([1.0, 0.0])
-    q = torch.tensor([0.0, 1.0])
-    assert tvd(p, q).item() == pytest.approx(1.0)
+# ---------------------------------------------------------------------------
+# ESS (already-implemented; pinning behaviour during the refactor)
+# ---------------------------------------------------------------------------
 
 
 def test_ess_equals_n_for_uniform_weights():
@@ -30,6 +42,11 @@ def test_ess_one_for_dominant_weight():
     log_w[0] = 0.0
     # one weight dominates → ESS → 1
     assert ess_from_log_weights(log_w).item() == pytest.approx(1.0, abs=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Enumeration helpers (still used by exact-reference D ≤ 20 path)
+# ---------------------------------------------------------------------------
 
 
 def test_enumerate_states_shape_and_count():
@@ -47,86 +64,122 @@ def test_exact_log_probs_normalises_to_one():
     class TinyTarget:
         def log_prob(self, x):
             return x.sum(dim=-1).float()
+
     states = enumerate_states(D=2)
     log_p = exact_log_probs(TinyTarget(), states)
     probs = log_p.exp()
     assert probs.sum().item() == pytest.approx(1.0)
 
 
-def test_kl_zero_for_identical():
-    log_p = torch.log(torch.tensor([0.25, 0.25, 0.25, 0.25]))
-    assert kl(log_p, log_p).item() == pytest.approx(0.0, abs=1e-7)
+# ---------------------------------------------------------------------------
+# free_energy_lb_estimate (paper Eq. 37)
+# ---------------------------------------------------------------------------
 
 
-def test_kl_matches_closed_form_on_two_state_bernoulli():
-    # KL(Bern(0.7) || Bern(0.3)) = 0.7*log(0.7/0.3) + 0.3*log(0.3/0.7)
-    log_p = torch.log(torch.tensor([0.7, 0.3]))
-    log_q = torch.log(torch.tensor([0.3, 0.7]))
-    expected = 0.7 * math.log(0.7 / 0.3) + 0.3 * math.log(0.3 / 0.7)
-    assert kl(log_p, log_q).item() == pytest.approx(expected, abs=1e-6)
+def test_free_energy_lb_constant_log_weights():
+    """If every w_k = c, then log Ẑ_lb = c and F/D = -c / (2σD)."""
+    K, sigma, D = 16, 0.1, 4
+    c = -3.0
+    log_weights = torch.full((K,), c)
+    F_per_site = free_energy_lb_estimate(log_weights, sigma=sigma, D=D)
+    expected = -c / (2 * sigma * D)
+    assert F_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
-def test_kl_infinite_when_q_misses_p_support():
-    # p has mass on state 1, q does not -> KL(p || q) = +inf.
-    log_p = torch.log(torch.tensor([0.5, 0.5]))
-    log_q = torch.tensor([0.0, -float("inf")])  # q = (1, 0) in prob space
-    assert torch.isinf(kl(log_p, log_q)) and kl(log_p, log_q).item() > 0
+def test_free_energy_lb_uses_arithmetic_mean_of_log_weights():
+    """log Ẑ_lb = (1/K) Σ w_k. Numerical pin so a `logsumexp - log K`
+    mistake (the geometric-vs-arithmetic-mean trap) is caught."""
+    sigma, D = 0.1, 2
+    log_weights = torch.tensor([0.0, 2.0, 4.0])
+    F_per_site = free_energy_lb_estimate(log_weights, sigma=sigma, D=D)
+    expected = -(log_weights.mean().item()) / (2 * sigma * D)
+    assert F_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
-def test_kl_finite_when_p_zeros_align_with_q_zeros():
-    # p has zero mass on state where q has zero mass -> 0 * log(0/0) := 0,
-    # the rest of the sum stays finite.  This pins the convention guard.
-    log_p = torch.tensor([0.0, -float("inf")])  # p = (1, 0)
-    log_q = torch.tensor([0.0, -float("inf")])  # q = (1, 0)
-    assert kl(log_p, log_q).item() == pytest.approx(0.0)
+# ---------------------------------------------------------------------------
+# internal_energy_estimate (paper Eq. 38)
+# ---------------------------------------------------------------------------
 
 
-def test_kl_asymmetric():
-    # KL(p || q) != KL(q || p) on a non-uniform pair.
-    log_p = torch.log(torch.tensor([0.8, 0.2]))
-    log_q = torch.log(torch.tensor([0.5, 0.5]))
-    forward = kl(log_p, log_q).item()
-    reverse = kl(log_q, log_p).item()
-    assert forward != pytest.approx(reverse)
+def test_internal_energy_uniform_weights_equals_mean_neg_log_p_tilde():
+    """Uniform log-weights → softmax(w) is uniform → IS reduces to a plain
+    arithmetic mean of -log p̃ / D."""
+    K, sigma, D = 8, 0.1, 4
+    log_weights = torch.zeros(K)
+    log_p_tilde = torch.tensor([0.5, -1.0, 0.0, 2.0, -0.3, 0.7, 1.1, -1.4])
+    E_per_site = internal_energy_estimate(
+        log_weights, log_p_tilde, sigma=sigma, D=D
+    )
+    expected = -log_p_tilde.mean().item() / D
+    assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
-def test_wasserstein1_zero_for_identical_samples():
-    a = torch.tensor([0.1, 0.2, 0.3, 0.4, 0.5])
-    assert wasserstein1_1d(a, a).item() == pytest.approx(0.0)
+def test_internal_energy_dominant_weight_picks_single_sample():
+    """If log_weights[0] dominates, softmax(w) is essentially a one-hot at 0,
+    so E/D ≈ -log_p_tilde[0] / D."""
+    sigma, D = 0.1, 4
+    log_weights = torch.tensor([0.0, -100.0, -100.0, -100.0])
+    log_p_tilde = torch.tensor([0.7, 0.0, 0.0, 0.0])
+    E_per_site = internal_energy_estimate(
+        log_weights, log_p_tilde, sigma=sigma, D=D
+    )
+    expected = -log_p_tilde[0].item() / D
+    assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
-def test_wasserstein1_translation_invariant():
-    a = torch.tensor([0.0, 1.0, 2.0, 3.0])
-    b = a + 5.0
-    # W1 between samples and a translated copy = the translation amount.
-    assert wasserstein1_1d(a, b).item() == pytest.approx(5.0)
+# ---------------------------------------------------------------------------
+# entropy_estimate (paper Table 2 caption: S = 2σ(E - F))
+# ---------------------------------------------------------------------------
 
 
-def test_wasserstein1_unequal_sample_sizes():
-    # Sanity: W1 between two delta-at-different-points distributions of
-    # different size should equal the gap between them.
-    a = torch.tensor([0.0, 0.0, 0.0])  # all at 0
-    b = torch.tensor([7.0, 7.0])        # all at 7
-    assert wasserstein1_1d(a, b).item() == pytest.approx(7.0, abs=1e-6)
+def test_entropy_is_2sigma_times_energy_minus_free_energy():
+    sigma = 0.1
+    F_per_site = torch.tensor(-3.6727)
+    E_per_site = torch.tensor(-0.4282)
+    S_per_site = entropy_estimate(F_per_site, E_per_site, sigma=sigma)
+    expected = 2 * sigma * (E_per_site.item() - F_per_site.item())
+    assert S_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
-def test_log_prob_w1_zero_when_sample_sets_match():
-    """If both sample sets are the same states, W1 of their log_probs is 0."""
+# ---------------------------------------------------------------------------
+# exact_free_energy / exact_internal_energy (D ≤ 20 enumeration)
+# ---------------------------------------------------------------------------
+
+
+def test_exact_free_energy_matches_logsumexp_definition():
+    """Sanity: given a target whose log_p̃ enumerates trivially, the
+    exact F/D should equal -logsumexp(log_p̃(states)) / (2σD)."""
+    sigma, D = 0.1, 2
+
     class TinyTarget:
+        device = "cpu"
         def log_prob(self, x):
-            return x.sum(dim=-1).float()
-    states = enumerate_states(D=3).float()
-    assert log_prob_w1(states, states, TinyTarget()).item() == pytest.approx(0.0)
+            # log p̃(x) = σ · sum(x) (linear; not Ising, but enumerates fine)
+            return sigma * x.sum(dim=-1).float()
+
+    target = TinyTarget()
+    F_per_site = exact_free_energy(target, sigma=sigma, D=D)
+
+    states = enumerate_states(D).float()
+    log_p_unnorm = target.log_prob(states)
+    log_Z = torch.logsumexp(log_p_unnorm, dim=0)
+    expected = -log_Z.item() / (2 * sigma * D)
+    assert F_per_site.item() == pytest.approx(expected, abs=1e-6)
 
 
-def test_log_prob_w1_positive_for_disjoint_log_prob_supports():
-    """Two sample sets whose log_probs differ in mean should give W1 > 0."""
+def test_exact_internal_energy_matches_pi_weighted_neg_log_p_tilde():
+    sigma, D = 0.1, 2
+
     class TinyTarget:
+        device = "cpu"
         def log_prob(self, x):
-            return x.sum(dim=-1).float()
-    # All-aligned samples: log_prob = +D ; All-anti-aligned samples: log_prob = -D
-    aligned = torch.ones(10, 4)
-    anti_aligned = -torch.ones(10, 4)
-    w1 = log_prob_w1(aligned, anti_aligned, TinyTarget()).item()
-    # log_prob differs by 8 (= 4 - (-4)) deterministically.
-    assert w1 == pytest.approx(8.0, abs=1e-6)
+            return sigma * x.sum(dim=-1).float()
+
+    target = TinyTarget()
+    E_per_site = exact_internal_energy(target, sigma=sigma, D=D)
+
+    states = enumerate_states(D).float()
+    log_p_unnorm = target.log_prob(states)
+    log_pi = log_p_unnorm - torch.logsumexp(log_p_unnorm, dim=0)
+    expected = -(log_pi.exp() * log_p_unnorm).sum().item() / D
+    assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
