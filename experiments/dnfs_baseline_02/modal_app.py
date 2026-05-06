@@ -2,30 +2,46 @@
 training to `run.train` so the remote and local code paths share a single
 implementation.
 
+The container image is built by installing pixi inside the container and
+running `pixi install --environment dev --locked` against the project's
+`pixi.lock`, so the remote runtime stack (pytorch, numpy, ...) matches
+local dev byte-for-byte. One source of truth is `pixi.lock` -- there is
+no second dep list living in this file.
+
+The `CONDA_OVERRIDE_CUDA=12.4` env var is required because the build
+container has no GPU and pixi's `__cuda` virtual package check would
+otherwise fail; runtime containers get a real GPU from Modal.
+
 Usage (after `modal token new` and `modal secret create wandb-secret ...`):
-    pixi run -e dev modal run \\
+    pixi run -e dev modal run -m \\
         experiments.dnfs_baseline_02.modal_app::train_remote \\
-        --cfg-name stage_1_d10 --seed 0
+        --cfg-name stage_1_d4_xl --seed 0
 """
 import modal
 
+PROJECT_DIR = "/repo"
+PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/dev/bin"
 
-# Build the container image from the project's pyproject.toml so deps are
-# locked to whatever the local pixi env tracks. The repo itself is mounted
-# at /repo so imports resolve identically to a local checkout.
+# Build the container image from `pixi.lock`. The repo is added at /repo;
+# pixi installs the dev env in-place; PATH points at the pixi env's bin.
 #
 # Local-only directories (`.pixi/` env tree, past `results/`, `wandb/` run
 # logs, `.git`, caches) are excluded from the upload. They are large,
-# irrelevant on the remote (Modal builds a fresh image from pyproject),
-# and `.pixi/` in particular causes "modified during build" failures when
-# any local pixi-run command touches conda metadata while the Modal
-# uploader is still streaming bytes.
+# irrelevant on the remote, and `.pixi/` in particular causes "modified
+# during build" failures when any local pixi-run command touches conda
+# metadata while the Modal uploader is still streaming bytes.
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .pip_install_from_pyproject("pyproject.toml")
+    .apt_install("git", "curl", "ca-certificates")
+    .run_commands(
+        "curl -fsSL https://pixi.sh/install.sh | bash",
+        "ln -s /root/.pixi/bin/pixi /usr/local/bin/pixi",
+    )
+    .workdir(PROJECT_DIR)
     .add_local_dir(
         ".",
-        remote_path="/repo",
+        PROJECT_DIR,
+        copy=True,
         ignore=[
             ".pixi/**",
             "results/**",
@@ -37,6 +53,11 @@ image = (
             "*.pdf",
         ],
     )
+    .run_commands(
+        f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
+        "pixi install --environment dev --locked"
+    )
+    .env({"PATH": f"{PIXI_ENV_BIN}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"})
 )
 
 # Persistent volume for run artefacts (training_log.csv, checkpoints, eval
