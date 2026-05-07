@@ -93,7 +93,6 @@ def _compute_xi_t_lenet(
     t: Tensor,
     model,
     target,
-    outflow_rates: Tensor | None = None,
 ) -> Tensor:
     """ξ_t for a locally equivariant model — single forward pass.
 
@@ -101,13 +100,14 @@ def _compute_xi_t_lenet(
     so the return rate at the flipped neighbour is [-G(y_i, i | x)]_+,
     computable from the same G tensor without a second model call.
 
-    When `outflow_rates` is provided it is the (B, D, S) G tensor already
-    computed by `sample_ctmc`; otherwise we call `model(state, t)` here.
+    Unlike the non-LE branch, this function takes no `outflow_rates`
+    passthrough from `sample_ctmc`: the Euler step there returns
+    `R_t = F.relu(G_t)`, not `G_t` itself, so the cached value cannot be
+    reused to recover `[-G_t]_+` for the reverse rate. Re-running
+    `model(state, t)` here is the cleaner wiring at the cost of one
+    extra forward pass per IS-weighted Euler step.
     """
-    if outflow_rates is None:
-        G_t = model(state, t)
-    else:
-        G_t = outflow_rates
+    G_t = model(state, t)
 
     vocab_size = model.vocab_size
     G_plus     = F.relu(G_t)
@@ -144,14 +144,16 @@ def compute_xi_t(
       - True  -> `_compute_xi_t_lenet`  (single forward pass, paper Eq. 8 LE form).
       - False -> `_compute_xi_t_general` (two forward passes, paper Eq. 8 general form).
 
-    `outflow_rates` is optional — `sample_ctmc` already computes
-    `model(state, t)` for the Euler step and passes it through to avoid the
-    duplicate forward pass; `control_variate` omits it and lets the helper
-    compute it. Gradients flow through `model(...)` when called outside
-    `torch.no_grad`.
+    `outflow_rates` is the non-LE-only passthrough optimisation: in that
+    branch `sample_ctmc` already computed `model(state, t)` for the Euler
+    step and feeds it through to skip the duplicate forward pass.
+    `control_variate` omits it and lets the helper compute it. The LE
+    branch ignores the argument because the Euler step there caches
+    `[G]_+` rather than `G`, which can't be reused to recover the reverse
+    rate; see `_compute_xi_t_lenet`.
     """
     if getattr(model, "is_locally_equivariant", False):
-        return _compute_xi_t_lenet(state, t, model, target, outflow_rates)
+        return _compute_xi_t_lenet(state, t, model, target)
     return _compute_xi_t_general(state, t, model, target, outflow_rates)
 
 
