@@ -219,6 +219,8 @@ results/*
 data/*.pt
 data/*.pkl
 data/*.npy
+papers/*
+wandb/
 
 # OS
 .DS_Store
