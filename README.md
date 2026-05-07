@@ -32,3 +32,7 @@ pixi run -e dev test    # smoke-test the dev environment
 - `notebooks/` — exploratory and tutorial notebooks
 - `tests/` — pytest suite (run via `pixi run -e dev test`)
 - `data/`, `results/` — project assets (gitignored; per-run artefacts written under `results/`)
+
+## Acknowledgements
+
+This work is heavily inspired by that of Zijing Ou, whose original code can be found at https://github.com/J-zin/DNFS.
