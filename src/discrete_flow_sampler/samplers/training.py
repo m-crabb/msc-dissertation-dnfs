@@ -72,7 +72,8 @@ def train(
     with log_path.open("w", newline="") as log_file:
         writer = csv.writer(log_file)
         writer.writerow(
-            ["step", "loss", "ess", "var_dt_log_p_tilde", "wall_clock_step_s"]
+            ["step", "loss", "ess", "var_dt_log_p_tilde",
+             "var_estimator_integrand", "wall_clock_step_s"]
         )
 
         for step in range(train_cfg.n_steps):
@@ -101,18 +102,28 @@ def train(
             with torch.no_grad():
                 x_batch = sample_ctmc(model, x_initial, time_grid_to_t)
 
-            # Per-step scalar estimate of ∂_t log Z_t. Stage 1 = naive MC,
-            # Stage 2 = control variate -- swappable behind LogZEstimator.
-            dt_log_Zt = estimator(t_batch, x_batch, target, model)
+            # Per-step scalar estimate of ∂_t log Z_t plus the per-state
+            # `modified_integrand` that was averaged to produce it. Stage 1's
+            # naive_mc returns `∂_t log p̃_t` itself; Stage 2's control_variate
+            # subtracts the Kolmogorov-derived baseline (Eq. 8). Same call
+            # site for both, swap behind LogZEstimator protocol.
+            dt_log_Zt, modified_integrand = estimator(
+                t_batch, x_batch, target, model
+            )
 
-            # Variance of the per-state integrand -- a cheap proxy for the
-            # naive estimator's variance (which scales as Var/K). Tracking
-            # this surfaces the high-D failure mode early, before ESS
-            # collapses.
+            # Two variance columns:
+            #   var_dt_log_p_tilde -- variance of the *naive* integrand, the
+            #     target-intrinsic noise floor (= 4σ²·N_bonds at lattice
+            #     scale, training-invariant). Identical column across stages.
+            #   var_estimator_integrand -- variance of the *modified*
+            #     integrand actually averaged by the estimator. In Stage 1
+            #     equals var_dt_log_p_tilde by construction; in Stage 2
+            #     diverges below it, ratio quantifies the variance reduction.
             with torch.no_grad():
                 var_integrand = (
                     target.dt_log_p_tilde_t(x_batch, t_batch).var().item()
                 )
+                var_estimator_integrand = modified_integrand.var().item()
 
             loss_value = kolmogorov_loss(
                 x_batch, t_batch, dt_log_Zt, model, target
@@ -158,7 +169,7 @@ def train(
 
             writer.writerow(
                 [step, loss_value.item(), ess_value, var_integrand,
-                 wall_clock_step_s]
+                 var_estimator_integrand, wall_clock_step_s]
             )
             log_file.flush()
 
@@ -170,6 +181,7 @@ def train(
                 log_dict = {
                     "train/loss": loss_value.item(),
                     "train/var_dt_log_p_tilde": var_integrand,
+                    "train/var_estimator_integrand": var_estimator_integrand,
                     "train/wall_clock_step_s": wall_clock_step_s,
                 }
                 if step % eval_cfg.eval_every == 0:
