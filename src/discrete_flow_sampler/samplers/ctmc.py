@@ -39,39 +39,20 @@ Caller contract
   semantics under the same flag.
 """
 import torch
+import torch.nn.functional as F
 from torch import Tensor
 
+from discrete_flow_sampler.samplers._neighbours import _log_p_tilde_at_neighbours
 
-def compute_xi_t(
+
+def _compute_xi_t_general(
     state: Tensor,
     t: Tensor,
     model,
     target,
     outflow_rates: Tensor | None = None,
 ) -> Tensor:
-    """Per-state IS integrand ξ_t(x; R_t) for ∂_t log Z_t (paper Eq. 8).
-
-    Same quantity used in two places:
-      • `sample_ctmc(..., return_log_weights=True)` — accumulated along the
-        Euler trajectory to produce IS log-weights for ESS / F/D / E/D eval.
-      • `samplers.log_z_estimators.control_variate` — averaged at each
-        training step as the gradient estimator for ∂_t log Z_t (Stage 2).
-
-    Math (single-spin-flip restriction, paper Eq. 6):
-        ξ_t(x; R_t) = ∂_t log p̃_t(x) − Σ_y R_t(x, y) p_t(y)/p_t(x)
-                    = ∂_t log p̃_t(x) + outflow_sum(x) − inflow_sum(x)
-
-    where outflow_sum(x) = Σ_i model(x, t)[i] and
-          inflow_sum(x)  = Σ_i model(x_flip_i, t)[i] · p_t(x_flip_i)/p_t(x).
-    The Z_t in the ratio cancels:
-          p_t(x_flip_i)/p_t(x) = exp(log_p̃_t(x_flip_i) − log_p̃_t(x)).
-
-    `outflow_rates` is optional — `sample_ctmc` already computes
-    `model(state, t)` for the Euler step and passes it through to avoid the
-    duplicate forward pass; `control_variate` omits it and lets the helper
-    compute it. Gradients flow through `model(...)` when called outside
-    `torch.no_grad`.
-    """
+    """ξ_t for a non-LE model — two forward passes (paper Eq. 8)."""
     batch_size, n_sites = state.shape
 
     if outflow_rates is None:
@@ -105,6 +86,73 @@ def compute_xi_t(
     dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)        # (B,)
 
     return dt_log_p_tilde_at_state + outflow_sum - inflow_sum
+
+
+def _compute_xi_t_lenet(
+    state: Tensor,
+    t: Tensor,
+    model,
+    target,
+    outflow_rates: Tensor | None = None,
+) -> Tensor:
+    """ξ_t for a locally equivariant model — single forward pass.
+
+    Local equivariance (paper Eq. 20) means G(x_i, i | y_i) = -G(y_i, i | x),
+    so the return rate at the flipped neighbour is [-G(y_i, i | x)]_+,
+    computable from the same G tensor without a second model call.
+
+    When `outflow_rates` is provided it is the (B, D, S) G tensor already
+    computed by `sample_ctmc`; otherwise we call `model(state, t)` here.
+    """
+    if outflow_rates is None:
+        G_t = model(state, t)
+    else:
+        G_t = outflow_rates
+
+    vocab_size = model.vocab_size
+    G_plus     = F.relu(G_t)
+    neg_G_plus = F.relu(-G_t)
+
+    log_p_neighbours = _log_p_tilde_at_neighbours(state, t, target, vocab_size)
+    log_p_x = target.log_p_tilde_t(state, t)
+    log_ratio = log_p_neighbours - log_p_x[:, None, None]
+    neighbour_ratio = log_ratio.exp()                                   # (B, D, S)
+
+    outflow_sum = G_plus.sum(dim=(-2, -1))                             # (B,)
+    inflow_sum  = (neg_G_plus * neighbour_ratio).sum(dim=(-2, -1))     # (B,)
+    dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)        # (B,)
+
+    return dt_log_p_tilde_at_state + outflow_sum - inflow_sum
+
+
+def compute_xi_t(
+    state: Tensor,
+    t: Tensor,
+    model,
+    target,
+    outflow_rates: Tensor | None = None,
+) -> Tensor:
+    """Per-state IS integrand ξ_t(x; R_t) for ∂_t log Z_t (paper Eq. 8).
+
+    Same quantity used in two places:
+      • `sample_ctmc(..., return_log_weights=True)` — accumulated along the
+        Euler trajectory to produce IS log-weights for ESS / F/D / E/D eval.
+      • `samplers.log_z_estimators.control_variate` — averaged at each
+        training step as the gradient estimator for ∂_t log Z_t (Stage 2).
+
+    Dispatches on `model.is_locally_equivariant`:
+      - True  -> `_compute_xi_t_lenet`  (single forward pass, paper Eq. 8 LE form).
+      - False -> `_compute_xi_t_general` (two forward passes, paper Eq. 8 general form).
+
+    `outflow_rates` is optional — `sample_ctmc` already computes
+    `model(state, t)` for the Euler step and passes it through to avoid the
+    duplicate forward pass; `control_variate` omits it and lets the helper
+    compute it. Gradients flow through `model(...)` when called outside
+    `torch.no_grad`.
+    """
+    if getattr(model, "is_locally_equivariant", False):
+        return _compute_xi_t_lenet(state, t, model, target, outflow_rates)
+    return _compute_xi_t_general(state, t, model, target, outflow_rates)
 
 
 def sample_ctmc(
