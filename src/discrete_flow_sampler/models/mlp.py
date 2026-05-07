@@ -24,9 +24,6 @@ Why a single MLP over the whole state (not site-wise):
     Stage 1's whole point is to be the simple, naive baseline. We want the
     failure mode (high estimator variance, low ESS at D=10) to be observable
     so Stage 3's LeT improvements have something to compare against.
-
-This is research-bearing -- the user implements the body. The interface,
-docstrings, and tests are scaffolding.
 """
 import torch
 import torch.nn as nn

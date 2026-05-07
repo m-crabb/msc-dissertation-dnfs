@@ -37,8 +37,6 @@ Caller contract
 - When `return_log_weights=True`, `target` must be supplied. We do NOT
   silently fall back to a model-only weight, because that would change
   semantics under the same flag.
-
-Research-bearing; user implements body.
 """
 import torch
 from torch import Tensor
