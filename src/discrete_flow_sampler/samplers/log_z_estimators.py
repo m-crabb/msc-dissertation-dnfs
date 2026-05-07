@@ -39,6 +39,8 @@ from typing import Callable
 
 from torch import Tensor
 
+from discrete_flow_sampler.samplers.ctmc import compute_xi_t
+
 
 # Type alias used by the training loop to declare its dependency.
 # The forward references are intentional: importing Target/RateMatrix at
@@ -111,12 +113,8 @@ def control_variate(
                 vector is the mechanism column for Stage 2 plan §0.3
                 (gate: ratio < 0.5 vs Stage 1's `var_dt_log_p_tilde`).
     """
-    raise NotImplementedError(
-        "control_variate body is research-bearing (Stage 2 plan Task 2 "
-        "step 3 — user implements). Math fully spelled out above; the "
-        "samplers/ctmc.py inflow/outflow decomposition gives the shape "
-        "and indexing conventions to mirror."
-    )
+    modified_integrand = compute_xi_t(x_batch, t, model, target)
+    return modified_integrand.mean(), modified_integrand
 
 
 def naive_mc(

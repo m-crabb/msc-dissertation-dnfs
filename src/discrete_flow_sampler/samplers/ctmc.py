@@ -42,6 +42,71 @@ import torch
 from torch import Tensor
 
 
+def compute_xi_t(
+    state: Tensor,
+    t: Tensor,
+    model,
+    target,
+    outflow_rates: Tensor | None = None,
+) -> Tensor:
+    """Per-state IS integrand ξ_t(x; R_t) for ∂_t log Z_t (paper Eq. 8).
+
+    Same quantity used in two places:
+      • `sample_ctmc(..., return_log_weights=True)` — accumulated along the
+        Euler trajectory to produce IS log-weights for ESS / F/D / E/D eval.
+      • `samplers.log_z_estimators.control_variate` — averaged at each
+        training step as the gradient estimator for ∂_t log Z_t (Stage 2).
+
+    Math (single-spin-flip restriction, paper Eq. 6):
+        ξ_t(x; R_t) = ∂_t log p̃_t(x) − Σ_y R_t(x, y) p_t(y)/p_t(x)
+                    = ∂_t log p̃_t(x) + outflow_sum(x) − inflow_sum(x)
+
+    where outflow_sum(x) = Σ_i model(x, t)[i] and
+          inflow_sum(x)  = Σ_i model(x_flip_i, t)[i] · p_t(x_flip_i)/p_t(x).
+    The Z_t in the ratio cancels:
+          p_t(x_flip_i)/p_t(x) = exp(log_p̃_t(x_flip_i) − log_p̃_t(x)).
+
+    `outflow_rates` is optional — `sample_ctmc` already computes
+    `model(state, t)` for the Euler step and passes it through to avoid the
+    duplicate forward pass; `control_variate` omits it and lets the helper
+    compute it. Gradients flow through `model(...)` when called outside
+    `torch.no_grad`.
+    """
+    batch_size, n_sites = state.shape
+
+    if outflow_rates is None:
+        outflow_rates = model(state, t)
+    outflow_sum = outflow_rates.sum(dim=-1)                            # (B,)
+
+    flip_signs = 1.0 - 2.0 * torch.eye(
+        n_sites, device=state.device, dtype=state.dtype
+    )
+    flip_neighbours = state.unsqueeze(1) * flip_signs.unsqueeze(0)     # (B, d, d)
+    flat_neighbours = flip_neighbours.reshape(batch_size * n_sites, n_sites)
+    t_per_neighbour = t.repeat_interleave(n_sites)                     # (B*d,)
+
+    # Rate of returning to x from each flipped neighbour, i.e.
+    # R_t(x, x_flip_i) under the paper's first-index-is-destination
+    # convention. Equals the i-th model output evaluated AT x_flip_i.
+    rates_at_flipped = model(flat_neighbours, t_per_neighbour).reshape(
+        batch_size, n_sites, n_sites
+    )
+    return_rates = rates_at_flipped.diagonal(dim1=1, dim2=2)           # (B, d)
+
+    log_p_tilde_at_state = target.log_p_tilde_t(state, t)
+    log_p_tilde_at_flips = target.log_p_tilde_t(
+        flat_neighbours, t_per_neighbour
+    ).reshape(batch_size, n_sites)
+    neighbour_ratio = (
+        log_p_tilde_at_flips - log_p_tilde_at_state.unsqueeze(-1)
+    ).exp()                                                            # (B, d)
+
+    inflow_sum = (return_rates * neighbour_ratio).sum(dim=-1)          # (B,)
+    dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)        # (B,)
+
+    return dt_log_p_tilde_at_state + outflow_sum - inflow_sum
+
+
 def sample_ctmc(
     model,
     x0: Tensor,
@@ -121,67 +186,26 @@ def sample_ctmc(
         else None
     )
 
-    # flip_signs[i, j] = -1 if i == j else +1. Used to construct, for every
-    # site i, the state with site i flipped: state * flip_signs[i] flips
-    # only the i-th coordinate of state. Pre-built once outside the loop.
-    flip_signs = 1.0 - 2.0 * torch.eye(
-        n_sites, device=state.device, dtype=state.dtype
-    )  # (d, d)
-
     for step in range(len(ts) - 1):
         t_curr = ts[step]
         step_dt = ts[step + 1] - ts[step]
         t_per_batch = t_curr.expand(batch_size)  # (B,)
 
         # Rates at the current state x_t. These are R_t(x_flip_i, x) -- the
-        # rate of leaving x by flipping site i. Shape (B, d).
+        # rate of leaving x by flipping site i. Shape (B, d). Used both for
+        # the Euler step below and (when integrating IS log-weights)
+        # threaded into compute_xi_t to avoid a duplicate forward pass.
         outflow_rates = model(state, t_per_batch)
 
         if return_log_weights:
-            # Build the (B, d, d) tensor of single-site flips:
-            # flip_neighbours[b, i, :] is state[b, :] with site i flipped.
-            # Implemented as a broadcasted multiplication by flip_signs;
-            # avoids a Python loop over sites.
-            flip_neighbours = state.unsqueeze(1) * flip_signs.unsqueeze(0)
-            flat_neighbours = flip_neighbours.reshape(
-                batch_size * n_sites, n_sites
-            )
-            t_per_neighbour = t_per_batch.repeat_interleave(n_sites)  # (B*d,)
-
-            # Evaluate model at every flipped neighbour. We only need the
-            # diagonal entry: at state x_flip_i, the rate of flipping site i
-            # back to x. That's R_t(x_flip_i -> x) in paper notation, i.e.
-            # R_t(x, x_flip_i) under Eq. 1's "first index = destination" rule.
-            rates_at_flipped = model(flat_neighbours, t_per_neighbour).reshape(
-                batch_size, n_sites, n_sites
-            )
-            return_rates = rates_at_flipped.diagonal(dim1=1, dim2=2)  # (B, d)
-
-            # Target log p̃_t at x and at every flipped neighbour. The Z_t
-            # in p_t(y)/p_t(x) cancels because we only ever take the ratio.
-            log_p_tilde_at_state = target.log_p_tilde_t(state, t_per_batch)
-            log_p_tilde_at_flips = target.log_p_tilde_t(
-                flat_neighbours, t_per_neighbour
-            ).reshape(batch_size, n_sites)
-            log_ratio = log_p_tilde_at_flips - log_p_tilde_at_state.unsqueeze(-1)
-            neighbour_ratio = log_ratio.exp()  # (B, d) -- p_t(x_flip_i)/p_t(x)
-
-            dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t_per_batch)
-
-            # Decompose Σ_y R_t(x, y) p_t(y)/p_t(x) for the one-way binary
-            # rate matrix (Eq. 6, Prop. 1). Two contributions survive:
-            #   y = x_flip_i   ->   inflow_sum  =  Σ_i return_rates[b,i] * ratio[b,i]
-            #   y = x          ->   diagonal R_t(x,x) = -Σ_i outflow_rates[b,i]
-            # Sum_y = inflow_sum - outflow_sum  (note the sign on the diagonal).
-            inflow_sum = (return_rates * neighbour_ratio).sum(dim=-1)  # (B,)
-            outflow_sum = outflow_rates.sum(dim=-1)  # (B,)
-
-            # ξ_t per Eq. 8, evaluated at x_t (left endpoint of the Euler
-            # interval -- standard for forward Euler).
-            xi_t = (
-                dt_log_p_tilde_at_state
-                - inflow_sum
-                + outflow_sum
+            # ξ_t per paper Eq. 8 evaluated at x_t (left endpoint of the
+            # Euler interval -- standard forward Euler). compute_xi_t
+            # encapsulates the inflow/outflow decomposition; same helper is
+            # called by samplers.log_z_estimators.control_variate at training
+            # time for Stage 2.
+            xi_t = compute_xi_t(
+                state, t_per_batch, model, target,
+                outflow_rates=outflow_rates,
             )
             log_weights = log_weights + xi_t * step_dt
 

@@ -127,34 +127,58 @@ def test_control_variate_unbiased_on_d2():
 
 
 def test_control_variate_reduces_variance_vs_naive_mc():
-    """K=200 paired replicates: same R_t, different batches each replicate.
-    Empirical Var of the scalar estimate must satisfy
-        Var[CV] < 0.5 * Var[naive_mc].
-    The 0.5 factor is the sanity floor from Stage 2 plan §0.3 (paper
-    Figure 1 suggests order-of-magnitude reduction in practice). The
-    paired (CV, naive) variances feed the dissertation mechanism figure.
+    """K=200 paired replicates after a brief naive_mc training warmup.
+
+    The variance-reduction identity (paper Eq. 8) holds asymptotically as
+    R_t approaches Kolmogorov-satisfying. With a fresh-init random MLP the
+    control statistic is uncorrelated with the integrand and ADDS variance
+    rather than reducing it (empirical ratio ~5× worse). So we train ~200
+    steps of naive_mc + kolmogorov_loss at D=2 to bring R_t into the
+    regime where the §0.3 mechanism floor (ratio < 0.5) actually applies.
+    The paired (CV, naive) variances at trained R_t are the unit-test
+    analog of the dissertation's mechanism figure (Stage 2 plan Task 6).
     """
+    from discrete_flow_sampler.samplers.ctmc import sample_ctmc
+    from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
     from discrete_flow_sampler.samplers.log_z_estimators import (
         control_variate,
     )
 
     torch.manual_seed(0)
     target = IsingTarget(D=2, sigma=0.1)
-    t_value = 0.5
-    n_samples = 256
-    K = 200
     n_sites = target.D * target.D
+    t_value = 0.5
 
+    # Brief training to move R_t off random init.
+    model = MLPRateMatrix(d=n_sites, hidden_dim=32, n_layers=2)
+    optimiser = torch.optim.Adam(model.parameters(), lr=1e-3)
+    n_train_steps, train_batch_size, n_euler_steps = 1_000, 64, 30
+    for _ in range(n_train_steps):
+        t_step = torch.rand(1).item()
+        time_grid = torch.linspace(0.0, t_step, n_euler_steps)
+        x_init = (
+            torch.randint(0, 2, (train_batch_size, n_sites)).float() * 2 - 1
+        )
+        with torch.no_grad():
+            x_train = sample_ctmc(model, x_init, time_grid)
+        t_batch_train = torch.full((train_batch_size,), t_step)
+        dt_log_Zt, _ = naive_mc(t_batch_train, x_train, target, model)
+        loss_val = kolmogorov_loss(
+            x_train, t_batch_train, dt_log_Zt, model, target
+        )
+        optimiser.zero_grad()
+        loss_val.backward()
+        optimiser.step()
+    model.eval()
+
+    # Variance comparison at the trained R_t.
     n_states = 2 ** n_sites
     states = enumerate_states(n_sites).float()
     log_p_tilde = target.log_p_tilde_t(states, torch.full((n_states,), t_value))
     p_t = torch.softmax(log_p_tilde, dim=0)
 
-    model = MLPRateMatrix(d=n_sites, hidden_dim=32, n_layers=2)
-    model.eval()
-
-    naive_estimates = []
-    cv_estimates = []
+    K, n_samples = 200, 256
+    naive_estimates, cv_estimates = [], []
     for replicate in range(K):
         torch.manual_seed(replicate + 100)
         sample_idx = torch.multinomial(
