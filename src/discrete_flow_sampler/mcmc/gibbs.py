@@ -30,11 +30,19 @@ def gibbs_sample(
     n_sweeps: int,
     x_init: Tensor | None = None,
     generator: torch.Generator | None = None,
-) -> Tensor:
+    record_energy_every: int | None = None,
+) -> Tensor | tuple[Tensor, Tensor]:
     """Single-spin-flip heat-bath sampler.
 
-    target: duck-types IsingTarget — needs `.J` (d×d), `.bias`, `.d`, `.device`.
+    target: duck-types IsingTarget — needs `.J` (d×d), `.bias`, `.d`, `.device`,
+      and (only if `record_energy_every` is set) `.log_prob`.
     Returns: (n_chains, target.d) tensor in {-1, +1}.
+
+    If `record_energy_every=K`, also returns a (n_records, n_chains) tensor of
+    `target.log_prob(spins)` at sweeps [0, K, 2K, ...]. Used as a mixing
+    diagnostic for the long-chain reference: chain-mean trace should plateau,
+    and runs from different `x_init` should converge to the same final
+    distribution.
     """
     if x_init is None:
         spins = torch.randint(
@@ -43,7 +51,11 @@ def gibbs_sample(
     else:
         spins = x_init.to(device=target.device).float()
 
-    for _ in range(n_sweeps):
+    energy_trace: list[Tensor] = []
+    if record_energy_every is not None:
+        energy_trace.append(target.log_prob(spins).detach())
+
+    for sweep_idx in range(n_sweeps):
         site_order = torch.randperm(target.d, generator=generator, device=target.device)
         for site in site_order.tolist():
             local_field = spins @ target.J[:, site]                       # Σ_j J_ij x_j, shape (n_chains,)
@@ -51,4 +63,9 @@ def gibbs_sample(
             prob_plus = torch.sigmoid(log_odds_plus)
             uniform_draws = torch.rand(n_chains, generator=generator, device=target.device)
             spins[:, site] = (uniform_draws < prob_plus).to(spins.dtype) * 2 - 1
-    return spins
+        if record_energy_every is not None and (sweep_idx + 1) % record_energy_every == 0:
+            energy_trace.append(target.log_prob(spins).detach())
+
+    if record_energy_every is None:
+        return spins
+    return spins, torch.stack(energy_trace)

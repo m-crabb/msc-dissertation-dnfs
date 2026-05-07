@@ -19,6 +19,19 @@ def test_output_shape(target_d4):
     assert torch.all((samples == 1) | (samples == -1))
 
 
+def test_record_energy_trace_shape(target_d4):
+    """When `record_energy_every=K`, returns (final_spins, energy_trace) with
+    trace shape (n_sweeps // K + 1, n_chains) — one record at t=0 plus one per
+    Kth sweep. Used as the mixing diagnostic for the D=10 long-chain reference.
+    """
+    spins, trace = gibbs_sample(
+        target_d4, n_chains=8, n_sweeps=20, record_energy_every=5,
+    )
+    assert spins.shape == (8, 16)
+    assert trace.shape == (20 // 5 + 1, 8)
+    assert torch.isfinite(trace).all()
+
+
 def test_z2_invariant_at_zero_bias(target_d4):
     """At zero bias and finite β, magnetisation distribution is symmetric
     around 0. Run many short chains, M = sum(x), assert mean(M) ≈ 0."""
