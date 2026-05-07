@@ -56,9 +56,10 @@ class EvalCfg:
 
 @dataclass(frozen=True)
 class ModelCfg:
-    kind: Literal["mlp", "let"] = "mlp"
+    kind: Literal["mlp", "lemlp", "let"] = "lemlp"
     hidden_dim: int = 256
-    n_layers: int = 3
+    n_layers: int = 3        # interpreted as n_summands K when kind="lemlp"
+    vocab_size: int = 2
 
 
 @dataclass(frozen=True)
