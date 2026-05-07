@@ -163,15 +163,18 @@ def train(
             log_file.flush()
 
             if use_wandb:
-                wandb.log(
-                    {
-                        "train/loss": loss_value.item(),
-                        "train/ess": ess_value,
-                        "train/var_dt_log_p_tilde": var_integrand,
-                        "train/wall_clock_step_s": wall_clock_step_s,
-                    },
-                    step=step,
-                )
+                # `train/ess` is only logged on eval steps; otherwise the
+                # default-NaN sentinel from above would render as a NaN-stippled
+                # series in the W&B chart. Loss / var / wall_clock are
+                # cheaply computed every step and always logged.
+                log_dict = {
+                    "train/loss": loss_value.item(),
+                    "train/var_dt_log_p_tilde": var_integrand,
+                    "train/wall_clock_step_s": wall_clock_step_s,
+                }
+                if step % eval_cfg.eval_every == 0:
+                    log_dict["train/ess"] = ess_value
+                wandb.log(log_dict, step=step)
 
     # End-of-run snapshot. `latest.pt` is also kept for debugging continuity
     # (it equals `final.pt` here, but a future kill-and-resume code path
