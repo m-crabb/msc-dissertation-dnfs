@@ -155,6 +155,86 @@ def compute_xi_t(
     return _compute_xi_t_general(state, t, model, target, outflow_rates)
 
 
+def _euler_step(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
+    """Take one forward-Euler CTMC step. Returns (new_state, outflow_rates).
+
+    The non-LE path returns (B, D) per-site flip rates that the caller
+    threads into `compute_xi_t` to avoid a duplicate forward pass at the
+    same state. The LE path returns the (B, D, S) rate tensor for
+    completeness; `compute_xi_t`'s LE branch re-runs the model anyway
+    (small extra cost; cleaner wiring), so the caller passes
+    `outflow_rates=None` to compute_xi_t in the LE case.
+    """
+    if getattr(model, "is_locally_equivariant", False):
+        return _euler_step_lenet(model, state, t_per_batch, step_dt)
+    return _euler_step_general(model, state, t_per_batch, step_dt)
+
+
+def _euler_step_general(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
+    """Existing binary-flip Euler step (single rate per site).
+
+    Forward Euler flip step (paper Eq. 2): each site flips independently with
+    probability outflow_rates * dt, clipped to [0, 1] for numerical safety
+    when dt is too coarse. The clamp signals stiffness rather than masking
+    it -- check post-hoc if many flip_prob entries hit 1.
+
+    Returns (new_state, outflow_rates) where outflow_rates is (B, D).
+    The caller re-uses outflow_rates to avoid a duplicate forward pass
+    inside compute_xi_t.
+    """
+    outflow_rates = model(state, t_per_batch)
+    flip_prob = (outflow_rates * step_dt).clamp(0.0, 1.0)
+    uniforms = torch.rand_like(flip_prob)
+    new_state = torch.where(uniforms < flip_prob, -state, state)
+    return new_state, outflow_rates
+
+
+def _euler_step_lenet(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
+    """LE-path Euler step: per-site categorical over S values.
+
+    Math (paper Eq. 2 specialised to R_t = [G]_+ under local equivariance):
+        Pr[site i -> τ in step] = [G(τ, i | x)]_+ * dt   for τ ≠ x_i,
+        Pr[site i stays]        = 1 - Σ_{τ ≠ x_i} [G(τ, i | x)]_+ * dt.
+
+    For binary this collapses back to the non-LE single-flip-prob form,
+    but we write the general categorical so the same code path serves
+    S > 2 (alloy extension under `constrained_03`).
+
+    Implementation: build a (B, D, S+1) per-site categorical with the
+    last slot = "stay", sample once via torch.multinomial on the
+    flattened (B*D, S+1) tensor, then map indices back to spin values
+    in {-1, +1} using spin_of_idx = 2*idx - 1 (with the stay-index
+    routed to the original state value).
+
+    Returns (new_state, R_t) where R_t = [G]_+ has shape (B, D, S).
+    """
+    G_t = model(state, t_per_batch)
+    R_t = F.relu(G_t)                                      # (B, D, S)
+
+    step_probs = (R_t * step_dt).clamp(0.0, 1.0)           # (B, D, S)
+    stay_prob = (1.0 - step_probs.sum(dim=-1)).clamp(0.0, 1.0)   # (B, D)
+    cat_probs = torch.cat([step_probs, stay_prob.unsqueeze(-1)], dim=-1)
+    # cat_probs: (B, D, S+1); last slot is stay.
+
+    batch_size, n_sites = state.shape
+    vocab_size = G_t.shape[-1]
+    sampled_idx = torch.multinomial(
+        cat_probs.reshape(batch_size * n_sites, vocab_size + 1),
+        num_samples=1,
+    ).reshape(batch_size, n_sites)
+
+    spin_of_idx = (
+        2.0 * torch.arange(vocab_size, device=state.device, dtype=state.dtype) - 1.0
+    )
+    stay_mask = sampled_idx == vocab_size
+    sampled_spin = torch.where(
+        stay_mask,
+        state,
+        spin_of_idx[sampled_idx.clamp(max=vocab_size - 1)],
+    )
+    return sampled_spin, R_t
+
+
 def sample_ctmc(
     model,
     x0: Tensor,
@@ -201,13 +281,9 @@ def sample_ctmc(
     for step in range(len(ts) - 1):
         t_curr = ts[step]
         step_dt = ts[step + 1] - ts[step]
-        t_per_batch = t_curr.expand(batch_size)  # (B,)
+        t_per_batch = t_curr.expand(batch_size)
 
-        # Rates at the current state x_t. These are R_t(x_flip_i, x) -- the
-        # rate of leaving x by flipping site i. Shape (B, d). Used both for
-        # the Euler step below and (when integrating IS log-weights)
-        # threaded into compute_xi_t to avoid a duplicate forward pass.
-        outflow_rates = model(state, t_per_batch)
+        new_state, outflow_rates = _euler_step(model, state, t_per_batch, step_dt)
 
         if return_log_weights:
             # ξ_t per paper Eq. 8 evaluated at x_t (left endpoint of the
@@ -215,19 +291,22 @@ def sample_ctmc(
             # encapsulates the inflow/outflow decomposition; same helper is
             # called by samplers.log_z_estimators.control_variate at training
             # time for Stage 2.
+            #
+            # Pass-through optimisation only valid for the non-LE branch:
+            # there `outflow_rates` is the (B, D) rate vector and re-using
+            # it skips a forward pass inside compute_xi_t. The LE branch's
+            # compute_xi_t recomputes G internally, so we pass None.
+            passthrough = (
+                None if getattr(model, "is_locally_equivariant", False)
+                else outflow_rates
+            )
             xi_t = compute_xi_t(
                 state, t_per_batch, model, target,
-                outflow_rates=outflow_rates,
+                outflow_rates=passthrough,
             )
             log_weights = log_weights + xi_t * step_dt
 
-        # Forward Euler flip step (Eq. 2): each site flips independently with
-        # probability outflow_rates * dt, clipped to [0, 1] for numerical
-        # safety when dt is too coarse. The clamp signals stiffness rather
-        # than masking it -- check post-hoc if many flip_prob entries hit 1.
-        flip_prob = (outflow_rates * step_dt).clamp(0.0, 1.0)
-        uniforms = torch.rand_like(flip_prob)
-        state = torch.where(uniforms < flip_prob, -state, state)
+        state = new_state
 
     if return_log_weights:
         return state, log_weights

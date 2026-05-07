@@ -92,3 +92,22 @@ def test_zero_rate_finite_weights():
     )
     assert torch.equal(x_final, x0)
     assert torch.isfinite(log_w).all()
+
+
+def test_sample_ctmc_lenet_path_runs_and_preserves_state_set():
+    """sample_ctmc with a leMLP must run end-to-end and produce states
+    in the expected support {-1, +1}^D. Doesn't pin distributional
+    accuracy (training-loop integration tests handle that); just shape
+    + support."""
+    from discrete_flow_sampler.models.lemlp import LeMLPRateMatrix
+    torch.manual_seed(0)
+    D = 4
+    model = LeMLPRateMatrix(d=D, vocab_size=2, hidden_dim=16, n_summands=2)
+    x0 = torch.randint(0, 2, (8, D)).float() * 2 - 1
+    ts = torch.linspace(0.0, 1.0, 20)
+    x_final = sample_ctmc(model, x0, ts)
+    assert x_final.shape == (8, D)
+    unique = torch.unique(x_final)
+    assert set(unique.tolist()).issubset({-1.0, 1.0}), (
+        f"sample_ctmc produced out-of-support values: {unique}"
+    )
