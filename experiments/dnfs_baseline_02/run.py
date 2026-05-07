@@ -69,6 +69,8 @@ def _build_model(cfg, target):
 def _build_estimator(name: str):
     if name == "naive_mc":
         return log_z_estimators.naive_mc
+    if name == "control_variate":
+        return log_z_estimators.control_variate
     raise ValueError(f"Unknown estimator: {name!r}")
 
 

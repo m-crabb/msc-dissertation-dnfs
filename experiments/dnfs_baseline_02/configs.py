@@ -19,6 +19,9 @@ Stage layout:
     stage_1_d10_xl -- capacity probe at paper scale; mirrors d4_xl's 512x4
                       MLP so the d4_small/d4_xl/d10_small/d10_xl 2x2 grid
                       cleanly disentangles capacity-scale interactions.
+    stage_2_*      -- Stage 1 ladder repeated with `estimator="control_variate"`
+                      (paper Eq. 8) and otherwise-identical training settings,
+                      so any improvement attributes to the estimator alone.
 """
 from dataclasses import dataclass
 from typing import Literal
@@ -121,5 +124,43 @@ CONFIGS: dict[str, StageCfg] = {
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
         estimator="naive_mc",
+    ),
+    # Stage 2 ladder: identical to Stage 1 in every parameter except
+    # estimator="control_variate". Apples-to-apples per-config attribution.
+    "stage_2_d4": StageCfg(
+        name="stage_2_d4",
+        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2),
+        estimator="control_variate",
+    ),
+    "stage_2_d4_xl": StageCfg(
+        name="stage_2_d4_xl",
+        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=128, lr=5e-4, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
+        estimator="control_variate",
+    ),
+    "stage_2_d10": StageCfg(
+        name="stage_2_d10",
+        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3),
+        estimator="control_variate",
+    ),
+    "stage_2_d10_xl": StageCfg(
+        name="stage_2_d10_xl",
+        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
+        estimator="control_variate",
     ),
 }
