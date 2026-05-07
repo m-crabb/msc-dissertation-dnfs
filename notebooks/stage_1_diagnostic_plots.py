@@ -14,6 +14,10 @@ Reads `training_log.csv` and `eval/metrics.json` from each run dir under
   right panel structural analog), saved to
   `results/02_baseline/stage_1_d10_energy_vs_gibbs.png` when the Gibbs
   reference at `gibbs_chain_d10_sigma01.pt` is on disk.
+- Energy-histogram-vs-exact verdict figure for D=4 runs (analytical
+  ground truth via 2^16-state enumeration; sharper than the d10 Gibbs
+  reference because the reference has no sampling noise), saved to
+  `results/02_baseline/stage_1_d4_energy_vs_exact.png`.
 
 Usage:
     pixi run -e dev python notebooks/stage_1_diagnostic_plots.py
@@ -36,6 +40,10 @@ import numpy as np
 import pandas as pd
 import torch
 
+from discrete_flow_sampler.diagnostics.metrics import (
+    enumerate_states,
+    exact_log_probs,
+)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 RESULTS_DIR = Path("results/02_baseline")
@@ -306,6 +314,74 @@ def _plot_energy_vs_gibbs(d10_runs: list[dict]) -> None:
     print(f"  wrote {out_path}")
 
 
+def _plot_energy_vs_exact(d4_runs: list[dict]) -> None:
+    """Energy-histogram verdict figure for D=4 runs vs analytical exact density.
+
+    At D=4 (16 sites, 2^16 = 65k states) the target is fully enumerable, so
+    the reference is *analytical*: each enumerated state contributes its
+    probability mass to its energy bin via a weighted histogram, and
+    "expected sample counts under perfect IID sampling at N" follows by
+    multiplying by N. There is no sampling noise on the reference side, so
+    any DNFS-vs-exact deviation visible at this scale is *real bias*, not
+    statistical fluctuation -- a sharper test than d10's Gibbs reference.
+
+    The reference curve is plotted as a line (continuous expected-counts
+    curve from analytical p_exact); DNFS samples appear as step
+    histograms on the same shared bins.
+    """
+    if not d4_runs:
+        return
+
+    cfg = d4_runs[0]["config"]["ising"]
+    target = IsingTarget(D=cfg["D"], sigma=cfg["sigma"], bias=cfg["bias"])
+    states = enumerate_states(D=target.d).float()
+    log_p_exact = exact_log_probs(target, states)
+    p_exact = log_p_exact.exp().numpy()
+    energies_exact = (-target.log_prob(states)).numpy()
+
+    dnfs_curves: list[tuple[dict, np.ndarray]] = []
+    for run in d4_runs:
+        samples_path = run["run_dir"] / "eval" / "samples.pt"
+        if not samples_path.exists():
+            continue
+        samples = torch.load(samples_path, weights_only=True)
+        dnfs_curves.append((run, (-target.log_prob(samples)).numpy()))
+    if not dnfs_curves:
+        return
+
+    energy_min = min([energies_exact.min()] + [e.min() for _, e in dnfs_curves])
+    energy_max = max([energies_exact.max()] + [e.max() for _, e in dnfs_curves])
+    bins = np.linspace(energy_min, energy_max, 50)
+    bin_centres = 0.5 * (bins[:-1] + bins[1:])
+
+    n_ref = len(dnfs_curves[0][1])
+    p_per_bin, _ = np.histogram(energies_exact, bins=bins, weights=p_exact)
+    expected_counts = p_per_bin * n_ref
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.5))
+    ax.plot(
+        bin_centres, expected_counts, lw=2.0, color="black",
+        label=f"Exact (perfect sampler, N={n_ref})",
+    )
+    for run, energy in dnfs_curves:
+        ax.hist(
+            energy, bins=bins, histtype="step", lw=1.5,
+            label=run["label"], alpha=0.85,
+        )
+    ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
+    ax.set_ylabel("count")
+    ax.set_title(
+        f"D={cfg['D']}×{cfg['D']}, σ={cfg['sigma']}: "
+        "sample-energy distribution vs exact (D ≤ 20 enumeration)"
+    )
+    ax.legend()
+    fig.tight_layout()
+    out_path = RESULTS_DIR / "stage_1_d4_energy_vs_exact.png"
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    print(f"  wrote {out_path}")
+
+
 def main() -> None:
     run_dirs = sorted(d for d in RESULTS_DIR.iterdir() if d.is_dir())
     runs = [r for r in (_load_run(d) for d in run_dirs) if r is not None]
@@ -317,6 +393,8 @@ def main() -> None:
         print(f"  - {run['name']}")
         _plot_per_run(run)
     _plot_comparison(runs)
+    d4_runs = [r for r in runs if r["config"]["ising"]["D"] == 4]
+    _plot_energy_vs_exact(d4_runs)
     d10_runs = [r for r in runs if r["config"]["ising"]["D"] == 10]
     _plot_energy_vs_gibbs(d10_runs)
     _print_summary_table(runs)
