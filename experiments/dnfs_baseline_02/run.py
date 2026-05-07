@@ -1,4 +1,4 @@
-"""Stage-agnostic entry point for DNFS Ising baseline runs.
+"""Entry point for DNFS Ising baseline runs.
 
 Usage (local):
     pixi run -e dev python -m experiments.dnfs_baseline_02.run \\
