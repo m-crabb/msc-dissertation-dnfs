@@ -134,42 +134,6 @@ def sample_ctmc(
         x_final: (B, d). The state at time `ts[-1]`.
         OR (when return_log_weights=True):
         (x_final, log_w) where log_w has shape (B,).
-
-    Implementation skeleton (USER fills body):
-        x = x0.clone()
-        log_w = torch.zeros(x.shape[0]) if return_log_weights else None
-        batch_size = x.shape[0]
-
-        for step in range(len(ts) - 1):
-            t_curr = ts[step]
-            dt = ts[step + 1] - ts[step]
-            t_per_batch = t_curr.expand(batch_size)
-
-            rates = model(x, t_per_batch)                  # (B, d), >= 0
-
-            # Per-site Euler flip probabilities, clipped for numerical safety.
-            flip_prob = (rates * dt).clamp(0.0, 1.0)        # (B, d)
-            uniforms = torch.rand_like(flip_prob)
-            x = torch.where(uniforms < flip_prob, -x, x)
-
-            if return_log_weights:
-                # TODO(human): pick xi_t form (paper Eq. 8 / 13) and compute it.
-                #   xi_t : (B,) tensor.
-                # See the file docstring for the two candidate forms (textbook
-                # vs. model-only). The first needs `target.log_p_tilde_t` at
-                # x and at each single-site flip neighbour; the second is
-                # simpler but has different variance properties.
-                xi_t = ...  # USER
-                log_w = log_w + xi_t * dt
-
-        return (x, log_w) if return_log_weights else x
-
-    Edge cases worth thinking about while you implement:
-    - `flip_prob > 1` if `dt` is too coarse for the rate. The clamp masks
-      it but it indicates a stiff regime where Euler is a bad approximation.
-      The plan's training schedule keeps dt small enough that this is rare.
-    - Vectorise the xi_t computation over the batch; never write a Python
-      loop over batch elements.
     """
     if return_log_weights and target is None:
         raise ValueError(
