@@ -41,6 +41,7 @@ Implementation notes
   the locally equivariant Transformer in Stage 3.
 """
 import torch
+import torch.nn.functional as F
 from torch import Tensor
 
 
@@ -121,6 +122,84 @@ def residual_general(
     return dt_log_pt_x + site_terms.sum(dim=-1)
 
 
+def residual_lenet(
+    x: Tensor,
+    t: Tensor,
+    dt_log_Zt: Tensor,
+    model,
+    target,
+) -> Tensor:
+    """Per-state Kolmogorov residual for locally equivariant models — paper Eq. (10).
+
+    Math (DNFS App. B.2, third line of the derivation after Definition 3):
+        δ_t(x; R^θ) = ∂_t log p_t(x)
+                    + Σ_{i, y_i ≠ x_i} [G(y_i, i | x)]_+
+                                       - [-G(y_i, i | x)]_+ · p_t(y_i)/p_t(x)
+
+    Why this collapses to a single forward pass:
+        Local equivariance (Eq. 20) gives G(x_i, i | y_i) = -G(y_i, i | x).
+        So the reverse rate at the flipped neighbour, R^θ(x_i, i | y_i)
+        = [G(x_i, i | y_i)]_+ = [-G(y_i, i | x)]_+, is computable from the
+        same G(·, i | x) tensor — no second model call. This is the
+        O(|N|) → O(1) reduction the paper attributes to leNets.
+
+    Args:
+        x: (B, D) state in {-1, +1}.
+        t: (B,) in [0, 1].
+        dt_log_Zt: scalar Tensor — pre-computed estimate of ∂_t log Z_t.
+        model: locally equivariant — `model(x, t)` returns G of shape
+            (B, D, vocab_size). The τ = x_i slot is zero by construction.
+        target: exposes `log_p_tilde_t(x, t) -> (B,)` and
+            `dt_log_p_tilde_t(x, t) -> (B,)`.
+
+    Returns:
+        (B,) per-state residual.
+    """
+    batch_size, n_sites = x.shape
+    vocab_size = model.vocab_size
+
+    # G_t shape (B, D, S). The τ = x_i slot is already 0 by the leMLP scatter.
+    G_t = model(x, t)
+    G_plus     = F.relu(G_t)
+    neg_G_plus = F.relu(-G_t)
+
+    # Build neighbour states: (B, D, S, D), where neighbours[b, i, τ, :]
+    # is x[b] with site i replaced by spin-value(τ). For τ = x_i (the
+    # self-slot) the neighbour equals x, and the corresponding G slot is 0,
+    # so its contribution to the sum is zero — keeping the broadcast lets
+    # us avoid an S-conditional code path.
+    spin_of_idx = (
+        2.0 * torch.arange(vocab_size, device=x.device, dtype=x.dtype) - 1.0
+    )
+    # Start with x broadcast to (B, D, S, D).
+    neighbours = (
+        x[:, None, None, :]
+        .expand(batch_size, n_sites, vocab_size, n_sites)
+        .clone()
+    )
+    # For each site i, overwrite dimension D (last axis at position i) with
+    # the corresponding spin value for each vocab entry τ.
+    # spin_of_idx: (S,) → expand to (1, 1, S) → (B, 1, S) for scatter.
+    # We iterate over sites to avoid the shape-mismatch in advanced indexing.
+    spin_vals = spin_of_idx.view(1, 1, vocab_size).expand(batch_size, 1, vocab_size)
+    for i in range(n_sites):
+        neighbours[:, i, :, i] = spin_vals[:, 0, :]
+
+    flat_neighbours = neighbours.reshape(
+        batch_size * n_sites * vocab_size, n_sites
+    )
+    t_per_neighbour = t.repeat_interleave(n_sites * vocab_size)
+    log_p_neighbours = target.log_p_tilde_t(
+        flat_neighbours, t_per_neighbour
+    ).reshape(batch_size, n_sites, vocab_size)
+    log_p_x = target.log_p_tilde_t(x, t)
+    log_ratio = log_p_neighbours - log_p_x[:, None, None]   # (B, D, S)
+
+    site_terms = (G_plus - neg_G_plus * log_ratio.exp()).sum(dim=(-2, -1))
+    dt_log_pt_x = target.dt_log_p_tilde_t(x, t) - dt_log_Zt
+    return dt_log_pt_x + site_terms
+
+
 def loss(
     x: Tensor,
     t: Tensor,
@@ -130,8 +209,13 @@ def loss(
 ) -> Tensor:
     """Mean-squared Kolmogorov residual over the batch. Scalar Tensor.
 
-    Minimising this drives delta_t(x) -> 0 in expectation under whichever
-    distribution `x` is sampled from (the paper uses x ~ p_t via the
-    learned CTMC trajectory).
+    Dispatches on `model.is_locally_equivariant`:
+      - True  -> residual_lenet (Eq. 10, single forward pass).
+      - False -> residual_general (Eq. 7, two forward passes).
+
+    The training loop calls this single entry point regardless of stage;
+    only the model's class attribute decides the residual form.
     """
+    if getattr(model, "is_locally_equivariant", False):
+        return residual_lenet(x, t, dt_log_Zt, model, target).pow(2).mean()
     return residual_general(x, t, dt_log_Zt, model, target).pow(2).mean()
