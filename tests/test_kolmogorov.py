@@ -14,7 +14,7 @@ Tests pinned here:
 import pytest
 import torch
 
-from discrete_flow_sampler.samplers.kolmogorov import loss, residual
+from discrete_flow_sampler.samplers.kolmogorov import loss, residual_general
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 
@@ -54,7 +54,7 @@ def test_residual_zero_for_trivial_transport():
     t = torch.tensor([0.5, 0.7])
     dt_log_Zt = torch.tensor(0.0)  # uniform target -> log Z_t constant in t
 
-    got = residual(x, t, dt_log_Zt, model, target)
+    got = residual_general(x, t, dt_log_Zt, model, target)
     torch.testing.assert_close(got, torch.zeros(2), atol=1e-6, rtol=0)
 
 
@@ -74,7 +74,7 @@ def test_residual_nonzero_for_random_model():
     t = torch.tensor([0.5])
     dt_log_Zt = torch.tensor(0.1)
 
-    got = residual(x, t, dt_log_Zt, RandomModel(), target)
+    got = residual_general(x, t, dt_log_Zt, RandomModel(), target)
     assert got.abs().item() > 1e-3, (
         f"random rate matrix unexpectedly satisfied Kolmogorov: residual={got}"
     )
@@ -89,6 +89,6 @@ def test_loss_is_mean_squared_residual():
     t = torch.tensor([0.5, 0.7])
     dt_log_Zt = torch.tensor(0.0)
 
-    expected = residual(x, t, dt_log_Zt, model, target).pow(2).mean()
+    expected = residual_general(x, t, dt_log_Zt, model, target).pow(2).mean()
     got = loss(x, t, dt_log_Zt, model, target)
     torch.testing.assert_close(got, expected)

@@ -40,6 +40,8 @@ class MLPRateMatrix(nn.Module):
         n_layers: number of (Linear, ReLU) hidden blocks. Must be >= 1.
     """
 
+    is_locally_equivariant: bool = False
+
     def __init__(self, d: int, hidden_dim: int = 256, n_layers: int = 3):
         super().__init__()
         if n_layers < 1:

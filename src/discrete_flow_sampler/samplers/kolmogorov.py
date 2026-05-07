@@ -55,7 +55,7 @@ def _flip_signs_matrix(n_sites: int, *, device, dtype) -> Tensor:
     return 1.0 - 2.0 * torch.eye(n_sites, device=device, dtype=dtype)
 
 
-def residual(
+def residual_general(
     x: Tensor,
     t: Tensor,
     dt_log_Zt: Tensor,
@@ -134,4 +134,4 @@ def loss(
     distribution `x` is sampled from (the paper uses x ~ p_t via the
     learned CTMC trajectory).
     """
-    return residual(x, t, dt_log_Zt, model, target).pow(2).mean()
+    return residual_general(x, t, dt_log_Zt, model, target).pow(2).mean()
