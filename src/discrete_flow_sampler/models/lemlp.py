@@ -163,7 +163,12 @@ class LeMLPRateMatrix(nn.Module):
         # site indices and a bias.  The hollow_mask zeroes the diagonal so
         # site i never aggregates its own embedding.
         K = n_summands
-        self.W_raw = nn.Parameter(torch.randn(K, d, d) / math.sqrt(d))
+        # Diagonal is zero-init AND zero-masked at every forward; the mask is
+        # the load-bearing one but explicitly zeroing the storage avoids
+        # confusing parameter-histogram readouts.
+        W_init = torch.randn(K, d, d) / math.sqrt(d)
+        W_init.diagonal(dim1=-2, dim2=-1).zero_()
+        self.W_raw = nn.Parameter(W_init)
         self.b = nn.Parameter(torch.zeros(K, hidden_dim))
         self.register_buffer("hollow_mask", 1.0 - torch.eye(d))  # (D, D)
 
@@ -203,10 +208,10 @@ class LeMLPRateMatrix(nn.Module):
         #   W_raw is (K, D, D); multiplying by hollow_mask zeroes the diagonal
         #   so site i's row reads only from other sites (Definition 3).
         W = self.W_raw * self.hollow_mask                # (K, D, D)
-        # einsum "kde,bef->kbdf": for each summand k and site d, aggregate the
-        # weighted embeddings of *all other* sites e (diagonal is 0).
-        # b: batch, d: target site, e: source site, f: embedding dim (h).
-        pre = torch.einsum("kde,bef->kbdf", W, x_emb) + self.b[:, None, None, :]
+        # einsum "kdj,bjh->kbdh": for each summand k and site d, aggregate the
+        # weighted embeddings of *all other* sites j (diagonal is 0).
+        # b: batch, d: target site, j: source site, h: embedding dim.
+        pre = torch.einsum("kdj,bjh->kbdh", W, x_emb) + self.b[:, None, None, :]
         # (K, B, D, h) -> activation -> sum over K -> (B, D, h)
         H = self.activation(pre).sum(dim=0)              # (B, D, h)
 
@@ -223,9 +228,10 @@ class LeMLPRateMatrix(nn.Module):
         # Contract over hidden dim h to get (B, D, S) rates.
         G = torch.einsum("bdh,bdsh->bds", H, diff)      # (B, D, S)
 
-        # Zero out the self-slot τ = x_i (guaranteed by Prop. 2 algebra, but
-        # we also enforce it exactly via scatter to eliminate floating-point
-        # residuals — ensures test_self_slot_is_zero passes with atol=0).
+        # Guard against fp rounding in the inner product: the τ=x_i slot is
+        # (ω_{x_i} - ω_{x_i})^T H_i = 0 algebraically, but float32 arithmetic
+        # can leave a small non-zero residual. Scatter to exact zero so
+        # downstream [G]_+ / [-G]_+ aren't fed numerical garbage at the self-slot.
         G = G.scatter(-1, x_idx.unsqueeze(-1), 0.0)
 
         return G

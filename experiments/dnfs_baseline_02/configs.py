@@ -54,6 +54,8 @@ class EvalCfg:
     n_eval_samples: int = 5_000
 
 
+# Default changed from "mlp" to "lemlp" at stage_1+; legacy stage_0 configs
+# explicitly pass kind="mlp" so there are no silent behaviour changes.
 @dataclass(frozen=True)
 class ModelCfg:
     kind: Literal["mlp", "lemlp", "let"] = "lemlp"
