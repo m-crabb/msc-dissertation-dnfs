@@ -12,11 +12,13 @@ artefacts. Across-seed std (paper Table 2 reports mean ± std over 10
 independent runs) is a multi-seed sweep planned for a later step.
 
 Stage layout:
-    stage_1_d4    -- D = 4 small-lattice sanity (16 spins, 65k joint states);
-                     enumeration-based exact F/E/S references available.
-    stage_1_d4_xl -- capacity / training-budget probe over the same target.
-    stage_1_d10   -- D = 10 paper-scale run; ESS + IS estimates of F/E/S
-                     against a (future) Gibbs / Ferdinand-Fisher reference.
+    stage_1_d4     -- D = 4 small-lattice sanity (16 spins, 65k joint states);
+                      enumeration-based exact F/E/S references available.
+    stage_1_d4_xl  -- capacity / training-budget probe over the same target.
+    stage_1_d10    -- D = 10 paper-scale run, MLP-256x3.
+    stage_1_d10_xl -- capacity probe at paper scale; mirrors d4_xl's 512x4
+                      MLP so the d4_small/d4_xl/d10_small/d10_xl 2x2 grid
+                      cleanly disentangles capacity-scale interactions.
 """
 from dataclasses import dataclass
 from typing import Literal
@@ -105,6 +107,19 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3),
+        estimator="naive_mc",
+    ),
+    # Capacity probe at paper scale: same MLP shape (512 x 4) as stage_1_d4_xl,
+    # so "same architecture, four data points" gives a clean 2x2 grid of
+    # capacity x lattice-size that disambiguates "naive MC fails because of
+    # size" vs "naive MC fails because of capacity".
+    "stage_1_d10_xl": StageCfg(
+        name="stage_1_d10_xl",
+        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
         estimator="naive_mc",
     ),
 }
