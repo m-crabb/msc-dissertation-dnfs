@@ -80,6 +80,20 @@ def _load_run(run_dir: Path) -> dict:
     }
 
 
+def _label_with_ess(run: dict) -> str:
+    """Run label with end-of-run ESS-fraction appended.
+
+    ESS in the legend is the load-bearing context that prevents misreading
+    the IS-weighted verdict panels: at very low ESS the histogram collapses
+    onto a few high-weight samples and *looks* target-shaped without being so.
+    Falls back to the bare label if metrics aren't on disk yet.
+    """
+    metrics = run.get("metrics")
+    if metrics is None or "ess_fraction" not in metrics:
+        return run["label"]
+    return f"{run['label']} (ESS={metrics['ess_fraction']:.3f})"
+
+
 def _plot_per_run(run: dict) -> None:
     """Four-panel diagnostic figure saved next to the run's artefacts."""
     fig, axes = plt.subplots(2, 2, figsize=(11, 7))
@@ -318,7 +332,7 @@ def _plot_energy_vs_gibbs(d10_runs: list[dict]) -> None:
                 mass, _ = np.histogram(energy, bins=bins, weights=weights)
             ax.step(
                 bins[:-1], mass, where="post", lw=1.5,
-                label=run["label"], alpha=0.85,
+                label=_label_with_ess(run), alpha=0.85,
             )
         ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
         ax.set_title(
@@ -408,7 +422,7 @@ def _plot_energy_vs_exact(d4_runs: list[dict]) -> None:
                 mass, _ = np.histogram(energy, bins=bins, weights=weights)
             ax.step(
                 bins[:-1], mass, where="post", lw=1.5,
-                label=run["label"], alpha=0.85,
+                label=_label_with_ess(run), alpha=0.85,
             )
         ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
         ax.set_title(
