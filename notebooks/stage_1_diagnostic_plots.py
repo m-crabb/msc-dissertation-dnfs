@@ -10,6 +10,10 @@ Reads `training_log.csv` and `eval/metrics.json` from each run dir under
 - A summary table printed to stdout reporting the paper-faithful eval
   metrics (paper Appendix D.1, Table 2): ESS-fraction, F/D, E/D, S/D,
   and (where available) bias-vs-exact at D ≤ 20.
+- Energy-histogram-vs-Gibbs verdict figure for D=10 runs (paper Figure 5
+  right panel structural analog), saved to
+  `results/02_baseline/stage_1_d10_energy_vs_gibbs.png` when the Gibbs
+  reference at `gibbs_chain_d10_sigma01.pt` is on disk.
 
 Usage:
     pixi run -e dev python notebooks/stage_1_diagnostic_plots.py
@@ -17,9 +21,6 @@ Usage:
 The script is idempotent and discovery-driven: it picks up whichever
 runs are on disk, so re-running it after a fresh Modal pull just
 refreshes the figures.
-
-Energy-histogram-vs-Gibbs (paper Figure 13) is a separate panel pending
-the D = 10×10 Gibbs reference run — added in a follow-up to this script.
 
 Stage 1's narrative claim: the naive ∂_t log Z_t estimator is too
 high-variance to train the flow. The figures here pin that claim to
@@ -31,9 +32,14 @@ import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import torch
+
+from discrete_flow_sampler.targets.ising import IsingTarget
 
 RESULTS_DIR = Path("results/02_baseline")
+GIBBS_REF_PATH = RESULTS_DIR / "gibbs_chain_d10_sigma01.pt"
 
 
 def _load_run(run_dir: Path) -> dict:
@@ -238,6 +244,68 @@ def _print_summary_table(runs: list[dict]) -> None:
     print()
 
 
+def _plot_energy_vs_gibbs(d10_runs: list[dict]) -> None:
+    """Energy-histogram verdict figure for D=10 runs vs Gibbs Oracle.
+
+    Structural analog of the paper's Figure 5 right panel: overlays the
+    target-evaluated energy `H(x) = -log p̃(x) = -x^T J x` of DNFS samples
+    against a long-run Gibbs reference. Skip cleanly if the Gibbs reference
+    or any D=10 run is missing.
+
+    Why energy = -log p̃ (and not the raw log p̃): paper Eq. 11 writes
+    `p(x) ∝ exp(x^T J x)` (no explicit β, J already absorbs σ), so the
+    natural physics-energy reading is `-log p̃`. Aligned states (high
+    p̃) sit at low energy, matching paper Figure 5's Oracle peaking near
+    energy ≈ -10.
+    """
+    if not GIBBS_REF_PATH.exists():
+        print(f"  skipping energy-vs-Gibbs: no reference at {GIBBS_REF_PATH}")
+        return
+    if not d10_runs:
+        return
+
+    gibbs_payload = torch.load(GIBBS_REF_PATH, weights_only=True)
+    gibbs_samples = gibbs_payload["samples"]
+    cfg = d10_runs[0]["config"]["ising"]
+    target = IsingTarget(D=cfg["D"], sigma=cfg["sigma"], bias=cfg["bias"])
+    gibbs_energy = (-target.log_prob(gibbs_samples)).numpy()
+
+    dnfs_curves: list[tuple[dict, np.ndarray]] = []
+    for run in d10_runs:
+        samples_path = run["run_dir"] / "eval" / "samples.pt"
+        if not samples_path.exists():
+            continue
+        samples = torch.load(samples_path, weights_only=True)
+        dnfs_curves.append((run, (-target.log_prob(samples)).numpy()))
+
+    energy_min = min([gibbs_energy.min()] + [e.min() for _, e in dnfs_curves])
+    energy_max = max([gibbs_energy.max()] + [e.max() for _, e in dnfs_curves])
+    bins = np.linspace(energy_min, energy_max, 50)
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.5))
+    ax.hist(
+        gibbs_energy, bins=bins, histtype="step", lw=2.0,
+        label="Oracle (Gibbs)", color="black",
+    )
+    for run, energy in dnfs_curves:
+        ax.hist(
+            energy, bins=bins, histtype="step", lw=1.5,
+            label=run["label"], alpha=0.85,
+        )
+    ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
+    ax.set_ylabel("count")
+    ax.set_title(
+        f"D={cfg['D']}×{cfg['D']}, σ={cfg['sigma']}: "
+        "sample-energy distribution (paper Fig. 5 right)"
+    )
+    ax.legend()
+    fig.tight_layout()
+    out_path = RESULTS_DIR / "stage_1_d10_energy_vs_gibbs.png"
+    fig.savefig(out_path, dpi=140)
+    plt.close(fig)
+    print(f"  wrote {out_path}")
+
+
 def main() -> None:
     run_dirs = sorted(d for d in RESULTS_DIR.iterdir() if d.is_dir())
     runs = [r for r in (_load_run(d) for d in run_dirs) if r is not None]
@@ -249,6 +317,8 @@ def main() -> None:
         print(f"  - {run['name']}")
         _plot_per_run(run)
     _plot_comparison(runs)
+    d10_runs = [r for r in runs if r["config"]["ising"]["D"] == 10]
+    _plot_energy_vs_gibbs(d10_runs)
     _print_summary_table(runs)
 
 
