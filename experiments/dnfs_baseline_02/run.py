@@ -15,7 +15,6 @@ import argparse
 import json
 import platform
 import socket
-import subprocess
 import time
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -43,17 +42,6 @@ from experiments.dnfs_baseline_02.configs import CONFIGS
 # small-lattice analog. Beyond D = 20 enumeration is memory-bound and
 # the analytical solution is the right call.
 ENUMERATION_MAX_SPINS = 20
-
-
-def _git_commit() -> str:
-    """Best-effort capture of HEAD SHA for run reproducibility. Returns
-    "unknown" outside a git working tree (e.g. inside a Modal sandbox)."""
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True
-        ).strip()
-    except Exception:
-        return "unknown"
 
 
 def _build_model(cfg, target):
@@ -175,7 +163,6 @@ def train(
     (run_dir / "metadata.json").write_text(
         json.dumps(
             {
-                "git_commit": _git_commit(),
                 "torch_version": torch.__version__,
                 "hostname": socket.gethostname(),
                 "platform": platform.platform(),
