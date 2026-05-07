@@ -12,16 +12,18 @@ artefacts. Across-seed std (paper Table 2 reports mean ± std over 10
 independent runs) is a multi-seed sweep planned for a later step.
 
 Stage layout:
-    stage_1_d4     -- D = 4 small-lattice sanity (16 spins, 65k joint states);
-                      enumeration-based exact F/E/S references available.
-    stage_1_d4_xl  -- capacity / training-budget probe over the same target.
-    stage_1_d10    -- D = 10 paper-scale run, MLP-256x3.
-    stage_1_d10_xl -- capacity probe at paper scale; mirrors d4_xl's 512x4
-                      MLP so the d4_small/d4_xl/d10_small/d10_xl 2x2 grid
-                      cleanly disentangles capacity-scale interactions.
-    stage_2_*      -- Stage 1 ladder repeated with `estimator="control_variate"`
-                      (paper Eq. 8) and otherwise-identical training settings,
-                      so any improvement attributes to the estimator alone.
+    stage_0_d4    -- D = 4 broken-baseline (vanilla MLP + Eq. 7 + naive MC).
+                     Not locally equivariant; rates are not one-way. Exists
+                     to motivate leMLP empirically by direct comparison to
+                     stage_1_d4.
+    stage_0_d10   -- D = 10 broken baseline at paper scale.
+    stage_1_d4    -- D = 4 leMLP + naive MC. First architecture-correct
+                     run; small-lattice sanity vs. stage_2_d4.
+    stage_1_d10   -- D = 10 leMLP + naive MC. Paper-scale; expected high
+                     estimator variance motivates the control variate.
+    stage_2_d4/10 -- leMLP + control variate (paper Eq. 8). Identical
+                     to stage_1_* except for the estimator, so any
+                     improvement attributes to the control variate alone.
 """
 from dataclasses import dataclass
 from typing import Literal
@@ -76,76 +78,58 @@ class StageCfg:
 
 
 CONFIGS: dict[str, StageCfg] = {
-    # Stage 1 small-lattice probe. D = 4 → 16 spins, 65k joint states;
-    # exact F/E/S references available via enumeration.
+    # Stage 0: BROKEN BASELINE. Vanilla MLP + Eq. (7) residual + naive MC.
+    # Architecture is NOT locally equivariant; rates are not one-way.
+    # This run exists to motivate leMLP empirically — comparing stage_0
+    # against stage_1 isolates "what does LE buy us" from "what does the
+    # control variate buy us".
+    "stage_0_d4": StageCfg(
+        name="stage_0_d4",
+        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2, vocab_size=2),
+        estimator="naive_mc",
+    ),
+    "stage_0_d10": StageCfg(
+        name="stage_0_d10",
+        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3, vocab_size=2),
+        estimator="naive_mc",
+    ),
+    # Stage 1: leMLP + naive MC. First architecture-correct run; failure
+    # of naive MC at D=10 (high estimator variance) motivates Stage 2.
     "stage_1_d4": StageCfg(
         name="stage_1_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
         train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=0),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2),
+        model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
         estimator="naive_mc",
     ),
-    # Capacity / training-budget probe over the same D = 4 target. The
-    # 4×-wider, 2×-deeper MLP at half the learning rate over 5× the steps
-    # rules out underfitting / budget exhaustion as the dominant failure
-    # mode for the naive MC estimator on this target.
-    "stage_1_d4_xl": StageCfg(
-        name="stage_1_d4_xl",
-        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=128, lr=5e-4, seed=0),
-        ctmc=CTMCCfg(n_euler_steps=50),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
-        estimator="naive_mc",
-    ),
-    # Paper-scale main run. D = 10 → 100 spins, 2^100 joint states; far
-    # past enumeration. Eval reports ESS plus IS estimates of F/E/S; the
-    # exact-reference comparison uses Ferdinand & Fisher (1969) at this
-    # scale (reference helper TBD; not in this module yet). The naive
-    # estimator is expected to struggle here -- that's the baseline
-    # failure motivating Stage 2's control variate (paper Eq. 8).
     "stage_1_d10": StageCfg(
         name="stage_1_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
         train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3),
+        model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
         estimator="naive_mc",
     ),
-    # Capacity probe at paper scale: same MLP shape (512 x 4) as stage_1_d4_xl,
-    # so "same architecture, four data points" gives a clean 2x2 grid of
-    # capacity x lattice-size that disambiguates "naive MC fails because of
-    # size" vs "naive MC fails because of capacity".
-    "stage_1_d10_xl": StageCfg(
-        name="stage_1_d10_xl",
-        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
-        ctmc=CTMCCfg(n_euler_steps=100),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
-        estimator="naive_mc",
-    ),
-    # Stage 2 ladder: identical to Stage 1 in every parameter except
-    # estimator="control_variate". Apples-to-apples per-config attribution.
+    # Stage 2: leMLP + control variate. Same architecture as stage 1;
+    # apples-to-apples per-config attribution of the variance reduction.
     "stage_2_d4": StageCfg(
         name="stage_2_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
         train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=0),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2),
-        estimator="control_variate",
-    ),
-    "stage_2_d4_xl": StageCfg(
-        name="stage_2_d4_xl",
-        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=128, lr=5e-4, seed=0),
-        ctmc=CTMCCfg(n_euler_steps=50),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
+        model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
         estimator="control_variate",
     ),
     "stage_2_d10": StageCfg(
@@ -154,16 +138,7 @@ CONFIGS: dict[str, StageCfg] = {
         train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3),
-        estimator="control_variate",
-    ),
-    "stage_2_d10_xl": StageCfg(
-        name="stage_2_d10_xl",
-        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=0),
-        ctmc=CTMCCfg(n_euler_steps=100),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="mlp", hidden_dim=512, n_layers=4),
+        model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
         estimator="control_variate",
     ),
 }

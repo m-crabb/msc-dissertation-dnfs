@@ -51,6 +51,14 @@ def _build_model(cfg, target):
             hidden_dim=cfg.model.hidden_dim,
             n_layers=cfg.model.n_layers,
         ).to(target.device)
+    if cfg.model.kind == "lemlp":
+        from discrete_flow_sampler.models.lemlp import LeMLPRateMatrix
+        return LeMLPRateMatrix(
+            d=target.d,
+            vocab_size=cfg.model.vocab_size,
+            hidden_dim=cfg.model.hidden_dim,
+            n_summands=cfg.model.n_layers,   # see ModelCfg comment on n_layers
+        ).to(target.device)
     raise ValueError(f"Unknown model kind: {cfg.model.kind!r}")
 
 
