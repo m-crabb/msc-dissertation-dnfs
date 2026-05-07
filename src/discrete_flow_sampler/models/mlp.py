@@ -1,13 +1,24 @@
-"""MLP rate-matrix parameterisation for Stage 1 of DNFS replication.
+"""MLP rate-matrix parameterisation — Stage 0 broken-baseline only.
 
 Concept (paper Sec. 3, Eq. (4)):
     DNFS learns a CTMC generator R_theta(x, t) so that, when integrated from
     t = 0 (base p_0) to t = 1 (target p_1), the marginals follow the
-    annealing path. For binary spins (S = 2) we only need one rate per site
-    (the flip rate); the rate matrix collapses to shape (B, D**2).
+    annealing path. For binary spins (S = 2) the original Stage 1 design
+    naïvely emitted one rate per site (the flip rate); the rate matrix
+    collapsed to shape (B, D**2).
 
-Architecture (Stage 1 -- intentionally vanilla, will be replaced by LeT in
-Stage 3):
+Status (post-2026-05-07 redo):
+    Stages 1 and 2 now use `LeMLPRateMatrix` (`models/lemlp.py`) — the
+    paper's Eq. (10) loss only makes sense over the locally equivariant /
+    one-way family that leMLP parameterises. This module is retained for
+    `stage_0_*` configs only, where it serves as a *broken baseline* whose
+    purpose is to motivate LE empirically by direct comparison against the
+    stage_1 leMLP run.
+
+    `is_locally_equivariant = False` is what routes `stage_0_*` runs to
+    the Eq. (7) `residual_general` path in `samplers/kolmogorov.py`.
+
+Architecture (intentionally vanilla):
 
     inputs  : concat(x, t) of shape (B, d + 1)
     hidden  : `n_layers` blocks of (Linear -> ReLU), width = `hidden_dim`
@@ -18,12 +29,7 @@ Why softplus rather than exp:
     Both produce non-negative outputs. Softplus has a well-conditioned
     gradient near zero (slope 1/2) whereas exp can either saturate (large
     negative scores -> 0 with vanishing gradient) or blow up early. Softplus
-    is the paper's choice; we follow it.
-
-Why a single MLP over the whole state (not site-wise):
-    Stage 1's whole point is to be the simple, naive baseline. We want the
-    failure mode (high estimator variance, low ESS at D=10) to be observable
-    so Stage 3's LeT improvements have something to compare against.
+    was the paper's choice for the original family.
 """
 import torch
 import torch.nn as nn
