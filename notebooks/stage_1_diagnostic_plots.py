@@ -256,15 +256,15 @@ def _plot_energy_vs_gibbs(d10_runs: list[dict]) -> None:
     """Energy-histogram verdict figure for D=10 runs vs Gibbs Oracle.
 
     Structural analog of the paper's Figure 5 right panel: overlays the
-    target-evaluated energy `H(x) = -log p̃(x) = -x^T J x` of DNFS samples
-    against a long-run Gibbs reference. Skip cleanly if the Gibbs reference
-    or any D=10 run is missing.
+    target-evaluated energy H(x) = -log p̃(x) of DNFS samples against a
+    long-run Gibbs reference. Skip cleanly if the reference is missing.
 
-    Why energy = -log p̃ (and not the raw log p̃): paper Eq. 11 writes
-    `p(x) ∝ exp(x^T J x)` (no explicit β, J already absorbs σ), so the
-    natural physics-energy reading is `-log p̃`. Aligned states (high
-    p̃) sit at low energy, matching paper Figure 5's Oracle peaking near
-    energy ≈ -10.
+    Mirrors `_plot_energy_vs_exact`'s two-panel layout: left = unweighted
+    CTMC samples (proposal-quality probe), right = IS-weighted samples
+    (paper Eq. 13, target-fit headline). All curves as probability mass
+    per bin so cross-run N differences are silently normalised. Note: the
+    Gibbs reference itself has small sampling noise (long-chain MCMC, not
+    enumeration), so the "Oracle" curve is *near*-exact rather than exact.
     """
     if not GIBBS_REF_PATH.exists():
         print(f"  skipping energy-vs-Gibbs: no reference at {GIBBS_REF_PATH}")
@@ -278,35 +278,60 @@ def _plot_energy_vs_gibbs(d10_runs: list[dict]) -> None:
     target = IsingTarget(D=cfg["D"], sigma=cfg["sigma"], bias=cfg["bias"])
     gibbs_energy = (-target.log_prob(gibbs_samples)).numpy()
 
-    dnfs_curves: list[tuple[dict, np.ndarray]] = []
+    dnfs_curves: list[tuple[dict, np.ndarray, np.ndarray]] = []
     for run in d10_runs:
         samples_path = run["run_dir"] / "eval" / "samples.pt"
-        if not samples_path.exists():
+        log_w_path = run["run_dir"] / "eval" / "log_weights.pt"
+        if not samples_path.exists() or not log_w_path.exists():
             continue
         samples = torch.load(samples_path, weights_only=True)
-        dnfs_curves.append((run, (-target.log_prob(samples)).numpy()))
+        log_w = torch.load(log_w_path, weights_only=True).numpy()
+        norm_weights = np.exp(log_w - log_w.max())
+        norm_weights = norm_weights / norm_weights.sum()
+        energies = (-target.log_prob(samples)).numpy()
+        dnfs_curves.append((run, energies, norm_weights))
+    if not dnfs_curves:
+        return
 
-    energy_min = min([gibbs_energy.min()] + [e.min() for _, e in dnfs_curves])
-    energy_max = max([gibbs_energy.max()] + [e.max() for _, e in dnfs_curves])
+    energy_min = min(
+        [gibbs_energy.min()] + [e.min() for _, e, _ in dnfs_curves]
+    )
+    energy_max = max(
+        [gibbs_energy.max()] + [e.max() for _, e, _ in dnfs_curves]
+    )
     bins = np.linspace(energy_min, energy_max, 50)
 
-    fig, ax = plt.subplots(figsize=(7.5, 4.5))
-    ax.hist(
-        gibbs_energy, bins=bins, histtype="step", lw=2.0,
-        label="Oracle (Gibbs)", color="black",
-    )
-    for run, energy in dnfs_curves:
-        ax.hist(
-            energy, bins=bins, histtype="step", lw=1.5,
-            label=run["label"], alpha=0.85,
+    gibbs_counts, _ = np.histogram(gibbs_energy, bins=bins)
+    gibbs_mass = gibbs_counts / len(gibbs_energy)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
+    for ax, mode in zip(axes, ("unweighted", "is_weighted")):
+        ax.step(
+            bins[:-1], gibbs_mass, where="post", lw=2.0, color="black",
+            label="Oracle (Gibbs, long-run)",
         )
-    ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
-    ax.set_ylabel("count")
-    ax.set_title(
+        for run, energy, weights in dnfs_curves:
+            if mode == "unweighted":
+                counts, _ = np.histogram(energy, bins=bins)
+                mass = counts / len(energy)
+            else:
+                mass, _ = np.histogram(energy, bins=bins, weights=weights)
+            ax.step(
+                bins[:-1], mass, where="post", lw=1.5,
+                label=run["label"], alpha=0.85,
+            )
+        ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
+        ax.set_title(
+            "Unweighted CTMC samples (proposal quality)" if mode == "unweighted"
+            else "IS-weighted samples (paper Eq. 13, target fit)"
+        )
+        ax.legend(fontsize=8)
+    axes[0].set_ylabel("probability mass per bin")
+    fig.suptitle(
         f"D={cfg['D']}×{cfg['D']}, σ={cfg['sigma']}: "
-        "sample-energy distribution (paper Fig. 5 right)"
+        "energy distribution vs Gibbs Oracle (paper Fig. 5 right)",
+        fontsize=11,
     )
-    ax.legend()
     fig.tight_layout()
     out_path = RESULTS_DIR / "stage_1_d10_energy_vs_gibbs.png"
     fig.savefig(out_path, dpi=140)
@@ -317,17 +342,20 @@ def _plot_energy_vs_gibbs(d10_runs: list[dict]) -> None:
 def _plot_energy_vs_exact(d4_runs: list[dict]) -> None:
     """Energy-histogram verdict figure for D=4 runs vs analytical exact density.
 
-    At D=4 (16 sites, 2^16 = 65k states) the target is fully enumerable, so
-    the reference is *analytical*: each enumerated state contributes its
-    probability mass to its energy bin via a weighted histogram, and
-    "expected sample counts under perfect IID sampling at N" follows by
-    multiplying by N. There is no sampling noise on the reference side, so
-    any DNFS-vs-exact deviation visible at this scale is *real bias*, not
-    statistical fluctuation -- a sharper test than d10's Gibbs reference.
+    At D=4 (16 sites, 2^16 = 65k states) the target is fully enumerable so the
+    reference is *analytical*: each enumerated state contributes its probability
+    mass to its energy bin. There is no sampling noise on the reference side,
+    so any DNFS-vs-exact deviation is real bias, not statistical fluctuation.
 
-    The reference curve is plotted as a line (continuous expected-counts
-    curve from analytical p_exact); DNFS samples appear as step
-    histograms on the same shared bins.
+    Two left/right panels:
+      • Left  — unweighted CTMC samples: a *proposal-quality* check. Tells us
+                how close the learned R_t is to being a self-sufficient sampler.
+      • Right — IS-weighted samples (paper Eq. 13): the headline target-fit
+                check. Reweighting absorbs proposal bias as long as the
+                proposal has support over the target's high-mass region.
+
+    All curves plotted as probability mass per bin (sum to 1) so cross-run N
+    differences are silently normalised.
     """
     if not d4_runs:
         return
@@ -339,42 +367,61 @@ def _plot_energy_vs_exact(d4_runs: list[dict]) -> None:
     p_exact = log_p_exact.exp().numpy()
     energies_exact = (-target.log_prob(states)).numpy()
 
-    dnfs_curves: list[tuple[dict, np.ndarray]] = []
+    dnfs_curves: list[tuple[dict, np.ndarray, np.ndarray]] = []
     for run in d4_runs:
         samples_path = run["run_dir"] / "eval" / "samples.pt"
-        if not samples_path.exists():
+        log_w_path = run["run_dir"] / "eval" / "log_weights.pt"
+        if not samples_path.exists() or not log_w_path.exists():
             continue
         samples = torch.load(samples_path, weights_only=True)
-        dnfs_curves.append((run, (-target.log_prob(samples)).numpy()))
+        log_w = torch.load(log_w_path, weights_only=True).numpy()
+        # Self-normalised weights: subtract max for numerical stability.
+        norm_weights = np.exp(log_w - log_w.max())
+        norm_weights = norm_weights / norm_weights.sum()
+        energies = (-target.log_prob(samples)).numpy()
+        dnfs_curves.append((run, energies, norm_weights))
     if not dnfs_curves:
         return
 
-    energy_min = min([energies_exact.min()] + [e.min() for _, e in dnfs_curves])
-    energy_max = max([energies_exact.max()] + [e.max() for _, e in dnfs_curves])
+    energy_min = min(
+        [energies_exact.min()] + [e.min() for _, e, _ in dnfs_curves]
+    )
+    energy_max = max(
+        [energies_exact.max()] + [e.max() for _, e, _ in dnfs_curves]
+    )
     bins = np.linspace(energy_min, energy_max, 50)
     bin_centres = 0.5 * (bins[:-1] + bins[1:])
 
-    n_ref = len(dnfs_curves[0][1])
-    p_per_bin, _ = np.histogram(energies_exact, bins=bins, weights=p_exact)
-    expected_counts = p_per_bin * n_ref
+    p_per_bin_exact, _ = np.histogram(energies_exact, bins=bins, weights=p_exact)
 
-    fig, ax = plt.subplots(figsize=(7.5, 4.5))
-    ax.plot(
-        bin_centres, expected_counts, lw=2.0, color="black",
-        label=f"Exact (perfect sampler, N={n_ref})",
-    )
-    for run, energy in dnfs_curves:
-        ax.hist(
-            energy, bins=bins, histtype="step", lw=1.5,
-            label=run["label"], alpha=0.85,
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
+    for ax, mode in zip(axes, ("unweighted", "is_weighted")):
+        ax.plot(
+            bin_centres, p_per_bin_exact, lw=2.0, color="black",
+            label="Exact (analytical)",
         )
-    ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
-    ax.set_ylabel("count")
-    ax.set_title(
+        for run, energy, weights in dnfs_curves:
+            if mode == "unweighted":
+                counts, _ = np.histogram(energy, bins=bins)
+                mass = counts / len(energy)
+            else:
+                mass, _ = np.histogram(energy, bins=bins, weights=weights)
+            ax.step(
+                bins[:-1], mass, where="post", lw=1.5,
+                label=run["label"], alpha=0.85,
+            )
+        ax.set_xlabel(r"Energy $= -\log\tilde{p}(x)$")
+        ax.set_title(
+            "Unweighted CTMC samples (proposal quality)" if mode == "unweighted"
+            else "IS-weighted samples (paper Eq. 13, target fit)"
+        )
+        ax.legend(fontsize=8)
+    axes[0].set_ylabel("probability mass per bin")
+    fig.suptitle(
         f"D={cfg['D']}×{cfg['D']}, σ={cfg['sigma']}: "
-        "sample-energy distribution vs exact (D ≤ 20 enumeration)"
+        "energy distribution vs exact enumeration",
+        fontsize=11,
     )
-    ax.legend()
     fig.tight_layout()
     out_path = RESULTS_DIR / "stage_1_d4_energy_vs_exact.png"
     fig.savefig(out_path, dpi=140)
