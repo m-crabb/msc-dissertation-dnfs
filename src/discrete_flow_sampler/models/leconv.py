@@ -84,7 +84,13 @@ class LeConvRateMatrix(nn.Module):
         nn.init.kaiming_uniform_(self.omega.weight, a=5 ** 0.5)
 
     def compute_body(self, x: Tensor, t: Tensor) -> Tensor:
-        """Pre-readout body H(x), shape (B, d, h). Hollow + translation-equivariant."""
+        """Pre-readout body H(x), shape (B, d, h). Hollow + translation-equivariant.
+
+        Accepts either ±1 float spins (training convention; see leMLP forward) or
+        0/1 Long indices (test convention). The expression ((x+1)/2).long() is
+        idempotent on the Long {0,1} case and converts the Float {-1,+1} case.
+        """
+        x = ((x + 1) / 2).long()
         B = x.shape[0]
         x_grid = x.view(B, self.D, self.D)
         x_emb = self.token_embedder(x_grid).permute(0, 3, 1, 2)
@@ -103,11 +109,16 @@ class LeConvRateMatrix(nn.Module):
         return H.permute(0, 2, 3, 1).reshape(B, self.D * self.D, self.hidden_dim)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        """Returns G(τ, i | x), shape (B, d, S). τ=x_i slot is exactly zero."""
+        """Returns G(τ, i | x), shape (B, d, S). τ=x_i slot is exactly zero.
+
+        Accepts ±1 float spins (training convention) or 0/1 Long indices
+        (test convention) — see leMLP forward for the convention.
+        """
         H = self.compute_body(x, t)
+        x_idx = ((x + 1) / 2).long()
         omega_all = self.omega.weight
-        omega_xi = self.omega(x)
+        omega_xi = self.omega(x_idx)
         diff = omega_all[None, None, :, :] - omega_xi[:, :, None, :]
         G = torch.einsum("bdh,bdsh->bds", H, diff)
-        G = G.scatter(-1, x.unsqueeze(-1), 0.0)
+        G = G.scatter(-1, x_idx.unsqueeze(-1), 0.0)
         return G

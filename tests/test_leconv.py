@@ -70,6 +70,31 @@ def test_compute_body_hollow():
         )
 
 
+def test_accepts_both_spin_and_index_input():
+    """Forward output is identical for ±1 float spins (training convention)
+    and 0/1 Long indices (test convention).
+
+    Regression test for a bug where compute_body / forward only handled Long
+    indices and crashed at nn.Embedding on the float spins that sample_ctmc
+    actually produces in training. See leMLP.forward (lemlp.py:202) for the
+    spin-to-index conversion convention.
+    """
+    D, vocab_size = 3, 2
+    d = D * D
+    model = _make_model(D=D, vocab_size=vocab_size)
+
+    x_idx = torch.randint(0, vocab_size, (2, d))
+    x_spin = (2 * x_idx - 1).float()
+    t = torch.rand(2)
+
+    G_idx = model(x_idx, t)
+    G_spin = model(x_spin, t)
+    assert torch.allclose(G_idx, G_spin, atol=1e-6), (
+        f"Output differs between spin (±1) and index (0/1) input: "
+        f"max diff = {(G_idx - G_spin).abs().max().item():.2e}"
+    )
+
+
 def test_translation_equivariant_body():
     """H(roll(x, v)) = roll(H(x), v) for any lattice shift v."""
     D, vocab_size = 4, 2
