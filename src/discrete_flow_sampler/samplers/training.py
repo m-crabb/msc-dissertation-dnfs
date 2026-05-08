@@ -75,7 +75,7 @@ def train(
     ckpt_dir.mkdir(exist_ok=True)
 
     torch.manual_seed(train_cfg.seed)
-    optimiser = torch.optim.Adam(model.parameters(), lr=train_cfg.lr)
+    optimiser = torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=1e-4)
 
     if use_wandb:
         import wandb

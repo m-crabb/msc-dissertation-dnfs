@@ -175,6 +175,7 @@ def residual_lenet(
     log_p_neighbours = _log_p_tilde_at_neighbours(x, t, target, vocab_size)
     log_p_x = target.log_p_tilde_t(x, t)
     log_ratio = log_p_neighbours - log_p_x[:, None, None]
+    log_ratio = log_ratio.clamp(max=5.0)  # paper App. E.1.1: clip log p_t(y)/p_t(x) at 5
     site_terms = (G_plus - neg_G_plus * log_ratio.exp()).sum(dim=(-2, -1))
     dt_log_pt_x = target.dt_log_p_tilde_t(x, t) - dt_log_Zt
     return dt_log_pt_x + site_terms
@@ -197,5 +198,8 @@ def loss(
     only the model's class attribute decides the residual form.
     """
     if getattr(model, "is_locally_equivariant", False):
-        return residual_lenet(x, t, dt_log_Zt, model, target).pow(2).mean()
-    return residual_general(x, t, dt_log_Zt, model, target).pow(2).mean()
+        residual = residual_lenet(x, t, dt_log_Zt, model, target)
+    else:
+        residual = residual_general(x, t, dt_log_Zt, model, target)
+    residual = residual.nan_to_num(posinf=1.0, neginf=-1.0, nan=0.0)
+    return residual.pow(2).mean()

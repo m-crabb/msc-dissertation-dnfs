@@ -69,10 +69,11 @@ class LeConvRateMatrix(nn.Module):
         self.time_embedder = TimestepEmbedder(hidden_dim)
         self.omega = nn.Embedding(vocab_size, hidden_dim)
 
-        scale = 1.0 / (hidden_dim * kernel_size)
         self.conv_weights = nn.Parameter(
-            torch.randn(n_summands, hidden_dim, hidden_dim, kernel_size, kernel_size) * scale
+            torch.empty(n_summands, hidden_dim, hidden_dim, kernel_size, kernel_size)
         )
+        for summand_idx in range(n_summands):
+            nn.init.kaiming_uniform_(self.conv_weights[summand_idx], a=5 ** 0.5)
         self.conv_bias = nn.Parameter(torch.zeros(n_summands, hidden_dim))
 
         center = kernel_size // 2
