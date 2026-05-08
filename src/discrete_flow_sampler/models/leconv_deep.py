@@ -25,6 +25,7 @@ Why this beats the static K-summand `LeConvRateMatrix` at criticality:
 """
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 
 from discrete_flow_sampler.models.lemlp import TimestepEmbedder
@@ -88,60 +89,90 @@ class LeConvDeepRateMatrix(nn.Module):
         nn.init.kaiming_uniform_(self.token_embedder.weight, a=5 ** 0.5)
         nn.init.kaiming_uniform_(self.omega.weight, a=5 ** 0.5)
 
-        # ----------------------------------------------------------------
-        # USER: per-layer LEC parameters (LEAPS Section 9 / Figure 3).
-        # Paper-default suggested structure (one block per kernel size k_l):
-        #
-        #   - A_l : (d_l, d_l)        # 1×1 channel-mix on h_{l-1}
-        #   - b_l : (d_l,)            # bias added before σ
-        #   - c_l : (d_l,)            # post-σ offset
-        #   - hollow_mask: (k_l, k_l) buffer, ones with center 0
-        #
-        # Plus an initial constant `h_0` of shape (d_0,) — the 'Const' block
-        # in Figure 3, broadcast over sites and combined with time conditioning
-        # before the first layer.
-        #
-        # The paper's parameter count (~100k for depth 5 on 15×15) suggests
-        # d_l = k_l² (the channel dim equals the kernel weight count, so W_l
-        # reshapes directly into a (k_l, k_l) spatial kernel). That's the
-        # paper-faithful choice; alternative is d_l = hidden_dim for all l.
-        # ----------------------------------------------------------------
+        # h_0: spatially uniform learned constant (same hidden_dim vector at
+        # every site). The spatial uniformity makes layer 1's W_1 uniform
+        # across the lattice — i.e. layer 1 is a standard translation-
+        # equivariant hollow conv. Layers 2..L pick up spatial structure
+        # from h_{l-1} (which carries x's structure through prior convs).
+        self.h_0 = nn.Parameter(torch.zeros(hidden_dim))
+
+        # Per-layer 1×1 channel-mix into kernel weights. A_l projects
+        # hidden_dim -> k_l² channels per site. The output, reshaped to
+        # (k_l, k_l) at each site, IS the position-conditional kernel for
+        # that layer.
+        self.A = nn.ModuleList([
+            nn.Conv2d(hidden_dim, k * k, kernel_size=1, bias=True)
+            for k in self.kernel_schedule
+        ])
+        # Post-σ offset c_l (LEAPS Section 9: W_l = σ(A_l h + b_l) + c_l).
+        self.c = nn.ParameterList([
+            nn.Parameter(torch.zeros(k * k))
+            for k in self.kernel_schedule
+        ])
+
+        # Hollow masks (zero center, ones elsewhere) per layer — preserves
+        # Definition 3 by zeroing the kernel weight at the diagonal.
+        for layer_idx, k in enumerate(self.kernel_schedule):
+            mask = torch.ones(k, k)
+            mask[k // 2, k // 2] = 0.0
+            self.register_buffer(f"hollow_mask_{layer_idx}", mask)
 
     def compute_body(self, x: Tensor, t: Tensor) -> Tensor:
         """Pre-readout body H(x), shape (B, d, hidden_dim).
 
-        Must satisfy:
-            - Hollow: H(x)[i] does not depend on x[i] (Definition 3).
-            - Translation-equivariant under lattice shifts (verified by tests).
-
-        LEAPS recurrence (Section 9):
-            h_0 = constant + time conditioning, broadcast over sites
+        LEAPS Section 9 recurrence:
+            h_0 = learned constant (spatially uniform, hidden_dim per site)
             for l in 1..L:
-                W_l = σ(A_l · h_{l-1} + b_l) + c_l       # per-site 1×1
-                W_l = W_l * hollow_mask                  # zero kernel center
-                h_l = conv2d(x_emb, W_l, circular_pad)   # original x at every layer
+                W_l = σ(A_l · h_{l-1} + b_l) + c_l       # per-site 1×1, k_l² channels
+                W_l = reshape(W_l, k_l, k_l) * hollow_mask
+                h_l = position_conditional_conv(x_in, W_l)
             H = h_L
 
-        Implementation notes:
-            - Accept ±1 float spins (training; ctmc.py flip convention) OR
-              0/1 Long indices (tests). The line `((x+1)/2).long()`
-              converts in either case.
-            - Use F.pad(..., mode='circular') for periodic Ising boundaries.
-            - Time conditioning: simplest is to add `time_embedder(t)`
-              to h_0 once before the layer loop.
-            - The "data-dependent kernel" in the paper means W_l is computed
-              from h_{l-1}, then used as the conv kernel that operates on x.
-              The trick that keeps it efficient: W_l can be the same kernel
-              everywhere (uniform-W variant) OR per-site (full data-dependent
-              variant). Start with uniform-W (treat A_l h_{l-1}+b_l as a
-              single per-site value averaged over sites, or use only h_0
-              for W_1) — simpler to implement, still gets depth.
+        Hollow-preservation through depth:
+            - h_0 is spatially uniform → independent of x.
+            - Inductive step: if h_{l-1}[r,s] is independent of x[r,s], then
+              W_l[..., r, s] (built from h_{l-1}[r,s] via 1×1 channel-mix) is
+              independent of x[r,s]. The conv with hollow kernel excludes the
+              diagonal contribution, so h_l[r,s] is also independent of x[r,s].
+
+        Accepts ±1 float spins (training; ctmc.py flip convention) or 0/1
+        Long indices (tests). The `((x+1)/2).long()` line handles both.
         """
-        raise NotImplementedError(
-            "Implement per LEAPS Section 9 + Figure 3. See class docstring "
-            "and the suggested per-layer parameter scaffold in __init__. "
-            "Tests in tests/test_leconv_deep.py encode the contract."
-        )
+        x_idx = ((x + 1) / 2).long()
+        B = x_idx.shape[0]
+        x_grid = x_idx.view(B, self.D, self.D)
+        x_emb = self.token_embedder(x_grid).permute(0, 3, 1, 2)  # (B, h, D, D)
+
+        cond_t = self.time_embedder(t)                            # (B, h)
+        x_in = x_emb + cond_t[:, :, None, None]                   # (B, h, D, D)
+
+        # h_0: spatially uniform — same hidden_dim vector at every site.
+        h = self.h_0.view(1, -1, 1, 1).expand(B, -1, self.D, self.D).contiguous()
+
+        for layer_idx, k_size in enumerate(self.kernel_schedule):
+            # 1) Per-site channel-mix produces kernel weights of shape k_l².
+            kernel_weights = F.gelu(self.A[layer_idx](h))         # (B, k², D, D)
+            kernel_weights = kernel_weights + self.c[layer_idx].view(1, -1, 1, 1)
+
+            # 2) Reshape to per-site (k, k) kernel and zero the center weight.
+            W = kernel_weights.view(B, k_size, k_size, self.D, self.D)
+            hollow_mask = getattr(self, f"hollow_mask_{layer_idx}")
+            W = W * hollow_mask[None, :, :, None, None]
+
+            # 3) Position-conditional convolution with circular padding.
+            #    At each output site (r, s), use the local kernel W[..., r, s]
+            #    weighted against the (k×k) circular-padded patch of x_in
+            #    centred at (r, s).
+            pad = k_size // 2
+            x_padded = F.pad(x_in, (pad, pad, pad, pad), mode="circular")
+            x_unfold = x_padded.unfold(2, k_size, 1).unfold(3, k_size, 1)
+            # x_unfold: (B, h, D, D, k, k)
+
+            # h_{l+1}[b, c, r, s] = Σ_{i,j} W[b, i, j, r, s] · x_unfold[b, c, r, s, i, j]
+            h = torch.einsum("bijrs,bcrsij->bcrs", W, x_unfold)
+
+        # (B, hidden_dim, D, D) -> (B, d, hidden_dim) flat-position layout.
+        return h.permute(0, 2, 3, 1).reshape(B, self.D * self.D, self.hidden_dim)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         """Returns G(τ, i | x), shape (B, d, S). τ=x_i slot is exactly zero.
