@@ -162,7 +162,7 @@ def train(
                 )
                 optimiser.zero_grad()
                 loss_value.backward()
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 500.0)
                 optimiser.step()
 
                 wall_clock_step_s = time.time() - step_start
