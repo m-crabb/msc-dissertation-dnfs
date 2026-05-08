@@ -94,6 +94,74 @@ def test_zero_rate_finite_weights():
     assert torch.isfinite(log_w).all()
 
 
+def test_return_all_states_shape_and_endpoints():
+    """`return_all_states=True` returns the (T, B, D) trajectory.
+
+    Pinned invariants:
+      - shape (T, B, D), where T = len(ts).
+      - traj[0] == x0 (the supplied initial state at ts[0]).
+      - traj[-1] equals what the default scalar-return path produces under
+        the same RNG seed -- the trajectory must agree with the existing
+        single-endpoint path at its final step (otherwise the buffer's
+        last time slot would silently drift from `sample_ctmc`'s endpoint).
+    """
+    torch.manual_seed(0)
+    n_dims = 4
+    batch_size = 8
+    n_grid = 10
+    flip_rate = 0.3
+    model = ConstantRateModel(flip_rate=flip_rate)
+    x0 = torch.randint(0, 2, (batch_size, n_dims)).float() * 2 - 1
+    ts = torch.linspace(0.0, 1.0, n_grid)
+
+    torch.manual_seed(123)
+    traj = sample_ctmc(model, x0, ts, return_all_states=True)
+
+    assert traj.shape == (n_grid, batch_size, n_dims)
+    assert torch.equal(traj[0], x0), "first slot must be the input x0"
+
+    torch.manual_seed(123)
+    x_final_default = sample_ctmc(model, x0, ts)
+    assert torch.equal(traj[-1], x_final_default), (
+        "final slot must equal the default sample_ctmc endpoint under same seed"
+    )
+
+
+def test_return_all_states_value_set_and_states_ordered_by_grid():
+    """All trajectory states stay in {-1, +1} and the grid axis is preserved
+    in order (no transposition of T-vs-B axes)."""
+    torch.manual_seed(1)
+    n_dims = 6
+    batch_size = 4
+    n_grid = 12
+    model = ConstantRateModel(flip_rate=0.5)
+    x0 = torch.randint(0, 2, (batch_size, n_dims)).float() * 2 - 1
+    ts = torch.linspace(0.0, 1.0, n_grid)
+
+    traj = sample_ctmc(model, x0, ts, return_all_states=True)
+    assert torch.all((traj == 1) | (traj == -1))
+    # Axis-order sanity: traj[k] has shape (B, D), not (D, B).
+    assert traj[0].shape == (batch_size, n_dims)
+
+
+def test_return_all_states_is_incompatible_with_log_weights():
+    """We deliberately don't cross-implement log-weights with all-states
+    return -- the buffer-construction path doesn't need IS weights, and
+    silently returning a 3-tuple would be a footgun."""
+    torch.manual_seed(0)
+    target = IsingTarget(D=2, sigma=0.1)
+    x0 = torch.randint(0, 2, (4, 4)).float() * 2 - 1
+    ts = torch.linspace(0.0, 1.0, 5)
+    with pytest.raises(ValueError, match="return_all_states"):
+        sample_ctmc(
+            ConstantRateModel(flip_rate=0.2),
+            x0, ts,
+            return_all_states=True,
+            return_log_weights=True,
+            target=target,
+        )
+
+
 def test_sample_ctmc_lenet_path_runs_and_preserves_state_set():
     """sample_ctmc with a leMLP must run end-to-end and produce states
     in the expected support {-1, +1}^D. Doesn't pin distributional

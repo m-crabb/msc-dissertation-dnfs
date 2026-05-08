@@ -137,8 +137,9 @@ def compute_xi_t(
     Same quantity used in two places:
       • `sample_ctmc(..., return_log_weights=True)` — accumulated along the
         Euler trajectory to produce IS log-weights for ESS / F/D / E/D eval.
-      • `samplers.log_z_estimators.control_variate` — averaged at each
-        training step as the gradient estimator for ∂_t log Z_t (Stage 2).
+      • `samplers.log_z_estimators.compute_c_t_grid` (control_variate
+        mode) — averaged per time slot in the outer step as the c_t
+        target for the inner-loop loss (paper Algorithm 1 line 4).
 
     Dispatches on `model.is_locally_equivariant`:
       - True  -> `_compute_xi_t_lenet`  (single forward pass, paper Eq. 8 LE form).
@@ -147,10 +148,10 @@ def compute_xi_t(
     `outflow_rates` is the non-LE-only passthrough optimisation: in that
     branch `sample_ctmc` already computed `model(state, t)` for the Euler
     step and feeds it through to skip the duplicate forward pass.
-    `control_variate` omits it and lets the helper compute it. The LE
-    branch ignores the argument because the Euler step there caches
-    `[G]_+` rather than `G`, which can't be reused to recover the reverse
-    rate; see `_compute_xi_t_lenet`.
+    Outer-step c_t computation omits it and lets the helper recompute.
+    The LE branch ignores the argument because the Euler step there
+    caches `[G]_+` rather than `G`, which can't be reused to recover the
+    reverse rate; see `_compute_xi_t_lenet`.
     """
     if getattr(model, "is_locally_equivariant", False):
         return _compute_xi_t_lenet(state, t, model, target)
@@ -243,6 +244,7 @@ def sample_ctmc(
     ts: Tensor,
     *,
     return_log_weights: bool = False,
+    return_all_states: bool = False,
     target=None,
 ) -> Tensor | tuple[Tensor, Tensor]:
     """Simulate a CTMC trajectory by Euler stepping along `ts`.
@@ -255,7 +257,12 @@ def sample_ctmc(
         ts: (T,) monotonically increasing time grid covering the desired
             range (typically [0, 1]). dt = ts[i+1] - ts[i] (per step).
         return_log_weights: if True, also return per-trajectory IS log-
-            weights accumulated along the path.
+            weights accumulated along the path. Mutually exclusive with
+            `return_all_states`.
+        return_all_states: if True, return the full (T, B, d) trajectory
+            -- traj[0] == x0, traj[k] == state after k Euler steps. Used
+            by the Algorithm 1 outer step to build the replay buffer.
+            Mutually exclusive with `return_log_weights`.
         target: required when `return_log_weights=True`; used to evaluate
             `dt_log_p_tilde_t` (and, depending on xi_t form, `log_p_tilde_t`
             at flipped neighbours).
@@ -264,11 +271,20 @@ def sample_ctmc(
         x_final: (B, d). The state at time `ts[-1]`.
         OR (when return_log_weights=True):
         (x_final, log_w) where log_w has shape (B,).
+        OR (when return_all_states=True):
+        (T, B, d) trajectory tensor.
     """
     if return_log_weights and target is None:
         raise ValueError(
             "sample_ctmc(return_log_weights=True) requires `target` to be "
             "provided so xi_t can be evaluated along the trajectory."
+        )
+    if return_log_weights and return_all_states:
+        raise ValueError(
+            "sample_ctmc: return_all_states and return_log_weights are "
+            "mutually exclusive -- the buffer-build path does not need IS "
+            "weights, and the eval path does not need every intermediate "
+            "state."
         )
 
     state = x0.clone()
@@ -279,6 +295,12 @@ def sample_ctmc(
         if return_log_weights
         else None
     )
+    if return_all_states:
+        trajectory = torch.empty(
+            (len(ts), batch_size, n_sites),
+            dtype=state.dtype, device=state.device,
+        )
+        trajectory[0] = state
 
     for step in range(len(ts) - 1):
         t_curr = ts[step]
@@ -291,8 +313,7 @@ def sample_ctmc(
             # ξ_t per paper Eq. 8 evaluated at x_t (left endpoint of the
             # Euler interval -- standard forward Euler). compute_xi_t
             # encapsulates the inflow/outflow decomposition; same helper is
-            # called by samplers.log_z_estimators.control_variate at training
-            # time for Stage 2.
+            # called by samplers.log_z_estimators at training time.
             #
             # Pass-through optimisation only valid for the non-LE branch:
             # there `outflow_rates` is the (B, D) rate vector and re-using
@@ -309,7 +330,11 @@ def sample_ctmc(
             log_weights = log_weights + xi_t * step_dt
 
         state = new_state
+        if return_all_states:
+            trajectory[step + 1] = state
 
     if return_log_weights:
         return state, log_weights
+    if return_all_states:
+        return trajectory
     return state

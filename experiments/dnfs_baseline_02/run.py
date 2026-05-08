@@ -2,11 +2,11 @@
 
 Usage (local):
     pixi run -e dev python -m experiments.dnfs_baseline_02.run \\
-        --cfg stage_1_d4 --seed 0
+        --cfg stage_1_d4 --seed 42
 
 Or, to recompute eval metrics from saved samples without re-training:
     pixi run -e dev python -m experiments.dnfs_baseline_02.run \\
-        --eval-only --run-dir results/02_baseline/stage_1_d4_seed0_...
+        --eval-only --run-dir results/02_baseline/stage_1_d4_seed42_...
 
 The same `train(cfg_name, seed, ...)` function is also imported by
 `modal_app.py` for remote runs, so both paths share artefacts and metadata.
@@ -30,7 +30,6 @@ from discrete_flow_sampler.diagnostics.metrics import (
     internal_energy_estimate,
 )
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
-from discrete_flow_sampler.samplers import log_z_estimators
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.training import train as train_loop
 from discrete_flow_sampler.targets.ising import IsingTarget
@@ -60,14 +59,6 @@ def _build_model(cfg, target):
             n_summands=cfg.model.n_layers,   # see ModelCfg comment on n_layers
         ).to(target.device)
     raise ValueError(f"Unknown model kind: {cfg.model.kind!r}")
-
-
-def _build_estimator(name: str):
-    if name == "naive_mc":
-        return log_z_estimators.naive_mc
-    if name == "control_variate":
-        return log_z_estimators.control_variate
-    raise ValueError(f"Unknown estimator: {name!r}")
 
 
 def _compute_eval_metrics(
@@ -147,7 +138,7 @@ def _compute_eval_metrics(
 
 def train(
     cfg_name: str,
-    seed: int = 0,
+    seed: int = 42,
     output_dir: str | Path = "results/02_baseline",
     use_wandb: bool = True,
 ):
@@ -189,10 +180,12 @@ def train(
             config=asdict(cfg),
             tags=[
                 cfg.name,
+                cfg.name.split("_d")[0],
                 f"D={cfg.ising.D}",
                 f"sigma={cfg.ising.sigma}",
                 cfg.estimator,
                 cfg.model.kind,
+                f"seed={seed}",
             ],
         )
 
@@ -204,17 +197,16 @@ def train(
         device=device,
     )
     model = _build_model(cfg, target)
-    estimator = _build_estimator(cfg.estimator)
 
     train_loop(
         model=model,
         target=target,
-        estimator=estimator,
         train_cfg=cfg.train,
         ctmc_cfg=cfg.ctmc,
         eval_cfg=cfg.eval,
         output_dir=run_dir,
         use_wandb=use_wandb,
+        estimator_mode=cfg.estimator,
     )
 
     # End-of-run eval: a final batch of (samples, IS log-weights) over the
@@ -302,7 +294,7 @@ def main():
     parser.add_argument(
         "--cfg", help="Config key from configs.py CONFIGS (training mode)"
     )
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/02_baseline")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument(

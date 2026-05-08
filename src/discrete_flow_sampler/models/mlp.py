@@ -1,4 +1,4 @@
-"""MLP rate-matrix parameterisation — Stage 0 broken-baseline only.
+"""MLP rate-matrix parameterisation — Stage 0 high-variance baseline.
 
 Concept (paper Sec. 3, Eq. (4)):
     DNFS learns a CTMC generator R_theta(x, t) so that, when integrated from
@@ -7,16 +7,24 @@ Concept (paper Sec. 3, Eq. (4)):
     naïvely emitted one rate per site (the flip rate); the rate matrix
     collapsed to shape (B, D**2).
 
-Status (post-2026-05-07 redo):
-    Stages 1 and 2 now use `LeMLPRateMatrix` (`models/lemlp.py`) — the
-    paper's Eq. (10) loss only makes sense over the locally equivariant /
-    one-way family that leMLP parameterises. This module is retained for
-    `stage_0_*` configs only, where it serves as a *broken baseline* whose
-    purpose is to motivate LE empirically by direct comparison against the
-    stage_1 leMLP run.
+Status (post-2026-05-07 redo, framing clarified by Zijing 2026-05-08):
+    Stages 1 and 2 now use `LeMLPRateMatrix` (`models/lemlp.py`). This
+    module is retained for `stage_0_*` configs as a *high-variance*
+    baseline.
 
-    `is_locally_equivariant = False` is what routes `stage_0_*` runs to
-    the Eq. (7) `residual_general` path in `samplers/kolmogorov.py`.
+    Eq. (7) (`residual_general` in `samplers/kolmogorov.py`) is a valid
+    loss for any single-site-flip parameterisation — it does NOT require
+    local equivariance. Per Zijing, the empirical variance of Eq. (7) is
+    intractable at lattice scale even under the paper's control-variate
+    estimator (Eq. 8); the pre-redo stage_2 d=10 R≡0 collapse corroborates
+    this. Eq. (10) (`residual_lenet`) is the LE specialisation that uses
+    Prop. 1 + Eq. (20) to fold the reverse rate into the same forward
+    tensor — *that* is the path requiring `is_locally_equivariant = True`.
+
+    `MLPRateMatrix.is_locally_equivariant = False` routes stage_0 runs to
+    Eq. (7). The stage_0 → stage_1 → stage_2 ladder thus demonstrates two
+    stacking variance-reduction strategies: architectural (Eq. 10 via
+    leMLP) and estimator (control variates).
 
 Architecture (intentionally vanilla):
 

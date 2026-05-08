@@ -1,7 +1,9 @@
 """Kolmogorov forward-equation residual and squared-residual loss.
 
 Paper reference: Eq. (3) (forward equation), Eq. (4) (log form), Eq. (7)
-(residual under the one-way binary parameterisation), in `dnfs.pdf`.
+(general residual under the single-site-flip parameterisation, Eq. 6), in
+`dnfs.pdf`. The locally-equivariant specialisation Eq. (10) lives in
+`residual_lenet` below; it is *not* the same as Eq. (7).
 
 Derivation
 ----------
@@ -20,9 +22,13 @@ with
         = dt log p_t(x)
           + Σ_{i: y_i != x_i} [ R^θ(y_i, i | x)  -  R^θ(x_i, i | y) * p_t(y) / p_t(x) ]   (Eq. 7)
 
-where we have specialised to the one-way binary parameterisation (Eq. 6,
-Prop. 1): only single-site flips have non-zero rate, and Σ_{y != x}
-collapses to Σ_i over the d single-flip neighbours y(i).
+where we have specialised to single-site flips only (Eq. 6): the Σ_{y != x}
+collapses to Σ_i over the d single-flip neighbours y(i). Eq. (7) does NOT
+require the one-way `R = [G]_+` parameterisation of Prop. 1 — that further
+specialisation is what produces Eq. (10) and `residual_lenet`. Any
+parameterisation that emits per-site flip rates (e.g. `MLPRateMatrix`)
+satisfies Eq. (7)'s premises; the cost is empirical estimator variance,
+which the paper attacks with the control-variate estimator (Eq. 8).
 
 Implementation notes
 --------------------
@@ -70,9 +76,10 @@ def residual_general(
     Args:
         x: (B, d) state tensor in {-1, +1}.
         t: (B,) time tensor in [0, 1].
-        dt_log_Zt: scalar Tensor. Pre-computed estimate of ∂_t log Z_t at
-            the relevant t (typically a single per-step scalar from
-            `samplers.log_z_estimators.naive_mc`).
+        dt_log_Zt: 0-dim or (B,) Tensor. Pre-computed estimate of
+            ∂_t log Z_t at the relevant t -- a per-sample lookup from
+            the outer-step c_t cache (paper Algorithm 1 line 7-9), or
+            a scalar if all states share a t.
         model: a `RateMatrix` -- callable (state, time) -> (B, d) rates >= 0.
         target: an IsingTarget (or any object exposing `log_p_tilde_t` and
             `dt_log_p_tilde_t`).
