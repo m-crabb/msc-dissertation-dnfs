@@ -221,4 +221,20 @@ CONFIGS: dict[str, StageCfg] = {
         model=ModelCfg(kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2),
         estimator="control_variate",
     ),
+    # First d10_critical attempt collapsed in ESS (~5/256) at 14k steps despite
+    # loss decreasing — diagnosed as receptive-field starvation: the 3x3 kernel
+    # is structurally too local for the long-range critical fluctuations on
+    # a 10x10 torus. _big bumps the kernel to 7x7 (covers 49 sites, ~half the
+    # lattice diameter) and the hidden dim to 128. If this also fails ESS, the
+    # fallback is the d4_critical / d6_critical pair (smaller N matched to
+    # the architecture's reach).
+    "stage_3_d10_critical_big": StageCfg(
+        name="stage_3_d10_critical_big",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="leconv", hidden_dim=128, n_layers=3, kernel_size=7, vocab_size=2),
+        estimator="control_variate",
+    ),
 }
