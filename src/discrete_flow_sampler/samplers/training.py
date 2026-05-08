@@ -100,7 +100,7 @@ def train(
         writer = csv.writer(log_file)
         writer.writerow(
             ["step", "loss", "ess", "var_dt_log_p_tilde",
-             "var_estimator_integrand", "wall_clock_step_s"]
+             "var_estimator_integrand", "grad_norm", "wall_clock_step_s"]
         )
 
         step = 0
@@ -162,7 +162,7 @@ def train(
                 )
                 optimiser.zero_grad()
                 loss_value.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimiser.step()
 
                 wall_clock_step_s = time.time() - step_start
@@ -190,7 +190,7 @@ def train(
                 writer.writerow(
                     [step, loss_value.item(), ess_value,
                      var_dt_log_p_tilde, var_estimator_integrand,
-                     wall_clock_step_s]
+                     grad_norm.item(), wall_clock_step_s]
                 )
                 log_file.flush()
 
@@ -199,6 +199,7 @@ def train(
                         "train/loss": loss_value.item(),
                         "train/var_dt_log_p_tilde": var_dt_log_p_tilde,
                         "train/var_estimator_integrand": var_estimator_integrand,
+                        "train/grad_norm": grad_norm.item(),
                         "train/wall_clock_step_s": wall_clock_step_s,
                     }
                     if step % eval_cfg.eval_every == 0:
