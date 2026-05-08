@@ -74,10 +74,11 @@ class EvalCfg:
 # explicitly pass kind="mlp" so there are no silent behaviour changes.
 @dataclass(frozen=True)
 class ModelCfg:
-    kind: Literal["mlp", "lemlp", "leconv", "let"] = "lemlp"
+    kind: Literal["mlp", "lemlp", "leconv", "leconv_deep", "let"] = "lemlp"
     hidden_dim: int = 256
     n_layers: int = 3        # n_summands K for lemlp/leconv; Linear blocks for mlp
-    kernel_size: int = 3     # leconv only; ignored for mlp/lemlp/let
+    kernel_size: int = 3     # leconv only; ignored elsewhere
+    kernel_schedule: tuple[int, ...] = ()  # leconv_deep only; per-layer kernels
     vocab_size: int = 2
 
 
@@ -235,6 +236,25 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="leconv", hidden_dim=128, n_layers=3, kernel_size=7, vocab_size=2),
+        estimator="control_variate",
+    ),
+    # LEAPS-style deep LEC at critical sigma. Reference: Holderrieth/Albergo/
+    # Jaakkola, papers/leaps.pdf, Section 9 + Figure 7. Their depth-5 LEC
+    # with kernels [3,5,7,9,15] hit ESS ~68% on a 15x15 critical Ising at
+    # ~100k params. We trim to [3,5,7,9] (no lattice-spanning kernel since
+    # D=10) and let the user pick d_l (per-layer channel dim) at impl time.
+    "stage_3_d10_critical_deep": StageCfg(
+        name="stage_3_d10_critical_deep",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="leconv_deep",
+            hidden_dim=64,
+            kernel_schedule=(3, 5, 7, 9),
+            vocab_size=2,
+        ),
         estimator="control_variate",
     ),
 }

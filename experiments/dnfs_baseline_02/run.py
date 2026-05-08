@@ -67,6 +67,14 @@ def _build_model(cfg, target):
             n_summands=cfg.model.n_layers,
             kernel_size=cfg.model.kernel_size,
         ).to(target.device)
+    if cfg.model.kind == "leconv_deep":
+        from discrete_flow_sampler.models.leconv_deep import LeConvDeepRateMatrix
+        return LeConvDeepRateMatrix(
+            D=cfg.ising.D,
+            vocab_size=cfg.model.vocab_size,
+            kernel_schedule=cfg.model.kernel_schedule,
+            hidden_dim=cfg.model.hidden_dim,
+        ).to(target.device)
     raise ValueError(f"Unknown model kind: {cfg.model.kind!r}")
 
 
