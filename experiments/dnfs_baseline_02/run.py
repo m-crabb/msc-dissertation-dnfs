@@ -75,6 +75,15 @@ def _build_model(cfg, target):
             kernel_schedule=cfg.model.kernel_schedule,
             hidden_dim=cfg.model.hidden_dim,
         ).to(target.device)
+    if cfg.model.kind == "let":
+        from discrete_flow_sampler.models.letf import LeTFRateMatrix
+        return LeTFRateMatrix(
+            d=target.d,
+            vocab_size=cfg.model.vocab_size,
+            hidden_dim=cfg.model.hidden_dim,
+            n_layers=cfg.model.n_layers,
+            n_heads=cfg.model.n_heads,
+        ).to(target.device)
     raise ValueError(f"Unknown model kind: {cfg.model.kind!r}")
 
 

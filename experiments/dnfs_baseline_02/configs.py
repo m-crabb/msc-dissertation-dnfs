@@ -79,6 +79,7 @@ class ModelCfg:
     n_layers: int = 3        # n_summands K for lemlp/leconv; Linear blocks for mlp
     kernel_size: int = 3     # leconv only; ignored elsewhere
     kernel_schedule: tuple[int, ...] = ()  # leconv_deep only; per-layer kernels
+    n_heads: int = 4         # leTF only; ignored elsewhere
     vocab_size: int = 2
 
 
