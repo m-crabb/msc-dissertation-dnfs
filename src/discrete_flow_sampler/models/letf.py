@@ -75,8 +75,30 @@ class _AttentionBlock(nn.Module):
         return x
 
 
+class _CausalBlock(nn.Module):
+    """One causal block: proj_in -> AttentionBlock -> raw-input skip.
+
+    Per the J-zin/DNFS reference's CausalBlock structure: each block has
+    its own proj_in (a fresh linear transform of the input) plus a
+    raw-input skip wrapping the inner AttentionBlock. Stacking these
+    gives multiple residual paths and per-block fresh transformations,
+    helping gradient flow at depth and at long sequences.
+    """
+
+    def __init__(self, hidden_dim: int, n_heads: int, ff_mult: int = 4):
+        super().__init__()
+        self.proj_in = nn.Linear(hidden_dim, hidden_dim)
+        self.attn_block = _AttentionBlock(hidden_dim, n_heads, ff_mult)
+
+    def forward(self, x: Tensor, attn_mask: Tensor) -> Tensor:
+        x_in = x
+        x = self.proj_in(x)
+        x = self.attn_block(x, attn_mask)
+        return x + x_in
+
+
 class CausalStack(nn.Module):
-    """Stack of n_layers AttentionBlocks with inclusive causal masking.
+    """Stack of n_layers _CausalBlocks with inclusive causal masking.
 
     Used for ONE direction (fwd OR bwd). The model holds two independent
     CausalStack instances; the bwd direction's flip-then-process-then-flip
@@ -87,9 +109,12 @@ class CausalStack(nn.Module):
     AttentionReadout, this produces hollow output at every k of the
     d-output-space. See module docstring for the full hollow argument.
 
+    Each block has a per-block proj_in + raw-input skip (mirrors the
+    reference's CausalBlock topology) for stable gradient flow at depth.
+
     Args:
         hidden_dim: channel dimension for embeddings and Transformer hidden states.
-        n_layers: number of AttentionBlocks in the stack.
+        n_layers: number of _CausalBlocks in the stack.
         n_heads: number of attention heads. Must divide hidden_dim.
         ff_mult: feed-forward expansion factor (Vaswani 2017 default = 4).
     """
@@ -101,7 +126,7 @@ class CausalStack(nn.Module):
                 f"hidden_dim {hidden_dim} not divisible by n_heads {n_heads}"
             )
         self.blocks = nn.ModuleList(
-            [_AttentionBlock(hidden_dim, n_heads, ff_mult) for _ in range(n_layers)]
+            [_CausalBlock(hidden_dim, n_heads, ff_mult) for _ in range(n_layers)]
         )
 
     def forward(self, x: Tensor) -> Tensor:

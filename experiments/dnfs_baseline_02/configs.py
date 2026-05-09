@@ -56,6 +56,7 @@ class TrainCfg:
     # steps_per_epoch=100 (consulted 2026-05-08).
     inner_steps_per_outer: int = 100
     outer_batch_size: int | None = None  # None -> falls back to batch_size
+    grad_clip_max_norm: float = 500.0  # transformer runs override to 1.0
 
 
 @dataclass(frozen=True)
@@ -311,10 +312,19 @@ CONFIGS: dict[str, StageCfg] = {
         model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
+    # Revised 2026-05-09 after first-launch divergence diagnosis: at d=100
+    # the snowballing-positive-feedback divergence kicked in within ~3k
+    # steps. Mitigation stack: (1) grad clip 1.0 (was 500 = effectively no
+    # clip for transformer-scale grads), (2) LR 3e-4 (paper says 1e-3 but
+    # paper authors' public default config is D=5; standard transformer LR
+    # at our D=10 scale), (3) per-block raw-input skip in CausalStack
+    # (mirrors reference CausalBlock topology; helps gradient flow at depth).
+    # d10_critical adds a sigma warmup 0.1 -> 0.22305 over 20k steps to
+    # dampen the larger initial loss scale at the harder target.
     "stage_4_d10": StageCfg(
         name="stage_4_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=1.0),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
@@ -323,10 +333,11 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_4_d10_critical": StageCfg(
         name="stage_4_d10_critical",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=100_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=100_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=1.0),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
+        warmup=WarmupCfg(n_steps=20_000, sigma=0.1),
     ),
 }
