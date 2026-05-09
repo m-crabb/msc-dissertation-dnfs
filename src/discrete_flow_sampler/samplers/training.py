@@ -97,17 +97,24 @@ def train(
         )
     n_outer = train_cfg.n_steps // inner_steps_per_outer
 
-    # Warm-up bookkeeping (MDNS App D.2.4 temperature warm-up). Pin the swap
-    # to an outer-step boundary so the buffer always carries one σ regime.
+    # Warm-up bookkeeping. We linearly interpolate σ from the initial σ
+    # (target's current value) to target_sigma_final over warmup_n_steps,
+    # updating once per outer step so the buffer is rebuilt under the σ
+    # it will be trained against. After the ramp, σ is pinned to final.
+    # Hard-swap deep_warmup runs (2026-05-09) showed the discontinuity
+    # itself was the failure mode (ESS 99.88% → 0.09% at the swap); a
+    # linear ramp removes that.
+    sigma_start = None
     if warmup_n_steps > 0:
         if target_sigma_final is None:
             raise ValueError("target_sigma_final required when warmup_n_steps > 0")
         if warmup_n_steps % inner_steps_per_outer != 0:
             raise ValueError(
                 f"warmup_n_steps={warmup_n_steps} must be a multiple of "
-                f"inner_steps_per_outer={inner_steps_per_outer} so the "
-                f"σ-swap aligns with replay-buffer rebuild boundaries."
+                f"inner_steps_per_outer={inner_steps_per_outer} so σ "
+                f"updates align with replay-buffer rebuild boundaries."
             )
+        sigma_start = float(target.sigma)
     warmup_done = warmup_n_steps == 0
 
     log_path = output_dir / "training_log.csv"
@@ -120,19 +127,28 @@ def train(
 
         step = 0
         for outer in range(n_outer):
-            # Swap target σ to the final value before rebuilding buffer once
-            # we cross the warm-up boundary. The buffer is then built under
-            # the post-warm-up target, keeping inner-step samples consistent
-            # with the σ they're being trained against.
-            if not warmup_done and step >= warmup_n_steps:
-                target.set_sigma(target_sigma_final)
-                warmup_done = True
-                if use_wandb:
-                    wandb.log(
-                        {"train/sigma_swapped_at_step": step,
-                         "train/sigma_final": target_sigma_final},
-                        step=step,
+            # Update σ before rebuilding the buffer so inner-step samples
+            # are consistent with the σ they will be trained against. Linear
+            # ramp during the warm-up window, then pinned at final.
+            if warmup_n_steps > 0 and not warmup_done:
+                if step < warmup_n_steps:
+                    progress = step / warmup_n_steps
+                    sigma_now = (
+                        sigma_start
+                        + (target_sigma_final - sigma_start) * progress
                     )
+                    target.set_sigma(sigma_now)
+                    if use_wandb:
+                        wandb.log({"train/sigma_current": sigma_now}, step=step)
+                else:
+                    target.set_sigma(target_sigma_final)
+                    warmup_done = True
+                    if use_wandb:
+                        wandb.log(
+                            {"train/sigma_current": target_sigma_final,
+                             "train/sigma_finalised_at_step": step},
+                            step=step,
+                        )
 
             # OUTER STEP -- rebuild buffer + c_t. Trajectory and c_t are
             # both detached from autograd by the no_grad block; this is

@@ -88,12 +88,15 @@ class ModelCfg:
 class WarmupCfg:
     """MDNS-style temperature warm-up (App D.2.4 of `papers/mdns.pdf`).
 
-    Train at `sigma` for `n_steps` first, then swap target.σ to
-    `IsingCfg.sigma` (the final, harder σ) for the remaining steps. The
-    swap is pinned to a replay-buffer rebuild boundary in `samplers.training`.
+    Linearly interpolates target.σ from `sigma` (warm-up start) to
+    `IsingCfg.sigma` (final) over `n_steps`, updating once per outer step.
+    After the ramp, σ is pinned to the final value. The original hard-swap
+    variant collapsed ESS at the boundary (stage_3 deep_warmup, stage_4
+    d10_critical, both 2026-05-09); the linear ramp removes that
+    discontinuity.
     """
     n_steps: int                              # multiple of inner_steps_per_outer
-    sigma: float                              # easier σ for the warm-up phase
+    sigma: float                              # easier σ at ramp start
 
 
 @dataclass(frozen=True)
@@ -312,19 +315,18 @@ CONFIGS: dict[str, StageCfg] = {
         model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
-    # Revised 2026-05-09 after first-launch divergence diagnosis: at d=100
-    # the snowballing-positive-feedback divergence kicked in within ~3k
-    # steps. Mitigation stack: (1) grad clip 1.0 (was 500 = effectively no
-    # clip for transformer-scale grads), (2) LR 3e-4 (paper says 1e-3 but
-    # paper authors' public default config is D=5; standard transformer LR
-    # at our D=10 scale), (3) per-block raw-input skip in CausalStack
-    # (mirrors reference CausalBlock topology; helps gradient flow at depth).
-    # d10_critical adds a sigma warmup 0.1 -> 0.22305 over 20k steps to
-    # dampen the larger initial loss scale at the harder target.
+    # Revised 2026-05-09 (second pass) after second-launch logs showed clip 1.0
+    # was choking learning: pre-clip grad norms ran 100-200 → effective LR
+    # ≈ 2e-6, ESS plateaued at ~2%. Stack now: (1) grad clip 10.0 (still
+    # tight enough to catch the 30k-norm spikes that motivated the original
+    # clip; ~16x looser effective step), (2) LR 3e-4, (3) per-block raw-input
+    # skip in CausalStack. d10_critical now uses a linear sigma ramp 0.1 →
+    # 0.22305 over 20k steps instead of the hard swap (training.py); the hard
+    # swap collapsed ESS 13.6% → 0.09% at the boundary.
     "stage_4_d10": StageCfg(
         name="stage_4_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=1.0),
+        train=TrainCfg(n_steps=50_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=10.0),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
@@ -333,7 +335,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_4_d10_critical": StageCfg(
         name="stage_4_d10_critical",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=100_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=1.0),
+        train=TrainCfg(n_steps=100_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=10.0),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
