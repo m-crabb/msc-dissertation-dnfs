@@ -68,9 +68,8 @@ class IsingTarget:
     def set_sigma(self, sigma: float) -> None:
         """Mutate σ in place; rescales J = σ · A.
 
-        Used for MDNS-style temperature warm-up (App D.2.4): train at an
-        easier σ first, then swap to the harder target σ without rebuilding
-        the model or optimizer state.
+        Used by temperature curricula to move through easier intermediate
+        targets without rebuilding model or optimizer state.
         """
         self.sigma = sigma
         self.J = sigma * self.A

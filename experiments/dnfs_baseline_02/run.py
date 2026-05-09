@@ -20,6 +20,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 import torch
+from experiments.dnfs_baseline_02.configs import CONFIGS
 
 from discrete_flow_sampler.diagnostics.metrics import (
     entropy_estimate,
@@ -33,7 +34,6 @@ from discrete_flow_sampler.models.mlp import MLPRateMatrix
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.training import train as train_loop
 from discrete_flow_sampler.targets.ising import IsingTarget
-from experiments.dnfs_baseline_02.configs import CONFIGS
 
 # State-count cutoff for exact-enumeration "Optimal Value" references at
 # small D. Paper Table 2 row 1 lists analytical (Ferdinand & Fisher 1969)
@@ -74,6 +74,7 @@ def _build_model(cfg, target):
             vocab_size=cfg.model.vocab_size,
             kernel_schedule=cfg.model.kernel_schedule,
             hidden_dim=cfg.model.hidden_dim,
+            use_global_context=cfg.model.hollow_global_context,
         ).to(target.device)
     if cfg.model.kind == "let":
         from discrete_flow_sampler.models.letf import LeTFRateMatrix
@@ -216,10 +217,12 @@ def train(
         )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    # Warm-up: target starts at the easier σ; train_loop swaps to cfg.ising.sigma
-    # at warmup.n_steps. End-of-run eval and downstream artefacts use the
-    # final σ (post-swap), matching the σ recorded in cfg.ising.
-    target_sigma_init = cfg.warmup.sigma if cfg.warmup is not None else cfg.ising.sigma
+    # Curriculum: target may start at an easier σ; train_loop moves it through
+    # piecewise-constant stages. Fixed-σ configs start directly at cfg.ising.
+    if cfg.curriculum is not None:
+        target_sigma_init = cfg.curriculum.stages[0].sigma
+    else:
+        target_sigma_init = cfg.ising.sigma
     target = IsingTarget(
         D=cfg.ising.D,
         sigma=target_sigma_init,
@@ -237,8 +240,9 @@ def train(
         output_dir=run_dir,
         use_wandb=use_wandb,
         estimator_mode=cfg.estimator,
-        warmup_n_steps=cfg.warmup.n_steps if cfg.warmup is not None else 0,
-        target_sigma_final=cfg.ising.sigma if cfg.warmup is not None else None,
+        sigma_curriculum=(
+            cfg.curriculum.stages if cfg.curriculum is not None else None
+        ),
     )
 
     # End-of-run eval: a final batch of (samples, IS log-weights) over the

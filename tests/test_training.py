@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import torch
 
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
-from discrete_flow_sampler.samplers.training import train
+from discrete_flow_sampler.samplers.training import _append_replay_buffer, train
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 
@@ -28,6 +28,7 @@ def _tiny_train_cfg(
     inner_steps_per_outer: int,
     batch_size: int,
     outer_batch_size: int | None = None,
+    replay_buffer_cycles: int = 1,
     lr: float = 1e-3,
     seed: int = 0,
 ):
@@ -36,6 +37,7 @@ def _tiny_train_cfg(
         inner_steps_per_outer=inner_steps_per_outer,
         batch_size=batch_size,
         outer_batch_size=outer_batch_size,
+        replay_buffer_cycles=replay_buffer_cycles,
         lr=lr,
         seed=seed,
     )
@@ -46,6 +48,12 @@ def _read_csv_loss_column(csv_path):
     with csv_path.open() as f:
         reader = csv.DictReader(f)
         return [float(row["loss"]) for row in reader]
+
+
+def _read_csv_rows(csv_path):
+    import csv
+    with csv_path.open() as f:
+        return list(csv.DictReader(f))
 
 
 def test_train_runs_outer_inner_without_error(tmp_path):
@@ -141,39 +149,8 @@ def test_train_naive_mc_mode_runs(tmp_path):
     assert all(loss == loss for loss in losses), "training log has NaN losses"
 
 
-def test_train_warmup_swaps_target_sigma_at_boundary(tmp_path):
-    """Target σ swaps from warm-up value to final value at warmup_n_steps.
-
-    Pins the MDNS-style temperature warm-up: target initialised at warm-up σ,
-    train_loop calls target.set_sigma(target_sigma_final) at the chosen
-    inner-step boundary. Boundary aligns with inner_steps_per_outer so the
-    replay buffer is rebuilt with the new σ on the next outer cycle.
-    """
-    torch.manual_seed(0)
-    target = IsingTarget(D=2, sigma=0.1)
-    n_sites = target.D * target.D
-    model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
-
-    train_cfg = _tiny_train_cfg(
-        n_steps=20, inner_steps_per_outer=10,
-        batch_size=8, outer_batch_size=8,
-    )
-    ctmc_cfg = SimpleNamespace(n_euler_steps=4)
-    eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
-
-    train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
-        estimator_mode="control_variate",
-        warmup_n_steps=10, target_sigma_final=0.5,
-    )
-
-    assert target.sigma == 0.5
-
-
-def test_train_no_warmup_leaves_target_sigma_unchanged(tmp_path):
-    """Default `warmup_n_steps=0` is a no-op: target.σ stays at its init value."""
+def test_train_no_curriculum_leaves_target_sigma_unchanged(tmp_path):
+    """Without a curriculum, target.σ stays at its init value."""
     torch.manual_seed(0)
     target = IsingTarget(D=2, sigma=0.1)
     n_sites = target.D * target.D
@@ -194,6 +171,40 @@ def test_train_no_warmup_leaves_target_sigma_unchanged(tmp_path):
     )
 
     assert target.sigma == 0.1
+
+
+def test_train_piecewise_curriculum_updates_sigma_and_lr(tmp_path):
+    """Piecewise σ/LR curriculum switches only on outer-cycle boundaries."""
+    torch.manual_seed(0)
+    target = IsingTarget(D=2, sigma=0.1)
+    n_sites = target.D * target.D
+    model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
+
+    train_cfg = _tiny_train_cfg(
+        n_steps=20, inner_steps_per_outer=10,
+        batch_size=8, outer_batch_size=8, lr=1e-2,
+    )
+    ctmc_cfg = SimpleNamespace(n_euler_steps=4)
+    eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
+    curriculum = (
+        SimpleNamespace(start_step=0, sigma=0.1, lr=1e-2),
+        SimpleNamespace(start_step=10, sigma=0.5, lr=1e-3),
+    )
+
+    train(
+        model=model, target=target,
+        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
+        output_dir=tmp_path, use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=curriculum,
+    )
+
+    rows = _read_csv_rows(tmp_path / "training_log.csv")
+    assert target.sigma == 0.5
+    assert float(rows[0]["sigma_current"]) == 0.1
+    assert float(rows[0]["lr_current"]) == 1e-2
+    assert float(rows[-1]["sigma_current"]) == 0.5
+    assert float(rows[-1]["lr_current"]) == 1e-3
 
 
 def test_train_outer_batch_size_falls_back_to_batch_size(tmp_path):
@@ -219,3 +230,23 @@ def test_train_outer_batch_size_falls_back_to_batch_size(tmp_path):
         estimator_mode="control_variate",
     )
     assert (tmp_path / "training_log.csv").exists()
+
+
+def test_append_replay_buffer_keeps_latest_outer_batches():
+    """Reference leTF recovery keeps a small rolling buffer of outer batches."""
+    x_chunks: list[torch.Tensor] = []
+    t_chunks: list[torch.Tensor] = []
+    t_idx = torch.tensor([0, 0, 1, 1])
+
+    for outer in range(3):
+        x_traj = torch.full((2, 2, 1), float(outer))
+        x_buffer, t_buffer = _append_replay_buffer(
+            x_chunks,
+            t_chunks,
+            x_traj,
+            t_idx,
+            max_cycles=2,
+        )
+
+    assert x_buffer.flatten().tolist() == [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+    assert t_buffer.tolist() == [0, 0, 1, 1, 0, 0, 1, 1]

@@ -30,11 +30,101 @@ import time
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.samplers.log_z_estimators import compute_c_t_grid
+
+
+def _append_replay_buffer(
+    x_chunks: list[torch.Tensor],
+    t_idx_chunks: list[torch.Tensor],
+    x_traj: torch.Tensor,
+    t_idx_buffer: torch.Tensor,
+    max_cycles: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Append one outer batch and return the retained replay-buffer view."""
+    x_chunks.append(x_traj.reshape(-1, x_traj.shape[-1]).detach())
+    t_idx_chunks.append(t_idx_buffer.detach())
+    if len(x_chunks) > max_cycles:
+        x_chunks.pop(0)
+        t_idx_chunks.pop(0)
+    return torch.cat(x_chunks, dim=0), torch.cat(t_idx_chunks, dim=0)
+
+
+def _normalise_curriculum(
+    sigma_curriculum,
+    *,
+    n_steps: int,
+    inner_steps_per_outer: int,
+) -> list[tuple[int, float, float | None]]:
+    if sigma_curriculum is None:
+        return []
+
+    stages = []
+    for stage in sigma_curriculum:
+        start_step = int(getattr(stage, "start_step"))
+        sigma = float(getattr(stage, "sigma"))
+        lr = getattr(stage, "lr", None)
+        stages.append((start_step, sigma, None if lr is None else float(lr)))
+
+    if not stages:
+        raise ValueError("sigma_curriculum must contain at least one stage")
+    if stages[0][0] != 0:
+        raise ValueError("sigma_curriculum first stage must start at step 0")
+
+    prev_step = -1
+    for start_step, _sigma, _lr in stages:
+        if start_step <= prev_step:
+            raise ValueError("sigma_curriculum stages must be strictly increasing")
+        if start_step >= n_steps:
+            raise ValueError(
+                f"curriculum start_step={start_step} must be < n_steps={n_steps}"
+            )
+        if start_step % inner_steps_per_outer != 0:
+            raise ValueError(
+                f"curriculum start_step={start_step} must align with "
+                f"inner_steps_per_outer={inner_steps_per_outer}"
+            )
+        prev_step = start_step
+    return stages
+
+
+def _set_optimizer_lr(optimiser: torch.optim.Optimizer, lr: float) -> None:
+    for group in optimiser.param_groups:
+        group["lr"] = lr
+
+
+def _clear_replay(
+    x_replay_chunks: list[torch.Tensor],
+    t_idx_replay_chunks: list[torch.Tensor],
+) -> None:
+    x_replay_chunks.clear()
+    t_idx_replay_chunks.clear()
+
+
+def _rate_diagnostics(model, x, t, step_dt: float) -> dict[str, float]:
+    """Cheap eval-time diagnostics for CTMC rate scale.
+
+    ESS alone cannot distinguish a no-op sampler (rates near zero) from a
+    stiff sampler (rates so large Euler probabilities clip). Logging per-site
+    outflow rates at eval cadence makes those failure modes visible without
+    changing the training objective.
+    """
+    if getattr(model, "is_locally_equivariant", False):
+        rates = F.relu(model(x, t)).sum(dim=-1)  # (B, d), per-site outflow
+    else:
+        rates = model(x, t)                      # (B, d), per-site outflow
+
+    flip_prob = rates * step_dt
+    return {
+        "rate_site_mean": rates.mean().item(),
+        "rate_site_p99": torch.quantile(rates.reshape(-1), 0.99).item(),
+        "flip_prob_site_p99": torch.quantile(flip_prob.reshape(-1), 0.99).item(),
+        "flip_prob_clipped_frac": (flip_prob > 1.0).float().mean().item(),
+    }
 
 
 def train(
@@ -47,8 +137,7 @@ def train(
     *,
     use_wandb: bool = True,
     estimator_mode: str = "control_variate",
-    warmup_n_steps: int = 0,
-    target_sigma_final: float | None = None,
+    sigma_curriculum=None,
 ):
     """Run paper Algorithm 1 for `train_cfg.n_steps` total inner steps.
 
@@ -62,6 +151,11 @@ def train(
                                      (paper line 3); falls back to
                                      batch_size if None.
             .inner_steps_per_outer -- paper default 100.
+            .replay_buffer_cycles -- number of recent outer batches retained
+                                     in the replay buffer; default 1 preserves
+                                     the pre-recovery behaviour. The public
+                                     DNFS reference retains four N=256 outer
+                                     batches via DataBuffer(max_size=1024/N).
             .lr, .seed.
         ctmc_cfg: object with .n_euler_steps -- length T of outer-step
             time grid (paper's K+1).
@@ -71,13 +165,19 @@ def train(
         use_wandb: skip wandb.log when False (handy for tests).
         estimator_mode: "naive_mc" | "control_variate". Selects which
             integrand `compute_c_t_grid` averages per time slot.
+        sigma_curriculum: optional piecewise-constant schedule of objects
+            with `.start_step`, `.sigma`, and optional `.lr`. Stage
+            boundaries clear the replay buffer so retained states are always
+            drawn under the current target temperature.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir = output_dir / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
 
     torch.manual_seed(train_cfg.seed)
-    optimiser = torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=1e-4)
+    optimiser = torch.optim.AdamW(
+        model.parameters(), lr=train_cfg.lr, weight_decay=1e-4
+    )
 
     if use_wandb:
         import wandb
@@ -88,6 +188,11 @@ def train(
     outer_batch = train_cfg.outer_batch_size or train_cfg.batch_size
     n_grid = ctmc_cfg.n_euler_steps
     inner_steps_per_outer = train_cfg.inner_steps_per_outer
+    replay_buffer_cycles = getattr(train_cfg, "replay_buffer_cycles", 1)
+    if replay_buffer_cycles < 1:
+        raise ValueError(
+            f"replay_buffer_cycles must be >= 1, got {replay_buffer_cycles}"
+        )
 
     if train_cfg.n_steps % inner_steps_per_outer != 0:
         raise ValueError(
@@ -96,57 +201,52 @@ def train(
             f"inner contract requires whole outer cycles."
         )
     n_outer = train_cfg.n_steps // inner_steps_per_outer
-
-    # Warm-up bookkeeping. We linearly interpolate σ from the initial σ
-    # (target's current value) to target_sigma_final over warmup_n_steps,
-    # updating once per outer step so the buffer is rebuilt under the σ
-    # it will be trained against. After the ramp, σ is pinned to final.
-    # Hard-swap deep_warmup runs (2026-05-09) showed the discontinuity
-    # itself was the failure mode (ESS 99.88% → 0.09% at the swap); a
-    # linear ramp removes that.
-    sigma_start = None
-    if warmup_n_steps > 0:
-        if target_sigma_final is None:
-            raise ValueError("target_sigma_final required when warmup_n_steps > 0")
-        if warmup_n_steps % inner_steps_per_outer != 0:
-            raise ValueError(
-                f"warmup_n_steps={warmup_n_steps} must be a multiple of "
-                f"inner_steps_per_outer={inner_steps_per_outer} so σ "
-                f"updates align with replay-buffer rebuild boundaries."
-            )
-        sigma_start = float(target.sigma)
-    warmup_done = warmup_n_steps == 0
+    curriculum = _normalise_curriculum(
+        sigma_curriculum,
+        n_steps=train_cfg.n_steps,
+        inner_steps_per_outer=inner_steps_per_outer,
+    )
 
     log_path = output_dir / "training_log.csv"
     with log_path.open("w", newline="") as log_file:
         writer = csv.writer(log_file)
         writer.writerow(
             ["step", "loss", "ess", "var_dt_log_p_tilde",
-             "var_estimator_integrand", "grad_norm", "wall_clock_step_s"]
+             "var_estimator_integrand", "grad_norm",
+             "rate_site_mean", "rate_site_p99", "flip_prob_site_p99",
+             "flip_prob_clipped_frac", "sigma_current", "lr_current",
+             "wall_clock_step_s"]
         )
 
         step = 0
+        curriculum_idx = -1
+        x_replay_chunks: list[torch.Tensor] = []
+        t_idx_replay_chunks: list[torch.Tensor] = []
+        replay_sigma = float(target.sigma)
         for outer in range(n_outer):
-            # Update σ before rebuilding the buffer so inner-step samples
-            # are consistent with the σ they will be trained against. Linear
-            # ramp during the warm-up window, then pinned at final.
-            if warmup_n_steps > 0 and not warmup_done:
-                if step < warmup_n_steps:
-                    progress = step / warmup_n_steps
-                    sigma_now = (
-                        sigma_start
-                        + (target_sigma_final - sigma_start) * progress
-                    )
+            # Update σ before rebuilding the buffer so inner-step samples are
+            # consistent with the σ they will be trained against. Curriculum
+            # runs are piecewise-constant plateaus.
+            if curriculum:
+                while (
+                    curriculum_idx + 1 < len(curriculum)
+                    and step >= curriculum[curriculum_idx + 1][0]
+                ):
+                    curriculum_idx += 1
+                    _start, sigma_now, lr_now = curriculum[curriculum_idx]
                     target.set_sigma(sigma_now)
-                    if use_wandb:
-                        wandb.log({"train/sigma_current": sigma_now}, step=step)
-                else:
-                    target.set_sigma(target_sigma_final)
-                    warmup_done = True
+                    if lr_now is not None:
+                        _set_optimizer_lr(optimiser, lr_now)
+                    if sigma_now != replay_sigma:
+                        _clear_replay(x_replay_chunks, t_idx_replay_chunks)
+                        replay_sigma = sigma_now
                     if use_wandb:
                         wandb.log(
-                            {"train/sigma_current": target_sigma_final,
-                             "train/sigma_finalised_at_step": step},
+                            {
+                                "train/sigma_current": sigma_now,
+                                "train/lr_current": optimiser.param_groups[0]["lr"],
+                                "train/curriculum_stage": curriculum_idx,
+                            },
                             step=step,
                         )
 
@@ -182,13 +282,22 @@ def train(
                     integrand_per_t.var(dim=-1).mean().item()
                 )
 
-            # Flatten buffer for uniform inner-step sampling.
-            x_buffer = x_traj.reshape(n_grid * outer_batch, n_dims)
             t_idx_buffer = (
                 torch.arange(n_grid, device=device)
                 .repeat_interleave(outer_batch)
             )
-            buffer_size = n_grid * outer_batch
+            # Flatten and retain the most recent outer trajectory batches for
+            # uniform inner-step sampling. `c_t_grid` intentionally remains
+            # the latest outer-step estimate, matching the public DNFS code's
+            # OnlineData(update_dt_log_Zt=False) behaviour.
+            x_buffer, t_idx_buffer = _append_replay_buffer(
+                x_replay_chunks,
+                t_idx_replay_chunks,
+                x_traj,
+                t_idx_buffer,
+                replay_buffer_cycles,
+            )
+            buffer_size = x_buffer.shape[0]
 
             for _inner in range(inner_steps_per_outer):
                 step_start = time.time()
@@ -216,6 +325,12 @@ def train(
                 wall_clock_step_s = time.time() - step_start
 
                 ess_value = float("nan")
+                rate_diag = {
+                    "rate_site_mean": float("nan"),
+                    "rate_site_p99": float("nan"),
+                    "flip_prob_site_p99": float("nan"),
+                    "flip_prob_clipped_frac": float("nan"),
+                }
                 if step % eval_cfg.eval_every == 0:
                     with torch.no_grad():
                         eval_grid = torch.linspace(
@@ -233,12 +348,23 @@ def train(
                             return_log_weights=True, target=target,
                         )
                         ess_value = ess_from_log_weights(log_weights).item()
+                        rate_diag = _rate_diagnostics(
+                            model,
+                            x_sample,
+                            t_sample,
+                            step_dt=1.0 / max(n_grid - 1, 1),
+                        )
                     torch.save(model.state_dict(), ckpt_dir / "latest.pt")
 
                 writer.writerow(
                     [step, loss_value.item(), ess_value,
                      var_dt_log_p_tilde, var_estimator_integrand,
-                     grad_norm.item(), wall_clock_step_s]
+                     grad_norm.item(), rate_diag["rate_site_mean"],
+                     rate_diag["rate_site_p99"],
+                     rate_diag["flip_prob_site_p99"],
+                     rate_diag["flip_prob_clipped_frac"],
+                     float(target.sigma), optimiser.param_groups[0]["lr"],
+                     wall_clock_step_s]
                 )
                 log_file.flush()
 
@@ -248,10 +374,18 @@ def train(
                         "train/var_dt_log_p_tilde": var_dt_log_p_tilde,
                         "train/var_estimator_integrand": var_estimator_integrand,
                         "train/grad_norm": grad_norm.item(),
+                        "train/sigma_current": float(target.sigma),
+                        "train/lr_current": optimiser.param_groups[0]["lr"],
                         "train/wall_clock_step_s": wall_clock_step_s,
                     }
                     if step % eval_cfg.eval_every == 0:
                         log_dict["train/ess"] = ess_value
+                        log_dict.update(
+                            {
+                                f"train/{key}": value
+                                for key, value in rate_diag.items()
+                            }
+                        )
                     wandb.log(log_dict, step=step)
 
                 step += 1

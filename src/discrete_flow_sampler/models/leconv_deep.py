@@ -4,10 +4,11 @@ Reference: Holderrieth, Albergo & Jaakkola (2025), 'LEAPS: A discrete
 neural sampler via locally equivariant networks', papers/leaps.pdf,
 Section 9 + Figure 3 + Figure 7 (kernel-schedule ablation).
 
-Architecture (LEAPS Section 9):
-    h_0 = constant per-site, time-conditioned
+Architecture (LEAPS Section 9, with explicit DNFS time conditioning and
+optional hollow global context):
+    h_0(t) = constant per-site + time embedding
     for layer l in 1..L:
-        W_l = σ(A_l h_{l-1} + b_l) + c_l       # 1×1 conv (per-site channel-mix)
+        W_l = σ(A_l h_{l-1} + b_l) + c_l       # 1x1 conv (per-site channel-mix)
         h_l = k_t(W_l) * x                      # convolve ORIGINAL x with hollow kernel
     H = h_L
 
@@ -49,13 +50,11 @@ class LeConvDeepRateMatrix(nn.Module):
             For our D=10 the lattice-spanning 15 is overkill; (3, 5, 7, 9)
             keeps the wavelet structure within reach.
         hidden_dim: channel dim for embeddings + the per-layer state.
-            Implementation may use this directly as d_l for every layer
-            OR set d_l = kernel_schedule[l]² per layer (paper-faithful;
-            the latter is what makes A_l 1×1 conv reshape into a kernel).
-
-    USER FILLS IN:
-        - per-layer parameters in `__init__` (block marked below)
-        - the `compute_body` recurrence
+        use_global_context: if True, kernel generation at every site also
+            receives a leave-one-out global token summary. The summary for
+            site i averages all token embeddings except x_i, so it preserves
+            hollow-ness while giving the conv access to lattice-scale
+            magnetisation information.
 
     Tests in `tests/test_leconv_deep.py` encode the structural contract.
     """
@@ -68,6 +67,7 @@ class LeConvDeepRateMatrix(nn.Module):
         vocab_size: int,
         kernel_schedule: tuple[int, ...],
         hidden_dim: int,
+        use_global_context: bool = False,
     ):
         super().__init__()
         if not kernel_schedule:
@@ -80,6 +80,7 @@ class LeConvDeepRateMatrix(nn.Module):
         self.kernel_schedule = tuple(kernel_schedule)
         self.depth = len(self.kernel_schedule)
         self.hidden_dim = hidden_dim
+        self.use_global_context = use_global_context
 
         # Readout (paper-faithful, mirrors LeConvRateMatrix; see DNFS Prop. 2).
         self.token_embedder = nn.Embedding(vocab_size, hidden_dim)
@@ -89,11 +90,12 @@ class LeConvDeepRateMatrix(nn.Module):
         nn.init.kaiming_uniform_(self.token_embedder.weight, a=5 ** 0.5)
         nn.init.kaiming_uniform_(self.omega.weight, a=5 ** 0.5)
 
-        # h_0: spatially uniform learned constant (same hidden_dim vector at
-        # every site). The spatial uniformity makes layer 1's W_1 uniform
-        # across the lattice — i.e. layer 1 is a standard translation-
-        # equivariant hollow conv. Layers 2..L pick up spatial structure
-        # from h_{l-1} (which carries x's structure through prior convs).
+        # h_0: spatially uniform learned constant, shifted by the time
+        # embedding in compute_body. The spatial uniformity makes layer 1's
+        # W_1 uniform across the lattice — i.e. layer 1 is a standard
+        # translation-equivariant hollow conv. Layers 2..L pick up spatial
+        # structure from h_{l-1} while all kernel-generation layers can adapt
+        # across t.
         self.h_0 = nn.Parameter(torch.zeros(hidden_dim))
 
         # Per-layer 1×1 channel-mix into kernel weights. A_l projects
@@ -104,6 +106,8 @@ class LeConvDeepRateMatrix(nn.Module):
             nn.Conv2d(hidden_dim, k * k, kernel_size=1, bias=True)
             for k in self.kernel_schedule
         ])
+        if use_global_context:
+            self.global_context_proj = nn.Conv2d(hidden_dim, hidden_dim, kernel_size=1)
         # Post-σ offset c_l (LEAPS Section 9: W_l = σ(A_l h + b_l) + c_l).
         self.c = nn.ParameterList([
             nn.Parameter(torch.zeros(k * k))
@@ -117,11 +121,22 @@ class LeConvDeepRateMatrix(nn.Module):
             mask[k // 2, k // 2] = 0.0
             self.register_buffer(f"hollow_mask_{layer_idx}", mask)
 
+    def _leave_one_out_global_context(self, x_emb: Tensor) -> Tensor:
+        """Per-site global token summary excluding the site's own token.
+
+        `x_emb` has shape (B, h, D, D). The output at lattice site i is
+        mean({x_emb_j : j != i}), hence independent of x_i. This is the
+        global analogue of a hollow local neighbourhood.
+        """
+        n_sites = self.D * self.D
+        total = x_emb.sum(dim=(2, 3), keepdim=True)
+        return (total - x_emb) / max(n_sites - 1, 1)
+
     def compute_body(self, x: Tensor, t: Tensor) -> Tensor:
         """Pre-readout body H(x), shape (B, d, hidden_dim).
 
         LEAPS Section 9 recurrence:
-            h_0 = learned constant (spatially uniform, hidden_dim per site)
+            h_0(t) = learned constant + time embedding (spatially uniform)
             for l in 1..L:
                 W_l = σ(A_l · h_{l-1} + b_l) + c_l       # per-site 1×1, k_l² channels
                 W_l = reshape(W_l, k_l, k_l) * hollow_mask
@@ -129,7 +144,7 @@ class LeConvDeepRateMatrix(nn.Module):
             H = h_L
 
         Hollow-preservation through depth:
-            - h_0 is spatially uniform → independent of x.
+            - h_0(t) is spatially uniform and independent of x.
             - Inductive step: if h_{l-1}[r,s] is independent of x[r,s], then
               W_l[..., r, s] (built from h_{l-1}[r,s] via 1×1 channel-mix) is
               independent of x[r,s]. The conv with hollow kernel excludes the
@@ -142,16 +157,25 @@ class LeConvDeepRateMatrix(nn.Module):
         B = x_idx.shape[0]
         x_grid = x_idx.view(B, self.D, self.D)
         x_emb = self.token_embedder(x_grid).permute(0, 3, 1, 2)  # (B, h, D, D)
+        global_context = None
+        if self.use_global_context:
+            global_context = self.global_context_proj(
+                self._leave_one_out_global_context(x_emb)
+            )
 
         cond_t = self.time_embedder(t)                            # (B, h)
         x_in = x_emb + cond_t[:, :, None, None]                   # (B, h, D, D)
 
-        # h_0: spatially uniform — same hidden_dim vector at every site.
-        h = self.h_0.view(1, -1, 1, 1).expand(B, -1, self.D, self.D).contiguous()
+        # h_0(t): spatially uniform and time-conditioned. This preserves
+        # hollow-ness and translation equivariance because cond_t has no
+        # dependence on x and is shared across sites.
+        h = self.h_0[None, :, None, None] + cond_t[:, :, None, None]
+        h = h.expand(-1, -1, self.D, self.D).contiguous()
 
         for layer_idx, k_size in enumerate(self.kernel_schedule):
             # 1) Per-site channel-mix produces kernel weights of shape k_l².
-            kernel_weights = F.gelu(self.A[layer_idx](h))         # (B, k², D, D)
+            kernel_state = h if global_context is None else h + global_context
+            kernel_weights = F.gelu(self.A[layer_idx](kernel_state))  # (B, k², D, D)
             kernel_weights = kernel_weights + self.c[layer_idx].view(1, -1, 1, 1)
 
             # 2) Reshape to per-site (k, k) kernel and zero the center weight.
@@ -168,7 +192,7 @@ class LeConvDeepRateMatrix(nn.Module):
             x_unfold = x_padded.unfold(2, k_size, 1).unfold(3, k_size, 1)
             # x_unfold: (B, h, D, D, k, k)
 
-            # h_{l+1}[b, c, r, s] = Σ_{i,j} W[b, i, j, r, s] · x_unfold[b, c, r, s, i, j]
+            # h_{l+1}[b,c,r,s] = Σ_{i,j} W[b,i,j,r,s] * x_patch[b,c,r,s,i,j]
             h = torch.einsum("bijrs,bcrsij->bcrs", W, x_unfold)
 
         # (B, hidden_dim, D, D) -> (B, d, hidden_dim) flat-position layout.

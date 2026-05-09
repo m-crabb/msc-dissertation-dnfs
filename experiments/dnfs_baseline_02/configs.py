@@ -53,10 +53,12 @@ class TrainCfg:
     # multiple of inner_steps_per_outer.
     #
     # Reference: J-zin/DNFS main.py Ising config uses M=256, N=128,
-    # steps_per_epoch=100 (consulted 2026-05-08).
+    # steps_per_epoch=100, and a four-outer-batch replay buffer via
+    # DataBuffer(max_size=1024 // N) (consulted 2026-05-09).
     inner_steps_per_outer: int = 100
     outer_batch_size: int | None = None  # None -> falls back to batch_size
-    grad_clip_max_norm: float = 500.0  # transformer runs override to 1.0
+    replay_buffer_cycles: int = 1        # number of retained outer batches
+    grad_clip_max_norm: float = 500.0  # some transformer runs override this
 
 
 @dataclass(frozen=True)
@@ -80,23 +82,28 @@ class ModelCfg:
     n_layers: int = 3        # n_summands K for lemlp/leconv; Linear blocks for mlp
     kernel_size: int = 3     # leconv only; ignored elsewhere
     kernel_schedule: tuple[int, ...] = ()  # leconv_deep only; per-layer kernels
+    hollow_global_context: bool = False    # leconv_deep only
     n_heads: int = 4         # leTF only; ignored elsewhere
     vocab_size: int = 2
 
 
 @dataclass(frozen=True)
-class WarmupCfg:
-    """MDNS-style temperature warm-up (App D.2.4 of `papers/mdns.pdf`).
+class CurriculumStageCfg:
+    """Piecewise-constant training stage for near-critical curricula.
 
-    Linearly interpolates target.σ from `sigma` (warm-up start) to
-    `IsingCfg.sigma` (final) over `n_steps`, updating once per outer step.
-    After the ramp, σ is pinned to the final value. The original hard-swap
-    variant collapsed ESS at the boundary (stage_3 deep_warmup, stage_4
-    d10_critical, both 2026-05-09); the linear ramp removes that
-    discontinuity.
+    `start_step` must align with an outer-cycle boundary. `lr=None` leaves the
+    optimiser LR unchanged at that stage; otherwise all AdamW param groups are
+    updated before rebuilding the replay buffer.
     """
-    n_steps: int                              # multiple of inner_steps_per_outer
-    sigma: float                              # easier σ at ramp start
+
+    start_step: int
+    sigma: float
+    lr: float | None = None
+
+
+@dataclass(frozen=True)
+class CurriculumCfg:
+    stages: tuple[CurriculumStageCfg, ...]
 
 
 @dataclass(frozen=True)
@@ -108,7 +115,7 @@ class StageCfg:
     eval: EvalCfg
     model: ModelCfg
     estimator: Literal["naive_mc", "control_variate"]
-    warmup: WarmupCfg | None = None
+    curriculum: CurriculumCfg | None = None
 
 
 CONFIGS: dict[str, StageCfg] = {
@@ -208,14 +215,15 @@ CONFIGS: dict[str, StageCfg] = {
     # paper's leTF Ising experiment (Sec. E.1) at 64. Smaller capacity than
     # stage_2's leMLP (h=128/256); a comparable result would demonstrate
     # the parameter efficiency of translation-equivariant weight sharing.
-    # See docs/design/2026-05-08-leconv-stage-3-design.md.
     "stage_3_d4": StageCfg(
         name="stage_3_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
         train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2),
+        model=ModelCfg(
+            kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2
+        ),
         estimator="control_variate",
     ),
     "stage_3_d10": StageCfg(
@@ -224,7 +232,9 @@ CONFIGS: dict[str, StageCfg] = {
         train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2),
+        model=ModelCfg(
+            kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2
+        ),
         estimator="control_variate",
     ),
     # MARS V submission cell: 10x10 Ising at the critical temperature
@@ -237,7 +247,9 @@ CONFIGS: dict[str, StageCfg] = {
         train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2),
+        model=ModelCfg(
+            kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2
+        ),
         estimator="control_variate",
     ),
     # First d10_critical attempt collapsed in ESS (~5/256) at 14k steps despite
@@ -253,7 +265,9 @@ CONFIGS: dict[str, StageCfg] = {
         train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="leconv", hidden_dim=128, n_layers=3, kernel_size=7, vocab_size=2),
+        model=ModelCfg(
+            kind="leconv", hidden_dim=128, n_layers=3, kernel_size=7, vocab_size=2
+        ),
         estimator="control_variate",
     ),
     # LEAPS-style deep LEC at critical sigma. Reference: Holderrieth/Albergo/
@@ -275,15 +289,12 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         estimator="control_variate",
     ),
-    # MDNS-style temperature warm-up applied to the deep LEC config.
-    # Reference: Zhu et al. 2025, `papers/mdns.pdf` §4.1 + App D.2.4.
-    # MDNS reports LEAPS gets ESS=0.384 at L=16 β_critical without warm-up;
-    # MDNS itself reaches 0.933 with a warm-up at β_high. We test whether
-    # DNFS Algorithm 1 + deep LEC can lift its 5.41% σ_critical ESS by
-    # warming up at the paper's leTF-Fig.3 setting (σ=0.1) for 20k steps
-    # before continuing at σ_critical for the remaining 30k.
-    "stage_3_d10_critical_deep_warmup": StageCfg(
-        name="stage_3_d10_critical_deep_warmup",
+    # Same deep LEC recurrence, but with the full LEAPS Figure-7 depth-5
+    # schedule [3,5,7,9,15]. On a D=10 torus the k=15 layer is deliberately
+    # lattice-spanning. Future runs under these names also include the
+    # time-conditioned kernel state in LeConvDeepRateMatrix.compute_body.
+    "stage_3_d10_critical_deep_k15": StageCfg(
+        name="stage_3_d10_critical_deep_k15",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
         train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
@@ -291,11 +302,102 @@ CONFIGS: dict[str, StageCfg] = {
         model=ModelCfg(
             kind="leconv_deep",
             hidden_dim=64,
-            kernel_schedule=(3, 5, 7, 9),
+            kernel_schedule=(3, 5, 7, 9, 15),
             vocab_size=2,
         ),
         estimator="control_variate",
-        warmup=WarmupCfg(n_steps=20_000, sigma=0.1),
+    ),
+    "stage_3_d10_critical_deep_k15_replay4": StageCfg(
+        name="stage_3_d10_critical_deep_k15_replay4",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="leconv_deep",
+            hidden_dim=64,
+            kernel_schedule=(3, 5, 7, 9, 15),
+            vocab_size=2,
+        ),
+        estimator="control_variate",
+    ),
+    # Plateau curriculum for the deep conv critical run. A linear ramp keeps
+    # changing σ every outer cycle, which means the replay buffer is cleared
+    # every cycle and replay4 cannot help near the hard σ≈0.20-0.223 regime.
+    # This schedule gives each intermediate distribution a fixed plateau,
+    # then lowers LR once the near-critical variance spike begins.
+    "stage_3_d10_critical_deep_k15_curriculum_replay4": StageCfg(
+        name="stage_3_d10_critical_deep_k15_curriculum_replay4",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="leconv_deep",
+            hidden_dim=64,
+            kernel_schedule=(3, 5, 7, 9, 15),
+            vocab_size=2,
+        ),
+        estimator="control_variate",
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+                CurriculumStageCfg(start_step=30_000, sigma=0.22305, lr=3e-4),
+            )
+        ),
+    ),
+    # Same plateau schedule as above, but kernel generation receives a
+    # leave-one-out global token summary at each site. The summary excludes
+    # x_i, so the Prop. 2 readout remains locally equivariant while giving
+    # the conv path direct access to critical-scale magnetisation context.
+    "stage_3_d10_critical_deep_k15_curriculum_global_replay4": StageCfg(
+        name="stage_3_d10_critical_deep_k15_curriculum_global_replay4",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="leconv_deep",
+            hidden_dim=64,
+            kernel_schedule=(3, 5, 7, 9, 15),
+            hollow_global_context=True,
+            vocab_size=2,
+        ),
+        estimator="control_variate",
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+                CurriculumStageCfg(start_step=30_000, sigma=0.22305, lr=3e-4),
+            )
+        ),
     ),
     # Stage 4: leTF (Locally Equivariant Transformer, DNFS Sec 3.3 + App B.3).
     # Paper-faithful per App. E.1.1: 3 bidirectional causal layers, 4 heads,
@@ -303,16 +405,16 @@ CONFIGS: dict[str, StageCfg] = {
     # (10k steps) for the cross-architecture comparison plot at small d.
     # d10 cell mirrors Fig 3 / Fig 14 setup at 64 hidden / 50k steps;
     # d10_critical mirrors Table 2 row at sigma=0.22305 with 128 hidden /
-    # 100k steps. All three are fixed-sigma; warmup remains a recovery
-    # option if d10_critical cold-start diverges. See
-    # docs/design/2026-05-09-letf-stage-4-design.md.
+    # 100k steps.
     "stage_4_d4": StageCfg(
         name="stage_4_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
         train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2
+        ),
         estimator="control_variate",
     ),
     # Revised 2026-05-09 (second pass) after second-launch logs showed clip 1.0
@@ -326,20 +428,120 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_4_d10": StageCfg(
         name="stage_4_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=10.0),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            lr=3e-4,
+            seed=42,
+            grad_clip_max_norm=10.0,
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2
+        ),
         estimator="control_variate",
     ),
     "stage_4_d10_critical": StageCfg(
         name="stage_4_d10_critical",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=100_000, batch_size=128, lr=3e-4, seed=42, grad_clip_max_norm=10.0),
+        train=TrainCfg(
+            n_steps=100_000,
+            batch_size=128,
+            lr=3e-4,
+            seed=42,
+            grad_clip_max_norm=10.0,
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
         estimator="control_variate",
-        warmup=WarmupCfg(n_steps=20_000, sigma=0.1),
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=3e-4),
+                CurriculumStageCfg(start_step=20_000, sigma=0.170, lr=3e-4),
+                CurriculumStageCfg(start_step=40_000, sigma=0.205, lr=3e-4),
+                CurriculumStageCfg(start_step=60_000, sigma=0.22305, lr=3e-4),
+            )
+        ),
+    ),
+    # Paper-aligned leTF Ising cells for Table 2 / App E.1.1 debugging.
+    # The earlier `stage_4_d10` run intentionally used the smaller Fig. 3
+    # h=64 / 50k-step setting. The Table 2 Ising setup is larger and faster:
+    # h=128, 64 time steps, lr=1e-3, 200k steps, batch 128, outer M=256,
+    # and a four-outer-batch replay buffer. We keep a wide clip (500) rather
+    # than the current stage_4 clip=10 because W&B shows median pre-clip
+    # transformer norms well above 10; clip=10 turns lr=3e-4 into an
+    # effective ~5e-5 step on typical batches.
+    "stage_4_d10_paper": StageCfg(
+        name="stage_4_d10_paper",
+        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
+        train=TrainCfg(
+            n_steps=200_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+    ),
+    "stage_4_d10_critical_paper": StageCfg(
+        name="stage_4_d10_critical_paper",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(
+            n_steps=200_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+    ),
+    "stage_4_d10_critical_paper_curriculum": StageCfg(
+        name="stage_4_d10_critical_paper_curriculum",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(
+            n_steps=200_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=30_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=40_000, sigma=0.205, lr=1e-3),
+                CurriculumStageCfg(start_step=55_000, sigma=0.215, lr=5e-4),
+                CurriculumStageCfg(start_step=70_000, sigma=0.220, lr=5e-4),
+                CurriculumStageCfg(start_step=85_000, sigma=0.22305, lr=3e-4),
+            )
+        ),
     ),
 }

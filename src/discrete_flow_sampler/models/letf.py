@@ -2,14 +2,13 @@
 
 Paper: DNFS Sec. 3.3 + App. B.3 + Eq. 22 + App. E.1.1.
 
-Hollow Transformer (the architecture is post-consult; see design doc
-`docs/design/2026-05-09-letf-stage-4-design.md` § 8 for the consult log):
+Hollow Transformer:
 
     1. Embed x to (B, d, h). Compute cond_t = TimestepEmbedder(t) with
        shape (B, 1, h).
     2. fwd_in = cat([cond_t, x_emb], dim=1)   # (B, 1+d, h); cond_t at pos 0
     3. bwd_in = cat([cond_t, x_emb.flip(1)], dim=1)
-    4. fwd_x = fwd_stack(fwd_in)               # inclusive causal (j <= i)
+    4. fwd_x = fwd_stack(fwd_in)               # per-block pos + causal (j <= i)
     5. bwd_x = bwd_stack(bwd_in).flip(1)       # inclusive causal then flip back
     6. H_HTF = attention_readout(fwd_x, bwd_x, cond_t)   # (B, d, h), hollow
     7. G(tau, i | x) = (omega_tau - omega_{x_i})^T H_HTF[:, i, :]   (Eq. 22)
@@ -85,14 +84,21 @@ class _CausalBlock(nn.Module):
     helping gradient flow at depth and at long sequences.
     """
 
-    def __init__(self, hidden_dim: int, n_heads: int, ff_mult: int = 4):
+    def __init__(
+        self,
+        hidden_dim: int,
+        n_heads: int,
+        seq_len: int,
+        ff_mult: int = 4,
+    ):
         super().__init__()
         self.proj_in = nn.Linear(hidden_dim, hidden_dim)
+        self.pos_embed = nn.Parameter(torch.randn(seq_len, hidden_dim) * 1e-2)
         self.attn_block = _AttentionBlock(hidden_dim, n_heads, ff_mult)
 
     def forward(self, x: Tensor, attn_mask: Tensor) -> Tensor:
         x_in = x
-        x = self.proj_in(x)
+        x = self.proj_in(x) + self.pos_embed.unsqueeze(0)
         x = self.attn_block(x, attn_mask)
         return x + x_in
 
@@ -109,24 +115,36 @@ class CausalStack(nn.Module):
     AttentionReadout, this produces hollow output at every k of the
     d-output-space. See module docstring for the full hollow argument.
 
-    Each block has a per-block proj_in + raw-input skip (mirrors the
-    reference's CausalBlock topology) for stable gradient flow at depth.
+    Each block has a per-block proj_in, learned position embedding, and
+    raw-input skip (mirrors the reference's CausalBlock topology) for stable
+    gradient flow at depth.
 
     Args:
         hidden_dim: channel dimension for embeddings and Transformer hidden states.
         n_layers: number of _CausalBlocks in the stack.
         n_heads: number of attention heads. Must divide hidden_dim.
+        seq_len: sequence length, including the prepended cond_t token.
         ff_mult: feed-forward expansion factor (Vaswani 2017 default = 4).
     """
 
-    def __init__(self, hidden_dim: int, n_layers: int, n_heads: int, ff_mult: int = 4):
+    def __init__(
+        self,
+        hidden_dim: int,
+        n_layers: int,
+        n_heads: int,
+        seq_len: int,
+        ff_mult: int = 4,
+    ):
         super().__init__()
         if hidden_dim % n_heads != 0:
             raise ValueError(
                 f"hidden_dim {hidden_dim} not divisible by n_heads {n_heads}"
             )
         self.blocks = nn.ModuleList(
-            [_CausalBlock(hidden_dim, n_heads, ff_mult) for _ in range(n_layers)]
+            [
+                _CausalBlock(hidden_dim, n_heads, seq_len, ff_mult)
+                for _ in range(n_layers)
+            ]
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -156,12 +174,18 @@ class AttentionReadout(nn.Module):
                     M_R allows R-keys j >= i (upper triangle inclusive).
         H = (combined + softmax(scores) V_proj) + FFN(LN(...))      # (B, d, h)
 
-    The cond_t triple-injection (combined + all-keys + sliced inputs) follows
-    the J-zin reference. cond_t is independent of x, so it doesn't add
-    x-dependence -- doesn't break hollow.
+    The cond_t triple-injection (combined + all-keys + sliced inputs) and
+    per-head readout position embeddings follow the J-zin reference. They are
+    independent of x_i, so they don't break hollow-ness.
     """
 
-    def __init__(self, hidden_dim: int, n_heads: int, ff_mult: int = 4):
+    def __init__(
+        self,
+        hidden_dim: int,
+        n_heads: int,
+        data_dim: int,
+        ff_mult: int = 4,
+    ):
         super().__init__()
         if hidden_dim % n_heads != 0:
             raise ValueError(
@@ -169,7 +193,9 @@ class AttentionReadout(nn.Module):
             )
         self.hidden_dim = hidden_dim
         self.n_heads = n_heads
+        self.data_dim = data_dim
         self.d_k = hidden_dim // n_heads
+        self.pos_embed = nn.Parameter(torch.randn(data_dim, self.d_k) * 1e-2)
 
         self.norm_in = nn.LayerNorm(hidden_dim)
         self.q_proj = nn.Linear(hidden_dim, hidden_dim)
@@ -204,6 +230,10 @@ class AttentionReadout(nn.Module):
         Q = split_heads(Q, d)             # (B, n_heads, d, d_k)
         K = split_heads(K, 2 * d)         # (B, n_heads, 2d, d_k)
         V = split_heads(V, 2 * d)         # (B, n_heads, 2d, d_k)
+
+        pos = self.pos_embed.unsqueeze(0).unsqueeze(0)  # (1, 1, d, d_k)
+        Q = Q + pos
+        K = torch.cat([K[:, :, :d, :] + pos, K[:, :, d:, :] + pos], dim=2)
 
         scale = math.sqrt(self.d_k)
         scores = torch.matmul(Q, K.transpose(-1, -2)) / scale   # (B, n_heads, d, 2d)
@@ -271,15 +301,11 @@ class LeTFRateMatrix(nn.Module):
         self.token_embedder = nn.Embedding(vocab_size, hidden_dim)
         nn.init.kaiming_uniform_(self.token_embedder.weight, a=math.sqrt(5))
         self.time_embedder = TimestepEmbedder(hidden_dim)
-
-        # Learned positional embeddings, one per directional stack.
-        # Length 1+d covers the prepended cond_t token at position 0.
-        self.fwd_pos_embed = nn.Parameter(torch.randn(1 + d, hidden_dim) * 1e-2)
-        self.bwd_pos_embed = nn.Parameter(torch.randn(1 + d, hidden_dim) * 1e-2)
-
-        self.fwd_stack = CausalStack(hidden_dim, n_layers, n_heads)
-        self.bwd_stack = CausalStack(hidden_dim, n_layers, n_heads)
-        self.attention_readout = AttentionReadout(hidden_dim, n_heads)
+        seq_len = 1 + d
+        self.fwd_stack = CausalStack(hidden_dim, n_layers, n_heads, seq_len)
+        self.bwd_stack = CausalStack(hidden_dim, n_layers, n_heads, seq_len)
+        self.attention_readout = AttentionReadout(hidden_dim, n_heads, d)
+        self.output_norm = nn.LayerNorm(hidden_dim)
 
         self.omega = nn.Embedding(vocab_size, hidden_dim)
         nn.init.kaiming_uniform_(self.omega.weight, a=math.sqrt(5))
@@ -294,17 +320,16 @@ class LeTFRateMatrix(nn.Module):
         cond_t = self.time_embedder(t).unsqueeze(1)     # (B, 1, h)
 
         fwd_in = torch.cat([cond_t, x_emb], dim=1)      # (B, 1+d, h)
-        fwd_in = fwd_in + self.fwd_pos_embed.unsqueeze(0)
         fwd_x = self.fwd_stack(fwd_in)                  # (B, 1+d, h)
 
         bwd_in = torch.cat([cond_t, x_emb.flip(1)], dim=1)
-        bwd_in = bwd_in + self.bwd_pos_embed.unsqueeze(0)
         bwd_x = self.bwd_stack(bwd_in).flip(1)          # (B, 1+d, h)
 
         return self.attention_readout(fwd_x, bwd_x, cond_t)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         H = self.compute_body(x, t)
+        H = self.output_norm(H) + self.time_embedder(t).unsqueeze(1)
         x_idx = ((x + 1) / 2).long()
         omega_all = self.omega.weight                    # (S, h)
         omega_xi = self.omega(x_idx)                     # (B, d, h)

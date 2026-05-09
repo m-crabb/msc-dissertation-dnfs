@@ -11,7 +11,9 @@ curl -fsSL https://pixi.sh/install.sh | sh   # macOS / Linux
 # or see https://pixi.sh/latest/#installation for other platforms
 ```
 
-The lockfile (`pixi.lock`) is **not** committed — `pixi install` resolves dependencies fresh from the version ranges in `pyproject.toml` on each new clone. Supported platforms are `linux-64` and `osx-arm64`; other platforms fail at the resolve step.
+The lockfile (`pixi.lock`) is committed, so installs resolve against the
+same dependency set used for the Modal runs. Supported platforms are
+`linux-64` and `osx-arm64`; other platforms fail at the resolve step.
 
 ```bash
 pixi install            # resolve and install the default environment
@@ -27,7 +29,7 @@ pixi run -e dev test    # smoke-test the dev environment
 
 ## Layout
 
-- `src/discrete_flow_sampler/` — library code: `targets/`, `mcmc/`, `models/`, `samplers/`, `diagnostics/`, `constraints/`, `utils/`
+- `src/discrete_flow_sampler/` — library code: `targets/`, `mcmc/`, `models/`, `samplers/`, `diagnostics/`, `constraints/`
 - `experiments/` — numbered experiment dirs in `<name>_NN` form (Python module identifiers can't begin with a digit)
 - `notebooks/` — exploratory and tutorial notebooks
 - `tests/` — pytest suite (run via `pixi run -e dev test`)

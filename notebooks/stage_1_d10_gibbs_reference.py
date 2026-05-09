@@ -1,9 +1,8 @@
 """Long Gibbs chain at D=10, σ=0.1 — reference samples for Stage 1's d10 verdict.
 
-Plan step 3 of `docs/plans/2026-05-05-dnfs-stage-1-vanilla.md`. Generates 5000
-independent final-state samples via single-spin-flip heat-bath, used as the
-ground-truth for the energy-histogram comparison vs DNFS samples (the headline
-verdict figure for Stage 1's D=10 sampler claim).
+Generates 5000 independent final-state samples via single-spin-flip heat-bath,
+used as the ground-truth for the energy-histogram comparison vs DNFS samples
+(the headline verdict figure for Stage 1's D=10 sampler claim).
 
 Mixing is verified two ways before the canonical samples are saved:
 
@@ -108,7 +107,7 @@ def main() -> None:
     print(f"  ⟨log p̃⟩ random init:   {mean_lp_random:+.4f}")
     print(f"  ⟨log p̃⟩ all-up init:    {mean_lp_up:+.4f}")
     print(f"  abs diff:                {abs(mean_lp_random - mean_lp_up):.4f}")
-    print(f"  trace plateau (last 20% sweep window, random init):")
+    print("  trace plateau (last 20% sweep window, random init):")
     plateau_window = trace_random[-trace_random.shape[0] // 5:].mean(-1)
     print(f"    mean {plateau_window.mean().item():+.4f}, "
           f"std across window {plateau_window.std().item():.4f}")

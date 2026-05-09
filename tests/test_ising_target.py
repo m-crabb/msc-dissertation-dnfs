@@ -1,5 +1,4 @@
 import torch
-import pytest
 
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -78,9 +77,8 @@ def test_periodic_boundary():
 def test_set_sigma_matches_fresh_target():
     """set_sigma swaps σ in place; resulting target equals one built at the new σ.
 
-    Used for MDNS-style temperature warm-up (App D.2.4 of the MDNS paper):
-    train at an easier σ, then mutate to the harder σ mid-training without
-    rebuilding model/optimizer state.
+    Used by temperature curricula to move through easier intermediate
+    targets without rebuilding model or optimizer state.
     """
     swapped = IsingTarget(D=4, sigma=0.1)
     swapped.set_sigma(0.5)

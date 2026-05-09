@@ -23,6 +23,7 @@ def _make_model(
     kernel_schedule: tuple[int, ...] = (3, 3),
     hidden_dim: int = 8,
     seed: int = 42,
+    use_global_context: bool = False,
 ) -> LeConvDeepRateMatrix:
     torch.manual_seed(seed)
     model = LeConvDeepRateMatrix(
@@ -30,6 +31,7 @@ def _make_model(
         vocab_size=vocab_size,
         kernel_schedule=kernel_schedule,
         hidden_dim=hidden_dim,
+        use_global_context=use_global_context,
     )
     model.eval()
     return model
@@ -135,17 +137,73 @@ def test_accepts_both_spin_and_index_input():
     )
 
 
+def test_kernel_generation_state_depends_on_time():
+    """The first generated kernel is conditioned on t, not only on a constant h_0."""
+    D, vocab_size = 3, 2
+    model = _make_model(D=D, vocab_size=vocab_size)
+
+    captured: list[torch.Tensor] = []
+
+    def capture_input(_module, inputs):
+        captured.append(inputs[0].detach().clone())
+
+    handle = model.A[0].register_forward_pre_hook(capture_input)
+    try:
+        x = torch.randint(0, vocab_size, (1, D * D))
+        model.compute_body(x, torch.tensor([0.1]))
+        model.compute_body(x, torch.tensor([0.9]))
+    finally:
+        handle.remove()
+
+    diff = (captured[0] - captured[1]).abs().max().item()
+    assert diff > 1e-6, "first-layer kernel state is independent of time"
+
+
+def test_hollow_global_context_preserves_structural_contracts():
+    """Leave-one-out global context is hollow and translation equivariant."""
+    D, vocab_size = 4, 2
+    d = D * D
+    model = _make_model(
+        D=D,
+        vocab_size=vocab_size,
+        kernel_schedule=(3, 5),
+        use_global_context=True,
+    )
+
+    x_grid = torch.randint(0, vocab_size, (1, D, D))
+    x_flat = x_grid.flatten(start_dim=1)
+    t = torch.rand(1)
+    H = model.compute_body(x_flat, t)
+
+    for i in range(d):
+        x_flipped = x_flat.clone()
+        x_flipped[0, i] = (x_flipped[0, i].item() + 1) % vocab_size
+        H_flipped = model.compute_body(x_flipped, t)
+        diff = (H[0, i] - H_flipped[0, i]).abs().max().item()
+        assert diff < 1e-6, (
+            f"hollow global context depends on x_i at site {i}: {diff:.2e}"
+        )
+
+    h_dim = H.shape[-1]
+    H_grid = H.reshape(1, D, D, h_dim).permute(0, 3, 1, 2)
+    x_shifted = torch.roll(x_grid, shifts=(1, 2), dims=(-2, -1))
+    H_shifted = model.compute_body(x_shifted.flatten(start_dim=1), t)
+    H_shifted_grid = H_shifted.reshape(1, D, D, h_dim).permute(0, 3, 1, 2)
+    H_grid_rolled = torch.roll(H_grid, shifts=(1, 2), dims=(-2, -1))
+    assert torch.allclose(H_grid_rolled, H_shifted_grid, atol=1e-5)
+
+
 def test_varied_kernel_schedule_runs():
-    """Depth-3 model with [3,5,7] kernels runs forward and emits correct shape.
+    """Depth-5 model with [3,5,7,9,15] kernels runs forward with correct shape.
 
     This is the LEAPS Figure 7 pattern (theirs: [5,7,15] for depth 3,
-    [3,5,7,9,15] for depth 5 on a 15×15 lattice). We test the
-    multi-scale schedule runs end-to-end with the right output shape.
+    [3,5,7,9,15] for depth 5 on a 15×15 lattice). We test the depth-5
+    multi-scale schedule end-to-end on the D=10 torus used by our runs.
     """
-    D, vocab_size = 8, 2
+    D, vocab_size = 10, 2
     model = _make_model(
         D=D, vocab_size=vocab_size,
-        kernel_schedule=(3, 5, 7), hidden_dim=16,
+        kernel_schedule=(3, 5, 7, 9, 15), hidden_dim=16,
     )
     x = torch.randint(0, vocab_size, (2, D * D))
     t = torch.rand(2)

@@ -179,7 +179,7 @@ def test_compute_c_t_grid_unknown_mode_raises():
 
 
 def test_control_variate_reduces_variance_vs_naive_mc():
-    """K=200 paired replicates after a brief naive_mc training warmup.
+    """K=200 paired replicates after brief naive_mc pretraining.
 
     The variance-reduction identity (paper Eq. 8) holds asymptotically as
     R_t approaches Kolmogorov-satisfying; with a fresh-init random MLP

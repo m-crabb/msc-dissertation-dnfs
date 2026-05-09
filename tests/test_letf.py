@@ -1,4 +1,4 @@
-"""Tests for the Locally Equivariant Transformer (DNFS Eq. 22, App B.3 + reference consult).
+"""Tests for the Locally Equivariant Transformer.
 
 Four correctness pillars:
 1. CausalStack inclusive-causal masking - perturbing input position i changes
@@ -16,6 +16,7 @@ stacks, so an isolated readout test feeding arbitrary tensors is over-strict.
 The full-pipeline hollow test in pillar 2 is the right level of granularity.
 """
 import torch
+import torch.nn as nn
 
 from discrete_flow_sampler.models.letf import CausalStack, LeTFRateMatrix
 
@@ -25,7 +26,7 @@ def test_causal_stack_inclusive_causal():
     positions < i unchanged; outputs at positions >= i may change.
     """
     torch.manual_seed(0)
-    stack = CausalStack(hidden_dim=8, n_layers=2, n_heads=2)
+    stack = CausalStack(hidden_dim=8, n_layers=2, n_heads=2, seq_len=6)
     stack.eval()
 
     B, seq_len, h = 1, 6, 8
@@ -45,7 +46,8 @@ def test_causal_stack_inclusive_causal():
     diff_after = (out[0, i:] - out_pert[0, i:]).abs().max().item()
     assert diff_after > 1e-3, (
         f"Trivial stack: outputs at pos >= i={i} unchanged (diff={diff_after:.2e}); "
-        f"layer is acting as identity on the perturbation, suggesting attention is broken"
+        "layer is acting as identity on the perturbation, suggesting attention "
+        "is broken"
     )
 
 
@@ -87,7 +89,7 @@ def test_compute_body_hollow():
 
 
 def test_local_equivariance_random_init():
-    """Eq. 20: G(tau, i | x) + G(x_i, i | Swap(x, i, tau)) ~= 0 for all i, tau != x_i."""
+    """Eq. 20 antisymmetry holds for every non-self transition."""
     d, vocab_size = 9, 2
     model = _make_model(d=d, vocab_size=vocab_size)
 
@@ -125,3 +127,15 @@ def test_accepts_both_spin_and_index_input():
         f"Output differs between spin/index input: "
         f"max diff = {(G_idx - G_spin).abs().max().item():.2e}"
     )
+
+
+def test_reference_fidelity_components_present():
+    """Pins reference-matching leTF details that materially affected D=10 runs."""
+    d, vocab_size, hidden_dim, n_heads = 9, 2, 8, 2
+    model = _make_model(d=d, vocab_size=vocab_size)
+
+    for block in list(model.fwd_stack.blocks) + list(model.bwd_stack.blocks):
+        assert block.pos_embed.shape == (1 + d, hidden_dim)
+
+    assert model.attention_readout.pos_embed.shape == (d, hidden_dim // n_heads)
+    assert isinstance(model.output_norm, nn.LayerNorm)
