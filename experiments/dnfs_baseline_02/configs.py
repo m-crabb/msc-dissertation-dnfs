@@ -295,11 +295,22 @@ CONFIGS: dict[str, StageCfg] = {
     ),
     # Stage 4: leTF (Locally Equivariant Transformer, DNFS Sec 3.3 + App B.3).
     # Paper-faithful per App. E.1.1: 3 bidirectional causal layers, 4 heads,
-    # AdamW + lr 1e-3 + batch size 128. d10 cell mirrors Fig 3 / Fig 14
-    # setup at 64 hidden / 50k steps; d10_critical mirrors Table 2 row at
-    # sigma=0.22305 with 128 hidden / 100k steps. Both fixed-sigma; warmup
-    # remains a recovery option if d10_critical cold-start diverges. See
+    # AdamW + lr 1e-3 + batch size 128. d4 cell mirrors stage_3_d4's budget
+    # (10k steps) for the cross-architecture comparison plot at small d.
+    # d10 cell mirrors Fig 3 / Fig 14 setup at 64 hidden / 50k steps;
+    # d10_critical mirrors Table 2 row at sigma=0.22305 with 128 hidden /
+    # 100k steps. All three are fixed-sigma; warmup remains a recovery
+    # option if d10_critical cold-start diverges. See
     # docs/design/2026-05-09-letf-stage-4-design.md.
+    "stage_4_d4": StageCfg(
+        name="stage_4_d4",
+        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+    ),
     "stage_4_d10": StageCfg(
         name="stage_4_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
