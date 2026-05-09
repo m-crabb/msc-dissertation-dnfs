@@ -207,9 +207,13 @@ def train(
         )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Warm-up: target starts at the easier σ; train_loop swaps to cfg.ising.sigma
+    # at warmup.n_steps. End-of-run eval and downstream artefacts use the
+    # final σ (post-swap), matching the σ recorded in cfg.ising.
+    target_sigma_init = cfg.warmup.sigma if cfg.warmup is not None else cfg.ising.sigma
     target = IsingTarget(
         D=cfg.ising.D,
-        sigma=cfg.ising.sigma,
+        sigma=target_sigma_init,
         bias=cfg.ising.bias,
         device=device,
     )
@@ -224,6 +228,8 @@ def train(
         output_dir=run_dir,
         use_wandb=use_wandb,
         estimator_mode=cfg.estimator,
+        warmup_n_steps=cfg.warmup.n_steps if cfg.warmup is not None else 0,
+        target_sigma_final=cfg.ising.sigma if cfg.warmup is not None else None,
     )
 
     # End-of-run eval: a final batch of (samples, IS log-weights) over the

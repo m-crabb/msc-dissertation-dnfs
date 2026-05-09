@@ -141,6 +141,61 @@ def test_train_naive_mc_mode_runs(tmp_path):
     assert all(loss == loss for loss in losses), "training log has NaN losses"
 
 
+def test_train_warmup_swaps_target_sigma_at_boundary(tmp_path):
+    """Target σ swaps from warm-up value to final value at warmup_n_steps.
+
+    Pins the MDNS-style temperature warm-up: target initialised at warm-up σ,
+    train_loop calls target.set_sigma(target_sigma_final) at the chosen
+    inner-step boundary. Boundary aligns with inner_steps_per_outer so the
+    replay buffer is rebuilt with the new σ on the next outer cycle.
+    """
+    torch.manual_seed(0)
+    target = IsingTarget(D=2, sigma=0.1)
+    n_sites = target.D * target.D
+    model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
+
+    train_cfg = _tiny_train_cfg(
+        n_steps=20, inner_steps_per_outer=10,
+        batch_size=8, outer_batch_size=8,
+    )
+    ctmc_cfg = SimpleNamespace(n_euler_steps=4)
+    eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
+
+    train(
+        model=model, target=target,
+        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
+        output_dir=tmp_path, use_wandb=False,
+        estimator_mode="control_variate",
+        warmup_n_steps=10, target_sigma_final=0.5,
+    )
+
+    assert target.sigma == 0.5
+
+
+def test_train_no_warmup_leaves_target_sigma_unchanged(tmp_path):
+    """Default `warmup_n_steps=0` is a no-op: target.σ stays at its init value."""
+    torch.manual_seed(0)
+    target = IsingTarget(D=2, sigma=0.1)
+    n_sites = target.D * target.D
+    model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
+
+    train_cfg = _tiny_train_cfg(
+        n_steps=20, inner_steps_per_outer=10,
+        batch_size=8, outer_batch_size=8,
+    )
+    ctmc_cfg = SimpleNamespace(n_euler_steps=4)
+    eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
+
+    train(
+        model=model, target=target,
+        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
+        output_dir=tmp_path, use_wandb=False,
+        estimator_mode="control_variate",
+    )
+
+    assert target.sigma == 0.1
+
+
 def test_train_outer_batch_size_falls_back_to_batch_size(tmp_path):
     """When `outer_batch_size=None`, the outer trajectory uses
     `batch_size` -- a non-breaking default that lets existing configs

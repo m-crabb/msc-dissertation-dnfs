@@ -83,6 +83,18 @@ class ModelCfg:
 
 
 @dataclass(frozen=True)
+class WarmupCfg:
+    """MDNS-style temperature warm-up (App D.2.4 of `papers/mdns.pdf`).
+
+    Train at `sigma` for `n_steps` first, then swap target.σ to
+    `IsingCfg.sigma` (the final, harder σ) for the remaining steps. The
+    swap is pinned to a replay-buffer rebuild boundary in `samplers.training`.
+    """
+    n_steps: int                              # multiple of inner_steps_per_outer
+    sigma: float                              # easier σ for the warm-up phase
+
+
+@dataclass(frozen=True)
 class StageCfg:
     name: str
     ising: IsingCfg
@@ -91,6 +103,7 @@ class StageCfg:
     eval: EvalCfg
     model: ModelCfg
     estimator: Literal["naive_mc", "control_variate"]
+    warmup: WarmupCfg | None = None
 
 
 CONFIGS: dict[str, StageCfg] = {
@@ -256,5 +269,27 @@ CONFIGS: dict[str, StageCfg] = {
             vocab_size=2,
         ),
         estimator="control_variate",
+    ),
+    # MDNS-style temperature warm-up applied to the deep LEC config.
+    # Reference: Zhu et al. 2025, `papers/mdns.pdf` §4.1 + App D.2.4.
+    # MDNS reports LEAPS gets ESS=0.384 at L=16 β_critical without warm-up;
+    # MDNS itself reaches 0.933 with a warm-up at β_high. We test whether
+    # DNFS Algorithm 1 + deep LEC can lift its 5.41% σ_critical ESS by
+    # warming up at the paper's leTF-Fig.3 setting (σ=0.1) for 20k steps
+    # before continuing at σ_critical for the remaining 30k.
+    "stage_3_d10_critical_deep_warmup": StageCfg(
+        name="stage_3_d10_critical_deep_warmup",
+        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
+        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="leconv_deep",
+            hidden_dim=64,
+            kernel_schedule=(3, 5, 7, 9),
+            vocab_size=2,
+        ),
+        estimator="control_variate",
+        warmup=WarmupCfg(n_steps=20_000, sigma=0.1),
     ),
 }

@@ -73,3 +73,21 @@ def test_periodic_boundary():
     assert target.J[0, 12].item() != 0.0
     # similarly (0,0) and (0,3) → 0 and 3
     assert target.J[0, 3].item() != 0.0
+
+
+def test_set_sigma_matches_fresh_target():
+    """set_sigma swaps σ in place; resulting target equals one built at the new σ.
+
+    Used for MDNS-style temperature warm-up (App D.2.4 of the MDNS paper):
+    train at an easier σ, then mutate to the harder σ mid-training without
+    rebuilding model/optimizer state.
+    """
+    swapped = IsingTarget(D=4, sigma=0.1)
+    swapped.set_sigma(0.5)
+    fresh = IsingTarget(D=4, sigma=0.5)
+
+    assert swapped.sigma == 0.5
+    torch.testing.assert_close(swapped.J, fresh.J)
+
+    x = torch.randint(0, 2, (8, 16)).float() * 2 - 1
+    torch.testing.assert_close(swapped.log_prob(x), fresh.log_prob(x))

@@ -62,7 +62,18 @@ class IsingTarget:
 
         # symmetrise so the matrix is symmetric (undirected edges)
         A = A + A.T
+        self.A = A                    # kept for `set_sigma` rescaling
         self.J = self.sigma * A
+
+    def set_sigma(self, sigma: float) -> None:
+        """Mutate σ in place; rescales J = σ · A.
+
+        Used for MDNS-style temperature warm-up (App D.2.4): train at an
+        easier σ first, then swap to the harder target σ without rebuilding
+        the model or optimizer state.
+        """
+        self.sigma = sigma
+        self.J = sigma * self.A
 
     def log_prob(self, x: Tensor) -> Tensor:
         """Un-normalised target log-density.
