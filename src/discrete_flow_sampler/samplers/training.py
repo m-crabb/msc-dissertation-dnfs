@@ -26,6 +26,7 @@ Eval: existing full t=0->1 IS-trajectory + ESS, gated on the inner-step
 counter so `eval_every` keeps its meaning.
 """
 import csv
+import json
 import time
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.samplers.log_z_estimators import compute_c_t_grid
+from discrete_flow_sampler.seeding import seed_everything
 
 
 def _append_replay_buffer(
@@ -174,7 +176,7 @@ def train(
     ckpt_dir = output_dir / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
 
-    torch.manual_seed(train_cfg.seed)
+    seed_everything(train_cfg.seed)
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=train_cfg.lr, weight_decay=1e-4
     )
@@ -223,6 +225,40 @@ def train(
         x_replay_chunks: list[torch.Tensor] = []
         t_idx_replay_chunks: list[torch.Tensor] = []
         replay_sigma = float(target.sigma)
+        current_intended_lr = float(train_cfg.lr)
+        warmup_steps = int(getattr(train_cfg, "warmup_steps", 0))
+
+        # Pre-training stiff-sampler / init-basin diagnostic. Computed at t=0
+        # before the first optimiser step; RNG state is saved and restored so
+        # the diagnostic does not perturb training-trajectory randomness.
+        # The logged `flip_prob_clipped_frac` here is the only place the
+        # init-time stiffness signal is captured -- the in-loop diagnostic
+        # only ever sees the post-first-update model.
+        rng_state_cpu = torch.get_rng_state()
+        rng_state_cuda = (
+            torch.cuda.get_rng_state() if torch.cuda.is_available() else None
+        )
+        with torch.no_grad():
+            x_diag = (
+                torch.randint(0, 2, (outer_batch, n_dims), device=device)
+                .float() * 2 - 1
+            )
+            t_diag = torch.zeros(outer_batch, device=device)
+            init_diag = _rate_diagnostics(
+                model, x_diag, t_diag,
+                step_dt=1.0 / max(n_grid - 1, 1),
+            )
+        torch.set_rng_state(rng_state_cpu)
+        if rng_state_cuda is not None:
+            torch.cuda.set_rng_state(rng_state_cuda)
+        (output_dir / "init_diagnostics.json").write_text(
+            json.dumps(init_diag, indent=2)
+        )
+        if use_wandb:
+            wandb.log(
+                {f"init/{k}": v for k, v in init_diag.items()}, step=0
+            )
+
         for outer in range(n_outer):
             # Update σ before rebuilding the buffer so inner-step samples are
             # consistent with the σ they will be trained against. Curriculum
@@ -237,6 +273,7 @@ def train(
                     target.set_sigma(sigma_now)
                     if lr_now is not None:
                         _set_optimizer_lr(optimiser, lr_now)
+                        current_intended_lr = float(lr_now)
                     if sigma_now != replay_sigma:
                         _clear_replay(x_replay_chunks, t_idx_replay_chunks)
                         replay_sigma = sigma_now
@@ -301,6 +338,20 @@ def train(
 
             for _inner in range(inner_steps_per_outer):
                 step_start = time.time()
+
+                # LR warmup: linearly ramp from 0 to current_intended_lr over
+                # the first `warmup_steps` inner updates. Applied multiplicatively
+                # so it composes with curriculum LR transitions. Targets the
+                # early-training regime where random init can emit high-magnitude
+                # rates that destabilise the first few optimiser steps.
+                if warmup_steps > 0:
+                    if step < warmup_steps:
+                        warmup_scale = (step + 1) / warmup_steps
+                        _set_optimizer_lr(
+                            optimiser, current_intended_lr * warmup_scale
+                        )
+                    elif step == warmup_steps:
+                        _set_optimizer_lr(optimiser, current_intended_lr)
 
                 # INNER STEP -- N uniform draws from buffer (paper line 7).
                 sample_idx = torch.randint(

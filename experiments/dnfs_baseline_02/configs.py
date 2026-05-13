@@ -38,6 +38,8 @@ class IsingCfg:
     D: int = 10
     sigma: float = 0.1
     bias: float = 0.0
+    target_composition: float | None = None
+    composition_penalty_strength: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,7 @@ class TrainCfg:
     outer_batch_size: int | None = None  # None -> falls back to batch_size
     replay_buffer_cycles: int = 1        # number of retained outer batches
     grad_clip_max_norm: float = 500.0  # some transformer runs override this
+    warmup_steps: int = 0                # linear LR warmup over first N inner steps; 0 = off
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,7 @@ class StageCfg:
     model: ModelCfg
     estimator: Literal["naive_mc", "control_variate"]
     curriculum: CurriculumCfg | None = None
+    wandb_project: str = "dnfs-baseline"
 
 
 CONFIGS: dict[str, StageCfg] = {
@@ -130,7 +134,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d4": StageCfg(
         name="stage_0_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -139,7 +143,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d10": StageCfg(
         name="stage_0_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3, vocab_size=2),
@@ -152,7 +156,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d4_cv": StageCfg(
         name="stage_0_d4_cv",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -161,7 +165,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d10_cv": StageCfg(
         name="stage_0_d10_cv",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3, vocab_size=2),
@@ -172,7 +176,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_1_d4": StageCfg(
         name="stage_1_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -181,7 +185,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_1_d10": StageCfg(
         name="stage_1_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
@@ -192,7 +196,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_2_d4": StageCfg(
         name="stage_2_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -201,11 +205,47 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_2_d10": StageCfg(
         name="stage_2_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
         estimator="control_variate",
+    ),
+    # First soft-composition constraint prototypes. The target is modified as
+    # log p_lambda(x) = log p_base(x) - lambda * d * (c_+(x) - c_target)^2.
+    # These use the stable stage_2 leMLP/control-variate stack before spending
+    # attention/conv budget on the constrained target.
+    "constrained_stage_2_d4_c03_l50": StageCfg(
+        name="constrained_stage_2_d4_c03_l50",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.3,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "constrained_stage_2_d10_c03_l50": StageCfg(
+        name="constrained_stage_2_d10_c03_l50",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.3,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=100),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
     ),
     # Stage 3: leConv (locally equivariant 2D conv with hollow zero-centre
     # kernel, K parallel summands) + control variate. Translation symmetry
@@ -218,7 +258,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d4": StageCfg(
         name="stage_3_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
@@ -229,7 +269,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d10": StageCfg(
         name="stage_3_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
@@ -244,7 +284,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d10_critical": StageCfg(
         name="stage_3_d10_critical",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
@@ -262,7 +302,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d10_critical_big": StageCfg(
         name="stage_3_d10_critical_big",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
@@ -278,7 +318,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d10_critical_deep": StageCfg(
         name="stage_3_d10_critical_deep",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
@@ -296,7 +336,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d10_critical_deep_k15": StageCfg(
         name="stage_3_d10_critical_deep_k15",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
@@ -409,7 +449,7 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_4_d4": StageCfg(
         name="stage_4_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, lr=1e-3, seed=42),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
@@ -417,6 +457,10 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         estimator="control_variate",
     ),
+    # Legacy/debug subcritical leTF config. Kept as a diagnostic point for the
+    # earlier cautious stack (smaller h, replay1, tight clip), not as the final
+    # Stage 4 comparison row; use `stage_4_d10_budget` for that.
+    #
     # Revised 2026-05-09 (second pass) after second-launch logs showed clip 1.0
     # was choking learning: pre-clip grad norms ran 100-200 → effective LR
     # ≈ 2e-6, ESS plateaued at ~2%. Stack now: (1) grad clip 10.0 (still
@@ -431,6 +475,7 @@ CONFIGS: dict[str, StageCfg] = {
         train=TrainCfg(
             n_steps=50_000,
             batch_size=128,
+            replay_buffer_cycles=8,
             lr=3e-4,
             seed=42,
             grad_clip_max_norm=10.0,
@@ -442,12 +487,36 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         estimator="control_variate",
     ),
+    # Canonical subcritical leTF comparison run. This keeps the paper-aligned
+    # architecture/training stack from `stage_4_d10_paper`, but caps the
+    # budget at 50k steps so it is comparable to the stage_3_d10 leConv run.
+    "stage_4_d10_budget": StageCfg(
+        name="stage_4_d10_budget",
+        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=500,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+    ),
     "stage_4_d10_critical": StageCfg(
         name="stage_4_d10_critical",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
         train=TrainCfg(
             n_steps=100_000,
             batch_size=128,
+            replay_buffer_cycles=8,
             lr=3e-4,
             seed=42,
             grad_clip_max_norm=10.0,
@@ -486,6 +555,31 @@ CONFIGS: dict[str, StageCfg] = {
             lr=1e-3,
             seed=42,
             grad_clip_max_norm=500.0,
+            warmup_steps=500,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+    ),
+    # 10k-step probe of stage_4_d10_paper with LR warmup enabled. Used for
+    # the 4-seed gate (42/43/44/45) measuring whether warmup recovers the
+    # init-basin sensitivity exposed by adding seed_everything. See
+    # docs/findings/2026-05-13-letf-init-basin.md.
+    "stage_4_d10_paper_probe_warmup": StageCfg(
+        name="stage_4_d10_paper_probe_warmup",
+        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
+        train=TrainCfg(
+            n_steps=10_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=500,
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
