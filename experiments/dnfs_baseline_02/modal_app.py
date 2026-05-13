@@ -135,3 +135,15 @@ def batch_configs(configs: str = "", seed: int = 42):
     for cfg in cfg_list:
         train_remote.spawn(cfg_name=cfg, seed=seed)
     print(f"spawned {len(cfg_list)} jobs: {cfg_list}")
+
+
+@app.local_entrypoint()
+def batch_seeds(cfg_name: str, seeds: str = "42"):
+    """Spawn one config across multiple seeds in parallel.
+
+    Example: `--cfg-name stage_4_d10_paper_probe_warmup --seeds "42,43,44,45"`.
+    """
+    seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    for seed in seed_list:
+        train_remote.spawn(cfg_name=cfg_name, seed=seed)
+    print(f"spawned {len(seed_list)} jobs: cfg={cfg_name}, seeds={seed_list}")
