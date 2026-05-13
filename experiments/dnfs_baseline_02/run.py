@@ -23,6 +23,7 @@ import torch
 from experiments.dnfs_baseline_02.configs import CONFIGS
 
 from discrete_flow_sampler.diagnostics.metrics import (
+    composition_observables,
     entropy_estimate,
     ess_from_log_weights,
     exact_free_energy,
@@ -33,6 +34,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.training import train as train_loop
+from discrete_flow_sampler.seeding import seed_everything
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 # State-count cutoff for exact-enumeration "Optimal Value" references at
@@ -139,6 +141,15 @@ def _compute_eval_metrics(
         "entropy_per_site": float(S_hat.item()),
     }
     metrics["ess_fraction"] = metrics["ess"] / metrics["n_eval_samples"]
+    metrics.update(
+        composition_observables(
+            eval_samples,
+            target_composition=getattr(target, "target_composition", None),
+            composition_penalty_strength=getattr(
+                target, "composition_penalty_strength", None
+            ),
+        )
+    )
 
     if D <= ENUMERATION_MAX_SPINS:
         F_exact = exact_free_energy(target, sigma=sigma, D=D)
@@ -199,23 +210,33 @@ def train(
 
     if use_wandb:
         import wandb
+        tags = [
+            cfg.name,
+            cfg.name.split("_d")[0],
+            f"D={cfg.ising.D}",
+            f"sigma={cfg.ising.sigma}",
+            cfg.estimator,
+            cfg.model.kind,
+            f"seed={seed}",
+        ]
+        if cfg.ising.target_composition is not None:
+            tags.extend(
+                [
+                    "composition-constrained",
+                    f"c_target={cfg.ising.target_composition}",
+                    f"lambda_c={cfg.ising.composition_penalty_strength}",
+                ]
+            )
 
         wandb.init(
-            project="dnfs-baseline",
+            project=cfg.wandb_project,
             group=cfg.name,
             name=f"{cfg.name}_seed{seed}_{timestamp}",
             config=asdict(cfg),
-            tags=[
-                cfg.name,
-                cfg.name.split("_d")[0],
-                f"D={cfg.ising.D}",
-                f"sigma={cfg.ising.sigma}",
-                cfg.estimator,
-                cfg.model.kind,
-                f"seed={seed}",
-            ],
+            tags=tags,
         )
 
+    seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # Curriculum: target may start at an easier σ; train_loop moves it through
     # piecewise-constant stages. Fixed-σ configs start directly at cfg.ising.
@@ -228,6 +249,8 @@ def train(
         sigma=target_sigma_init,
         bias=cfg.ising.bias,
         device=device,
+        target_composition=cfg.ising.target_composition,
+        composition_penalty_strength=cfg.ising.composition_penalty_strength,
     )
     model = _build_model(cfg, target)
 
@@ -314,6 +337,10 @@ def eval_only(run_dir: str | Path) -> dict:
         sigma=cfg_dict["ising"]["sigma"],
         bias=cfg_dict["ising"]["bias"],
         device=device,
+        target_composition=cfg_dict["ising"].get("target_composition"),
+        composition_penalty_strength=cfg_dict["ising"].get(
+            "composition_penalty_strength", 0.0
+        ),
     )
     eval_samples = eval_samples.to(device)
     eval_log_weights = eval_log_weights.to(device)

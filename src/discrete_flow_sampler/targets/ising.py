@@ -43,12 +43,32 @@ class IsingTarget:
         sigma: float,
         bias: float = 0.0,
         device: torch.device | str = "cpu",
+        target_composition: float | None = None,
+        composition_penalty_strength: float = 0.0,
     ):
+        if target_composition is not None and not 0.0 <= target_composition <= 1.0:
+            raise ValueError(
+                "target_composition must be in [0, 1], "
+                f"got {target_composition}"
+            )
+        if composition_penalty_strength < 0.0:
+            raise ValueError(
+                "composition_penalty_strength must be non-negative, "
+                f"got {composition_penalty_strength}"
+            )
+        if composition_penalty_strength > 0.0 and target_composition is None:
+            raise ValueError(
+                "target_composition must be set when "
+                "composition_penalty_strength is nonzero"
+            )
+
         self.D = D
         self.d = D * D
         self.sigma = sigma
         self.bias = bias
         self.device = torch.device(device)
+        self.target_composition = target_composition
+        self.composition_penalty_strength = composition_penalty_strength
 
         A = torch.zeros((self.d, self.d), device=self.device)
 
@@ -74,8 +94,12 @@ class IsingTarget:
         self.sigma = sigma
         self.J = sigma * self.A
 
-    def log_prob(self, x: Tensor) -> Tensor:
-        """Un-normalised target log-density.
+    def composition_fraction(self, x: Tensor) -> Tensor:
+        """Fraction of +1 spins in each state, shape (B,)."""
+        return ((x + 1.0) * 0.5).mean(dim=-1)
+
+    def base_log_prob(self, x: Tensor) -> Tensor:
+        """Unnormalised Ising log-density before optional soft constraints.
 
         x: (B, d) float tensor with entries in {-1, +1}.
         Returns: (B,) tensor.
@@ -86,6 +110,35 @@ class IsingTarget:
         un-normalised log p.
         """
         return (x @ self.J * x).sum(dim=-1)  + (self.bias * x.sum(dim=1))
+
+    def composition_penalty(self, x: Tensor) -> Tensor:
+        """Extensive soft-composition penalty, shape (B,).
+
+        The form mirrors VCSGC-style concentration control by scaling the
+        squared composition deviation by the number of sites:
+
+            λ · d · (c_+(x) - c_target)^2
+
+        It is subtracted from `log_prob`, equivalently added to the target
+        energy.
+        """
+        if self.target_composition is None or self.composition_penalty_strength == 0.0:
+            return torch.zeros(x.shape[0], device=x.device, dtype=x.dtype)
+        diff = self.composition_fraction(x) - self.target_composition
+        return self.composition_penalty_strength * self.d * diff.pow(2)
+
+    def log_prob(self, x: Tensor) -> Tensor:
+        """Un-normalised target log-density.
+
+        x: (B, d) float tensor with entries in {-1, +1}.
+        Returns: (B,) tensor.
+
+            log_prob(x) = base_log_prob(x) - composition_penalty(x)
+
+        With no soft-composition constraint, this reduces to the base Ising
+        log-density.
+        """
+        return self.base_log_prob(x) - self.composition_penalty(x)
 
     def log_p_tilde_t(self, x: Tensor, t: Tensor) -> Tensor:
         """Annealing-path log-density at time t (paper Eq. 4).

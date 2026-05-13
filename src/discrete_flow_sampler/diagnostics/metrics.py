@@ -55,6 +55,54 @@ def ess_from_log_weights(log_w: Tensor) -> Tensor:
     return torch.exp(2 * log_sum_w - log_sum_w_sq)
 
 
+def composition_fraction_up(x: Tensor) -> Tensor:
+    """Fraction of +1 spins/species in each sample, shape (B,)."""
+    return ((x.float() + 1.0) * 0.5).mean(dim=-1)
+
+
+def magnetisation(x: Tensor) -> Tensor:
+    """Mean Ising spin in each sample, shape (B,)."""
+    return x.float().mean(dim=-1)
+
+
+def composition_observables(
+    x: Tensor,
+    *,
+    target_composition: float | None = None,
+    composition_penalty_strength: float | None = None,
+) -> dict[str, float]:
+    """Paper-adjacent composition diagnostics for eval samples.
+
+    These are observables of the sample set, not training losses. When a target
+    composition is supplied, the returned dict also includes violation metrics
+    against that target.
+    """
+    c = composition_fraction_up(x)
+    m = magnetisation(x)
+    metrics = {
+        "composition_mean": float(c.mean().item()),
+        "composition_std": float(c.std(unbiased=False).item()),
+        "magnetisation_mean": float(m.mean().item()),
+        "magnetisation_std": float(m.std(unbiased=False).item()),
+    }
+
+    if target_composition is not None:
+        error = c - float(target_composition)
+        metrics.update(
+            {
+                "target_composition": float(target_composition),
+                "composition_abs_error_mean": float(error.abs().mean().item()),
+                "composition_sq_violation_mean": float(error.pow(2).mean().item()),
+            }
+        )
+        if composition_penalty_strength is not None:
+            metrics["composition_penalty_strength"] = float(
+                composition_penalty_strength
+            )
+
+    return metrics
+
+
 def enumerate_states(D: int) -> Tensor:
     """All 2^D binary spin states for a D-site lattice.
 
