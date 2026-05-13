@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from discrete_flow_sampler.targets.ising import IsingTarget
@@ -31,6 +32,47 @@ def test_bias_breaks_z2_symmetry():
     diff = target.log_prob(x) - target.log_prob(-x)
     expected = 2 * 0.5 * x.sum(dim=-1)
     torch.testing.assert_close(diff, expected)
+
+
+def test_composition_fraction_maps_up_spins():
+    target = IsingTarget(D=2, sigma=0.1)
+    x = torch.tensor([
+        [1.0, 1.0, -1.0, -1.0],
+        [1.0, -1.0, -1.0, -1.0],
+    ])
+    expected = torch.tensor([0.5, 0.25])
+    torch.testing.assert_close(target.composition_fraction(x), expected)
+
+
+def test_zero_strength_composition_constraint_matches_base_target():
+    base = IsingTarget(D=4, sigma=0.1)
+    constrained = IsingTarget(
+        D=4,
+        sigma=0.1,
+        target_composition=0.3,
+        composition_penalty_strength=0.0,
+    )
+    x = torch.randint(0, 2, (8, 16)).float() * 2 - 1
+    torch.testing.assert_close(constrained.log_prob(x), base.log_prob(x))
+
+
+def test_composition_constraint_subtracts_extensive_penalty():
+    target = IsingTarget(
+        D=2,
+        sigma=0.1,
+        target_composition=0.25,
+        composition_penalty_strength=10.0,
+    )
+    x = torch.tensor([[1.0, 1.0, -1.0, -1.0]])  # c_+ = 0.5
+    expected_penalty = 10.0 * target.d * (0.5 - 0.25) ** 2
+    got = target.log_prob(x)
+    expected = target.base_log_prob(x) - expected_penalty
+    torch.testing.assert_close(got, expected)
+
+
+def test_nonzero_composition_penalty_requires_target():
+    with pytest.raises(ValueError, match="target_composition"):
+        IsingTarget(D=2, sigma=0.1, composition_penalty_strength=1.0)
 
 
 def test_log_p_tilde_at_t0_is_uniform():

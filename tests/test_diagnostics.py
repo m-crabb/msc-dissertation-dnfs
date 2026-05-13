@@ -10,22 +10,22 @@ Tests for the off-paper utilities removed in the 2026-05 metric refactor
 (TVD, KL, 1-D Wasserstein, log_prob_w1) have been deleted alongside the
 function definitions.
 """
-import math
-
 import pytest
 import torch
 
 from discrete_flow_sampler.diagnostics.metrics import (
-    enumerate_states,
+    composition_fraction_up,
+    composition_observables,
     entropy_estimate,
+    enumerate_states,
     ess_from_log_weights,
     exact_free_energy,
     exact_internal_energy,
     exact_log_probs,
     free_energy_lb_estimate,
     internal_energy_estimate,
+    magnetisation,
 )
-
 
 # ---------------------------------------------------------------------------
 # ESS (already-implemented; pinning behaviour during the refactor)
@@ -42,6 +42,28 @@ def test_ess_one_for_dominant_weight():
     log_w[0] = 0.0
     # one weight dominates → ESS → 1
     assert ess_from_log_weights(log_w).item() == pytest.approx(1.0, abs=1e-3)
+
+
+def test_composition_and_magnetisation_observables():
+    x = torch.tensor([
+        [1.0, 1.0, -1.0, -1.0],
+        [1.0, -1.0, -1.0, -1.0],
+    ])
+
+    torch.testing.assert_close(composition_fraction_up(x), torch.tensor([0.5, 0.25]))
+    torch.testing.assert_close(magnetisation(x), torch.tensor([0.0, -0.5]))
+
+    metrics = composition_observables(
+        x,
+        target_composition=0.25,
+        composition_penalty_strength=50.0,
+    )
+    assert metrics["composition_mean"] == pytest.approx(0.375)
+    assert metrics["magnetisation_mean"] == pytest.approx(-0.25)
+    assert metrics["target_composition"] == pytest.approx(0.25)
+    assert metrics["composition_penalty_strength"] == pytest.approx(50.0)
+    assert metrics["composition_abs_error_mean"] == pytest.approx(0.125)
+    assert metrics["composition_sq_violation_mean"] == pytest.approx(0.03125)
 
 
 # ---------------------------------------------------------------------------
