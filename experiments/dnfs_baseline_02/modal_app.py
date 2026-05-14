@@ -24,9 +24,15 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     pixi run -e dev modal run --detach -m \\
         experiments.dnfs_baseline_02.modal_app::batch --scale all
 """
+import os
+
 import modal
 
 PROJECT_DIR = "/repo"
+# Modal app name. Defaults to "dnfs-baseline" for the paper-replication
+# track; constraint runs override via `DNFS_MODAL_APP=dnfs-constraints` so
+# Modal's dashboard groups them under a separate app.
+APP_NAME = os.environ.get("DNFS_MODAL_APP", "dnfs-baseline")
 PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
 
 # Build the container image from `pixi.lock`. The repo is added at /repo;
@@ -76,7 +82,7 @@ volume = modal.Volume.from_name("dnfs-results", create_if_missing=True)
 # create wandb-secret WANDB_API_KEY=...` makes it available as an env var.
 wandb_secret = modal.Secret.from_name("wandb-secret")
 
-app = modal.App("dnfs-baseline", image=image)
+app = modal.App(APP_NAME, image=image)
 
 
 @app.function(
