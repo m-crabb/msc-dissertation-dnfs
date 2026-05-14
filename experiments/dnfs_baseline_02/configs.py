@@ -61,7 +61,16 @@ class TrainCfg:
     outer_batch_size: int | None = None  # None -> falls back to batch_size
     replay_buffer_cycles: int = 1        # number of retained outer batches
     grad_clip_max_norm: float = 500.0  # some transformer runs override this
-    warmup_steps: int = 0                # linear LR warmup over first N inner steps; 0 = off
+    # LR warmup over the first N inner steps. **Paper deviation:** the DNFS
+    # paper doesn't specify warmup; reference repo has none. Added 2026-05-13
+    # after a 4-seed probe on stage_4_d10_paper showed 1/4 seeds healthy
+    # without warmup (init-basin sensitivity exposed by adding seed_everything).
+    # With warmup_steps=500, all 4 seeds recover to ESS frac 0.95-0.97; cross-
+    # seed std drops ~50x. Step-0 only — does NOT re-fire at curriculum
+    # σ-transitions, because that failure mode is structurally different (not
+    # random-init) and the curriculum's LR drops already play the warmup role
+    # at sensitive transitions. See docs/findings/2026-05-13-letf-init-basin.md.
+    warmup_steps: int = 500              # 0 to disable; e.g. paper-faithful runs
 
 
 @dataclass(frozen=True)
