@@ -354,7 +354,9 @@ def eval_only(run_dir: str | Path) -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--cfg", help="Config key from configs.py CONFIGS (training mode)"
+        "--cfg",
+        choices=list(CONFIGS.keys()),
+        help="Config key from configs.py CONFIGS (training mode)",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/01_baseline")
