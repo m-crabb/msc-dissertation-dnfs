@@ -202,7 +202,7 @@ def _euler_step_lenet(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor
 
     For binary this collapses back to the non-LE single-flip-prob form,
     but we write the general categorical so the same code path serves
-    S > 2 (alloy extension under `constrained_03`).
+    S > 2 (alloy extension; future cells under `constrained_soft_02`).
 
     Implementation: build a (B, D, S+1) per-site categorical with the
     last slot = "stay", sample once via torch.multinomial on the
