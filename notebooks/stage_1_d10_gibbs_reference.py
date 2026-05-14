@@ -15,8 +15,8 @@ Mixing is verified two ways before the canonical samples are saved:
      they disagree, the chain hasn't fully mixed regardless of what (1) says.
 
 Saves:
-  - results/02_baseline/gibbs_chain_d10_sigma01.pt    (canonical samples)
-  - results/02_baseline/stage_1_d10_gibbs_mixing.png  (diagnostic plot)
+  - results/01_baseline/gibbs_chain_d10_sigma01.pt    (canonical samples)
+  - results/01_baseline/stage_1_d10_gibbs_mixing.png  (diagnostic plot)
 """
 from pathlib import Path
 
@@ -27,7 +27,7 @@ from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-OUT_DIR = REPO_ROOT / "results" / "02_baseline"
+OUT_DIR = REPO_ROOT / "results" / "01_baseline"
 N_CHAINS = 5000
 N_SWEEPS = 1000
 RECORD_EVERY = 10
