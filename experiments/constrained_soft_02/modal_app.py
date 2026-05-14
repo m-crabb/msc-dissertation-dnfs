@@ -8,21 +8,19 @@ running `pixi install --environment dev --locked` against the project's
 
 Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     # Single config:
-    DNFS_MODAL_APP=dnfs-constraints pixi run -e dev modal run -m \\
+    pixi run -e dev modal run -m \\
         experiments.constrained_soft_02.modal_app::main \\
         --cfg-name S2_d4_c03_l50 --seed 42
 
     # Multi-seed for d=4:
-    DNFS_MODAL_APP=dnfs-constraints pixi run -e dev modal run --detach -m \\
+    pixi run -e dev modal run --detach -m \\
         experiments.constrained_soft_02.modal_app::batch_seeds \\
         --cfg-name S2_d4_c03_l50 --seeds "42,43,44,45"
 """
-import os
-
 import modal
 
 PROJECT_DIR = "/repo"
-APP_NAME = os.environ.get("DNFS_MODAL_APP", "dnfs-constraints")
+APP_NAME = "dnfs-constraints"
 PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
 
 image = (
