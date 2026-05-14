@@ -220,42 +220,6 @@ CONFIGS: dict[str, StageCfg] = {
         model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
         estimator="control_variate",
     ),
-    # First soft-composition constraint prototypes. The target is modified as
-    # log p_lambda(x) = log p_base(x) - lambda * d * (c_+(x) - c_target)^2.
-    # These use the stable stage_2 leMLP/control-variate stack before spending
-    # attention/conv budget on the constrained target.
-    "constrained_stage_2_d4_c03_l50": StageCfg(
-        name="constrained_stage_2_d4_c03_l50",
-        ising=IsingCfg(
-            D=4,
-            sigma=0.1,
-            bias=0.0,
-            target_composition=0.3,
-            composition_penalty_strength=50.0,
-        ),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
-        ctmc=CTMCCfg(n_euler_steps=50),
-        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
-        estimator="control_variate",
-        wandb_project="dnfs-constraints",
-    ),
-    "constrained_stage_2_d10_c03_l50": StageCfg(
-        name="constrained_stage_2_d10_c03_l50",
-        ising=IsingCfg(
-            D=10,
-            sigma=0.1,
-            bias=0.0,
-            target_composition=0.3,
-            composition_penalty_strength=50.0,
-        ),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
-        ctmc=CTMCCfg(n_euler_steps=100),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
-        estimator="control_variate",
-        wandb_project="dnfs-constraints",
-    ),
     # Stage 3: leConv (locally equivariant 2D conv with hollow zero-centre
     # kernel, K parallel summands) + control variate. Translation symmetry
     # of the Ising lattice is encoded structurally via circular-padded

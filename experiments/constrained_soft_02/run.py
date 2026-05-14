@@ -1,0 +1,34 @@
+"""Entry point for the constrained-soft Ising experiments.
+
+Delegates the actual training to `experiments.dnfs_baseline_01.run.train`,
+which is parameterised by the cfg object and already handles
+composition-penalty kwargs natively when `IsingCfg` sets them.
+
+Usage:
+    pixi run -e dev python -m experiments.constrained_soft_02.run \\
+        --cfg S2_d4_c03_l50 --seed 42
+"""
+import argparse
+
+from experiments.dnfs_baseline_01.run import train
+
+from .configs import CONFIGS
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--cfg", required=True, choices=list(CONFIGS.keys()),
+        help="Config key from constrained_soft_02/configs.py CONFIGS",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--output-dir", default="results/02_constrained_soft")
+    parser.add_argument("--no-wandb", action="store_true")
+    args = parser.parse_args()
+
+    cfg = CONFIGS[args.cfg]
+    train(cfg, seed=args.seed, output_dir=args.output_dir, use_wandb=not args.no_wandb)
+
+
+if __name__ == "__main__":
+    main()
