@@ -28,10 +28,11 @@ import os
 
 import modal
 
+from experiments.dnfs_baseline_01.configs import CONFIGS
+
 PROJECT_DIR = "/repo"
-# Modal app name. Defaults to "dnfs-baseline" for the paper-replication
-# track; constraint runs override via `DNFS_MODAL_APP=dnfs-constraints` so
-# Modal's dashboard groups them under a separate app.
+# Modal app name. The constrained track has its own hardcoded app name in
+# `experiments.constrained_soft_02.modal_app`.
 APP_NAME = os.environ.get("DNFS_MODAL_APP", "dnfs-baseline")
 PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
 
@@ -85,6 +86,12 @@ wandb_secret = modal.Secret.from_name("wandb-secret")
 app = modal.App(APP_NAME, image=image)
 
 
+def _validate_cfg_name(cfg_name: str) -> None:
+    if cfg_name not in CONFIGS:
+        valid = ", ".join(sorted(CONFIGS))
+        raise ValueError(f"Unknown cfg_name {cfg_name!r}. Valid configs: {valid}")
+
+
 @app.function(
     # A100 for Stage 4 leTF re-launch (attention-bound; 2x faster wall-clock
     # vs L4 at d=100). Earlier MLP/leconv stages ran fine on L4; if cost
@@ -118,6 +125,7 @@ def train_remote(cfg_name: str, seed: int = 42):
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call."""
+    _validate_cfg_name(cfg_name)
     train_remote.remote(cfg_name=cfg_name, seed=seed)
 
 
@@ -126,7 +134,13 @@ def batch(scale: str = "all", seed: int = 42):
     """Fire off post-redo configs in parallel. scale: 'all' | 'd4' | 'd10'."""
     d4 = ["stage_0_d4", "stage_0_d4_cv", "stage_1_d4", "stage_2_d4"]
     d10 = ["stage_0_d10", "stage_0_d10_cv", "stage_1_d10", "stage_2_d10"]
-    configs = {"all": d4 + d10, "d4": d4, "d10": d10}[scale]
+    groups = {"all": d4 + d10, "d4": d4, "d10": d10}
+    if scale not in groups:
+        valid = ", ".join(sorted(groups))
+        raise ValueError(f"Unknown scale {scale!r}. Valid scales: {valid}")
+    configs = groups[scale]
+    for cfg in configs:
+        _validate_cfg_name(cfg)
     for cfg in configs:
         train_remote.spawn(cfg_name=cfg, seed=seed)
     print(f"spawned {len(configs)} jobs: {configs}")
@@ -140,6 +154,8 @@ def batch_configs(configs: str = "", seed: int = 42):
     """
     cfg_list = [c.strip() for c in configs.split(",") if c.strip()]
     for cfg in cfg_list:
+        _validate_cfg_name(cfg)
+    for cfg in cfg_list:
         train_remote.spawn(cfg_name=cfg, seed=seed)
     print(f"spawned {len(cfg_list)} jobs: {cfg_list}")
 
@@ -150,6 +166,7 @@ def batch_seeds(cfg_name: str, seeds: str = "42"):
 
     Example: `--cfg-name stage_4_d10_paper_probe_warmup --seeds "42,43,44,45"`.
     """
+    _validate_cfg_name(cfg_name)
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
     for seed in seed_list:
         train_remote.spawn(cfg_name=cfg_name, seed=seed)

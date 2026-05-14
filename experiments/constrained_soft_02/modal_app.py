@@ -19,6 +19,8 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
 """
 import modal
 
+from experiments.constrained_soft_02.configs import CONFIGS
+
 PROJECT_DIR = "/repo"
 APP_NAME = "dnfs-constraints"
 PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
@@ -58,6 +60,12 @@ wandb_secret = modal.Secret.from_name("wandb-secret")
 app = modal.App(APP_NAME, image=image)
 
 
+def _validate_cfg_name(cfg_name: str) -> None:
+    if cfg_name not in CONFIGS:
+        valid = ", ".join(sorted(CONFIGS))
+        raise ValueError(f"Unknown cfg_name {cfg_name!r}. Valid configs: {valid}")
+
+
 @app.function(
     gpu="A100",
     volumes={"/results": volume},
@@ -79,12 +87,14 @@ def train_remote(cfg_name: str, seed: int = 42):
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call."""
+    _validate_cfg_name(cfg_name)
     train_remote.remote(cfg_name=cfg_name, seed=seed)
 
 
 @app.local_entrypoint()
 def batch_seeds(cfg_name: str, seeds: str = "42"):
     """Spawn one constrained config across multiple seeds in parallel."""
+    _validate_cfg_name(cfg_name)
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
     for seed in seed_list:
         train_remote.spawn(cfg_name=cfg_name, seed=seed)
