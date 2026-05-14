@@ -1,4 +1,4 @@
-from experiments.dnfs_baseline_02.configs import CONFIGS
+from experiments.dnfs_baseline_01.configs import CONFIGS
 
 
 def test_constrained_configs_use_constraints_wandb_project():

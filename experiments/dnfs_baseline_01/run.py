@@ -1,14 +1,14 @@
 """Entry point for DNFS Ising baseline runs.
 
 Usage (local):
-    pixi run -e dev python -m experiments.dnfs_baseline_02.run \\
+    pixi run -e dev python -m experiments.dnfs_baseline_01.run \\
         --cfg stage_1_d4 --seed 42
 
 Or, to recompute eval metrics from saved samples without re-training:
-    pixi run -e dev python -m experiments.dnfs_baseline_02.run \\
-        --eval-only --run-dir results/02_baseline/stage_1_d4_seed42_...
+    pixi run -e dev python -m experiments.dnfs_baseline_01.run \\
+        --eval-only --run-dir results/01_baseline/stage_1_d4_seed42_...
 
-The same `train(cfg_name, seed, ...)` function is also imported by
+The same `train(cfg, seed, ...)` function is also imported by
 `modal_app.py` for remote runs, so both paths share artefacts and metadata.
 """
 import argparse
@@ -20,7 +20,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 import torch
-from experiments.dnfs_baseline_02.configs import CONFIGS
+from experiments.dnfs_baseline_01.configs import CONFIGS, StageCfg
 
 from discrete_flow_sampler.diagnostics.metrics import (
     composition_observables,
@@ -175,20 +175,19 @@ def _compute_eval_metrics(
 
 
 def train(
-    cfg_name: str,
+    cfg: StageCfg,
     seed: int = 42,
-    output_dir: str | Path = "results/02_baseline",
+    output_dir: str | Path = "results/01_baseline",
     use_wandb: bool = True,
 ):
     """Top-level training entry. Importable from CLI or modal_app.
 
-    Builds the target / model / estimator from the named config, kicks off
+    Builds the target / model / estimator from the resolved config, kicks off
     `samplers.training.train`, and persists end-of-run eval samples + IS
     log-weights for downstream analysis notebooks.
     """
-    base_cfg = CONFIGS[cfg_name]
     # Apply the per-invocation seed without mutating the frozen config.
-    cfg = replace(base_cfg, train=replace(base_cfg.train, seed=seed))
+    cfg = replace(cfg, train=replace(cfg.train, seed=seed))
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path(output_dir) / f"{cfg.name}_seed{seed}_{timestamp}"
@@ -358,7 +357,7 @@ def main():
         "--cfg", help="Config key from configs.py CONFIGS (training mode)"
     )
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--output-dir", default="results/02_baseline")
+    parser.add_argument("--output-dir", default="results/01_baseline")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument(
         "--eval-only",
@@ -380,8 +379,9 @@ def main():
 
     if not args.cfg:
         parser.error("--cfg is required for training mode")
+    cfg = CONFIGS[args.cfg]
     train(
-        args.cfg,
+        cfg,
         seed=args.seed,
         output_dir=args.output_dir,
         use_wandb=not args.no_wandb,

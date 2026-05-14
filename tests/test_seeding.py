@@ -1,9 +1,9 @@
 import random
 
-import experiments.dnfs_baseline_02.run as run_module
+import experiments.dnfs_baseline_01.run as run_module
 import numpy as np
 import torch
-from experiments.dnfs_baseline_02.configs import (
+from experiments.dnfs_baseline_01.configs import (
     CTMCCfg,
     EvalCfg,
     IsingCfg,
@@ -52,35 +52,25 @@ def test_top_level_train_seeds_let_model_initialisation(monkeypatch, tmp_path):
             "ess": float(log_weights.numel()),
         },
     )
-    monkeypatch.setitem(
-        run_module.CONFIGS,
-        "seed_test_let",
-        StageCfg(
-            name="seed_test_let",
-            ising=IsingCfg(D=2, sigma=0.1, bias=0.0),
-            train=TrainCfg(n_steps=1, batch_size=2, lr=1e-3, seed=0),
-            ctmc=CTMCCfg(n_euler_steps=2),
-            eval=EvalCfg(eval_every=1, n_eval_samples=2),
-            model=ModelCfg(
-                kind="let",
-                hidden_dim=8,
-                n_layers=1,
-                n_heads=2,
-                vocab_size=2,
-            ),
-            estimator="control_variate",
+    test_cfg = StageCfg(
+        name="seed_test_let",
+        ising=IsingCfg(D=2, sigma=0.1, bias=0.0),
+        train=TrainCfg(n_steps=1, batch_size=2, lr=1e-3, seed=0),
+        ctmc=CTMCCfg(n_euler_steps=2),
+        eval=EvalCfg(eval_every=1, n_eval_samples=2),
+        model=ModelCfg(
+            kind="let",
+            hidden_dim=8,
+            n_layers=1,
+            n_heads=2,
+            vocab_size=2,
         ),
+        estimator="control_variate",
     )
 
-    run_module.train(
-        "seed_test_let", seed=123, output_dir=tmp_path / "run_a", use_wandb=False
-    )
-    run_module.train(
-        "seed_test_let", seed=123, output_dir=tmp_path / "run_b", use_wandb=False
-    )
-    run_module.train(
-        "seed_test_let", seed=124, output_dir=tmp_path / "run_c", use_wandb=False
-    )
+    run_module.train(test_cfg, seed=123, output_dir=tmp_path / "run_a", use_wandb=False)
+    run_module.train(test_cfg, seed=123, output_dir=tmp_path / "run_b", use_wandb=False)
+    run_module.train(test_cfg, seed=124, output_dir=tmp_path / "run_c", use_wandb=False)
 
     same_seed_a, same_seed_b, different_seed = captured_states
     assert same_seed_a.keys() == same_seed_b.keys()

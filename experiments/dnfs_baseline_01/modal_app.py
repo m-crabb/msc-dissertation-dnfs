@@ -15,14 +15,14 @@ otherwise fail; runtime containers get a real GPU from Modal.
 Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     # Single config:
     pixi run -e dev modal run -m \\
-        experiments.dnfs_baseline_02.modal_app::main \\
+        experiments.dnfs_baseline_01.modal_app::main \\
         --cfg-name stage_1_d4 --seed 42
 
     # All 8 post-redo configs in parallel. `--detach` is REQUIRED:
     # without it, the ephemeral app stops when the entrypoint returns and
     # all spawned FunctionCalls are cancelled before any container runs.
     pixi run -e dev modal run --detach -m \\
-        experiments.dnfs_baseline_02.modal_app::batch --scale all
+        experiments.dnfs_baseline_01.modal_app::batch --scale all
 """
 import os
 
@@ -104,11 +104,12 @@ def train_remote(cfg_name: str, seed: int = 42):
     import sys
 
     # /repo is the mount point of `add_local_dir`. Inserting it onto sys.path
-    # lets `experiments.dnfs_baseline_02.run` import resolve correctly.
+    # lets `experiments.dnfs_baseline_01.run` import resolve correctly.
     sys.path.insert(0, "/repo")
-    from experiments.dnfs_baseline_02.run import train
+    from experiments.dnfs_baseline_01.run import train
+    from experiments.dnfs_baseline_01.configs import CONFIGS
 
-    train(cfg_name, seed=seed, output_dir="/results")
+    train(CONFIGS[cfg_name], seed=seed, output_dir="/results")
     # commit() makes the artefacts visible to subsequent `modal volume get`
     # calls. Without this, the volume is reverted on container shutdown.
     volume.commit()

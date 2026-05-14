@@ -4,7 +4,7 @@ import json
 
 import pytest
 import torch
-from experiments.dnfs_baseline_02.configs import CTMCCfg, EvalCfg, TrainCfg
+from experiments.dnfs_baseline_01.configs import CTMCCfg, EvalCfg, TrainCfg
 
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
 from discrete_flow_sampler.samplers.training import train
