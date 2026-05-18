@@ -68,3 +68,40 @@ def test_matches_exact_on_small_lattice():
 
     tv_distance = 0.5 * (p_emp - p_exact).abs().sum().item()
     assert tv_distance < 0.02
+
+
+def test_constrained_chain_converges_to_target_composition():
+    """Penalty-aware heat-bath: a chain on the soft-constrained target must
+    concentrate composition near c_target. The unconstrained Ising at σ=0.1 is
+    Z₂-symmetric ⇒ ⟨c₊⟩ = 0.5, so a penalty-BLIND sampler stays near 0.5 and
+    fails this. With λ=50, d=16 the constrained distribution is tightly peaked
+    (run composition_std ≈ 0.023), so the 2000-chain mean lands well within
+    0.03 of c_target = 0.3.
+    """
+    torch.manual_seed(0)
+    target = IsingTarget(
+        D=4, sigma=0.1, target_composition=0.3, composition_penalty_strength=50.0,
+    )
+    samples = gibbs_sample(target, n_chains=2000, n_sweeps=300)
+    composition = ((samples + 1.0) * 0.5).mean(dim=-1)
+    assert abs(composition.mean().item() - 0.3) < 0.03
+
+
+def test_penalty_inactive_matches_unconstrained():
+    """strength=0 must reproduce the unconstrained sampler byte-for-byte:
+    same global-RNG stream, same log-odds. Pins that the Ising path is
+    untouched by the penalty branch. (The four pre-existing tests in this
+    file are the broader regression guard — they seed global RNG and assert
+    properties that only hold if the unconstrained path is unchanged.)
+    """
+    torch.manual_seed(0)
+    plain = IsingTarget(D=4, sigma=0.1)
+    out_plain = gibbs_sample(plain, n_chains=64, n_sweeps=20)
+
+    torch.manual_seed(0)
+    inactive = IsingTarget(
+        D=4, sigma=0.1, target_composition=0.3, composition_penalty_strength=0.0,
+    )
+    out_inactive = gibbs_sample(inactive, n_chains=64, n_sweeps=20)
+
+    assert torch.equal(out_plain, out_inactive)

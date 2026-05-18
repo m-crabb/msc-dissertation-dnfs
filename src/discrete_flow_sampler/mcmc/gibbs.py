@@ -55,11 +55,31 @@ def gibbs_sample(
     if record_energy_every is not None:
         energy_trace.append(target.log_prob(spins).detach())
 
+    # Composition-penalty awareness. The soft constraint λ·d·(c₊ − c_t)² is a
+    # GLOBAL term, so it must enter the single-site heat-bath conditional, not
+    # only the diagnostic. Guard mirrors IsingTarget.composition_penalty
+    # (ising.py): when inactive the log-odds and RNG stream are byte-for-byte
+    # the original unconstrained sampler.
+    target_composition = getattr(target, "target_composition", None)
+    penalty_strength = getattr(target, "composition_penalty_strength", 0.0)
+    penalty_active = target_composition is not None and penalty_strength != 0.0
+
     for sweep_idx in range(n_sweeps):
         site_order = torch.randperm(target.d, generator=generator, device=target.device)
         for site in site_order.tolist():
             local_field = spins @ target.J[:, site]                       # Σ_j J_ij x_j, shape (n_chains,)
             log_odds_plus = 4 * local_field + 2 * target.bias              # log p(+1) - log p(-1)
+            if penalty_active:
+                # S = #{+1 among sites ≠ i}. With x ∈ {−1,+1} and d−1 other
+                # sites: S = ((d−1) + Σ_{j≠i} x_j) / 2. Penalty contribution to
+                # the log-odds is −λ·(2·(S/d − c_t) + 1/d), obtained by
+                # completing the square on λd[((S+1)/d−c_t)² − (S/d−c_t)²].
+                others_sum = spins.sum(dim=1) - spins[:, site]
+                up_count_others = ((target.d - 1) + others_sum) / 2
+                log_odds_plus = log_odds_plus - penalty_strength * (
+                    2.0 * (up_count_others / target.d - target_composition)
+                    + 1.0 / target.d
+                )
             prob_plus = torch.sigmoid(log_odds_plus)
             uniform_draws = torch.rand(n_chains, generator=generator, device=target.device)
             spins[:, site] = (uniform_draws < prob_plus).to(spins.dtype) * 2 - 1
