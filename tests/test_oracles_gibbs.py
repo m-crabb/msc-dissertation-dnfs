@@ -70,6 +70,33 @@ def test_matches_exact_on_small_lattice():
     assert tv_distance < 0.02
 
 
+def test_constrained_matches_exact_on_small_lattice():
+    """Active composition penalty must still sample the exact target.
+
+    This pins the full constrained conditional, including the discrete +1/d
+    correction, rather than only testing that the mean composition moves in the
+    right direction.
+    """
+    torch.manual_seed(0)
+    target = IsingTarget(
+        D=2, sigma=0.1, target_composition=0.3, composition_penalty_strength=5.0,
+    )
+    states = enumerate_states(D=4)
+    log_p_exact = exact_log_probs(target, states.float())
+    p_exact = log_p_exact.exp()
+
+    samples = gibbs_sample(target, n_chains=16384, n_sweeps=500)
+
+    state_to_idx = {tuple(s.tolist()): i for i, s in enumerate(states)}
+    counts = torch.zeros(len(states))
+    for s in samples:
+        counts[state_to_idx[tuple(s.long().tolist())]] += 1
+    p_emp = counts / counts.sum()
+
+    tv_distance = 0.5 * (p_emp - p_exact).abs().sum().item()
+    assert tv_distance < 0.02
+
+
 def test_constrained_chain_converges_to_target_composition():
     """Penalty-aware heat-bath: a chain on the soft-constrained target must
     concentrate composition near c_target. The unconstrained Ising at σ=0.1 is

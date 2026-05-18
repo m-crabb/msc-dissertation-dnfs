@@ -1,6 +1,7 @@
 """Gibbs heat-bath sampler for Ising-like targets.
 
-Reference oracle for DNFS sampler validation. Heat-bath update at site i:
+Reference oracle for DNFS sampler validation. Unconstrained heat-bath update
+at site i:
 
     p(x_i = +1 | x_{≠i}) = σ( 4 h + 2 b ),    h = Σ_j J_ij x_j,  b = bias
 
@@ -13,11 +14,18 @@ Together with the bias term:
         - 2 · (-1) · Σ_j J_ij x_j - b · (-1)
         = 4 h + 2 b.
 
-So p(x_i=+1) = σ(4h + 2b). The textbook one-edge-per-pair convention gives
-σ(2h_i); ours double-counts in J, so the factor doubles. Proposal IS the
-conditional → acceptance is always 1 (no MH correction). One "sweep"
-updates every site once; chains are vectorised, the inner loop is over
-sites only.
+So p(x_i=+1) = σ(4h + 2b). If the target includes the soft composition
+penalty λ d (c_+ - c_t)^2, the exact conditional subtracts
+
+    λ · ( 2 · (S/d - c_t) + 1/d ),
+
+where S is the number of +1 spins among sites other than i. The +1/d term is
+the discrete single-site correction from comparing S+1 against S.
+
+The textbook one-edge-per-pair convention gives σ(2h_i); ours double-counts
+in J, so the factor doubles. Proposal IS the conditional, so acceptance is
+always 1 (no MH correction). One "sweep" updates every site once; chains are
+vectorised, the inner loop is over sites only.
 """
 
 import torch
@@ -34,8 +42,9 @@ def gibbs_sample(
 ) -> Tensor | tuple[Tensor, Tensor]:
     """Single-spin-flip heat-bath sampler.
 
-    target: duck-types IsingTarget — needs `.J` (d×d), `.bias`, `.d`, `.device`,
-      and (only if `record_energy_every` is set) `.log_prob`.
+    target: duck-types IsingTarget — needs `.J` (d×d), `.bias`, `.d`, `.device`;
+      may expose `.target_composition` and `.composition_penalty_strength`;
+      needs `.log_prob` if `record_energy_every` is set.
     Returns: (n_chains, target.d) tensor in {-1, +1}.
 
     If `record_energy_every=K`, also returns a (n_records, n_chains) tensor of
