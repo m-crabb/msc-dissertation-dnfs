@@ -29,3 +29,18 @@ def test_letf_constrained_cells_use_let_arch_and_penalty():
         assert cfg.ising.composition_penalty_strength == 50.0
         assert cfg.wandb_project == "dnfs-constraints"
         assert cfg.estimator == "control_variate"
+
+
+def test_letf_d10_ne128_cell_refines_euler_grid():
+    """leTF d=10 n_euler=128 refinement cell: identical to base cell except Euler grid."""
+    base = CONSTRAINED_CONFIGS["S2_d10_c03_l50_letf"]
+    refined = CONSTRAINED_CONFIGS["S2_d10_c03_l50_letf_ne128"]
+    assert refined.ctmc.n_euler_steps == 128
+    assert base.ctmc.n_euler_steps == 64
+    assert refined.model == base.model
+    assert refined.ising == base.ising
+    assert refined.train == base.train
+    assert refined.eval == base.eval
+    assert refined.estimator == base.estimator
+    assert refined.wandb_project == base.wandb_project
+    assert refined.name == "S2_d10_c03_l50_letf_ne128"
