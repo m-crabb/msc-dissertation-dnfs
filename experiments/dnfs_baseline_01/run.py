@@ -19,6 +19,8 @@ import time
 from dataclasses import asdict, replace
 from pathlib import Path
 
+import pandas as pd
+
 import torch
 from experiments.dnfs_baseline_01.configs import CONFIGS, StageCfg
 
@@ -88,6 +90,27 @@ def _build_model(cfg, target):
             n_heads=cfg.model.n_heads,
         ).to(target.device)
     raise ValueError(f"Unknown model kind: {cfg.model.kind!r}")
+
+
+def _trailing_ess_metrics(run_dir: Path, k: int = 10) -> dict:
+    """Last-K training-time ESS aggregates (median/min/max).
+
+    Addresses single-snapshot eval timing concern: the final ESS reported in
+    eval/metrics.json is one trajectory draw at t = n_steps; if the trained
+    model oscillates near the end, the snapshot is a lottery. The trailing-K
+    window reports the recent training-time ESS distribution for a more
+    honest "where did training actually land" reading. Note: training-time
+    ESS is over outer_batch_size, not n_eval_samples — interpret in absolute
+    counts, not as a fraction comparable to eval/ess_fraction.
+    """
+    recent = (
+        pd.read_csv(run_dir / "training_log.csv")["ess"].dropna().tail(k)
+    )
+    return {
+        f"ess_trailing{k}_median": float(recent.median()),
+        f"ess_trailing{k}_min": float(recent.min()),
+        f"ess_trailing{k}_max": float(recent.max()),
+    }
 
 
 def _compute_eval_metrics(
@@ -292,6 +315,7 @@ def train(
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
 
     eval_metrics = _compute_eval_metrics(eval_samples, eval_log_weights, target)
+    eval_metrics.update(_trailing_ess_metrics(run_dir))
     (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
 
     if use_wandb:
@@ -345,6 +369,7 @@ def eval_only(run_dir: str | Path) -> dict:
     eval_log_weights = eval_log_weights.to(device)
 
     eval_metrics = _compute_eval_metrics(eval_samples, eval_log_weights, target)
+    eval_metrics.update(_trailing_ess_metrics(run_dir))
     (run_dir / "eval" / "metrics.json").write_text(
         json.dumps(eval_metrics, indent=2)
     )
