@@ -308,7 +308,7 @@ class LeTFRateMatrix(nn.Module):
         self.output_norm = nn.LayerNorm(hidden_dim)
 
         self.omega = nn.Embedding(vocab_size, hidden_dim)
-        nn.init.kaiming_uniform_(self.omega.weight, a=math.sqrt(5))
+        nn.init.normal_(self.omega.weight, std=0.002)
 
     def compute_body(self, x: Tensor, t: Tensor) -> Tensor:
         """Pre-readout body H_HTF(x), shape (B, d, hidden_dim). Hollow at every site.
