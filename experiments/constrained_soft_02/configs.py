@@ -108,6 +108,7 @@ CONFIGS: dict[str, StageCfg] = {
             lr=1e-3,
             seed=42,
             grad_clip_max_norm=500.0,
+            warmup_steps=2000,
         ),
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
