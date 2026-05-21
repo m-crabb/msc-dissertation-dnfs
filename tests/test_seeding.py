@@ -52,6 +52,7 @@ def test_top_level_train_seeds_let_model_initialisation(monkeypatch, tmp_path):
             "ess": float(log_weights.numel()),
         },
     )
+    monkeypatch.setattr(run_module, "_trailing_ess_metrics", lambda _run_dir: {})
     test_cfg = StageCfg(
         name="seed_test_let",
         ising=IsingCfg(D=2, sigma=0.1, bias=0.0),

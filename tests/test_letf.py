@@ -139,3 +139,27 @@ def test_reference_fidelity_components_present():
 
     assert model.attention_readout.pos_embed.shape == (d, hidden_dim // n_heads)
     assert isinstance(model.output_norm, nn.LayerNorm)
+
+
+def test_omega_readout_init_uses_leaps_small_scale():
+    """omega init std ~ 0.002 (LEAPS magnitude), not the kaiming_uniform default.
+
+    Why: omega is the rate-matrix readout (Eq. 22: G = (omega_tau - omega_xi)^T H).
+    Default kaiming_uniform_(a=sqrt(5)) on (vocab=2, hidden=128) gives uniform
+    bound = 1/sqrt(128) ~= 0.088, so std ~ 0.051. With H ~ O(1) post-LayerNorm
+    and hidden_dim=128, the bilinear G has per-element std on the order of
+    sqrt(hidden) * 0.051 ~ O(1) -- driving step-0 Kolmogorov-residual grad
+    norms into the 1e7-1e8 range observed empirically in the d=10 constrained
+    4-seed probe (2026-05-21). LEAPS uses 0.002-scale init on its analogous
+    readout; porting that magnitude brings step-0 grad scale closer to the
+    clip ceiling (500) so the longer warmup (2000) has room to work.
+    """
+    torch.manual_seed(0)
+    model = LeTFRateMatrix(
+        d=100, vocab_size=2, hidden_dim=128, n_layers=1, n_heads=4
+    )
+    omega_std = model.omega.weight.detach().std().item()
+    # Target 0.002 +/- factor of ~2 sampling band on a (2, 128) tensor.
+    assert 0.001 < omega_std < 0.005, (
+        f"omega init std = {omega_std:.4f}, expected near 0.002 (LEAPS scale)"
+    )
