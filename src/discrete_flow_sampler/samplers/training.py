@@ -34,6 +34,7 @@ import torch
 import torch.nn.functional as F
 
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
+from discrete_flow_sampler.samplers._neighbours import _log_p_tilde_at_neighbours
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.samplers.log_z_estimators import compute_c_t_grid
@@ -107,13 +108,23 @@ def _clear_replay(
     t_idx_replay_chunks.clear()
 
 
-def _rate_diagnostics(model, x, t, step_dt: float) -> dict[str, float]:
+def _rate_diagnostics(
+    model, x, t, step_dt: float, *, target=None
+) -> dict[str, float]:
     """Cheap eval-time diagnostics for CTMC rate scale.
 
     ESS alone cannot distinguish a no-op sampler (rates near zero) from a
     stiff sampler (rates so large Euler probabilities clip). Logging per-site
     outflow rates at eval cadence makes those failure modes visible without
     changing the training objective.
+
+    When `target` is supplied AND the model is locally equivariant, also
+    logs the saturation fraction of the log-target ratio against the 5.0
+    clamp at `kolmogorov.residual_lenet` and `ctmc._compute_xi_t_lenet`.
+    `log_ratio_clamp_frac` is the share of (B, d, S) entries that exceed
+    the ceiling; `log_ratio_p99` is the unclipped 99th percentile so the
+    magnitude of the saturated tail is visible (saturation alone is
+    ambiguous between "just above 5" and "an order of magnitude above").
     """
     if getattr(model, "is_locally_equivariant", False):
         rates = F.relu(model(x, t)).sum(dim=-1)  # (B, d), per-site outflow
@@ -121,12 +132,29 @@ def _rate_diagnostics(model, x, t, step_dt: float) -> dict[str, float]:
         rates = model(x, t)                      # (B, d), per-site outflow
 
     flip_prob = rates * step_dt
-    return {
+    metrics = {
         "rate_site_mean": rates.mean().item(),
         "rate_site_p99": torch.quantile(rates.reshape(-1), 0.99).item(),
         "flip_prob_site_p99": torch.quantile(flip_prob.reshape(-1), 0.99).item(),
         "flip_prob_clipped_frac": (flip_prob > 1.0).float().mean().item(),
+        "log_ratio_clamp_frac": float("nan"),
+        "log_ratio_p99": float("nan"),
     }
+
+    if target is not None and getattr(model, "is_locally_equivariant", False):
+        log_p_neighbours = _log_p_tilde_at_neighbours(
+            x, t, target, model.vocab_size
+        )
+        log_p_x = target.log_p_tilde_t(x, t)
+        log_ratio = log_p_neighbours - log_p_x[:, None, None]
+        metrics["log_ratio_clamp_frac"] = (
+            (log_ratio > 5.0).float().mean().item()
+        )
+        metrics["log_ratio_p99"] = torch.quantile(
+            log_ratio.reshape(-1), 0.99
+        ).item()
+
+    return metrics
 
 
 def train(
@@ -216,7 +244,8 @@ def train(
             ["step", "loss", "ess", "var_dt_log_p_tilde",
              "var_estimator_integrand", "grad_norm",
              "rate_site_mean", "rate_site_p99", "flip_prob_site_p99",
-             "flip_prob_clipped_frac", "sigma_current", "lr_current",
+             "flip_prob_clipped_frac", "log_ratio_clamp_frac",
+             "log_ratio_p99", "sigma_current", "lr_current",
              "wall_clock_step_s"]
         )
 
@@ -247,6 +276,7 @@ def train(
             init_diag = _rate_diagnostics(
                 model, x_diag, t_diag,
                 step_dt=1.0 / max(n_grid - 1, 1),
+                target=target,
             )
         torch.set_rng_state(rng_state_cpu)
         if rng_state_cuda is not None:
@@ -381,6 +411,8 @@ def train(
                     "rate_site_p99": float("nan"),
                     "flip_prob_site_p99": float("nan"),
                     "flip_prob_clipped_frac": float("nan"),
+                    "log_ratio_clamp_frac": float("nan"),
+                    "log_ratio_p99": float("nan"),
                 }
                 if step % eval_cfg.eval_every == 0:
                     with torch.no_grad():
@@ -404,6 +436,7 @@ def train(
                             x_sample,
                             t_sample,
                             step_dt=1.0 / max(n_grid - 1, 1),
+                            target=target,
                         )
                     torch.save(model.state_dict(), ckpt_dir / "latest.pt")
 
@@ -414,6 +447,8 @@ def train(
                      rate_diag["rate_site_p99"],
                      rate_diag["flip_prob_site_p99"],
                      rate_diag["flip_prob_clipped_frac"],
+                     rate_diag["log_ratio_clamp_frac"],
+                     rate_diag["log_ratio_p99"],
                      float(target.sigma), optimiser.param_groups[0]["lr"],
                      wall_clock_step_s]
                 )
