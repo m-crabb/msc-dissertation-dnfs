@@ -16,6 +16,7 @@ import torch
 from discrete_flow_sampler.diagnostics.metrics import (
     composition_fraction_up,
     composition_observables,
+    conditional_pmf_at_composition,
     entropy_estimate,
     enumerate_states,
     ess_from_log_weights,
@@ -25,6 +26,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
     free_energy_lb_estimate,
     internal_energy_estimate,
     magnetisation,
+    z2_asymmetry_from_samples,
 )
 
 # ---------------------------------------------------------------------------
@@ -189,6 +191,98 @@ def test_exact_free_energy_matches_logsumexp_definition():
     log_Z = torch.logsumexp(log_p_unnorm, dim=0)
     expected = -log_Z.item() / (2 * sigma * D)
     assert F_per_site.item() == pytest.approx(expected, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# conditional_pmf_at_composition / z2_asymmetry_from_samples
+# ---------------------------------------------------------------------------
+
+
+def test_conditional_pmf_slice_normalises_and_picks_right_count():
+    """At D=4, the c=0.5 slice (n_plus=2) should contain C(4,2) = 6 states
+    and the conditional log-pmf should logsumexp to 0."""
+    D = 4
+    states = enumerate_states(D)
+
+    class TinyTarget:
+        def log_prob(self, x):
+            return torch.zeros(x.shape[0])  # uniform → π is uniform over 2^D
+
+    log_pi = exact_log_probs(TinyTarget(), states)
+    slice_states, log_pi_cond = conditional_pmf_at_composition(
+        states, log_pi, n_plus_target=2
+    )
+    assert slice_states.shape == (6, D)
+    assert torch.logsumexp(log_pi_cond, dim=0).item() == pytest.approx(0.0, abs=1e-6)
+    # uniform target → uniform conditional → all log-probs equal log(1/6)
+    torch.testing.assert_close(
+        log_pi_cond,
+        torch.full((6,), -torch.log(torch.tensor(6.0)).item()),
+        atol=1e-6, rtol=0,
+    )
+
+
+def test_conditional_pmf_z2_symmetric_at_c_half():
+    """At c_target = 0.5 with bias = 0, the conditional p(·|c=0.5) should
+    be Z_2-symmetric: π(x|c=0.5) == π(-x|c=0.5) for every x on the slice."""
+    from discrete_flow_sampler.targets.ising import IsingTarget
+
+    target = IsingTarget(
+        D=2, sigma=0.1, bias=0.0,
+        target_composition=0.5, composition_penalty_strength=50.0,
+    )
+    D_total = 4  # 2x2 = 4 sites
+    states = enumerate_states(D_total)
+    log_pi = exact_log_probs(target, states.float())
+    _, log_pi_cond = conditional_pmf_at_composition(states, log_pi, n_plus_target=2)
+    # Z_2 symmetry: every state x on the slice has -x also on the slice
+    # (because n_plus(-x) = D - n_plus(x), which equals 2 iff n_plus(x) = 2).
+    # Sorting the conditional probabilities should give the same multiset
+    # as the reverse-ordered version (since the slice is closed under x → -x
+    # and each pair has equal probability).
+    sorted_probs = torch.sort(log_pi_cond.exp())[0]
+    # paired structure: the conditional pmf at c=0.5 should split into
+    # (x, -x) pairs with equal prob, so the sorted multiset equals itself
+    # under reversal trivially; the strong claim is that pairing x with -x
+    # gives matching probs.
+    n_plus = ((states + 1) // 2).sum(dim=-1)
+    slice_idx = torch.where(n_plus == 2)[0]
+    slice_states = states[slice_idx]
+    probs = log_pi_cond.exp()
+    for i, s in enumerate(slice_states):
+        neg_s = -s
+        # find index of -s in slice_states
+        j = ((slice_states == neg_s).all(dim=-1).nonzero(as_tuple=True))[0].item()
+        assert probs[i].item() == pytest.approx(probs[j].item(), abs=1e-6)
+
+
+def test_z2_asymmetry_zero_for_symmetric_weights():
+    """Pair each x with -x and give equal IS weight → e_m_is = 0 and
+    mass_pos == mass_neg, so asymmetry = 0."""
+    samples = torch.tensor([
+        [1.0, -1.0, 1.0, -1.0],   # m = 0
+        [1.0, 1.0, -1.0, -1.0],   # m = 0
+        [1.0, 1.0, 1.0, -1.0],    # m = +0.5
+        [-1.0, -1.0, -1.0, 1.0],  # m = -0.5  (negation of previous)
+    ])
+    log_w = torch.zeros(4)  # uniform IS weights
+    result = z2_asymmetry_from_samples(samples, log_w)
+    assert result["e_m_is"] == pytest.approx(0.0, abs=1e-6)
+    assert result["mass_pos"] == pytest.approx(result["mass_neg"], abs=1e-6)
+    assert result["asymmetry"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_z2_asymmetry_flags_imbalanced_samples():
+    """All samples have m > 0 → mass_pos = 1, mass_neg = 0, asymmetry = 1."""
+    samples = torch.tensor([
+        [1.0, 1.0, 1.0, -1.0],    # m = +0.5
+        [1.0, 1.0, -1.0, 1.0],    # m = +0.5
+    ])
+    log_w = torch.zeros(2)
+    result = z2_asymmetry_from_samples(samples, log_w)
+    assert result["mass_pos"] == pytest.approx(1.0, abs=1e-6)
+    assert result["mass_neg"] == pytest.approx(0.0, abs=1e-6)
+    assert result["asymmetry"] == pytest.approx(1.0, abs=1e-6)
 
 
 def test_exact_internal_energy_matches_pi_weighted_neg_log_p_tilde():

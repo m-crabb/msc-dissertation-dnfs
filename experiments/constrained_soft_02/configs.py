@@ -67,6 +67,22 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
+    "S2_d4_c05_l50_letf": StageCfg(
+        name="S2_d4_c05_l50_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
     "S2_d10_c03_l50_letf": StageCfg(
         name="S2_d10_c03_l50_letf",
         ising=IsingCfg(

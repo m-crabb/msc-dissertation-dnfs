@@ -31,6 +31,25 @@ def test_letf_constrained_cells_use_let_arch_and_penalty():
         assert cfg.estimator == "control_variate"
 
 
+def test_c05_d4_letf_cell_mirrors_c03_with_only_target_changed():
+    """Supervisor-requested c_target=0.5 cell at D=4: shape-identical to the
+    c=0.3 D=4 leTF cell except for `target_composition`. Pinned so any
+    future refactor of the c=0.5 cell stays paired with its c=0.3 sibling."""
+    base = CONSTRAINED_CONFIGS["S2_d4_c03_l50_letf"]
+    twin = CONSTRAINED_CONFIGS["S2_d4_c05_l50_letf"]
+    assert twin.ising.target_composition == 0.5
+    assert twin.ising.D == base.ising.D
+    assert twin.ising.sigma == base.ising.sigma
+    assert twin.ising.bias == base.ising.bias
+    assert twin.ising.composition_penalty_strength == base.ising.composition_penalty_strength
+    assert twin.model == base.model
+    assert twin.train == base.train
+    assert twin.ctmc == base.ctmc
+    assert twin.eval == base.eval
+    assert twin.estimator == base.estimator
+    assert twin.wandb_project == base.wandb_project
+
+
 def test_letf_d10_ne128_cell_refines_euler_grid_and_extends_warmup():
     """leTF d=10 ne128 cell deviates from base on n_euler AND warmup_steps.
 

@@ -265,6 +265,71 @@ def exact_free_energy(target, sigma: float, D: int) -> Tensor:
     return -log_Z / (2 * sigma * D)
 
 
+def conditional_pmf_at_composition(
+    states: Tensor,
+    log_pi: Tensor,
+    n_plus_target: int,
+) -> tuple[Tensor, Tensor]:
+    """Exact conditional distribution restricted to a single composition slice.
+
+    Given enumerated states with their normalised log-probabilities under π,
+    selects states whose number of +1 spins equals `n_plus_target` and
+    returns the corresponding state subset together with the renormalised
+    conditional log-probabilities π(·|Σ(x+1)/2 = n_plus_target).
+
+    At c_target = 0.5 the c-marginal is uninformative as a diagnostic (the
+    Z_2 symmetry pins ⟨c⟩ = 0.5 by construction); the conditional energy
+    distribution on the slice is what tells us whether DNFS is fitting the
+    Ising free-energy *shape* correctly.
+
+    Args:
+        states: (N, D) tensor of enumerated ±1 spin configurations.
+        log_pi: (N,) tensor of normalised log-probabilities (logsumexp = 0).
+        n_plus_target: integer in [0, D] selecting the slice.
+
+    Returns:
+        (slice_states, log_pi_cond): the (M, D) selected states and the
+        (M,) normalised conditional log-probabilities on the slice. M is
+        the binomial coefficient C(D, n_plus_target).
+    """
+    n_plus = ((states + 1) // 2).sum(dim=-1)
+    mask = n_plus == n_plus_target
+    slice_states = states[mask]
+    log_pi_slice = log_pi[mask]
+    log_Z_slice = torch.logsumexp(log_pi_slice, dim=0)
+    return slice_states, log_pi_slice - log_Z_slice
+
+
+def z2_asymmetry_from_samples(
+    samples: Tensor, log_weights: Tensor
+) -> dict[str, float]:
+    """Z_2 symmetry-breaking diagnostic for IS-weighted DNFS samples.
+
+    For a Z_2-symmetric target (Ising with bias=0 at c_target=0.5),
+    E_π[m(x)] = 0 exactly and the IS-weighted mass on m>0 should equal
+    the mass on m<0. Any deviation measures how badly q_θ has failed to
+    learn the Z_2 invariance.
+
+    Returns:
+        Dict with `e_m_is` (IS-weighted ⟨m⟩, should be 0), `mass_pos`,
+        `mass_neg`, `mass_zero` (IS-weighted mass fractions in each
+        magnetisation sector, summing to 1), and `asymmetry` (the absolute
+        imbalance |mass_pos - mass_neg|).
+    """
+    w = torch.softmax(log_weights, dim=0)
+    m = samples.float().mean(dim=-1)
+    mass_pos = float(w[m > 0].sum().item())
+    mass_neg = float(w[m < 0].sum().item())
+    mass_zero = float(w[m == 0].sum().item())
+    return {
+        "e_m_is": float((w * m).sum().item()),
+        "mass_pos": mass_pos,
+        "mass_neg": mass_neg,
+        "mass_zero": mass_zero,
+        "asymmetry": abs(mass_pos - mass_neg),
+    }
+
+
 def exact_internal_energy(target, sigma: float, D: int) -> Tensor:
     """Exact E/D = u = -E_π[log p̃(x)] / (2σD) by enumeration.
 
