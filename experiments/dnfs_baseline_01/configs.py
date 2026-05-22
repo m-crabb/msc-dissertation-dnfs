@@ -91,10 +91,9 @@ class EvalCfg:
 # explicitly pass kind="mlp" so there are no silent behaviour changes.
 @dataclass(frozen=True)
 class ModelCfg:
-    kind: Literal["mlp", "lemlp", "leconv", "leconv_deep", "let"] = "lemlp"
+    kind: Literal["mlp", "lemlp", "leconv_deep", "let"] = "lemlp"
     hidden_dim: int = 256
-    n_layers: int = 3        # n_summands K for lemlp/leconv; Linear blocks for mlp
-    kernel_size: int = 3     # leconv only; ignored elsewhere
+    n_layers: int = 3        # n_summands K for lemlp; Linear blocks for mlp
     kernel_schedule: tuple[int, ...] = ()  # leconv_deep only; per-layer kernels
     hollow_global_context: bool = False    # leconv_deep only
     n_heads: int = 4         # leTF only; ignored elsewhere
@@ -220,69 +219,6 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
-        estimator="control_variate",
-    ),
-    # Stage 3: leConv (locally equivariant 2D conv with hollow zero-centre
-    # kernel, K parallel summands) + control variate. Translation symmetry
-    # of the Ising lattice is encoded structurally via circular-padded
-    # convolution; combined with the hollow constraint and Prop. 2 readout,
-    # G is both LE and translation-equivariant. Hidden dim mirrors the
-    # paper's leTF Ising experiment (Sec. E.1) at 64. Smaller capacity than
-    # stage_2's leMLP (h=128/256); a comparable result would demonstrate
-    # the parameter efficiency of translation-equivariant weight sharing.
-    "stage_3_d4": StageCfg(
-        name="stage_3_d4",
-        ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
-        ctmc=CTMCCfg(n_euler_steps=50),
-        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2
-        ),
-        estimator="control_variate",
-    ),
-    "stage_3_d10": StageCfg(
-        name="stage_3_d10",
-        ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
-        ctmc=CTMCCfg(n_euler_steps=100),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2
-        ),
-        estimator="control_variate",
-    ),
-    # MARS V submission cell: 10x10 Ising at the critical temperature
-    # sigma = 0.22305 (paper Table 2). Sampling at T_c is the regime where
-    # naive mean-field-style approximations fail; a working sampler here
-    # is doing real work that mean field cannot.
-    "stage_3_d10_critical": StageCfg(
-        name="stage_3_d10_critical",
-        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
-        ctmc=CTMCCfg(n_euler_steps=100),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="leconv", hidden_dim=64, n_layers=3, kernel_size=3, vocab_size=2
-        ),
-        estimator="control_variate",
-    ),
-    # First d10_critical attempt collapsed in ESS (~5/256) at 14k steps despite
-    # loss decreasing — diagnosed as receptive-field starvation: the 3x3 kernel
-    # is structurally too local for the long-range critical fluctuations on
-    # a 10x10 torus. _big bumps the kernel to 7x7 (covers 49 sites, ~half the
-    # lattice diameter) and the hidden dim to 128. If this also fails ESS, the
-    # fallback is the d4_critical / d6_critical pair (smaller N matched to
-    # the architecture's reach).
-    "stage_3_d10_critical_big": StageCfg(
-        name="stage_3_d10_critical_big",
-        ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
-        ctmc=CTMCCfg(n_euler_steps=100),
-        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="leconv", hidden_dim=128, n_layers=3, kernel_size=7, vocab_size=2
-        ),
         estimator="control_variate",
     ),
     # LEAPS-style deep LEC at critical sigma. Reference: Holderrieth/Albergo/

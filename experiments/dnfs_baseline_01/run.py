@@ -62,15 +62,6 @@ def _build_model(cfg, target):
             hidden_dim=cfg.model.hidden_dim,
             n_summands=cfg.model.n_layers,   # see ModelCfg comment on n_layers
         ).to(target.device)
-    if cfg.model.kind == "leconv":
-        from discrete_flow_sampler.models.leconv import LeConvRateMatrix
-        return LeConvRateMatrix(
-            D=cfg.ising.D,                   # lattice side; flat dim d = D*D
-            vocab_size=cfg.model.vocab_size,
-            hidden_dim=cfg.model.hidden_dim,
-            n_summands=cfg.model.n_layers,
-            kernel_size=cfg.model.kernel_size,
-        ).to(target.device)
     if cfg.model.kind == "leconv_deep":
         from discrete_flow_sampler.models.leconv_deep import LeConvDeepRateMatrix
         return LeConvDeepRateMatrix(
