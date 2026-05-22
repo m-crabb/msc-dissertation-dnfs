@@ -10,12 +10,12 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     # Single config:
     pixi run -e dev modal run -m \\
         experiments.constrained_soft_02.modal_app::main \\
-        --cfg-name S2_d4_c03_l50 --seed 42
+        --cfg-name S2_d4_c05_l50_letf --seed 42
 
     # Multi-seed for d=4:
     pixi run -e dev modal run --detach -m \\
         experiments.constrained_soft_02.modal_app::batch_seeds \\
-        --cfg-name S2_d4_c03_l50 --seeds "42,43,44,45"
+        --cfg-name S2_d4_c05_l50_letf --seeds "42,43,44,45"
 """
 import modal
 

@@ -352,11 +352,10 @@ CONFIGS: dict[str, StageCfg] = {
     ),
     # Stage 4: leTF (Locally Equivariant Transformer, DNFS Sec 3.3 + App B.3).
     # Paper-faithful per App. E.1.1: 3 bidirectional causal layers, 4 heads,
-    # AdamW + lr 1e-3 + batch size 128. d4 cell mirrors stage_3_d4's budget
-    # (10k steps) for the cross-architecture comparison plot at small d.
-    # d10 cell mirrors Fig 3 / Fig 14 setup at 64 hidden / 50k steps;
-    # d10_critical mirrors Table 2 row at sigma=0.22305 with 128 hidden /
-    # 100k steps.
+    # AdamW + lr 1e-3 + batch size 128. d4 cell runs at 10k steps for the
+    # cross-architecture comparison plot at small d. d10 cell mirrors
+    # Fig 3 / Fig 14 setup at 64 hidden / 50k steps; d10_critical mirrors
+    # Table 2 row at sigma=0.22305 with 128 hidden / 100k steps.
     "stage_4_d4": StageCfg(
         name="stage_4_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
@@ -400,7 +399,7 @@ CONFIGS: dict[str, StageCfg] = {
     ),
     # Canonical subcritical leTF comparison run. This keeps the paper-aligned
     # architecture/training stack from `stage_4_d10_paper`, but caps the
-    # budget at 50k steps so it is comparable to the stage_3_d10 leConv run.
+    # budget at 50k steps for budget-matched cross-architecture comparison.
     "stage_4_d10_budget": StageCfg(
         name="stage_4_d10_budget",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),

@@ -6,7 +6,7 @@ composition-penalty kwargs natively when `IsingCfg` sets them.
 
 Usage:
     pixi run -e dev python -m experiments.constrained_soft_02.run \\
-        --cfg S2_d4_c03_l50 --seed 42
+        --cfg S2_d4_c05_l50_letf --seed 42
 """
 import argparse
 
