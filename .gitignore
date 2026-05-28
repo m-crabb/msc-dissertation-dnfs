@@ -1,6 +1,7 @@
 # MC experimental data (for time being at least)
 monte_carlo_data/
 monte-carlo*
+assets/ising_phases_states.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
