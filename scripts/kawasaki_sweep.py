@@ -56,17 +56,17 @@ def failure_curves():
         ax[1].plot(CURVE_SIGMAS, esss, "o-", label=f"D={D}")
     for a in ax:
         a.axvline(SIGMA_OPERATING, color="green", ls=":", lw=1.2,
-                  label="σ=0.1 (DNFS operating pt)")
-        a.axvline(SIGMA_CRITICAL, color="k", ls="--", lw=1, label="σ_c")
-        a.set_xlabel("σ (coupling; larger = lower T)")
+                  label=r"$\sigma=0.1$ (DNFS operating pt)")
+        a.axvline(SIGMA_CRITICAL, color="k", ls="--", lw=1, label=r"$\sigma_c$")
+        a.set_xlabel(r"$\sigma$ (coupling; larger = lower $T$)")
         a.set_yscale("log")
-    ax[0].set_ylabel("τ_int (swap steps)")
+    ax[0].set_ylabel(r"$\tau_{\mathrm{int}}$ (swap steps)")
     ax[0].set_title("critical slowing-down")
     ax[1].set_ylabel("ESS")
     ax[1].set_title("effective sample size collapse")
     ax[0].legend(fontsize=8)
-    fig.suptitle("Kawasaki on the hard-composition canonical Ising (c=0.5): "
-                 "mixing degrades past σ_c, worsening with lattice size")
+    fig.suptitle(r"Kawasaki on the hard-composition canonical Ising ($c=0.5$): "
+                 r"mixing degrades past $\sigma_c$, worsening with lattice size")
     fig.tight_layout()
     fig.savefig(OUT / "failure_curves.png", dpi=140)
     plt.close(fig)
@@ -101,19 +101,19 @@ def mode_coverage():
 
     fig, ax = plt.subplots(1, 3, figsize=(15, 4.3))
     ax[0].plot(ERGO_SIGMAS, rhats, "o-", color="purple")
-    ax[0].axhline(1.1, color="grey", ls=":", lw=1, label="R̂=1.1 (mixed)")
+    ax[0].axhline(1.1, color="grey", ls=":", lw=1, label=r"$\hat{R}=1.1$ (mixed)")
     ax[0].axvline(SIGMA_OPERATING, color="green", ls=":", lw=1.2,
-                  label="σ=0.1 (operating pt)")
-    ax[0].axvline(SIGMA_CRITICAL, color="k", ls="--", lw=1, label="σ_c")
+                  label=r"$\sigma=0.1$ (operating pt)")
+    ax[0].axvline(SIGMA_CRITICAL, color="k", ls="--", lw=1, label=r"$\sigma_c$")
     ax[0].set_yscale("log")
-    ax[0].set_xlabel("σ")
-    ax[0].set_ylabel("R̂ of order parameter φ")
+    ax[0].set_xlabel(r"$\sigma$")
+    ax[0].set_ylabel(r"$\hat{R}$ of order parameter $\phi$")
     ax[0].set_title("ergodicity breaking")
     ax[0].legend(fontsize=8)
 
     xs_scale = thin
-    for label, sigma, axi in [("low T: σ=0.40 (trapped)", 0.40, ax[1]),
-                              ("operating pt: σ=0.10 (mixed)", 0.10, ax[2])]:
+    for label, sigma, axi in [(r"low $T$: $\sigma=0.40$ (trapped)", 0.40, ax[1]),
+                              (r"operating pt: $\sigma=0.10$ (mixed)", 0.10, ax[2])]:
         for c, phi in enumerate(traces_by_sigma[sigma]):
             colour = "C0" if c < 2 else "C3"
             axi.plot(np.arange(len(phi)) * xs_scale, phi, lw=0.8, alpha=0.8,
@@ -121,11 +121,11 @@ def mode_coverage():
         axi.axhline(0, color="k", lw=0.6)
         axi.set_ylim(-2.2, 2.2)
         axi.set_xlabel("swap step")
-        axi.set_ylabel("φ = left − right magnetisation")
+        axi.set_ylabel(r"$\phi$ = left $-$ right magnetisation")
         axi.set_title(label + "\n(blue = +domain-left init, red = right init)")
-    fig.suptitle("Mode coverage via different-init ergodicity test: at the "
-                 "operating point chains forget their init (φ→0, R̂≈1); at low T "
-                 "they stay trapped on their starting side (R̂≫1)")
+    fig.suptitle(r"Mode coverage via different-init ergodicity test: at the "
+                 r"operating point chains forget their init ($\phi\to0$, "
+                 r"$\hat{R}\approx1$); at low $T$ they stay trapped ($\hat{R}\gg1$)")
     fig.tight_layout()
     fig.savefig(OUT / "mode_coverage.png", dpi=140)
     plt.close(fig)
