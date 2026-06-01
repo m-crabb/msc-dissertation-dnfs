@@ -30,6 +30,7 @@ for the derivation.
 
 import itertools
 
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -357,3 +358,57 @@ def exact_internal_energy(target, sigma: float, D: int) -> Tensor:
     log_p_unnorm = target.log_prob(states)
     log_pi = log_p_unnorm - torch.logsumexp(log_p_unnorm, dim=0)
     return -(log_pi.exp() * log_p_unnorm).sum() / (2 * sigma * D)
+
+
+def integrated_autocorr(x, c_window: float = 5.0) -> float:
+    """Sokal automatic-windowing integrated autocorrelation time.
+
+    τ_int = 1 + 2 Σ_{k=1}^{W} ρ(k), with W the smallest integer such that
+    W >= c_window * τ_int(W). Uses an FFT for the autocovariance. Input is a
+    1-D trace; the returned τ_int is in units of the trace's sampling interval
+    (multiply by any thinning factor to recover raw-step units).
+
+    Used to quantify MCMC mixing: ESS = n_samples / τ_int. For the §3.1
+    Kawasaki failure demo, τ_int diverging with σ is the critical-slowing-down
+    signature.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    n = len(x)
+    x = x - x.mean()
+    var0 = np.dot(x, x) / n
+    if var0 == 0:
+        return 1.0
+    n2 = 1
+    while n2 < 2 * n:
+        n2 *= 2
+    f = np.fft.fft(x, n=n2)
+    acov = np.real(np.fft.ifft(f * np.conj(f)))[:n]
+    acf = acov / (var0 * np.arange(n, 0, -1))
+    tau = 1.0
+    for W in range(1, n):
+        tau += 2.0 * acf[W]
+        if W >= c_window * tau:
+            return float(tau)
+    return float(tau)
+
+
+def gelman_rubin(chains) -> float:
+    """Between-chain potential scale reduction factor R̂.
+
+    chains: (n_chains, n_samples) array of a scalar observable. R̂ ≈ 1 when the
+    chains have mixed to a common distribution; R̂ ≫ 1 signals chains trapped in
+    distinct modes — the §3.1 mode-coverage failure at low temperature.
+
+        var_hat = (1 - 1/n) W + B/n,   R̂ = sqrt(var_hat / W),
+
+    with W the mean within-chain variance and B the between-chain variance.
+    """
+    chains = np.asarray(chains, dtype=np.float64)
+    m, n = chains.shape
+    chain_means = chains.mean(axis=1)
+    within_var = chains.var(axis=1, ddof=1).mean()
+    between_var = n * chain_means.var(ddof=1)
+    if within_var == 0:
+        return float("inf")
+    var_hat = (1 - 1 / n) * within_var + between_var / n
+    return float(np.sqrt(var_hat / within_var))

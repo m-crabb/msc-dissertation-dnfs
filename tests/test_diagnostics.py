@@ -301,3 +301,47 @@ def test_exact_internal_energy_matches_pi_weighted_neg_log_p_tilde():
     log_pi = log_p_unnorm - torch.logsumexp(log_p_unnorm, dim=0)
     expected = -(log_pi.exp() * log_p_unnorm).sum().item() / (2 * sigma * D)
     assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
+
+
+# --- MCMC-trace diagnostics (integrated autocorrelation time, R-hat) ---------
+import numpy as np
+
+from discrete_flow_sampler.diagnostics.metrics import (
+    integrated_autocorr,
+    gelman_rubin,
+)
+
+
+def test_integrated_autocorr_white_noise_is_one():
+    rng = np.random.default_rng(0)
+    x = rng.standard_normal(200_000)
+    tau = integrated_autocorr(x)
+    assert 0.8 < tau < 1.3  # white noise → τ_int ≈ 1
+
+
+def test_integrated_autocorr_ar1_matches_theory():
+    # AR(1) x_t = phi x_{t-1} + eps has τ_int = (1+phi)/(1-phi).
+    phi = 0.8
+    rng = np.random.default_rng(1)
+    n = 500_000
+    x = np.empty(n)
+    x[0] = 0.0
+    eps = rng.standard_normal(n)
+    for t in range(1, n):
+        x[t] = phi * x[t - 1] + eps[t]
+    tau_theory = (1 + phi) / (1 - phi)  # = 9.0
+    tau = integrated_autocorr(x)
+    assert abs(tau - tau_theory) / tau_theory < 0.15
+
+
+def test_gelman_rubin_agreeing_chains_near_one():
+    rng = np.random.default_rng(2)
+    chains = rng.standard_normal((4, 5000))  # iid, same dist
+    assert gelman_rubin(chains) < 1.05
+
+
+def test_gelman_rubin_separated_chains_large():
+    rng = np.random.default_rng(3)
+    offsets = np.array([0.0, 10.0, 20.0, 30.0])[:, None]
+    chains = rng.standard_normal((4, 5000)) + offsets  # trapped in diff modes
+    assert gelman_rubin(chains) > 2.0
