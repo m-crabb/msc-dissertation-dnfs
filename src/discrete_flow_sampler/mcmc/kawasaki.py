@@ -135,3 +135,90 @@ def run_chain(x, D, sigma, n_steps, seed):
         energy_trace[step] = L
 
     return energy_trace, x, n_accept
+
+
+@njit(cache=True)
+def left_minus_right(x, D):
+    """Mode-sensitive order parameter: mean(x | left-half columns) minus
+    mean(x | right-half columns) on a DxD lattice.
+
+    Labels WHICH way the system has phase-separated at fixed composition:
+    +domain on the left → ~ +2, on the right → ~ -2, symmetric/mixed → ~ 0.
+    Unlike energy, this distinguishes spatial modes, so its between-chain R̂
+    detects ergodicity breaking (the §3.1 mode-coverage failure).
+    """
+    half = D // 2
+    left_sum = 0.0
+    right_sum = 0.0
+    n_left = 0
+    n_right = 0
+    for i in range(D * D):
+        if i % D < half:
+            left_sum += x[i]
+            n_left += 1
+        else:
+            right_sum += x[i]
+            n_right += 1
+    return left_sum / n_left - right_sum / n_right
+
+
+def init_phase_separated(D, side):
+    """c=0.5 phase-separated config: all +1 in the left (side=0) or right
+    (side=1) half-columns, -1 elsewhere. For even D this is exactly d/2 +1
+    sites. Used to seed chains in DIFFERENT modes for the ergodicity test."""
+    if D % 2 != 0:
+        raise ValueError("init_phase_separated assumes even D for c=0.5")
+    d = D * D
+    half = D // 2
+    x = -np.ones(d, dtype=np.int64)
+    for i in range(d):
+        in_left = (i % D) < half
+        if (side == 0 and in_left) or (side == 1 and not in_left):
+            x[i] = 1
+    return x
+
+
+@njit(cache=True)
+def run_chain_order_param(x, D, sigma, n_steps, seed, thin):
+    """Kawasaki chain recording the left_minus_right order parameter every
+    `thin` steps. Returns (phi_trace, x_final, n_accept). Same move and accept
+    rule as run_chain; only the recorded observable differs (mode label, not
+    energy), so different-init chains' R̂(phi) measures ergodicity breaking."""
+    np.random.seed(seed)
+    d = D * D
+    plus = np.empty(d, dtype=np.int64)
+    minus = np.empty(d, dtype=np.int64)
+    n_plus = 0
+    n_minus = 0
+    for k in range(d):
+        if x[k] == 1:
+            plus[n_plus] = k
+            n_plus += 1
+        else:
+            minus[n_minus] = k
+            n_minus += 1
+
+    n_record = n_steps // thin
+    phi_trace = np.empty(n_record, dtype=np.float64)
+    rec = 0
+    n_accept = 0
+
+    for step in range(n_steps):
+        # Record at the top so phi_trace[k] is the state after k*thin steps;
+        # phi_trace[0] is the initial config (before any move).
+        if step % thin == 0 and rec < n_record:
+            phi_trace[rec] = left_minus_right(x, D)
+            rec += 1
+        pi = np.random.randint(n_plus)
+        mi = np.random.randint(n_minus)
+        i = plus[pi]
+        j = minus[mi]
+        delta = kawasaki_delta_log_prob(x, i, j, D, sigma)
+        if delta >= 0.0 or np.random.random() < np.exp(delta):
+            x[i] = -1
+            x[j] = 1
+            plus[pi] = j
+            minus[mi] = i
+            n_accept += 1
+
+    return phi_trace[:rec], x, n_accept

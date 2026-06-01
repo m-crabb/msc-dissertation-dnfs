@@ -13,9 +13,12 @@ import numpy as np
 import torch
 
 from discrete_flow_sampler.mcmc.kawasaki import (
+    init_phase_separated,
     init_random_at_composition,
     kawasaki_delta_log_prob,
+    left_minus_right,
     run_chain,
+    run_chain_order_param,
 )
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -107,3 +110,25 @@ def test_kawasaki_stationary_matches_exact_enum_d4():
 
     assert abs(samples.mean() - exact_mean_E) < 0.15
     assert np.max(np.abs(emp_level_p - exact_level_p)) < 0.02
+
+
+def test_left_minus_right_labels_mode():
+    # left-slab → +1 - (-1) = +2; right-slab → -2; symmetric checkerboard → 0.
+    D = 6
+    assert left_minus_right(init_phase_separated(D, 0), D) == 2.0
+    assert left_minus_right(init_phase_separated(D, 1), D) == -2.0
+    checker = np.array([1 if (i + i // D) % 2 == 0 else -1 for i in range(D * D)],
+                       dtype=np.int64)
+    assert abs(left_minus_right(checker, D)) < 1e-9
+
+
+def test_order_param_trace_matches_direct_and_conserves_composition():
+    D, sigma = 10, 0.2
+    x = init_phase_separated(D, 0)
+    n_plus0 = int((x == 1).sum())
+    phi_trace, x_final, _ = run_chain_order_param(x, D, sigma, 20_000, 0, thin=1000)
+    # phi_trace[0] is the initial config (recorded before any move): a left
+    # slab has order parameter +2 exactly.
+    assert phi_trace[0] == 2.0
+    # composition still conserved by the swap move
+    assert int((x_final == 1).sum()) == n_plus0
