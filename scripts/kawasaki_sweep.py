@@ -50,8 +50,12 @@ def failure_curves():
                 thin=50, n_chains=4, seed=100,
             )
             taus.append(tau.mean())
-            esss.append(ess.mean())
-            print(f"D={D} σ={sigma}: τ_int≈{tau.mean():.0f} ESS≈{ess.mean():.0f}")
+            # Normalised chain ESS = ESS/N = 1/τ_int ∈ (0,1] (fraction of the
+            # chain that is effectively independent). Comparable across chain
+            # lengths and lattice sizes; distinct from the IS-ESS used elsewhere.
+            esss.append((1.0 / tau).mean())
+            print(f"D={D} σ={sigma}: τ_int≈{tau.mean():.0f} "
+                  f"normESS≈{(1.0/tau).mean():.2e}")
         ax[0].plot(CURVE_SIGMAS, taus, "o-", label=f"D={D}")
         ax[1].plot(CURVE_SIGMAS, esss, "o-", label=f"D={D}")
     for a in ax:
@@ -62,8 +66,8 @@ def failure_curves():
         a.set_yscale("log")
     ax[0].set_ylabel(r"$\tau_{\mathrm{int}}$ (swap steps)")
     ax[0].set_title("critical slowing-down")
-    ax[1].set_ylabel("ESS")
-    ax[1].set_title("effective sample size collapse")
+    ax[1].set_ylabel(r"normalised ESS  $= 1/\tau_{\mathrm{int}}$")
+    ax[1].set_title("sampling efficiency collapse")
     ax[0].legend(fontsize=8)
     fig.suptitle(r"Kawasaki on the hard-composition canonical Ising ($c=0.5$): "
                  r"mixing degrades past $\sigma_c$, worsening with lattice size")
