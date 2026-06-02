@@ -21,6 +21,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import ListedColormap
 
 from discrete_flow_sampler.diagnostics.metrics import gelman_rubin
 from discrete_flow_sampler.mcmc.kawasaki import (
@@ -39,6 +40,10 @@ CURVE_SIGMAS = [0.05, 0.10, 0.16, 0.20, 0.22305, 0.26]   # monotonic τ_int regi
 ERGO_SIGMAS = [0.05, 0.10, 0.16, 0.20, 0.22305, 0.26, 0.32, 0.40]
 DEMO_D = [10, 16, 24]
 ERGO_D = 24
+
+# Spin colours matching scripts/plot_ising_phases.py: indigo = -1 (down),
+# gold = +1 (up). Plotted on (x+1)/2 so 0->down, 1->up.
+SPIN_CMAP = ListedColormap(["#3B3A6B", "#F2C14E"])
 
 
 def failure_curves():
@@ -146,7 +151,8 @@ def mode_coverage():
     snaps = bot[0].subgridspec(1, 4, wspace=0.15)
     for c, x_final in enumerate(finals_by_sigma[0.40]):
         axs = fig.add_subplot(snaps[c])
-        axs.imshow(x_final.reshape(ERGO_D, ERGO_D), cmap="binary", vmin=-1, vmax=1)
+        axs.imshow((x_final.reshape(ERGO_D, ERGO_D) + 1) * 0.5, cmap=SPIN_CMAP,
+                   vmin=0, vmax=1, interpolation="nearest")
         axs.set_xticks([])
         axs.set_yticks([])
         axs.set_title(rf"$\phi={left_minus_right(x_final, ERGO_D):+.1f}$",
