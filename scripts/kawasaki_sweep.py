@@ -49,19 +49,26 @@ SPIN_CMAP = ListedColormap(["#3B3A6B", "#F2C14E"])
 def failure_curves():
     fig, ax = plt.subplots(1, 2, figsize=(12, 4.5))
     for D in DEMO_D:
+        d_sites = D * D
         taus, esss = [], []
         for sigma in CURVE_SIGMAS:
             _, _, _, tau, ess, _ = run_config(
                 D, sigma, 0.5, n_steps=1_500_000, n_burn=200_000,
                 thin=50, n_chains=4, seed=100,
             )
-            taus.append(tau.mean())
-            # Normalised chain ESS = ESS/N = 1/τ_int ∈ (0,1] (fraction of the
-            # chain that is effectively independent). Comparable across chain
-            # lengths and lattice sizes; distinct from the IS-ESS used elsewhere.
-            esss.append((1.0 / tau).mean())
-            print(f"D={D} σ={sigma}: τ_int≈{tau.mean():.0f} "
-                  f"normESS≈{(1.0/tau).mean():.2e}")
+            # Work in SWEEPS (one sweep = d swap attempts). A local move touches
+            # only 2 of d sites, so any local sampler needs ~1 sweep per
+            # independent configuration; measuring τ_int in single-swap units
+            # would make every large lattice look slow purely from the step
+            # definition, and unfairly penalise larger d at the operating point.
+            tau_sweeps = tau.mean() / d_sites
+            taus.append(tau_sweeps)
+            # Normalised ESS = independent samples per sweep, capped at 1
+            # (≈1 means as good as i.i.d. at sweep resolution), matching the
+            # (·, 1] scale of the IS-ESS reported elsewhere.
+            esss.append(min(1.0, 1.0 / tau_sweeps))
+            print(f"D={D} σ={sigma}: τ_int≈{tau_sweeps:.2f} sweeps "
+                  f"normESS≈{min(1.0, 1.0 / tau_sweeps):.2f}")
         ax[0].plot(CURVE_SIGMAS, taus, "o-", label=f"D={D}")
         ax[1].plot(CURVE_SIGMAS, esss, "o-", label=f"D={D}")
     for a in ax:
@@ -69,10 +76,11 @@ def failure_curves():
                   label=r"$\sigma=0.1$ (DNFS operating pt)")
         a.axvline(SIGMA_CRITICAL, color="k", ls="--", lw=1, label=r"$\sigma_c$")
         a.set_xlabel(r"$\sigma$ (coupling; larger = lower $T$)")
-        a.set_yscale("log")
-    ax[0].set_ylabel(r"$\tau_{\mathrm{int}}$ (swap steps)")
+    ax[0].set_yscale("log")
+    ax[0].set_ylabel(r"$\tau_{\mathrm{int}}$ (sweeps)")
     ax[0].set_title("critical slowing-down")
-    ax[1].set_ylabel(r"normalised ESS  $= 1/\tau_{\mathrm{int}}$")
+    ax[1].set_ylim(0, 1.05)
+    ax[1].set_ylabel("normalised ESS (indep. samples / sweep)")
     ax[1].set_title("sampling efficiency collapse")
     ax[0].legend(fontsize=8)
     fig.suptitle(r"Kawasaki on the hard-composition canonical Ising ($c=0.5$): "
