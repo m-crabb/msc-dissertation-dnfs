@@ -1,5 +1,5 @@
-from experiments.dnfs_baseline_01.configs import CONFIGS as BASELINE_CONFIGS
 from experiments.constrained_soft_02.configs import CONFIGS as CONSTRAINED_CONFIGS
+from experiments.dnfs_baseline_01.configs import CONFIGS as BASELINE_CONFIGS
 
 
 def test_constrained_configs_use_constraints_wandb_project():
@@ -41,7 +41,10 @@ def test_c05_d4_letf_cell_mirrors_c03_with_only_target_changed():
     assert twin.ising.D == base.ising.D
     assert twin.ising.sigma == base.ising.sigma
     assert twin.ising.bias == base.ising.bias
-    assert twin.ising.composition_penalty_strength == base.ising.composition_penalty_strength
+    assert (
+        twin.ising.composition_penalty_strength
+        == base.ising.composition_penalty_strength
+    )
     assert twin.model == base.model
     assert twin.train == base.train
     assert twin.ctmc == base.ctmc
@@ -65,3 +68,24 @@ def test_letf_d10_ne128_cell_carries_stability_stack():
     assert cfg.model.hidden_dim == 128
     assert cfg.ising.D == 10
     assert cfg.wandb_project == "dnfs-constraints"
+
+
+def test_d10_c05_ne64_cell_is_report_witness():
+    """D=10 c=0.5 headline cell: inherits the c=0.3 ne128 stability stack
+    (warmup=2000, lambda=50, let/h128) but runs the paper-faithful n_euler=64
+    grid rather than the unvalidated 128. c=0.3 is dropped from the report,
+    so this is the D=10 soft witness; pinned so a refactor keeps it paired
+    with its c=0.3 sibling on everything except target and n_euler."""
+    base = CONSTRAINED_CONFIGS["S2_d10_c03_l50_letf_ne128"]
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64"]
+    assert cfg.ising.target_composition == 0.5
+    assert cfg.ctmc.n_euler_steps == 64
+    assert cfg.ising.D == base.ising.D
+    assert (
+        cfg.ising.composition_penalty_strength
+        == base.ising.composition_penalty_strength
+    )
+    assert cfg.train.warmup_steps == base.train.warmup_steps
+    assert cfg.model == base.model
+    assert cfg.estimator == base.estimator
+    assert cfg.wandb_project == base.wandb_project

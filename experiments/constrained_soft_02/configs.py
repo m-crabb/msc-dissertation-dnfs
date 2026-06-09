@@ -9,6 +9,7 @@ for derivation).
 
 Cell-name format: `S<alphabet>_d<dim>_c<c_target_x100>_l<lambda>`.
 """
+
 from experiments.dnfs_baseline_01.configs import (
     CTMCCfg,
     EvalCfg,
@@ -28,7 +29,9 @@ CONFIGS: dict[str, StageCfg] = {
             target_composition=0.3,
             composition_penalty_strength=50.0,
         ),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
@@ -44,7 +47,9 @@ CONFIGS: dict[str, StageCfg] = {
             target_composition=0.5,
             composition_penalty_strength=50.0,
         ),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
@@ -96,6 +101,37 @@ CONFIGS: dict[str, StageCfg] = {
             warmup_steps=2000,
         ),
         ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    # D=10 c_target=0.5 subcritical headline cell. Follows the c=0.3 ne128 cell's
+    # stability stack (warmup=2000, lambda=50) but drops n_euler 128 -> 64 to match
+    # the paper-faithful baseline D=10 grid (DNFS uses T=64); the old 128 was an
+    # unvalidated conservative pick. This is a controlled escalation of the
+    # validated D=4 c=0.5 run up to D=10. c=0.3 is dropped from the report
+    # (2026-06-09), so this is the D=10 soft witness the final report ships.
+    "S2_d10_c05_l50_letf_ne64": StageCfg(
+        name="S2_d10_c05_l50_letf_ne64",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
