@@ -53,6 +53,26 @@ def test_c05_d4_letf_cell_mirrors_c03_with_only_target_changed():
     assert twin.wandb_project == base.wandb_project
 
 
+def test_d4_critical_cell_mirrors_d4_with_only_sigma_changed():
+    """4x4 row at the critical coupling for the Stage-4 table, giving the
+    critical operating point an exact-enumeration reference. Shape-identical
+    to stage_4_d4 except sigma, and trains direct with no curriculum: the
+    sigma-transition collapse that motivated the d10 curriculum was a D=10
+    finding, and the 4x4 lattice has no phase transition to fight."""
+    base = BASELINE_CONFIGS["stage_4_d4"]
+    cfg = BASELINE_CONFIGS["stage_4_d4_critical"]
+    assert cfg.ising.sigma == 0.22305
+    assert cfg.ising.D == base.ising.D
+    assert cfg.ising.bias == base.ising.bias
+    assert cfg.model == base.model
+    assert cfg.train == base.train
+    assert cfg.ctmc == base.ctmc
+    assert cfg.eval == base.eval
+    assert cfg.estimator == base.estimator
+    assert cfg.curriculum is None
+    assert cfg.wandb_project == base.wandb_project
+
+
 def test_letf_d10_ne128_cell_carries_stability_stack():
     """leTF d=10 ne128 cell carries the stability stack (warmup=2000, ne=128).
 

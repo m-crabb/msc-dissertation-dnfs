@@ -367,6 +367,23 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         estimator="control_variate",
     ),
+    # 4x4 row at the critical coupling for the Stage-4 report table: gives the
+    # critical operating point an exact-enumeration reference (2^16 states),
+    # which the 10x10 critical run cannot have. Trains direct at sigma_c with
+    # no curriculum: the sigma-transition collapse that motivated the d10
+    # curriculum was a D=10 finding, and the finite 4x4 lattice has no phase
+    # transition to fight. Fall back to a curriculum only if this fails.
+    "stage_4_d4_critical": StageCfg(
+        name="stage_4_d4_critical",
+        ising=IsingCfg(D=4, sigma=0.22305, bias=0.0),
+        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+    ),
     # Legacy/debug subcritical leTF config. Kept as a diagnostic point for the
     # earlier cautious stack (smaller h, replay1, tight clip), not as the final
     # Stage 4 comparison row; use `stage_4_d10_budget` for that.
