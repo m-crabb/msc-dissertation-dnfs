@@ -1,7 +1,7 @@
 """d=4 constrained Ising at c_target=0.5: exact distribution vs DNFS IS-weighted.
 
 Mirrors `01_c03_d4_exact_fidelity.py` but adds two diagnostics specific to
-the c_target=0.5 supervisor ask:
+the c_target=0.5:
 
   1. **Conditional p(log p̃ | c = 0.5)** — the c-marginal is uninformative
      at c_target=0.5 (Z_2 symmetry pins ⟨c⟩ = 0.5 by construction), so the
@@ -12,8 +12,6 @@ the c_target=0.5 supervisor ask:
      Z_2-symmetric (π(x) = π(−x)). The IS-weighted ⟨m⟩ should be 0; the
      |mass(m>0) − mass(m<0)| asymmetry measures how badly q_θ has failed
      to learn the invariance the leTF isn't manifestly equivariant under.
-
-Local-only (experiments/constrained_soft_02/analysis/ is git-excluded).
 """
 import argparse
 import json

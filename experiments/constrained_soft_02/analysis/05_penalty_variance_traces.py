@@ -11,8 +11,6 @@ stage_4_d10_budget seeds (identical architecture/budget/settings, no penalty).
 
 The full Var[delta_I] / lambda^2 Var[delta_P] decomposition is NOT logged, so
 this is the two-trace version: total integrand variance, soft vs unconstrained.
-
-Local-only (experiments/constrained_soft_02/analysis/ is git-excluded).
 """
 import argparse
 from pathlib import Path

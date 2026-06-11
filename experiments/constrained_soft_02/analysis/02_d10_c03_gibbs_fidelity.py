@@ -6,11 +6,6 @@ exact checks + its own 3 mixing diagnostics) is the empirical reference.
 Compares low-dim marginals only (composition: 101 support points; log p̃:
 ~40 bins) — informative at N=5000 but finite-sample floored; full 2^100 TVD
 is meaningless.
-
-The two helpers are re-defined inline (2 lines each): both analysis scripts
-are local-only and digit-prefixed (not importable); a shared module for
-throwaway analysis would be over-abstraction (feedback_lean_code).
-Local-only (experiments/constrained_soft_02/analysis/ is git-excluded).
 """
 import argparse
 import json

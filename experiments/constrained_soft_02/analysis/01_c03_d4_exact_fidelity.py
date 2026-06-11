@@ -5,7 +5,7 @@ so the constrained pmf is known exactly. The eval samples are CTMC proposal
 draws with importance log-weights; the faithful estimate of any target
 expectation is the SELF-NORMALISED IS estimate softmax(log_w)·f, NOT the raw
 sample mean (the stored metrics.json `composition_mean` is the unweighted
-proposal mean — design §1.3).
+proposal mean).
 
 Reports:
   - exact E_π[c₊]  vs  IS-weighted Ê[c₊]  vs  stored unweighted mean (0.3047)
@@ -16,7 +16,6 @@ Reports:
 
 Marginal TVDs (low-dim: 17 / ~40 bins) are informative at N=5000; the
 full 2^16-state TVD is sample-floored at this budget (project_tvd_floor).
-Local-only (experiments/constrained_soft_02/analysis/ is git-excluded).
 """
 import json
 from pathlib import Path

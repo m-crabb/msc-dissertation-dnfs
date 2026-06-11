@@ -21,9 +21,6 @@ for the d=4, c_target=0.5 binary alloy:
 
 Pass one run dir to prototype, or all of seeds 42-45 for the report figure: with
 several the DNFS marginal is drawn as the across-seed mean with a min-max band.
-
-Reuses the d=4 exact-enumeration machinery from `03_c05_d4_exact_fidelity.py`.
-Local-only (experiments/constrained_soft_02/analysis/ is git-excluded).
 """
 import argparse
 import json
