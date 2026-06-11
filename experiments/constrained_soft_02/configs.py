@@ -56,6 +56,63 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
+    # λ sweep at the c=0.5 report operating point (2026-06-11 design): clones
+    # of the l50 cell varying only the penalty strength, so the four-seed
+    # λ comparison is controlled. λ=50 is the existing cell above.
+    "S2_d4_c05_l5_letf": StageCfg(
+        name="S2_d4_c05_l5_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=5.0,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d4_c05_l10_letf": StageCfg(
+        name="S2_d4_c05_l10_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=10.0,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d4_c05_l100_letf": StageCfg(
+        name="S2_d4_c05_l100_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=100.0,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
     "S2_d10_c03_l50_letf_ne128": StageCfg(
         name="S2_d10_c03_l50_letf_ne128",
         ising=IsingCfg(
@@ -120,6 +177,84 @@ CONFIGS: dict[str, StageCfg] = {
             bias=0.0,
             target_composition=0.5,
             composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    # λ sweep at the c=0.5 report operating point (2026-06-11 design): clones
+    # of the l50 witness varying only the penalty strength, so the four-seed
+    # λ comparison is controlled. λ=50 is the existing witness above.
+    "S2_d10_c05_l5_letf_ne64": StageCfg(
+        name="S2_d10_c05_l5_letf_ne64",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=5.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d10_c05_l10_letf_ne64": StageCfg(
+        name="S2_d10_c05_l10_letf_ne64",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=10.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d10_c05_l100_letf_ne64": StageCfg(
+        name="S2_d10_c05_l100_letf_ne64",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=100.0,
         ),
         train=TrainCfg(
             n_steps=50_000,

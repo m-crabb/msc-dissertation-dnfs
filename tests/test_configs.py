@@ -109,3 +109,39 @@ def test_d10_c05_ne64_cell_is_report_witness():
     assert cfg.model == base.model
     assert cfg.estimator == base.estimator
     assert cfg.wandb_project == base.wandb_project
+
+
+def test_d10_c05_lambda_sweep_cells_mirror_l50_with_only_penalty_changed():
+    """λ-sweep cells at c=0.5 d=10: clones of the l50 ne64 witness, λ only."""
+    base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64"]
+    for lam in (5.0, 10.0, 100.0):
+        cfg = CONSTRAINED_CONFIGS[f"S2_d10_c05_l{int(lam)}_letf_ne64"]
+        assert cfg.ising.composition_penalty_strength == lam
+        assert cfg.ising.D == base.ising.D
+        assert cfg.ising.sigma == base.ising.sigma
+        assert cfg.ising.bias == base.ising.bias
+        assert cfg.ising.target_composition == base.ising.target_composition
+        assert cfg.train == base.train
+        assert cfg.ctmc == base.ctmc
+        assert cfg.eval == base.eval
+        assert cfg.model == base.model
+        assert cfg.estimator == base.estimator
+        assert cfg.wandb_project == base.wandb_project
+
+
+def test_d4_c05_lambda_sweep_cells_mirror_l50_with_only_penalty_changed():
+    """λ-sweep cells at c=0.5 d=4: clones of the l50 cell, λ only."""
+    base = CONSTRAINED_CONFIGS["S2_d4_c05_l50_letf"]
+    for lam in (5.0, 10.0, 100.0):
+        cfg = CONSTRAINED_CONFIGS[f"S2_d4_c05_l{int(lam)}_letf"]
+        assert cfg.ising.composition_penalty_strength == lam
+        assert cfg.ising.D == base.ising.D
+        assert cfg.ising.sigma == base.ising.sigma
+        assert cfg.ising.bias == base.ising.bias
+        assert cfg.ising.target_composition == base.ising.target_composition
+        assert cfg.train == base.train
+        assert cfg.ctmc == base.ctmc
+        assert cfg.eval == base.eval
+        assert cfg.model == base.model
+        assert cfg.estimator == base.estimator
+        assert cfg.wandb_project == base.wandb_project
