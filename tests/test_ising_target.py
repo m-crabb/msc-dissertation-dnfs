@@ -131,3 +131,35 @@ def test_set_sigma_matches_fresh_target():
 
     x = torch.randint(0, 2, (8, 16)).float() * 2 - 1
     torch.testing.assert_close(swapped.log_prob(x), fresh.log_prob(x))
+
+
+def test_set_composition_penalty_strength_matches_fresh_target():
+    """set_composition_penalty_strength swaps λ in place; target equals one
+    built at the new λ. Used by λ-annealing curricula to tighten the soft
+    composition constraint without rebuilding model or optimizer state."""
+    swapped = IsingTarget(
+        D=4, sigma=0.1, target_composition=0.5,
+        composition_penalty_strength=10.0,
+    )
+    swapped.set_composition_penalty_strength(50.0)
+    fresh = IsingTarget(
+        D=4, sigma=0.1, target_composition=0.5,
+        composition_penalty_strength=50.0,
+    )
+
+    assert swapped.composition_penalty_strength == 50.0
+
+    x = torch.randint(0, 2, (8, 16)).float() * 2 - 1
+    torch.testing.assert_close(
+        swapped.composition_penalty(x), fresh.composition_penalty(x)
+    )
+    torch.testing.assert_close(swapped.log_prob(x), fresh.log_prob(x))
+
+
+def test_set_composition_penalty_strength_rejects_negative():
+    target = IsingTarget(
+        D=4, sigma=0.1, target_composition=0.5,
+        composition_penalty_strength=10.0,
+    )
+    with pytest.raises(ValueError):
+        target.set_composition_penalty_strength(-1.0)

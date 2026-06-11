@@ -250,3 +250,64 @@ def test_append_replay_buffer_keeps_latest_outer_batches():
 
     assert x_buffer.flatten().tolist() == [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
     assert t_buffer.tolist() == [0, 0, 1, 1, 0, 0, 1, 1]
+
+
+def test_train_piecewise_lambda_curriculum_tightens_penalty(tmp_path):
+    """Piecewise λ curriculum anneals the soft-composition penalty upward,
+    switching on outer-cycle boundaries like the σ curriculum."""
+    torch.manual_seed(0)
+    target = IsingTarget(
+        D=2, sigma=0.1, target_composition=0.5,
+        composition_penalty_strength=10.0,
+    )
+    n_sites = target.D * target.D
+    model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
+
+    train_cfg = _tiny_train_cfg(
+        n_steps=20, inner_steps_per_outer=10,
+        batch_size=8, outer_batch_size=8,
+    )
+    ctmc_cfg = SimpleNamespace(n_euler_steps=4)
+    eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
+    lambda_curriculum = (
+        SimpleNamespace(start_step=0, composition_penalty_strength=10.0, lr=None),
+        SimpleNamespace(start_step=10, composition_penalty_strength=50.0, lr=None),
+    )
+
+    train(
+        model=model, target=target,
+        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
+        output_dir=tmp_path, use_wandb=False,
+        estimator_mode="control_variate",
+        lambda_curriculum=lambda_curriculum,
+    )
+
+    assert target.composition_penalty_strength == 50.0
+
+
+def test_run_entry_wires_lambda_curriculum_into_train_loop(tmp_path, monkeypatch):
+    """run.train must init the target at the anneal's stage-0 λ and hand the
+    stages to train_loop; otherwise an anneal config silently trains at the
+    final λ from step 0."""
+    import pytest
+    from experiments.constrained_soft_02.configs import (
+        CONFIGS as CONSTRAINED_CONFIGS,
+    )
+    from experiments.dnfs_baseline_01 import run as run_mod
+
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
+    captured = {}
+
+    class _Abort(Exception):
+        pass
+
+    def fake_train_loop(*args, **kwargs):
+        captured.update(kwargs)
+        raise _Abort
+
+    monkeypatch.setattr(run_mod, "train_loop", fake_train_loop)
+    with pytest.raises(_Abort):
+        run_mod.train(cfg, seed=42, output_dir=tmp_path, use_wandb=False)
+
+    assert captured["lambda_curriculum"] == cfg.lambda_curriculum.stages
+    assert captured["target"].composition_penalty_strength == 10.0

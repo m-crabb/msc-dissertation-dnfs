@@ -94,6 +94,24 @@ class IsingTarget:
         self.sigma = sigma
         self.J = sigma * self.A
 
+    def set_composition_penalty_strength(self, strength: float) -> None:
+        """Mutate λ in place.
+
+        Used by λ-annealing curricula to tighten the soft composition
+        constraint without rebuilding model or optimizer state.
+        """
+        if strength < 0.0:
+            raise ValueError(
+                "composition_penalty_strength must be non-negative, "
+                f"got {strength}"
+            )
+        if strength > 0.0 and self.target_composition is None:
+            raise ValueError(
+                "target_composition must be set when "
+                "composition_penalty_strength is nonzero"
+            )
+        self.composition_penalty_strength = strength
+
     def composition_fraction(self, x: Tensor) -> Tensor:
         """Fraction of +1 spins in each state, shape (B,)."""
         return ((x + 1.0) * 0.5).mean(dim=-1)

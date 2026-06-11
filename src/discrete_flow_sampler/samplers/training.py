@@ -58,30 +58,32 @@ def _append_replay_buffer(
 
 
 def _normalise_curriculum(
-    sigma_curriculum,
+    curriculum,
     *,
     n_steps: int,
     inner_steps_per_outer: int,
+    value_attr: str = "sigma",
 ) -> list[tuple[int, float, float | None]]:
-    if sigma_curriculum is None:
+    name = f"{value_attr}_curriculum"
+    if curriculum is None:
         return []
 
     stages = []
-    for stage in sigma_curriculum:
+    for stage in curriculum:
         start_step = int(getattr(stage, "start_step"))
-        sigma = float(getattr(stage, "sigma"))
+        value = float(getattr(stage, value_attr))
         lr = getattr(stage, "lr", None)
-        stages.append((start_step, sigma, None if lr is None else float(lr)))
+        stages.append((start_step, value, None if lr is None else float(lr)))
 
     if not stages:
-        raise ValueError("sigma_curriculum must contain at least one stage")
+        raise ValueError(f"{name} must contain at least one stage")
     if stages[0][0] != 0:
-        raise ValueError("sigma_curriculum first stage must start at step 0")
+        raise ValueError(f"{name} first stage must start at step 0")
 
     prev_step = -1
-    for start_step, _sigma, _lr in stages:
+    for start_step, _value, _lr in stages:
         if start_step <= prev_step:
-            raise ValueError("sigma_curriculum stages must be strictly increasing")
+            raise ValueError(f"{name} stages must be strictly increasing")
         if start_step >= n_steps:
             raise ValueError(
                 f"curriculum start_step={start_step} must be < n_steps={n_steps}"
@@ -168,6 +170,7 @@ def train(
     use_wandb: bool = True,
     estimator_mode: str = "control_variate",
     sigma_curriculum=None,
+    lambda_curriculum=None,
 ):
     """Run paper Algorithm 1 for `train_cfg.n_steps` total inner steps.
 
@@ -199,6 +202,12 @@ def train(
             with `.start_step`, `.sigma`, and optional `.lr`. Stage
             boundaries clear the replay buffer so retained states are always
             drawn under the current target temperature.
+        lambda_curriculum: optional piecewise-constant schedule of objects
+            with `.start_step`, `.composition_penalty_strength`, and
+            optional `.lr`. Anneals the soft-composition penalty (typically
+            upward, so the physics is learned before the constraint
+            tightens). Same boundary rules and replay-buffer clearing as
+            `sigma_curriculum`.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir = output_dir / "checkpoints"
@@ -236,6 +245,12 @@ def train(
         n_steps=train_cfg.n_steps,
         inner_steps_per_outer=inner_steps_per_outer,
     )
+    lambda_stages = _normalise_curriculum(
+        lambda_curriculum,
+        n_steps=train_cfg.n_steps,
+        inner_steps_per_outer=inner_steps_per_outer,
+        value_attr="composition_penalty_strength",
+    )
 
     log_path = output_dir / "training_log.csv"
     with log_path.open("w", newline="") as log_file:
@@ -251,9 +266,13 @@ def train(
 
         step = 0
         curriculum_idx = -1
+        lambda_idx = -1
         x_replay_chunks: list[torch.Tensor] = []
         t_idx_replay_chunks: list[torch.Tensor] = []
         replay_sigma = float(target.sigma)
+        replay_lambda = float(
+            getattr(target, "composition_penalty_strength", 0.0)
+        )
         current_intended_lr = float(train_cfg.lr)
         warmup_steps = int(getattr(train_cfg, "warmup_steps", 0))
 
@@ -313,6 +332,33 @@ def train(
                                 "train/sigma_current": sigma_now,
                                 "train/lr_current": optimiser.param_groups[0]["lr"],
                                 "train/curriculum_stage": curriculum_idx,
+                            },
+                            step=step,
+                        )
+
+            # λ annealing mirrors the σ curriculum: tighten the penalty on
+            # outer-cycle boundaries and clear the replay buffer so retained
+            # states are always drawn under the current soft target.
+            if lambda_stages:
+                while (
+                    lambda_idx + 1 < len(lambda_stages)
+                    and step >= lambda_stages[lambda_idx + 1][0]
+                ):
+                    lambda_idx += 1
+                    _start, lambda_now, lr_now = lambda_stages[lambda_idx]
+                    target.set_composition_penalty_strength(lambda_now)
+                    if lr_now is not None:
+                        _set_optimizer_lr(optimiser, lr_now)
+                        current_intended_lr = float(lr_now)
+                    if lambda_now != replay_lambda:
+                        _clear_replay(x_replay_chunks, t_idx_replay_chunks)
+                        replay_lambda = lambda_now
+                    if use_wandb:
+                        wandb.log(
+                            {
+                                "train/lambda_current": lambda_now,
+                                "train/lr_current": optimiser.param_groups[0]["lr"],
+                                "train/lambda_stage": lambda_idx,
                             },
                             step=step,
                         )

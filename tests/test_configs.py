@@ -158,3 +158,25 @@ def test_d10_c05_l50_ne128_mirrors_ne64_with_only_euler_steps_changed():
     assert cfg.model == base.model
     assert cfg.estimator == base.estimator
     assert cfg.wandb_project == base.wandb_project
+
+
+def test_d10_c05_l50_anneal_mirrors_ne64_with_lambda_curriculum_only():
+    """Recipe-ladder anneal rung (2026-06-11): l50 ne64 witness plus a
+    10->25->50 lambda curriculum; the final stage must land on the cell's
+    own penalty strength so eval reports the operating point."""
+    base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64"]
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
+    stages = cfg.lambda_curriculum.stages
+    assert [
+        (s.start_step, s.composition_penalty_strength) for s in stages
+    ] == [(0, 10.0), (10_000, 25.0), (20_000, 50.0)]
+    assert stages[-1].composition_penalty_strength == (
+        cfg.ising.composition_penalty_strength
+    )
+    assert cfg.ising == base.ising
+    assert cfg.train == base.train
+    assert cfg.ctmc == base.ctmc
+    assert cfg.eval == base.eval
+    assert cfg.model == base.model
+    assert cfg.estimator == base.estimator
+    assert cfg.wandb_project == base.wandb_project

@@ -120,6 +120,25 @@ class CurriculumCfg:
 
 
 @dataclass(frozen=True)
+class LambdaCurriculumStageCfg:
+    """Piecewise-constant λ-annealing stage for soft-composition cells.
+
+    Same boundary rules as `CurriculumStageCfg`: `start_step` must align
+    with an outer-cycle boundary, and `lr=None` leaves the optimiser LR
+    unchanged at that stage.
+    """
+
+    start_step: int
+    composition_penalty_strength: float
+    lr: float | None = None
+
+
+@dataclass(frozen=True)
+class LambdaCurriculumCfg:
+    stages: tuple[LambdaCurriculumStageCfg, ...]
+
+
+@dataclass(frozen=True)
 class StageCfg:
     name: str
     ising: IsingCfg
@@ -129,6 +148,7 @@ class StageCfg:
     model: ModelCfg
     estimator: Literal["naive_mc", "control_variate"]
     curriculum: CurriculumCfg | None = None
+    lambda_curriculum: LambdaCurriculumCfg | None = None
     wandb_project: str = "dnfs-baseline"
 
 

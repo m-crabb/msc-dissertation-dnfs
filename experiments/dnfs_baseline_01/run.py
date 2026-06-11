@@ -257,13 +257,25 @@ def train(
         target_sigma_init = cfg.curriculum.stages[0].sigma
     else:
         target_sigma_init = cfg.ising.sigma
+    # λ anneal mirrors the σ curriculum: the target starts at the stage-0
+    # penalty strength and train_loop tightens it through the stages. It is
+    # plumbed here, not in constrained_soft_02, because this `train` is the
+    # shared entry point that the constrained modal_app delegates to; for
+    # baseline (unconstrained) configs lambda_curriculum is None and this
+    # block is a no-op.
+    if cfg.lambda_curriculum is not None:
+        target_lambda_init = (
+            cfg.lambda_curriculum.stages[0].composition_penalty_strength
+        )
+    else:
+        target_lambda_init = cfg.ising.composition_penalty_strength
     target = IsingTarget(
         D=cfg.ising.D,
         sigma=target_sigma_init,
         bias=cfg.ising.bias,
         device=device,
         target_composition=cfg.ising.target_composition,
-        composition_penalty_strength=cfg.ising.composition_penalty_strength,
+        composition_penalty_strength=target_lambda_init,
     )
     model = _build_model(cfg, target)
 
@@ -278,6 +290,11 @@ def train(
         estimator_mode=cfg.estimator,
         sigma_curriculum=(
             cfg.curriculum.stages if cfg.curriculum is not None else None
+        ),
+        lambda_curriculum=(
+            cfg.lambda_curriculum.stages
+            if cfg.lambda_curriculum is not None
+            else None
         ),
     )
 
