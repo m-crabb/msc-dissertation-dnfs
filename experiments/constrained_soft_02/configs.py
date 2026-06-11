@@ -272,4 +272,32 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
+    # Recipe ladder rung 1 (2026-06-11): clone of the l50 ne64 witness with a
+    # finer Euler grid only, testing whether ne128 rescues d10 seed survival
+    # at the tight operating point (the c=0.3 ne128 batch went 4/4).
+    "S2_d10_c05_l50_letf_ne128": StageCfg(
+        name="S2_d10_c05_l50_letf_ne128",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
 }

@@ -145,3 +145,16 @@ def test_d4_c05_lambda_sweep_cells_mirror_l50_with_only_penalty_changed():
         assert cfg.model == base.model
         assert cfg.estimator == base.estimator
         assert cfg.wandb_project == base.wandb_project
+
+
+def test_d10_c05_l50_ne128_mirrors_ne64_with_only_euler_steps_changed():
+    """Recipe-ladder rung 1 (2026-06-11): l50 witness with ne128 only."""
+    base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64"]
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128"]
+    assert cfg.ctmc.n_euler_steps == 128
+    assert cfg.ising == base.ising
+    assert cfg.train == base.train
+    assert cfg.eval == base.eval
+    assert cfg.model == base.model
+    assert cfg.estimator == base.estimator
+    assert cfg.wandb_project == base.wandb_project
