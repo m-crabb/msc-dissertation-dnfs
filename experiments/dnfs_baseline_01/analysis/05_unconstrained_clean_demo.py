@@ -25,8 +25,6 @@ COUNT for independence: with 100 chains whose inits land in either Z2 mode at
 random, the pooled histogram is unbiased even if individual chains tunnel
 rarely. Cross-chain R-hat on magnetisation is printed as the mixing check.
 References are cached to results/01_baseline/gibbs_ref_*.pt (~minutes to build).
-
-Local-only (experiments/dnfs_baseline_01/analysis/ is git-excluded).
 """
 import argparse
 import json
