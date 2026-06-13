@@ -317,6 +317,88 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # F(c) campaign gate windows (2026-06-13): off-centre clones of the won
+    # anneal rung, varying only target_composition. c=0.65 (typical) and
+    # c=0.80 (stress) launch first and gate the rest of the composition sweep
+    # against the failure criteria in the campaign design doc. The anneal
+    # schedule and every other knob are held fixed so the off-centre runs are a
+    # controlled test of whether the recipe generalises away from c=0.5.
+    "S2_d10_c065_l50_letf_ne64_anneal": StageCfg(
+        name="S2_d10_c065_l50_letf_ne64_anneal",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.65,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=10_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=20_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d10_c080_l50_letf_ne64_anneal": StageCfg(
+        name="S2_d10_c080_l50_letf_ne64_anneal",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.80,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=10_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=20_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # Recipe ladder fallback rung (2026-06-11): clone of the l50 ne64 witness
     # with a finer Euler grid only, testing whether ne128 rescues d10 seed
     # survival at the tight operating point (the c=0.3 ne128 batch went 4/4).

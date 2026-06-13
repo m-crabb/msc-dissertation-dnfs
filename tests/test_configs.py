@@ -180,3 +180,31 @@ def test_d10_c05_l50_anneal_mirrors_ne64_with_lambda_curriculum_only():
     assert cfg.model == base.model
     assert cfg.estimator == base.estimator
     assert cfg.wandb_project == base.wandb_project
+
+
+def test_fc_gate_anneal_cells_mirror_c05_anneal_with_only_composition_changed():
+    """F(c) campaign gate windows (2026-06-13): off-centre clones of the won
+    c=0.5 anneal rung varying only target_composition, so the off-centre runs
+    are a controlled test of whether the annealed recipe generalises."""
+    base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
+    for key, ct in (
+        ("S2_d10_c065_l50_letf_ne64_anneal", 0.65),
+        ("S2_d10_c080_l50_letf_ne64_anneal", 0.80),
+    ):
+        cfg = CONSTRAINED_CONFIGS[key]
+        assert cfg.ising.target_composition == ct
+        # only the composition moves; the rest of the ising block is the anchor's
+        assert cfg.ising.D == base.ising.D
+        assert cfg.ising.sigma == base.ising.sigma
+        assert cfg.ising.bias == base.ising.bias
+        assert (
+            cfg.ising.composition_penalty_strength
+            == base.ising.composition_penalty_strength
+        )
+        assert cfg.train == base.train
+        assert cfg.ctmc == base.ctmc
+        assert cfg.eval == base.eval
+        assert cfg.model == base.model
+        assert cfg.estimator == base.estimator
+        assert cfg.lambda_curriculum == base.lambda_curriculum
+        assert cfg.wandb_project == base.wandb_project
