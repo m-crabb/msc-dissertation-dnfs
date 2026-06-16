@@ -208,3 +208,20 @@ def test_fc_gate_anneal_cells_mirror_c05_anneal_with_only_composition_changed():
         assert cfg.estimator == base.estimator
         assert cfg.lambda_curriculum == base.lambda_curriculum
         assert cfg.wandb_project == base.wandb_project
+
+
+def test_fc_c080_ne128_anneal_mirrors_ne64_with_only_euler_steps_changed():
+    """F(c) gate fallback rung (2026-06-16): the c=0.80 stress window with a
+    finer Euler grid only (ne64 -> ne128), a controlled test of whether finer
+    integration rescues seed survival at the most off-centre target."""
+    base = CONSTRAINED_CONFIGS["S2_d10_c080_l50_letf_ne64_anneal"]
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c080_l50_letf_ne128_anneal"]
+    assert cfg.ctmc.n_euler_steps == 128
+    assert base.ctmc.n_euler_steps == 64
+    assert cfg.ising == base.ising
+    assert cfg.train == base.train
+    assert cfg.eval == base.eval
+    assert cfg.model == base.model
+    assert cfg.estimator == base.estimator
+    assert cfg.lambda_curriculum == base.lambda_curriculum
+    assert cfg.wandb_project == base.wandb_project
