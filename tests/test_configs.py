@@ -193,6 +193,9 @@ def test_fc_gate_anneal_cells_mirror_c05_anneal_with_only_composition_changed():
     are a controlled test of whether the annealed recipe generalises."""
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     for key, ct in (
+        ("S2_d10_c030_l50_letf_ne64_anneal", 0.30),
+        ("S2_d10_c055_l50_letf_ne64_anneal", 0.55),
+        ("S2_d10_c060_l50_letf_ne64_anneal", 0.60),
         ("S2_d10_c065_l50_letf_ne64_anneal", 0.65),
         ("S2_d10_c080_l50_letf_ne64_anneal", 0.80),
     ):
