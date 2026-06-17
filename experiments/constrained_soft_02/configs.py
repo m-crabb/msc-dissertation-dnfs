@@ -470,4 +470,116 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
+    # Matched-base validation (2026-06-17): the c=0.80 ne128 anneal window with
+    # a per-site Bernoulli(0.80) base, so the flow starts centred and only
+    # tightens width. base_composition is the only change vs the ne128 anneal.
+    "S2_d10_c080_l50_letf_ne128_matched_anneal": StageCfg(
+        name="S2_d10_c080_l50_letf_ne128_matched_anneal",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.80,
+            composition_penalty_strength=50.0,
+            base_composition=0.80,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=10_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=20_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    # Matched base + fixed lambda=50 (no anneal): tests whether the matched
+    # start lets the lambda curriculum be dropped entirely.
+    "S2_d10_c080_l50_letf_ne128_matched_fixed50": StageCfg(
+        name="S2_d10_c080_l50_letf_ne128_matched_fixed50",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.80,
+            composition_penalty_strength=50.0,
+            base_composition=0.80,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    # n_euler consistency control (2026-06-17): the c=0.5 anneal witness at
+    # ne128, paired against the existing ne64 anneal (same seeds) to check
+    # whether n_euler shifts logZ/F at centred compositions before mixing
+    # grids across the F(c) curve.
+    "S2_d10_c05_l50_letf_ne128_anneal": StageCfg(
+        name="S2_d10_c05_l50_letf_ne128_anneal",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=10_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=20_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        wandb_project="dnfs-constraints",
+    ),
 }

@@ -230,3 +230,49 @@ def test_fc_c080_ne128_anneal_mirrors_ne64_with_only_euler_steps_changed():
     assert cfg.estimator == base.estimator
     assert cfg.lambda_curriculum == base.lambda_curriculum
     assert cfg.wandb_project == base.wandb_project
+
+
+def test_matched_anneal_mirrors_c080_ne128_with_only_base_composition():
+    base = CONSTRAINED_CONFIGS["S2_d10_c080_l50_letf_ne128_anneal"]
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c080_l50_letf_ne128_matched_anneal"]
+    assert cfg.ising.base_composition == 0.80
+    assert base.ising.base_composition == 0.5
+    assert cfg.ising.target_composition == base.ising.target_composition == 0.80
+    assert cfg.ising.D == base.ising.D
+    assert cfg.ising.sigma == base.ising.sigma
+    assert cfg.ising.composition_penalty_strength == (
+        base.ising.composition_penalty_strength
+    )
+    assert cfg.train == base.train
+    assert cfg.ctmc == base.ctmc
+    assert cfg.eval == base.eval
+    assert cfg.model == base.model
+    assert cfg.estimator == base.estimator
+    assert cfg.lambda_curriculum == base.lambda_curriculum
+    assert cfg.wandb_project == base.wandb_project
+
+
+def test_matched_fixed50_drops_anneal_keeps_matched_base():
+    base = CONSTRAINED_CONFIGS["S2_d10_c080_l50_letf_ne128_matched_anneal"]
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c080_l50_letf_ne128_matched_fixed50"]
+    assert cfg.lambda_curriculum is None
+    assert cfg.ising == base.ising  # same matched base + target + lambda=50
+    assert cfg.train == base.train
+    assert cfg.ctmc == base.ctmc
+    assert cfg.eval == base.eval
+    assert cfg.model == base.model
+    assert cfg.estimator == base.estimator
+
+
+def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
+    base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
+    cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
+    assert cfg.ctmc.n_euler_steps == 128
+    assert base.ctmc.n_euler_steps == 64
+    assert cfg.ising == base.ising  # base_composition stays 0.5 both sides
+    assert cfg.train == base.train
+    assert cfg.eval == base.eval
+    assert cfg.model == base.model
+    assert cfg.estimator == base.estimator
+    assert cfg.lambda_curriculum == base.lambda_curriculum
+    assert cfg.wandb_project == base.wandb_project
