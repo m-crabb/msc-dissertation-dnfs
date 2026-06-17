@@ -45,7 +45,13 @@ class IsingTarget:
         device: torch.device | str = "cpu",
         target_composition: float | None = None,
         composition_penalty_strength: float = 0.0,
+        base_composition: float = 0.5,
     ):
+        if not 0.0 < base_composition < 1.0:
+            raise ValueError(
+                "base_composition must be in the open interval (0, 1), "
+                f"got {base_composition}"
+            )
         if target_composition is not None and not 0.0 <= target_composition <= 1.0:
             raise ValueError(
                 "target_composition must be in [0, 1], "
@@ -69,6 +75,7 @@ class IsingTarget:
         self.device = torch.device(device)
         self.target_composition = target_composition
         self.composition_penalty_strength = composition_penalty_strength
+        self.base_composition = base_composition
 
         A = torch.zeros((self.d, self.d), device=self.device)
 
@@ -115,6 +122,38 @@ class IsingTarget:
     def composition_fraction(self, x: Tensor) -> Tensor:
         """Fraction of +1 spins in each state, shape (B,)."""
         return ((x + 1.0) * 0.5).mean(dim=-1)
+
+    def base_log_eta(self, x: Tensor) -> Tensor:
+        """Log-density of the per-site Bernoulli base η, shape (B,).
+
+        η(x) = ∏_i p^{[x_i=+1]} (1-p)^{[x_i=-1]}, p = base_composition.
+        For the uniform base (p=0.5) this is the constant -d·log2 for all x;
+        we return that exact expression so the annealing path stays
+        byte-identical to a uniform base.
+        """
+        if self.base_composition == 0.5:
+            return torch.full(
+                (x.shape[0],), -self.d * math.log(2),
+                device=x.device, dtype=x.dtype,
+            )
+        n_plus = ((x + 1.0) * 0.5).sum(dim=-1)
+        return (
+            n_plus * math.log(self.base_composition)
+            + (self.d - n_plus) * math.log(1.0 - self.base_composition)
+        )
+
+    def sample_base(self, n: int, device) -> Tensor:
+        """Draw n states from the base η, shape (n, d), entries in {-1, +1}.
+
+        At p=0.5 this is a plain randint draw (identical RNG consumption, so
+        existing runs reproduce bit-for-bit).
+        """
+        if self.base_composition == 0.5:
+            return torch.randint(0, 2, (n, self.d), device=device).float() * 2 - 1
+        return (
+            (torch.rand(n, self.d, device=device) < self.base_composition)
+            .float() * 2 - 1
+        )
 
     def base_log_prob(self, x: Tensor) -> Tensor:
         """Unnormalised Ising log-density before optional soft constraints.
@@ -166,12 +205,14 @@ class IsingTarget:
         Returns: (B,) tensor.
 
             log p̃_t(x) = (1 - t) · log η(x) + t · log p(x)
-                       = (1 - t) · (-d · log 2) + t · log_prob(x)
+                       = (1 - t) · base_log_eta(x) + t · log_prob(x)
 
-        At t=0: returns the constant -d · log 2 (uniform prior).
+        η is the per-site Bernoulli base (uniform when base_composition=0.5,
+        in which case base_log_eta is the constant -d · log 2).
+        At t=0: returns base_log_eta(x) (the base).
         At t=1: returns log_prob(x) (full target).
         """
-        return (1 - t) * (-self.d * math.log(2)) + (t * self.log_prob(x))
+        return (1 - t) * self.base_log_eta(x) + (t * self.log_prob(x))
 
     def dt_log_p_tilde_t(self, x: Tensor, t: Tensor) -> Tensor:
         """Time-derivative of the annealing log-density. t-independent.
@@ -181,10 +222,10 @@ class IsingTarget:
         Returns: (B,) tensor.
 
             ∂_t log p̃_t(x) = log p(x) - log η(x)
-                            = log_prob(x) - (-d · log 2)
-                            = log_prob(x) + d · log 2
+                            = log_prob(x) - base_log_eta(x)
 
-        This expression has no t-dependence - that's the consequence of
-        choosing a linear-in-log annealing path.
+        For the uniform base (base_composition=0.5) base_log_eta is -d · log 2,
+        so this reduces to log_prob(x) + d · log 2. The expression has no
+        t-dependence - that's the consequence of a linear-in-log annealing path.
         """
-        return self.log_prob(x) + (self.d * math.log(2))
+        return self.log_prob(x) - self.base_log_eta(x)

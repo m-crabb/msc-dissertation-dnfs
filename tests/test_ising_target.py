@@ -1,7 +1,16 @@
+import itertools
+import math
+
 import pytest
 import torch
 
 from discrete_flow_sampler.targets.ising import IsingTarget
+
+
+def _all_states(d):
+    return torch.tensor(
+        list(itertools.product([-1.0, 1.0], repeat=d)), dtype=torch.float
+    )
 
 
 def test_log_prob_matches_explicit_sum_D2():
@@ -163,3 +172,86 @@ def test_set_composition_penalty_strength_rejects_negative():
     )
     with pytest.raises(ValueError):
         target.set_composition_penalty_strength(-1.0)
+
+
+def test_base_log_eta_normalises_uniform():
+    target = IsingTarget(D=2, sigma=0.1, base_composition=0.5)
+    states = _all_states(target.d)
+    total = torch.logsumexp(target.base_log_eta(states), dim=0)
+    torch.testing.assert_close(total, torch.tensor(0.0))
+
+
+def test_base_log_eta_normalises_off_centre():
+    target = IsingTarget(D=2, sigma=0.1, base_composition=0.8)
+    states = _all_states(target.d)
+    total = torch.logsumexp(target.base_log_eta(states), dim=0)
+    torch.testing.assert_close(total, torch.tensor(0.0), atol=1e-6, rtol=0)
+
+
+def test_base_log_eta_uniform_is_constant_minus_d_log2():
+    target = IsingTarget(D=4, sigma=0.1, base_composition=0.5)
+    x = torch.randint(0, 2, (8, target.d)).float() * 2 - 1
+    expected = torch.full((8,), -target.d * math.log(2))
+    torch.testing.assert_close(target.base_log_eta(x), expected)
+
+
+def test_log_p_tilde_t_bit_identical_at_p_half():
+    """p=0.5 must reproduce the legacy (1-t)(-d log2) + t log_prob exactly."""
+    target = IsingTarget(D=4, sigma=0.1, base_composition=0.5)
+    x = torch.randint(0, 2, (8, target.d)).float() * 2 - 1
+    t = torch.rand(8)
+    legacy = (1 - t) * (-target.d * math.log(2)) + t * target.log_prob(x)
+    torch.testing.assert_close(target.log_p_tilde_t(x, t), legacy)
+
+
+def test_dt_log_p_tilde_t_bit_identical_at_p_half():
+    target = IsingTarget(D=4, sigma=0.1, base_composition=0.5)
+    x = torch.randint(0, 2, (8, target.d)).float() * 2 - 1
+    t = torch.rand(8)
+    legacy = target.log_prob(x) + target.d * math.log(2)
+    torch.testing.assert_close(target.dt_log_p_tilde_t(x, t), legacy)
+
+
+def test_log_p_tilde_t_at_zero_equals_base_log_eta_off_centre():
+    target = IsingTarget(D=4, sigma=0.1, base_composition=0.8)
+    x = torch.randint(0, 2, (8, target.d)).float() * 2 - 1
+    t0 = torch.zeros(8)
+    torch.testing.assert_close(
+        target.log_p_tilde_t(x, t0), target.base_log_eta(x)
+    )
+
+
+def test_sample_base_draw_bit_identical_at_p_half():
+    target = IsingTarget(D=4, sigma=0.1, base_composition=0.5)
+    torch.manual_seed(123)
+    legacy = torch.randint(0, 2, (100, target.d)).float() * 2 - 1
+    torch.manual_seed(123)
+    got = target.sample_base(100, device="cpu")
+    torch.testing.assert_close(got, legacy)
+
+
+def test_sample_base_mean_matches_p_off_centre():
+    target = IsingTarget(D=10, sigma=0.1, base_composition=0.8)
+    torch.manual_seed(0)
+    x = target.sample_base(20_000, device="cpu")
+    frac = ((x + 1.0) * 0.5).mean().item()
+    assert abs(frac - 0.8) < 0.01
+
+
+def test_base_composition_out_of_range_raises():
+    with pytest.raises(ValueError):
+        IsingTarget(D=4, sigma=0.1, base_composition=0.0)
+    with pytest.raises(ValueError):
+        IsingTarget(D=4, sigma=0.1, base_composition=1.0)
+
+
+def test_sample_base_matches_inline_call_signature_p_half():
+    """training.py replaces randint(0,2,(N,d))*2-1 with target.sample_base(N, dev).
+    At p=0.5 the two must be identical for the same RNG state and shape."""
+    target = IsingTarget(D=10, sigma=0.1, base_composition=0.5)
+    outer_batch, n_dims = 256, target.d
+    torch.manual_seed(7)
+    inline = torch.randint(0, 2, (outer_batch, n_dims)).float() * 2 - 1
+    torch.manual_seed(7)
+    via_base = target.sample_base(outer_batch, device="cpu")
+    torch.testing.assert_close(via_base, inline)
