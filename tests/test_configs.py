@@ -1,5 +1,10 @@
 from experiments.constrained_soft_02.configs import CONFIGS as CONSTRAINED_CONFIGS
 from experiments.dnfs_baseline_01.configs import CONFIGS as BASELINE_CONFIGS
+from experiments.dnfs_baseline_01.configs import IsingCfg
+
+
+def test_ising_cfg_base_composition_defaults_to_half():
+    assert IsingCfg().base_composition == 0.5
 
 
 def test_constrained_configs_use_constraints_wandb_project():

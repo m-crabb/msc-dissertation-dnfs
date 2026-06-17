@@ -42,6 +42,7 @@ class IsingCfg:
     bias: float = 0.0
     target_composition: float | None = None
     composition_penalty_strength: float = 0.0
+    base_composition: float = 0.5
 
 
 @dataclass(frozen=True)

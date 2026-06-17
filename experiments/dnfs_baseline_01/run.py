@@ -276,6 +276,7 @@ def train(
         device=device,
         target_composition=cfg.ising.target_composition,
         composition_penalty_strength=target_lambda_init,
+        base_composition=cfg.ising.base_composition,
     )
     model = _build_model(cfg, target)
 
@@ -372,6 +373,7 @@ def eval_only(run_dir: str | Path) -> dict:
         composition_penalty_strength=cfg_dict["ising"].get(
             "composition_penalty_strength", 0.0
         ),
+        base_composition=cfg_dict["ising"].get("base_composition", 0.5),
     )
     eval_samples = eval_samples.to(device)
     eval_log_weights = eval_log_weights.to(device)
