@@ -582,4 +582,46 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # Matched-base correctness check (2026-06-17): D=4 so logZ is exactly
+    # enumerable (2^16). Identical off-centre target (c=0.625) under two bases;
+    # a correct IS sampler must estimate the same target logZ from either base.
+    # _verify_matched_base_logz.py fetches both and compares to exact enum.
+    "verify_matched_base_u050": StageCfg(
+        name="verify_matched_base_u050",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.625,
+            composition_penalty_strength=50.0,
+            base_composition=0.5,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "verify_matched_base_m625": StageCfg(
+        name="verify_matched_base_m625",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.625,
+            composition_penalty_strength=50.0,
+            base_composition=0.625,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
 }
