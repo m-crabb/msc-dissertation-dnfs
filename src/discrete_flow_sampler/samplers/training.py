@@ -287,10 +287,7 @@ def train(
             torch.cuda.get_rng_state() if torch.cuda.is_available() else None
         )
         with torch.no_grad():
-            x_diag = (
-                torch.randint(0, 2, (outer_batch, n_dims), device=device)
-                .float() * 2 - 1
-            )
+            x_diag = target.sample_base(outer_batch, device=device)
             t_diag = torch.zeros(outer_batch, device=device)
             init_diag = _rate_diagnostics(
                 model, x_diag, t_diag,
@@ -367,12 +364,7 @@ def train(
             # both detached from autograd by the no_grad block; this is
             # the paper's R_t^{θ_sg} (stop-gradient) treatment.
             t_grid = torch.linspace(0.0, 1.0, n_grid, device=device)
-            x_initial = (
-                torch.randint(
-                    0, 2, (outer_batch, n_dims), device=device,
-                ).float()
-                * 2 - 1
-            )
+            x_initial = target.sample_base(outer_batch, device=device)
             with torch.no_grad():
                 x_traj = sample_ctmc(
                     model, x_initial, t_grid, return_all_states=True,
@@ -465,12 +457,8 @@ def train(
                         eval_grid = torch.linspace(
                             0.0, 1.0, n_grid, device=device,
                         )
-                        x_eval_initial = (
-                            torch.randint(
-                                0, 2, (eval_cfg.n_eval_samples, n_dims),
-                                device=device,
-                            ).float()
-                            * 2 - 1
+                        x_eval_initial = target.sample_base(
+                            eval_cfg.n_eval_samples, device=device
                         )
                         _, log_weights = sample_ctmc(
                             model, x_eval_initial, eval_grid,
