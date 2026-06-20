@@ -304,7 +304,10 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
         vce = [r["vcsgc_err"][key] for r in have]
         dn = [r["dnfs"][key] for r in have]
         dne = [r["dnfs_err"][key] for r in have]
-        ax.errorbar(cs, vc, yerr=vce, fmt="k-o", capsize=3, lw=1.2,
+        # both series as discrete markers (no connecting line): the comparison is
+        # per-composition agreement at five matched windows, not a trend, so a
+        # joining line would imply interpolation neither sampler measures.
+        ax.errorbar(cs, vc, yerr=vce, fmt="ko", capsize=3,
                     label="vcSGC (mchammer)")
         ax.errorbar(cs, dn, yerr=dne, fmt="s", color="tab:blue", capsize=3,
                     label="DNFS soft (IS)")
@@ -313,6 +316,10 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
         if key == "c_std":
             ax.axhline(analytic_cstd, ls=":", color="grey", lw=0.8,
                        label=r"$1/\sqrt{2\lambda d}$")
+            # std(c) is near-constant ~0.010, so autoscale zooms into the noise;
+            # pin a +/-0.001 window around the analytic value so the tiny (and
+            # expected) IS-vs-chain differences don't dominate the panel.
+            ax.set_ylim(analytic_cstd - 0.001, analytic_cstd + 0.001)
         ax.set_xlabel("composition $c$")
         ax.set_ylabel(ylab)
         ax.set_title(title)
