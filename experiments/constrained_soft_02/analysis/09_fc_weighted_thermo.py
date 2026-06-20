@@ -289,8 +289,32 @@ def main() -> None:
         _plot(curve, lam, analytic_cstd, args.plot)
 
 
+def _zmirror(have: list[dict], key: str) -> list[tuple]:
+    """Z_2 reflections of the sampled windows for one observable.
+
+    The global spin flip x->-x maps composition c->1-c. It leaves the zero-field
+    energy, the NN short-range order and the composition width invariant, and
+    sends the mean composition to 1-<c>. So a window trained at c_t supplies a
+    symmetry-implied point at 1-c_t: the same value for std/energy/SRO, and
+    1-value for the mean. This fills the RHS-heavy sampled grid
+    ({0.30,0.50,0.55,0.60,0.65}) on the left. Skip c=0.5 and any reflection that
+    lands on an already-sampled window. Returns (c, vc, dn) tuples; these are
+    symmetry-implied, not independently sampled, so we draw them open-faced.
+    """
+    sampled = {round(r["c"], 4) for r in have}
+    flip = (lambda v: 1.0 - v) if key == "c_mean" else (lambda v: v)
+    out = []
+    for r in have:
+        cm = round(1.0 - r["c"], 4)
+        if abs(r["c"] - 0.5) < 1e-6 or cm in sampled:
+            continue
+        out.append((cm, flip(r["vcsgc"][key]), flip(r["dnfs"][key])))
+    return out
+
+
 def _plot(curve, lam, analytic_cstd, out: Path) -> None:
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
 
     have = [r for r in curve if r["dnfs"] is not None]
     cs = [r["c"] for r in have]
@@ -311,8 +335,15 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
                     label="vcSGC (mchammer)")
         ax.errorbar(cs, dn, yerr=dne, fmt="s", color="tab:blue", capsize=3,
                     label="DNFS soft (IS)")
+        # Z_2 reflections fill the sparse left side (open markers = symmetry-implied)
+        mir = _zmirror(have, key)
+        if mir:
+            mc = [m[0] for m in mir]
+            ax.plot(mc, [m[1] for m in mir], "o", color="k", markerfacecolor="none")
+            ax.plot(mc, [m[2] for m in mir], "s", color="tab:blue", markerfacecolor="none")
+        allcs = sorted(cs + [m[0] for m in mir])
         if key == "c_mean":
-            ax.plot(cs, cs, ":", color="grey", lw=0.8, label="$c=c_t$")
+            ax.plot(allcs, allcs, ":", color="grey", lw=0.8, label="$c=c_t$")
         if key == "c_std":
             ax.axhline(analytic_cstd, ls=":", color="grey", lw=0.8,
                        label=r"$1/\sqrt{2\lambda d}$")
@@ -323,7 +354,12 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
         ax.set_xlabel("composition $c$")
         ax.set_ylabel(ylab)
         ax.set_title(title)
-        ax.legend(fontsize=8)
+        handles, _ = ax.get_legend_handles_labels()
+        if mir:
+            handles.append(Line2D([0], [0], marker="o", linestyle="none",
+                                  markerfacecolor="none", markeredgecolor="grey",
+                                  label="open: $Z_2$ mirror"))
+        ax.legend(handles=handles, fontsize=8)
     fig.suptitle(f"DNFS soft vs vcSGC at matched $\\kappa=\\lambda={lam:g}$", y=1.02)
     fig.tight_layout()
     fig.savefig(out, dpi=150, bbox_inches="tight")
