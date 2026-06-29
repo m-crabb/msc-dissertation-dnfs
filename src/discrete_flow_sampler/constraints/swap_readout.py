@@ -62,3 +62,34 @@ def _masked_body(
     H = model.attention_readout(fwd_x, bwd_x, cond_t)    # (B, d, h)
     H = model.output_norm(H) + model.time_embedder(t).unsqueeze(1)
     return H
+
+
+class DoublyHollowSwapHead(nn.Module):
+    """Brute-force doubly-hollow swap head: mask BOTH sites. Gate-only, O(d^2).
+
+    Architecture-agnostic correctness check. For each ordered pair (i, j) it
+    masks i and j, reads the body at j, and reads out against the token
+    difference. The diagonal (i == j) and same-spin pairs vanish automatically
+    because omega_{x_i} - omega_{x_j} = 0 there.
+    """
+
+    def __init__(self, backbone: LeTFRateMatrix):
+        super().__init__()
+        self.backbone = backbone
+        self.d = backbone.d
+
+    def forward(self, x: Tensor, t: Tensor) -> Tensor:
+        m = self.backbone
+        x_idx = ((x + 1) / 2).long()
+        om = m.omega(x_idx)                              # (B, d, h)
+        batch, d = x.shape
+        G = x.new_zeros(batch, d, d)
+        for i in range(d):
+            for j in range(d):
+                if i == j:
+                    continue
+                H = _masked_body(m, x, t, (i, j))        # (B, d, h)
+                H_ij = H[:, j, :]                         # read at second index
+                diff = om[:, i, :] - om[:, j, :]         # omega_{x_i} - omega_{x_j}
+                G[:, i, j] = (H_ij * diff).sum(-1)
+        return G

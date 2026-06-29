@@ -2,7 +2,7 @@
 import torch
 
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from discrete_flow_sampler.constraints.swap_readout import swap2, _masked_body
+from discrete_flow_sampler.constraints.swap_readout import swap2, _masked_body, DoublyHollowSwapHead
 
 ATOL = 1e-5
 
@@ -56,3 +56,45 @@ def test_masked_body_double_hollow():
 
     assert d_i < ATOL, f"H_ij not blind to x_i: {d_i:.2e}"
     assert d_j < ATOL, f"H_ij not hollow in x_j: {d_j:.2e}"
+
+
+def _active_pairs(x):
+    d = x.shape[1]
+    return [(i, j) for i in range(d) for j in range(i + 1, d) if x[0, i] != x[0, j]]
+
+
+def test_doubly_hollow_antisymmetric():
+    """Assertion 1: state-swap antisymmetry, bit-exact (< atol)."""
+    for d in (9, 16):
+        m = _backbone(d=d)
+        head = DoublyHollowSwapHead(m)
+        x = _state(d=d)
+        t = torch.rand(1)
+        G = head(x, t)
+        worst = 0.0
+        for (i, j) in _active_pairs(x):
+            y = swap2(x, i, j)
+            Gy = head(y, t)
+            worst = max(worst, (G[0, i, j] + Gy[0, i, j]).abs().item())
+        assert worst < ATOL, f"d={d}: antisymmetry residual {worst:.2e}"
+
+
+def test_doubly_hollow_trivial_swap_vanishes():
+    """Assertion 3: same-spin pair => G_swap == 0 exactly."""
+    m = _backbone(d=9)
+    head = DoublyHollowSwapHead(m)
+    x = _state(d=9)
+    t = torch.rand(1)
+    G = head(x, t)
+    same = [(i, j) for i in range(9) for j in range(i + 1, 9) if x[0, i] == x[0, j]]
+    assert same, "fixture must contain at least one same-spin pair"
+    worst = max(G[0, i, j].abs().item() for (i, j) in same)
+    assert worst < ATOL, f"trivial-swap nonzero: {worst:.2e}"
+
+
+def test_doubly_hollow_finite():
+    """Assertion 6 (part): no NaN/Inf."""
+    m = _backbone(d=9)
+    head = DoublyHollowSwapHead(m)
+    G = head(_state(d=9), torch.rand(1))
+    assert torch.isfinite(G).all()
