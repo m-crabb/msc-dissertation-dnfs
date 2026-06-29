@@ -2,7 +2,7 @@
 import torch
 
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from discrete_flow_sampler.constraints.swap_readout import swap2, _masked_body, DoublyHollowSwapHead
+from discrete_flow_sampler.constraints.swap_readout import swap2, _masked_body, DoublyHollowSwapHead, LeTFMaskOneSwapHead
 
 ATOL = 1e-5
 
@@ -97,4 +97,59 @@ def test_doubly_hollow_finite():
     m = _backbone(d=9)
     head = DoublyHollowSwapHead(m)
     G = head(_state(d=9), torch.rand(1))
+    assert torch.isfinite(G).all()
+
+
+def test_mask_one_antisymmetric():
+    """Assertion 5: the real climax head is state-swap antisymmetric, bit-exact."""
+    for d in (9, 16):
+        m = _backbone(d=d)
+        head = LeTFMaskOneSwapHead(m)
+        x = _state(d=d)
+        t = torch.rand(1)
+        G = head(x, t)
+        worst = 0.0
+        for (i, j) in _active_pairs(x):
+            y = swap2(x, i, j)
+            Gy = head(y, t)
+            worst = max(worst, (G[0, i, j] + Gy[0, i, j]).abs().item())
+        assert worst < ATOL, f"d={d}: mask-one antisymmetry residual {worst:.2e}"
+
+
+def test_mask_one_blind_to_anchor():
+    """Assertion 5 (part): G_swap(i,j) is invariant to flipping x_i then fixing omega.
+
+    Flip x_i AND keep the readout's omega_{x_i} fixed by comparing the body
+    contribution only: assert the masked body H[:,j,:] (anchor i) is unchanged
+    when x_i flips (structural blindness, not incidental).
+    """
+    m = _backbone(d=9)
+    x = _state(d=9)
+    t = torch.rand(1)
+    i, j = _active_pairs(x)[0]
+    base = _masked_body(m, x, t, (i,))[:, j, :].clone()
+    x_fi = x.clone(); x_fi[0, i] *= -1
+    drift = (_masked_body(m, x_fi, t, (i,))[:, j, :] - base).abs().max().item()
+    assert drift < ATOL, f"mask-one body not structurally blind to x_i: {drift:.2e}"
+
+
+def test_mask_one_label_asymmetry_pinned():
+    """Assertion 6: the mask-one head is NOT label-symmetric (H_ij != H_ji).
+
+    This is expected and documents why the downstream residual must order swap
+    pairs by site index (i<j), not by spin. State-swap antisymmetry (above) is
+    unaffected; here we PIN the label asymmetry so a future 'fix' that makes it
+    symmetric is caught and reconsidered.
+    """
+    m = _backbone(d=9)
+    head = LeTFMaskOneSwapHead(m)
+    x = _state(d=9)
+    t = torch.rand(1)
+    i, j = _active_pairs(x)[0]
+    G = head(x, t)
+    label_resid = (G[0, i, j] + G[0, j, i]).abs().item()
+    assert label_resid > 1e-4, (
+        f"mask-one head unexpectedly label-symmetric ({label_resid:.2e}); "
+        "the i<j ordering convention assumption needs revisiting"
+    )
     assert torch.isfinite(G).all()

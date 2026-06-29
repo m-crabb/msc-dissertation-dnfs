@@ -93,3 +93,31 @@ class DoublyHollowSwapHead(nn.Module):
                 diff = om[:, i, :] - om[:, j, :]         # omega_{x_i} - omega_{x_j}
                 G[:, i, j] = (H_ij * diff).sum(-1)
         return G
+
+
+class LeTFMaskOneSwapHead(nn.Module):
+    """Climax swap head: mask anchor i, reuse single-site leTF hollowness. O(d).
+
+    For each anchor i, one masked body pass returns H_ij = H[:, j, :] for ALL
+    j != i: blind to x_i (anchor masked) and hollow in x_j (leTF readout at j
+    ignores j's own input). The readout against omega_{x_i} - omega_{x_j} then
+    gives the full row G_swap(i, :). Diagonal and same-spin pairs vanish because
+    the token difference is zero there. NOT label-symmetric (H_ij != H_ji).
+    """
+
+    def __init__(self, backbone: LeTFRateMatrix):
+        super().__init__()
+        self.backbone = backbone
+        self.d = backbone.d
+
+    def forward(self, x: Tensor, t: Tensor) -> Tensor:
+        m = self.backbone
+        x_idx = ((x + 1) / 2).long()
+        om = m.omega(x_idx)                              # (B, d, h)
+        batch, d = x.shape
+        G = x.new_zeros(batch, d, d)
+        for i in range(d):
+            H = _masked_body(m, x, t, (i,))             # (B, d, h); H[:, j, :] = H_ij
+            diff = om[:, i : i + 1, :] - om             # (B, d, h): [:, j, :] = om_xi - om_xj
+            G[:, i, :] = (H * diff).sum(-1)            # (B, d); diagonal j==i -> 0
+        return G
