@@ -239,3 +239,18 @@ def test_brute_force_matches_mask_one():
     for i, j in _active_pairs(x):
         diff = max(diff, (G_bf[0, i, j] - G_m1[0, i, j]).abs().item())
     assert diff < ATOL, f"brute-force vs mask-one disagree: {diff:.2e}"
+
+
+def test_masked_body_matches_real_readout_path():
+    """Drift guard: with no masking, _masked_body equals the model's real readout body.
+
+    Pins the hand-rolled replication of compute_body + the output_norm/time line to
+    LeTFRateMatrix, so a future change to letf.py's readout path fails loudly here
+    instead of silently desyncing both swap heads (which share _masked_body).
+    """
+    m = _backbone(d=9)
+    x = _state(d=9)
+    t = torch.rand(1)
+    expected = m.output_norm(m.compute_body(x, t)) + m.time_embedder(t).unsqueeze(1)
+    got = _masked_body(m, x, t, ())
+    assert (got - expected).abs().max().item() < ATOL

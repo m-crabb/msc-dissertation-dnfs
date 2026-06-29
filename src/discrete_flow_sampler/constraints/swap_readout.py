@@ -24,7 +24,7 @@ swap residual must order each unordered pair by site index (i<j), never by
 spin (design note section 4). LeTFRateMatrix is reused untouched.
 """
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 import torch
 import torch.nn as nn
@@ -124,7 +124,9 @@ class LeTFMaskOneSwapHead(nn.Module):
         return G
 
 
-def antisymmetrise(raw_head, x: Tensor, t: Tensor) -> Tensor:
+def antisymmetrise(
+    raw_head: Callable[[Tensor, Tensor], Tensor], x: Tensor, t: Tensor
+) -> Tensor:
     """Explicit antisymmetrisation of any raw pair score (design note 2.4).
 
     G_swap(i, j | x) := 1/2 [ raw(i, j | x) - raw(i, j | Swap2(x, i, j)) ]
