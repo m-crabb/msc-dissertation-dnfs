@@ -1,8 +1,15 @@
 """Tests for the paired-swap antisymmetric readout (P1.1, design note 2026-06-29 §5)."""
+
 import torch
 
+from discrete_flow_sampler.constraints.swap_readout import (
+    DoublyHollowSwapHead,
+    LeTFMaskOneSwapHead,
+    _masked_body,
+    antisymmetrise,
+    swap2,
+)
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from discrete_flow_sampler.constraints.swap_readout import swap2, _masked_body, DoublyHollowSwapHead, LeTFMaskOneSwapHead, antisymmetrise
 
 ATOL = 1e-5
 
@@ -48,10 +55,12 @@ def test_masked_body_double_hollow():
     base = H[:, j, :].clone()
 
     # flip x_i (masked) -> H[:,j,:] unchanged
-    x_fi = x.clone(); x_fi[0, i] *= -1
+    x_fi = x.clone()
+    x_fi[0, i] *= -1
     d_i = (_masked_body(m, x_fi, t, (i,))[:, j, :] - base).abs().max().item()
     # flip x_j (hollow at j) -> H[:,j,:] unchanged
-    x_fj = x.clone(); x_fj[0, j] *= -1
+    x_fj = x.clone()
+    x_fj[0, j] *= -1
     d_j = (_masked_body(m, x_fj, t, (i,))[:, j, :] - base).abs().max().item()
 
     assert d_i < ATOL, f"H_ij not blind to x_i: {d_i:.2e}"
@@ -72,7 +81,7 @@ def test_doubly_hollow_antisymmetric():
         t = torch.rand(1)
         G = head(x, t)
         worst = 0.0
-        for (i, j) in _active_pairs(x):
+        for i, j in _active_pairs(x):
             y = swap2(x, i, j)
             Gy = head(y, t)
             worst = max(worst, (G[0, i, j] + Gy[0, i, j]).abs().item())
@@ -109,7 +118,7 @@ def test_mask_one_antisymmetric():
         t = torch.rand(1)
         G = head(x, t)
         worst = 0.0
-        for (i, j) in _active_pairs(x):
+        for i, j in _active_pairs(x):
             y = swap2(x, i, j)
             Gy = head(y, t)
             worst = max(worst, (G[0, i, j] + Gy[0, i, j]).abs().item())
@@ -128,7 +137,8 @@ def test_mask_one_blind_to_anchor():
     t = torch.rand(1)
     i, j = _active_pairs(x)[0]
     base = _masked_body(m, x, t, (i,))[:, j, :].clone()
-    x_fi = x.clone(); x_fi[0, i] *= -1
+    x_fi = x.clone()
+    x_fi[0, i] *= -1
     drift = (_masked_body(m, x_fi, t, (i,))[:, j, :] - base).abs().max().item()
     assert drift < ATOL, f"mask-one body not structurally blind to x_i: {drift:.2e}"
 
@@ -162,7 +172,7 @@ def _naive_factoring(model, x, t):
     (B, d, d) callable for both the negative control and the antisymmetrise
     oracle. B=1 assumed (test fixture).
     """
-    G = model(x, t)                                      # (B, d, S)
+    G = model(x, t)  # (B, d, S)
     x_idx = ((x + 1) / 2).long()
     batch, d = x.shape
     out = x.new_zeros(batch, d, d)
@@ -175,21 +185,24 @@ def _naive_factoring(model, x, t):
 
 
 def test_naive_factoring_breaks_antisymmetry():
-    """Assertion 2: the naive factoring is NOT antisymmetric (max-over-pairs floor + separation)."""
+    """Assertion 2: the naive factoring is NOT antisymmetric.
+
+    Negative control: max-over-pairs floor + separation from the bit-exact head.
+    """
     m = _backbone(d=9)
     x = _state(d=9)
     t = torch.rand(1)
 
     base = _naive_factoring(m, x, t)
     naive_worst = 0.0
-    for (i, j) in _active_pairs(x):
+    for i, j in _active_pairs(x):
         sw = _naive_factoring(m, swap2(x, i, j), t)
         naive_worst = max(naive_worst, (base[0, i, j] + sw[0, i, j]).abs().item())
 
     head = DoublyHollowSwapHead(m)
     G = head(x, t)
     hollow_worst = 0.0
-    for (i, j) in _active_pairs(x):
+    for i, j in _active_pairs(x):
         Gy = head(swap2(x, i, j), t)
         hollow_worst = max(hollow_worst, (G[0, i, j] + Gy[0, i, j]).abs().item())
 
@@ -207,8 +220,10 @@ def test_antisymmetrise_fixes_arbitrary_head():
     t = torch.rand(1)
     A = antisymmetrise(lambda xx, tt: _naive_factoring(m, xx, tt), x, t)
     worst = 0.0
-    for (i, j) in _active_pairs(x):
-        Ay = antisymmetrise(lambda xx, tt: _naive_factoring(m, xx, tt), swap2(x, i, j), t)
+    for i, j in _active_pairs(x):
+        Ay = antisymmetrise(
+            lambda xx, tt: _naive_factoring(m, xx, tt), swap2(x, i, j), t
+        )
         worst = max(worst, (A[0, i, j] + Ay[0, i, j]).abs().item())
     assert worst < ATOL, f"antisymmetrise did not enforce antisymmetry: {worst:.2e}"
 
@@ -221,6 +236,6 @@ def test_brute_force_matches_mask_one():
     G_bf = DoublyHollowSwapHead(m)(x, t)
     G_m1 = LeTFMaskOneSwapHead(m)(x, t)
     diff = 0.0
-    for (i, j) in _active_pairs(x):
+    for i, j in _active_pairs(x):
         diff = max(diff, (G_bf[0, i, j] - G_m1[0, i, j]).abs().item())
     assert diff < ATOL, f"brute-force vs mask-one disagree: {diff:.2e}"

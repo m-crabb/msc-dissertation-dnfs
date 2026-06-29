@@ -23,6 +23,7 @@ no-op. The heads are NOT label-symmetric (H_ij != H_ji), so the downstream
 swap residual must order each unordered pair by site index (i<j), never by
 spin (design note section 4). LeTFRateMatrix is reused untouched.
 """
+
 from collections.abc import Iterable
 
 import torch
@@ -53,13 +54,13 @@ def _masked_body(
     zeroing is an unconditional override, independent of the true token).
     """
     x_idx = ((x + 1) / 2).long()
-    x_emb = model.token_embedder(x_idx).clone()        # (B, d, h)
+    x_emb = model.token_embedder(x_idx).clone()  # (B, d, h)
     for s in mask_sites:
-        x_emb[:, s, :] = 0.0                            # content-free override
-    cond_t = model.time_embedder(t).unsqueeze(1)        # (B, 1, h)
+        x_emb[:, s, :] = 0.0  # content-free override
+    cond_t = model.time_embedder(t).unsqueeze(1)  # (B, 1, h)
     fwd_x = model.fwd_stack(torch.cat([cond_t, x_emb], dim=1))
     bwd_x = model.bwd_stack(torch.cat([cond_t, x_emb.flip(1)], dim=1)).flip(1)
-    H = model.attention_readout(fwd_x, bwd_x, cond_t)    # (B, d, h)
+    H = model.attention_readout(fwd_x, bwd_x, cond_t)  # (B, d, h)
     H = model.output_norm(H) + model.time_embedder(t).unsqueeze(1)
     return H
 
@@ -81,16 +82,16 @@ class DoublyHollowSwapHead(nn.Module):
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         m = self.backbone
         x_idx = ((x + 1) / 2).long()
-        om = m.omega(x_idx)                              # (B, d, h)
+        om = m.omega(x_idx)  # (B, d, h)
         batch, d = x.shape
         G = x.new_zeros(batch, d, d)
         for i in range(d):
             for j in range(d):
                 if i == j:
                     continue
-                H = _masked_body(m, x, t, (i, j))        # (B, d, h)
-                H_ij = H[:, j, :]                         # read at second index
-                diff = om[:, i, :] - om[:, j, :]         # omega_{x_i} - omega_{x_j}
+                H = _masked_body(m, x, t, (i, j))  # (B, d, h)
+                H_ij = H[:, j, :]  # read at second index
+                diff = om[:, i, :] - om[:, j, :]  # omega_{x_i} - omega_{x_j}
                 G[:, i, j] = (H_ij * diff).sum(-1)
         return G
 
@@ -113,13 +114,13 @@ class LeTFMaskOneSwapHead(nn.Module):
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         m = self.backbone
         x_idx = ((x + 1) / 2).long()
-        om = m.omega(x_idx)                              # (B, d, h)
+        om = m.omega(x_idx)  # (B, d, h)
         batch, d = x.shape
         G = x.new_zeros(batch, d, d)
         for i in range(d):
-            H = _masked_body(m, x, t, (i,))             # (B, d, h); H[:, j, :] = H_ij
-            diff = om[:, i : i + 1, :] - om             # (B, d, h): [:, j, :] = om_xi - om_xj
-            G[:, i, :] = (H * diff).sum(-1)            # (B, d); diagonal j==i -> 0
+            H = _masked_body(m, x, t, (i,))  # (B, d, h); H[:, j, :] = H_ij
+            diff = om[:, i : i + 1, :] - om  # (B, d, h): [:, j, :] = om_xi - om_xj
+            G[:, i, :] = (H * diff).sum(-1)  # (B, d); diagonal j==i -> 0
         return G
 
 
