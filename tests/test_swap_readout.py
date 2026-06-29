@@ -2,7 +2,7 @@
 import torch
 
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from discrete_flow_sampler.constraints.swap_readout import swap2, _masked_body, DoublyHollowSwapHead, LeTFMaskOneSwapHead
+from discrete_flow_sampler.constraints.swap_readout import swap2, _masked_body, DoublyHollowSwapHead, LeTFMaskOneSwapHead, antisymmetrise
 
 ATOL = 1e-5
 
@@ -153,3 +153,74 @@ def test_mask_one_label_asymmetry_pinned():
         "the i<j ordering convention assumption needs revisiting"
     )
     assert torch.isfinite(G).all()
+
+
+def _naive_factoring(model, x, t):
+    """Negative control: G(x_j,i|x) + G(x_i,j|x) from the real single-site readout.
+
+    Provably breaks paired-swap antisymmetry (design note 2.2). Built as a raw
+    (B, d, d) callable for both the negative control and the antisymmetrise
+    oracle. B=1 assumed (test fixture).
+    """
+    G = model(x, t)                                      # (B, d, S)
+    x_idx = ((x + 1) / 2).long()
+    batch, d = x.shape
+    out = x.new_zeros(batch, d, d)
+    for i in range(d):
+        for j in range(d):
+            if i == j:
+                continue
+            out[:, i, j] = G[0, i, x_idx[0, j]] + G[0, j, x_idx[0, i]]
+    return out
+
+
+def test_naive_factoring_breaks_antisymmetry():
+    """Assertion 2: the naive factoring is NOT antisymmetric (max-over-pairs floor + separation)."""
+    m = _backbone(d=9)
+    x = _state(d=9)
+    t = torch.rand(1)
+
+    base = _naive_factoring(m, x, t)
+    naive_worst = 0.0
+    for (i, j) in _active_pairs(x):
+        sw = _naive_factoring(m, swap2(x, i, j), t)
+        naive_worst = max(naive_worst, (base[0, i, j] + sw[0, i, j]).abs().item())
+
+    head = DoublyHollowSwapHead(m)
+    G = head(x, t)
+    hollow_worst = 0.0
+    for (i, j) in _active_pairs(x):
+        Gy = head(swap2(x, i, j), t)
+        hollow_worst = max(hollow_worst, (G[0, i, j] + Gy[0, i, j]).abs().item())
+
+    # Explicit floor (robust; observed naive max ~1e-3 at seed 42) ...
+    assert naive_worst > 1e-4, f"negative control too weak: {naive_worst:.2e}"
+    # ... and clean separation from the (bit-exact) doubly-hollow head.
+    assert hollow_worst < ATOL
+    assert naive_worst > 100 * max(hollow_worst, 1e-12)
+
+
+def test_antisymmetrise_fixes_arbitrary_head():
+    """Assertion 4a: antisymmetrise(non-antisymmetric raw head) is antisymmetric."""
+    m = _backbone(d=9)
+    x = _state(d=9)
+    t = torch.rand(1)
+    A = antisymmetrise(lambda xx, tt: _naive_factoring(m, xx, tt), x, t)
+    worst = 0.0
+    for (i, j) in _active_pairs(x):
+        Ay = antisymmetrise(lambda xx, tt: _naive_factoring(m, xx, tt), swap2(x, i, j), t)
+        worst = max(worst, (A[0, i, j] + Ay[0, i, j]).abs().item())
+    assert worst < ATOL, f"antisymmetrise did not enforce antisymmetry: {worst:.2e}"
+
+
+def test_brute_force_matches_mask_one():
+    """Assertion 4b: brute-force mask-both and leTF mask-one agree (read at j)."""
+    m = _backbone(d=9)
+    x = _state(d=9)
+    t = torch.rand(1)
+    G_bf = DoublyHollowSwapHead(m)(x, t)
+    G_m1 = LeTFMaskOneSwapHead(m)(x, t)
+    diff = 0.0
+    for (i, j) in _active_pairs(x):
+        diff = max(diff, (G_bf[0, i, j] - G_m1[0, i, j]).abs().item())
+    assert diff < ATOL, f"brute-force vs mask-one disagree: {diff:.2e}"

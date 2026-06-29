@@ -121,3 +121,25 @@ class LeTFMaskOneSwapHead(nn.Module):
             diff = om[:, i : i + 1, :] - om             # (B, d, h): [:, j, :] = om_xi - om_xj
             G[:, i, :] = (H * diff).sum(-1)            # (B, d); diagonal j==i -> 0
         return G
+
+
+def antisymmetrise(raw_head, x: Tensor, t: Tensor) -> Tensor:
+    """Explicit antisymmetrisation of any raw pair score (design note 2.4).
+
+    G_swap(i, j | x) := 1/2 [ raw(i, j | x) - raw(i, j | Swap2(x, i, j)) ]
+
+    is exactly antisymmetric under Swap2 for ANY raw_head, with no hollowness
+    required. raw_head is a callable (x, t) -> (B, d, d). Cost is one swapped
+    forward pass per ordered pair (O(d^2)): the guaranteed-correct fallback and
+    the unit-test oracle, NOT the efficient path.
+    """
+    base = raw_head(x, t)
+    batch, d, _ = base.shape
+    G = base.new_zeros(batch, d, d)
+    for i in range(d):
+        for j in range(d):
+            if i == j:
+                continue
+            swapped = raw_head(swap2(x, i, j), t)
+            G[:, i, j] = 0.5 * (base[:, i, j] - swapped[:, i, j])
+    return G
