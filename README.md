@@ -1,4 +1,4 @@
-# Discrete Neural Flow Samplers with Constraints
+# Discrete Neural Samplers with Constraints
 
 Code for an MSc dissertation at Imperial College London on **constrained discrete neural
 samplers for materials configurations**.
