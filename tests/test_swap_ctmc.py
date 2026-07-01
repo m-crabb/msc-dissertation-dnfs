@@ -1,3 +1,4 @@
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -8,7 +9,12 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
     gather_pair_scores,
     upper_tri_pairs,
 )
-from discrete_flow_sampler.samplers.swap_ctmc import compute_xi_t_swap
+from discrete_flow_sampler.samplers.swap_ctmc import (
+    _euler_step_swap,
+    compute_c_t_grid_swap,
+    compute_xi_t_swap,
+    sample_swap_ctmc,
+)
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 
@@ -76,3 +82,51 @@ def test_orientation_negative_control_index_not_spin():
     # active (opposite-spin) pairs must disagree by a clear margin
     active = (x[:, pairs[:, 0]] != x[:, pairs[:, 1]])
     assert (reverse_from_x - transposed).abs()[active].max() > 1e-4
+
+
+def test_euler_step_preserves_composition():
+    head, tgt = _head_and_target(D=4)            # d=16, N_A=8
+    state = tgt.sample_base(32, device="cpu")
+    t = torch.full((32,), 0.5)
+    for _ in range(50):
+        state, _ = _euler_step_swap(head, state, t, torch.tensor(0.05))
+        tgt.assert_on_manifold(state)            # bit-exact composition invariance
+
+
+def test_sample_swap_ctmc_stays_on_manifold_and_shapes():
+    head, tgt = _head_and_target(D=4)
+    x0 = tgt.sample_base(16, device="cpu")
+    ts = torch.linspace(0.0, 1.0, 20)
+    x_final = sample_swap_ctmc(head, x0, ts, target=tgt)
+    assert x_final.shape == (16, 16)
+    tgt.assert_on_manifold(x_final)
+    traj = sample_swap_ctmc(head, x0, ts, return_all_states=True)
+    assert traj.shape == (20, 16, 16)
+
+
+def test_sample_swap_ctmc_log_weights_finite_and_contract():
+    head, tgt = _head_and_target(D=4)
+    x0 = tgt.sample_base(16, device="cpu")
+    ts = torch.linspace(0.0, 1.0, 20)
+    x_final, log_w = sample_swap_ctmc(
+        head, x0, ts, return_log_weights=True, target=tgt
+    )
+    assert log_w.shape == (16,) and torch.isfinite(log_w).all()
+    with pytest.raises(ValueError):
+        sample_swap_ctmc(head, x0, ts, return_log_weights=True)          # no target
+    with pytest.raises(ValueError):
+        sample_swap_ctmc(
+            head, x0, ts,
+            return_log_weights=True, return_all_states=True, target=tgt,
+        )
+
+
+def test_compute_c_t_grid_swap_modes():
+    head, tgt = _head_and_target(D=4)
+    x0 = tgt.sample_base(8, device="cpu")
+    ts = torch.linspace(0.0, 1.0, 6)
+    traj = sample_swap_ctmc(head, x0, ts, return_all_states=True)        # (6,8,16)
+    for mode in ("naive_mc", "control_variate"):
+        c_t, integrand = compute_c_t_grid_swap(ts, traj, tgt, head, mode=mode)
+        assert c_t.shape == (6,) and integrand.shape == (6, 8)
+        assert torch.isfinite(c_t).all()
