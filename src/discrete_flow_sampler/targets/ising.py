@@ -229,3 +229,70 @@ class IsingTarget:
         t-dependence - that's the consequence of a linear-in-log annealing path.
         """
         return self.log_prob(x) - self.base_log_eta(x)
+
+
+class FixedCompositionIsingTarget(IsingTarget):
+    """Ising target on the fixed-composition manifold C = {n_plus = N_A}.
+
+    Hard-constraint counterpart of IsingTarget: composition is enforced by the
+    swap move set, not a soft penalty, so this target carries no
+    composition_penalty. It differs from IsingTarget only in the base:
+
+      * sample_base draws uniformly over configs with exactly N_A up-spins (the
+        canonical fixed-N base), NOT product-Bernoulli.
+      * base_log_eta returns the constant -log C(d, N_A) on the slice.
+
+    The config knob is the composition fraction c (target_composition);
+    N_A = round(c * d) is its integer realisation. On the slice every fixed-N
+    config is equiprobable under any product base, so c drops out of
+    base_log_eta, leaving only the slice-size constant.
+    """
+
+    def __init__(self, D, sigma, target_composition, bias=0.0, device="cpu"):
+        n_plus_float = target_composition * (D * D)
+        n_plus_target = round(n_plus_float)
+        if abs(n_plus_float - n_plus_target) > 1e-9:
+            raise ValueError(
+                f"target_composition={target_composition} * d={D * D} = "
+                f"{n_plus_float} is not integral; no exact fixed-N slice exists."
+            )
+        super().__init__(
+            D, sigma, bias=bias, device=device,
+            target_composition=target_composition,
+            composition_penalty_strength=0.0,
+        )
+        self.n_plus_target = n_plus_target
+        self._log_slice_size = (
+            math.lgamma(self.d + 1)
+            - math.lgamma(n_plus_target + 1)
+            - math.lgamma(self.d - n_plus_target + 1)
+        )  # log C(d, N_A)
+
+    def sample_base(self, n, device):
+        """Uniform over fixed-N configs: a random N_A-subset of sites set to +1.
+
+        argsort of per-row uniforms is a uniform random permutation; its first
+        N_A columns are a uniform random N_A-subset of site indices.
+        """
+        permuted_sites = torch.rand(n, self.d, device=device).argsort(dim=1)
+        x = torch.full((n, self.d), -1.0, device=device)
+        up_sites = permuted_sites[:, : self.n_plus_target]
+        x.scatter_(1, up_sites, 1.0)
+        return x
+
+    def base_log_eta(self, x):
+        """Constant log-density -log C(d, N_A) on the slice, shape (B,)."""
+        return torch.full(
+            (x.shape[0],), -self._log_slice_size,
+            device=x.device, dtype=x.dtype,
+        )
+
+    def assert_on_manifold(self, x):
+        """Raise AssertionError if any row has n_plus != N_A."""
+        n_plus = ((x + 1) * 0.5).sum(dim=-1)
+        if not torch.all(n_plus == self.n_plus_target):
+            bad = n_plus[n_plus != self.n_plus_target]
+            raise AssertionError(
+                f"off-manifold states: expected n_plus={self.n_plus_target}, "
+                f"got e.g. {bad[:5].tolist()}"
+            )
