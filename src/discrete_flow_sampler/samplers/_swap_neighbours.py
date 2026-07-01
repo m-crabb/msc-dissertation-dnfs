@@ -1,0 +1,41 @@
+"""Swap-neighbour helpers: pair enumeration + target evaluation at swaps.
+
+A swap CTMC's neighbours are Swap2(x, i, j) over unordered site pairs. Every
+pair is represented by its site-index-ordered member (i < j); the swap readout
+head is label-asymmetric, so this ordering is load-bearing for the single-pass
+reverse-rate identity (Eq. 8 / Eq. 10, swap form).
+"""
+import torch
+from torch import Tensor
+
+
+def upper_tri_pairs(d: int, device) -> Tensor:
+    """All (i, j) site pairs with i < j, shape (n_pairs, 2), n_pairs = d(d-1)/2."""
+    return torch.combinations(torch.arange(d, device=device), r=2)
+
+
+def gather_pair_scores(G: Tensor, pairs: Tensor) -> Tensor:
+    """Pick G[:, i, j] for each (i, j) in `pairs`, shape (B, n_pairs)."""
+    return G[:, pairs[:, 0], pairs[:, 1]]
+
+
+def _log_p_tilde_at_swap_neighbours(x: Tensor, t: Tensor, target) -> Tensor:
+    """log p̃_t(Swap2(x, i, j)) for every i<j pair, shape (B, n_pairs).
+
+    Same role for swap moves as `_neighbours._log_p_tilde_at_neighbours` for
+    single-site flips. Same-spin pairs give Swap2(x,i,j) = x, so their column is
+    log p̃_t(x) (downstream log-ratio 0), exactly as a trivial swap should.
+    """
+    batch_size, d = x.shape
+    pairs = upper_tri_pairs(d, x.device)                  # (P, 2)
+    n_pairs = pairs.shape[0]
+    i_col = pairs[:, 0].view(1, n_pairs, 1).expand(batch_size, n_pairs, 1)
+    j_col = pairs[:, 1].view(1, n_pairs, 1).expand(batch_size, n_pairs, 1)
+    y = x[:, None, :].expand(batch_size, n_pairs, d).clone()   # (B, P, d)
+    spin_i = y.gather(2, i_col)
+    spin_j = y.gather(2, j_col)
+    y.scatter_(2, i_col, spin_j)
+    y.scatter_(2, j_col, spin_i)
+    flat = y.reshape(batch_size * n_pairs, d)
+    t_per = t.repeat_interleave(n_pairs)
+    return target.log_p_tilde_t(flat, t_per).reshape(batch_size, n_pairs)
