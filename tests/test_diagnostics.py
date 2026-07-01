@@ -349,7 +349,10 @@ def test_gelman_rubin_separated_chains_large():
 
 # --- Short-range-order diagnostic (nearest-neighbour spin correlation) ------
 
-from discrete_flow_sampler.diagnostics.metrics import nn_correlation
+from discrete_flow_sampler.diagnostics.metrics import (
+    diagonal_correlation,
+    nn_correlation,
+)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 
@@ -366,3 +369,17 @@ def test_nn_correlation_checkerboard_is_minus_one():
     row, col = coords // 4, coords % 4
     x = ((-1.0) ** (row + col)).unsqueeze(0)     # (1, 16)
     assert torch.allclose(nn_correlation(x, tgt.A), -torch.ones(1), atol=1e-6)
+
+
+def test_diagonal_correlation_all_up_is_one():
+    x = torch.ones(3, 16)
+    assert torch.allclose(diagonal_correlation(x, 4), torch.ones(3), atol=1e-6)
+
+
+def test_diagonal_correlation_checkerboard_is_plus_one():
+    # checkerboard sign = (-1)^(row+col); diagonal neighbours (r±1,c±1) share
+    # colour, so every diagonal product is +1 — the OPPOSITE of nn_correlation.
+    coords = torch.arange(16)
+    row, col = coords // 4, coords % 4
+    x = ((-1.0) ** (row + col)).unsqueeze(0)     # (1, 16)
+    assert torch.allclose(diagonal_correlation(x, 4), torch.ones(1), atol=1e-6)

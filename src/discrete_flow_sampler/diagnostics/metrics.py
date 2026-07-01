@@ -426,3 +426,28 @@ def nn_correlation(x: Tensor, adjacency: Tensor) -> Tensor:
     x = x.float()
     quadratic = torch.einsum("bi,ij,bj->b", x, adjacency, x)
     return quadratic / adjacency.sum()
+
+
+def diagonal_correlation(x: Tensor, D: int) -> Tensor:
+    """Mean diagonal (next-nearest-neighbour) spin product over the DxD torus, (B,).
+
+    Independent within-energy-level spatial check for the fixed-composition gate:
+    nn_correlation is ∝ energy on the slice, so it cannot see within-level
+    structure; the diagonal correlation can. Diagonal neighbours of site (r,c)
+    are (r±1, c±1) with PBC. Same xᵀA_diag x / A_diag.sum() reduction as
+    nn_correlation. For a checkerboard this is +1 (diagonal neighbours share
+    colour), the opposite sign to nn_correlation (−1).
+    """
+    x = x.float()
+    d = D * D
+    A_diag = torch.zeros((d, d), device=x.device, dtype=x.dtype)
+    for r in range(D):
+        for c in range(D):
+            i = r * D + c
+            down_right = ((r + 1) % D) * D + (c + 1) % D
+            down_left = ((r + 1) % D) * D + (c - 1) % D
+            A_diag[i, down_right] = 1.0
+            A_diag[i, down_left] = 1.0
+    A_diag = A_diag + A_diag.T
+    quadratic = torch.einsum("bi,ij,bj->b", x, A_diag, x)
+    return quadratic / A_diag.sum()

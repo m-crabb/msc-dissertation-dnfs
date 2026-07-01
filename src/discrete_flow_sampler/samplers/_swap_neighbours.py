@@ -8,6 +8,13 @@ reverse-rate identity (Eq. 8 / Eq. 10, swap form).
 import torch
 from torch import Tensor
 
+# Upper bound on the swap log-ratio before exp(), analogous to the single-site
+# cap. A swap touches up to ~2x the bonds of a single-site flip, so the
+# single-site value of 5.0 is effectively ~2x tighter for swaps and would bind
+# at near-critical sigma; 30.0 is overflow-safe (exp(30) ~ 1e13) and non-binding
+# across the gate sigma-range (max |log-ratio| = t*sigma*|Delta(xTAx)| <= 32*sigma).
+SWAP_LOG_RATIO_CLAMP = 30.0
+
 
 def upper_tri_pairs(d: int, device) -> Tensor:
     """All (i, j) site pairs with i < j, shape (n_pairs, 2), n_pairs = d(d-1)/2."""

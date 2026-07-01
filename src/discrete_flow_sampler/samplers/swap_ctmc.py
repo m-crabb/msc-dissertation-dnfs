@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from discrete_flow_sampler.samplers._swap_neighbours import (
+    SWAP_LOG_RATIO_CLAMP,
     _log_p_tilde_at_swap_neighbours,
     gather_pair_scores,
     upper_tri_pairs,
@@ -28,7 +29,7 @@ def compute_xi_t_swap(x: Tensor, t: Tensor, head, target) -> Tensor:
     neg_G_plus = F.relu(-G_edge)
     log_p_neighbours = _log_p_tilde_at_swap_neighbours(x, t, target)
     log_p_x = target.log_p_tilde_t(x, t)
-    log_ratio = (log_p_neighbours - log_p_x[:, None]).clamp(max=5.0)
+    log_ratio = (log_p_neighbours - log_p_x[:, None]).clamp(max=SWAP_LOG_RATIO_CLAMP)
     outflow = G_plus.sum(dim=-1)                            # (B,)
     inflow = (neg_G_plus * log_ratio.exp()).sum(dim=-1)     # (B,)
     return target.dt_log_p_tilde_t(x, t) + outflow - inflow
@@ -40,7 +41,10 @@ def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
     Single global categorical over the i<j pairs plus a stay slot: at most one
     composition-preserving swap fires per step. Edges sharing a vertex conflict,
     so per-edge independent firing (single-site tau-leaping) is invalid here.
-    Correct to O(dt^2); monitor the Λ·dt>1 clip via the stay-prob clamp.
+    Correct to O(dt^2). When Λ·dt > 1 the stay slot clamps to 0 and
+    torch.multinomial renormalises the pair probabilities, so exactly one swap
+    fires that step; logging the Λ·dt>1 clip fraction is the caller's
+    responsibility (the train driver).
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)                       # (P, 2)

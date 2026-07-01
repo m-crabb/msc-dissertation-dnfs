@@ -2,7 +2,11 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from discrete_flow_sampler.constraints.swap_readout import DoublyHollowSwapHead, swap2
+from discrete_flow_sampler.constraints.swap_readout import (
+    DoublyHollowSwapHead,
+    LeTFMaskOneSwapHead,
+    swap2,
+)
 from discrete_flow_sampler.diagnostics.metrics import enumerate_states
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
@@ -130,3 +134,18 @@ def test_compute_c_t_grid_swap_modes():
         c_t, integrand = compute_c_t_grid_swap(ts, traj, tgt, head, mode=mode)
         assert c_t.shape == (6,) and integrand.shape == (6, 8)
         assert torch.isfinite(c_t).all()
+
+
+def test_xi_t_swap_unbiased_d16_slice():
+    # Unbiasedness at the GATE's dimension: d=16, N_A=8 (12,870 states), random
+    # init, no training. mask_one head is bit-exact-equal to doubly-hollow (P1),
+    # so this validates the same estimator at 120 pairs. sigma=0.1 -> clamp inert.
+    torch.manual_seed(42)
+    tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+    backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
+    head = LeTFMaskOneSwapHead(backbone)
+    for t_scalar in (0.1, 0.5, 0.9):
+        slice_states, p_cond, dt_log_Z = _exact_slice(tgt, 4, t_scalar)
+        t = torch.full((slice_states.shape[0],), t_scalar)
+        xi = compute_xi_t_swap(slice_states, t, head, tgt)
+        assert torch.isclose((p_cond * xi).sum(), dt_log_Z, atol=1e-4)
