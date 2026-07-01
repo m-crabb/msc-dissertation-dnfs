@@ -412,3 +412,17 @@ def gelman_rubin(chains) -> float:
         return float("inf")
     var_hat = (1 - 1 / n) * within_var + between_var / n
     return float(np.sqrt(var_hat / within_var))
+
+
+def nn_correlation(x: Tensor, adjacency: Tensor) -> Tensor:
+    """Mean nearest-neighbour spin product <s_i s_j> over lattice edges, (B,).
+
+    x^T A x sums s_i s_j over every ordered adjacent pair, i.e. twice per
+    undirected edge; adjacency.sum() is the matching count of ordered pairs, so
+    the ratio is the mean bond correlation. For a ferromagnet at c=0.5 this is
+    ∝ the per-site energy; the diagonal correlation (out of scope) is the
+    independent within-energy-level check.
+    """
+    x = x.float()
+    quadratic = torch.einsum("bi,ij,bj->b", x, adjacency, x)
+    return quadratic / adjacency.sum()

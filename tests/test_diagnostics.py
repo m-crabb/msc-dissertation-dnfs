@@ -345,3 +345,24 @@ def test_gelman_rubin_separated_chains_large():
     offsets = np.array([0.0, 10.0, 20.0, 30.0])[:, None]
     chains = rng.standard_normal((4, 5000)) + offsets  # trapped in diff modes
     assert gelman_rubin(chains) > 2.0
+
+
+# --- Short-range-order diagnostic (nearest-neighbour spin correlation) ------
+
+from discrete_flow_sampler.diagnostics.metrics import nn_correlation
+from discrete_flow_sampler.targets.ising import IsingTarget
+
+
+def test_nn_correlation_all_up_is_one():
+    tgt = IsingTarget(D=4, sigma=0.1)
+    x = torch.ones(3, 16)
+    assert torch.allclose(nn_correlation(x, tgt.A), torch.ones(3), atol=1e-6)
+
+
+def test_nn_correlation_checkerboard_is_minus_one():
+    tgt = IsingTarget(D=4, sigma=0.1)
+    # bipartite checkerboard on the 4×4 torus: sign = (-1)^(row+col)
+    coords = torch.arange(16)
+    row, col = coords // 4, coords % 4
+    x = ((-1.0) ** (row + col)).unsqueeze(0)     # (1, 16)
+    assert torch.allclose(nn_correlation(x, tgt.A), -torch.ones(1), atol=1e-6)
