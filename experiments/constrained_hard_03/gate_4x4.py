@@ -19,7 +19,9 @@ Why each metric (examiner-facing rationale):
 - Within-level uniformity closes that blind spot. A raw within-level TV is
   uninterpretable when the per-level sample count n_k is much smaller than the
   degeneracy g_k (a perfect sampler still shows TV ~ 1 - n_k/g_k -- the TVD-floor
-  trap), so we subtract a matched perfect-sampler baseline and report the EXCESS.
+  trap) or when the IS weights are dispersed, so we subtract a WEIGHT-MATCHED
+  perfect-sampler baseline (the observed IS weights assigned to uniform
+  on-level draws) and report the EXCESS.
 - <E> and nn_correlation are energy-tied observables; diagonal_correlation is the
   INDEPENDENT within-level spatial observable (checkerboard: nn = -1 but diag =
   +1), so it can move even when the energy marginal is right.
@@ -152,11 +154,27 @@ def within_level_uniformity(
     within-level structure. For each level with raw sample count n_k >= min_count,
     map every sample to its slice-state identity, form the IS-weighted
     distribution over the level's g_k states, and compute TV_k against
-    uniform(1/g_k). Because a raw TV_k is floored when n_k << g_k (a perfect
-    sampler still shows TV ~ 1 - n_k/g_k), we also draw R = n_ref_replicates
-    matched perfect-sampler baselines (n_k uniform-on-level draws each) and report
-    the EXCESS = TV_k - TV_k^ref, which is ~0 for a faithful sampler regardless of
-    the floor. Returns one dict per well-populated level.
+    uniform(1/g_k). A raw TV_k is uninterpretable on its own for two reasons:
+
+    * the sample-size floor (a perfect sampler still shows TV ~ 1 - n_k/g_k
+      when n_k << g_k -- the known TVD-floor trap), and
+    * IS-weight dispersion: skewed weights inflate TV_k even when the states
+      themselves cover the level uniformly, because the within-level effective
+      sample size n_eff_k = (Sigma w)^2 / Sigma w^2 < n_k.
+
+    So we subtract a WEIGHT-MATCHED perfect-sampler baseline: each of the
+    R = n_ref_replicates replicates keeps the level's OBSERVED normalised IS
+    weight vector (the same one used for TV_k) and assigns it to n_k uniform
+    draws over the g_k states, accumulated exactly as for the real samples.
+    Under the null hypothesis -- sampler uniform within the level, weights
+    independent of within-level identity -- this IS the distribution of the
+    statistic, so EXCESS = TV_k - TV_k^ref is centred at ~0 for a faithful
+    sampler. An UNWEIGHTED (equal-weight) baseline would model only the
+    sample-size floor, not the weight dispersion, so TV_ref would sit below
+    the true null and the excess would be biased upward one-sidedly -- a
+    low-within-level-ESS rung (sigma=0.40) could spuriously fail the gate.
+    n_eff_k is reported per level so weight dispersion is visible alongside
+    the excess. Returns one dict per well-populated level.
     """
     generator = torch.Generator().manual_seed(seed)
     sample_keys = _pack_spin_keys(sample_states)
@@ -179,16 +197,19 @@ def within_level_uniformity(
         weights = weights / weights.sum()
         p_hat = torch.zeros(g_k).index_add_(0, positions, weights)
         tv_k = 0.5 * (p_hat - 1.0 / g_k).abs().sum().item()
+        # (Sigma w)^2 / Sigma w^2 with w already normalised to Sigma w = 1.
+        n_eff_k = (1.0 / weights.pow(2).sum()).item()
 
         tv_refs = []
         for _ in range(n_ref_replicates):
             draws = torch.randint(0, g_k, (n_k,), generator=generator)
-            counts = torch.zeros(g_k).index_add_(0, draws, torch.ones(n_k))
-            tv_refs.append(0.5 * (counts / n_k - 1.0 / g_k).abs().sum().item())
+            p_ref = torch.zeros(g_k).index_add_(0, draws, weights)
+            tv_refs.append(0.5 * (p_ref - 1.0 / g_k).abs().sum().item())
         tv_ref = sum(tv_refs) / len(tv_refs)
 
         results.append({
             "energy": float(level_energy), "n_k": n_k, "g_k": g_k,
+            "n_eff_k": n_eff_k,
             "tv_k": tv_k, "tv_ref": tv_ref, "excess": tv_k - tv_ref,
         })
     return results
