@@ -36,6 +36,18 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 HEAD_KINDS = ("doubly_hollow", "mask_one", "non_antisym")
 
 
+def smoke_config(cfg: HardStageCfg) -> HardStageCfg:
+    """Shrink `cfg` to a minutes-scale end-to-end check (shared by the CLI
+    `--smoke` flag and `modal_app.train_remote`'s `smoke` argument, so the
+    two entry points can never drift apart)."""
+    return replace(
+        cfg,
+        train=replace(cfg.train, n_steps=4, inner_steps_per_outer=2),
+        ctmc=replace(cfg.ctmc, n_euler_steps=8),
+        eval=replace(cfg.eval, n_eval_samples=64),
+    )
+
+
 def train(
     cfg: HardStageCfg,
     seed: int = 42,
@@ -174,12 +186,7 @@ def main():
     if args.head_kind is not None:
         cfg = replace(cfg, head_kind=args.head_kind)
     if args.smoke:
-        cfg = replace(
-            cfg,
-            train=replace(cfg.train, n_steps=4, inner_steps_per_outer=2),
-            ctmc=replace(cfg.ctmc, n_euler_steps=8),
-            eval=replace(cfg.eval, n_eval_samples=64),
-        )
+        cfg = smoke_config(cfg)
     train(
         cfg,
         seed=args.seed,
