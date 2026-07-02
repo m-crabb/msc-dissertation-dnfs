@@ -72,6 +72,20 @@ def _active_pairs(x):
     return [(i, j) for i in range(d) for j in range(i + 1, d) if x[0, i] != x[0, j]]
 
 
+def _all_pairs(d):
+    return [(i, j) for i in range(d) for j in range(i + 1, d)]
+
+
+def _state_batch(d=16, batch=3, seed=7):
+    """A (batch, d) ±1 state batch; every row guaranteed to contain both spins."""
+    torch.manual_seed(seed)
+    x = (torch.randint(0, 2, (batch, d)) * 2 - 1).float()
+    for b in range(batch):
+        if bool((x[b] > 0).all()) or bool((x[b] < 0).all()):
+            x[b, 0] *= -1
+    return x
+
+
 def test_doubly_hollow_antisymmetric():
     """Assertion 1: state-swap antisymmetry, bit-exact (< atol)."""
     for d in (9, 16):
@@ -239,6 +253,36 @@ def test_brute_force_matches_mask_one():
     for i, j in _active_pairs(x):
         diff = max(diff, (G_bf[0, i, j] - G_m1[0, i, j]).abs().item())
     assert diff < ATOL, f"brute-force vs mask-one disagree: {diff:.2e}"
+
+
+def test_brute_force_matches_mask_one_d16_batch_all_pairs():
+    """Assertion 4b, extended: d=16 (gate dim), batch>1, ALL i<j pairs.
+
+    test_brute_force_matches_mask_one above only pins d=9, batch 1, active
+    (opposite-spin) pairs. Before mask_one is used as an O(d) drop-in for the
+    O(d^2) reference head in the d=16 gate (task 9), the oracle must also cover
+    the gate's own dimension, more than one state at once, and same-spin pairs
+    (where both heads should agree trivially at exactly 0).
+    """
+    d = 16
+    m = _backbone(d=d)
+    x = _state_batch(d=d, batch=3)
+    t = torch.rand(3)
+    G_bf = DoublyHollowSwapHead(m)(x, t)
+    G_m1 = LeTFMaskOneSwapHead(m)(x, t)
+
+    pairs = _all_pairs(d)
+    idx_i = torch.tensor([i for i, _ in pairs])
+    idx_j = torch.tensor([j for _, j in pairs])
+    bf_vals = G_bf[:, idx_i, idx_j]  # (batch, n_pairs)
+    m1_vals = G_m1[:, idx_i, idx_j]
+
+    # masking j is a float32 no-op (module docstring), so this is observed
+    # bit-exact; fall back to atol if a future backbone change makes the
+    # paths diverge slightly.
+    if not torch.equal(bf_vals, m1_vals):
+        diff = (bf_vals - m1_vals).abs().max().item()
+        assert diff < ATOL, f"d=16 batch all-pairs oracle: max diff {diff:.2e}"
 
 
 def test_masked_body_matches_real_readout_path():

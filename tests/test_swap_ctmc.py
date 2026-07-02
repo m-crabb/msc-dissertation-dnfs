@@ -138,8 +138,11 @@ def test_compute_c_t_grid_swap_modes():
 
 def test_xi_t_swap_unbiased_d16_slice():
     # Unbiasedness at the GATE's dimension: d=16, N_A=8 (12,870 states), random
-    # init, no training. mask_one head is bit-exact-equal to doubly-hollow (P1),
-    # so this validates the same estimator at 120 pairs. sigma=0.1 -> clamp inert.
+    # init, no training. mask_one head is numerically equal to doubly-hollow
+    # (test_brute_force_matches_mask_one_d16_batch_all_pairs, d=16, batch, all
+    # i<j pairs oracle in test_swap_readout.py: observed bit-exact, atol=1e-5
+    # fallback), so this validates the same estimator at 120 pairs. sigma=0.1
+    # -> clamp inert.
     torch.manual_seed(42)
     tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
