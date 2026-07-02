@@ -41,7 +41,6 @@ import math
 from dataclasses import replace
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import torch
 from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
@@ -459,6 +458,8 @@ def _control_product_bernoulli(results_dir, seeds, n_samples, device):
     per_seed = []
     for seed in seeds:
         run_dir = latest_run_dir(results_dir, cfg_name, seed)
+        print(f"[gate] control product_bernoulli seed {seed}: {run_dir.name}",
+              flush=True)
         head, target = load_run(run_dir, device)
         d = int(target.d)
         all_states = enumerate_states(d).to(device)
@@ -515,6 +516,7 @@ def _control_non_antisym(results_dir, seeds, n_samples, device):
     per_seed = []
     for seed in seeds:
         run_dir = latest_run_dir(results_dir, cfg_name, seed)
+        print(f"[gate] control non_antisym seed {seed}: {run_dir.name}", flush=True)
         head, target = load_run(run_dir, device)
         per_seed.append(run_gate(head, target, n_samples, n_euler, seed))
     violations = [m["antisym_violation"] for m in per_seed]
@@ -545,6 +547,11 @@ def _overall_pass(verdict, skip_controls):
 def _plot_energy_hists(hist_by_rung, out_path):
     """One panel per rung: exact conditional (black) vs IS-weighted DNFS
     histograms (seeds overlaid)."""
+    import matplotlib
+
+    matplotlib.use("Agg")  # headless-safe (Modal containers have no display)
+    import matplotlib.pyplot as plt
+
     rungs = list(hist_by_rung.keys())
     fig, axes = plt.subplots(1, len(rungs), figsize=(5 * len(rungs), 4), squeeze=False)
     for ax, rung in zip(axes[0], rungs):
@@ -564,7 +571,7 @@ def _plot_energy_hists(hist_by_rung, out_path):
     plt.close(fig)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -575,7 +582,7 @@ def main():
     parser.add_argument("--out", default=None)
     parser.add_argument("--skip-controls", action="store_true",
                         help="positive-only pass (ladder rungs, no negative controls)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     results_dir = Path(args.results_dir)
     seeds = [int(s) for s in args.seeds.split(",")]
@@ -589,11 +596,17 @@ def main():
         per_seed = []
         for seed in seeds:
             run_dir = latest_run_dir(results_dir, cfg_name, seed)
+            print(f"[gate] rung {rung} seed {seed}: {run_dir.name}", flush=True)
             head, target = load_run(run_dir, args.device)
             metrics = run_gate(head, target, args.n_samples, n_euler, seed)
             metrics["run_dir"] = str(run_dir)
             metrics["clamp"] = clamp_fractions(run_dir)
             per_seed.append(metrics)
+            print(
+                f"[gate] rung {rung} seed {seed}: energy_tv={metrics['energy_tv']:.4f}"
+                f" ess_frac={metrics['ess_fraction']:.3f}",
+                flush=True,
+            )
         verdict["rungs"][rung] = _aggregate_rung(per_seed)
         hist_by_rung[rung] = per_seed
 

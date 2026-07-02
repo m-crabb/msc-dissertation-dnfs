@@ -21,6 +21,11 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     pixi run -e dev modal run --detach -m \\
         experiments.constrained_hard_03.modal_app::ladder \\
         --seeds "42,43,44"
+
+    # The 4x4 exact-enumeration gate over the trained run dirs already on
+    # the volume (blocking so logs stream; writes /results/gate_4x4):
+    pixi run -e dev modal run -m \\
+        experiments.constrained_hard_03.modal_app::gate
 """
 import modal
 from experiments.constrained_hard_03.configs import CONFIGS
@@ -120,6 +125,36 @@ def train_remote(
     volume.commit()
 
 
+@app.function(
+    # Same L4 as train_remote: the gate re-loads the trained d=16 heads and
+    # draws 5k-sample swap-CTMC evals -- tiny on GPU, ~2h40m on local CPU.
+    gpu="L4",
+    volumes={"/results": volume},
+    timeout=4 * 60 * 60,
+)
+def gate_remote(
+    seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False
+):
+    """Run the 4x4 exact-enumeration go/no-go gate against the trained run
+    dirs already on the volume; writes verdict.json + plot to /results/gate_4x4."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.gate_4x4 import main as gate_main
+
+    argv = [
+        "--results-dir", "/results",
+        "--device", "cuda",
+        "--out", "/results/gate_4x4",
+        "--seeds", seeds,
+        "--n-samples", str(n_samples),
+    ]
+    if skip_controls:
+        argv.append("--skip-controls")
+    gate_main(argv)
+    volume.commit()
+
+
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42, head_kind: str = "", smoke: bool = False):
     """Local CLI entry: blocking single `train_remote` call (used for smoke
@@ -129,6 +164,13 @@ def main(cfg_name: str, seed: int = 42, head_kind: str = "", smoke: bool = False
     train_remote.remote(
         cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind, smoke=smoke
     )
+
+
+@app.local_entrypoint()
+def gate(seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False):
+    """Local CLI entry for the gate: blocking `.remote()` so the per-run
+    progress prints stream back to the local terminal."""
+    gate_remote.remote(seeds=seeds, n_samples=n_samples, skip_controls=skip_controls)
 
 
 @app.local_entrypoint()
