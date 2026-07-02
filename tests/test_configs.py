@@ -267,6 +267,27 @@ def test_matched_fixed50_drops_anneal_keeps_matched_base():
     assert cfg.estimator == base.estimator
 
 
+def test_hard_cell_is_fixed_composition_no_penalty():
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cfg = CONFIGS["H2_d16_c50_s010_letf_dh"]
+    assert cfg.ising.D == 4
+    assert cfg.ising.target_composition == 0.5
+    assert cfg.ising.composition_penalty_strength == 0.0
+    assert cfg.ising.sigma < 0.2                       # subcritical floor rung
+    assert cfg.model.kind == "letf"
+    assert cfg.head_kind == "doubly_hollow"
+
+
+def test_hard_ladder_covers_three_sigmas_plus_control():
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    ladder = [k for k in CONFIGS if k.endswith("_dh")]
+    assert sorted(CONFIGS[k].ising.sigma for k in ladder) == [0.10, 0.223, 0.40]
+    control = CONFIGS["H2_d16_c50_s010_letf_na"]
+    assert control.head_kind == "non_antisym"
+
+
 def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
