@@ -45,6 +45,7 @@ def test_swap2_is_involution_and_exchanges():
     assert torch.equal(swap2(y, i, j), x)
 
 
+@torch.no_grad()
 def test_masked_body_double_hollow():
     """H from masking anchor i: H[:,j,:] is blind to x_i (masked) and x_j (hollow)."""
     m = _backbone(d=9)
@@ -86,6 +87,7 @@ def _state_batch(d=16, batch=3, seed=7):
     return x
 
 
+@torch.no_grad()
 def test_doubly_hollow_antisymmetric():
     """Assertion 1: state-swap antisymmetry, bit-exact (< atol)."""
     for d in (9, 16):
@@ -102,6 +104,7 @@ def test_doubly_hollow_antisymmetric():
         assert worst < ATOL, f"d={d}: antisymmetry residual {worst:.2e}"
 
 
+@torch.no_grad()
 def test_doubly_hollow_trivial_swap_vanishes():
     """Assertion 3: same-spin pair => G_swap == 0 exactly."""
     m = _backbone(d=9)
@@ -115,6 +118,7 @@ def test_doubly_hollow_trivial_swap_vanishes():
     assert worst < ATOL, f"trivial-swap nonzero: {worst:.2e}"
 
 
+@torch.no_grad()
 def test_doubly_hollow_finite():
     """Assertion 6 (part): no NaN/Inf."""
     m = _backbone(d=9)
@@ -123,6 +127,7 @@ def test_doubly_hollow_finite():
     assert torch.isfinite(G).all()
 
 
+@torch.no_grad()
 def test_mask_one_antisymmetric():
     """Assertion 5: the real climax head is state-swap antisymmetric, bit-exact."""
     for d in (9, 16):
@@ -139,6 +144,7 @@ def test_mask_one_antisymmetric():
         assert worst < ATOL, f"d={d}: mask-one antisymmetry residual {worst:.2e}"
 
 
+@torch.no_grad()
 def test_mask_one_blind_to_anchor():
     """Assertion 5 (part): G_swap(i,j) is invariant to flipping x_i then fixing omega.
 
@@ -157,6 +163,7 @@ def test_mask_one_blind_to_anchor():
     assert drift < ATOL, f"mask-one body not structurally blind to x_i: {drift:.2e}"
 
 
+@torch.no_grad()
 def test_mask_one_label_asymmetry_pinned():
     """Assertion 6: the mask-one head is NOT label-symmetric (H_ij != H_ji).
 
@@ -198,6 +205,7 @@ def _naive_factoring(model, x, t):
     return out
 
 
+@torch.no_grad()
 def test_naive_factoring_breaks_antisymmetry():
     """Assertion 2: the naive factoring is NOT antisymmetric.
 
@@ -227,6 +235,7 @@ def test_naive_factoring_breaks_antisymmetry():
     assert naive_worst > 100 * max(hollow_worst, 1e-12)
 
 
+@torch.no_grad()
 def test_antisymmetrise_fixes_arbitrary_head():
     """Assertion 4a: antisymmetrise(non-antisymmetric raw head) is antisymmetric."""
     m = _backbone(d=9)
@@ -242,6 +251,7 @@ def test_antisymmetrise_fixes_arbitrary_head():
     assert worst < ATOL, f"antisymmetrise did not enforce antisymmetry: {worst:.2e}"
 
 
+@torch.no_grad()
 def test_brute_force_matches_mask_one():
     """Assertion 4b: brute-force mask-both and leTF mask-one agree (read at j)."""
     m = _backbone(d=9)
@@ -255,6 +265,7 @@ def test_brute_force_matches_mask_one():
     assert diff < ATOL, f"brute-force vs mask-one disagree: {diff:.2e}"
 
 
+@torch.no_grad()
 def test_brute_force_matches_mask_one_d16_batch_all_pairs():
     """Assertion 4b, extended: d=16 (gate dim), batch>1, ALL i<j pairs.
 
@@ -285,6 +296,7 @@ def test_brute_force_matches_mask_one_d16_batch_all_pairs():
         assert diff < ATOL, f"d=16 batch all-pairs oracle: max diff {diff:.2e}"
 
 
+@torch.no_grad()
 def test_masked_body_matches_real_readout_path():
     """Drift guard: with no masking, _masked_body equals the model's real readout body.
 

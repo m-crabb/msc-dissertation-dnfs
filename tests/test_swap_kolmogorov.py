@@ -28,6 +28,7 @@ def _exact_slice(target, D, t_scalar):
     return slice_states, p_cond, dt_log_Z
 
 
+@torch.no_grad()
 def test_residual_swap_shape_and_finite():
     head, tgt = _head_and_target()
     x = tgt.sample_base(8, device="cpu")
@@ -37,6 +38,7 @@ def test_residual_swap_shape_and_finite():
     assert torch.isfinite(r).all()
 
 
+@torch.no_grad()
 def test_residual_swap_zero_mean_at_exact_dt_log_Z():
     # E_{p_t^C}[δ_t] = ∂_t log Z_t^C − dt_log_Zt = 0 when dt_log_Zt is exact,
     # for ANY head (design §3.3). Bit-close on the 6-state 2×2 slice.
@@ -48,6 +50,7 @@ def test_residual_swap_zero_mean_at_exact_dt_log_Z():
         assert torch.isclose((p_cond * r).sum(), torch.zeros(()), atol=1e-5)
 
 
+@torch.no_grad()
 def test_loss_swap_is_nonneg_scalar():
     head, tgt = _head_and_target()
     x = tgt.sample_base(8, device="cpu")

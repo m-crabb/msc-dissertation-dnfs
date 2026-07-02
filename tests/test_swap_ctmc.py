@@ -42,6 +42,7 @@ def _exact_slice(target, D, t_scalar):
     return slice_states, p_cond, dt_log_Z
 
 
+@torch.no_grad()
 def test_xi_t_swap_is_unbiased_for_dt_log_Z():
     # E_{p_t^C}[ξ_t] = ∂_t log Z_t^C for ANY valid rate (design §3.3), checked
     # exactly on the 2×2 slice at random init — no training.
@@ -53,6 +54,7 @@ def test_xi_t_swap_is_unbiased_for_dt_log_Z():
         assert torch.isclose((p_cond * xi).sum(), dt_log_Z, atol=1e-5)
 
 
+@torch.no_grad()
 def test_single_pass_reverse_rate_identity():
     # [-G(i,j|x)]_+ == [G(i,j|Swap2 x)]_+ bit-exact (P1 antisymmetry) — the
     # identity the single-pass residual/ξ_t rely on.
@@ -69,6 +71,7 @@ def test_single_pass_reverse_rate_identity():
     assert torch.allclose(reverse_from_x, reverse_true, atol=1e-6)
 
 
+@torch.no_grad()
 def test_orientation_negative_control_index_not_spin():
     # Reading the TRANSPOSED entry G[:, j, i] at the swapped state (what a
     # spin-based representative would do) breaks the reverse-rate identity: the
@@ -88,6 +91,7 @@ def test_orientation_negative_control_index_not_spin():
     assert (reverse_from_x - transposed).abs()[active].max() > 1e-4
 
 
+@torch.no_grad()
 def test_euler_step_preserves_composition():
     head, tgt = _head_and_target(D=4)            # d=16, N_A=8
     state = tgt.sample_base(32, device="cpu")
@@ -97,6 +101,7 @@ def test_euler_step_preserves_composition():
         tgt.assert_on_manifold(state)            # bit-exact composition invariance
 
 
+@torch.no_grad()
 def test_sample_swap_ctmc_stays_on_manifold_and_shapes():
     head, tgt = _head_and_target(D=4)
     x0 = tgt.sample_base(16, device="cpu")
@@ -108,6 +113,7 @@ def test_sample_swap_ctmc_stays_on_manifold_and_shapes():
     assert traj.shape == (20, 16, 16)
 
 
+@torch.no_grad()
 def test_sample_swap_ctmc_log_weights_finite_and_contract():
     head, tgt = _head_and_target(D=4)
     x0 = tgt.sample_base(16, device="cpu")
@@ -125,6 +131,7 @@ def test_sample_swap_ctmc_log_weights_finite_and_contract():
         )
 
 
+@torch.no_grad()
 def test_compute_c_t_grid_swap_modes():
     head, tgt = _head_and_target(D=4)
     x0 = tgt.sample_base(8, device="cpu")
@@ -136,6 +143,7 @@ def test_compute_c_t_grid_swap_modes():
         assert torch.isfinite(c_t).all()
 
 
+@torch.no_grad()
 def test_xi_t_swap_unbiased_d16_slice():
     # Unbiasedness at the GATE's dimension: d=16, N_A=8 (12,870 states), random
     # init, no training. mask_one head is numerically equal to doubly-hollow
