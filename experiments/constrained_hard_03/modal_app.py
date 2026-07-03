@@ -71,7 +71,14 @@ image = (
         f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
         "pixi install --environment cuda --locked"
     )
-    .env({"PATH": f"{PIXI_ENV_BIN}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"})
+    .env(
+        {
+            "PATH": (
+                f"{PIXI_ENV_BIN}:/usr/local/sbin:/usr/local/bin:"
+                "/usr/sbin:/usr/bin:/sbin:/bin"
+            )
+        }
+    )
 )
 
 volume = modal.Volume.from_name("dnfs-results", create_if_missing=True)

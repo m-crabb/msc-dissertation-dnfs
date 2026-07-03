@@ -17,6 +17,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
     composition_fraction_up,
     composition_observables,
     conditional_pmf_at_composition,
+    diagonal_correlation,
     entropy_estimate,
     enumerate_states,
     ess_from_log_weights,
@@ -26,8 +27,10 @@ from discrete_flow_sampler.diagnostics.metrics import (
     free_energy_lb_estimate,
     internal_energy_estimate,
     magnetisation,
+    nn_correlation,
     z2_asymmetry_from_samples,
 )
+from discrete_flow_sampler.targets.ising import IsingTarget
 
 # ---------------------------------------------------------------------------
 # ESS (already-implemented; pinning behaviour during the refactor)
@@ -348,12 +351,6 @@ def test_gelman_rubin_separated_chains_large():
 
 
 # --- Short-range-order diagnostic (nearest-neighbour spin correlation) ------
-
-from discrete_flow_sampler.diagnostics.metrics import (
-    diagonal_correlation,
-    nn_correlation,
-)
-from discrete_flow_sampler.targets.ising import IsingTarget
 
 
 def test_nn_correlation_all_up_is_one():

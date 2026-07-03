@@ -34,8 +34,14 @@ def test_energy_marginal_tv_is_zero_for_identical():
 def test_energy_marginal_tv_detects_shift():
     adj = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
     bins = torch.linspace(-3, 3, 7)
-    up = slice_energy_hist(torch.tensor([[1.0, 1.0]]), torch.tensor([1.0]), adj, bins)   # xAx=+2
-    anti = slice_energy_hist(torch.tensor([[1.0, -1.0]]), torch.tensor([1.0]), adj, bins) # xAx=-2
+    # xAx=+2
+    up = slice_energy_hist(
+        torch.tensor([[1.0, 1.0]]), torch.tensor([1.0]), adj, bins
+    )
+    # xAx=-2
+    anti = slice_energy_hist(
+        torch.tensor([[1.0, -1.0]]), torch.tensor([1.0]), adj, bins
+    )
     assert energy_marginal_tv(up, anti) > 0.9
 
 
