@@ -16,9 +16,22 @@ from torch import Tensor
 SWAP_LOG_RATIO_CLAMP = 30.0
 
 
+_PAIRS_CACHE: dict[tuple[int, torch.device], Tensor] = {}
+
+
 def upper_tri_pairs(d: int, device) -> Tensor:
-    """All (i, j) site pairs with i < j, shape (n_pairs, 2), n_pairs = d(d-1)/2."""
-    return torch.combinations(torch.arange(d, device=device), r=2)
+    """All (i, j) site pairs with i < j, shape (n_pairs, 2), n_pairs = d(d-1)/2.
+
+    Cached per (d, device): every sampler step re-reads the same table and
+    n_pairs grows as d^2, so rebuilding it per call is pure dispatch overhead.
+    Callers treat the result as read-only.
+    """
+    key = (d, torch.device(device))
+    if key not in _PAIRS_CACHE:
+        _PAIRS_CACHE[key] = torch.combinations(
+            torch.arange(d, device=device), r=2
+        )
+    return _PAIRS_CACHE[key]
 
 
 def gather_pair_scores(G: Tensor, pairs: Tensor) -> Tensor:

@@ -147,13 +147,24 @@ class CausalStack(nn.Module):
             ]
         )
 
+    def _cached_causal_mask(self, T: int, device) -> Tensor:
+        """Inclusive-causal mask, rebuilt only on shape/device change.
+
+        Plain attribute, NOT a registered buffer: it must stay out of
+        state_dict so checkpoints keep their exact key set.
+        """
+        mask = getattr(self, "_causal_mask", None)
+        if mask is None or mask.shape[0] != T or mask.device != device:
+            mask = torch.triu(
+                torch.ones(T, T, dtype=torch.bool, device=device), diagonal=1
+            )
+            self._causal_mask = mask
+        return mask
+
     def forward(self, x: Tensor) -> Tensor:
-        T = x.shape[1]
         # nn.MultiheadAttention attn_mask: True = excluded.
         # Inclusive causal: mask j > i (upper triangle excluding diag).
-        mask = torch.triu(
-            torch.ones(T, T, dtype=torch.bool, device=x.device), diagonal=1
-        )
+        mask = self._cached_causal_mask(x.shape[1], x.device)
         for block in self.blocks:
             x = block(x, mask)
         return x
@@ -210,6 +221,22 @@ class AttentionReadout(nn.Module):
             nn.Linear(hidden_dim * ff_mult, hidden_dim),
         )
 
+    def _cached_joint_mask(self, d: int, device) -> Tensor:
+        """(d, 2d) joint score mask, rebuilt only on shape/device change.
+
+        Score-mask convention: True = mask out (-inf).
+        M_L allows L-keys j <= i, so mask j > i (upper triangle excl diag).
+        M_R allows R-keys j >= i, so mask j < i (lower triangle excl diag).
+        Plain attribute, NOT a registered buffer (kept out of state_dict).
+        """
+        mask = getattr(self, "_joint_mask", None)
+        if mask is None or mask.shape[0] != d or mask.device != device:
+            i_idx = torch.arange(d, device=device).unsqueeze(1)
+            j_idx = torch.arange(d, device=device).unsqueeze(0)
+            mask = torch.cat([j_idx > i_idx, j_idx < i_idx], dim=-1)
+            self._joint_mask = mask
+        return mask
+
     def forward(self, fwd_x: Tensor, bwd_x: Tensor, cond_t: Tensor) -> Tensor:
         sliced_fwd = fwd_x[:, :-1, :]    # (B, d, h)
         sliced_bwd = bwd_x[:, 1:, :]     # (B, d, h)
@@ -238,15 +265,7 @@ class AttentionReadout(nn.Module):
         scale = math.sqrt(self.d_k)
         scores = torch.matmul(Q, K.transpose(-1, -2)) / scale   # (B, n_heads, d, 2d)
 
-        # Joint mask. Score-mask convention: True = mask out (-inf).
-        # M_L allows L-keys j <= i, so mask j > i (upper triangle excl diag).
-        # M_R allows R-keys j >= i, so mask j < i (lower triangle excl diag).
-        device = Q.device
-        i_idx = torch.arange(d, device=device).unsqueeze(1)
-        j_idx = torch.arange(d, device=device).unsqueeze(0)
-        mask_l_excl = j_idx > i_idx
-        mask_r_excl = j_idx < i_idx
-        joint_mask = torch.cat([mask_l_excl, mask_r_excl], dim=-1)  # (d, 2d)
+        joint_mask = self._cached_joint_mask(d, Q.device)  # (d, 2d)
 
         scores = scores.masked_fill(joint_mask, float("-inf"))
         attn = torch.softmax(scores, dim=-1)        # (B, n_heads, d, 2d)
