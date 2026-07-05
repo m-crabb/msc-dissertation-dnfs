@@ -94,21 +94,33 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
     raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
 
 
-def _hard_cell(name: str, sigma: float, head_kind: str) -> HardStageCfg:
-    """Shared shape for the sigma-ladder + control cells: only sigma and
-    head_kind vary (per the brief, all four cells are otherwise identical)."""
+def _hard_cell(
+    name: str,
+    sigma: float,
+    head_kind: str,
+    *,
+    D: int = 4,
+    n_euler_steps: int = 100,
+    n_eval_samples: int = 512,
+) -> HardStageCfg:
+    """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
+    only sigma and head_kind (all otherwise identical). The keyword knobs open
+    the same shape to the non-enumerable scaling rungs (§7 mixing probe): D sets
+    the lattice, n_euler_steps must be clip-safe for the one-event step at that D
+    (scout: ~2d at d=64), n_eval_samples sizes the IS-ESS eval drawn on the GPU
+    job itself (evals-ride-the-gpu-job)."""
     return HardStageCfg(
         name=name,
         ising=IsingCfg(
-            D=4, sigma=sigma, bias=0.0,
+            D=D, sigma=sigma, bias=0.0,
             target_composition=0.5, composition_penalty_strength=0.0,
         ),
         train=TrainCfg(
             n_steps=2_000, batch_size=128, replay_buffer_cycles=8,
             lr=1e-3, seed=42, warmup_steps=500,
         ),
-        ctmc=CTMCCfg(n_euler_steps=100),
-        eval=EvalCfg(eval_every=200, n_eval_samples=512),
+        ctmc=CTMCCfg(n_euler_steps=n_euler_steps),
+        eval=EvalCfg(eval_every=200, n_eval_samples=n_eval_samples),
         model=ModelCfg(kind="letf", hidden_dim=32, n_layers=2, n_heads=4, vocab_size=2),
         estimator="control_variate",
         head_kind=head_kind,
@@ -130,5 +142,15 @@ CONFIGS: dict[str, HardStageCfg] = {
     # NonAntisymSwapHead instead of DoublyHollowSwapHead, same loss.
     "H2_d16_c50_s010_letf_na": _hard_cell(
         "H2_d16_c50_s010_letf_na", sigma=0.10, head_kind="non_antisym",
+    ),
+    # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
+    # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
+    # here rides the probe's reference chain, not exact enumeration. One-event
+    # step sized clip-safe (scout: n~116 at d=64; 128 gives margin, verified via
+    # lambda_dt_clipped_frac). 5000-sample eval on the GPU job. This is a
+    # VALIDATION run: confirms b-scaling + matching-step fidelity before D=16.
+    "H2_d64_c50_s223_letf_mo": _hard_cell(
+        "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
+        D=8, n_euler_steps=128, n_eval_samples=5000,
     ),
 }
