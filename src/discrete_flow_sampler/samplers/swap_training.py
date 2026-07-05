@@ -30,7 +30,6 @@ import torch.nn.functional as F
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
 from discrete_flow_sampler.samplers._swap_neighbours import (
     SWAP_LOG_RATIO_CLAMP,
-    _log_p_tilde_at_swap_neighbours,
     gather_pair_scores,
     upper_tri_pairs,
 )
@@ -71,9 +70,7 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
     forward_rates = F.relu(gather_pair_scores(head(x, t), pairs))  # (B, n_pairs)
     lambda_dt = (forward_rates * step_dt).sum(dim=-1)              # (B,)
 
-    log_p_neighbours = _log_p_tilde_at_swap_neighbours(x, t, target)
-    log_p_x = target.log_p_tilde_t(x, t)
-    log_ratio = log_p_neighbours - log_p_x[:, None]
+    log_ratio = target.swap_log_ratio(x, t, pairs)   # unclamped: measures saturation
 
     return {
         "rate_pair_mean": forward_rates.mean().item(),

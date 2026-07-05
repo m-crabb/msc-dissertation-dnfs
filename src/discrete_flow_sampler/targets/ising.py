@@ -230,6 +230,30 @@ class IsingTarget:
         """
         return self.log_prob(x) - self.base_log_eta(x)
 
+    def swap_log_ratio(self, x: Tensor, t: Tensor, pairs: Tensor) -> Tensor:
+        """log p̃_t(Swap2(x, i, j)) − log p̃_t(x) for each pair, shape (B, P).
+
+        Generic fallback: materialise the swapped states and evaluate the
+        annealing density directly. Correct for any target (the same
+        build-and-evaluate path as `_log_p_tilde_at_swap_neighbours`), and it
+        doubles as the oracle the closed-form overrides are tested against.
+        Subclasses on a fixed-composition slice override this with a closed form
+        that skips the (B, P, d) materialisation.
+        """
+        batch_size, d = x.shape
+        n_pairs = pairs.shape[0]
+        i_col = pairs[:, 0].view(1, n_pairs, 1).expand(batch_size, n_pairs, 1)
+        j_col = pairs[:, 1].view(1, n_pairs, 1).expand(batch_size, n_pairs, 1)
+        y = x[:, None, :].expand(batch_size, n_pairs, d).clone()
+        spin_i = y.gather(2, i_col)
+        spin_j = y.gather(2, j_col)
+        y.scatter_(2, i_col, spin_j)
+        y.scatter_(2, j_col, spin_i)
+        neighbours = self.log_p_tilde_t(
+            y.reshape(batch_size * n_pairs, d), t.repeat_interleave(n_pairs)
+        ).reshape(batch_size, n_pairs)
+        return neighbours - self.log_p_tilde_t(x, t)[:, None]
+
 
 class FixedCompositionIsingTarget(IsingTarget):
     """Ising target on the fixed-composition manifold C = {n_plus = N_A}.
@@ -296,3 +320,26 @@ class FixedCompositionIsingTarget(IsingTarget):
                 f"off-manifold states: expected n_plus={self.n_plus_target}, "
                 f"got e.g. {bad[:5].tolist()}"
             )
+
+    def swap_log_ratio(self, x, t, pairs):
+        """Closed-form swap log-ratio on the fixed-N slice, shape (B, P).
+
+        followups doc §A / Task A. Because base_log_eta is constant on the slice
+        (so the (1 − t) term cancels) and bias·Σx is swap-invariant, only the
+        t·σ·Δ(xᵀAx) term survives:
+
+            log p̃_t(Swap2(x, i, j)) − log p̃_t(x)
+                = t·σ·[ 2(x_j − x_i)(h_i − h_j) − 2(x_j − x_i)²·A_ij ],   h = x·A
+
+        the batched form of the single-move Kawasaki ΔE. Same-spin pairs
+        (x_i = x_j ⇒ diff = 0) give 0 for free. Cost O(B·d² + B·P), with no
+        (B, P, d) neighbour materialisation.
+        """
+        h = x @ self.A                                    # (B, d) neighbour sums
+        site_i, site_j = pairs[:, 0], pairs[:, 1]
+        diff = x[:, site_j] - x[:, site_i]                # (B, P)
+        adjacent = self.A[site_i, site_j]                 # (P,) 0/1
+        delta_quadratic = (
+            2.0 * diff * (h[:, site_i] - h[:, site_j]) - 2.0 * diff * diff * adjacent
+        )
+        return t[:, None] * self.sigma * delta_quadratic

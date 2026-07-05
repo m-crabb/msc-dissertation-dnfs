@@ -12,7 +12,6 @@ from torch import Tensor
 
 from discrete_flow_sampler.samplers._swap_neighbours import (
     SWAP_LOG_RATIO_CLAMP,
-    _log_p_tilde_at_swap_neighbours,
     gather_pair_scores,
     upper_tri_pairs,
 )
@@ -24,9 +23,7 @@ def residual_swap(x: Tensor, t: Tensor, dt_log_Zt, head, target) -> Tensor:
     G_edge = gather_pair_scores(head(x, t), pairs)          # (B, P), i<j
     G_plus = F.relu(G_edge)
     neg_G_plus = F.relu(-G_edge)
-    log_p_neighbours = _log_p_tilde_at_swap_neighbours(x, t, target)
-    log_p_x = target.log_p_tilde_t(x, t)
-    log_ratio = (log_p_neighbours - log_p_x[:, None]).clamp(max=SWAP_LOG_RATIO_CLAMP)
+    log_ratio = target.swap_log_ratio(x, t, pairs).clamp(max=SWAP_LOG_RATIO_CLAMP)
     site_terms = (G_plus - neg_G_plus * log_ratio.exp()).sum(dim=-1)   # (B,)
     dt_log_pt_x = target.dt_log_p_tilde_t(x, t) - dt_log_Zt
     return dt_log_pt_x + site_terms
