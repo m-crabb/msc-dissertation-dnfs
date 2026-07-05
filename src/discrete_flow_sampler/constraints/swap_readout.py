@@ -15,7 +15,10 @@ no training. Two heads share the readout and differ only in how H_ij is built:
   * DoublyHollowSwapHead - brute-force: mask BOTH i and j (O(d^2) passes; the
     architecture-agnostic correctness gate).
   * LeTFMaskOneSwapHead  - climax head: mask anchor i, reuse the single-site
-    leTF hollowness at j (O(d) passes).
+    leTF hollowness at j. The d anchor passes are independent, so forward
+    batches them into the model batch dimension (one stacked pass, optionally
+    chunked for memory); forward_looped keeps the O(d)-sequential-pass
+    reference.
 
 Both read H_ij at the SECOND index j, so they agree numerically: the leTF
 readout at j already ignores j's own input, so additionally masking j is a
@@ -65,6 +68,41 @@ def _masked_body(
     return H
 
 
+def _anchor_masked_bodies(
+    model: LeTFRateMatrix, x: Tensor, t: Tensor, anchor_sites: Tensor
+) -> Tensor:
+    """Batched `_masked_body` over single-site anchors: ONE stacked pass.
+
+    The anchor passes are independent -- they differ only in which site's
+    embedding is zeroed -- so they ride the model batch dimension: build
+    (n_anchors*B, d, h) with anchor a's copy zeroed at site anchor_sites[a]
+    (a diagonal zeroing mask), run the fwd/bwd stacks + readout once, and
+    reshape back. Every kernel in the path reduces over non-batch dims, so
+    each batch element's arithmetic (including reduction order) is identical
+    to its looped counterpart -- observed bit-exact on CPU.
+
+    Returns (n_anchors, B, d, h): [a, :, j, :] = H_ij for anchor i = anchor_sites[a].
+    """
+    x_idx = ((x + 1) / 2).long()
+    x_emb = model.token_embedder(x_idx)  # (B, d, h)
+    batch, d, hidden = x_emb.shape
+    n_anchors = anchor_sites.shape[0]
+
+    keep = x_emb.new_ones(n_anchors, d)
+    keep[torch.arange(n_anchors, device=x.device), anchor_sites] = 0.0
+    emb = x_emb.unsqueeze(0) * keep[:, None, :, None]  # (A, B, d, h)
+    emb = emb.reshape(n_anchors * batch, d, hidden)
+
+    cond_t = model.time_embedder(t).unsqueeze(1)  # (B, 1, h)
+    cond_t = cond_t.expand(n_anchors, batch, 1, hidden).reshape(-1, 1, hidden)
+
+    fwd_x = model.fwd_stack(torch.cat([cond_t, emb], dim=1))
+    bwd_x = model.bwd_stack(torch.cat([cond_t, emb.flip(1)], dim=1)).flip(1)
+    H = model.attention_readout(fwd_x, bwd_x, cond_t)  # (A*B, d, h)
+    H = model.output_norm(H) + cond_t
+    return H.reshape(n_anchors, batch, d, hidden)
+
+
 class DoublyHollowSwapHead(nn.Module):
     """Brute-force doubly-hollow swap head: mask BOTH sites. Gate-only, O(d^2).
 
@@ -97,21 +135,51 @@ class DoublyHollowSwapHead(nn.Module):
 
 
 class LeTFMaskOneSwapHead(nn.Module):
-    """Climax swap head: mask anchor i, reuse single-site leTF hollowness. O(d).
+    """Climax swap head: mask anchor i, reuse single-site leTF hollowness.
 
     For each anchor i, one masked body pass returns H_ij = H[:, j, :] for ALL
     j != i: blind to x_i (anchor masked) and hollow in x_j (leTF readout at j
     ignores j's own input). The readout against omega_{x_i} - omega_{x_j} then
     gives the full row G_swap(i, :). Diagonal and same-spin pairs vanish because
     the token difference is zero there. NOT label-symmetric (H_ij != H_ji).
+
+    forward batches the d independent anchor passes into the model batch
+    dimension (`_anchor_masked_bodies`) instead of looping them sequentially
+    -- the loop cost ~d x the single-site head and made D >= 8 rungs
+    infeasible (56 s/forward at d=256). `anchor_chunk_size` caps anchors per
+    stacked pass: the readout attention buffer is (n_anchors*B, n_heads, d, 2d),
+    which stops fitting memory at large d unchunked. None = all d anchors in
+    one pass. forward_looped is the original sequential reference, kept as the
+    test oracle.
     """
 
-    def __init__(self, backbone: LeTFRateMatrix):
+    def __init__(
+        self, backbone: LeTFRateMatrix, anchor_chunk_size: int | None = None
+    ):
         super().__init__()
         self.backbone = backbone
         self.d = backbone.d
+        self.anchor_chunk_size = anchor_chunk_size
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
+        m = self.backbone
+        x_idx = ((x + 1) / 2).long()
+        om = m.omega(x_idx)  # (B, d, h)
+        batch, d = x.shape
+        chunk = self.anchor_chunk_size or d
+        rows = []
+        for start in range(0, d, chunk):
+            anchors = torch.arange(start, min(start + chunk, d), device=x.device)
+            H = _anchor_masked_bodies(m, x, t, anchors)  # (A, B, d, h)
+            # diff[a, :, j, :] = om_{x_i} - om_{x_j} for anchor i = anchors[a]
+            diff = om[:, anchors, :].permute(1, 0, 2).unsqueeze(2) - om.unsqueeze(0)
+            rows.append((H * diff).sum(-1))  # (A, B, d); diagonal j==i -> 0
+        return torch.cat(rows, dim=0).permute(1, 0, 2)  # (B, d, d)
+
+    def forward_looped(self, x: Tensor, t: Tensor) -> Tensor:
+        """Sequential reference: one masked body pass per anchor. ~d x slower
+        than forward; kept as the readable form of the math and the oracle
+        forward must match (tests/test_swap_head_vectorised.py)."""
         m = self.backbone
         x_idx = ((x + 1) / 2).long()
         om = m.omega(x_idx)  # (B, d, h)
