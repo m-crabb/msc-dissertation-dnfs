@@ -86,6 +86,10 @@ class CTMCCfg:
 class EvalCfg:
     eval_every: int = 500
     n_eval_samples: int = 5_000
+    # Stream the eval draw in slices of this many samples (None = all at
+    # once). Needed by the swap-head route at large d, where the vectorised
+    # head rides d anchor copies per sample; the single-site path ignores it.
+    eval_sample_chunk: int | None = None
 
 
 # Default changed from "mlp" to "lemlp" at stage_1+; legacy stage_0 configs

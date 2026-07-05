@@ -316,13 +316,30 @@ def train_swap(
                         eval_grid = torch.linspace(
                             0.0, 1.0, n_grid, device=device,
                         )
-                        x_eval_initial = target.sample_base(
-                            eval_cfg.n_eval_samples, device=device
+                        # Stream the eval draw in slices: the vectorised swap
+                        # head rides d anchor copies per sample, so feeding
+                        # all n_eval_samples at once builds (d*B)-row
+                        # attention buffers and OOMs at large d. IS weights
+                        # are independent per sample, so slicing changes
+                        # nothing statistically.
+                        eval_chunk = (
+                            getattr(eval_cfg, "eval_sample_chunk", None)
+                            or eval_cfg.n_eval_samples
                         )
-                        _, log_weights = sample_swap_ctmc(
-                            head, x_eval_initial, eval_grid,
-                            return_log_weights=True, target=target,
-                        )
+                        log_weight_slices = []
+                        remaining = eval_cfg.n_eval_samples
+                        while remaining > 0:
+                            n_slice = min(eval_chunk, remaining)
+                            x_eval_initial = target.sample_base(
+                                n_slice, device=device
+                            )
+                            _, slice_log_weights = sample_swap_ctmc(
+                                head, x_eval_initial, eval_grid,
+                                return_log_weights=True, target=target,
+                            )
+                            log_weight_slices.append(slice_log_weights)
+                            remaining -= n_slice
+                        log_weights = torch.cat(log_weight_slices)
                         ess_value = ess_from_log_weights(log_weights).item()
                         rate_diag = _swap_rate_diagnostics(
                             head,

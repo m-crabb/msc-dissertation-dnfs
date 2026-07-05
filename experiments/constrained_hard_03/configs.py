@@ -102,13 +102,15 @@ def _hard_cell(
     D: int = 4,
     n_euler_steps: int = 100,
     n_eval_samples: int = 512,
+    eval_sample_chunk: int | None = None,
 ) -> HardStageCfg:
     """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
     only sigma and head_kind (all otherwise identical). The keyword knobs open
     the same shape to the non-enumerable scaling rungs (§7 mixing probe): D sets
     the lattice, n_euler_steps must be clip-safe for the one-event step at that D
     (scout: ~2d at d=64), n_eval_samples sizes the IS-ESS eval drawn on the GPU
-    job itself (evals-ride-the-gpu-job)."""
+    job itself (evals-ride-the-gpu-job), and eval_sample_chunk streams that eval
+    in slices so the vectorised head's d-anchor-copies batch fits GPU memory."""
     return HardStageCfg(
         name=name,
         ising=IsingCfg(
@@ -120,7 +122,10 @@ def _hard_cell(
             lr=1e-3, seed=42, warmup_steps=500,
         ),
         ctmc=CTMCCfg(n_euler_steps=n_euler_steps),
-        eval=EvalCfg(eval_every=200, n_eval_samples=n_eval_samples),
+        eval=EvalCfg(
+            eval_every=200, n_eval_samples=n_eval_samples,
+            eval_sample_chunk=eval_sample_chunk,
+        ),
         model=ModelCfg(kind="letf", hidden_dim=32, n_layers=2, n_heads=4, vocab_size=2),
         estimator="control_variate",
         head_kind=head_kind,
@@ -152,5 +157,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
         D=8, n_euler_steps=128, n_eval_samples=5000,
+        # 256 samples x 64 anchor copies = 16k-row stacked passes under
+        # no_grad -- a few GB transient on the L4, vs ~22 GB unchunked.
+        eval_sample_chunk=256,
     ),
 }

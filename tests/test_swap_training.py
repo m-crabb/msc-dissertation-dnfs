@@ -78,3 +78,37 @@ def test_train_swap_logs_swap_rate_diagnostics_and_preserves_composition(tmp_pat
         t_grid = torch.linspace(0.0, 1.0, ctmc_cfg.n_euler_steps, device=tgt.device)
         x_final = sample_swap_ctmc(head, x0, t_grid)
     tgt.assert_on_manifold(x_final)
+
+
+def test_train_swap_eval_sample_chunk_bounds_head_batch(tmp_path):
+    """With eval_sample_chunk set, the ESS eval streams n_eval_samples through
+    sample_swap_ctmc in slices, so the head never sees the full eval batch at
+    once. This is the GPU-memory contract for the D>=8 rungs: the vectorised
+    mask_one head rides d anchor copies per sample, so an unchunked
+    5000-sample eval would build (d*5000)-row attention buffers and OOM the
+    L4. The chunked eval must still log a usable (non-NaN) ESS."""
+    torch.manual_seed(0)
+    tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+    head = _tiny_head()
+    train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
+    eval_cfg.eval_sample_chunk = 8  # n_eval_samples=16 -> two slices of 8
+
+    head_batches = []
+    hook = head.register_forward_pre_hook(
+        lambda module, args: head_batches.append(args[0].shape[0])
+    )
+    try:
+        train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
+                   use_wandb=False, estimator_mode="control_variate")
+    finally:
+        hook.remove()
+
+    # Training batches are 8; unchunked eval would show 16 here.
+    assert max(head_batches) <= 8, (
+        f"eval fed the head {max(head_batches)} samples at once; "
+        "eval_sample_chunk=8 not honoured"
+    )
+    rows = _read_csv_rows(Path(tmp_path) / "training_log.csv")
+    for eval_row in (rows[0], rows[2]):
+        ess = float(eval_row["ess"])
+        assert ess == ess, "ess is NaN on an eval row under chunked eval"
