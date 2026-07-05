@@ -162,6 +162,26 @@ def gate_remote(
     volume.commit()
 
 
+@app.function(gpu="L4", timeout=60 * 60)
+def bench_remote(argv: str = ""):
+    """Run the profile/benchmark harness on the L4. `argv` is the
+    space-separated profile_swap CLI string, e.g.
+    "--mode eval --d 64 --batch 256 --n-euler-steps 128"."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.profile_swap import main as bench_main
+
+    bench_main(argv.split())
+
+
+@app.local_entrypoint()
+def bench(argv: str = ""):
+    """Local CLI entry for the profiling harness: blocking so the timing
+    tables stream back to the local terminal (dev box is CPU-only)."""
+    bench_remote.remote(argv=argv)
+
+
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42, head_kind: str = "", smoke: bool = False):
     """Local CLI entry: blocking single `train_remote` call (used for smoke
