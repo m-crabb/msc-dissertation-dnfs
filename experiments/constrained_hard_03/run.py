@@ -48,6 +48,75 @@ def smoke_config(cfg: HardStageCfg) -> HardStageCfg:
     )
 
 
+def build_target_and_head(
+    cfg: HardStageCfg, device: str
+) -> tuple[FixedCompositionIsingTarget, torch.nn.Module]:
+    """Shared constructor for the train and eval-only entry points, so the
+    two can never drift in how they instantiate the target/backbone/head."""
+    target = FixedCompositionIsingTarget(
+        D=cfg.ising.D,
+        sigma=cfg.ising.sigma,
+        target_composition=cfg.ising.target_composition,
+        bias=cfg.ising.bias,
+        device=device,
+    )
+    backbone = LeTFRateMatrix(
+        d=target.d,
+        vocab_size=cfg.model.vocab_size,
+        hidden_dim=cfg.model.hidden_dim,
+        n_layers=cfg.model.n_layers,
+        n_heads=cfg.model.n_heads,
+        use_sdpa_readout=cfg.model.use_sdpa_readout,
+    ).to(device)
+    return target, build_swap_head(cfg, backbone)
+
+
+def final_eval(head, target, cfg: HardStageCfg, run_dir: Path) -> dict:
+    """End-of-run eval: (samples, IS log-weights) over the full t = 0 -> 1
+    trajectory, streamed in `eval_sample_chunk` slices. The vectorised swap
+    head rides d anchor copies per sample, so an unchunked n_eval_samples
+    batch OOMs at large d (all three d=64 sigma_c seeds died here,
+    2026-07-06); slicing changes nothing statistically because the IS
+    weights are independent per sample. Runs fp32 — the bf16 opt-in covers
+    the in-training diagnostic eval only. Writes eval/ artefacts into
+    `run_dir` and returns the metrics dict."""
+    device = next(head.parameters()).device
+    ts = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps + 1, device=device)
+    chunk = cfg.eval.eval_sample_chunk or cfg.eval.n_eval_samples
+    sample_slices, log_weight_slices = [], []
+    remaining = cfg.eval.n_eval_samples
+    with torch.no_grad():
+        while remaining > 0:
+            x_initial = target.sample_base(min(chunk, remaining), device=device)
+            slice_samples, slice_log_weights = sample_swap_ctmc(
+                head, x_initial, ts, return_log_weights=True, target=target,
+            )
+            sample_slices.append(slice_samples)
+            log_weight_slices.append(slice_log_weights)
+            remaining -= x_initial.shape[0]
+    eval_samples = torch.cat(sample_slices)
+    eval_log_weights = torch.cat(log_weight_slices)
+
+    eval_dir = run_dir / "eval"
+    eval_dir.mkdir(exist_ok=True)
+    torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
+    torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
+
+    eval_metrics = {
+        "n_eval_samples": int(eval_log_weights.numel()),
+        "ess": float(ess_from_log_weights(eval_log_weights).item()),
+        "head_kind": cfg.head_kind,
+    }
+    eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
+    eval_metrics.update(
+        composition_observables(
+            eval_samples, target_composition=cfg.ising.target_composition,
+        )
+    )
+    (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
+    return eval_metrics
+
+
 def train(
     cfg: HardStageCfg,
     seed: int = 42,
@@ -85,22 +154,7 @@ def train(
 
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    target = FixedCompositionIsingTarget(
-        D=cfg.ising.D,
-        sigma=cfg.ising.sigma,
-        target_composition=cfg.ising.target_composition,
-        bias=cfg.ising.bias,
-        device=device,
-    )
-    backbone = LeTFRateMatrix(
-        d=target.d,
-        vocab_size=cfg.model.vocab_size,
-        hidden_dim=cfg.model.hidden_dim,
-        n_layers=cfg.model.n_layers,
-        n_heads=cfg.model.n_heads,
-        use_sdpa_readout=cfg.model.use_sdpa_readout,
-    ).to(device)
-    head = build_swap_head(cfg, backbone)
+    target, head = build_target_and_head(cfg, device)
 
     train_swap(
         head,
@@ -113,32 +167,7 @@ def train(
         estimator_mode=cfg.estimator,
     )
 
-    # End-of-run eval: (samples, IS log-weights) over the full t = 0 -> 1
-    # trajectory. The base draw is already on the fixed-composition manifold
-    # and swaps keep it there.
-    with torch.no_grad():
-        x_eval_initial = target.sample_base(cfg.eval.n_eval_samples, device=device)
-        ts = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps + 1, device=device)
-        eval_samples, eval_log_weights = sample_swap_ctmc(
-            head, x_eval_initial, ts, return_log_weights=True, target=target,
-        )
-    eval_dir = run_dir / "eval"
-    eval_dir.mkdir(exist_ok=True)
-    torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
-    torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
-
-    eval_metrics = {
-        "n_eval_samples": int(eval_log_weights.numel()),
-        "ess": float(ess_from_log_weights(eval_log_weights).item()),
-        "head_kind": cfg.head_kind,
-    }
-    eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
-    eval_metrics.update(
-        composition_observables(
-            eval_samples, target_composition=cfg.ising.target_composition,
-        )
-    )
-    (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
+    eval_metrics = final_eval(head, target, cfg, run_dir)
 
     if use_wandb:
         wandb.log(
@@ -153,13 +182,55 @@ def train(
     return run_dir
 
 
+def eval_only(run_dir: str | Path) -> dict:
+    """Re-run the end-of-run eval for a completed run dir (config.json +
+    checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
+    path for runs whose training finished but whose final eval died before
+    the chunked `final_eval` landed (the 2026-07-06 d=64 OOMs)."""
+    run_dir = Path(run_dir)
+    saved = json.loads((run_dir / "config.json").read_text())
+    cfg = CONFIGS[saved["name"]]
+    cfg = replace(
+        cfg,
+        head_kind=saved["head_kind"],
+        train=replace(cfg.train, seed=saved["train"]["seed"]),
+    )
+    # Guard against silent drift between the run's recorded config and the
+    # current CONFIGS entry (json round-trip normalises tuples to lists).
+    if json.loads(json.dumps(asdict(cfg))) != saved:
+        raise ValueError(
+            f"config.json in {run_dir} does not match CONFIGS[{saved['name']!r}]"
+        )
+
+    seed_everything(cfg.train.seed)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    target, head = build_target_and_head(cfg, device)
+    head.load_state_dict(
+        torch.load(
+            run_dir / "checkpoints" / "final.pt",
+            map_location=device,
+            weights_only=True,
+        )
+    )
+    eval_metrics = final_eval(head, target, cfg, run_dir)
+    print(f"[eval_only] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
+    return eval_metrics
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--cfg",
-        required=True,
+        default=None,
         choices=list(CONFIGS.keys()),
         help="Config key from configs.py CONFIGS",
+    )
+    parser.add_argument(
+        "--eval-only",
+        default=None,
+        metavar="RUN_DIR",
+        help="Skip training: re-run the end-of-run eval for this completed "
+        "run dir (uses its config.json + checkpoints/final.pt)",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/03_hard")
@@ -182,6 +253,12 @@ def main():
         "value is recorded in config.json and eval/metrics.json",
     )
     args = parser.parse_args()
+
+    if args.eval_only is not None:
+        eval_only(args.eval_only)
+        return
+    if args.cfg is None:
+        parser.error("--cfg is required unless --eval-only is given")
 
     cfg = CONFIGS[args.cfg]
     if args.head_kind is not None:

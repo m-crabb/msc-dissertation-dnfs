@@ -164,6 +164,42 @@ def gate_remote(
     volume.commit()
 
 
+@app.function(
+    # A100 like train_remote: the eval slices are exactly where the perf
+    # profile showed the A100 win concentrating.
+    gpu="A100",
+    volumes={"/results": volume},
+    timeout=2 * 60 * 60,
+)
+def eval_remote(run_dir_name: str):
+    """Re-run the end-of-run eval for a run dir already on the volume
+    (recovery for trainings whose final eval died, e.g. the 2026-07-06
+    d=64 OOMs before final_eval chunked its draw)."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.run import eval_only
+
+    eval_only(Path("/results") / run_dir_name)
+    volume.commit()
+
+
+@app.function(gpu="A100", volumes={"/results": volume}, timeout=60 * 60)
+def scout_remote(run_dir_name: str, D: int, head_kind: str = "mask_one"):
+    """Run the Euler-budget scout (`scout_euler_budget.from_checkpoint`) on a
+    trained checkpoint already on the volume; writes /results/scout."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.scout_euler_budget import from_checkpoint
+
+    ckpt = Path("/results") / run_dir_name / "checkpoints" / "final.pt"
+    from_checkpoint(ckpt, D, head_kind, "/results/scout")
+    volume.commit()
+
+
 @app.function(gpu="L4", timeout=60 * 60)
 def bench_remote(argv: str = ""):
     """Run the profile/benchmark harness on the L4. `argv` is the
@@ -200,6 +236,23 @@ def gate(seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = F
     """Local CLI entry for the gate: blocking `.remote()` so the per-run
     progress prints stream back to the local terminal."""
     gate_remote.remote(seeds=seeds, n_samples=n_samples, skip_controls=skip_controls)
+
+
+@app.local_entrypoint()
+def evalonly(run_dirs: str):
+    """Spawn eval-only recovery over comma-separated run dir names on the
+    volume (fire-and-forget: launch with --detach)."""
+    names = [n.strip() for n in run_dirs.split(",") if n.strip()]
+    for name in names:
+        eval_remote.spawn(run_dir_name=name)
+    print(f"spawned {len(names)} eval-only jobs: {names}")
+
+
+@app.local_entrypoint()
+def scout(run_dir: str, d_side: int, head_kind: str = "mask_one"):
+    """Blocking Euler-budget scout on a trained checkpoint (streams the
+    report table back to the local terminal)."""
+    scout_remote.remote(run_dir_name=run_dir, D=d_side, head_kind=head_kind)
 
 
 @app.local_entrypoint()
