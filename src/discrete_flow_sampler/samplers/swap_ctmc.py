@@ -70,16 +70,16 @@ def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
     categorical = torch.cat([step_probs, stay_prob[:, None]], dim=-1)  # (B, P+1)
     choice = torch.multinomial(categorical, num_samples=1).squeeze(-1)  # (B,)
 
-    new_state = state.clone()
     fired = choice < n_pairs
-    if fired.any():
-        rows = torch.nonzero(fired, as_tuple=False).squeeze(-1)
-        chosen = pairs[choice[rows]]  # (K, 2)
-        site_i, site_j = chosen[:, 0], chosen[:, 1]
-        spin_i = new_state[rows, site_i].clone()
-        new_state[rows, site_i] = new_state[rows, site_j]
-        new_state[rows, site_j] = spin_i
-    return new_state, pair_scores
+    chosen = pairs[choice.clamp(max=n_pairs - 1)]  # (B, 2); stay rows dummy
+    site_i = torch.where(fired, chosen[:, 0], chosen.new_zeros(()))
+    site_j = torch.where(fired, chosen[:, 1], chosen.new_zeros(()))
+    # Branch-free swap-or-identity permutation per row: stay rows map site
+    # 0 -> 0 (a no-op), so no `.any()`/`nonzero()` host-device sync.
+    perm = torch.arange(d, device=state.device).expand(batch_size, d).clone()
+    perm.scatter_(1, site_i[:, None], site_j[:, None])
+    perm.scatter_(1, site_j[:, None], site_i[:, None])
+    return state.gather(1, perm), pair_scores
 
 
 def _vertex_disjoint_matching(proposed, priority, pairs, d, max_rounds=8):
@@ -104,12 +104,16 @@ def _vertex_disjoint_matching(proposed, priority, pairs, d, max_rounds=8):
         if not active.any():
             break
         pr = torch.where(active, priority, neg_inf)  # (B, P)
-        vmax = torch.full((batch_size, d), neg_inf, dtype=priority.dtype)
+        vmax = torch.full(
+            (batch_size, d), neg_inf, dtype=priority.dtype, device=priority.device
+        )
         vmax.scatter_reduce_(1, idx_i, pr, reduce="amax", include_self=True)
         vmax.scatter_reduce_(1, idx_j, pr, reduce="amax", include_self=True)
         win = active & (pr == vmax.gather(1, idx_i)) & (pr == vmax.gather(1, idx_j))
         accepted |= win
-        used = torch.zeros((batch_size, d), dtype=priority.dtype)
+        used = torch.zeros(
+            (batch_size, d), dtype=priority.dtype, device=priority.device
+        )
         win_f = win.to(priority.dtype)
         used.scatter_reduce_(1, idx_i, win_f, reduce="amax", include_self=True)
         used.scatter_reduce_(1, idx_j, win_f, reduce="amax", include_self=True)
@@ -123,14 +127,23 @@ def _apply_swaps(state: Tensor, accepted: Tensor, pairs: Tensor) -> Tensor:
 
     `accepted` is vertex-disjoint, so each (row, site) is reassigned at most
     once — the permutation has no collisions and every row stays on the slice.
+    Non-accepted pairs scatter into a dummy slot d that is dropped before the
+    gather, so no `nonzero()` host-device sync is needed.
     """
     batch_size, d = state.shape
-    perm = torch.arange(d, device=state.device).expand(batch_size, d).clone()
-    rows, cols = accepted.nonzero(as_tuple=True)
-    site_i, site_j = pairs[cols, 0], pairs[cols, 1]
-    perm[rows, site_i] = site_j
-    perm[rows, site_j] = site_i
-    return state.gather(1, perm)
+    site_i = pairs[:, 0].unsqueeze(0).expand(batch_size, -1)
+    site_j = pairs[:, 1].unsqueeze(0).expand(batch_size, -1)
+    dummy = torch.full_like(site_i, d)
+    perm = (
+        torch.arange(d + 1, device=state.device).expand(batch_size, d + 1).clone()
+    )
+    perm.scatter_(
+        1, torch.where(accepted, site_i, dummy), torch.where(accepted, site_j, dummy)
+    )
+    perm.scatter_(
+        1, torch.where(accepted, site_j, dummy), torch.where(accepted, site_i, dummy)
+    )
+    return state.gather(1, perm[:, :d])
 
 
 def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt):
