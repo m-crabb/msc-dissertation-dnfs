@@ -288,6 +288,26 @@ def test_hard_ladder_covers_three_sigmas_plus_control():
     assert control.head_kind == "non_antisym"
 
 
+def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
+    """d=256 cannot run the mask_one head unchunked (the anchor-batched pass
+    builds a (d*B)-row buffer); the head's anchor_chunk_size knob must be
+    settable from HardStageCfg, defaulting to None (unchunked, behaviour
+    unchanged)."""
+    from dataclasses import replace
+
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
+    cfg = CONFIGS["H2_d64_c50_s223_letf_mo"]
+    backbone = LeTFRateMatrix(
+        d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
+    )
+    assert cfg.anchor_chunk_size is None
+    assert build_swap_head(cfg, backbone).anchor_chunk_size is None
+    chunked = replace(cfg, anchor_chunk_size=32)
+    assert build_swap_head(chunked, backbone).anchor_chunk_size == 32
+
+
 def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]

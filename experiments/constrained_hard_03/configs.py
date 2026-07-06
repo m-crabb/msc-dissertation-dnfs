@@ -51,6 +51,10 @@ class HardStageCfg(StageCfg):
     """
 
     head_kind: Literal["doubly_hollow", "mask_one", "non_antisym"] = "doubly_hollow"
+    # Anchor-batch chunk for the mask_one head's vectorised forward; None =
+    # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
+    # otherwise build a (d*B)-row buffer that OOMs the L4.
+    anchor_chunk_size: int | None = None
 
 
 class NonAntisymSwapHead(nn.Module):
@@ -88,7 +92,7 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
     if cfg.head_kind == "doubly_hollow":
         return DoublyHollowSwapHead(backbone)
     if cfg.head_kind == "mask_one":
-        return LeTFMaskOneSwapHead(backbone)
+        return LeTFMaskOneSwapHead(backbone, anchor_chunk_size=cfg.anchor_chunk_size)
     if cfg.head_kind == "non_antisym":
         return NonAntisymSwapHead(backbone)
     raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
