@@ -24,9 +24,21 @@ def compute_xi_t_swap(x: Tensor, t: Tensor, head, target) -> Tensor:
     integrand and the eval IS-weight integrand.
     """
     pairs = upper_tri_pairs(x.shape[1], x.device)
-    G_edge = gather_pair_scores(head(x, t), pairs)  # (B, P), i<j
-    G_plus = F.relu(G_edge)
-    neg_G_plus = F.relu(-G_edge)
+    pair_scores = gather_pair_scores(head(x, t), pairs)  # (B, P), i<j
+    return xi_t_swap_from_scores(pair_scores, x, t, target, pairs)
+
+
+def xi_t_swap_from_scores(
+    pair_scores: Tensor, x: Tensor, t: Tensor, target, pairs: Tensor
+) -> Tensor:
+    """ξ_t from already-gathered pair scores G[i,j], i<j. (B,).
+
+    The head forward dominates eval wall-clock; the Euler step evaluates the
+    head on the same (state, t) this integrand needs, so the eval loop passes
+    the step's scores here instead of calling the head a second time.
+    """
+    G_plus = F.relu(pair_scores)
+    neg_G_plus = F.relu(-pair_scores)
     log_ratio = target.swap_log_ratio(x, t, pairs).clamp(max=SWAP_LOG_RATIO_CLAMP)
     outflow = G_plus.sum(dim=-1)  # (B,)
     inflow = (neg_G_plus * log_ratio.exp()).sum(dim=-1)  # (B,)
@@ -34,7 +46,7 @@ def compute_xi_t_swap(x: Tensor, t: Tensor, head, target) -> Tensor:
 
 
 def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
-    """One-event swap Euler step. Returns (new_state, forward_rates) (B, n_pairs).
+    """One-event swap Euler step. Returns (new_state, pair_scores) (B, n_pairs).
 
     Single global categorical over the i<j pairs plus a stay slot: at most one
     composition-preserving swap fires per step. Edges sharing a vertex conflict,
@@ -43,11 +55,16 @@ def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
     torch.multinomial renormalises the pair probabilities, so exactly one swap
     fires that step; logging the Λ·dt>1 clip fraction is the caller's
     responsibility (the train driver).
+
+    The second return is the RAW gathered head output G[i,j] (relu applied
+    internally where rates are needed), so the eval loop can reuse this one
+    head call for the ξ_t integrand.
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)  # (P, 2)
     n_pairs = pairs.shape[0]
-    forward_rates = F.relu(gather_pair_scores(head(state, t_per_batch), pairs))
+    pair_scores = gather_pair_scores(head(state, t_per_batch), pairs)  # (B, P)
+    forward_rates = F.relu(pair_scores)
     step_probs = (forward_rates * step_dt).clamp(0.0, 1.0)  # (B, P)
     stay_prob = (1.0 - step_probs.sum(dim=-1)).clamp(0.0, 1.0)  # (B,)
     categorical = torch.cat([step_probs, stay_prob[:, None]], dim=-1)  # (B, P+1)
@@ -62,7 +79,7 @@ def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
         spin_i = new_state[rows, site_i].clone()
         new_state[rows, site_i] = new_state[rows, site_j]
         new_state[rows, site_j] = spin_i
-    return new_state, forward_rates
+    return new_state, pair_scores
 
 
 def _vertex_disjoint_matching(proposed, priority, pairs, d, max_rounds=8):
@@ -121,19 +138,19 @@ def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt)
 
     Thin every pair by its firing probability rate·dt, then keep a random
     vertex-disjoint matching of the proposals (§B). Returns (new_state,
-    forward_rates) to match `_euler_step_swap`'s contract, so `sample_swap_ctmc`
+    pair_scores) to match `_euler_step_swap`'s contract, so `sample_swap_ctmc`
     can swap the two step kinds. Correct to O(dt): proposal conflicts are O(dt²)
     as dt → 0, so this collapses to the one-event step in that limit. The caller
     controls dt to hold the expected events per site per step ≤ 0.1 (pre-reg §6).
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)
-    forward_rates = F.relu(gather_pair_scores(head(state, t_per_batch), pairs))
-    fire_prob = (forward_rates * step_dt).clamp(0.0, 1.0)
+    pair_scores = gather_pair_scores(head(state, t_per_batch), pairs)  # (B, P)
+    fire_prob = (F.relu(pair_scores) * step_dt).clamp(0.0, 1.0)
     proposed = torch.bernoulli(fire_prob).bool()
     priority = torch.rand(batch_size, pairs.shape[0], device=state.device)
     accepted = _vertex_disjoint_matching(proposed, priority, pairs, d)
-    return _apply_swaps(state, accepted, pairs), forward_rates
+    return _apply_swaps(state, accepted, pairs), pair_scores
 
 
 def sample_swap_ctmc(
@@ -176,12 +193,18 @@ def sample_swap_ctmc(
         trajectory[0] = state
 
     step_fn = _euler_step_swap_matching if multi_event else _euler_step_swap
+    pairs = upper_tri_pairs(d, x0.device)
+    dts = ts[1:] - ts[:-1]
     for step in range(len(ts) - 1):
-        step_dt = ts[step + 1] - ts[step]
+        step_dt = dts[step]
         t_per_batch = ts[step].expand(batch_size)
-        new_state, _ = step_fn(head, state, t_per_batch, step_dt)
+        new_state, step_pair_scores = step_fn(head, state, t_per_batch, step_dt)
         if return_log_weights:
-            xi_t = compute_xi_t_swap(state, t_per_batch, head, target)
+            # ξ_t at the left endpoint reads the same head(state, t) the step
+            # just computed; reusing its scores halves the head calls per step.
+            xi_t = xi_t_swap_from_scores(
+                step_pair_scores, state, t_per_batch, target, pairs
+            )
             log_weights = log_weights + xi_t * step_dt
         state = new_state
         if return_all_states:
