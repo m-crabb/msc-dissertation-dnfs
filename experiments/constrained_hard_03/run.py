@@ -71,7 +71,9 @@ def build_target_and_head(
     return target, build_swap_head(cfg, backbone)
 
 
-def final_eval(head, target, cfg: HardStageCfg, run_dir: Path) -> dict:
+def final_eval(
+    head, target, cfg: HardStageCfg, run_dir: Path, multi_event: bool = False
+) -> dict:
     """End-of-run eval: (samples, IS log-weights) over the full t = 0 -> 1
     trajectory, streamed in `eval_sample_chunk` slices. The vectorised swap
     head rides d anchor copies per sample, so an unchunked n_eval_samples
@@ -79,7 +81,9 @@ def final_eval(head, target, cfg: HardStageCfg, run_dir: Path) -> dict:
     2026-07-06); slicing changes nothing statistically because the IS
     weights are independent per sample. Runs fp32 — the bf16 opt-in covers
     the in-training diagnostic eval only. Writes eval/ artefacts into
-    `run_dir` and returns the metrics dict."""
+    `run_dir` (eval_multi_event/ under `multi_event=True`, so the one-event
+    baseline is never clobbered — the two dirs on the same checkpoint are
+    the --compare-multi-event probe) and returns the metrics dict."""
     device = next(head.parameters()).device
     ts = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps + 1, device=device)
     chunk = cfg.eval.eval_sample_chunk or cfg.eval.n_eval_samples
@@ -90,6 +94,7 @@ def final_eval(head, target, cfg: HardStageCfg, run_dir: Path) -> dict:
             x_initial = target.sample_base(min(chunk, remaining), device=device)
             slice_samples, slice_log_weights = sample_swap_ctmc(
                 head, x_initial, ts, return_log_weights=True, target=target,
+                multi_event=multi_event,
             )
             sample_slices.append(slice_samples)
             log_weight_slices.append(slice_log_weights)
@@ -97,7 +102,7 @@ def final_eval(head, target, cfg: HardStageCfg, run_dir: Path) -> dict:
     eval_samples = torch.cat(sample_slices)
     eval_log_weights = torch.cat(log_weight_slices)
 
-    eval_dir = run_dir / "eval"
+    eval_dir = run_dir / ("eval_multi_event" if multi_event else "eval")
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
@@ -106,6 +111,7 @@ def final_eval(head, target, cfg: HardStageCfg, run_dir: Path) -> dict:
         "n_eval_samples": int(eval_log_weights.numel()),
         "ess": float(ess_from_log_weights(eval_log_weights).item()),
         "head_kind": cfg.head_kind,
+        "multi_event": multi_event,
     }
     eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
     eval_metrics.update(
@@ -182,11 +188,13 @@ def train(
     return run_dir
 
 
-def eval_only(run_dir: str | Path) -> dict:
+def eval_only(run_dir: str | Path, multi_event: bool = False) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
     checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
     path for runs whose training finished but whose final eval died before
-    the chunked `final_eval` landed (the 2026-07-06 d=64 OOMs)."""
+    the chunked `final_eval` landed (the 2026-07-06 d=64 OOMs), and — with
+    `multi_event=True` — the --compare-multi-event probe (same checkpoint,
+    same draw protocol, matching step instead of one-event)."""
     run_dir = Path(run_dir)
     saved = json.loads((run_dir / "config.json").read_text())
     cfg = CONFIGS[saved["name"]]
@@ -212,7 +220,7 @@ def eval_only(run_dir: str | Path) -> dict:
             weights_only=True,
         )
     )
-    eval_metrics = final_eval(head, target, cfg, run_dir)
+    eval_metrics = final_eval(head, target, cfg, run_dir, multi_event=multi_event)
     print(f"[eval_only] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
     return eval_metrics
 
@@ -231,6 +239,12 @@ def main():
         metavar="RUN_DIR",
         help="Skip training: re-run the end-of-run eval for this completed "
         "run dir (uses its config.json + checkpoints/final.pt)",
+    )
+    parser.add_argument(
+        "--multi-event",
+        action="store_true",
+        help="With --eval-only: sample with the vertex-disjoint matching "
+        "step instead of the one-event step; writes eval_multi_event/",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/03_hard")
@@ -255,7 +269,7 @@ def main():
     args = parser.parse_args()
 
     if args.eval_only is not None:
-        eval_only(args.eval_only)
+        eval_only(args.eval_only, multi_event=args.multi_event)
         return
     if args.cfg is None:
         parser.error("--cfg is required unless --eval-only is given")

@@ -63,6 +63,23 @@ def test_final_eval_chunked_covers_exact_count_and_writes_artefacts(tmp_path):
     assert metrics == json.loads((tmp_path / "eval" / "metrics.json").read_text())
 
 
+def test_final_eval_multi_event_writes_own_dir_and_stays_on_manifold(tmp_path):
+    """The --compare-multi-event probe must never clobber the one-event
+    baseline: matching-step artefacts land in eval_multi_event/, and the
+    simultaneous swaps still conserve composition exactly."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4)
+    target, head = build_target_and_head(cfg, "cpu")
+
+    metrics = final_eval(head, target, cfg, Path(tmp_path), multi_event=True)
+
+    assert not (tmp_path / "eval").exists()
+    samples = torch.load(tmp_path / "eval_multi_event" / "samples.pt")
+    assert ((samples == 1).float().mean(dim=1) == 0.5).all()
+    assert metrics["multi_event"] is True
+    assert metrics["n_eval_samples"] == 10
+
+
 def test_final_eval_unchunked_when_chunk_is_none(tmp_path):
     torch.manual_seed(0)
     cfg = _tiny_cfg(n_eval_samples=6, eval_sample_chunk=None)

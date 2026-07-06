@@ -171,17 +171,19 @@ def gate_remote(
     volumes={"/results": volume},
     timeout=2 * 60 * 60,
 )
-def eval_remote(run_dir_name: str):
+def eval_remote(run_dir_name: str, multi_event: bool = False):
     """Re-run the end-of-run eval for a run dir already on the volume
     (recovery for trainings whose final eval died, e.g. the 2026-07-06
-    d=64 OOMs before final_eval chunked its draw)."""
+    d=64 OOMs before final_eval chunked its draw). `multi_event=True` is
+    the --compare-multi-event probe: same checkpoint and draw protocol,
+    matching step instead of one-event, artefacts to eval_multi_event/."""
     import sys
     from pathlib import Path
 
     sys.path.insert(0, "/repo")
     from experiments.constrained_hard_03.run import eval_only
 
-    eval_only(Path("/results") / run_dir_name)
+    eval_only(Path("/results") / run_dir_name, multi_event=multi_event)
     volume.commit()
 
 
@@ -239,13 +241,13 @@ def gate(seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = F
 
 
 @app.local_entrypoint()
-def evalonly(run_dirs: str):
+def evalonly(run_dirs: str, multi_event: bool = False):
     """Spawn eval-only recovery over comma-separated run dir names on the
     volume (fire-and-forget: launch with --detach)."""
     names = [n.strip() for n in run_dirs.split(",") if n.strip()]
     for name in names:
-        eval_remote.spawn(run_dir_name=name)
-    print(f"spawned {len(names)} eval-only jobs: {names}")
+        eval_remote.spawn(run_dir_name=name, multi_event=multi_event)
+    print(f"spawned {len(names)} eval-only jobs (multi_event={multi_event}): {names}")
 
 
 @app.local_entrypoint()
