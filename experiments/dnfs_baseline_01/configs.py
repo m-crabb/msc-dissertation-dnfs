@@ -90,6 +90,11 @@ class EvalCfg:
     # once). Needed by the swap-head route at large d, where the vectorised
     # head rides d anchor copies per sample; the single-site path ignores it.
     eval_sample_chunk: int | None = None
+    # In-training eval draw size; None -> n_eval_samples (behaviour
+    # unchanged). The end-of-run eval in run.py always uses n_eval_samples:
+    # the in-training ESS cadence is a diagnostic, not the objective, so it
+    # may run smaller (e.g. 512) where the eval dominates GPU time.
+    n_eval_samples_training: int | None = None
 
 
 # Default changed from "mlp" to "lemlp" at stage_1+; legacy stage_0 configs

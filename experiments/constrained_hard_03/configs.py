@@ -107,6 +107,7 @@ def _hard_cell(
     n_euler_steps: int = 100,
     n_eval_samples: int = 512,
     eval_sample_chunk: int | None = None,
+    n_eval_samples_training: int | None = None,
 ) -> HardStageCfg:
     """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
     only sigma and head_kind (all otherwise identical). The keyword knobs open
@@ -129,6 +130,7 @@ def _hard_cell(
         eval=EvalCfg(
             eval_every=200, n_eval_samples=n_eval_samples,
             eval_sample_chunk=eval_sample_chunk,
+            n_eval_samples_training=n_eval_samples_training,
         ),
         model=ModelCfg(kind="letf", hidden_dim=32, n_layers=2, n_heads=4, vocab_size=2),
         estimator="control_variate",
@@ -164,5 +166,9 @@ CONFIGS: dict[str, HardStageCfg] = {
         # 256 samples x 64 anchor copies = 16k-row stacked passes under
         # no_grad -- a few GB transient on the L4, vs ~22 GB unchunked.
         eval_sample_chunk=256,
+        # In-training ESS cadence is a diagnostic: 512 samples suffices and
+        # the eval otherwise dominates the run (profile: 92% of GPU time).
+        # run.py's final eval still draws the full 5000.
+        n_eval_samples_training=512,
     ),
 }

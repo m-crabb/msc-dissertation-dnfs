@@ -322,12 +322,18 @@ def train_swap(
                         # attention buffers and OOMs at large d. IS weights
                         # are independent per sample, so slicing changes
                         # nothing statistically.
-                        eval_chunk = (
-                            getattr(eval_cfg, "eval_sample_chunk", None)
+                        # In-training evals are a diagnostic; run.py's final
+                        # eval always draws the full n_eval_samples.
+                        n_train_eval = (
+                            getattr(eval_cfg, "n_eval_samples_training", None)
                             or eval_cfg.n_eval_samples
                         )
+                        eval_chunk = (
+                            getattr(eval_cfg, "eval_sample_chunk", None)
+                            or n_train_eval
+                        )
                         log_weight_slices = []
-                        remaining = eval_cfg.n_eval_samples
+                        remaining = n_train_eval
                         while remaining > 0:
                             n_slice = min(eval_chunk, remaining)
                             x_eval_initial = target.sample_base(

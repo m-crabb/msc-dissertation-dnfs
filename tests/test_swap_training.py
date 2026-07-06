@@ -112,3 +112,42 @@ def test_train_swap_eval_sample_chunk_bounds_head_batch(tmp_path):
     for eval_row in (rows[0], rows[2]):
         ess = float(eval_row["ess"])
         assert ess == ess, "ess is NaN on an eval row under chunked eval"
+
+
+def test_train_swap_in_training_eval_draw_size(tmp_path):
+    """`n_eval_samples_training` shrinks ONLY the in-training diagnostic ESS
+    draws (the objective is the one final n_eval_samples eval in run.py, which
+    train_swap does not perform); the default None preserves the current
+    behaviour of drawing the full n_eval_samples every eval."""
+    from experiments.dnfs_baseline_01.configs import EvalCfg
+
+    assert EvalCfg().n_eval_samples_training is None
+
+    for training_draw, expected_eval_draw in ((4, 4), (None, 16)):
+        torch.manual_seed(0)
+        tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+        head = _tiny_head()
+        train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
+        eval_cfg.n_eval_samples_training = training_draw
+
+        draw_sizes = []
+        original_sample_base = tgt.sample_base
+
+        def recording_sample_base(n, device=None, _orig=original_sample_base):
+            draw_sizes.append(n)
+            return _orig(n, device=device)
+
+        tgt.sample_base = recording_sample_base
+        run_dir = Path(tmp_path) / f"draw_{training_draw}"
+        run_dir.mkdir()
+        train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, run_dir,
+                   use_wandb=False, estimator_mode="control_variate")
+
+        assert expected_eval_draw in draw_sizes, (
+            f"n_eval_samples_training={training_draw}: no eval draw of "
+            f"{expected_eval_draw} observed (draws: {sorted(set(draw_sizes))})"
+        )
+        if training_draw is not None:
+            assert 16 not in draw_sizes, (
+                "in-training eval still drew the full n_eval_samples"
+            )

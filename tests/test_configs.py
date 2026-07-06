@@ -295,8 +295,9 @@ def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
     unchanged)."""
     from dataclasses import replace
 
-    from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
     cfg = CONFIGS["H2_d64_c50_s223_letf_mo"]
     backbone = LeTFRateMatrix(
