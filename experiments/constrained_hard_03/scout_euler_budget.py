@@ -65,11 +65,25 @@ def _build_head(kind, d, device):
 
 
 @torch.no_grad()
-def measure(head, target, states, t_values):
-    """Λ decomposition + per-candidate clip diagnostics on `states` at `t_values`."""
+def measure(head, target, states, t_values, chunk_size=256):
+    """Λ decomposition + per-candidate clip diagnostics on `states` at `t_values`.
+
+    The head forward is chunked: mask_one stacks d anchor copies per state, so
+    an unchunked pass over the flattened trajectory OOMs at d=64 (A100 40 GB).
+    """
     pairs = upper_tri_pairs(target.d, states.device)  # (P, 2)
     adjacent = target.A[pairs[:, 0], pairs[:, 1]] > 0  # (P,)
-    rates = F.relu(gather_pair_scores(head(states, t_values), pairs))  # (S, P)
+    rates = F.relu(
+        torch.cat(
+            [
+                gather_pair_scores(
+                    head(states[i : i + chunk_size], t_values[i : i + chunk_size]),
+                    pairs,
+                )
+                for i in range(0, states.shape[0], chunk_size)
+            ]
+        )
+    )  # (S, P)
 
     lam = rates.sum(dim=-1)  # (S,)
     lam_adj = rates[:, adjacent].sum(dim=-1)
