@@ -303,6 +303,23 @@ def test_hard_d64_cell_enables_tier2_flags():
     assert gate.eval.eval_autocast_bf16 is False
 
 
+def test_d64_25k_budget_probe_mirrors_base_cell_except_n_steps():
+    """The 25k budget probe (2026-07-06) must isolate ONE variable: same cell
+    as H2_d64_c50_s223_letf_mo in every respect except the training budget,
+    so a converged/stalled outcome is attributable to budget alone."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    base = CONFIGS["H2_d64_c50_s223_letf_mo"]
+    probe = CONFIGS["H2_d64_c50_s223_letf_mo_25k"]
+    assert probe.train.n_steps == 25_000
+    normalised = replace(
+        probe, name=base.name, train=replace(probe.train, n_steps=base.train.n_steps)
+    )
+    assert normalised == base
+
+
 def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
     """d=256 cannot run the mask_one head unchunked (the anchor-batched pass
     builds a (d*B)-row buffer); the head's anchor_chunk_size knob must be

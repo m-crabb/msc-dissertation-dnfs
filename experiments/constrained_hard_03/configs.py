@@ -113,6 +113,7 @@ def _hard_cell(
     head_kind: str,
     *,
     D: int = 4,
+    n_steps: int = 2_000,
     n_euler_steps: int = 100,
     n_eval_samples: int = 512,
     eval_sample_chunk: int | None = None,
@@ -134,7 +135,7 @@ def _hard_cell(
             target_composition=0.5, composition_penalty_strength=0.0,
         ),
         train=TrainCfg(
-            n_steps=2_000, batch_size=128, replay_buffer_cycles=8,
+            n_steps=n_steps, batch_size=128, replay_buffer_cycles=8,
             lr=1e-3, seed=42, warmup_steps=500,
         ),
         ctmc=CTMCCfg(n_euler_steps=n_euler_steps),
@@ -175,6 +176,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     # step sized clip-safe (scout: n~116 at d=64; 128 gives margin, verified via
     # lambda_dt_clipped_frac). 5000-sample eval on the GPU job. This is a
     # VALIDATION run: confirms b-scaling + matching-step fidelity before D=16.
+    # Budget probe (2026-07-06): the 2000-step cell trained healthily but was
+    # cut off mid-descent (loss 22->14 over the last 250 steps; final ESS
+    # 0.0005-0.001 vs the D=4 sigma_c reference 0.68-0.80). One seed at 12.5x
+    # the budget, cold at sigma_c, isolates the budget variable before
+    # committing to the 3-seed curriculum protocol.
+    "H2_d64_c50_s223_letf_mo_25k": _hard_cell(
+        "H2_d64_c50_s223_letf_mo_25k", sigma=0.223, head_kind="mask_one",
+        D=8, n_steps=25_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=256, n_eval_samples_training=512,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+    ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
         D=8, n_euler_steps=128, n_eval_samples=5000,
