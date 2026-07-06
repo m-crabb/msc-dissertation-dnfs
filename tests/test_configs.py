@@ -288,6 +288,21 @@ def test_hard_ladder_covers_three_sigmas_plus_control():
     assert control.head_kind == "non_antisym"
 
 
+def test_hard_d64_cell_enables_tier2_flags():
+    """User sign-off 2026-07-06 (perf-branch evidence): the D=8 scaling cell
+    runs with the SDPA readout and bf16 IN-TRAINING evals only — run.py's
+    final 5,000-sample eval stays fp32. The D=4 gate cells stay flag-off:
+    Tier-2 enablement is a per-cell decision, never a global default."""
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cfg = CONFIGS["H2_d64_c50_s223_letf_mo"]
+    assert cfg.model.use_sdpa_readout is True
+    assert cfg.eval.eval_autocast_bf16 is True
+    gate = CONFIGS["H2_d16_c50_s223_letf_dh"]
+    assert gate.model.use_sdpa_readout is False
+    assert gate.eval.eval_autocast_bf16 is False
+
+
 def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
     """d=256 cannot run the mask_one head unchunked (the anchor-batched pass
     builds a (d*B)-row buffer); the head's anchor_chunk_size knob must be

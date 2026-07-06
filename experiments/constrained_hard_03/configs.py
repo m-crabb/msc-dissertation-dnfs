@@ -117,6 +117,8 @@ def _hard_cell(
     n_eval_samples: int = 512,
     eval_sample_chunk: int | None = None,
     n_eval_samples_training: int | None = None,
+    use_sdpa_readout: bool = False,
+    eval_autocast_bf16: bool = False,
 ) -> HardStageCfg:
     """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
     only sigma and head_kind (all otherwise identical). The keyword knobs open
@@ -140,8 +142,12 @@ def _hard_cell(
             eval_every=200, n_eval_samples=n_eval_samples,
             eval_sample_chunk=eval_sample_chunk,
             n_eval_samples_training=n_eval_samples_training,
+            eval_autocast_bf16=eval_autocast_bf16,
         ),
-        model=ModelCfg(kind="letf", hidden_dim=32, n_layers=2, n_heads=4, vocab_size=2),
+        model=ModelCfg(
+            kind="letf", hidden_dim=32, n_layers=2, n_heads=4, vocab_size=2,
+            use_sdpa_readout=use_sdpa_readout,
+        ),
         estimator="control_variate",
         head_kind=head_kind,
         wandb_project="dnfs-constraints",
@@ -179,5 +185,10 @@ CONFIGS: dict[str, HardStageCfg] = {
         # the eval otherwise dominates the run (profile: 92% of GPU time).
         # run.py's final eval still draws the full 5000.
         n_eval_samples_training=512,
+        # Tier-2 flags, user sign-off 2026-07-06 (perf-branch evidence in
+        # the 2026-07-05 findings doc): SDPA readout everywhere, bf16 on the
+        # in-training eval block only — the final 5000-sample eval runs fp32.
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
     ),
 }
