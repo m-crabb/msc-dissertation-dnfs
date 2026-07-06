@@ -126,15 +126,44 @@ def _runners(args, head, target, device: torch.device) -> dict:
         return {"train_step": run_train_step}
 
     if args.mode == "eval":
+        autocast_kwargs = dict(
+            device_type=device.type, dtype=torch.bfloat16,
+            enabled=args.eval_autocast_bf16,
+        )
 
         def run_eval_slice():
             x0 = target.sample_base(batch, device=device)
-            sample_swap_ctmc(
-                head, x0, ts, return_log_weights=True, target=target,
-                multi_event=args.multi_event,
+            with torch.autocast(**autocast_kwargs):
+                sample_swap_ctmc(
+                    head, x0, ts, return_log_weights=True, target=target,
+                    multi_event=args.multi_event,
+                )
+
+        def eval_quality_diagnostics():
+            """One seeded draw: ESS fraction + composition for the flag-on vs
+            flag-off within-noise comparison (Tier-2 evidence, plan Task 7)."""
+            from discrete_flow_sampler.diagnostics.metrics import (
+                ess_from_log_weights,
             )
 
-        return {"eval_slice": run_eval_slice}
+            torch.manual_seed(123)
+            x0 = target.sample_base(batch, device=device)
+            with torch.autocast(**autocast_kwargs):
+                x_final, log_w = sample_swap_ctmc(
+                    head, x0, ts, return_log_weights=True, target=target,
+                    multi_event=args.multi_event,
+                )
+            ess_frac = ess_from_log_weights(log_w).item() / batch
+            composition = ((x_final > 0).float().mean(dim=1))
+            print(
+                f"eval_quality: ess_frac {ess_frac:.4f}  "
+                f"composition mean {composition.mean():.4f} "
+                f"(target {target.target_composition})  "
+                f"log_w mean {log_w.mean():.4f} std {log_w.std():.4f}"
+            )
+
+        return {"eval_slice": run_eval_slice,
+                "_quality": eval_quality_diagnostics}
 
     def run_matching_step():
         try:
@@ -164,6 +193,7 @@ def main(argv=None):
     parser.add_argument("--anchor-chunk", type=int, default=None)
     parser.add_argument("--n-euler-steps", type=int, default=128)
     parser.add_argument("--multi-event", action="store_true")
+    parser.add_argument("--eval-autocast-bf16", action="store_true")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--device", default=None)
@@ -176,17 +206,21 @@ def main(argv=None):
     print(
         f"mode={args.mode} d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
-        f"multi_event={args.multi_event} device={device} "
+        f"multi_event={args.multi_event} "
+        f"eval_autocast_bf16={args.eval_autocast_bf16} device={device} "
         f"torch={torch.__version__}"
     )
 
     grad_free = args.mode != "train_step"
     with torch.no_grad() if grad_free else torch.enable_grad():
         runners = _runners(args, head, target, device)
+        quality_fn = runners.pop("_quality", None)
         for name, fn in runners.items():
             if device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats()
             _report(name, _timed(fn, args.repeats, device), device)
+        if quality_fn is not None:
+            quality_fn()  # once, seeded -- not a timing target
         if args.profile:
             first_name, first_fn = next(iter(runners.items()))
             print(f"\ntorch.profiler: {first_name}")

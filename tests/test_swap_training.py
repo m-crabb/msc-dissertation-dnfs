@@ -151,3 +151,43 @@ def test_train_swap_in_training_eval_draw_size(tmp_path):
             assert 16 not in draw_sizes, (
                 "in-training eval still drew the full n_eval_samples"
             )
+
+
+def test_train_swap_eval_autocast_bf16_flag(tmp_path):
+    """`eval_autocast_bf16` must default False (fp32 eval, behaviour
+    unchanged) and, when set, run ONLY the in-training eval head calls under
+    bf16 autocast -- training forward/backward stays fp32 (gradients are
+    Tier-3, untouchable)."""
+    from experiments.dnfs_baseline_01.configs import EvalCfg
+
+    assert EvalCfg().eval_autocast_bf16 is False
+
+    for flag_on in (False, True):
+        torch.manual_seed(0)
+        tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+        head = _tiny_head()
+        train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
+        eval_cfg.eval_autocast_bf16 = flag_on
+
+        # The head's OUTPUT dtype is fp32 even under autocast (the readout's
+        # final op promotes), so detect autocast state, not tensor dtype.
+        autocast_states = []
+        hook = head.register_forward_pre_hook(
+            lambda module, args: autocast_states.append(
+                torch.is_autocast_enabled("cpu")
+            )
+        )
+        run_dir = Path(tmp_path) / f"autocast_{flag_on}"
+        run_dir.mkdir()
+        try:
+            train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, run_dir,
+                       use_wandb=False, estimator_mode="control_variate")
+        finally:
+            hook.remove()
+
+        assert (True in autocast_states) == flag_on, (
+            f"eval_autocast_bf16={flag_on} but autocast head calls "
+            f"{'missing' if flag_on else 'present'}"
+        )
+        # Training forward/backward must stay fp32 under either flag value.
+        assert False in autocast_states

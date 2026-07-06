@@ -16,7 +16,10 @@ the new contract.
 import torch
 import torch.nn.functional as F
 
-from discrete_flow_sampler.constraints.swap_readout import LeTFMaskOneSwapHead
+from discrete_flow_sampler.constraints.swap_readout import (
+    LeTFMaskOneSwapHead,
+    swap2,
+)
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
     gather_pair_scores,
@@ -265,3 +268,57 @@ def test_compute_xi_t_swap_unchanged_behaviour():
         compute_xi_t_swap(x, t, head, target),
         _reference_compute_xi_t_swap(x, t, head, target),
     )
+
+
+# --------------------------------------------------------------------------
+# Task 7: invariants under bf16 autocast (opt-in eval path)
+# --------------------------------------------------------------------------
+
+
+@torch.no_grad()
+def test_antisymmetry_exact_under_bf16_autocast():
+    """Swap-antisymmetry must hold EXACTLY under autocast: both calls feed
+    bit-identical inputs to the masked body, and the readout dot product just
+    negates one operand -- IEEE negation is exact at any precision."""
+    head, target = _small_head_and_target()
+    torch.manual_seed(9)
+    x = target.sample_base(6, device="cpu")
+    t = torch.full((6,), 0.5)
+    pairs = upper_tri_pairs(target.d, "cpu")
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        G = head(x, t)
+        for i, j in pairs.tolist()[:20]:
+            G_swapped = head(swap2(x, i, j), t)
+            assert torch.equal(G[:, i, j].float(), -G_swapped[:, i, j].float())
+
+
+@torch.no_grad()
+def test_sampler_on_manifold_and_fp32_log_weights_under_bf16_autocast():
+    """Composition preservation is dtype-independent (swaps are index
+    permutations), and the IS log-weight accumulator must stay fp32 so the
+    128-step running sum does not lose precision."""
+    head, target = _small_head_and_target()
+    torch.manual_seed(6)
+    x0 = target.sample_base(8, device="cpu")
+    ts = torch.linspace(0.0, 1.0, 12)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        x_final, log_weights = sample_swap_ctmc(
+            head, x0, ts, return_log_weights=True, target=target
+        )
+    target.assert_on_manifold(x_final)
+    assert log_weights.dtype == torch.float32
+
+
+@torch.no_grad()
+def test_head_scores_match_fp32_within_bf16_tolerance():
+    """Value-level (not structural) agreement: bf16 has an 8-bit mantissa,
+    so per-element relative error ~2^-8. Bound calibrated on the seed-11
+    init-scale head (observed max abs diff 1.7e-4 at max |G| 1.9e-2)."""
+    head, target = _small_head_and_target()
+    torch.manual_seed(9)
+    x = target.sample_base(6, device="cpu")
+    t = torch.full((6,), 0.5)
+    G_fp32 = head(x, t)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        G_bf16 = head(x, t)
+    assert torch.allclose(G_bf16.float(), G_fp32, atol=1e-3, rtol=2e-2)

@@ -95,6 +95,11 @@ class EvalCfg:
     # the in-training ESS cadence is a diagnostic, not the objective, so it
     # may run smaller (e.g. 512) where the eval dominates GPU time.
     n_eval_samples_training: int | None = None
+    # Run the in-training eval under bf16 autocast (opt-in; default fp32).
+    # Eval-only: gradients never flow here, and the structural invariants
+    # (swap-antisymmetry, composition preservation) hold exactly at bf16 --
+    # only G's values move, within bf16 tolerance (test_swap_perf_refactors).
+    eval_autocast_bf16: bool = False
 
 
 # Default changed from "mlp" to "lemlp" at stage_1+; legacy stage_0 configs

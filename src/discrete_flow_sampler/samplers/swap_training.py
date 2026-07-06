@@ -312,7 +312,11 @@ def train_swap(
                     "log_ratio_clamp_frac": float("nan"),
                 }
                 if step % eval_cfg.eval_every == 0:
-                    with torch.no_grad():
+                    eval_autocast = torch.autocast(
+                        device.type, dtype=torch.bfloat16,
+                        enabled=getattr(eval_cfg, "eval_autocast_bf16", False),
+                    )
+                    with torch.no_grad(), eval_autocast:
                         eval_grid = torch.linspace(
                             0.0, 1.0, n_grid, device=device,
                         )
