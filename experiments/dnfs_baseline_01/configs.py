@@ -112,6 +112,10 @@ class ModelCfg:
     kernel_schedule: tuple[int, ...] = ()  # leconv_deep only; per-layer kernels
     hollow_global_context: bool = False    # leconv_deep only
     n_heads: int = 4         # leTF only; ignored elsewhere
+    # leTF only: fused-kernel readout attention (never materialises the
+    # (B, n_heads, d, 2d) score buffer). Tier-2 opt-in: same math, different
+    # reduction order; no state_dict change.
+    use_sdpa_readout: bool = False
     vocab_size: int = 2
 
 

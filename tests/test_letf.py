@@ -15,6 +15,7 @@ slice-and-mask design depends on inputs structured by the inclusive-causal
 stacks, so an isolated readout test feeding arbitrary tensors is over-strict.
 The full-pipeline hollow test in pillar 2 is the right level of granularity.
 """
+import pytest
 import torch
 import torch.nn as nn
 
@@ -51,7 +52,9 @@ def test_causal_stack_inclusive_causal():
     )
 
 
-def _make_model(d: int = 9, vocab_size: int = 2, seed: int = 42) -> LeTFRateMatrix:
+def _make_model(
+    d: int = 9, vocab_size: int = 2, seed: int = 42, use_sdpa: bool = False
+) -> LeTFRateMatrix:
     torch.manual_seed(seed)
     model = LeTFRateMatrix(
         d=d,
@@ -59,12 +62,14 @@ def _make_model(d: int = 9, vocab_size: int = 2, seed: int = 42) -> LeTFRateMatr
         hidden_dim=8,
         n_layers=2,
         n_heads=2,
+        use_sdpa_readout=use_sdpa,
     )
     model.eval()
     return model
 
 
-def test_compute_body_hollow():
+@pytest.mark.parametrize("use_sdpa", [False, True])
+def test_compute_body_hollow(use_sdpa):
     """Definition 3: H_HTF(x) at position i does not depend on x_i.
 
     Load-bearing test for the slice-and-mask architecture: verifies the
@@ -72,7 +77,7 @@ def test_compute_body_hollow():
     AttentionReadout) actually produces hollow output at every position.
     """
     d, vocab_size = 9, 2
-    model = _make_model(d=d, vocab_size=vocab_size)
+    model = _make_model(d=d, vocab_size=vocab_size, use_sdpa=use_sdpa)
 
     x1 = torch.randint(0, vocab_size, (1, d))
     t = torch.rand(1)
@@ -83,15 +88,23 @@ def test_compute_body_hollow():
         x2[0, i] = (x2[0, i].item() + 1) % vocab_size
         H2 = model.compute_body(x2, t)
         diff = (H1[0, i, :] - H2[0, i, :]).abs().max().item()
+        if use_sdpa:
+            # Tier-2 structural evidence: SDPA gives masked keys attention
+            # weight exactly 0 (exp(-inf)), so hollowness must hold EXACTLY
+            # flag-on, not just within tolerance.
+            assert diff == 0.0, (
+                f"SDPA hollowness not exact at i={i}: diff = {diff:.2e}"
+            )
         assert diff < 1e-5, (
             f"Hollow violated at i={i}: ||H1[i] - H2[i]||_inf = {diff:.2e}"
         )
 
 
-def test_local_equivariance_random_init():
+@pytest.mark.parametrize("use_sdpa", [False, True])
+def test_local_equivariance_random_init(use_sdpa):
     """Eq. 20 antisymmetry holds for every non-self transition."""
     d, vocab_size = 9, 2
-    model = _make_model(d=d, vocab_size=vocab_size)
+    model = _make_model(d=d, vocab_size=vocab_size, use_sdpa=use_sdpa)
 
     x = torch.randint(0, vocab_size, (1, d))
     t = torch.rand(1)

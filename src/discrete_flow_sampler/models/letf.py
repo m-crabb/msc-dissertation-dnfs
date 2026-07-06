@@ -188,6 +188,15 @@ class AttentionReadout(nn.Module):
     The cond_t triple-injection (combined + all-keys + sliced inputs) and
     per-head readout position embeddings follow the J-zin reference. They are
     independent of x_i, so they don't break hollow-ness.
+
+    `use_sdpa` (opt-in, default OFF) routes the attention through
+    F.scaled_dot_product_attention: the same masked softmax-attention in a
+    fused kernel that never materialises the (B, n_heads, d, 2d) score
+    buffer — the memory wall that forces small anchor/eval chunks at large d.
+    Tier 2 because the fused reduction order differs from the manual
+    matmul/softmax/matmul (fp32-tolerance equivalent, not bit-exact); masking
+    stays structural (masked keys get weight exactly 0), and there are no new
+    parameters, so checkpoints are interchangeable across the flag.
     """
 
     def __init__(
@@ -196,6 +205,7 @@ class AttentionReadout(nn.Module):
         n_heads: int,
         data_dim: int,
         ff_mult: int = 4,
+        use_sdpa: bool = False,
     ):
         super().__init__()
         if hidden_dim % n_heads != 0:
@@ -206,6 +216,7 @@ class AttentionReadout(nn.Module):
         self.n_heads = n_heads
         self.data_dim = data_dim
         self.d_k = hidden_dim // n_heads
+        self.use_sdpa = use_sdpa
         self.pos_embed = nn.Parameter(torch.randn(data_dim, self.d_k) * 1e-2)
 
         self.norm_in = nn.LayerNorm(hidden_dim)
@@ -262,14 +273,21 @@ class AttentionReadout(nn.Module):
         Q = Q + pos
         K = torch.cat([K[:, :, :d, :] + pos, K[:, :, d:, :] + pos], dim=2)
 
-        scale = math.sqrt(self.d_k)
-        scores = torch.matmul(Q, K.transpose(-1, -2)) / scale   # (B, n_heads, d, 2d)
-
         joint_mask = self._cached_joint_mask(d, Q.device)  # (d, 2d)
 
-        scores = scores.masked_fill(joint_mask, float("-inf"))
-        attn = torch.softmax(scores, dim=-1)        # (B, n_heads, d, 2d)
-        out = torch.matmul(attn, V)                  # (B, n_heads, d, d_k)
+        if self.use_sdpa:
+            # Fused kernel; SDPA's default scale 1/sqrt(d_k) matches the
+            # manual branch, and its bool-mask convention is inverted
+            # (True = attend), hence the negation.
+            out = nn.functional.scaled_dot_product_attention(
+                Q, K, V, attn_mask=~joint_mask
+            )                                        # (B, n_heads, d, d_k)
+        else:
+            scale = math.sqrt(self.d_k)
+            scores = torch.matmul(Q, K.transpose(-1, -2)) / scale  # (B, n_heads, d, 2d)
+            scores = scores.masked_fill(joint_mask, float("-inf"))
+            attn = torch.softmax(scores, dim=-1)    # (B, n_heads, d, 2d)
+            out = torch.matmul(attn, V)              # (B, n_heads, d, d_k)
         out = out.transpose(1, 2).contiguous().view(B, d, self.hidden_dim)
         out = self.out_proj(out)                     # (B, d, h)
 
@@ -292,6 +310,8 @@ class LeTFRateMatrix(nn.Module):
         n_layers: depth of EACH directional CausalStack (per App. E.1.1
             "3 bidirectional causal attention layers" -> n_layers=3).
         n_heads: attention heads per block. Must divide hidden_dim.
+        use_sdpa_readout: opt-in fused-kernel readout attention (see
+            AttentionReadout docstring). Default OFF; Tier-2 flag.
     """
 
     is_locally_equivariant: bool = True
@@ -303,6 +323,7 @@ class LeTFRateMatrix(nn.Module):
         hidden_dim: int,
         n_layers: int,
         n_heads: int = 4,
+        use_sdpa_readout: bool = False,
     ):
         super().__init__()
         if n_layers < 1:
@@ -323,7 +344,9 @@ class LeTFRateMatrix(nn.Module):
         seq_len = 1 + d
         self.fwd_stack = CausalStack(hidden_dim, n_layers, n_heads, seq_len)
         self.bwd_stack = CausalStack(hidden_dim, n_layers, n_heads, seq_len)
-        self.attention_readout = AttentionReadout(hidden_dim, n_heads, d)
+        self.attention_readout = AttentionReadout(
+            hidden_dim, n_heads, d, use_sdpa=use_sdpa_readout
+        )
         self.output_norm = nn.LayerNorm(hidden_dim)
 
         self.omega = nn.Embedding(vocab_size, hidden_dim)

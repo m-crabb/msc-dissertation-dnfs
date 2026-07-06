@@ -98,6 +98,7 @@ def train(
         hidden_dim=cfg.model.hidden_dim,
         n_layers=cfg.model.n_layers,
         n_heads=cfg.model.n_heads,
+        use_sdpa_readout=cfg.model.use_sdpa_readout,
     ).to(device)
     head = build_swap_head(cfg, backbone)
 

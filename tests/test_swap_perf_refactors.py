@@ -322,3 +322,60 @@ def test_head_scores_match_fp32_within_bf16_tolerance():
     with torch.autocast("cpu", dtype=torch.bfloat16):
         G_bf16 = head(x, t)
     assert torch.allclose(G_bf16.float(), G_fp32, atol=1e-3, rtol=2e-2)
+
+
+# --------------------------------------------------------------------------
+# Task 8: SDPA readout (opt-in flag, default OFF)
+# --------------------------------------------------------------------------
+
+
+def _letf_pair(d: int, seed: int = 13) -> tuple[LeTFRateMatrix, LeTFRateMatrix]:
+    """Same-seed model pair differing ONLY in the SDPA readout flag (the flag
+    consumes no RNG, so the parameters are identical)."""
+    models = []
+    for use_sdpa in (False, True):
+        torch.manual_seed(seed)
+        model = LeTFRateMatrix(
+            d=d, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2,
+            use_sdpa_readout=use_sdpa,
+        )
+        model.eval()
+        models.append(model)
+    return models[0], models[1]
+
+
+@torch.no_grad()
+def test_sdpa_readout_matches_manual_and_keeps_state_dict():
+    """SDPA computes the same masked softmax-attention as the manual
+    scores/masked_fill/softmax/matmul block without materialising the
+    (B, n_heads, d, 2d) score buffer. Only the kernel's reduction order
+    differs, so G agrees to fp32 tolerance; no new parameters or buffers,
+    so checkpoints are interchangeable across the flag."""
+    for d in (16, 64):
+        manual, sdpa = _letf_pair(d)
+        assert sorted(manual.state_dict()) == sorted(sdpa.state_dict())
+        torch.manual_seed(2)
+        x = (torch.randint(0, 2, (4, d)) * 2 - 1).float()
+        t = torch.rand(4)
+        assert torch.allclose(sdpa(x, t), manual(x, t), atol=1e-5), f"d={d}"
+
+
+@torch.no_grad()
+def test_sdpa_flag_reaches_swap_head():
+    """The mask-one swap head routes through AttentionReadout via
+    _masked_body, so the flag must reach that path (its d-anchor-stacked
+    score buffer is the d=256 memory wall) while preserving G_swap."""
+    manual, sdpa = _letf_pair(16)
+    assert sdpa.attention_readout.use_sdpa
+    torch.manual_seed(3)
+    x = (torch.randint(0, 2, (4, 16)) * 2 - 1).float()
+    t = torch.rand(4)
+    G_manual = LeTFMaskOneSwapHead(manual)(x, t)
+    G_sdpa = LeTFMaskOneSwapHead(sdpa)(x, t)
+    assert torch.allclose(G_sdpa, G_manual, atol=1e-5)
+
+
+def test_model_cfg_sdpa_default_off():
+    from experiments.dnfs_baseline_01.configs import ModelCfg
+
+    assert ModelCfg().use_sdpa_readout is False

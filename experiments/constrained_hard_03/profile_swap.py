@@ -46,7 +46,9 @@ from discrete_flow_sampler.samplers.swap_kolmogorov import loss_swap
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 
-def build_head_and_target(d: int, device: torch.device, anchor_chunk: int | None):
+def build_head_and_target(
+    d: int, device: torch.device, anchor_chunk: int | None, use_sdpa: bool = False
+):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c)."""
     side = int(round(d**0.5))
     if side * side != d:
@@ -56,7 +58,8 @@ def build_head_and_target(d: int, device: torch.device, anchor_chunk: int | None
         D=side, sigma=0.223, target_composition=0.5, device=device
     )
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4
+        d=d, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4,
+        use_sdpa_readout=use_sdpa,
     ).to(device)
     head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
     return head, target
@@ -194,6 +197,7 @@ def main(argv=None):
     parser.add_argument("--n-euler-steps", type=int, default=128)
     parser.add_argument("--multi-event", action="store_true")
     parser.add_argument("--eval-autocast-bf16", action="store_true")
+    parser.add_argument("--sdpa", action="store_true")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--device", default=None)
@@ -202,13 +206,15 @@ def main(argv=None):
     device = torch.device(
         args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    head, target = build_head_and_target(args.d, device, args.anchor_chunk)
+    head, target = build_head_and_target(
+        args.d, device, args.anchor_chunk, use_sdpa=args.sdpa
+    )
     print(
         f"mode={args.mode} d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
         f"multi_event={args.multi_event} "
-        f"eval_autocast_bf16={args.eval_autocast_bf16} device={device} "
-        f"torch={torch.__version__}"
+        f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
+        f"device={device} torch={torch.__version__}"
     )
 
     grad_free = args.mode != "train_step"

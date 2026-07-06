@@ -1,5 +1,6 @@
 """Tests for the paired-swap antisymmetric readout (P1.1, design note 2026-06-29 §5)."""
 
+import pytest
 import torch
 
 from discrete_flow_sampler.constraints.swap_readout import (
@@ -14,10 +15,11 @@ from discrete_flow_sampler.models.letf import LeTFRateMatrix
 ATOL = 1e-5
 
 
-def _backbone(d=9, seed=42, hidden_dim=8, n_heads=2, n_layers=2):
+def _backbone(d=9, seed=42, hidden_dim=8, n_heads=2, n_layers=2, use_sdpa=False):
     torch.manual_seed(seed)
     m = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers, n_heads=n_heads
+        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers,
+        n_heads=n_heads, use_sdpa_readout=use_sdpa,
     )
     m.eval()
     return m
@@ -46,9 +48,10 @@ def test_swap2_is_involution_and_exchanges():
 
 
 @torch.no_grad()
-def test_masked_body_double_hollow():
+@pytest.mark.parametrize("use_sdpa", [False, True])
+def test_masked_body_double_hollow(use_sdpa):
     """H from masking anchor i: H[:,j,:] is blind to x_i (masked) and x_j (hollow)."""
-    m = _backbone(d=9)
+    m = _backbone(d=9, use_sdpa=use_sdpa)
     x = _state(d=9)
     t = torch.rand(1)
     i, j = 2, 5
@@ -64,6 +67,12 @@ def test_masked_body_double_hollow():
     x_fj[0, j] *= -1
     d_j = (_masked_body(m, x_fj, t, (i,))[:, j, :] - base).abs().max().item()
 
+    if use_sdpa:
+        # SDPA masking is structural (weight exactly 0): both blindness
+        # properties must be EXACT flag-on, per the Tier-2 evidence bar.
+        assert d_i == 0.0 and d_j == 0.0, (
+            f"SDPA double-hollowness not exact: d_i={d_i:.2e}, d_j={d_j:.2e}"
+        )
     assert d_i < ATOL, f"H_ij not blind to x_i: {d_i:.2e}"
     assert d_j < ATOL, f"H_ij not hollow in x_j: {d_j:.2e}"
 
@@ -145,14 +154,15 @@ def test_mask_one_antisymmetric():
 
 
 @torch.no_grad()
-def test_mask_one_blind_to_anchor():
+@pytest.mark.parametrize("use_sdpa", [False, True])
+def test_mask_one_blind_to_anchor(use_sdpa):
     """Assertion 5 (part): G_swap(i,j) is invariant to flipping x_i then fixing omega.
 
     Flip x_i AND keep the readout's omega_{x_i} fixed by comparing the body
     contribution only: assert the masked body H[:,j,:] (anchor i) is unchanged
     when x_i flips (structural blindness, not incidental).
     """
-    m = _backbone(d=9)
+    m = _backbone(d=9, use_sdpa=use_sdpa)
     x = _state(d=9)
     t = torch.rand(1)
     i, j = _active_pairs(x)[0]
