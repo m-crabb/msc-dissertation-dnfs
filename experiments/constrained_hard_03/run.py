@@ -22,6 +22,7 @@ from experiments.constrained_hard_03.configs import (
     HardStageCfg,
     build_swap_head,
 )
+from experiments.dnfs_baseline_01.configs import CurriculumCfg
 
 from discrete_flow_sampler.diagnostics.metrics import (
     composition_observables,
@@ -40,11 +41,23 @@ def smoke_config(cfg: HardStageCfg) -> HardStageCfg:
     """Shrink `cfg` to a minutes-scale end-to-end check (shared by the CLI
     `--smoke` flag and `modal_app.train_remote`'s `smoke` argument, so the
     two entry points can never drift apart)."""
+    # A full sigma ladder cannot fit 4 steps (_normalise_curriculum requires
+    # start_step < n_steps); keep one stage-0 -> final-sigma transition at the
+    # outer-cycle boundary so smoke still exercises the curriculum machinery.
+    curriculum = cfg.curriculum
+    if curriculum is not None:
+        curriculum = CurriculumCfg(
+            stages=(
+                replace(curriculum.stages[0], start_step=0),
+                replace(curriculum.stages[-1], start_step=2),
+            )
+        )
     return replace(
         cfg,
         train=replace(cfg.train, n_steps=4, inner_steps_per_outer=2),
         ctmc=replace(cfg.ctmc, n_euler_steps=8),
         eval=replace(cfg.eval, n_eval_samples=64),
+        curriculum=curriculum,
     )
 
 
@@ -161,6 +174,12 @@ def train(
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     target, head = build_target_and_head(cfg, device)
+    if cfg.curriculum is not None:
+        # Start the flow at the stage-0 coupling so the step-0 stiffness
+        # diagnostic fires at the sigma training actually begins from (the
+        # curriculum loop in train_swap takes over from outer cycle 0). The
+        # final stage restores cfg.ising.sigma before final_eval runs.
+        target.set_sigma(cfg.curriculum.stages[0].sigma)
 
     train_swap(
         head,
@@ -171,6 +190,9 @@ def train(
         run_dir,
         use_wandb=use_wandb,
         estimator_mode=cfg.estimator,
+        sigma_curriculum=(
+            cfg.curriculum.stages if cfg.curriculum is not None else None
+        ),
     )
 
     eval_metrics = final_eval(head, target, cfg, run_dir)

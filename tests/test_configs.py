@@ -320,6 +320,38 @@ def test_d64_25k_budget_probe_mirrors_base_cell_except_n_steps():
     assert normalised == base
 
 
+def test_d64_50k_curriculum_cell_mirrors_base_except_budget_and_ladder():
+    """The curriculum rung (2026-07-06) changes exactly TWO things vs the base
+    d=64 cell — budget (50k) and the sigma-plateau ladder — so its outcome is
+    attributable to those levers. The ladder is the proven baseline recipe
+    (stage_3 conv critical, itself 50k steps) with the final stage at the hard
+    cells' 0.223; boundaries must align with outer cycles for train_swap."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    base = CONFIGS["H2_d64_c50_s223_letf_mo"]
+    cell = CONFIGS["H2_d64_c50_s223_letf_mo_50k_curr"]
+    assert cell.train.n_steps == 50_000
+    stages = cell.curriculum.stages
+    assert (stages[0].start_step, stages[0].sigma) == (0, 0.100)
+    assert stages[-1].sigma == cell.ising.sigma == 0.223
+    assert all(
+        later.start_step > earlier.start_step and later.sigma > earlier.sigma
+        for earlier, later in zip(stages, stages[1:])
+    )
+    assert all(
+        stage.start_step < cell.train.n_steps
+        and stage.start_step % cell.train.inner_steps_per_outer == 0
+        for stage in stages
+    )
+    normalised = replace(
+        cell, name=base.name, curriculum=None,
+        train=replace(cell.train, n_steps=base.train.n_steps),
+    )
+    assert normalised == base
+
+
 def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
     """d=256 cannot run the mask_one head unchunked (the anchor-batched pass
     builds a (d*B)-row buffer); the head's anchor_chunk_size knob must be

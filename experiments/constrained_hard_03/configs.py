@@ -22,6 +22,8 @@ import torch
 import torch.nn as nn
 from experiments.dnfs_baseline_01.configs import (
     CTMCCfg,
+    CurriculumCfg,
+    CurriculumStageCfg,
     EvalCfg,
     IsingCfg,
     ModelCfg,
@@ -120,6 +122,7 @@ def _hard_cell(
     n_eval_samples_training: int | None = None,
     use_sdpa_readout: bool = False,
     eval_autocast_bf16: bool = False,
+    curriculum: CurriculumCfg | None = None,
 ) -> HardStageCfg:
     """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
     only sigma and head_kind (all otherwise identical). The keyword knobs open
@@ -152,6 +155,7 @@ def _hard_cell(
         estimator="control_variate",
         head_kind=head_kind,
         wandb_project="dnfs-constraints",
+        curriculum=curriculum,
     )
 
 
@@ -186,6 +190,31 @@ CONFIGS: dict[str, HardStageCfg] = {
         D=8, n_steps=25_000, n_euler_steps=128, n_eval_samples=5000,
         eval_sample_chunk=256, n_eval_samples_training=512,
         use_sdpa_readout=True, eval_autocast_bf16=True,
+    ),
+    # Curriculum + budget rung (2026-07-06 eve): the 25k cold probe lifted the
+    # final ESS frac 0.001 -> 0.12 with the loss STILL descending, so budget
+    # dominates the collapse but had not saturated. This cell adds the other
+    # pocketed lever: the sigma-plateau ladder the unconstrained baseline
+    # needed at sigma_c (stage_3 conv-critical recipe, itself a 50k-step run:
+    # 5k plateaus, LR drop when the near-critical variance spike begins at
+    # sigma=0.205, 40% of the budget on the final plateau). Final sigma is the
+    # hard cells' 0.223, matching the D=4 reference chain and the 25k probe.
+    "H2_d64_c50_s223_letf_mo_50k_curr": _hard_cell(
+        "H2_d64_c50_s223_letf_mo_50k_curr", sigma=0.223, head_kind="mask_one",
+        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=256, n_eval_samples_training=512,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+                CurriculumStageCfg(start_step=30_000, sigma=0.223, lr=3e-4),
+            )
+        ),
     ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
