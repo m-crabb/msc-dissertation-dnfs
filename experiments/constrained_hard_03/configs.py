@@ -55,6 +55,9 @@ class HardStageCfg(StageCfg):
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
     # otherwise build a (d*B)-row buffer that OOMs the L4.
     anchor_chunk_size: int | None = None
+    # Opt-in torch.compile of the built head (Tier 2, default OFF). Head
+    # only — the Euler loop's data-dependent sampling would graph-break.
+    compile_head: bool = False
 
 
 class NonAntisymSwapHead(nn.Module):
@@ -90,12 +93,18 @@ class NonAntisymSwapHead(nn.Module):
 def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
     """Map `cfg.head_kind` to an instantiated swap-readout head."""
     if cfg.head_kind == "doubly_hollow":
-        return DoublyHollowSwapHead(backbone)
-    if cfg.head_kind == "mask_one":
-        return LeTFMaskOneSwapHead(backbone, anchor_chunk_size=cfg.anchor_chunk_size)
-    if cfg.head_kind == "non_antisym":
-        return NonAntisymSwapHead(backbone)
-    raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
+        head = DoublyHollowSwapHead(backbone)
+    elif cfg.head_kind == "mask_one":
+        head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=cfg.anchor_chunk_size)
+    elif cfg.head_kind == "non_antisym":
+        head = NonAntisymSwapHead(backbone)
+    else:
+        raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
+    if cfg.compile_head:
+        # In-place nn.Module.compile: state_dict keys stay unprefixed
+        # (torch.compile(module) wrapping would add `_orig_mod.`).
+        head.compile()
+    return head
 
 
 def _hard_cell(

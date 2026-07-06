@@ -198,6 +198,7 @@ def main(argv=None):
     parser.add_argument("--multi-event", action="store_true")
     parser.add_argument("--eval-autocast-bf16", action="store_true")
     parser.add_argument("--sdpa", action="store_true")
+    parser.add_argument("--compile", action="store_true")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--device", default=None)
@@ -209,12 +210,14 @@ def main(argv=None):
     head, target = build_head_and_target(
         args.d, device, args.anchor_chunk, use_sdpa=args.sdpa
     )
+    if args.compile:
+        head.compile()
     print(
         f"mode={args.mode} d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
         f"multi_event={args.multi_event} "
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
-        f"device={device} torch={torch.__version__}"
+        f"compile={args.compile} device={device} torch={torch.__version__}"
     )
 
     grad_free = args.mode != "train_step"

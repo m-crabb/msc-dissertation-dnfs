@@ -379,3 +379,45 @@ def test_model_cfg_sdpa_default_off():
     from experiments.dnfs_baseline_01.configs import ModelCfg
 
     assert ModelCfg().use_sdpa_readout is False
+
+
+# --------------------------------------------------------------------------
+# Task 9: torch.compile on the head (opt-in flag, default OFF)
+# --------------------------------------------------------------------------
+
+
+@torch.no_grad()
+def test_compile_head_flag_matches_uncompiled_and_keeps_state_dict():
+    """`compile_head=True` must use IN-PLACE nn.Module.compile: identical
+    state_dict keys (no `_orig_mod.` prefix, so checkpoints round-trip) and
+    inductor-vs-eager output agreement at fp32 tolerance. The cfg's d need
+    not match the backbone (build_swap_head only reads head_kind /
+    anchor_chunk_size / compile_head), so a small backbone keeps the test's
+    runtime cost at one compile."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS,
+        HardStageCfg,
+        build_swap_head,
+    )
+
+    assert HardStageCfg.__dataclass_fields__["compile_head"].default is False
+
+    base_cfg = CONFIGS["H2_d64_c50_s223_letf_mo"]
+    assert base_cfg.compile_head is False
+    torch.manual_seed(0)
+    backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
+    backbone.eval()
+
+    plain_head = build_swap_head(base_cfg, backbone)
+    keys_before = sorted(plain_head.state_dict())
+    torch.manual_seed(1)
+    x = (torch.randint(0, 2, (2, 16)) * 2 - 1).float()
+    t = torch.rand(2)
+    want = plain_head(x, t)
+
+    compiled_head = build_swap_head(replace(base_cfg, compile_head=True), backbone)
+    assert sorted(compiled_head.state_dict()) == keys_before
+    got = compiled_head(x, t)
+    assert torch.allclose(got, want, atol=1e-5)
