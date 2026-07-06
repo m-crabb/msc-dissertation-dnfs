@@ -104,9 +104,11 @@ def _resolve_head_kind(head_kind: str) -> str | None:
 
 
 @app.function(
-    # d=16, hidden_dim<=32 is tiny -- the A100 in the baseline app is for
-    # d=100 attention-bound runs. Bump per-launch if L4 proves slow.
-    gpu="L4",
+    # A100 for seed runs (decision 2026-07-06): the perf profile showed the
+    # workload bandwidth-bound (layernorm/copies), where the L4 is weakest;
+    # the win concentrates in the eval slices. bench_remote stays on L4 so
+    # benchmark numbers remain comparable with the recorded baselines.
+    gpu="A100",
     volumes={"/results": volume},
     secrets=[wandb_secret],
     timeout=24 * 60 * 60,
