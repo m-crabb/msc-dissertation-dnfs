@@ -34,7 +34,7 @@ from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.seeding import seed_everything
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
-HEAD_KINDS = ("doubly_hollow", "mask_one", "non_antisym")
+HEAD_KINDS = ("doubly_hollow", "mask_one", "non_antisym", "interval")
 
 
 def smoke_config(cfg: HardStageCfg) -> HardStageCfg:

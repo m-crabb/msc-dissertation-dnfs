@@ -32,6 +32,7 @@ from experiments.dnfs_baseline_01.configs import (
 )
 from torch import Tensor
 
+from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
 from discrete_flow_sampler.constraints.swap_readout import (
     DoublyHollowSwapHead,
     LeTFMaskOneSwapHead,
@@ -47,12 +48,16 @@ class HardStageCfg(StageCfg):
     `head_kind` picks which swap-readout head `build_swap_head` instantiates:
     "doubly_hollow" (DoublyHollowSwapHead, O(d^2), the architecture-agnostic
     correctness gate), "mask_one" (LeTFMaskOneSwapHead, O(d), the efficient
-    head that agrees with doubly_hollow numerically), or "non_antisym"
+    head that agrees with doubly_hollow numerically), "non_antisym"
     (NonAntisymSwapHead, a negative control that must never be used for a
-    real run -- see that class's docstring).
+    real run -- see that class's docstring), or "interval"
+    (IntervalSwapHead, the one-pass three-interval spike head -- property-
+    equivalent to doubly_hollow, not numerically equal: different H).
     """
 
-    head_kind: Literal["doubly_hollow", "mask_one", "non_antisym"] = "doubly_hollow"
+    head_kind: Literal[
+        "doubly_hollow", "mask_one", "non_antisym", "interval"
+    ] = "doubly_hollow"
     # Anchor-batch chunk for the mask_one head's vectorised forward; None =
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
     # otherwise build a (d*B)-row buffer that OOMs the L4.
@@ -100,6 +105,10 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
         head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=cfg.anchor_chunk_size)
     elif cfg.head_kind == "non_antisym":
         head = NonAntisymSwapHead(backbone)
+    elif cfg.head_kind == "interval":
+        # Band pair-feature offsets (1, D): row and column adjacency of the
+        # flattened D x D lattice -- the interactions the Ising energy uses.
+        head = IntervalSwapHead(backbone, pair_offsets=(1, cfg.ising.D))
     else:
         raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
     if cfg.compile_head:
