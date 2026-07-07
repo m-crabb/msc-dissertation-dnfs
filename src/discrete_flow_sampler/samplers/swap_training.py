@@ -74,7 +74,11 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
 
     return {
         "rate_pair_mean": forward_rates.mean().item(),
-        "rate_pair_p99": torch.quantile(forward_rates.reshape(-1), 0.99).item(),
+        # .float(): quantile is fp32/64-only; heads may emit reduced
+        # precision under the eval autocast block.
+        "rate_pair_p99": torch.quantile(
+            forward_rates.reshape(-1).float(), 0.99
+        ).item(),
         "lambda_dt_clipped_frac": (lambda_dt > 1.0).float().mean().item(),
         "log_ratio_clamp_frac": (
             (log_ratio > SWAP_LOG_RATIO_CLAMP).float().mean().item()

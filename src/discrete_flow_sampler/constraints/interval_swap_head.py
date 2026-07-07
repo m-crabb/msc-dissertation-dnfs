@@ -292,4 +292,9 @@ class IntervalSwapHead(nn.Module):
         omega = self.backbone.omega(x_idx)                    # (B, d, h)
         token_difference = omega.unsqueeze(2) - omega.unsqueeze(1)
         H = self.compute_pair_context(x, t)
-        return torch.einsum("bijh,bijh->bij", token_difference, H)
+        # mul+sum, NOT einsum: einsum is on the autocast lower-precision
+        # list, so under the Tier-2 eval_autocast_bf16 block it would emit
+        # bf16 G (crashing the fp32-only quantile rate diagnostic and
+        # departing from the dtype path Tier-2 was validated on); the
+        # mask-one readout keeps G fp32 the same way.
+        return (token_difference * H).sum(-1)
