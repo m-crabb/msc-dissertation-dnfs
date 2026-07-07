@@ -30,6 +30,7 @@ import time
 import torch
 import torch.nn.functional as F
 
+from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
 from discrete_flow_sampler.constraints.swap_readout import LeTFMaskOneSwapHead
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
@@ -47,9 +48,13 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 
 def build_head_and_target(
-    d: int, device: torch.device, anchor_chunk: int | None, use_sdpa: bool = False
+    d: int, device: torch.device, anchor_chunk: int | None, use_sdpa: bool = False,
+    head_kind: str = "mask_one",
 ):
-    """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c)."""
+    """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
+
+    head_kind defaults to mask_one so every recorded baseline stays
+    comparable; "interval" benches the one-pass spike head (K3 A/B)."""
     side = int(round(d**0.5))
     if side * side != d:
         raise ValueError(f"--d must be a square lattice site count, got {d}")
@@ -61,7 +66,10 @@ def build_head_and_target(
         d=d, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4,
         use_sdpa_readout=use_sdpa,
     ).to(device)
-    head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
+    if head_kind == "interval":
+        head = IntervalSwapHead(backbone, pair_offsets=(1, side)).to(device)
+    else:
+        head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
     return head, target
 
 
@@ -192,6 +200,9 @@ def main(argv=None):
         choices=("head", "train_step", "eval", "components"),
     )
     parser.add_argument("--d", type=int, default=64, help="site count (D*D)")
+    parser.add_argument(
+        "--head-kind", default="mask_one", choices=("mask_one", "interval")
+    )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)
     parser.add_argument("--n-euler-steps", type=int, default=128)
@@ -208,12 +219,13 @@ def main(argv=None):
         args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     )
     head, target = build_head_and_target(
-        args.d, device, args.anchor_chunk, use_sdpa=args.sdpa
+        args.d, device, args.anchor_chunk, use_sdpa=args.sdpa,
+        head_kind=args.head_kind,
     )
     if args.compile:
         head.compile()
     print(
-        f"mode={args.mode} d={args.d} batch={args.batch} "
+        f"mode={args.mode} head_kind={args.head_kind} d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
         f"multi_event={args.multi_event} "
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
