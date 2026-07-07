@@ -31,6 +31,9 @@ import torch
 import torch.nn.functional as F
 
 from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
+from discrete_flow_sampler.constraints.masked_attention_swap_head import (
+    MaskedAttentionSwapHead,
+)
 from discrete_flow_sampler.constraints.swap_readout import LeTFMaskOneSwapHead
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
@@ -54,7 +57,8 @@ def build_head_and_target(
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
 
     head_kind defaults to mask_one so every recorded baseline stays
-    comparable; "interval" benches the one-pass spike head (K3 A/B)."""
+    comparable; "interval" benches the one-pass spike head (K3 A/B);
+    "masked_attention" benches the reported exclusion-mask head."""
     side = int(round(d**0.5))
     if side * side != d:
         raise ValueError(f"--d must be a square lattice site count, got {d}")
@@ -68,6 +72,8 @@ def build_head_and_target(
     ).to(device)
     if head_kind == "interval":
         head = IntervalSwapHead(backbone, pair_offsets=(1, side)).to(device)
+    elif head_kind == "masked_attention":
+        head = MaskedAttentionSwapHead(backbone, pair_offsets=(1, side)).to(device)
     else:
         head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
     return head, target
@@ -201,7 +207,8 @@ def main(argv=None):
     )
     parser.add_argument("--d", type=int, default=64, help="site count (D*D)")
     parser.add_argument(
-        "--head-kind", default="mask_one", choices=("mask_one", "interval")
+        "--head-kind", default="mask_one",
+        choices=("mask_one", "interval", "masked_attention"),
     )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)

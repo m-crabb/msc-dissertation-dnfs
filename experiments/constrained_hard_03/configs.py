@@ -33,6 +33,9 @@ from experiments.dnfs_baseline_01.configs import (
 from torch import Tensor
 
 from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
+from discrete_flow_sampler.constraints.masked_attention_swap_head import (
+    MaskedAttentionSwapHead,
+)
 from discrete_flow_sampler.constraints.swap_readout import (
     DoublyHollowSwapHead,
     LeTFMaskOneSwapHead,
@@ -50,13 +53,16 @@ class HardStageCfg(StageCfg):
     correctness gate), "mask_one" (LeTFMaskOneSwapHead, O(d), the efficient
     head that agrees with doubly_hollow numerically), "non_antisym"
     (NonAntisymSwapHead, a negative control that must never be used for a
-    real run -- see that class's docstring), or "interval"
+    real run -- see that class's docstring), "interval"
     (IntervalSwapHead, the one-pass three-interval spike head -- property-
-    equivalent to doubly_hollow, not numerically equal: different H).
+    equivalent to doubly_hollow, not numerically equal: different H), or
+    "masked_attention" (MaskedAttentionSwapHead, the reported one-pass head:
+    same three-interval structure, band aggregated by exclusion-mask
+    attention -- bit-exact blindness, decision 2026-07-07).
     """
 
     head_kind: Literal[
-        "doubly_hollow", "mask_one", "non_antisym", "interval"
+        "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention"
     ] = "doubly_hollow"
     # Anchor-batch chunk for the mask_one head's vectorised forward; None =
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
@@ -109,6 +115,10 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
         # Band pair-feature offsets (1, D): row and column adjacency of the
         # flattened D x D lattice -- the interactions the Ising energy uses.
         head = IntervalSwapHead(backbone, pair_offsets=(1, cfg.ising.D))
+    elif cfg.head_kind == "masked_attention":
+        # Same offsets rationale as "interval"; only the band aggregator
+        # differs (exclusion-mask attention, see the head's module docstring).
+        head = MaskedAttentionSwapHead(backbone, pair_offsets=(1, cfg.ising.D))
     else:
         raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
     if cfg.compile_head:
