@@ -81,7 +81,10 @@ def build_target_and_head(
         n_heads=cfg.model.n_heads,
         use_sdpa_readout=cfg.model.use_sdpa_readout,
     ).to(device)
-    return target, build_swap_head(cfg, backbone)
+    # .to(device) on the HEAD, not just the backbone: the wrapper heads are
+    # parameterless (no-op), but IntervalSwapHead owns band/position/readout
+    # modules that would otherwise stay on CPU (2026-07-07 Modal crash).
+    return target, build_swap_head(cfg, backbone).to(device)
 
 
 def final_eval(
