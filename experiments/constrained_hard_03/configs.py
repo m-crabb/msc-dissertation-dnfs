@@ -235,6 +235,32 @@ CONFIGS: dict[str, HardStageCfg] = {
             )
         ),
     ),
+    # Masked-attention twin of the PASSED 50k curriculum rung: every knob
+    # identical, ONLY head_kind differs. Serves three purposes at once
+    # (2026-07-07 head-switch follow-up): (i) true end-to-end wall-clock A/B
+    # vs the 6.8 h mask_one record (head-level bench says 5.4x on head fwd;
+    # the workload is eval-dominated, so the run measures what that buys);
+    # (ii) re-validates the new head at a non-enumerable size before D=16;
+    # (iii) retrains the 8x8 mixing-probe trend point so the probe's
+    # network-pass currency is single-architecture across sizes.
+    "H2_d64_c50_s223_letf_ma_50k_curr": _hard_cell(
+        "H2_d64_c50_s223_letf_ma_50k_curr", sigma=0.223,
+        head_kind="masked_attention",
+        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=256, n_eval_samples_training=512,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+                CurriculumStageCfg(start_step=30_000, sigma=0.223, lr=3e-4),
+            )
+        ),
+    ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
         D=8, n_euler_steps=128, n_eval_samples=5000,
