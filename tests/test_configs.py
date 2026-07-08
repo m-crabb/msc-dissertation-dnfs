@@ -440,6 +440,33 @@ def test_band_push_cells_mirror_ma_twin_except_declared_fields():
     assert replace(offsets, name=twin.name, pair_offsets=None) == twin
 
 
+def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():
+    """4x4 supervisor-demo cells (2026-07-08): single-variable twins of the
+    2k dh ladder — only name, head_kind and n_steps may differ, so head and
+    budget effects in the demo stay attributable."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    demo_cells = {
+        "H2_d16_c50_s010_letf_ma_10k": ("H2_d16_c50_s010_letf_dh", "masked_attention"),
+        "H2_d16_c50_s223_letf_ma_10k": ("H2_d16_c50_s223_letf_dh", "masked_attention"),
+        "H2_d16_c50_s010_letf_mo_10k": ("H2_d16_c50_s010_letf_dh", "mask_one"),
+        "H2_d16_c50_s223_letf_mo_10k": ("H2_d16_c50_s223_letf_dh", "mask_one"),
+    }
+    for demo_name, (ladder_name, head_kind) in demo_cells.items():
+        demo, ladder = CONFIGS[demo_name], CONFIGS[ladder_name]
+        assert demo.head_kind == head_kind
+        assert demo.train.n_steps == 10_000
+        rebuilt = replace(
+            demo,
+            name=ladder.name,
+            head_kind=ladder.head_kind,
+            train=replace(demo.train, n_steps=ladder.train.n_steps),
+        )
+        assert rebuilt == ladder
+
+
 def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]

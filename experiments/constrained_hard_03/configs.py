@@ -245,6 +245,27 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d16_c50_s010_letf_na": _hard_cell(
         "H2_d16_c50_s010_letf_na", sigma=0.10, head_kind="non_antisym",
     ),
+    # 4x4 supervisor-demo cells (2026-07-08): 10k-step MA/MO twins of the 2k
+    # dh ladder at the floor and critical rungs. Only head_kind and n_steps
+    # differ from the corresponding _dh cells (pinned by
+    # test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields); no
+    # curriculum -- the 2k sigma_c dh cell already passed the gate cold.
+    "H2_d16_c50_s010_letf_ma_10k": _hard_cell(
+        "H2_d16_c50_s010_letf_ma_10k", sigma=0.10,
+        head_kind="masked_attention", n_steps=10_000,
+    ),
+    "H2_d16_c50_s223_letf_ma_10k": _hard_cell(
+        "H2_d16_c50_s223_letf_ma_10k", sigma=0.223,
+        head_kind="masked_attention", n_steps=10_000,
+    ),
+    "H2_d16_c50_s010_letf_mo_10k": _hard_cell(
+        "H2_d16_c50_s010_letf_mo_10k", sigma=0.10,
+        head_kind="mask_one", n_steps=10_000,
+    ),
+    "H2_d16_c50_s223_letf_mo_10k": _hard_cell(
+        "H2_d16_c50_s223_letf_mo_10k", sigma=0.223,
+        head_kind="mask_one", n_steps=10_000,
+    ),
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
