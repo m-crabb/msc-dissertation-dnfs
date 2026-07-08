@@ -184,6 +184,23 @@ def demo_remote(seeds: str = "42,43,44", n_samples: int = 5000,
     volume.commit()
 
 
+@app.function(gpu="L4", volumes={"/results": volume}, timeout=60 * 60)
+def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
+    """Light GPU stage: pooled IS-weighted phi histograms for the demo cells
+    (mode-coverage exhibit); writes /results/demo_4x4/phi_hists.json."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.demo_4x4 import main as demo_main
+
+    demo_main([
+        "phi", "--results-dir", "/results", "--device", "cuda",
+        "--seeds", seeds, "--n-samples", str(n_samples),
+        "--out", "/results/demo_4x4",
+    ])
+    volume.commit()
+
+
 @app.function(
     # A100 like train_remote: the eval slices are exactly where the perf
     # profile showed the A100 win concentrating.
@@ -267,6 +284,12 @@ def demo(seeds: str = "42,43,44", n_samples: int = 5000, n_replicates: int = 5):
     demo_remote.remote(
         seeds=seeds, n_samples=n_samples, n_replicates=n_replicates
     )
+
+
+@app.local_entrypoint()
+def phihist(seeds: str = "42,43,44", n_samples: int = 5000):
+    """Blocking local CLI entry for the phi-histogram stage."""
+    phi_hist_remote.remote(seeds=seeds, n_samples=n_samples)
 
 
 @app.local_entrypoint()

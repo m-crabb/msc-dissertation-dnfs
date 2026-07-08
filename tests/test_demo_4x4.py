@@ -65,3 +65,29 @@ def test_pass_row_counter_mask_one_is_d_times_masked_attention():
         rows[head_kind] = counter.rows
     assert rows["masked_attention"] == batch
     assert rows["mask_one"] == d * batch
+
+
+def test_phi_support_and_exact_pmf_symmetry():
+    """phi support at D=4 is the 9 points -1..1 step 1/4 (phi = sum_L/8 on
+    the slice); the exact pmf is normalised and Z2-symmetric, with equal mass
+    in the two sectors -- the enumerated mode-coverage reference."""
+    from experiments.constrained_hard_03.demo_4x4 import (
+        exact_phi_pmf,
+        phi_mass_on_support,
+        phi_support,
+    )
+
+    support = phi_support(4)
+    np.testing.assert_allclose(support, np.arange(-8, 9, 2) / 8.0)
+
+    left = torch.ones(4, 4)
+    left[:, 2:] = -1.0
+    mass = phi_mass_on_support(np.array([1.0, 0.0]), np.array([0.5, 0.5]), 4)
+    assert mass[-1] == 0.5 and mass[4] == 0.5  # phi=+1 and phi=0 bins
+
+    target = FixedCompositionIsingTarget(
+        D=4, sigma=0.223, target_composition=0.5, bias=0.0, device="cpu"
+    )
+    pmf = exact_phi_pmf(target)
+    assert pmf.sum() == pytest.approx(1.0, abs=1e-6)
+    np.testing.assert_allclose(pmf, pmf[::-1], atol=1e-6)  # Z2 symmetry

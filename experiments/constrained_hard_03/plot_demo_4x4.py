@@ -135,6 +135,52 @@ def plot_neff_per_compute(table, out_path):
     plt.close(fig)
 
 
+def plot_phi_coverage(phi_hists, kawasaki_dir, out_path):
+    """Mode-coverage exhibit: exact enumerated pmf of the order parameter phi
+    vs the IS-weighted neural histograms and the pooled Kawasaki histogram,
+    one panel per sigma. Recovery of the full phi distribution (both Z2
+    sectors, equal mass) is the distributional coverage check the scalar
+    E[phi]=0 rows only imply statistically."""
+    from experiments.constrained_hard_03.demo_4x4 import (
+        exact_phi_pmf,
+        kawasaki_phi_mass,
+        phi_support,
+    )
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
+    sigmas = sorted({cell["sigma"] for cell in phi_hists})
+    support = phi_support(4)
+    fig, axes = plt.subplots(1, len(sigmas), figsize=(9.5, 3.8), sharey=True)
+    for ax, sigma in zip(axes, sigmas):
+        target = FixedCompositionIsingTarget(
+            D=4, sigma=sigma, target_composition=0.5, bias=0.0, device="cpu"
+        )
+        ax.plot(support, exact_phi_pmf(target), color=INK, linewidth=1.8,
+                marker="o", markersize=4, zorder=4, label=r"exact $\pi(\phi)$")
+        for cell in phi_hists:
+            if abs(cell["sigma"] - sigma) > 1e-9:
+                continue
+            ax.plot(cell["phi_support"], cell["phi_mass"],
+                    color=HEAD_HUES[cell["head_kind"]], linewidth=1.4,
+                    marker="o", markersize=3.5, alpha=0.85, zorder=3,
+                    label=cell["head_kind"])
+        ax.plot(support, kawasaki_phi_mass(kawasaki_dir, sigma, target, 20_000),
+                color=KAWASAKI_HUE, linewidth=1.4, marker="o", markersize=3.5,
+                alpha=0.85, zorder=2, label="kawasaki")
+        ax.set_title(f"$\\sigma$ = {sigma}", fontsize=9, color=INK)
+        ax.set_xlabel(r"mode order parameter $\phi$", fontsize=8, color=MUTED)
+        _style_axis(ax)
+    axes[0].set_ylabel("probability mass", fontsize=8, color=MUTED)
+    axes[0].legend(fontsize=7, frameon=False)
+    fig.suptitle(
+        "Mode coverage at the enumerable size: full distribution of $\\phi$ "
+        "vs exact enumeration", fontsize=10, color=INK,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(out_path, dpi=180)
+    plt.close(fig)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--demo-dir", default="results/03_hard/demo_4x4")
@@ -146,7 +192,15 @@ def main(argv=None):
     table = json.loads((demo_dir / "neff_table.json").read_text())
     plot_energy_marginals(neural, figures_dir / "energy_marginals.png")
     plot_neff_per_compute(table, figures_dir / "neff_per_compute.png")
-    print(f"[plot] wrote 2 figures to {figures_dir}", flush=True)
+    n_figures = 2
+    phi_json = demo_dir / "phi_hists.json"
+    if phi_json.exists():
+        plot_phi_coverage(
+            json.loads(phi_json.read_text()), demo_dir / "kawasaki",
+            figures_dir / "phi_coverage.png",
+        )
+        n_figures = 3
+    print(f"[plot] wrote {n_figures} figures to {figures_dir}", flush=True)
 
 
 if __name__ == "__main__":

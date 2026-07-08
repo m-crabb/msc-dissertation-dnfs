@@ -193,6 +193,89 @@ def gpu_stage(results_dir, out_path, seeds, n_samples, n_replicates, device):
     print(f"[demo] wrote {out_path}", flush=True)
 
 
+def phi_support(D):
+    """Exact support of phi on the 50/50 slice: sum_L = -sum_R forces
+    phi = (m_L - m_R)/2 = sum_L / (D*D/2), with sum_L over D*D/2 sites of
+    +/-1 taking even values in [-D*D/2, D*D/2] -- D*D/2 + 1 points."""
+    half = D * D // 2
+    return np.arange(-half, half + 1, 2) / half
+
+
+def phi_mass_on_support(phi_values, weights, D):
+    """Weighted mass of per-sample phi values on the exact support grid."""
+    half = D * D // 2
+    indices = np.rint((np.asarray(phi_values) * half + half) / 2).astype(int)
+    return np.bincount(
+        indices, weights=np.asarray(weights), minlength=half + 1
+    )
+
+
+def exact_phi_pmf(target):
+    """Exact pmf of phi under the enumerated conditional."""
+    all_states = enumerate_states(int(target.d))
+    log_pi = exact_log_probs(target, all_states)
+    slice_states, log_p_cond = conditional_pmf_at_composition(
+        all_states, log_pi, target.n_plus_target
+    )
+    phi = observable_values("phi", slice_states.float(), target).numpy()
+    return phi_mass_on_support(phi, log_p_cond.exp().numpy(), int(target.D))
+
+
+def phi_hist_stage(results_dir, out_path, seeds, n_samples, device):
+    """Light GPU stage: pooled IS-weighted phi histogram per demo cell (the
+    mode-coverage exhibit -- the earlier gpu stage kept only scalar means).
+    One fresh 5000-draw pass per (cell, seed), pooled across seeds."""
+    payload = []
+    for cfg_name in DEMO_CELLS:
+        cfg = CONFIGS[cfg_name]
+        n_euler_steps = cfg.ctmc.n_euler_steps
+        D = int(cfg.ising.D)
+        mass = np.zeros(D * D // 2 + 1)
+        for seed in seeds:
+            run_dir = latest_run_dir(results_dir, cfg_name, seed)
+            print(f"[demo/phi] {cfg_name} seed {seed}", flush=True)
+            head, target = load_run(run_dir, device)
+            with torch.no_grad():
+                seed_everything(20_000 + seed)
+                x0 = target.sample_base(n_samples, device=device)
+                ts = torch.linspace(0.0, 1.0, n_euler_steps + 1, device=device)
+                samples, log_w = sample_swap_ctmc(
+                    head, x0, ts, return_log_weights=True, target=target
+                )
+            weights = torch.softmax(log_w, dim=0).cpu().numpy()
+            phi = observable_values("phi", samples, target).cpu().numpy()
+            mass += phi_mass_on_support(phi, weights, D)
+        mass /= len(seeds)
+        payload.append({
+            "cfg": cfg_name, "sigma": float(cfg.ising.sigma),
+            "head_kind": cfg.head_kind,
+            "phi_support": phi_support(D).tolist(),
+            "phi_mass": mass.tolist(),
+        })
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2))
+    print(f"[demo/phi] wrote {out_path}", flush=True)
+
+
+def kawasaki_phi_mass(kawasaki_dir, sigma, target, burn_in_trials):
+    """Pooled unweighted phi histogram over the post-burn-in snapshots of
+    every chain at this sigma (chains equal-weighted)."""
+    D = int(target.D)
+    mass = np.zeros(D * D // 2 + 1)
+    n_chains = 0
+    for npz_path in sorted(Path(kawasaki_dir).glob("*.npz")):
+        data = np.load(npz_path)
+        if abs(float(data["sigma"]) - sigma) > 1e-9:
+            continue
+        spins = torch.tensor(data["spins"]).float()
+        kept = torch.tensor(data["mctrial"] > burn_in_trials)
+        phi = observable_values("phi", spins[kept], target).numpy()
+        mass += phi_mass_on_support(phi, np.full(len(phi), 1.0 / len(phi)), D)
+        n_chains += 1
+    return mass / n_chains
+
+
 def kawasaki_cell_estimates(kawasaki_dir, sigma, target, burn_in_trials):
     """Per chain: post-burn-in snapshot-mean estimates; cost = TOTAL trial
     steps (burn-in charged -- Kawasaki pays it in real use). Chains are
@@ -316,7 +399,7 @@ def _write_markdown_tables(table, neural, out_dir):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=["gpu", "local"])
+    parser.add_argument("stage", choices=["gpu", "phi", "local"])
     parser.add_argument("--results-dir", default="results/03_hard")
     parser.add_argument("--seeds", default="42,43,44")
     parser.add_argument("--n-samples", type=int, default=5000)
@@ -334,6 +417,12 @@ def main(argv=None):
             args.results_dir,
             Path(args.out) / "neural_estimates.json",
             seeds, args.n_samples, args.n_replicates, args.device,
+        )
+    elif args.stage == "phi":
+        phi_hist_stage(
+            args.results_dir,
+            Path(args.out) / "phi_hists.json",
+            seeds, args.n_samples, args.device,
         )
     else:
         assemble(args.neural_json, args.kawasaki_dir, args.out)
