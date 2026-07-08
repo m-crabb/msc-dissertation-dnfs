@@ -71,6 +71,15 @@ class HardStageCfg(StageCfg):
     # Opt-in torch.compile of the built head (Tier 2, default OFF). Head
     # only — the Euler loop's data-dependent sampling would graph-break.
     compile_head: bool = False
+    # Band-capacity knobs for the interval / masked_attention heads
+    # (band-capacity push, design docs/design/2026-07-08-band-capacity-push-
+    # design.md). None = the constructions every prior run used:
+    # band_feature_dim 16, attention_dim 32, pair_offsets (1, D) — row and
+    # column adjacency of the flattened D x D lattice. attention_dim is
+    # masked_attention-only (the interval head has no attention).
+    band_feature_dim: int | None = None
+    attention_dim: int | None = None
+    pair_offsets: tuple[int, ...] | None = None
 
 
 class NonAntisymSwapHead(nn.Module):
@@ -112,13 +121,22 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
     elif cfg.head_kind == "non_antisym":
         head = NonAntisymSwapHead(backbone)
     elif cfg.head_kind == "interval":
-        # Band pair-feature offsets (1, D): row and column adjacency of the
-        # flattened D x D lattice -- the interactions the Ising energy uses.
-        head = IntervalSwapHead(backbone, pair_offsets=(1, cfg.ising.D))
+        # Default offsets (1, D): row and column adjacency of the flattened
+        # D x D lattice -- the interactions the Ising energy is built from.
+        head = IntervalSwapHead(
+            backbone,
+            pair_offsets=cfg.pair_offsets or (1, cfg.ising.D),
+            band_feature_dim=cfg.band_feature_dim or 16,
+        )
     elif cfg.head_kind == "masked_attention":
         # Same offsets rationale as "interval"; only the band aggregator
         # differs (exclusion-mask attention, see the head's module docstring).
-        head = MaskedAttentionSwapHead(backbone, pair_offsets=(1, cfg.ising.D))
+        head = MaskedAttentionSwapHead(
+            backbone,
+            pair_offsets=cfg.pair_offsets or (1, cfg.ising.D),
+            band_feature_dim=cfg.band_feature_dim or 16,
+            attention_dim=cfg.attention_dim or 32,
+        )
     else:
         raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
     if cfg.compile_head:

@@ -256,3 +256,29 @@ def test_head_parameters_receive_grad_and_grads_finite():
         "attention_readout unexpectedly live; the one-pass design routed "
         "through the machinery it exists to replace"
     )
+
+
+def test_blindness_holds_at_tuned_band_capacity():
+    """The band-capacity knobs (design 2026-07-08) must not perturb the
+    exclusion logic: H_ij stays EXACTLY unchanged under any flip of x_i /
+    x_j at non-default widths and offsets, including an offset (4) that is
+    neither row nor column adjacency."""
+    torch.manual_seed(0)
+    backbone = LeTFRateMatrix(
+        d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2,
+        use_sdpa_readout=False,
+    )
+    head = MaskedAttentionSwapHead(
+        backbone, pair_offsets=(1, 2, 4, 8), band_feature_dim=32, attention_dim=64
+    )
+    head.eval()
+    x = torch.randint(0, 2, (3, 16)).float() * 2 - 1
+    t = torch.rand(3)
+    H = head.compute_pair_context(x, t)
+    for i, j in ((0, 5), (4, 11), (14, 15)):
+        for flip_sites in ((i,), (j,), (i, j)):
+            x_flipped = x.clone()
+            for site in flip_sites:
+                x_flipped[:, site] = -x_flipped[:, site]
+            H_flipped = head.compute_pair_context(x_flipped, t)
+            assert torch.equal(H[:, i, j], H_flipped[:, i, j])

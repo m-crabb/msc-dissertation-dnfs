@@ -373,6 +373,46 @@ def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
     assert build_swap_head(chunked, backbone).anchor_chunk_size == 32
 
 
+def test_hard_cfg_band_capacity_knobs_reach_band_heads():
+    """Band-capacity push (design 2026-07-08): band_feature_dim /
+    attention_dim / pair_offsets must be settable from HardStageCfg,
+    defaulting to None = the constructions every prior run used (offsets
+    (1, D), feature width 16, attention width 32), so existing cells build
+    byte-identical heads."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+
+    cfg = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    backbone = LeTFRateMatrix(
+        d=64, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
+    )
+
+    assert (cfg.band_feature_dim, cfg.attention_dim, cfg.pair_offsets) == (
+        None, None, None,
+    )
+    default_head = build_swap_head(cfg, backbone)
+    assert default_head.pair_offsets == (1, cfg.ising.D)
+    assert default_head.band_unary_features[-1].out_features == 16
+    assert default_head.band_query_projections[0].out_features == 32
+
+    tuned = replace(
+        cfg, band_feature_dim=32, attention_dim=64, pair_offsets=(1, 2, 8, 16)
+    )
+    tuned_head = build_swap_head(tuned, backbone)
+    assert tuned_head.pair_offsets == (1, 2, 8, 16)
+    assert len(tuned_head.band_pair_features) == 4
+    assert tuned_head.band_unary_features[-1].out_features == 32
+    assert tuned_head.band_query_projections[0].out_features == 64
+
+    interval = replace(tuned, head_kind="interval")
+    interval_head = build_swap_head(interval, backbone)
+    assert interval_head.pair_offsets == (1, 2, 8, 16)
+    assert interval_head.band_unary_features[-1].out_features == 32
+
+
 def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
