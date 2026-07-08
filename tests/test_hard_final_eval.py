@@ -107,6 +107,33 @@ def test_eval_only_recovers_eval_artefacts_from_run_dir(tmp_path, monkeypatch):
     assert metrics["n_eval_samples"] == 10
 
 
+def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
+    tmp_path, monkeypatch
+):
+    """Run dirs written before a defaulted HardStageCfg field existed lack its
+    key in config.json; eval_only must treat the absence as "ran with the
+    then-default" instead of rejecting the dir as drifted (the strict guard
+    would otherwise break the recovery path for every historical run each
+    time the dataclass grows a knob)."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg()
+    monkeypatch.setattr(
+        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
+    )
+    run_dir = tmp_path / "legacy"
+    (run_dir / "checkpoints").mkdir(parents=True)
+    saved = asdict(cfg)
+    del saved["anchor_chunk_size"]  # default None
+    del saved["compile_head"]  # default False — fill must use the field default
+    (run_dir / "config.json").write_text(json.dumps(saved))
+    _, head = build_target_and_head(cfg, "cpu")
+    torch.save(head.state_dict(), run_dir / "checkpoints" / "final.pt")
+
+    metrics = eval_only(run_dir)
+
+    assert metrics["n_eval_samples"] == 10
+
+
 def test_eval_only_rejects_config_drift(tmp_path, monkeypatch):
     """A run dir whose recorded config no longer matches CONFIGS must fail
     loudly rather than silently eval under the wrong settings."""

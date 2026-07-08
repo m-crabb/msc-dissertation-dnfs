@@ -13,7 +13,7 @@ masked body passes per forward, so full eval batches are slow on CPU).
 import argparse
 import json
 import time
-from dataclasses import asdict, replace
+from dataclasses import MISSING, asdict, fields, replace
 from pathlib import Path
 
 import torch
@@ -224,6 +224,12 @@ def eval_only(run_dir: str | Path, multi_event: bool = False) -> dict:
     same draw protocol, matching step instead of one-event)."""
     run_dir = Path(run_dir)
     saved = json.loads((run_dir / "config.json").read_text())
+    # Run dirs written before a defaulted HardStageCfg field existed lack its
+    # key: treat the absence as "ran with the then-default" and fill it in
+    # before the drift comparison. Keys that ARE present must still match.
+    for cfg_field in fields(HardStageCfg):
+        if cfg_field.name not in saved and cfg_field.default is not MISSING:
+            saved[cfg_field.name] = json.loads(json.dumps(cfg_field.default))
     cfg = CONFIGS[saved["name"]]
     cfg = replace(
         cfg,
