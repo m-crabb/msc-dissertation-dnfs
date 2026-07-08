@@ -15,7 +15,7 @@ phase transition (σ_c ≈ 0.22305) with the correctness-gate
 for Task 9's ablation.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 import torch
@@ -196,6 +196,40 @@ def _hard_cell(
     )
 
 
+# The proven sigma-plateau ladder for the d=64 sigma_c rung (the baseline
+# stage_3 conv-critical recipe, final stage at the hard cells' 0.223; LR
+# drops when the near-critical variance spike begins at sigma=0.205).
+_D64_SIGMA_LADDER = CurriculumCfg(
+    stages=(
+        CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+        CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+        CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+        CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+        CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+        CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+        CurriculumStageCfg(start_step=30_000, sigma=0.223, lr=3e-4),
+    )
+)
+
+
+def _d64_50k_curriculum_cell(
+    name: str, head_kind: str, **head_knobs
+) -> HardStageCfg:
+    """The d=64 sigma_c 50k-curriculum recipe — the shape of the PASSED D=8
+    rung. Every band-capacity-push cell shares it verbatim and differs only
+    in head_kind and the declared head knobs, so outcome differences are
+    attributable to the declared change (design 2026-07-08; twin-ness is
+    pinned by test_band_push_cells_mirror_ma_twin_except_declared_fields)."""
+    cell = _hard_cell(
+        name, sigma=0.223, head_kind=head_kind,
+        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=256, n_eval_samples_training=512,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        curriculum=_D64_SIGMA_LADDER,
+    )
+    return replace(cell, **head_knobs)
+
+
 CONFIGS: dict[str, HardStageCfg] = {
     "H2_d16_c50_s010_letf_dh": _hard_cell(
         "H2_d16_c50_s010_letf_dh", sigma=0.10, head_kind="doubly_hollow",
@@ -236,22 +270,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # 5k plateaus, LR drop when the near-critical variance spike begins at
     # sigma=0.205, 40% of the budget on the final plateau). Final sigma is the
     # hard cells' 0.223, matching the D=4 reference chain and the 25k probe.
-    "H2_d64_c50_s223_letf_mo_50k_curr": _hard_cell(
-        "H2_d64_c50_s223_letf_mo_50k_curr", sigma=0.223, head_kind="mask_one",
-        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=256, n_eval_samples_training=512,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
-        curriculum=CurriculumCfg(
-            stages=(
-                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
-                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
-                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
-                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
-                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
-                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
-                CurriculumStageCfg(start_step=30_000, sigma=0.223, lr=3e-4),
-            )
-        ),
+    "H2_d64_c50_s223_letf_mo_50k_curr": _d64_50k_curriculum_cell(
+        "H2_d64_c50_s223_letf_mo_50k_curr", head_kind="mask_one",
     ),
     # Masked-attention twin of the PASSED 50k curriculum rung: every knob
     # identical, ONLY head_kind differs. Serves three purposes at once
@@ -261,23 +281,27 @@ CONFIGS: dict[str, HardStageCfg] = {
     # (ii) re-validates the new head at a non-enumerable size before D=16;
     # (iii) retrains the 8x8 mixing-probe trend point so the probe's
     # network-pass currency is single-architecture across sizes.
-    "H2_d64_c50_s223_letf_ma_50k_curr": _hard_cell(
-        "H2_d64_c50_s223_letf_ma_50k_curr", sigma=0.223,
-        head_kind="masked_attention",
-        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=256, n_eval_samples_training=512,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
-        curriculum=CurriculumCfg(
-            stages=(
-                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
-                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
-                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
-                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
-                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
-                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
-                CurriculumStageCfg(start_step=30_000, sigma=0.223, lr=3e-4),
-            )
-        ),
+    "H2_d64_c50_s223_letf_ma_50k_curr": _d64_50k_curriculum_cell(
+        "H2_d64_c50_s223_letf_ma_50k_curr", head_kind="masked_attention",
+    ),
+    # Band-capacity push batch 1 (design docs/design/2026-07-08-band-
+    # capacity-push-design.md): three single-variable twins of ma_50k_curr.
+    # The discriminator: interval head, head_kind is the ONLY change.
+    # Separates "shared band content is the bottleneck" (lands in the MA
+    # band ~0.75-0.78) from "the MA aggregator is" (lands well above it).
+    "H2_d64_c50_s223_letf_iv_50k_curr": _d64_50k_curriculum_cell(
+        "H2_d64_c50_s223_letf_iv_50k_curr", head_kind="interval",
+    ),
+    # H-width: double the band feature and attention widths, nothing else.
+    "H2_d64_c50_s223_letf_ma_wide_50k_curr": _d64_50k_curriculum_cell(
+        "H2_d64_c50_s223_letf_ma_wide_50k_curr", head_kind="masked_attention",
+        band_feature_dim=32, attention_dim=64,
+    ),
+    # H-offsets: band also sees offset-2 / offset-2D bond families (second-
+    # neighbour row/column pairs), beyond the energy's (1, D).
+    "H2_d64_c50_s223_letf_ma_offs_50k_curr": _d64_50k_curriculum_cell(
+        "H2_d64_c50_s223_letf_ma_offs_50k_curr", head_kind="masked_attention",
+        pair_offsets=(1, 2, 8, 16),
     ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",

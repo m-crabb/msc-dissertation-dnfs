@@ -413,6 +413,33 @@ def test_hard_cfg_band_capacity_knobs_reach_band_heads():
     assert interval_head.band_unary_features[-1].out_features == 32
 
 
+def test_band_push_cells_mirror_ma_twin_except_declared_fields():
+    """Band-capacity push batch 1 (design 2026-07-08): each cell must be a
+    single-variable twin of H2_d64_c50_s223_letf_ma_50k_curr so its outcome
+    is attributable to the declared change alone (the discriminator changes
+    the head kind; the other two change exactly one capacity axis)."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+
+    discriminator = CONFIGS["H2_d64_c50_s223_letf_iv_50k_curr"]
+    assert discriminator.head_kind == "interval"
+    assert replace(discriminator, name=twin.name, head_kind=twin.head_kind) == twin
+
+    wide = CONFIGS["H2_d64_c50_s223_letf_ma_wide_50k_curr"]
+    assert (wide.band_feature_dim, wide.attention_dim) == (32, 64)
+    assert (
+        replace(wide, name=twin.name, band_feature_dim=None, attention_dim=None)
+        == twin
+    )
+
+    offsets = CONFIGS["H2_d64_c50_s223_letf_ma_offs_50k_curr"]
+    assert offsets.pair_offsets == (1, 2, 8, 16)
+    assert replace(offsets, name=twin.name, pair_offsets=None) == twin
+
+
 def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
