@@ -164,6 +164,26 @@ def gate_remote(
     volume.commit()
 
 
+@app.function(gpu="L4", volumes={"/results": volume}, timeout=2 * 60 * 60)
+def demo_remote(seeds: str = "42,43,44", n_samples: int = 5000,
+                n_replicates: int = 5):
+    """GPU stage of the 4x4 demo analysis (2026-07-08): gate fidelity +
+    neural replicate estimates for the 10k MA/MO cells; writes
+    /results/demo_4x4/neural_estimates.json. L4 suffices at d=16."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.demo_4x4 import main as demo_main
+
+    demo_main([
+        "gpu", "--results-dir", "/results", "--device", "cuda",
+        "--seeds", seeds, "--n-samples", str(n_samples),
+        "--n-replicates", str(n_replicates),
+        "--out", "/results/demo_4x4",
+    ])
+    volume.commit()
+
+
 @app.function(
     # A100 like train_remote: the eval slices are exactly where the perf
     # profile showed the A100 win concentrating.
@@ -238,6 +258,15 @@ def gate(seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = F
     """Local CLI entry for the gate: blocking `.remote()` so the per-run
     progress prints stream back to the local terminal."""
     gate_remote.remote(seeds=seeds, n_samples=n_samples, skip_controls=skip_controls)
+
+
+@app.local_entrypoint()
+def demo(seeds: str = "42,43,44", n_samples: int = 5000, n_replicates: int = 5):
+    """Blocking local CLI entry for the 4x4 demo GPU stage (per-cell progress
+    prints stream back to the local terminal)."""
+    demo_remote.remote(
+        seeds=seeds, n_samples=n_samples, n_replicates=n_replicates
+    )
 
 
 @app.local_entrypoint()
