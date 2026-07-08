@@ -380,3 +380,23 @@ def test_diagonal_correlation_checkerboard_is_plus_one():
     row, col = coords // 4, coords % 4
     x = ((-1.0) ** (row + col)).unsqueeze(0)     # (1, 16)
     assert torch.allclose(diagonal_correlation(x, 4), torch.ones(1), atol=1e-6)
+
+
+def test_half_magnetisation_order_parameter_modes_and_checkerboard():
+    """phi = +1 / -1 on the two phase-separated modes, 0 on the checkerboard:
+    the coverage observable of the frozen probe metric (pre-reg §2)."""
+    from discrete_flow_sampler.diagnostics.metrics import (
+        half_magnetisation_order_parameter,
+    )
+
+    D = 4
+    grid = torch.ones(D, D)
+    grid[:, D // 2:] = -1.0                       # left half +1, right half -1
+    left_phase = grid.reshape(-1)
+    right_phase = -left_phase                     # the Z2 partner mode
+    coords = torch.arange(D * D)
+    row, col = coords // D, coords % D
+    checkerboard = ((-1.0) ** (row + col)).float()
+    states = torch.stack([left_phase, right_phase, checkerboard])
+    phi = half_magnetisation_order_parameter(states, D)
+    assert torch.allclose(phi, torch.tensor([1.0, -1.0, 0.0]), atol=1e-6)

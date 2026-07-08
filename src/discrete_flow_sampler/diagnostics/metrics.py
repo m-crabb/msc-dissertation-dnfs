@@ -451,3 +451,19 @@ def diagonal_correlation(x: Tensor, D: int) -> Tensor:
     A_diag = A_diag + A_diag.T
     quadratic = torch.einsum("bi,ij,bj->b", x, A_diag, x)
     return quadratic / A_diag.sum()
+
+
+def half_magnetisation_order_parameter(x: Tensor, D: int) -> Tensor:
+    """Mode order parameter phi = (m_left - m_right) / 2 on the DxD torus, (B,).
+
+    m_left / m_right are the mean spins of columns [0, D//2) and [D//2, D) of
+    the row-major flattening; the half factor puts phi in [-1, 1]. At fixed
+    50/50 composition the two phase-separated modes give phi = +1 / -1 while
+    total magnetisation is constant on the slice, so phi is the mode-coverage
+    observable of the frozen mixing-probe metric (pre-registration 2026-07-03
+    §2); E_pi[phi] = 0 by the global spin-flip symmetry of the slice.
+    """
+    grid = x.float().reshape(*x.shape[:-1], D, D)
+    m_left = grid[..., :, : D // 2].mean(dim=(-2, -1))
+    m_right = grid[..., :, D // 2:].mean(dim=(-2, -1))
+    return 0.5 * (m_left - m_right)
