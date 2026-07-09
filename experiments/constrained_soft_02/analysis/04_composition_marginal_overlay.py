@@ -249,7 +249,7 @@ def run_single(args: argparse.Namespace) -> None:
 
     # (b) violating mass vs lambda: never reaches 0 at finite, samplable lambda.
     axr.plot(lam_grid, off_grid, "-o", color="C0", ms=4)
-    axr.plot([lam], [off_slice], marker="*", color="C3", ms=16,
+    axr.plot([lam], [off_slice], marker="*", color="C3", ms=16, ls="none",
              label=f"operating point $\\lambda={lam:g}$ ({off_slice:.1%})")
     axr.set_xscale("log")
     axr.set_xlabel(r"penalty strength $\lambda$")
