@@ -258,6 +258,148 @@ def test_head_parameters_receive_grad_and_grads_finite():
     )
 
 
+def _stencil_head(d=16, offsets=(1, 4), lattice_side=4, seed=42):
+    """MA head with the 5-point stencil family live (design 2026-07-08 §5.i).
+
+    d=16 / lattice_side=4 is the smallest square grid where a wide pair such
+    as (0, 15) admits interior stencil centres (i+side < k < j-side), so the
+    coverage/teeth probes have something to bite on; narrow pairs still fall
+    entirely inside the collar.
+    """
+    torch.manual_seed(seed)
+    backbone = LeTFRateMatrix(
+        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        use_sdpa_readout=False,
+    )
+    head = MaskedAttentionSwapHead(
+        backbone, pair_offsets=offsets, use_stencil=True, lattice_side=lattice_side,
+    )
+    head.eval()
+    return head
+
+
+@torch.no_grad()
+def test_stencil_band_blind_exactly():
+    """The stencil family must not break the head's reason for existing: with
+    it live, band[:, i, j] stays EXACTLY unchanged under any flip of x_i / x_j.
+    Visibility (k - side > i AND k + side < j) is index arithmetic, so every
+    excluded centre carries softmax weight +0.0 -- the exact-0.0 bar holds."""
+    head = _stencil_head()
+    x = _state(d=16)
+    t = torch.rand(1)
+    band = head.band_summaries(x, t)
+    for i, j in ((0, 15), (3, 12), (2, 5)):
+        for flipped, label in (
+            (_flip(x, i), f"x_{i}"),
+            (_flip(x, j), f"x_{j}"),
+            (_flip(x, i, j), f"x_{i} and x_{j}"),
+        ):
+            drift = _drift(
+                head.band_summaries(flipped, t)[:, i, j, :], band[:, i, j, :]
+            )
+            assert drift == 0.0, f"stencil band[{i},{j}] leaks {label}: {drift:.2e}"
+
+
+@torch.no_grad()
+def test_stencil_collar_and_coverage():
+    """The ±side reach leaves a collar (~side sites round each hole) with no
+    stencil coverage; the family is exact zero for any pair whose interior
+    holds no admissible centre, and nonzero once a wide pair does. Stencil is
+    the LAST band-feature family, so its block is the trailing F channels."""
+    head = _stencil_head()
+    F = head.band_stencil_features[-1].out_features
+    x = _state(d=16)
+    band = head.band_summaries(x, torch.rand(1))
+
+    def stencil_block(i, j):
+        return band[:, i, j, -F:]
+
+    # No centre survives i + side < k < j - side for these -> exact zero.
+    assert (stencil_block(0, 8) == 0.0).all(), "collar pair: stencil block nonzero"
+    assert (stencil_block(3, 4) == 0.0).all(), "adjacent pair: stencil nonzero"
+    # A wide pair does admit interior centres -> genuinely nonzero.
+    assert (stencil_block(0, 15) != 0.0).any(), (
+        "wide pair has no live stencil centre: over-masked"
+    )
+
+
+@torch.no_grad()
+def test_stencil_visibility_is_exact_index_arithmetic():
+    """Sharp visibility probe on the stencil block for pair (0, 15), side 4:
+    centre k is live iff 4 < k < 11. A hole flip must not move it (blindness),
+    a flip of a touched interior site MUST (teeth), and a flip of a site no
+    live centre touches must NOT -- pinning the k±side straddle exclusion."""
+    head = _stencil_head()
+    F = head.band_stencil_features[-1].out_features
+    x = _state(d=16)
+    t = torch.rand(1)
+    i, j = 0, 15
+    base = head.band_summaries(x, t)[:, i, j, -F:]
+
+    def moved(site):
+        return _drift(head.band_summaries(_flip(x, site), t)[:, i, j, -F:], base)
+
+    assert moved(i) == 0.0 and moved(j) == 0.0, "stencil block leaks a hole"
+    assert moved(7) > 1e-7, "stencil ignores a covered interior site (no teeth)"
+
+
+@torch.no_grad()
+def test_stencil_empty_centre_range_is_zero_and_finite():
+    """Boundary term-range guard: centres exist only for side <= k < d - side,
+    so d = 2*side leaves NO centre. The family must be all-zero and finite --
+    the fully-masked-softmax NaN trap this head is built to avoid."""
+    head = _stencil_head(d=4, offsets=(1, 2), lattice_side=2)
+    F = head.band_stencil_features[-1].out_features
+    band = head.band_summaries(_state(d=4), torch.rand(1))
+    assert torch.isfinite(band).all(), "empty stencil range produced non-finite band"
+    assert (band[..., -F:] == 0.0).all(), "empty centre range must zero the stencil"
+
+
+@torch.no_grad()
+def test_stencil_antisymmetric_at_init_exactly():
+    """K1 for the stencil variant: exact blindness => exact state-swap
+    antisymmetry G(i,j|x) = -G(i,j|Swap2(x,i,j)), residual 0.0."""
+    head = _stencil_head()
+    x = _state(d=16)
+    t = torch.rand(1)
+    G = head(x, t)
+    worst = max(
+        (G[0, i, j] + head(swap2(x, i, j), t)[0, i, j]).abs().item()
+        for i, j in _active_pairs(x)
+    )
+    assert worst == 0.0, f"stencil breaks antisymmetry: {worst:.2e}"
+
+
+def test_stencil_off_adds_nothing():
+    """Byte-identity guard: the default head is unchanged -- no stencil module,
+    so every existing MA cell builds the head it always did."""
+    torch.manual_seed(0)
+    backbone = LeTFRateMatrix(
+        d=16, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        use_sdpa_readout=False,
+    )
+    head = MaskedAttentionSwapHead(backbone, pair_offsets=(1, 4))
+    assert head.use_stencil is False
+    assert not hasattr(head, "band_stencil_features")
+    assert len(head.band_query_projections) == 3  # unary + two offsets, no stencil
+
+
+def test_stencil_head_parameters_receive_finite_grad():
+    """Every head-owned module -- including the stencil MLP and its
+    query/key projections -- must be live in the graph with finite grads,
+    even with a forced empty-band adjacent pair in the batch."""
+    head = _stencil_head()
+    head.train()
+    x = _state(d=16)
+    x[0, 3], x[0, 4] = 1.0, -1.0  # active adjacent pair => empty band row
+    head(x, torch.rand(1)).sum().backward()
+    for name, param in head.named_parameters():
+        if "backbone" in name:
+            continue
+        assert param.grad is not None, f"head module dead in graph: {name}"
+        assert torch.isfinite(param.grad).all(), f"non-finite grad: {name}"
+
+
 def test_blindness_holds_at_tuned_band_capacity():
     """The band-capacity knobs (design 2026-07-08) must not perturb the
     exclusion logic: H_ij stays EXACTLY unchanged under any flip of x_i /

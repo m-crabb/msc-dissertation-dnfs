@@ -87,6 +87,12 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
 
     Args (beyond IntervalSwapHead's):
         attention_dim: query/key width of the per-family band attention.
+        use_stencil: add the 5-point lattice-stencil band-feature family
+            (design 2026-07-08 §5.i). Off by default so every existing MA
+            cell keeps building a byte-identical head. See `band_summaries`.
+        lattice_side: side length D of the flattened D x D grid the stencil's
+            column neighbours x_{k±D} address. None infers round(sqrt(d))
+            and asserts squareness -- pass it explicitly for non-square d.
     """
 
     def __init__(
@@ -96,9 +102,15 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         band_feature_dim: int = 16,
         position_dim: int = 16,
         attention_dim: int = 32,
+        use_stencil: bool = False,
+        lattice_side: int | None = None,
     ):
         super().__init__(backbone, pair_offsets, band_feature_dim, position_dim)
-        n_families = 1 + len(self.pair_offsets)
+        self.use_stencil = use_stencil
+        hidden = backbone.hidden_dim
+        # The stencil is one extra band-feature family, so it gets its own
+        # attention query/key projection alongside the unary + offset ones.
+        n_families = 1 + len(self.pair_offsets) + (1 if use_stencil else 0)
         self.attention_scale = attention_dim**-0.5
         self.band_query_projections = nn.ModuleList(
             nn.Linear(2 * position_dim, attention_dim) for _ in range(n_families)
@@ -107,6 +119,35 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             nn.Linear(band_feature_dim + position_dim, attention_dim)
             for _ in range(n_families)
         )
+        if use_stencil:
+            self.stencil_side = (
+                lattice_side if lattice_side is not None else round(self.d**0.5)
+            )
+            if self.stencil_side**2 != self.d:
+                raise ValueError(
+                    f"stencil needs a square lattice: side {self.stencil_side} "
+                    f"does not tile d={self.d}; pass lattice_side explicitly"
+                )
+            # Per-term feature over the 5-point neighbourhood {k, k±1, k±D}:
+            # a depth-1 local 2D statistic (the object Ising energy diffs turn
+            # on), still blind because exclusion is index arithmetic (below).
+            self.band_stencil_features = nn.Sequential(
+                nn.Linear(5 * hidden, band_feature_dim),
+                nn.GELU(),
+                nn.Linear(band_feature_dim, band_feature_dim),
+            )
+            # One extra family widens the band block, so the inherited
+            # pair_readout's input is now band_feature_dim too narrow: rebuild
+            # it. The narrow one the parent drew is discarded (one wasted init
+            # draw -- harmless; use_stencil=False never enters here, so those
+            # cells stay byte-identical to pre-stencil code).
+            band_dim = band_feature_dim * n_families
+            readout_in = 2 * hidden + band_dim + 2 * position_dim
+            self.pair_readout = nn.Sequential(
+                nn.Linear(readout_in, 2 * hidden),
+                nn.GELU(),
+                nn.Linear(2 * hidden, hidden),
+            )
 
     def _attend_band_family(
         self,
@@ -146,6 +187,10 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         softmax weight +0.0 (module docstring). Empty intervals are exact
         zeros. Only the i < j triangle is consumed downstream; the lower
         triangle's visibility set is empty, so it holds zeros here.
+
+        When use_stencil is set, a final 5-point lattice-stencil family is
+        appended (trailing F channels); see the inline note below and design
+        2026-07-08 §5.i.
         """
         del t
         x_idx = ((x + 1) / 2).long()
@@ -189,6 +234,44 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                     pair_query_input,
                     term_features,
                     position[:n_terms].unsqueeze(0),
+                    visible,
+                )
+            )
+        if self.use_stencil:
+            # 5-point lattice-stencil family (design 2026-07-08 §5.i). Per-term
+            # feature s_k = MLP(emb(x_k) ++ emb(x_{k±1}) ++ emb(x_{k±side})) --
+            # a 2D neighbourhood statistic, richer than the unary/offset terms
+            # that capped the one-pass family at ~0.78 (H-shared).
+            #
+            # Centres exist only for side <= k < d - side (raster-boundary
+            # sites lack a k±side neighbour); the range is empty when d = 2*side.
+            # Straddle exclusion: centre k touches {k-side .. k+side}, all strictly
+            # interior iff k - side > i AND k + side < j -- index arithmetic, so
+            # blindness is value-independent, like every other family. The ±side
+            # reach leaves an uncovered collar round each hole; the narrow
+            # families above cover it, forming a locality ladder.
+            side = self.stencil_side
+            centres = torch.arange(side, d - side, device=x.device)
+            stencil_features = self.band_stencil_features(
+                torch.cat(
+                    [
+                        emb[:, centres],
+                        emb[:, centres - 1],
+                        emb[:, centres + 1],
+                        emb[:, centres - side],
+                        emb[:, centres + side],
+                    ],
+                    dim=-1,
+                )
+            )  # (B, n_centres, F); n_centres = 0 (empty) when d <= 2*side
+            centre_slot = centres.view(1, 1, -1)
+            visible = (centre_slot - side > site_i) & (centre_slot + side < site_j)
+            families.append(
+                self._attend_band_family(
+                    len(families),  # stencil is the last family
+                    pair_query_input,
+                    stencil_features,
+                    position[centres].unsqueeze(0),
                     visible,
                 )
             )
