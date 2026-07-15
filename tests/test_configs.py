@@ -412,6 +412,14 @@ def test_hard_cfg_band_capacity_knobs_reach_band_heads():
     assert interval_head.pair_offsets == (1, 2, 8, 16)
     assert interval_head.band_unary_features[-1].out_features == 32
 
+    # Stencil family (design §5.i): use_stencil defaults off (byte-identical
+    # head) and, when set, builds a stencil MLP addressing the D x D grid.
+    assert cfg.use_stencil is False
+    assert not hasattr(default_head, "band_stencil_features")
+    stencil_head = build_swap_head(replace(cfg, use_stencil=True), backbone)
+    assert stencil_head.stencil_side == cfg.ising.D
+    assert stencil_head.band_stencil_features[0].in_features == 5 * 16
+
 
 def test_band_push_cells_mirror_ma_twin_except_declared_fields():
     """Band-capacity push batch 1 (design 2026-07-08): each cell must be a
@@ -438,6 +446,11 @@ def test_band_push_cells_mirror_ma_twin_except_declared_fields():
     offsets = CONFIGS["H2_d64_c50_s223_letf_ma_offs_50k_curr"]
     assert offsets.pair_offsets == (1, 2, 8, 16)
     assert replace(offsets, name=twin.name, pair_offsets=None) == twin
+
+    # Round-2 stencil family (design §5.i): use_stencil is the only change.
+    stencil = CONFIGS["H2_d64_c50_s223_letf_ma_stencil_50k_curr"]
+    assert stencil.use_stencil is True and twin.use_stencil is False
+    assert replace(stencil, name=twin.name, use_stencil=False) == twin
 
 
 def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():

@@ -80,6 +80,11 @@ class HardStageCfg(StageCfg):
     band_feature_dim: int | None = None
     attention_dim: int | None = None
     pair_offsets: tuple[int, ...] | None = None
+    # Round-2 stencil family (design §5.i): add the 5-point lattice-stencil
+    # band-feature family to the masked_attention head. False = the depth-1
+    # unary+offset band every prior run used. lattice_side is cfg.ising.D
+    # (the flattened D x D grid), so no separate field is needed.
+    use_stencil: bool = False
 
 
 class NonAntisymSwapHead(nn.Module):
@@ -136,6 +141,8 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             pair_offsets=cfg.pair_offsets or (1, cfg.ising.D),
             band_feature_dim=cfg.band_feature_dim or 16,
             attention_dim=cfg.attention_dim or 32,
+            use_stencil=cfg.use_stencil,
+            lattice_side=cfg.ising.D,
         )
     else:
         raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
@@ -323,6 +330,15 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_ma_offs_50k_curr": _d64_50k_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_offs_50k_curr", head_kind="masked_attention",
         pair_offsets=(1, 2, 8, 16),
+    ),
+    # Round-2 stencil family (design §5.i): the reported MA head + the 5-point
+    # lattice-stencil band family (neighbours ±1, ±D on the flattened D x D
+    # grid), narrow unary+offset families kept alongside to cover the collar.
+    # use_stencil is the ONLY change vs ma_50k_curr -- the probe of whether a
+    # richer 2D-local band content lifts the ~0.78 H-shared ceiling.
+    "H2_d64_c50_s223_letf_ma_stencil_50k_curr": _d64_50k_curriculum_cell(
+        "H2_d64_c50_s223_letf_ma_stencil_50k_curr", head_kind="masked_attention",
+        use_stencil=True,
     ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
