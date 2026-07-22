@@ -498,6 +498,64 @@ def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
     assert replace(long_stencil, name=long_ma.name, use_stencil=False) == long_ma
 
 
+def test_grouped_anchor_cells_mirror_ma_twin_except_declared_fields():
+    """Grouped-anchor batch 1 (avenues doc §4c): each cell must be a
+    single-variable twin of H2_d64_c50_s223_letf_ma_50k_curr apart from the
+    head selection and its declared knobs, so the result reads against the
+    existing ladder rungs rather than against a different recipe. ga16 differs
+    from ga8 by k alone (the cost dial) and ga8_contig by grouping alone (the
+    dispersal control) -- both must hold, or neither comparison is clean."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    ga8 = CONFIGS["H2_d64_c50_s223_letf_ga8_50k_curr"]
+    ga16 = CONFIGS["H2_d64_c50_s223_letf_ga16_50k_curr"]
+    contiguous = CONFIGS["H2_d64_c50_s223_letf_ga8_contig_50k_curr"]
+
+    for cell, n_groups, grouping in (
+        (ga8, 8, "diagonal"), (ga16, 16, "diagonal"), (contiguous, 8, "contiguous"),
+    ):
+        assert cell.head_kind == "grouped_anchor"
+        assert (cell.n_groups, cell.grouping) == (n_groups, grouping)
+        normalised = replace(
+            cell, name=twin.name, head_kind=twin.head_kind,
+            n_groups=None, grouping="diagonal",
+        )
+        assert normalised == twin
+
+    # The two comparisons the batch is built to make, each single-variable.
+    assert replace(ga16, name=ga8.name, n_groups=8) == ga8
+    assert replace(contiguous, name=ga8.name, grouping="diagonal") == ga8
+
+
+def test_build_swap_head_wires_the_grouped_anchor_knobs():
+    """head_kind='grouped_anchor' must reach the head with cfg.ising.D as the
+    lattice side (so 'diagonal' can disperse across the raster), and must fail
+    loudly rather than silently defaulting when n_groups is unset."""
+    from dataclasses import replace
+
+    import pytest
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+
+    cfg = CONFIGS["H2_d64_c50_s223_letf_ga8_50k_curr"]
+    backbone = LeTFRateMatrix(
+        d=cfg.ising.D**2, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2
+    )
+    head = build_swap_head(cfg, backbone)
+    assert (head.n_groups, head.grouping) == (8, "diagonal")
+    # Latin-square dispersal is only correct if lattice_side came through as D.
+    rows = head.group_of_site.nonzero().flatten() // cfg.ising.D
+    assert head.group_of_site.shape == (cfg.ising.D**2,)
+    assert rows.numel() > 0
+
+    with pytest.raises(ValueError, match="requires n_groups"):
+        build_swap_head(replace(cfg, n_groups=None), backbone)
+
+
 def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():
     """4x4 supervisor-demo cells (2026-07-08): single-variable twins of the
     2k dh ladder — only name, head_kind and n_steps may differ, so head and

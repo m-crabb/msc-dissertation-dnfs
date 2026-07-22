@@ -32,6 +32,9 @@ from experiments.dnfs_baseline_01.configs import (
 )
 from torch import Tensor
 
+from discrete_flow_sampler.constraints.grouped_anchor_swap_head import (
+    GroupedAnchorSwapHead,
+)
 from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
@@ -62,7 +65,8 @@ class HardStageCfg(StageCfg):
     """
 
     head_kind: Literal[
-        "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention"
+        "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention",
+        "grouped_anchor",
     ] = "doubly_hollow"
     # Anchor-batch chunk for the mask_one head's vectorised forward; None =
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
@@ -85,6 +89,13 @@ class HardStageCfg(StageCfg):
     # unary+offset band every prior run used. lattice_side is cfg.ising.D
     # (the flattened D x D grid), so no separate field is needed.
     use_stencil: bool = False
+    # Grouped-anchor head knobs (avenues doc 2026-07-22 §4c). n_groups is k,
+    # the number of masked body passes: k = d reproduces mask_one bit-exactly,
+    # smaller k trades masked-site count for passes. Only read when head_kind
+    # is "grouped_anchor", so every other cell stays byte-identical.
+    n_groups: int | None = None
+    grouping: str = "diagonal"
+    group_chunk_size: int | None = None
 
 
 class NonAntisymSwapHead(nn.Module):
@@ -143,6 +154,18 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             attention_dim=cfg.attention_dim or 32,
             use_stencil=cfg.use_stencil,
             lattice_side=cfg.ising.D,
+        )
+    elif cfg.head_kind == "grouped_anchor":
+        # k masked passes instead of mask_one's d; lattice_side is cfg.ising.D
+        # so the "diagonal" grouping can disperse across the D x D raster.
+        if cfg.n_groups is None:
+            raise ValueError("head_kind 'grouped_anchor' requires n_groups")
+        head = GroupedAnchorSwapHead(
+            backbone,
+            n_groups=cfg.n_groups,
+            grouping=cfg.grouping,
+            lattice_side=cfg.ising.D,
+            group_chunk_size=cfg.group_chunk_size,
         )
     else:
         raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
@@ -368,6 +391,32 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_ma_stencil_100k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_stencil_100k_curr", head_kind="masked_attention",
         n_steps=100_000, use_stencil=True,
+    ),
+    # Grouped-anchor batch 1 (avenues doc 2026-07-22 §4c): the head family
+    # sampled BETWEEN its endpoints for the first time -- k masked passes
+    # instead of mask_one's d (= 64) or the one-pass heads' zero. Same 50k
+    # curriculum as every other ladder rung, so the result reads directly
+    # against iv 0.6463 < ma 0.7806 < stencil 0.8046 < mo 0.9103.
+    # ga8: the headline. k=8 masks 12.5% of sites per pass at 1/8 of mask_one's
+    # body cost, keeping FULL depth and global mixing over the rest.
+    "H2_d64_c50_s223_letf_ga8_50k_curr": _d64_curriculum_cell(
+        "H2_d64_c50_s223_letf_ga8_50k_curr", head_kind="grouped_anchor",
+        n_groups=8,
+    ),
+    # ga16: the cost/quality dial. Halves the masked fraction to 6.25% for 2x
+    # the passes -- with ga8 it gives the slope of quality against k, which is
+    # what extrapolates to the D=16 choice of k.
+    "H2_d64_c50_s223_letf_ga16_50k_curr": _d64_curriculum_cell(
+        "H2_d64_c50_s223_letf_ga16_50k_curr", head_kind="grouped_anchor",
+        n_groups=16,
+    ),
+    # ga8_contig: the shape control. Identical k, identical cost, but the
+    # masked sites form a raster ROW instead of a dispersed Latin-square
+    # diagonal -- the direct test of "dispersed >> line-shaped", which is a
+    # prediction of the construction rather than an assumption in it.
+    "H2_d64_c50_s223_letf_ga8_contig_50k_curr": _d64_curriculum_cell(
+        "H2_d64_c50_s223_letf_ga8_contig_50k_curr", head_kind="grouped_anchor",
+        n_groups=8, grouping="contiguous",
     ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
