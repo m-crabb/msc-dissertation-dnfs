@@ -533,27 +533,52 @@ def test_grouped_anchor_cells_mirror_ma_twin_except_declared_fields():
 def test_build_swap_head_wires_the_grouped_anchor_knobs():
     """head_kind='grouped_anchor' must reach the head with cfg.ising.D as the
     lattice side (so 'diagonal' can disperse across the raster), and must fail
-    loudly rather than silently defaulting when n_groups is unset."""
+    loudly rather than silently defaulting when n_groups is unset.
+
+    All three launch cells are built, not just ga8: `site_groups` REFUSES an
+    n_groups it cannot balance on the raster, so constructing each cell's head
+    is what turns "this k is legal at this D" from an assumption into a test.
+    A cell whose k the head rejects would otherwise fail at run start, on the
+    GPU, after the job had been paid for."""
     from dataclasses import replace
 
     import pytest
+    import torch
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
+    def _backbone(cfg):
+        return LeTFRateMatrix(
+            d=cfg.ising.D**2, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2
+        )
+
+    expected = {"ga8": (8, "diagonal"), "ga16": (16, "diagonal"),
+                "ga8_contig": (8, "contiguous")}
+    for tag, (n_groups, grouping) in expected.items():
+        cfg = CONFIGS[f"H2_d64_c50_s223_letf_{tag}_50k_curr"]
+        head = build_swap_head(cfg, _backbone(cfg))
+        assert (head.n_groups, head.grouping) == (n_groups, grouping)
+        assert head.group_of_site.shape == (cfg.ising.D**2,)
+
+    # The dispersal the ga8 cell is actually buying, asserted rather than
+    # gestured at: on the D x D raster with n_groups = D, each group must hit
+    # every row exactly once and every column exactly once (the Latin-square
+    # diagonal). This is a property of the RASTER, so it holds only if
+    # lattice_side arrived as cfg.ising.D -- a different side reshapes the
+    # grid and the one-per-row-and-column structure dies.
     cfg = CONFIGS["H2_d64_c50_s223_letf_ga8_50k_curr"]
-    backbone = LeTFRateMatrix(
-        d=cfg.ising.D**2, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2
-    )
-    head = build_swap_head(cfg, backbone)
-    assert (head.n_groups, head.grouping) == (8, "diagonal")
-    # Latin-square dispersal is only correct if lattice_side came through as D.
-    rows = head.group_of_site.nonzero().flatten() // cfg.ising.D
-    assert head.group_of_site.shape == (cfg.ising.D**2,)
-    assert rows.numel() > 0
+    head = build_swap_head(cfg, _backbone(cfg))
+    side = cfg.ising.D
+    site = torch.arange(side * side)
+    rows, cols = site // side, site % side
+    for group_id in range(head.n_groups):
+        member = head.group_of_site == group_id
+        assert sorted(rows[member].tolist()) == list(range(side))
+        assert sorted(cols[member].tolist()) == list(range(side))
 
     with pytest.raises(ValueError, match="requires n_groups"):
-        build_swap_head(replace(cfg, n_groups=None), backbone)
+        build_swap_head(replace(cfg, n_groups=None), _backbone(cfg))
 
 
 def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():

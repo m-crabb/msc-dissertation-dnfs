@@ -59,9 +59,19 @@ multiplier the mask-one head pays is cut by d/k. The readout is (B, d, d, h)
 of work either way -- that is inherent to producing a (B, d, d) score matrix --
 and `group_chunk_size` bounds the transient exactly as mask_one's
 `anchor_chunk_size` does, since the stacked pass builds a
-(n_groups*B, n_heads, d, 2d) readout attention buffer. The D=16 case is the
-point of the whole construction: mask_one is infeasible at d=256 because that
-buffer scales with A = d, and here A = k is chosen independently of d.
+(n_groups*B, n_heads, d, 2d) readout attention buffer.
+
+WHY D=16 NEEDS THIS -- COMPUTE, NOT MEMORY. The memory framing is tempting and
+wrong, so state it precisely: mask_one's readout buffer is
+(A*B, n_heads, d, 2d) with A = `anchor_chunk_size`, NOT A = d. Chunking
+already bounds it, and test_swap_head_vectorised.py exercises exactly that at
+d=256 with a ragged tail chunk. What chunking cannot bound is the NUMBER of
+body passes, which is d by construction (~56 s/forward at d=256; see
+LeTFMaskOneSwapHead). Grouped anchors cut that count to k, chosen
+independently of d -- that is the lever that moves D=16 into budget. Activation
+memory does fall too (measured at d=64, B=128: 877 MiB at k=8, 1690 at k=16,
+6566 at mask_one's k=64, i.e. linear in k), but as a CONSEQUENCE of running
+fewer passes, not because mask_one lacks a bound this head has.
 
 NOT label-symmetric (H_ij != H_ji, since the two come from different group
 passes), exactly as for mask_one -- the downstream swap residual must order
@@ -91,8 +101,18 @@ def site_groups(
 
         "diagonal":   anti-diagonal dispersal on the D x D raster. At
                       n_groups = D it is (row + col) mod D, a Latin-square
-                      diagonal: exactly one masked site per row and per column,
-                      the maximally dispersed choice on a lattice. Above D
+                      diagonal: exactly one masked site per row and per column.
+                      Precisely: the masked set is an INDEPENDENT SET in the
+                      nearest-neighbour graph (no two members differ by offset
+                      1 or D, so every masked site keeps all four live
+                      neighbours) -- which is the property that matters, since
+                      the Ising coupling is nearest-neighbour only. It is not
+                      maximally spread under a second-neighbour metric: group
+                      members are diagonally adjacent (min Chebyshev distance
+                      1 for k <= D, rising to 2, 4, 8 above it), where a
+                      spaced sublattice would be 2. Do not write it up as
+                      "maximally dispersed"; write it up as "no masked site
+                      loses a neighbour". Above D
                       there are only 2D-1 distinct anti-diagonals, so the
                       residue alone cannot address k > D groups; the general
                       form splits each anti-diagonal class further by row,
