@@ -219,17 +219,26 @@ _D64_SIGMA_LADDER = CurriculumCfg(
 )
 
 
-def _d64_50k_curriculum_cell(
-    name: str, head_kind: str, **head_knobs
+def _d64_curriculum_cell(
+    name: str, head_kind: str, n_steps: int = 50_000, **head_knobs
 ) -> HardStageCfg:
-    """The d=64 sigma_c 50k-curriculum recipe — the shape of the PASSED D=8
-    rung. Every band-capacity-push cell shares it verbatim and differs only
-    in head_kind and the declared head knobs, so outcome differences are
+    """The d=64 sigma_c curriculum recipe — the shape of the PASSED D=8 rung.
+    Every band-capacity-push cell shares it verbatim and differs only in
+    head_kind and the declared head knobs, so outcome differences are
     attributable to the declared change (design 2026-07-08; twin-ness is
-    pinned by test_band_push_cells_mirror_ma_twin_except_declared_fields)."""
+    pinned by test_band_push_cells_mirror_ma_twin_except_declared_fields).
+
+    `n_steps` defaults to the 50k budget every batch-1 / round-2 cell used.
+    The horizon-extension cells (avenues doc §4a) pass 100_000: the sigma
+    ladder is a tuple of absolute start_steps, so it does NOT stretch with the
+    budget — the extra steps all land on the final sigma=0.223 plateau, which
+    is the phase the training logs show still descending at 50k. n_steps is
+    also schedule-inert here (lr is the curriculum's per-stage value times a
+    fixed-step warmup ramp, never normalised by the total), so a longer cell's
+    first 50k steps are schedule-identical to the 50k cell's."""
     cell = _hard_cell(
         name, sigma=0.223, head_kind=head_kind,
-        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        D=8, n_steps=n_steps, n_euler_steps=128, n_eval_samples=5000,
         eval_sample_chunk=256, n_eval_samples_training=512,
         use_sdpa_readout=True, eval_autocast_bf16=True,
         curriculum=_D64_SIGMA_LADDER,
@@ -298,7 +307,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # 5k plateaus, LR drop when the near-critical variance spike begins at
     # sigma=0.205, 40% of the budget on the final plateau). Final sigma is the
     # hard cells' 0.223, matching the D=4 reference chain and the 25k probe.
-    "H2_d64_c50_s223_letf_mo_50k_curr": _d64_50k_curriculum_cell(
+    "H2_d64_c50_s223_letf_mo_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_mo_50k_curr", head_kind="mask_one",
     ),
     # Masked-attention twin of the PASSED 50k curriculum rung: every knob
@@ -309,7 +318,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # (ii) re-validates the new head at a non-enumerable size before D=16;
     # (iii) retrains the 8x8 mixing-probe trend point so the probe's
     # network-pass currency is single-architecture across sizes.
-    "H2_d64_c50_s223_letf_ma_50k_curr": _d64_50k_curriculum_cell(
+    "H2_d64_c50_s223_letf_ma_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr", head_kind="masked_attention",
     ),
     # Band-capacity push batch 1 (design docs/design/2026-07-08-band-
@@ -317,17 +326,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     # The discriminator: interval head, head_kind is the ONLY change.
     # Separates "shared band content is the bottleneck" (lands in the MA
     # band ~0.75-0.78) from "the MA aggregator is" (lands well above it).
-    "H2_d64_c50_s223_letf_iv_50k_curr": _d64_50k_curriculum_cell(
+    "H2_d64_c50_s223_letf_iv_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_iv_50k_curr", head_kind="interval",
     ),
     # H-width: double the band feature and attention widths, nothing else.
-    "H2_d64_c50_s223_letf_ma_wide_50k_curr": _d64_50k_curriculum_cell(
+    "H2_d64_c50_s223_letf_ma_wide_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_wide_50k_curr", head_kind="masked_attention",
         band_feature_dim=32, attention_dim=64,
     ),
     # H-offsets: band also sees offset-2 / offset-2D bond families (second-
     # neighbour row/column pairs), beyond the energy's (1, D).
-    "H2_d64_c50_s223_letf_ma_offs_50k_curr": _d64_50k_curriculum_cell(
+    "H2_d64_c50_s223_letf_ma_offs_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_offs_50k_curr", head_kind="masked_attention",
         pair_offsets=(1, 2, 8, 16),
     ),
@@ -336,9 +345,29 @@ CONFIGS: dict[str, HardStageCfg] = {
     # grid), narrow unary+offset families kept alongside to cover the collar.
     # use_stencil is the ONLY change vs ma_50k_curr -- the probe of whether a
     # richer 2D-local band content lifts the ~0.78 H-shared ceiling.
-    "H2_d64_c50_s223_letf_ma_stencil_50k_curr": _d64_50k_curriculum_cell(
+    "H2_d64_c50_s223_letf_ma_stencil_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_stencil_50k_curr", head_kind="masked_attention",
         use_stencil=True,
+    ),
+    # Horizon extension (avenues doc 2026-07-22 §4a). Judging the stencil
+    # exposed that the 50k budget cuts BOTH heads off mid-descent: over the
+    # final 10k steps the loss still falls 12.0% (ma) / 7.4% (stencil) and
+    # train ESS is still climbing, so the 0.78/0.80 "ceiling" is read off
+    # unconverged runs. n_steps is the ONLY change: the ladder holds absolute
+    # start_steps (last rung 30k) and lr is warmup x per-stage value with no
+    # total-budget normalisation, so the anneal does NOT stretch -- the extra
+    # 50k steps all land on the final sigma=0.223 plateau (20k -> 70k), which
+    # is the phase still descending, and each cell's first 50k steps stay
+    # schedule-identical to its 50k twin. Both cells are needed: MA is the
+    # control for whether the stencil's +0.024 survives a converged horizon
+    # (MA's loss is falling FASTER at the cutoff, so it may close some gap).
+    "H2_d64_c50_s223_letf_ma_100k_curr": _d64_curriculum_cell(
+        "H2_d64_c50_s223_letf_ma_100k_curr", head_kind="masked_attention",
+        n_steps=100_000,
+    ),
+    "H2_d64_c50_s223_letf_ma_stencil_100k_curr": _d64_curriculum_cell(
+        "H2_d64_c50_s223_letf_ma_stencil_100k_curr", head_kind="masked_attention",
+        n_steps=100_000, use_stencil=True,
     ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
         "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",

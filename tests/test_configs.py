@@ -453,6 +453,51 @@ def test_band_push_cells_mirror_ma_twin_except_declared_fields():
     assert replace(stencil, name=twin.name, use_stencil=False) == twin
 
 
+def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
+    """Horizon extension (avenues doc §4a, 2026-07-22): the 50k curriculum
+    stops while both heads are still improving (loss -12.0% / -7.4% over the
+    final 10k steps, train ESS still climbing), so the 0.78/0.80 ceiling is
+    read off unconverged runs. These cells double the budget and change
+    NOTHING else — same sigma ladder, same lr drop, so the extra 50k steps all
+    land on the final sigma=0.223 plateau (20k -> 70k) rather than stretching
+    the anneal. n_steps must be the sole difference from the 50k twin, and the
+    stencil pair must differ from each other by use_stencil alone, or the
+    ablation ladder stops being attributable."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    pairs = {
+        "H2_d64_c50_s223_letf_ma_100k_curr": "H2_d64_c50_s223_letf_ma_50k_curr",
+        "H2_d64_c50_s223_letf_ma_stencil_100k_curr": (
+            "H2_d64_c50_s223_letf_ma_stencil_50k_curr"
+        ),
+    }
+    for long_name, short_name in pairs.items():
+        long_cell, short_cell = CONFIGS[long_name], CONFIGS[short_name]
+        assert long_cell.train.n_steps == 100_000
+        assert short_cell.train.n_steps == 50_000
+        rebuilt = replace(
+            long_cell,
+            name=short_cell.name,
+            train=replace(long_cell.train, n_steps=short_cell.train.n_steps),
+        )
+        assert rebuilt == short_cell
+
+    # The ladder is deliberately NOT stretched: identical stage boundaries at
+    # both horizons, so the lr drop still fires at 20k and the final plateau
+    # absorbs the whole extra budget.
+    long_ma = CONFIGS["H2_d64_c50_s223_letf_ma_100k_curr"]
+    assert long_ma.curriculum == CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"].curriculum
+    assert long_ma.curriculum.stages[-1].start_step == 30_000
+
+    # The 100k pair is itself a single-variable comparison (the MA twin is the
+    # control for "did the stencil's +0.024 survive a converged horizon").
+    long_stencil = CONFIGS["H2_d64_c50_s223_letf_ma_stencil_100k_curr"]
+    assert long_stencil.use_stencil is True and long_ma.use_stencil is False
+    assert replace(long_stencil, name=long_ma.name, use_stencil=False) == long_ma
+
+
 def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():
     """4x4 supervisor-demo cells (2026-07-08): single-variable twins of the
     2k dh ladder — only name, head_kind and n_steps may differ, so head and
