@@ -68,39 +68,62 @@ def _masked_body(
     return H
 
 
-def _anchor_masked_bodies(
-    model: LeTFRateMatrix, x: Tensor, t: Tensor, anchor_sites: Tensor
+def _keep_masked_bodies(
+    model: LeTFRateMatrix, x: Tensor, t: Tensor, keep: Tensor
 ) -> Tensor:
-    """Batched `_masked_body` over single-site anchors: ONE stacked pass.
+    """Batched `_masked_body` over a stack of keep-masks: ONE stacked pass.
 
-    The anchor passes are independent -- they differ only in which site's
-    embedding is zeroed -- so they ride the model batch dimension: build
-    (n_anchors*B, d, h) with anchor a's copy zeroed at site anchor_sites[a]
-    (a diagonal zeroing mask), run the fwd/bwd stacks + readout once, and
-    reshape back. Every kernel in the path reduces over non-batch dims, so
+    `keep` is (n_masks, d) with 1.0 at sites whose token embedding survives
+    and 0.0 at sites forced content-free. The masked passes are independent --
+    they differ only in WHICH sites are zeroed -- so they ride the model batch
+    dimension: build (n_masks*B, d, h), run the fwd/bwd stacks + readout once,
+    and reshape back. Every kernel in the path reduces over non-batch dims, so
     each batch element's arithmetic (including reduction order) is identical
     to its looped counterpart -- observed bit-exact on CPU.
 
-    Returns (n_anchors, B, d, h): [a, :, j, :] = H_ij for anchor i = anchor_sites[a].
+    Zeroing is an unconditional override (multiply by a value-independent
+    mask), so H never depends on the true token at any masked site. That is
+    the whole blindness argument, and it is why depth is free here: the
+    masking is at the INPUT, so the two-hop leak that forces the one-pass
+    heads' band content to be shallow (interval_swap_head.py) never arises.
+
+    Returns (n_masks, B, d, h): [a, :, j, :] is the body under mask a read at
+    site j -- blind to every site zeroed by keep[a] AND hollow in x_j (leTF
+    single-site hollowness: the readout at j ignores j's own input).
     """
     x_idx = ((x + 1) / 2).long()
     x_emb = model.token_embedder(x_idx)  # (B, d, h)
     batch, d, hidden = x_emb.shape
-    n_anchors = anchor_sites.shape[0]
+    n_masks = keep.shape[0]
 
-    keep = x_emb.new_ones(n_anchors, d)
-    keep[torch.arange(n_anchors, device=x.device), anchor_sites] = 0.0
     emb = x_emb.unsqueeze(0) * keep[:, None, :, None]  # (A, B, d, h)
-    emb = emb.reshape(n_anchors * batch, d, hidden)
+    emb = emb.reshape(n_masks * batch, d, hidden)
 
     cond_t = model.time_embedder(t).unsqueeze(1)  # (B, 1, h)
-    cond_t = cond_t.expand(n_anchors, batch, 1, hidden).reshape(-1, 1, hidden)
+    cond_t = cond_t.expand(n_masks, batch, 1, hidden).reshape(-1, 1, hidden)
 
     fwd_x = model.fwd_stack(torch.cat([cond_t, emb], dim=1))
     bwd_x = model.bwd_stack(torch.cat([cond_t, emb.flip(1)], dim=1)).flip(1)
     H = model.attention_readout(fwd_x, bwd_x, cond_t)  # (A*B, d, h)
     H = model.output_norm(H) + cond_t
-    return H.reshape(n_anchors, batch, d, hidden)
+    return H.reshape(n_masks, batch, d, hidden)
+
+
+def _anchor_masked_bodies(
+    model: LeTFRateMatrix, x: Tensor, t: Tensor, anchor_sites: Tensor
+) -> Tensor:
+    """Batched `_masked_body` over single-site anchors: ONE stacked pass.
+
+    The single-anchor special case of `_keep_masked_bodies`: keep-mask a
+    zeroes exactly site anchor_sites[a] (a diagonal zeroing mask). Delegating
+    is arithmetically identical to building `emb` here, so the mask-one head's
+    numerics are unchanged.
+
+    Returns (n_anchors, B, d, h): [a, :, j, :] = H_ij for anchor i = anchor_sites[a].
+    """
+    keep = x.new_ones(anchor_sites.shape[0], model.d)
+    keep[torch.arange(anchor_sites.shape[0], device=x.device), anchor_sites] = 0.0
+    return _keep_masked_bodies(model, x, t, keep)
 
 
 class DoublyHollowSwapHead(nn.Module):
