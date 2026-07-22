@@ -392,6 +392,38 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_ma_stencil_100k_curr", head_kind="masked_attention",
         n_steps=100_000, use_stencil=True,
     ),
+    # The missing twin (judged 2026-07-22). §4a found the 50k cutoff lands
+    # mid-descent for the one-pass heads -- but the SAME check on mo_50k_curr's
+    # log shows mask_one was still descending fastest of the three at its own
+    # cutoff (loss -25.7% over the final 15k, train ESS 0.864 -> 0.900). So the
+    # reference rung is unconverged too, and "does a longer horizon close the
+    # gap to MO's 0.9103" is unanswerable while only the one-pass heads get the
+    # longer horizon: both sides must move before any gap is read.
+    # Seed 42, NOT the record's 43 -- the rest of the d64 ladder is seed 42, and
+    # the cross-seed comparison is a standing confound in every mo-vs-ma number
+    # quoted so far (same-seed MA s43 is 0.7546, not the 0.7806 usually cited
+    # against MO). This cell retires that confound at the same time as the
+    # horizon one; it is NOT a twin of the 0.9103 run (seed differs by design),
+    # so the 50k seed-42 mask_one point it implies is a second thing this run
+    # buys back.
+    "H2_d64_c50_s223_letf_mo_100k_curr": _d64_curriculum_cell(
+        "H2_d64_c50_s223_letf_mo_100k_curr", head_kind="mask_one",
+        n_steps=100_000,
+    ),
+    # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
+    # these three cells are the only way to reproduce a NEGATIVE result the
+    # writeup will cite, and the head + falsification suite they exercise stay
+    # green at no run cost. Do NOT launch further ga cells at d64.
+    #   ga8 0.58072 -- BELOW iv 0.6463, i.e. under the ladder floor, while
+    #     costing MORE per inner step than its ma cost peer (28.8 vs 26.4 ms)
+    #   ga16 0.71414 -- still below ma 0.7806, at 1.43x ma's step cost
+    #   ga8_contig 0.00877 -- stable failure (trains at sigma=0.1, then cannot
+    #     track the ladder to 0.223; flat loss ~5.14 for the final 20k)
+    # Reading: k IS a real dial (ga8 -> ga16 = +0.133, in the expected
+    # direction) but the whole family sits under the existing ladder at d64, so
+    # no (k, cost) point here is worth having. Group SHAPE dominates k -- the
+    # diagonal-vs-contiguous gap (0.572) is 4x the k gap, which vindicates the
+    # independent-set argument far past what the design predicted.
     # Grouped-anchor batch 1 (avenues doc 2026-07-22 §4c): the head family
     # sampled BETWEEN its endpoints for the first time -- k masked passes
     # instead of mask_one's d (= 64) or the one-pass heads' zero. Same 50k

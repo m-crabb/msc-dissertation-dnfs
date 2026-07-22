@@ -472,6 +472,10 @@ def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
         "H2_d64_c50_s223_letf_ma_stencil_100k_curr": (
             "H2_d64_c50_s223_letf_ma_stencil_50k_curr"
         ),
+        # mask_one gets the same treatment: judging the first two exposed that
+        # the reference rung is unconverged at 50k as well, so the horizon
+        # change has to reach it or the ladder compares heads at two budgets.
+        "H2_d64_c50_s223_letf_mo_100k_curr": "H2_d64_c50_s223_letf_mo_50k_curr",
     }
     for long_name, short_name in pairs.items():
         long_cell, short_cell = CONFIGS[long_name], CONFIGS[short_name]
