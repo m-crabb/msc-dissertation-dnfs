@@ -147,25 +147,48 @@ def train(
     output_dir: str | Path = "results/03_hard",
     use_wandb: bool = True,
     tag: str | None = None,
+    on_checkpoint=None,
 ):
-    """Train a swap head on the fixed-composition target and save eval artefacts."""
+    """Train a swap head on the fixed-composition target and save eval artefacts.
+
+    Preemption resume: with a caller-supplied `tag` (Modal mints one at spawn
+    time so retries reuse it), a re-invocation lands in the SAME run dir; a
+    `checkpoints/resume.pt` there makes `train_swap` continue instead of
+    starting over, and an existing `eval/metrics.json` short-circuits the
+    whole call (fully completed run being retried).
+    """
     # Apply the per-invocation seed without mutating the frozen config.
     cfg = replace(cfg, train=replace(cfg.train, seed=seed))
 
     tag = tag or time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path(output_dir) / f"{cfg.name}_seed{seed}_{tag}"
+    if (run_dir / "eval" / "metrics.json").exists():
+        print(f"[train] {run_dir.name} already complete; nothing to do")
+        return run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     # Persist the resolved config (incl. the effective head_kind) so the run
-    # is reproducible from the directory alone.
-    (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
+    # is reproducible from the directory alone. Written once: on a resumed
+    # attempt the original file is the record of what the run started as.
+    if not (run_dir / "config.json").exists():
+        (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
 
     if use_wandb:
         import wandb
+        # Reuse the first attempt's wandb run on resume so the curve stays a
+        # single run (steps already logged past the checkpoint are dropped by
+        # wandb's monotonic-step rule -- the same rows the log truncation
+        # discards locally).
+        wandb_id_path = run_dir / "wandb_run_id.txt"
+        stored_run_id = (
+            wandb_id_path.read_text().strip() if wandb_id_path.exists() else None
+        )
         wandb.init(
             project=cfg.wandb_project,
             group=cfg.name,
             name=f"{cfg.name}_seed{seed}_{tag}",
             config=asdict(cfg),
+            id=stored_run_id,
+            resume="allow",
             tags=[
                 cfg.name,
                 f"D={cfg.ising.D}",
@@ -175,6 +198,7 @@ def train(
                 f"seed={seed}",
             ],
         )
+        wandb_id_path.write_text(wandb.run.id)
 
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -198,6 +222,7 @@ def train(
         sigma_curriculum=(
             cfg.curriculum.stages if cfg.curriculum is not None else None
         ),
+        on_checkpoint=on_checkpoint,
     )
 
     eval_metrics = final_eval(head, target, cfg, run_dir)

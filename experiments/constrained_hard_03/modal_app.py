@@ -27,6 +27,8 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     pixi run -e dev modal run -m \\
         experiments.constrained_hard_03.modal_app::gate
 """
+import time
+
 import modal
 from experiments.constrained_hard_03.configs import CONFIGS
 from experiments.constrained_hard_03.run import HEAD_KINDS
@@ -106,17 +108,29 @@ def _resolve_head_kind(head_kind: str) -> str | None:
 @app.function(
     # A100 for seed runs (decision 2026-07-06): the perf profile showed the
     # workload bandwidth-bound (layernorm/copies), where the L4 is weakest;
-    # the win concentrates in the eval slices. bench_remote stays on L4 so
-    # benchmark numbers remain comparable with the recorded baselines.
+    # the win concentrates in the eval slices. (bench_remote moved to A100
+    # too on 2026-07-23, so eval-cost numbers match production hardware.)
     gpu="A100",
     volumes={"/results": volume},
     secrets=[wandb_secret],
     timeout=24 * 60 * 60,
 )
 def train_remote(
-    cfg_name: str, seed: int = 42, head_kind: str | None = None, smoke: bool = False
+    cfg_name: str,
+    seed: int = 42,
+    head_kind: str | None = None,
+    smoke: bool = False,
+    tag: str = "",
 ):
-    """Run a single hard-constraint training config on Modal."""
+    """Run a single hard-constraint training config on Modal.
+
+    `tag` is minted ONCE at spawn time by the local entrypoints: a Modal
+    preemption retry re-runs this function with identical inputs, so a stable
+    tag makes the retry land in the same run dir and resume from
+    checkpoints/resume.pt instead of training from scratch (the 2026-07-23
+    MO 100k recall restarted from step 0 for want of exactly this).
+    `volume.commit` rides along as the checkpoint hook so resume state is on
+    the volume even if a preemption skips the death-flush."""
     import sys
     from dataclasses import replace
 
@@ -130,7 +144,13 @@ def train_remote(
     if smoke:
         cfg = smoke_config(cfg)
 
-    train(cfg, seed=seed, output_dir="/results")
+    train(
+        cfg,
+        seed=seed,
+        output_dir="/results",
+        tag=tag or None,
+        on_checkpoint=volume.commit,
+    )
     volume.commit()
 
 
@@ -268,7 +288,8 @@ def main(cfg_name: str, seed: int = 42, head_kind: str = "", smoke: bool = False
     _validate_cfg_name(cfg_name)
     resolved_head_kind = _resolve_head_kind(head_kind)
     train_remote.remote(
-        cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind, smoke=smoke
+        cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind, smoke=smoke,
+        tag=time.strftime("%Y%m%d-%H%M%S"),
     )
 
 
@@ -317,8 +338,11 @@ def batch_seeds(cfg_name: str, seeds: str = "42", head_kind: str = ""):
     _validate_cfg_name(cfg_name)
     resolved_head_kind = _resolve_head_kind(head_kind)
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    tag = time.strftime("%Y%m%d-%H%M%S")
     for seed in seed_list:
-        train_remote.spawn(cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind)
+        train_remote.spawn(
+            cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind, tag=tag
+        )
     print(f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list}")
 
 
@@ -328,11 +352,12 @@ def ladder(seeds: str = "42,43,44", head_kind: str = ""):
     across the given seeds in parallel -- 9 jobs at the default seeds."""
     resolved_head_kind = _resolve_head_kind(head_kind)
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    tag = time.strftime("%Y%m%d-%H%M%S")
     spawned = []
     for cfg_name in LADDER_CFGS:
         for seed in seed_list:
             train_remote.spawn(
-                cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind
+                cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind, tag=tag
             )
             spawned.append((cfg_name, seed))
     print(f"spawned {len(spawned)} jobs across {LADDER_CFGS}: seeds={seed_list}")
