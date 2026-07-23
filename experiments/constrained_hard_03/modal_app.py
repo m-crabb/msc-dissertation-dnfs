@@ -239,9 +239,11 @@ def scout_remote(run_dir_name: str, D: int, head_kind: str = "mask_one"):
     volume.commit()
 
 
-@app.function(gpu="L4", timeout=60 * 60)
+@app.function(gpu="A100", timeout=2 * 60 * 60)
 def bench_remote(argv: str = ""):
-    """Run the profile/benchmark harness on the L4. `argv` is the
+    """Run the profile/benchmark harness on the production GPU (A100 — the
+    per-head eval costs must be comparable to the recorded run wall-clocks,
+    and MO's B·d expansion saturates smaller GPUs earlier). `argv` is the
     space-separated profile_swap CLI string, e.g.
     "--mode eval --d 64 --batch 256 --n-euler-steps 128"."""
     import sys
