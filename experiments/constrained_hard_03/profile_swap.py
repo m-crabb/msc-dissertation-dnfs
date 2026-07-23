@@ -58,7 +58,10 @@ def build_head_and_target(
 
     head_kind defaults to mask_one so every recorded baseline stays
     comparable; "interval" benches the one-pass spike head (K3 A/B);
-    "masked_attention" benches the reported exclusion-mask head."""
+    "masked_attention" benches the reported exclusion-mask head; "stencil"
+    benches the MA head with the 5-point lattice-stencil band family (the
+    ladder's 0.8046/0.86034 cell). Parity with the production cells is
+    pinned by tests/test_profile_swap_heads.py."""
     side = int(round(d**0.5))
     if side * side != d:
         raise ValueError(f"--d must be a square lattice site count, got {d}")
@@ -74,6 +77,10 @@ def build_head_and_target(
         head = IntervalSwapHead(backbone, pair_offsets=(1, side)).to(device)
     elif head_kind == "masked_attention":
         head = MaskedAttentionSwapHead(backbone, pair_offsets=(1, side)).to(device)
+    elif head_kind == "stencil":
+        head = MaskedAttentionSwapHead(
+            backbone, pair_offsets=(1, side), use_stencil=True, lattice_side=side,
+        ).to(device)
     else:
         head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
     return head, target
@@ -208,7 +215,7 @@ def main(argv=None):
     parser.add_argument("--d", type=int, default=64, help="site count (D*D)")
     parser.add_argument(
         "--head-kind", default="mask_one",
-        choices=("mask_one", "interval", "masked_attention"),
+        choices=("mask_one", "interval", "masked_attention", "stencil"),
     )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)
