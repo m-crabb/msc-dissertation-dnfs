@@ -14,6 +14,11 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
     gather_pair_scores,
     upper_tri_pairs,
 )
+from discrete_flow_sampler.samplers.resampling import (
+    ResamplingConfig,
+    ResamplingStats,
+    resample_if_needed,
+)
 
 
 def compute_xi_t_swap(x: Tensor, t: Tensor, head, target) -> Tensor:
@@ -175,6 +180,7 @@ def sample_swap_ctmc(
     return_all_states: bool = False,
     target=None,
     multi_event: bool = False,
+    resampling: ResamplingConfig | None = None,
 ):
     """Swap-CTMC trajectory sampler. Same contract as `ctmc.sample_ctmc`.
 
@@ -184,12 +190,24 @@ def sample_swap_ctmc(
     `multi_event=True` uses the vertex-disjoint-matching step (many swaps/step,
     O(d) trajectory length at scale); the default one-event step fires ≤1
     swap/step (O(d²) steps at the critical coupling — followups §B).
+
+    `resampling` (requires `return_log_weights=True`) enables the eval-time
+    SMC upgrade (`samplers.resampling`): adaptive systematic resampling of
+    the particle batch when interim ESS < τ·B. Resampling duplicates whole
+    on-manifold rows, so composition stays bit-exact. Return becomes
+    (x_final, log_weights, ResamplingStats); the final-segment log_weights
+    feed `smc_log_z_estimate` together with the stats.
     """
     if return_log_weights and target is None:
         raise ValueError("sample_swap_ctmc(return_log_weights=True) requires `target`.")
     if return_log_weights and return_all_states:
         raise ValueError(
             "return_all_states and return_log_weights are mutually exclusive."
+        )
+    if resampling is not None and not return_log_weights:
+        raise ValueError(
+            "sample_swap_ctmc(resampling=...) requires return_log_weights=True "
+            "— the trigger and the log-Z bookkeeping both live on the weights."
         )
 
     state = x0.clone()
@@ -204,6 +222,14 @@ def sample_swap_ctmc(
             (len(ts), batch_size, d), dtype=state.dtype, device=state.device
         )
         trajectory[0] = state
+
+    smc_stats = (
+        ResamplingStats(
+            log_z_increment=torch.zeros((), dtype=x0.dtype, device=x0.device)
+        )
+        if resampling is not None
+        else None
+    )
 
     step_fn = _euler_step_swap_matching if multi_event else _euler_step_swap
     pairs = upper_tri_pairs(d, x0.device)
@@ -222,7 +248,21 @@ def sample_swap_ctmc(
         state = new_state
         if return_all_states:
             trajectory[step + 1] = state
+        # Checkpoint AFTER the state advance: the particle carrying log w(t+dt)
+        # is x_{t+dt}, so that is the row set resampling duplicates/kills.
+        if resampling is not None and step % resampling.check_every == 0:
+            state, log_weights, log_z_increment, fired = resample_if_needed(
+                state, log_weights, resampling.ess_threshold_fraction
+            )
+            if fired:
+                smc_stats.log_z_increment = (
+                    smc_stats.log_z_increment + log_z_increment
+                )
+                smc_stats.n_events += 1
+                smc_stats.event_steps.append(step)
 
+    if resampling is not None:
+        return state, log_weights, smc_stats
     if return_log_weights:
         return state, log_weights
     if return_all_states:

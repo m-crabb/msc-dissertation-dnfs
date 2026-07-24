@@ -43,6 +43,11 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from discrete_flow_sampler.samplers._neighbours import _log_p_tilde_at_neighbours
+from discrete_flow_sampler.samplers.resampling import (
+    ResamplingConfig,
+    ResamplingStats,
+    resample_if_needed,
+)
 
 
 def _compute_xi_t_general(
@@ -247,6 +252,7 @@ def sample_ctmc(
     return_log_weights: bool = False,
     return_all_states: bool = False,
     target=None,
+    resampling: ResamplingConfig | None = None,
 ) -> Tensor | tuple[Tensor, Tensor]:
     """Simulate a CTMC trajectory by Euler stepping along `ts`.
 
@@ -267,6 +273,11 @@ def sample_ctmc(
         target: required when `return_log_weights=True`; used to evaluate
             `dt_log_p_tilde_t` (and, depending on xi_t form, `log_p_tilde_t`
             at flipped neighbours).
+        resampling: optional `ResamplingConfig` enabling the eval-time SMC
+            upgrade (`samplers.resampling`): adaptive systematic resampling
+            of the particle batch when interim ESS < τ·B. Requires
+            `return_log_weights=True`. Applies unchanged to soft-tilted
+            targets — resampling only touches (state, log_weights).
 
     Returns:
         x_final: (B, d). The state at time `ts[-1]`.
@@ -274,6 +285,9 @@ def sample_ctmc(
         (x_final, log_w) where log_w has shape (B,).
         OR (when return_all_states=True):
         (T, B, d) trajectory tensor.
+        OR (when resampling is not None):
+        (x_final, log_w, ResamplingStats) — final-segment log_w plus the
+        banked log-Z increments; combine via `smc_log_z_estimate`.
     """
     if return_log_weights and target is None:
         raise ValueError(
@@ -287,6 +301,12 @@ def sample_ctmc(
             "weights, and the eval path does not need every intermediate "
             "state."
         )
+    if resampling is not None and not return_log_weights:
+        raise ValueError(
+            "sample_ctmc(resampling=...) requires return_log_weights=True "
+            "-- the trigger and the log-Z bookkeeping both live on the "
+            "weights."
+        )
 
     state = x0.clone()
     batch_size, n_sites = state.shape
@@ -294,6 +314,13 @@ def sample_ctmc(
     log_weights = (
         torch.zeros(batch_size, dtype=state.dtype, device=state.device)
         if return_log_weights
+        else None
+    )
+    smc_stats = (
+        ResamplingStats(
+            log_z_increment=torch.zeros((), dtype=state.dtype, device=state.device)
+        )
+        if resampling is not None
         else None
     )
     if return_all_states:
@@ -333,7 +360,21 @@ def sample_ctmc(
         state = new_state
         if return_all_states:
             trajectory[step + 1] = state
+        # Checkpoint AFTER the state advance: the particle carrying log w(t+dt)
+        # is x_{t+dt}, so that is the row set resampling duplicates/kills.
+        if resampling is not None and step % resampling.check_every == 0:
+            state, log_weights, log_z_increment, fired = resample_if_needed(
+                state, log_weights, resampling.ess_threshold_fraction
+            )
+            if fired:
+                smc_stats.log_z_increment = (
+                    smc_stats.log_z_increment + log_z_increment
+                )
+                smc_stats.n_events += 1
+                smc_stats.event_steps.append(step)
 
+    if resampling is not None:
+        return state, log_weights, smc_stats
     if return_log_weights:
         return state, log_weights
     if return_all_states:
