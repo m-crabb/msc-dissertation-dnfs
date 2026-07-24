@@ -13,6 +13,7 @@ from experiments.constrained_hard_03.run import (
     build_target_and_head,
     eval_only,
     final_eval,
+    final_eval_smc,
 )
 from experiments.dnfs_baseline_01.configs import (
     CTMCCfg,
@@ -132,6 +133,73 @@ def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
     metrics = eval_only(run_dir)
 
     assert metrics["n_eval_samples"] == 10
+
+
+def test_final_eval_smc_writes_own_dir_and_smc_metrics(tmp_path):
+    """SMC eval must land beside — never over — the plain-IS artefacts, and
+    at τ=1.0 (fires whenever weights aren't exactly uniform) the resampling
+    machinery is actually exercised at toy scale."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4)
+    target, head = build_target_and_head(cfg, "cpu")
+
+    metrics = final_eval_smc(head, target, cfg, Path(tmp_path), tau=1.0)
+
+    assert not (tmp_path / "eval").exists()          # plain-IS dir untouched
+    eval_dir = tmp_path / "eval_smc_tau1"
+    samples = torch.load(eval_dir / "samples.pt")
+    pooled_log_weights = torch.load(eval_dir / "log_weights.pt")
+    assert samples.shape == (10, 16)
+    assert pooled_log_weights.shape == (10,)
+    assert torch.isfinite(pooled_log_weights).all()
+    assert ((samples == 1).float().mean(dim=1) == 0.5).all()   # on-manifold
+    assert metrics["smc_tau"] == 1.0
+    assert metrics["n_resample_events"] > 0
+    assert len(metrics["chunk_stats"]) == 3                    # slices 4/4/2
+    assert 0.0 < metrics["ess_fraction"] <= 1.0
+    assert 1 <= metrics["n_unique_samples"] <= 10
+    assert metrics == json.loads((eval_dir / "metrics.json").read_text())
+
+
+def test_final_eval_smc_tau_zero_is_bit_exact_plain_is(tmp_path):
+    """τ=0 never fires, consumes no extra RNG, and banks nothing — so the
+    pooled SMC weights must equal the plain-IS weights bit-for-bit under
+    the same seed. This pins the whole eval path, not just the sampler."""
+    cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4)
+    target, head = build_target_and_head(cfg, "cpu")
+
+    torch.manual_seed(3)
+    plain_metrics = final_eval(head, target, cfg, Path(tmp_path))
+    torch.manual_seed(3)
+    smc_metrics = final_eval_smc(head, target, cfg, Path(tmp_path), tau=0.0)
+
+    plain_log_weights = torch.load(tmp_path / "eval" / "log_weights.pt")
+    pooled_log_weights = torch.load(tmp_path / "eval_smc_tau0" / "log_weights.pt")
+    assert torch.equal(pooled_log_weights, plain_log_weights)
+    assert smc_metrics["n_resample_events"] == 0
+    assert smc_metrics["ess"] == plain_metrics["ess"]
+
+
+def test_eval_only_smc_tau_runs_smc_variant_only(tmp_path, monkeypatch):
+    """Backfill path: --smc-tau on a completed run dir writes the SMC
+    artefacts without re-drawing the expensive plain-IS eval."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg()
+    monkeypatch.setattr(
+        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
+    )
+    run_dir = tmp_path / "tiny_hard_eval_seed7_smc"
+    (run_dir / "checkpoints").mkdir(parents=True)
+    seeded = replace(cfg, train=replace(cfg.train, seed=7))
+    (run_dir / "config.json").write_text(json.dumps(asdict(seeded)))
+    _, head = build_target_and_head(cfg, "cpu")
+    torch.save(head.state_dict(), run_dir / "checkpoints" / "final.pt")
+
+    metrics = eval_only(run_dir, smc_tau=1.0)
+
+    assert (run_dir / "eval_smc_tau1" / "metrics.json").exists()
+    assert not (run_dir / "eval").exists()
+    assert metrics["smc_tau"] == 1.0
 
 
 def test_eval_only_rejects_config_drift(tmp_path, monkeypatch):

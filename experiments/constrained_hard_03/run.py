@@ -29,6 +29,10 @@ from discrete_flow_sampler.diagnostics.metrics import (
     ess_from_log_weights,
 )
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
+from discrete_flow_sampler.samplers.resampling import (
+    ResamplingConfig,
+    log_mean_exp,
+)
 from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.seeding import seed_everything
@@ -89,6 +93,66 @@ def build_target_and_head(
     return target, build_swap_head(cfg, backbone).to(device)
 
 
+def _chunked_eval_draw(
+    head, target, cfg: HardStageCfg, *, multi_event: bool, smc_tau: float | None
+):
+    """Stream the eval draw in `eval_sample_chunk` slices; returns
+    (samples, per_sample_log_weights, chunk_stats).
+
+    Plain IS (`smc_tau=None`): weights are independent per sample, so
+    slicing changes nothing statistically; chunk_stats is empty.
+
+    SMC (`smc_tau` set): resampling couples particles WITHIN a population,
+    so each chunk is an independent SMC population of size `chunk`. The
+    returned per-sample log-weight is the pooled form
+
+        ℓ_ci = (banked log-Z increments of chunk c) + (final-segment log w_ci),
+
+    which makes the chunked run one uniform estimator again:
+    logmeanexp(ℓ) equals the unbiased chunk-mean of the per-chunk SMC
+    product-form Ẑ estimates, and ESS(ℓ) is the ESS of the pooled estimator
+    actually used downstream (between-chunk Ẑ spread honestly included).
+    Within a chunk the banked part is constant, so per-chunk final-segment
+    ESS is still recoverable from the saved ℓ + chunk size.
+    """
+    device = next(head.parameters()).device
+    ts = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps + 1, device=device)
+    chunk = cfg.eval.eval_sample_chunk or cfg.eval.n_eval_samples
+    sample_slices, log_weight_slices, chunk_stats = [], [], []
+    remaining = cfg.eval.n_eval_samples
+    with torch.no_grad():
+        while remaining > 0:
+            x_initial = target.sample_base(min(chunk, remaining), device=device)
+            if smc_tau is None:
+                slice_samples, slice_log_weights = sample_swap_ctmc(
+                    head, x_initial, ts, return_log_weights=True, target=target,
+                    multi_event=multi_event,
+                )
+            else:
+                slice_samples, final_segment_log_weights, stats = sample_swap_ctmc(
+                    head, x_initial, ts, return_log_weights=True, target=target,
+                    multi_event=multi_event,
+                    resampling=ResamplingConfig(ess_threshold_fraction=smc_tau),
+                )
+                slice_log_weights = (
+                    stats.log_z_increment + final_segment_log_weights
+                )
+                final_segment_ess = ess_from_log_weights(final_segment_log_weights)
+                chunk_stats.append({
+                    "chunk_size": int(x_initial.shape[0]),
+                    "n_resample_events": stats.n_events,
+                    "event_steps": stats.event_steps,
+                    "log_z_increment": float(stats.log_z_increment.item()),
+                    "final_segment_ess_fraction": float(
+                        final_segment_ess.item() / x_initial.shape[0]
+                    ),
+                })
+            sample_slices.append(slice_samples)
+            log_weight_slices.append(slice_log_weights)
+            remaining -= x_initial.shape[0]
+    return torch.cat(sample_slices), torch.cat(log_weight_slices), chunk_stats
+
+
 def final_eval(
     head, target, cfg: HardStageCfg, run_dir: Path, multi_event: bool = False
 ) -> dict:
@@ -102,23 +166,9 @@ def final_eval(
     `run_dir` (eval_multi_event/ under `multi_event=True`, so the one-event
     baseline is never clobbered — the two dirs on the same checkpoint are
     the --compare-multi-event probe) and returns the metrics dict."""
-    device = next(head.parameters()).device
-    ts = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps + 1, device=device)
-    chunk = cfg.eval.eval_sample_chunk or cfg.eval.n_eval_samples
-    sample_slices, log_weight_slices = [], []
-    remaining = cfg.eval.n_eval_samples
-    with torch.no_grad():
-        while remaining > 0:
-            x_initial = target.sample_base(min(chunk, remaining), device=device)
-            slice_samples, slice_log_weights = sample_swap_ctmc(
-                head, x_initial, ts, return_log_weights=True, target=target,
-                multi_event=multi_event,
-            )
-            sample_slices.append(slice_samples)
-            log_weight_slices.append(slice_log_weights)
-            remaining -= x_initial.shape[0]
-    eval_samples = torch.cat(sample_slices)
-    eval_log_weights = torch.cat(log_weight_slices)
+    eval_samples, eval_log_weights, _ = _chunked_eval_draw(
+        head, target, cfg, multi_event=multi_event, smc_tau=None
+    )
 
     eval_dir = run_dir / ("eval_multi_event" if multi_event else "eval")
     eval_dir.mkdir(exist_ok=True)
@@ -132,6 +182,62 @@ def final_eval(
         "multi_event": multi_event,
     }
     eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
+    eval_metrics.update(
+        composition_observables(
+            eval_samples, target_composition=cfg.ising.target_composition,
+        )
+    )
+    (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
+    return eval_metrics
+
+
+def final_eval_smc(
+    head,
+    target,
+    cfg: HardStageCfg,
+    run_dir: Path,
+    tau: float = 0.5,
+    multi_event: bool = False,
+) -> dict:
+    """SMC-resampled end-of-run eval, written ALONGSIDE the plain-IS eval/
+    (never over it — the S7 preregistration keeps the pure-IS numbers as
+    the quoted baseline; plan `docs/plans/2026-07-24-smc-resampling.md`).
+
+    Same draw protocol as `final_eval` (n_eval_samples, chunking, Euler
+    grid), plus adaptive systematic resampling at threshold `tau` inside
+    each chunk (`samplers.resampling`). Saved log_weights.pt holds the
+    pooled per-sample weights ℓ (see `_chunked_eval_draw`), so
+    `logmeanexp(ℓ)` is the unbiased SMC log-Z estimate — the Eq. 37
+    Jensen-LB form is NOT valid on these weights. `n_unique_samples`
+    tracks ancestry collapse: resampling duplicates rows, so pooled ESS
+    overstates independent-sample count when this drops well below
+    n_eval_samples. Artefacts land in eval_smc_tau<τ>/ per (τ, step-kind)
+    so sweeps never clobber each other."""
+    eval_samples, pooled_log_weights, chunk_stats = _chunked_eval_draw(
+        head, target, cfg, multi_event=multi_event, smc_tau=tau
+    )
+
+    dir_name = f"eval_smc_tau{tau:g}" + ("_multi_event" if multi_event else "")
+    eval_dir = run_dir / dir_name
+    eval_dir.mkdir(exist_ok=True)
+    torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
+    torch.save(pooled_log_weights.cpu(), eval_dir / "log_weights.pt")
+
+    n_samples = int(pooled_log_weights.numel())
+    eval_metrics = {
+        "n_eval_samples": n_samples,
+        "smc_tau": tau,
+        "ess": float(ess_from_log_weights(pooled_log_weights).item()),
+        "log_z_estimate": float(log_mean_exp(pooled_log_weights).item()),
+        "n_resample_events": sum(c["n_resample_events"] for c in chunk_stats),
+        "n_unique_samples": int(
+            torch.unique(eval_samples, dim=0).shape[0]
+        ),
+        "chunk_stats": chunk_stats,
+        "head_kind": cfg.head_kind,
+        "multi_event": multi_event,
+    }
+    eval_metrics["ess_fraction"] = eval_metrics["ess"] / n_samples
     eval_metrics.update(
         composition_observables(
             eval_samples, target_composition=cfg.ising.target_composition,
@@ -240,13 +346,20 @@ def train(
     return run_dir
 
 
-def eval_only(run_dir: str | Path, multi_event: bool = False) -> dict:
+def eval_only(
+    run_dir: str | Path, multi_event: bool = False, smc_tau: float | None = None
+) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
     checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
     path for runs whose training finished but whose final eval died before
     the chunked `final_eval` landed (the 2026-07-06 d=64 OOMs), and — with
     `multi_event=True` — the --compare-multi-event probe (same checkpoint,
-    same draw protocol, matching step instead of one-event)."""
+    same draw protocol, matching step instead of one-event).
+
+    With `smc_tau` set, runs ONLY the SMC-resampled eval (final_eval_smc,
+    artefacts to eval_smc_tau<τ>/): the plain-IS eval/ of a completed run
+    already exists, and re-drawing it costs real GPU-hours at d=64 — run
+    without smc_tau first if it is genuinely missing."""
     run_dir = Path(run_dir)
     saved = json.loads((run_dir / "config.json").read_text())
     # Run dirs written before a defaulted HardStageCfg field existed lack its
@@ -278,7 +391,14 @@ def eval_only(run_dir: str | Path, multi_event: bool = False) -> dict:
             weights_only=True,
         )
     )
-    eval_metrics = final_eval(head, target, cfg, run_dir, multi_event=multi_event)
+    if smc_tau is not None:
+        eval_metrics = final_eval_smc(
+            head, target, cfg, run_dir, tau=smc_tau, multi_event=multi_event
+        )
+    else:
+        eval_metrics = final_eval(
+            head, target, cfg, run_dir, multi_event=multi_event
+        )
     print(f"[eval_only] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
     return eval_metrics
 
@@ -304,6 +424,15 @@ def main():
         help="With --eval-only: sample with the vertex-disjoint matching "
         "step instead of the one-event step; writes eval_multi_event/",
     )
+    parser.add_argument(
+        "--smc-tau",
+        type=float,
+        default=None,
+        metavar="TAU",
+        help="With --eval-only: run the SMC-resampled eval (adaptive "
+        "systematic resampling when interim ESS < TAU*B) instead of the "
+        "plain-IS one; writes eval_smc_tau<TAU>/ alongside eval/",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/03_hard")
     parser.add_argument("--no-wandb", action="store_true")
@@ -327,8 +456,13 @@ def main():
     args = parser.parse_args()
 
     if args.eval_only is not None:
-        eval_only(args.eval_only, multi_event=args.multi_event)
+        eval_only(
+            args.eval_only, multi_event=args.multi_event, smc_tau=args.smc_tau
+        )
         return
+    if args.smc_tau is not None:
+        parser.error("--smc-tau requires --eval-only (SMC is inference-time "
+                     "only; run it against a completed run dir)")
     if args.cfg is None:
         parser.error("--cfg is required unless --eval-only is given")
 
