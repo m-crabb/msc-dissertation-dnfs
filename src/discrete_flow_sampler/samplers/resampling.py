@@ -1,7 +1,6 @@
 """Adaptive systematic resampling: the eval-time AIS -> SMC upgrade.
 
 Design: `docs/design/2026-07-22-unexplored-avenues-inference-distillation.md`,
-Avenue 1 (soft-approved 2026-07-23). Plan: `docs/plans/2026-07-24-smc-resampling.md`.
 
 Why resampling
 --------------

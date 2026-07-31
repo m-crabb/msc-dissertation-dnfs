@@ -117,6 +117,11 @@ class ModelCfg:
     # reduction order; no state_dict change.
     use_sdpa_readout: bool = False
     vocab_size: int = 2
+    # leTF only: take the target composition as a second conditioning input,
+    # so one trained model serves many compositions. OFF leaves parameter
+    # construction identical to an unconditioned model, so archived
+    # checkpoints stay loadable.
+    condition_on_composition: bool = False
 
 
 @dataclass(frozen=True)
@@ -158,6 +163,42 @@ class LambdaCurriculumCfg:
 
 
 @dataclass(frozen=True)
+class CompositionCurriculumStageCfg:
+    """Piecewise-constant widening of the composition draw window.
+
+    Same boundary rules as the σ and λ stages, with one deliberate
+    difference: crossing one of these does NOT clear the replay buffer. The
+    target has not moved — only the distribution compositions are drawn from
+    — so retained states remain valid, and discarding them would throw away
+    exactly the wide-window samples the widening exists to accumulate.
+    """
+
+    start_step: int
+    half_width: float
+    lr: float | None = None
+
+
+@dataclass(frozen=True)
+class CompositionCfg:
+    """Amortise one model over a range of target compositions.
+
+    The draw window is [centre − half_width, centre + half_width], one
+    composition per outer cycle. It is centred rather than given as (lo, hi)
+    because zero-bias Ising is invariant under the joint map (x → −x,
+    c → 1−c), so a symmetric window respects a symmetry the target has and
+    the whole schedule anneals through the single scalar half_width.
+
+    Set `values` instead to draw from a finite set — the control that
+    amortises only over compositions we already have specialists for.
+    """
+
+    centre: float = 0.5
+    half_width: float = 0.0
+    values: tuple[float, ...] | None = None
+    curriculum: tuple[CompositionCurriculumStageCfg, ...] | None = None
+
+
+@dataclass(frozen=True)
 class StageCfg:
     name: str
     ising: IsingCfg
@@ -168,6 +209,7 @@ class StageCfg:
     estimator: Literal["naive_mc", "control_variate"]
     curriculum: CurriculumCfg | None = None
     lambda_curriculum: LambdaCurriculumCfg | None = None
+    composition: CompositionCfg | None = None
     wandb_project: str = "dnfs-baseline"
 
 

@@ -11,6 +11,8 @@ Cell-name format: `S<alphabet>_d<dim>_c<c_target_x100>_l<lambda>`.
 """
 
 from experiments.dnfs_baseline_01.configs import (
+    CompositionCfg,
+    CompositionCurriculumStageCfg,
     CTMCCfg,
     EvalCfg,
     IsingCfg,
@@ -698,6 +700,116 @@ CONFIGS: dict[str, StageCfg] = {
                     start_step=20_000, composition_penalty_strength=50.0
                 ),
             )
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    # ---------------------------------------------------------------
+    # Amortised cells: ONE model conditioned on the target composition,
+    # to be measured against the six per-composition specialists above.
+    #
+    # Both clone the surviving recipe verbatim — λ 10→25→50, ne128, warmup
+    # 2000, grad-clip 500 — because the λ anneal is what took D=10 seed
+    # survival from 1/4 to 4/4, and ne128 is what took the c=0.5 ESS
+    # fraction from 0.699 (3/4 seeds) to 0.918 (4/4).
+    # ---------------------------------------------------------------
+    # Continuous c on a widening window, mirroring the λ schedule step for
+    # step: c ≈ 0.5 is the easy end (base and target compositions already
+    # agree) so the model learns there first, then generalises outward to
+    # the edges where the composition gap is largest.
+    "S2_d10_camort_l50_letf_ne128_anneal": StageCfg(
+        name="S2_d10_camort_l50_letf_ne128_anneal",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=10_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=20_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    # Control: amortise over ONLY the six compositions we have specialists
+    # for. Held-out points between those atoms separate genuine
+    # interpolation from memorising the training set.
+    "S2_d10_cgrid_l50_letf_ne128_anneal": StageCfg(
+        name="S2_d10_cgrid_l50_letf_ne128_anneal",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=10_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=20_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5, values=(0.3, 0.5, 0.55, 0.6, 0.65, 0.8),
         ),
         wandb_project="dnfs-constraints",
     ),

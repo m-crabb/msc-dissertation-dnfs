@@ -6,6 +6,8 @@ from contextlib import contextmanager
 import torch
 from torch import Tensor
 
+from discrete_flow_sampler.composition import expand_b_major
+
 
 class IsingTarget:
     """Periodic-boundary DxD Ising lattice with annealing path.
@@ -77,8 +79,8 @@ class IsingTarget:
         self.target_composition = target_composition
         self.composition_penalty_strength = composition_penalty_strength
         self.base_composition = base_composition
-        # Per-row composition bound by `composition_batch` (D.11). None means
-        # the scalar `target_composition` is in force — the specialist path.
+        # Per-row composition bound by `composition_batch`. None means the
+        # scalar `target_composition` is in force — the specialist path.
         self._bound_composition: Tensor | None = None
 
         A = torch.zeros((self.d, self.d), device=self.device)
@@ -122,6 +124,13 @@ class IsingTarget:
                 "composition_penalty_strength is nonzero"
             )
         self.composition_penalty_strength = strength
+
+    # Denominator of the realisable compositions, or None if c is free. The
+    # soft penalty accepts any real c, so an amortised trainer may draw from a
+    # continuum. A fixed-composition target cannot — there c·d must be an
+    # integer or no exact slice exists — so it sets this to `d` and the
+    # trainer quantises its draws onto that lattice.
+    composition_quantum: int | None = None
 
     def composition_fraction(self, x: Tensor) -> Tensor:
         """Fraction of +1 spins in each state, shape (B,)."""
@@ -176,9 +185,9 @@ class IsingTarget:
     def composition_batch(self, composition: Tensor):
         """Bind a per-row target composition for the duration of the block.
 
-        D.11 amortisation (`docs/plans/2026-07-31-soft-amortisation-d11.md`,
-        decision D2). One model is trained to serve many compositions, so a
-        training batch carries a *different* c per row:
+        Used by the amortised sampler, where one model is trained to serve
+        many compositions, so a training batch carries a *different* c per
+        row:
 
             log p_c(x_b) = x_b^T J x_b − λ · d · (c_+(x_b) − c_b)^2
 
@@ -197,6 +206,13 @@ class IsingTarget:
 
         On exit the previous binding is restored, including when the block
         raises, so no run can leak a bound vector into a later evaluation.
+
+        This is the shared seam for both constraint routes. Here the bound
+        composition feeds the soft penalty; a fixed-composition subclass is
+        expected to honour the same binding wherever it currently reads its
+        scalar composition (its base sampler, its slice-size constant, its
+        off-manifold check), so an amortised trainer needs no knowledge of
+        which route it is driving.
         """
         composition = torch.as_tensor(
             composition, dtype=torch.float, device=self.device
@@ -219,21 +235,9 @@ class IsingTarget:
     def _row_composition(self, x: Tensor) -> Tensor | float | None:
         """Target composition for each row of `x`. Scalar when nothing is bound.
 
-        **The b-major expansion rule.** Every batch-expanding call site in
-        this codebase builds its expanded batch b-major and rides `t` along
-        with `t.repeat_interleave(k)`:
-
-            `_neighbours._log_p_tilde_at_neighbours`  k = d · S
-            `kolmogorov.residual_general`             k = d
-            `ctmc._compute_xi_t_general`              k = d
-
-        So row (b·k + j) of an expanded batch descends from row b of the
-        original, for every j < k. A bound composition vector must follow
-        the identical rule — `composition.repeat_interleave(k)` with
-        k = x.shape[0] // n_blocks — or row b silently inherits row b'’s
-        target composition. That failure never raises; it only shows up as
-        a quietly worse ESS, which is why the divisibility check must be a
-        hard error rather than a broadcast.
+        A bound vector is aligned to `x` by `composition.expand_b_major`,
+        which documents why the expansion rule matters and why a ragged
+        batch is a hard error rather than a broadcast.
 
         Returns:
             None when no composition is configured at all, the scalar
@@ -243,18 +247,7 @@ class IsingTarget:
         if self._bound_composition is None:
             return self.target_composition
 
-        batch_size = x.shape[0]
-        n_blocks = self._bound_composition.shape[0]
-        if batch_size % n_blocks != 0:
-            raise ValueError(
-                f"batch of {batch_size} rows is not an integer multiple of "
-                f"the {n_blocks} bound compositions, so the b-major "
-                "expansion rule cannot align them. Every expansion in this "
-                "codebase repeats each row a fixed number of times; a "
-                "ragged batch means the caller expanded some other way and "
-                "the row-to-composition map is unknown."
-            )
-        return self._bound_composition.repeat_interleave(batch_size // n_blocks)
+        return expand_b_major(self._bound_composition, x.shape[0])
 
     def composition_penalty(self, x: Tensor) -> Tensor:
         """Extensive soft-composition penalty, shape (B,).
@@ -376,6 +369,7 @@ class FixedCompositionIsingTarget(IsingTarget):
             composition_penalty_strength=0.0,
         )
         self.n_plus_target = n_plus_target
+        self.composition_quantum = self.d
         self._log_slice_size = (
             math.lgamma(self.d + 1)
             - math.lgamma(n_plus_target + 1)

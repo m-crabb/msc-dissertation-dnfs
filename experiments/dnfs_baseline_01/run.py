@@ -79,6 +79,7 @@ def _build_model(cfg, target):
             hidden_dim=cfg.model.hidden_dim,
             n_layers=cfg.model.n_layers,
             n_heads=cfg.model.n_heads,
+            condition_on_composition=cfg.model.condition_on_composition,
         ).to(target.device)
     raise ValueError(f"Unknown model kind: {cfg.model.kind!r}")
 
@@ -296,6 +297,18 @@ def train(
             cfg.lambda_curriculum.stages
             if cfg.lambda_curriculum is not None
             else None
+        ),
+        composition_centre=(
+            cfg.composition.centre if cfg.composition is not None else None
+        ),
+        composition_half_width=(
+            cfg.composition.half_width if cfg.composition is not None else 0.0
+        ),
+        composition_values=(
+            cfg.composition.values if cfg.composition is not None else None
+        ),
+        composition_curriculum=(
+            cfg.composition.curriculum if cfg.composition is not None else None
         ),
     )
 

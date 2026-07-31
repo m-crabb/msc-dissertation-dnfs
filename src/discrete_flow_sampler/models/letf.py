@@ -312,15 +312,14 @@ class LeTFRateMatrix(nn.Module):
         n_heads: attention heads per block. Must divide hidden_dim.
         use_sdpa_readout: opt-in fused-kernel readout attention (see
             AttentionReadout docstring). Default OFF; Tier-2 flag.
-        condition_on_composition: opt-in D.11 amortisation — the model takes
-            the soft target composition c as a second conditioning scalar,
-            so one network serves the whole F(c) curve instead of one
-            specialist per composition. Default OFF, which leaves parameter
+        condition_on_composition: opt-in amortisation — the model takes the
+            target composition c as a second conditioning scalar, so one
+            network serves the whole F(c) curve instead of one specialist
+            per composition. Default OFF, which leaves parameter
             construction (and therefore RNG consumption and every archived
             checkpoint) bit-identical to the unconditioned model.
 
-    Composition conditioning (D.11, decision D1 in
-    `docs/plans/2026-07-31-soft-amortisation-d11.md`):
+    Composition conditioning:
 
         cond = TimestepEmbedder(t) + CompositionEmbedder(c)      # (B, 1, h)
 
@@ -397,7 +396,7 @@ class LeTFRateMatrix(nn.Module):
         """Conditioning token, shape (B, 1, h) — prepended AND readout-injected.
 
         Unconditioned: TimestepEmbedder(t) alone, exactly as before.
-        Conditioned (D.11): plus the composition embedding, summed.
+        Conditioned: plus the composition embedding, summed.
 
         Both arms return the same shape, so every downstream consumer — the
         two causal stacks, and the readout's triple injection — is unaware
@@ -445,7 +444,7 @@ class LeTFRateMatrix(nn.Module):
         """Pre-readout body H_HTF(x), shape (B, d, hidden_dim). Hollow at every site.
 
         Accepts +-1 float spins (training) or 0/1 Long indices (tests).
-        `c` is the D.11 target composition; see `_conditioning`.
+        `c` is the target composition; see `_conditioning`.
         """
         x_idx = ((x + 1) / 2).long()
         x_emb = self.token_embedder(x_idx)              # (B, d, h)

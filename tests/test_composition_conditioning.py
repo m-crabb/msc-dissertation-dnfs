@@ -1,12 +1,10 @@
-"""Tests for D.11 composition-conditioning — the amortised soft sampler.
+"""Tests for composition conditioning — the amortised sampler.
 
-Design decisions under test live in `docs/plans/2026-07-31-soft-amortisation-d11.md`
-(D1 = model conditioning by summing into `cond_t`; D2 = per-row composition
-bound onto the target by context manager).
+An amortised sampler is conditioned on the target composition c, so one
+trained model serves many compositions instead of one specialist per
+composition. Two halves.
 
-Two halves:
-
-TARGET (D2) — `IsingTarget.composition_batch(c)` binds a (B,) composition
+TARGET — `IsingTarget.composition_batch(c)` binds a (B,) composition
 vector for the duration of a block, so `composition_penalty` becomes per-row:
 
     penalty(x_b) = λ · d · (c₊(x_b) − c_b)²                [was: scalar c]
@@ -19,7 +17,7 @@ batch axis b-major by an integer factor and rides `t` along with
 exactly the same rule, or row b's penalty silently gets row b'’s target
 composition — a bias that would never raise, only degrade.
 
-MODEL (D1) — c is embedded by a second `TimestepEmbedder` and SUMMED into
+MODEL — c is embedded by a second `TimestepEmbedder` and SUMMED into
 the existing `(B, 1, h)` conditioning tensor. Three properties matter:
 
   1. Hollowness (Def. 3) survives — c is independent of x entirely, so the
@@ -74,7 +72,7 @@ def _penalty_by_loop(target, x, compositions):
 
 
 # --------------------------------------------------------------------------
-# TARGET (D2) — per-row composition
+# TARGET — per-row composition
 # --------------------------------------------------------------------------
 
 def test_unbound_penalty_is_unchanged_by_the_new_machinery():
@@ -156,7 +154,7 @@ def test_bound_composition_reaches_the_annealing_path():
     """The penalty is reached via log_prob → log_p_tilde_t / dt_log_p_tilde_t.
 
     Binding must change both, and must NOT change either at t=0 (where the
-    path is pure base η, which D4 keeps composition-independent).
+    path is pure base η, which stays composition-independent).
     """
     target = _soft_target(target_composition=0.5)
     x = _random_spins(4, target.d, seed=3)
@@ -177,7 +175,7 @@ def test_bound_composition_reaches_the_annealing_path():
     torch.testing.assert_close(bound_mid[1], baseline_mid[1])
     assert not torch.allclose(bound_mid[0], baseline_mid[0])
     assert not torch.allclose(bound_dt[0], baseline_dt[0])
-    # t=0 is the base η, which carries no composition (design D4).
+    # t=0 is the base η, which carries no composition.
     torch.testing.assert_close(bound_zero, baseline_zero)
 
 
@@ -211,7 +209,7 @@ def test_neighbour_helper_respects_bound_composition():
 
 
 # --------------------------------------------------------------------------
-# MODEL (D1) — c summed into cond_t
+# MODEL — c summed into cond_t
 # --------------------------------------------------------------------------
 
 def _conditioned_model(d=9, hidden_dim=16, seed=0):
