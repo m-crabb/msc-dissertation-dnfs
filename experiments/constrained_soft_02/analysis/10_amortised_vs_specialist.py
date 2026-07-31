@@ -141,6 +141,28 @@ def collect_amortised(results_dir: Path, cells: list[str]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=AMORTISED_COLUMNS)
 
 
+def _one_run_per_seed(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    """Keep the newest run dir per (group, seed); report what was dropped.
+
+    The archive holds repeated run dirs for the same cell and seed — a relaunch
+    that superseded an earlier attempt, or the same run copied under a new
+    timestamp. Averaging over rows would weight such a seed twice, inflating
+    (or deflating) the seed mean while `n_seeds` still reports the honest
+    distinct-seed count, so the discrepancy is invisible in the output.
+
+    Newest wins because run dirs carry a trailing timestamp and a relaunch is
+    the later word on that seed. Duplicates are printed rather than silently
+    collapsed: if two dirs for one seed disagree, that is something to look at,
+    not something for this function to decide quietly.
+    """
+    subset = [*keys, "seed"]
+    ordered = frame.sort_values("run")
+    duplicated = ordered.duplicated(subset=subset, keep="last")
+    for _, row in ordered[duplicated].iterrows():
+        print(f"  (superseded, excluded from the mean: {row['run']})")
+    return ordered[~duplicated]
+
+
 def _aggregate(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     """Seed-mean of the reported metrics, with the seed count kept visible.
 
@@ -156,7 +178,8 @@ def _aggregate(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     """
     if frame.empty:
         return pd.DataFrame(columns=[*keys, "n_seeds", *REPORTED])
-    aggregated = frame.groupby(keys, as_index=False).agg(
+    deduped = _one_run_per_seed(frame, keys)
+    aggregated = deduped.groupby(keys, as_index=False).agg(
         n_seeds=("seed", "nunique"),
         **{key: (key, "mean") for key in REPORTED},
     )

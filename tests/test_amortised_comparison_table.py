@@ -72,7 +72,8 @@ def _write_run(
 @pytest.fixture
 def results_dir(tmp_path):
     _write_run(tmp_path, "good_c05_seed42", composition=0.5, ess_fraction=0.90)
-    _write_run(tmp_path, "good_c05_seed43", composition=0.5, ess_fraction=0.80)
+    _write_run(tmp_path, "good_c05_seed43", composition=0.5, seed=43,
+               ess_fraction=0.80)
     _write_run(tmp_path, "matched_base_c08_seed45", composition=0.8,
                base_composition=0.8, ess_fraction=0.17)
     _write_run(tmp_path, "mlp_c03_seed42", composition=0.3, kind="lemlp",
@@ -91,6 +92,28 @@ def test_wrong_comparators_are_excluded(results_dir):
     # Each exclusion for its own reason, so a loosened filter fails loudly.
     assert 0.8 not in set(rows["composition"]), "matched base leaked in"
     assert "lemlp" not in set(rows["model_kind"]), "wrong architecture leaked in"
+
+
+def test_repeated_run_dirs_for_one_seed_are_not_double_counted(results_dir):
+    """A relaunched seed must weigh once, not twice.
+
+    The archive really does hold two dirs for c=0.50 seed 42. Averaging over
+    rows would count it twice while `n_seeds` still says 4 — a seed mean that
+    is wrong in a way its own metadata denies.
+    """
+    _write_run(results_dir, "good_c05_seed42_relaunch", composition=0.5,
+               seed=42, ess_fraction=0.10)
+
+    aggregated = table._aggregate(
+        table.collect_specialists(results_dir, D=10, sigma=0.1, penalty=50.0),
+        ["composition", "n_euler_steps"],
+    )
+    row = aggregated.iloc[0]
+
+    assert row["n_seeds"] == 2
+    # Newest dir wins (0.10 supersedes 0.90), so the mean is over {0.10, 0.80}
+    # — not the 0.60 that double-counting seed 42 would give.
+    assert row["ess_fraction"] == pytest.approx(0.45)
 
 
 def test_anneal_requirement_follows_the_comparator(results_dir):
