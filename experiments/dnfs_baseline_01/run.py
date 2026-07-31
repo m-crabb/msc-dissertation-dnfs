@@ -274,6 +274,7 @@ def _eval_at_composition(model, target, cfg, composition: float | None, device):
     time_grid = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps, device=device)
     wrap, binding = _composition_binding(target, composition, device)
     with torch.no_grad(), binding:
+        draw_start = time.perf_counter()
         x_initial = target.sample_base(cfg.eval.n_eval_samples, device=device)
         samples, log_weights = sample_ctmc(
             wrap(model),
@@ -282,9 +283,31 @@ def _eval_at_composition(model, target, cfg, composition: float | None, device):
             return_log_weights=True,
             target=target,
         )
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        draw_seconds = time.perf_counter() - draw_start
         metrics = _compute_eval_metrics(
             samples, log_weights, target, composition=composition
         )
+    # Cost of the draw, recorded because it cannot be recovered later: no
+    # archived run carries any timing, and the runs are spread across several
+    # machines, so a cost axis has to start accumulating from here.
+    #
+    # `wall_clock_step_s` in the training log is NOT this: it times only the
+    # inner loss update, excluding trajectory generation and the eval draw.
+    #
+    # Seconds are machine-specific, so the derived quantity is the one to
+    # quote across runs: `nfe_per_effective_sample` is Euler steps × samples
+    # drawn, divided by ESS — a hardware-independent cost-per-good-sample that
+    # prices the Euler budget honestly (ne128 costs 2× ne64 per sample and has
+    # to earn it back in ESS) and is comparable to published pure-IS tables.
+    metrics["eval_draw_seconds"] = draw_seconds
+    metrics["eval_device"] = "cuda" if torch.cuda.is_available() else "cpu"
+    effective = metrics["ess"]
+    metrics["nfe_per_effective_sample"] = (
+        cfg.ctmc.n_euler_steps * cfg.eval.n_eval_samples / effective
+        if effective > 0 else float("inf")
+    )
     return samples, log_weights, metrics
 
 

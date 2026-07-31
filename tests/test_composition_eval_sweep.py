@@ -154,6 +154,28 @@ def test_sweep_covers_the_specialists_and_the_held_out_points(amortised_run):
     )
 
 
+def test_sweep_rows_carry_a_cost_axis(amortised_run):
+    """Cost has to be recorded at draw time or it is gone.
+
+    No archived run carries any timing, and the runs span several machines, so
+    a cost-vs-quality grid can only be built from runs made after this exists.
+    Seconds are machine-specific; `nfe_per_effective_sample` is the quotable
+    one — Euler steps × samples ÷ ESS, which prices the Euler budget and is
+    comparable across hardware.
+    """
+    rows = composition_sweep(amortised_run, compositions=(0.50,), save=False)
+    row = rows[0]
+
+    assert row["eval_draw_seconds"] > 0.0
+    assert row["eval_device"] in ("cpu", "cuda")
+    # 8 Euler steps × 16 samples ÷ ESS, and ESS ≤ 16, so cost ≥ 8 per
+    # effective sample — i.e. never cheaper than one pass per good sample.
+    assert row["nfe_per_effective_sample"] == pytest.approx(
+        8 * 16 / row["ess"]
+    )
+    assert row["nfe_per_effective_sample"] >= 8.0
+
+
 def test_sweep_scores_each_row_against_its_own_target(amortised_run):
     """The binding must reach the density, not just the model.
 
@@ -185,8 +207,14 @@ def test_sweep_reseeds_per_composition_for_common_random_numbers(amortised_run):
     rows = composition_sweep(
         amortised_run, compositions=(0.50, 0.30, 0.50), save=False
     )
+    # Everything except the clock: `eval_draw_seconds` measures the machine,
+    # not the draw, so it is the one field a reproducible sweep may differ on.
+    statistics = [
+        {k: v for k, v in row.items() if k != "eval_draw_seconds"}
+        for row in rows
+    ]
 
-    assert rows[0] == rows[2]
+    assert statistics[0] == statistics[2]
     assert rows[0]["ess"] != rows[1]["ess"]
 
 
