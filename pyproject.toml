@@ -23,7 +23,15 @@ wandb = ">=0.18,<1"
 modal = ">=0.77"
 
 [tool.pixi.tasks]
-test = "pytest tests/ -v"
+# Parallel by default: the suite is dominated by a handful of long swap-leg
+# tests (bit-exact resume alone is ~43 s), so wall-clock is ~290 s serial vs
+# ~77 s across 12 workers. `worksteal` beats the default round-robin here
+# because the durations are very uneven. conftest.py already pins torch to
+# one thread, so workers do not oversubscribe the cores.
+test = "pytest tests/ -q -n auto --dist worksteal"
+# Serial escape hatch: use when you need pdb, live output, or to rule out a
+# cross-test interaction that only appears under parallelism.
+test-serial = "pytest tests/ -v"
 lint = "ruff check src/ experiments/ tests/"
 format = "ruff format src/ experiments/ tests/"
 jupyter = "jupyter lab"
@@ -45,6 +53,7 @@ einops = ">=0.8,<1"
 [tool.pixi.feature.dev.dependencies]
 pytest = "*"
 ruff = "*"
+pytest-xdist = ">=3.8.0,<4"
 
 # ---------------------------------------------
 # CUDA Feature (used by the Modal image)
