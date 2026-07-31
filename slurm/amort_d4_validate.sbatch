@@ -29,8 +29,10 @@ export WANDB_MODE=offline
 
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
-CFG=S2_d4_camort_l50_letf
 RESULTS=results/02_constrained_soft
+# Override for the narrow-window twin:
+#   sbatch --export=ALL,CFG=S2_d4_camort_w15_l50_letf slurm/amort_d4_validate.sbatch
+CFG=${CFG:-S2_d4_camort_l50_letf}
 
 SEEDS=(42 43 44 45)
 SEED=${SEEDS[$SLURM_ARRAY_TASK_ID]}

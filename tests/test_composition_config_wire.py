@@ -17,11 +17,12 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 # The D=4 cell is the cheap end-to-end validation of the same machinery; the
 # D=10 pair is the headline experiment and carries the surviving recipe.
 VALIDATION_CELL = "S2_d4_camort_l50_letf"
+NARROW_WINDOW_CELL = "S2_d4_camort_w15_l50_letf"
 D10_AMORTISED_CELLS = (
     "S2_d10_camort_l50_letf_ne128_anneal",
     "S2_d10_cgrid_l50_letf_ne128_anneal",
 )
-AMORTISED_CELLS = (VALIDATION_CELL, *D10_AMORTISED_CELLS)
+AMORTISED_CELLS = (VALIDATION_CELL, NARROW_WINDOW_CELL, *D10_AMORTISED_CELLS)
 
 # The compositions with archived per-composition specialists; the grid cell
 # exists to amortise over exactly these, so drift here breaks the comparison.
@@ -67,6 +68,30 @@ def test_validation_cell_differs_from_its_comparator_only_by_amortisation():
     # D=4 has archived specialists at 0.30 and 0.50 only.
     final_half_width = validation.composition.curriculum[-1].half_width
     assert validation.composition.centre - final_half_width <= 0.30
+
+
+def test_narrow_window_cell_differs_only_in_the_window():
+    """The coverage-cost probe must vary one thing.
+
+    Its whole purpose is to attribute a change in conditioning fidelity to the
+    width of the training range, so anything else differing from the wide cell
+    — steps, Euler budget, capacity — would make the comparison worthless.
+    """
+    wide = CONFIGS[VALIDATION_CELL]
+    narrow = CONFIGS[NARROW_WINDOW_CELL]
+
+    assert replace(narrow, name=wide.name, composition=wide.composition) == wide
+    # Same schedule shape and boundaries, half the final width.
+    assert [s.start_step for s in narrow.composition.curriculum] == [
+        s.start_step for s in wide.composition.curriculum
+    ]
+    assert narrow.composition.curriculum[-1].half_width == pytest.approx(0.15)
+    assert wide.composition.curriculum[-1].half_width == pytest.approx(0.30)
+    # 0.30 and 0.80 fall outside the narrow training range on purpose: those
+    # sweep rows measure extrapolation, and reading them as interpolation
+    # would credit the model with coverage it never trained on.
+    narrow_edge = narrow.composition.centre - narrow.composition.curriculum[-1].half_width
+    assert narrow_edge > 0.30
 
 
 @pytest.mark.parametrize("cell_name", D10_AMORTISED_CELLS)

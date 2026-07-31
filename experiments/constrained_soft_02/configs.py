@@ -166,6 +166,57 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # Narrow-window twin of the cell above: identical in every respect except
+    # that the window stops widening at ±0.15 instead of ±0.30.
+    #
+    # It exists to answer one question the wide run raised and could not
+    # settle. The wide run's conditioning came out heavily attenuated —
+    # realised composition tracked requested composition with slope 0.39,
+    # against 0.984 for the exact enumerated target — so the model travels
+    # under 40% of the distance it is asked to. Two explanations fit that
+    # equally well: the range is too wide to cover with a 10k-step budget
+    # (a coverage cost, which trades off and can be quantified), or the
+    # conditioning is attenuated however narrow the range gets (intrinsic,
+    # and no amount of budget-shuffling fixes it).
+    #
+    # Halving the final window separates them. If the slope rises toward 1
+    # inside [0.35, 0.65], the deficit is coverage and buys a real trade-off
+    # curve; if it stays near 0.4, the attenuation is intrinsic and the
+    # escalation is architectural rather than a matter of scheduling.
+    #
+    # The sweep still evaluates the full ten compositions, so 0.30 and 0.80
+    # now sit OUTSIDE the training range by construction — those rows measure
+    # extrapolation, not interpolation, and must be read as such.
+    "S2_d4_camort_w15_l50_letf": StageCfg(
+        name="S2_d4_camort_w15_l50_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=2_000, half_width=0.10),
+                CompositionCurriculumStageCfg(start_step=4_000, half_width=0.15),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     "S2_d10_c03_l50_letf_ne128": StageCfg(
         name="S2_d10_c03_l50_letf_ne128",
         ising=IsingCfg(
