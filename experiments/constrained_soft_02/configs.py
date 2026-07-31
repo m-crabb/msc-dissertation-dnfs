@@ -217,6 +217,51 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # NULL CONTROL for the amortisation machinery. Conditioning is ON, but the
+    # draw window has zero width, so every outer cycle draws c = 0.5 exactly.
+    # Mathematically this IS the S2_d4_c05_l50_letf specialist — same target,
+    # same fixed composition — yet it reaches that target through the whole
+    # amortisation path: the model adapter, the per-cycle draw, the per-state
+    # composition buffer, the per-state c_t baseline, and the target binding.
+    #
+    # It exists because every other check on that path is partial. The exact
+    # enumeration validates the target; the archived specialists validate the
+    # sampler and the eval; neither touches the conditioning code, because a
+    # specialist has none. This cell is the one comparison where a discrepancy
+    # can only be the machinery.
+    #
+    # Pass condition: it reproduces the specialist — ESS fraction ~0.74 over
+    # seeds 42-45 and realised composition ~0.500. Anything materially worse
+    # means the attenuation measured on the wide and narrow cells is an
+    # artefact and every number from them needs re-reading.
+    #
+    # It is NOT expected to be bit-identical, and that is the other reason it
+    # is worth running: amortised training replaced the specialist's "latest
+    # c_t grid applied to the whole buffer" approximation with a per-state
+    # buffered c_t. That change is research-bearing, rides on every amortised
+    # run, and no archived cell exercises it. This isolates it.
+    "S2_d4_cnull_l50_letf": StageCfg(
+        name="S2_d4_cnull_l50_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        composition=CompositionCfg(centre=0.5, half_width=0.0),
+        wandb_project="dnfs-constraints",
+    ),
     "S2_d10_c03_l50_letf_ne128": StageCfg(
         name="S2_d10_c03_l50_letf_ne128",
         ising=IsingCfg(

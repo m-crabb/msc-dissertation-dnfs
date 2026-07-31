@@ -18,11 +18,14 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 # D=10 pair is the headline experiment and carries the surviving recipe.
 VALIDATION_CELL = "S2_d4_camort_l50_letf"
 NARROW_WINDOW_CELL = "S2_d4_camort_w15_l50_letf"
+NULL_CONTROL_CELL = "S2_d4_cnull_l50_letf"
 D10_AMORTISED_CELLS = (
     "S2_d10_camort_l50_letf_ne128_anneal",
     "S2_d10_cgrid_l50_letf_ne128_anneal",
 )
-AMORTISED_CELLS = (VALIDATION_CELL, NARROW_WINDOW_CELL, *D10_AMORTISED_CELLS)
+AMORTISED_CELLS = (
+    VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, *D10_AMORTISED_CELLS
+)
 
 # The compositions with archived per-composition specialists; the grid cell
 # exists to amortise over exactly these, so drift here breaks the comparison.
@@ -92,6 +95,34 @@ def test_narrow_window_cell_differs_only_in_the_window():
     # would credit the model with coverage it never trained on.
     narrow_edge = narrow.composition.centre - narrow.composition.curriculum[-1].half_width
     assert narrow_edge > 0.30
+
+
+def test_null_control_is_the_specialist_reached_through_the_amortised_path():
+    """A zero-width window makes the amortised cell a specialist in disguise.
+
+    Every c drawn is exactly the centre, so the target is the archived
+    c=0.5 specialist's target — but it is reached through the adapter, the
+    per-cycle draw, the per-state composition buffer, the buffered c_t
+    baseline and the target binding. That makes it the one comparison where a
+    discrepancy can only be the machinery, since the physics is held fixed.
+    """
+    null = CONFIGS[NULL_CONTROL_CELL]
+    specialist = CONFIGS["S2_d4_c05_l50_letf"]
+
+    assert null.composition.half_width == 0.0
+    assert null.composition.curriculum is None
+    assert null.composition.values is None
+    assert null.composition.centre == specialist.ising.target_composition
+
+    # Identical to the specialist once the amortisation knobs are stripped, so
+    # a gap cannot be blamed on some other hyperparameter.
+    stripped = replace(
+        null,
+        name=specialist.name,
+        model=replace(null.model, condition_on_composition=False),
+        composition=None,
+    )
+    assert stripped == specialist
 
 
 @pytest.mark.parametrize("cell_name", D10_AMORTISED_CELLS)
