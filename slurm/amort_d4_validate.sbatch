@@ -30,9 +30,12 @@ export WANDB_MODE=offline
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
 RESULTS=results/02_constrained_soft
-# Override for the narrow-window twin:
-#   sbatch --export=ALL,CFG=S2_d4_camort_w15_l50_letf slurm/amort_d4_validate.sbatch
-CFG=${CFG:-S2_d4_camort_l50_letf}
+# The cell is a positional argument, not an --export: passing it through the
+# environment made this cluster's controller fail user-env retrieval and hold
+# the whole array ("requeued held", 2026-08-01). Slurm hands trailing sbatch
+# arguments to the script as $1, which needs no environment propagation.
+#   sbatch slurm/amort_d4_validate.sbatch S2_d4_camort_w15_l50_letf
+CFG=${1:-S2_d4_camort_l50_letf}
 
 SEEDS=(42 43 44 45)
 SEED=${SEEDS[$SLURM_ARRAY_TASK_ID]}
