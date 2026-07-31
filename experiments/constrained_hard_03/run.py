@@ -36,7 +36,11 @@ from discrete_flow_sampler.samplers.resampling import (
 from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.seeding import seed_everything
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+from discrete_flow_sampler.targets.ising import (
+    FixedCompositionIsingTarget,
+    IsingTarget,
+)
+from discrete_flow_sampler.targets.potts import FixedCompositionPottsTarget
 
 HEAD_KINDS = (
     "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention"
@@ -69,16 +73,36 @@ def smoke_config(cfg: HardStageCfg) -> HardStageCfg:
 
 def build_target_and_head(
     cfg: HardStageCfg, device: str
-) -> tuple[FixedCompositionIsingTarget, torch.nn.Module]:
+) -> tuple[IsingTarget, torch.nn.Module]:
     """Shared constructor for the train and eval-only entry points, so the
-    two can never drift in how they instantiate the target/backbone/head."""
-    target = FixedCompositionIsingTarget(
-        D=cfg.ising.D,
-        sigma=cfg.ising.sigma,
-        target_composition=cfg.ising.target_composition,
-        bias=cfg.ising.bias,
-        device=device,
-    )
+    two can never drift in how they instantiate the target/backbone/head.
+
+    Both targets sit on a fixed-composition manifold and expose the same
+    surface to the swap stack (`swap_log_ratio`, `dt_log_p_tilde_t`,
+    `sample_base`, `set_sigma`), so the branch is confined to this one place —
+    nothing downstream in `train_swap` or `sample_swap_ctmc` knows which it
+    got. `cfg.ising` carries the lattice for both routes; only the
+    *composition* differs (scalar n_plus vs S-vector of species counts)."""
+    if cfg.target_kind == "potts":
+        if cfg.potts_composition is None:
+            raise ValueError(
+                "target_kind 'potts' requires potts_composition (the "
+                "per-species fractions; its length is also S)"
+            )
+        target = FixedCompositionPottsTarget(
+            D=cfg.ising.D,
+            sigma=cfg.ising.sigma,
+            composition=tuple(cfg.potts_composition),
+            device=device,
+        )
+    else:
+        target = FixedCompositionIsingTarget(
+            D=cfg.ising.D,
+            sigma=cfg.ising.sigma,
+            target_composition=cfg.ising.target_composition,
+            bias=cfg.ising.bias,
+            device=device,
+        )
     backbone = LeTFRateMatrix(
         d=target.d,
         vocab_size=cfg.model.vocab_size,
@@ -153,6 +177,29 @@ def _chunked_eval_draw(
     return torch.cat(sample_slices), torch.cat(log_weight_slices), chunk_stats
 
 
+def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
+    """Composition observables for the eval metrics dict — EMPTY on Potts.
+
+    `diagnostics.metrics.composition_observables` is two-species throughout:
+    `composition_fraction_up` computes ((x+1)/2).mean(), which is the fraction
+    of +1 spins only when x is binary and is the mean LABEL INDEX once S > 2,
+    and `magnetisation` averages the raw spins {-1, 1, 3, ...}. Neither
+    RAISES on Potts states — they would write a confident, meaningless number
+    into metrics.json, which is worse than writing nothing.
+
+    So the Potts route reports no composition observables until the S-vector
+    diagnostics land (Potts plan Step 3: composition_counts, S_q asymmetry,
+    delta-based correlators). Nothing is lost from the constraint's point of
+    view: composition here is enforced exactly by the swap move set, not
+    measured, and `assert_on_manifold` still checks it.
+    """
+    if cfg.target_kind == "potts":
+        return {}
+    return composition_observables(
+        samples, target_composition=cfg.ising.target_composition,
+    )
+
+
 def final_eval(
     head, target, cfg: HardStageCfg, run_dir: Path, multi_event: bool = False
 ) -> dict:
@@ -182,11 +229,7 @@ def final_eval(
         "multi_event": multi_event,
     }
     eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
-    eval_metrics.update(
-        composition_observables(
-            eval_samples, target_composition=cfg.ising.target_composition,
-        )
-    )
+    eval_metrics.update(_composition_metrics(cfg, eval_samples))
     (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
     return eval_metrics
 
@@ -238,11 +281,7 @@ def final_eval_smc(
         "multi_event": multi_event,
     }
     eval_metrics["ess_fraction"] = eval_metrics["ess"] / n_samples
-    eval_metrics.update(
-        composition_observables(
-            eval_samples, target_composition=cfg.ising.target_composition,
-        )
-    )
+    eval_metrics.update(_composition_metrics(cfg, eval_samples))
     (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
     return eval_metrics
 

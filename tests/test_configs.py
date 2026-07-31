@@ -282,7 +282,12 @@ def test_hard_cell_is_fixed_composition_no_penalty():
 def test_hard_ladder_covers_three_sigmas_plus_control():
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    ladder = [k for k in CONFIGS if k.endswith("_dh")]
+    # Scoped to the binary D=16 ladder this test is about: `_dh` alone now
+    # also catches the Potts gate cell (H3_d9, a different lattice, species
+    # count and sigma convention), which is not a rung of this ladder.
+    ladder = [
+        k for k in CONFIGS if k.startswith("H2_d16") and k.endswith("_dh")
+    ]
     assert sorted(CONFIGS[k].ising.sigma for k in ladder) == [0.10, 0.223, 0.40]
     control = CONFIGS["H2_d16_c50_s010_letf_na"]
     assert control.head_kind == "non_antisym"

@@ -7,7 +7,9 @@ cells, the target here is `FixedCompositionIsingTarget`: composition is
 enforced exactly by the swap move set (n_plus == N_A always), so there is no
 `composition_penalty_strength` or `lambda_curriculum` to anneal.
 
-Cell-name format: `H2_d<dim>_c<c_target_x100>_s<sigma label>_letf_<head tag>`.
+Cell-name format: `H<S>_d<dim>_c<c_target_x100>_s<sigma label>_letf_<head tag>`,
+where S is the species count — `H2_*` are the binary Ising cells, `H3_*` the
+first Potts ones (composition then means the per-species share, c33 = thirds).
 The sigma-ladder cells (`_dh` suffix) probe the swap-CTMC across the Ising
 phase transition (σ_c ≈ 0.22305) with the correctness-gate
 `DoublyHollowSwapHead`; the `_na` cell pairs the subcritical floor rung with
@@ -96,6 +98,20 @@ class HardStageCfg(StageCfg):
     n_groups: int | None = None
     grouping: str = "diagonal"
     group_chunk_size: int | None = None
+    # Target family on the fixed-composition manifold (Potts plan Step 2).
+    # "ising" = FixedCompositionIsingTarget, composition a scalar n_plus held
+    # in `ising.target_composition`; "potts" = FixedCompositionPottsTarget,
+    # composition an S-vector held in `potts_composition` below. Both fields
+    # default to the Ising route so every run dir written before Potts existed
+    # backfills to what it actually ran under `eval_only`'s drift guard (89363b3).
+    target_kind: Literal["ising", "potts"] = "ising"
+    # Per-species fractions, length S, summing to 1; each entry times d must be
+    # integral or no exact slice exists. This is the SINGLE source of S: the
+    # backbone's vocab_size is derived from its length in `_hard_cell`, so the
+    # embedding tables and the target's species count cannot disagree (they
+    # would otherwise fail as an index error inside nn.Embedding). Read only
+    # when target_kind is "potts", mirroring n_groups / "grouped_anchor".
+    potts_composition: tuple[float, ...] | None = None
 
 
 class NonAntisymSwapHead(nn.Module):
@@ -190,6 +206,7 @@ def _hard_cell(
     use_sdpa_readout: bool = False,
     eval_autocast_bf16: bool = False,
     curriculum: CurriculumCfg | None = None,
+    potts_composition: tuple[float, ...] | None = None,
 ) -> HardStageCfg:
     """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
     only sigma and head_kind (all otherwise identical). The keyword knobs open
@@ -197,12 +214,21 @@ def _hard_cell(
     the lattice, n_euler_steps must be clip-safe for the one-event step at that D
     (scout: ~2d at d=64), n_eval_samples sizes the IS-ESS eval drawn on the GPU
     job itself (evals-ride-the-gpu-job), and eval_sample_chunk streams that eval
-    in slices so the vectorised head's d-anchor-copies batch fits GPU memory."""
+    in slices so the vectorised head's d-anchor-copies batch fits GPU memory.
+
+    `potts_composition` switches the cell to the S-species route: S and the
+    manifold both come from that one tuple, so `vocab_size` follows its length
+    and the binary `ising.target_composition` is dropped to None (a scalar
+    n_plus has no meaning for S > 2, and leaving 0.5 there would be a false
+    record). `sigma` is then the POTTS coupling — an Ising run at σ corresponds
+    to S=2 Potts at 2σ (targets/potts.py module docstring)."""
+    is_potts = potts_composition is not None
     return HardStageCfg(
         name=name,
         ising=IsingCfg(
             D=D, sigma=sigma, bias=0.0,
-            target_composition=0.5, composition_penalty_strength=0.0,
+            target_composition=None if is_potts else 0.5,
+            composition_penalty_strength=0.0,
         ),
         train=TrainCfg(
             n_steps=n_steps, batch_size=128, replay_buffer_cycles=8,
@@ -216,13 +242,16 @@ def _hard_cell(
             eval_autocast_bf16=eval_autocast_bf16,
         ),
         model=ModelCfg(
-            kind="letf", hidden_dim=32, n_layers=2, n_heads=4, vocab_size=2,
+            kind="letf", hidden_dim=32, n_layers=2, n_heads=4,
+            vocab_size=len(potts_composition) if is_potts else 2,
             use_sdpa_readout=use_sdpa_readout,
         ),
         estimator="control_variate",
         head_kind=head_kind,
         wandb_project="dnfs-constraints",
         curriculum=curriculum,
+        target_kind="potts" if is_potts else "ising",
+        potts_composition=potts_composition,
     )
 
 
@@ -270,6 +299,22 @@ def _d64_curriculum_cell(
 
 
 CONFIGS: dict[str, HardStageCfg] = {
+    # First Potts cell (plan docs/plans/2026-07-31-potts-extension.md Step 2):
+    # the training path on S=3, kept small enough to smoke end-to-end on CPU.
+    # D=3 (d=9) is the smallest lattice that is BOTH non-degenerate (on the L=2
+    # torus a site's two neighbours coincide) and divisible by 3, so the equal
+    # three-way slice exists exactly at 3 sites per species.
+    # sigma = 0.5025 is the 3-state Potts critical coupling: beta_c = ln(1+sqrt 3)
+    # = 1.00505 per BOND, halved because our A double-counts each edge — the
+    # same convention that puts Ising's sigma_c at ln(1+sqrt 2)/2 = 0.223.
+    # A 3x3 lattice has no phase transition to sit at; the value is chosen so
+    # the cell is the right shape to grow into the hardness-ladder rung rather
+    # than needing a re-pick later. doubly_hollow because at d=9 the O(d^2)
+    # correctness gate is free, and nothing has ever been trained on Potts.
+    "H3_d9_c33_s503_letf_dh": _hard_cell(
+        "H3_d9_c33_s503_letf_dh", sigma=0.5025, head_kind="doubly_hollow",
+        D=3, potts_composition=(1 / 3, 1 / 3, 1 / 3),
+    ),
     "H2_d16_c50_s010_letf_dh": _hard_cell(
         "H2_d16_c50_s010_letf_dh", sigma=0.10, head_kind="doubly_hollow",
     ),
