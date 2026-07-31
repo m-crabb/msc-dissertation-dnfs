@@ -126,6 +126,14 @@ def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
     saved = asdict(cfg)
     del saved["anchor_chunk_size"]  # default None
     del saved["compile_head"]  # default False — fill must use the field default
+    # Nested sub-config additions must backfill too: the real d=16 run dirs
+    # (2026-07-02) predate model.use_sdpa_readout and eval.eval_autocast_bf16,
+    # and a top-level-only fill left every one of them locked out. Both sit at
+    # their defaults in _tiny_cfg, so absence really does mean "then-default"
+    # here — deleting a key the cfg sets non-defaultly (eval_sample_chunk=4)
+    # would be real drift and must still be rejected.
+    del saved["model"]["use_sdpa_readout"]  # default False
+    del saved["eval"]["eval_autocast_bf16"]  # default False
     (run_dir / "config.json").write_text(json.dumps(saved))
     _, head = build_target_and_head(cfg, "cpu")
     torch.save(head.state_dict(), run_dir / "checkpoints" / "final.pt")

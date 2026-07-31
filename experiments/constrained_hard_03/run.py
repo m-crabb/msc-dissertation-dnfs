@@ -13,7 +13,7 @@ masked body passes per forward, so full eval batches are slow on CPU).
 import argparse
 import json
 import time
-from dataclasses import MISSING, asdict, fields, replace
+from dataclasses import MISSING, asdict, fields, is_dataclass, replace
 from pathlib import Path
 
 import torch
@@ -346,6 +346,28 @@ def train(
     return run_dir
 
 
+def _backfill_missing_defaults(saved: dict, cfg_class) -> None:
+    """Fill defaulted config keys a run dir predates, in place, recursively.
+
+    A run dir written before a defaulted field existed lacks its key. Treat
+    that absence as "ran with the then-default" so the drift guard below does
+    not lock out every older checkpoint the moment a new field is added. This
+    recurses into nested config dataclasses (`model.*`, `eval.*`, ...) — a
+    flat pass would leave nested additions looking like real drift.
+
+    Only ABSENT keys are filled; keys that are present must still match
+    exactly, so genuine config drift is still caught. This is sound only
+    because a newly-added field's default reproduces the prior behaviour —
+    check that holds before adding a non-inert default.
+    """
+    for cfg_field in fields(cfg_class):
+        if cfg_field.name not in saved:
+            if cfg_field.default is not MISSING:
+                saved[cfg_field.name] = json.loads(json.dumps(cfg_field.default))
+        elif is_dataclass(cfg_field.type) and isinstance(saved[cfg_field.name], dict):
+            _backfill_missing_defaults(saved[cfg_field.name], cfg_field.type)
+
+
 def eval_only(
     run_dir: str | Path, multi_event: bool = False, smc_tau: float | None = None
 ) -> dict:
@@ -362,12 +384,7 @@ def eval_only(
     without smc_tau first if it is genuinely missing."""
     run_dir = Path(run_dir)
     saved = json.loads((run_dir / "config.json").read_text())
-    # Run dirs written before a defaulted HardStageCfg field existed lack its
-    # key: treat the absence as "ran with the then-default" and fill it in
-    # before the drift comparison. Keys that ARE present must still match.
-    for cfg_field in fields(HardStageCfg):
-        if cfg_field.name not in saved and cfg_field.default is not MISSING:
-            saved[cfg_field.name] = json.loads(json.dumps(cfg_field.default))
+    _backfill_missing_defaults(saved, HardStageCfg)
     cfg = CONFIGS[saved["name"]]
     cfg = replace(
         cfg,
