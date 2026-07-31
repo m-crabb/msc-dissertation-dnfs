@@ -44,7 +44,14 @@ REPORTED = ["ess_fraction", "composition_mean"]
 # Declared so that "nothing collected" is still a frame with these columns —
 # the sweeps land after the specialists, so the half-populated table is the
 # normal state of this script, not an edge case.
-SPECIALIST_COLUMNS = ["composition", "seed", "n_euler_steps", "run", *REPORTED]
+# `model_kind`, `hidden_dim` and `n_steps` are carried through to the detail
+# CSV rather than used for filtering: they are the confounds most likely to
+# creep into an "amortised vs specialist" claim, and they belong on the page
+# where a reader can check them.
+SPECIALIST_COLUMNS = [
+    "composition", "seed", "n_euler_steps", "model_kind", "hidden_dim",
+    "n_steps", "run", *REPORTED,
+]
 AMORTISED_COLUMNS = ["cell", "held_out", *SPECIALIST_COLUMNS]
 
 
@@ -53,10 +60,37 @@ def _run_dirs(results_dir: Path):
         yield config_path.parent, json.loads(config_path.read_text())
 
 
+def _descriptors(cfg: dict) -> dict:
+    return {
+        "seed": cfg["train"]["seed"],
+        "n_euler_steps": cfg["ctmc"]["n_euler_steps"],
+        "model_kind": cfg["model"]["kind"],
+        "hidden_dim": cfg["model"]["hidden_dim"],
+        "n_steps": cfg["train"]["n_steps"],
+    }
+
+
 def collect_specialists(
-    results_dir: Path, *, D: int, sigma: float, penalty: float
+    results_dir: Path,
+    *,
+    D: int,
+    sigma: float,
+    penalty: float,
+    require_anneal: bool = True,
+    model_kind: str = "let",
 ) -> pd.DataFrame:
-    """One row per archived specialist run: its composition and its metrics."""
+    """One row per archived specialist run: its composition and its metrics.
+
+    `model_kind` is a filter, not just a label: the c = 0.30 window at D = 4
+    has both a leTF and an `lemlp` specialist, and quoting the wrong one turns
+    an amortisation result into an architecture comparison.
+
+    `require_anneal` follows the comparator, not the code. At D = 10 the λ
+    anneal is the recipe that took seed survival from 1/4 to 4/4, so the
+    archived non-annealed cells are not the thing to beat. At D = 4, λ = 50
+    trained 4/4 from scratch and the archived comparators have no anneal at
+    all — requiring one there would silently return an empty comparator set.
+    """
     rows = []
     for run_dir, cfg in _run_dirs(results_dir):
         ising = cfg["ising"]
@@ -68,7 +102,8 @@ def collect_specialists(
             and ising["sigma"] == sigma
             and ising["composition_penalty_strength"] == penalty
             and ising.get("base_composition", 0.5) == 0.5
-            and cfg.get("lambda_curriculum") is not None
+            and cfg["model"]["kind"] == model_kind
+            and (cfg.get("lambda_curriculum") is not None) == require_anneal
         )
         metrics_path = run_dir / "eval" / "metrics.json"
         if not (is_specialist and metrics_path.exists()):
@@ -77,8 +112,7 @@ def collect_specialists(
         rows.append(
             {
                 "composition": ising["target_composition"],
-                "seed": cfg["train"]["seed"],
-                "n_euler_steps": cfg["ctmc"]["n_euler_steps"],
+                **_descriptors(cfg),
                 "run": run_dir.name,
                 **{key: metrics.get(key) for key in REPORTED},
             }
@@ -99,8 +133,7 @@ def collect_amortised(results_dir: Path, cells: list[str]) -> pd.DataFrame:
                     "cell": cfg["name"],
                     "composition": row["composition"],
                     "held_out": row["held_out"],
-                    "seed": cfg["train"]["seed"],
-                    "n_euler_steps": cfg["ctmc"]["n_euler_steps"],
+                    **_descriptors(cfg),
                     "run": run_dir.name,
                     **{key: row.get(key) for key in REPORTED},
                 }
@@ -172,6 +205,15 @@ def main():
     parser.add_argument("--D", type=int, default=10)
     parser.add_argument("--sigma", type=float, default=0.1)
     parser.add_argument("--penalty", type=float, default=50.0)
+    parser.add_argument("--model-kind", default="let")
+    parser.add_argument(
+        "--require-anneal",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Comparators must (default) or must not carry the λ anneal — "
+             "match whichever recipe the amortised cell was cloned from "
+             "(D=10 anneals, D=4 does not)",
+    )
     parser.add_argument(
         "--out", help="Optional CSV path for the per-run detail rows"
     )
@@ -179,7 +221,8 @@ def main():
 
     results_dir = Path(args.results_dir)
     specialists = collect_specialists(
-        results_dir, D=args.D, sigma=args.sigma, penalty=args.penalty
+        results_dir, D=args.D, sigma=args.sigma, penalty=args.penalty,
+        require_anneal=args.require_anneal, model_kind=args.model_kind,
     )
     amortised = collect_amortised(results_dir, args.cells)
 
