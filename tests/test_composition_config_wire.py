@@ -6,16 +6,22 @@ would be rejected at train time, but only after the job is queued), curriculum
 stages that do not land on outer-cycle boundaries, and a control cell whose
 value set has drifted away from the specialists it is meant to be compared to.
 """
+from dataclasses import replace
+
 import pytest
 from experiments.constrained_soft_02.configs import CONFIGS
 from experiments.dnfs_baseline_01.run import _build_model
 
 from discrete_flow_sampler.targets.ising import IsingTarget
 
-AMORTISED_CELLS = (
+# The D=4 cell is the cheap end-to-end validation of the same machinery; the
+# D=10 pair is the headline experiment and carries the surviving recipe.
+VALIDATION_CELL = "S2_d4_camort_l50_letf"
+D10_AMORTISED_CELLS = (
     "S2_d10_camort_l50_letf_ne128_anneal",
     "S2_d10_cgrid_l50_letf_ne128_anneal",
 )
+AMORTISED_CELLS = (VALIDATION_CELL, *D10_AMORTISED_CELLS)
 
 # The compositions with archived per-composition specialists; the grid cell
 # exists to amortise over exactly these, so drift here breaks the comparison.
@@ -39,9 +45,37 @@ def test_amortised_cell_builds_a_conditioned_model(cell_name):
     assert hasattr(model, "comp_embedder")
 
 
-@pytest.mark.parametrize("cell_name", AMORTISED_CELLS)
+def test_validation_cell_differs_from_its_comparator_only_by_amortisation():
+    """The D=4 cell is a controlled clone of the archived c=0.5 specialist.
+
+    Strip the two amortisation knobs and the name, and what is left must be
+    the specialist config byte-for-byte — otherwise a gap in the comparison
+    could be some unnoticed hyperparameter drift rather than the cost of
+    serving a whole range of compositions with one model.
+    """
+    validation = CONFIGS[VALIDATION_CELL]
+    specialist = CONFIGS["S2_d4_c05_l50_letf"]
+
+    stripped = replace(
+        validation,
+        name=specialist.name,
+        model=replace(validation.model, condition_on_composition=False),
+        composition=None,
+    )
+    assert stripped == specialist
+    # And the widened window must reach the compositions it will be judged at:
+    # D=4 has archived specialists at 0.30 and 0.50 only.
+    final_half_width = validation.composition.curriculum[-1].half_width
+    assert validation.composition.centre - final_half_width <= 0.30
+
+
+@pytest.mark.parametrize("cell_name", D10_AMORTISED_CELLS)
 def test_amortised_cell_inherits_the_surviving_recipe(cell_name):
-    """λ anneal and ne128 are what made this leg train on 4/4 seeds."""
+    """λ anneal and ne128 are what made this leg train on 4/4 seeds.
+
+    D=4 is deliberately excluded: its archived λ=50 comparator trained 4/4
+    without the anneal, so the validation cell matches that recipe instead.
+    """
     cfg = CONFIGS[cell_name]
     assert cfg.ctmc.n_euler_steps == 128
     assert cfg.lambda_curriculum is not None

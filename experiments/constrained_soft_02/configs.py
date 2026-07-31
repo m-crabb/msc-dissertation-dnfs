@@ -117,6 +117,55 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
+    # Amortised validation cell at the small lattice: a controlled clone of
+    # S2_d4_c05_l50_letf above, differing ONLY in that the model is
+    # conditioned on c and c is drawn per outer cycle instead of being fixed
+    # at 0.5. Everything else — 10k steps, ne50, λ=50 held fixed, hidden 64 —
+    # is copied, so a gap against the archived four-seed c=0.5 record
+    # (ess_fraction 0.58–0.85) is attributable to amortisation and nothing
+    # else. It runs before the D=10 cells because it is minutes rather than
+    # hours: a cheap end-to-end proof of the conditioning, the per-cycle draw,
+    # the buffered baseline and the per-composition sweep.
+    #
+    # λ is NOT annealed here, unlike the D=10 cells. The anneal exists because
+    # λ=50 from scratch trains 1 seed in 4 at D=10; at D=4 the archived λ=50
+    # cell trained 4/4, and matching the comparator's recipe matters more than
+    # inheriting a fix for a problem this lattice does not have.
+    #
+    # The c-window still widens (0.05 → 0.15 → 0.30 at the same fractions of
+    # the run as the D=10 schedule, 20% and 40%): the easy end is c ≈ 0.5,
+    # where base and target compositions already agree, and the final window
+    # [0.20, 0.80] has to cover the archived comparators at 0.30 and 0.50.
+    "S2_d4_camort_l50_letf": StageCfg(
+        name="S2_d4_camort_l50_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=2_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=4_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     "S2_d10_c03_l50_letf_ne128": StageCfg(
         name="S2_d10_c03_l50_letf_ne128",
         ising=IsingCfg(
