@@ -47,7 +47,7 @@ def test_top_level_train_seeds_let_model_initialisation(monkeypatch, tmp_path):
     monkeypatch.setattr(
         run_module,
         "_compute_eval_metrics",
-        lambda _samples, log_weights, _target: {
+        lambda _samples, log_weights, _target, **_: {
             "n_eval_samples": int(log_weights.numel()),
             "ess": float(log_weights.numel()),
         },

@@ -7,6 +7,12 @@ composition-penalty kwargs natively when `IsingCfg` sets them.
 Usage:
     pixi run -e dev python -m experiments.constrained_soft_02.run \\
         --cfg S2_d4_c05_l50_letf --seed 42
+
+An amortised cell's end-of-run eval is a single draw at the window centre. Its
+per-composition numbers come from a separate sweep over the finished run dir,
+which works for any run dir because it rebuilds from config.json:
+    pixi run -e dev python -m experiments.dnfs_baseline_01.run \\
+        --sweep --run-dir results/02_constrained_soft/<run_dir>
 """
 import argparse
 

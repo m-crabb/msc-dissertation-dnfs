@@ -8,6 +8,11 @@ Or, to recompute eval metrics from saved samples without re-training:
     pixi run -e dev python -m experiments.dnfs_baseline_01.run \\
         --eval-only --run-dir results/01_baseline/stage_1_d4_seed42_...
 
+Or, for an amortised (composition-conditioned) run, to re-draw the eval at
+each composition in turn and write per-composition rows:
+    pixi run -e dev python -m experiments.dnfs_baseline_01.run \\
+        --sweep --run-dir results/02_constrained_soft/S2_d10_camort_..._seed42
+
 The same `train(cfg, seed, ...)` function is also imported by
 `modal_app.py` for remote runs, so both paths share artefacts and metadata.
 """
@@ -16,13 +21,22 @@ import json
 import platform
 import socket
 import time
-from dataclasses import asdict, replace
+from contextlib import nullcontext
+from dataclasses import asdict, fields, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 
 import torch
-from experiments.dnfs_baseline_01.configs import CONFIGS, StageCfg
+from experiments.dnfs_baseline_01.configs import (
+    CONFIGS,
+    CTMCCfg,
+    EvalCfg,
+    IsingCfg,
+    ModelCfg,
+    StageCfg,
+)
 
 from discrete_flow_sampler.diagnostics.metrics import (
     composition_observables,
@@ -32,6 +46,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
     exact_internal_energy,
     free_energy_lb_estimate,
     internal_energy_estimate,
+)
+from discrete_flow_sampler.models.composition_conditioned import (
+    CompositionConditioned,
 )
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
@@ -45,6 +62,18 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 # small-lattice analog. Beyond D = 20 enumeration is memory-bound and
 # the analytical solution is the right call.
 ENUMERATION_MAX_SPINS = 20
+
+# The compositions an amortised model is measured at. The first group has a
+# per-composition specialist on disk under results/02_constrained_soft, so
+# those rows are a direct amortised-vs-specialist comparison at matched
+# compute. The second group was never trained by anything: it sits between the
+# specialists' values, so it separates a model that interpolates across the
+# composition axis from one that memorised the atoms it was trained on.
+SPECIALIST_COMPOSITIONS = (0.30, 0.50, 0.55, 0.60, 0.65, 0.80)
+HELD_OUT_COMPOSITIONS = (0.35, 0.45, 0.575, 0.70)
+SWEEP_COMPOSITIONS = tuple(
+    sorted(SPECIALIST_COMPOSITIONS + HELD_OUT_COMPOSITIONS)
+)
 
 
 def _build_model(cfg, target):
@@ -109,6 +138,7 @@ def _compute_eval_metrics(
     eval_samples: torch.Tensor,
     eval_log_weights: torch.Tensor,
     target,
+    composition: float | None = None,
 ) -> dict:
     """Aggregate end-of-run diagnostics into a JSON-friendly dict.
 
@@ -137,6 +167,12 @@ def _compute_eval_metrics(
         eval_log_weights: (N,) IS log-weights from the same eval pass.
         target: IsingTarget (or any duck with `.d`, `.device`, `.log_prob`,
             `.sigma`).
+        composition: the composition this eval was conditioned on, or None to
+            read the target's own scalar. It has to be passed explicitly
+            because an amortised eval's composition lives in the target's
+            binding, not in `target.target_composition` — labelling the
+            observables from the fallback scalar would quietly attribute a
+            c = 0.80 draw to whatever the config happened to record.
     """
     sigma = float(target.sigma)
     D = int(target.d)
@@ -159,7 +195,11 @@ def _compute_eval_metrics(
     metrics.update(
         composition_observables(
             eval_samples,
-            target_composition=getattr(target, "target_composition", None),
+            target_composition=(
+                composition
+                if composition is not None
+                else getattr(target, "target_composition", None)
+            ),
             composition_penalty_strength=getattr(
                 target, "composition_penalty_strength", None
             ),
@@ -187,6 +227,65 @@ def _compute_eval_metrics(
         )
 
     return metrics
+
+
+def _composition_binding(target, composition: float | None, device):
+    """(model wrapper, target binding) for one composition, or the bare pair.
+
+    `composition=None` is the specialist route: the model is called as it
+    always was and nothing is bound, so an archived cell executes exactly the
+    code it did before amortisation existed.
+
+    Otherwise the composition is bound in both places it is read. The model
+    needs it as an input — a conditioned model raises when c is missing rather
+    than silently predicting rates for some other composition — and the target
+    needs it because the composition penalty (and, on the fixed-composition
+    route, the manifold itself) is what makes p_c differ from p.
+    """
+    if composition is None:
+        return (lambda model: model), nullcontext()
+    bound = torch.full((1,), float(composition), device=device)
+    return (
+        lambda model: CompositionConditioned(model, bound),
+        target.composition_batch(bound),
+    )
+
+
+def _eval_at_composition(model, target, cfg, composition: float | None, device):
+    """One t = 0 → 1 eval draw and its metrics, at a single composition.
+
+    Returns `(samples, log_weights, metrics)`.
+
+    The draw and the scoring deliberately share ONE binding. The IS
+    log-weights are accumulated along the path against log p̃_t at the bound
+    composition, so the free energy (Eq. 37) and internal energy (Eq. 38) read
+    off them must use that same composition; scoring them under a different
+    one — or unbound, where the target falls back to its scalar
+    `target_composition` — mixes two densities into a single estimate and
+    raises nothing at all.
+
+    The base draw goes through `target.sample_base` rather than an inline
+    `torch.randint`. At the uniform base the two are identical draws (same RNG
+    consumption, so archived runs still reproduce bit-for-bit), but the base is
+    a property of the target: a composition-dependent base — a Bernoulli(c)
+    base, or the fixed-composition route's slice — would make an inline draw
+    silently wrong.
+    """
+    time_grid = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps, device=device)
+    wrap, binding = _composition_binding(target, composition, device)
+    with torch.no_grad(), binding:
+        x_initial = target.sample_base(cfg.eval.n_eval_samples, device=device)
+        samples, log_weights = sample_ctmc(
+            wrap(model),
+            x_initial,
+            time_grid,
+            return_log_weights=True,
+            target=target,
+        )
+        metrics = _compute_eval_metrics(
+            samples, log_weights, target, composition=composition
+        )
+    return samples, log_weights, metrics
 
 
 def train(
@@ -314,29 +413,24 @@ def train(
 
     # End-of-run eval: a final batch of (samples, IS log-weights) over the
     # full t = 0 -> 1 trajectory. Analysis notebooks read these directly.
-    with torch.no_grad():
-        full_time_grid = torch.linspace(
-            0.0, 1.0, cfg.ctmc.n_euler_steps, device=device
-        )
-        x_eval_initial = (
-            torch.randint(
-                0, 2, (cfg.eval.n_eval_samples, target.d), device=device
-            ).float()
-            * 2 - 1
-        )
-        eval_samples, eval_log_weights = sample_ctmc(
-            model,
-            x_eval_initial,
-            full_time_grid,
-            return_log_weights=True,
-            target=target,
-        )
+    #
+    # An amortised model serves a whole range of compositions, so a single
+    # draw has to pick one. It picks the window centre, matching the in-loop
+    # ESS probe, so the training curve and this final number describe the same
+    # conditional model. The per-composition picture is a separate sweep
+    # (`composition_sweep`) over the trained checkpoint — this draw is not it,
+    # and must not be read as it.
+    eval_composition = (
+        None if cfg.composition is None else float(cfg.composition.centre)
+    )
+    eval_samples, eval_log_weights, eval_metrics = _eval_at_composition(
+        model, target, cfg, eval_composition, device
+    )
     eval_dir = run_dir / "eval"
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
 
-    eval_metrics = _compute_eval_metrics(eval_samples, eval_log_weights, target)
     eval_metrics.update(_trailing_ess_metrics(run_dir))
     (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
 
@@ -361,6 +455,57 @@ def train(
     return run_dir
 
 
+def _sub_config(cls, values: dict):
+    """Rebuild one config dataclass from a run dir's `config.json`.
+
+    Keys the dataclass no longer has are dropped, and keys it has since gained
+    fall back to their defaults. A run dir is meant to stay evaluable from the
+    directory alone, and a strict constructor makes every historical run
+    un-evaluable the moment a config grows a knob.
+    """
+    known = {field.name for field in fields(cls)}
+    return cls(**{key: value for key, value in values.items() if key in known})
+
+
+def _rebuild_from_run_dir(run_dir: Path):
+    """(cfg, target, device) for a finished run, from `config.json` alone.
+
+    The returned cfg carries only the sub-configs the eval paths read
+    (`ising`, `model`, `ctmc`, `eval`); the curricula are training-time
+    schedules and are deliberately not replayed. That means the target is
+    rebuilt at the *final* σ and λ — the operating point the run ended at,
+    which is what the recorded eval numbers belong to.
+    """
+    cfg_dict = json.loads((run_dir / "config.json").read_text())
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    ising = _sub_config(IsingCfg, cfg_dict["ising"])
+    target = IsingTarget(
+        D=ising.D,
+        sigma=ising.sigma,
+        bias=ising.bias,
+        device=device,
+        target_composition=ising.target_composition,
+        composition_penalty_strength=ising.composition_penalty_strength,
+        base_composition=ising.base_composition,
+    )
+    cfg = SimpleNamespace(
+        ising=ising,
+        model=_sub_config(ModelCfg, cfg_dict["model"]),
+        ctmc=_sub_config(CTMCCfg, cfg_dict["ctmc"]),
+        eval=_sub_config(EvalCfg, cfg_dict["eval"]),
+        # The window centre is the composition a single eval draw is
+        # conditioned on; None for a specialist run.
+        composition_centre=(
+            None if cfg_dict.get("composition") is None
+            else float(cfg_dict["composition"]["centre"])
+        ),
+        condition_on_composition=cfg_dict["model"].get(
+            "condition_on_composition", False
+        ),
+    )
+    return cfg, target, device
+
+
 def eval_only(run_dir: str | Path) -> dict:
     """Recompute eval metrics from a finished run's saved samples.
 
@@ -368,35 +513,119 @@ def eval_only(run_dir: str | Path) -> dict:
     target from `config.json`, and writes / overwrites `eval/metrics.json`
     in the run directory. Useful for backfilling diagnostics on older
     runs whose training pre-dated the metrics-aggregation block.
+
+    For an amortised run the saved samples were drawn at the window centre, so
+    the metrics are recomputed under that binding — both to score them against
+    the density they actually came from, and to label them with it. Reading
+    the target's fallback scalar instead would relabel the numbers silently.
     """
     run_dir = Path(run_dir)
-    cfg_dict = json.loads((run_dir / "config.json").read_text())
-    eval_samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True)
+    cfg, target, device = _rebuild_from_run_dir(run_dir)
+    eval_samples = torch.load(
+        run_dir / "eval" / "samples.pt", weights_only=True
+    ).to(device)
     eval_log_weights = torch.load(
         run_dir / "eval" / "log_weights.pt", weights_only=True
-    )
+    ).to(device)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    target = IsingTarget(
-        D=cfg_dict["ising"]["D"],
-        sigma=cfg_dict["ising"]["sigma"],
-        bias=cfg_dict["ising"]["bias"],
-        device=device,
-        target_composition=cfg_dict["ising"].get("target_composition"),
-        composition_penalty_strength=cfg_dict["ising"].get(
-            "composition_penalty_strength", 0.0
-        ),
-        base_composition=cfg_dict["ising"].get("base_composition", 0.5),
-    )
-    eval_samples = eval_samples.to(device)
-    eval_log_weights = eval_log_weights.to(device)
-
-    eval_metrics = _compute_eval_metrics(eval_samples, eval_log_weights, target)
+    _, binding = _composition_binding(target, cfg.composition_centre, device)
+    with binding:
+        eval_metrics = _compute_eval_metrics(
+            eval_samples,
+            eval_log_weights,
+            target,
+            composition=cfg.composition_centre,
+        )
     eval_metrics.update(_trailing_ess_metrics(run_dir))
     (run_dir / "eval" / "metrics.json").write_text(
         json.dumps(eval_metrics, indent=2)
     )
     return eval_metrics
+
+
+def composition_sweep(
+    run_dir: str | Path,
+    compositions: tuple[float, ...] = SWEEP_COMPOSITIONS,
+    *,
+    checkpoint: str = "final.pt",
+    seed: int = 0,
+    save: bool = True,
+) -> list[dict]:
+    """Re-draw a trained amortised run's eval at each composition in turn.
+
+    This is the measurement the amortisation claim rests on: ONE model, many
+    compositions, each row directly comparable to the specialist trained for
+    that composition alone — the archived
+    `results/02_constrained_soft/*/eval/metrics.json` carry the same
+    `ess_fraction` and `composition_mean` keys. Rows at the held-out
+    compositions are the interpolation test: no specialist was ever trained
+    there, and the grid control never drew them.
+
+    Rows, not one flat dict, because every quantity here is a function of c.
+    A single `target_composition` scalar in a metrics dict cannot express
+    "worked at 0.50, drifted at 0.80", which is exactly the failure the sweep
+    is looking for.
+
+    Each row is drawn under COMMON RANDOM NUMBERS: the sampler is reseeded to
+    `seed` before every composition, so all rows start from the same base
+    states and consume the same noise stream. Differences down the sweep are
+    then the model's response to c rather than which draw a row happened to
+    get — the same reason paired comparisons beat independent ones, and it
+    costs nothing here because the draws are independent anyway.
+
+    Args:
+        run_dir: a finished run directory (config.json + checkpoints/).
+        compositions: the grid to evaluate; defaults to the six specialist
+            values plus the four held-out points.
+        checkpoint: file under `checkpoints/`; `final.pt` is the end-of-run
+            state, `latest.pt` the most recent eval-cadence snapshot.
+        seed: common-random-numbers seed, shared by every row.
+        save: write `eval/composition_sweep.json` (skip for exploratory runs
+            that should not overwrite a recorded sweep).
+
+    Returns:
+        One dict per composition — the full eval metrics plus `composition`
+        and `held_out` — in the order given.
+    """
+    run_dir = Path(run_dir)
+    cfg, target, device = _rebuild_from_run_dir(run_dir)
+    if not cfg.condition_on_composition:
+        raise ValueError(
+            f"{run_dir} was trained without composition conditioning, so its "
+            "model has no c input: a sweep would redraw the same specialist "
+            "distribution once per composition and label the copies with "
+            "compositions they do not obey."
+        )
+    model = _build_model(cfg, target)
+    model.load_state_dict(
+        torch.load(
+            run_dir / "checkpoints" / checkpoint,
+            map_location=device,
+            weights_only=True,
+        )
+    )
+
+    rows = []
+    for composition in compositions:
+        seed_everything(seed)
+        _, _, metrics = _eval_at_composition(
+            model, target, cfg, float(composition), device
+        )
+        rows.append(
+            {
+                "composition": float(composition),
+                "held_out": float(composition) in HELD_OUT_COMPOSITIONS,
+                **metrics,
+            }
+        )
+
+    if save:
+        eval_dir = run_dir / "eval"
+        eval_dir.mkdir(exist_ok=True)
+        (eval_dir / "composition_sweep.json").write_text(
+            json.dumps(rows, indent=2)
+        )
+    return rows
 
 
 def main():
@@ -415,10 +644,42 @@ def main():
         help="Skip training; recompute eval/metrics.json from saved samples",
     )
     parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help="Per-composition eval sweep of a trained amortised run "
+             "(requires --run-dir)",
+    )
+    parser.add_argument(
+        "--compositions",
+        type=float,
+        nargs="+",
+        help="Override the sweep grid (default: the six specialist "
+             "compositions plus the four held-out points)",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        default="final.pt",
+        help="Checkpoint under checkpoints/ to sweep (default final.pt)",
+    )
+    parser.add_argument(
         "--run-dir",
-        help="Run directory to re-evaluate (required with --eval-only)",
+        help="Run directory to re-evaluate (required with --eval-only/--sweep)",
     )
     args = parser.parse_args()
+
+    if args.sweep:
+        if not args.run_dir:
+            parser.error("--sweep requires --run-dir")
+        rows = composition_sweep(
+            args.run_dir,
+            compositions=(
+                tuple(args.compositions) if args.compositions
+                else SWEEP_COMPOSITIONS
+            ),
+            checkpoint=args.checkpoint,
+        )
+        print(json.dumps(rows, indent=2))
+        return
 
     if args.eval_only:
         if not args.run_dir:
