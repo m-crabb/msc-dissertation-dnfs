@@ -312,6 +312,32 @@ class LeTFRateMatrix(nn.Module):
         n_heads: attention heads per block. Must divide hidden_dim.
         use_sdpa_readout: opt-in fused-kernel readout attention (see
             AttentionReadout docstring). Default OFF; Tier-2 flag.
+        condition_on_composition: opt-in D.11 amortisation — the model takes
+            the soft target composition c as a second conditioning scalar,
+            so one network serves the whole F(c) curve instead of one
+            specialist per composition. Default OFF, which leaves parameter
+            construction (and therefore RNG consumption and every archived
+            checkpoint) bit-identical to the unconditioned model.
+
+    Composition conditioning (D.11, decision D1 in
+    `docs/plans/2026-07-31-soft-amortisation-d11.md`):
+
+        cond = TimestepEmbedder(t) + CompositionEmbedder(c)      # (B, 1, h)
+
+    c is embedded by a second `TimestepEmbedder` — c ∈ [0, 1] is a smooth
+    scalar exactly like t, so the sinusoidal basis transfers unchanged — and
+    SUMMED into the existing conditioning tensor rather than prepended as a
+    second token.
+
+    Why summed, not a second token: the hollowness argument in this module's
+    header rests on the slice trick `fwd_x[:, :-1]` / `bwd_x[:, 1:]`, whose
+    index arithmetic assumes exactly ONE conditioning token at position 0. A
+    second token would shift every position, desynchronise
+    `AttentionReadout.pos_embed` (sized `data_dim`) and the (d, 2d) joint
+    mask, and put the load-bearing hollow property at risk for no gain.
+    Summing changes nothing structurally: hollowness only requires the
+    injected conditioning to be independent of x_i, and c is independent of
+    x entirely.
     """
 
     is_locally_equivariant: bool = True
@@ -324,6 +350,7 @@ class LeTFRateMatrix(nn.Module):
         n_layers: int,
         n_heads: int = 4,
         use_sdpa_readout: bool = False,
+        condition_on_composition: bool = False,
     ):
         super().__init__()
         if n_layers < 1:
@@ -341,6 +368,20 @@ class LeTFRateMatrix(nn.Module):
         self.token_embedder = nn.Embedding(vocab_size, hidden_dim)
         nn.init.kaiming_uniform_(self.token_embedder.weight, a=math.sqrt(5))
         self.time_embedder = TimestepEmbedder(hidden_dim)
+        self.condition_on_composition = condition_on_composition
+        if condition_on_composition:
+            # Constructed immediately after the time embedder so the two
+            # conditioning channels sit together; when the flag is OFF no
+            # parameters are created at all, so RNG consumption for every
+            # subsequent module is unchanged from the archived runs.
+            self.comp_embedder = TimestepEmbedder(hidden_dim)
+            # Zero-init the output layer: the composition channel contributes
+            # exactly 0 at initialisation, so a conditioned model reproduces
+            # an unconditioned checkpoint bit-for-bit and can warm-start from
+            # one. Training grows the channel from inert rather than
+            # perturbing a working specialist on step 0.
+            nn.init.zeros_(self.comp_embedder.mlp[-1].weight)
+            nn.init.zeros_(self.comp_embedder.mlp[-1].bias)
         seq_len = 1 + d
         self.fwd_stack = CausalStack(hidden_dim, n_layers, n_heads, seq_len)
         self.bwd_stack = CausalStack(hidden_dim, n_layers, n_heads, seq_len)
@@ -352,14 +393,63 @@ class LeTFRateMatrix(nn.Module):
         self.omega = nn.Embedding(vocab_size, hidden_dim)
         nn.init.normal_(self.omega.weight, std=0.002)
 
-    def compute_body(self, x: Tensor, t: Tensor) -> Tensor:
+    def _conditioning(self, t: Tensor, c: Tensor | None) -> Tensor:
+        """Conditioning token, shape (B, 1, h) — prepended AND readout-injected.
+
+        Unconditioned: TimestepEmbedder(t) alone, exactly as before.
+        Conditioned (D.11): plus the composition embedding, summed.
+
+        Both arms return the same shape, so every downstream consumer — the
+        two causal stacks, and the readout's triple injection — is unaware
+        that conditioning gained a second channel. That is the whole reason
+        this design is cheap.
+
+        Args:
+            t: (B,) diffusion time in [0, 1].
+            c: (B,) target composition in [0, 1], or None. Must be supplied
+                iff the model was built with `condition_on_composition=True`
+                — a mismatch is a configuration bug (a silently ignored c
+                would train an "amortised" model that never saw its
+                constraint), so it raises rather than defaulting.
+        """
+        if not self.condition_on_composition:
+            if c is not None:
+                raise ValueError(
+                    "composition c was supplied but this model was built "
+                    "with condition_on_composition=False; it would be "
+                    "silently ignored."
+                )
+            return self.time_embedder(t).unsqueeze(1)
+
+        if c is None:
+            raise ValueError(
+                "this model was built with condition_on_composition=True, "
+                "so the target composition c must be supplied; running "
+                "without it would train an 'amortised' model that never "
+                "saw its constraint."
+            )
+        # Note on resolution: `timestep_embedding` spaces its frequencies
+        # from 1 down to 1/max_period, so over an input range of [0, 1] the
+        # basis is close to linear (sin(cf) ≈ cf for the fastest channel).
+        # For c that is a feature rather than a defect — a near-linear
+        # featurisation biases the composition channel toward *smooth*
+        # behaviour in c, which is exactly the interpolation property D5
+        # sets out to test. If the channel later underfits, scaling c into
+        # a wider range before embedding is the first knob to reach for.
+        return (
+            self.time_embedder(t).unsqueeze(1)
+            + self.comp_embedder(c).unsqueeze(1)
+        )
+
+    def compute_body(self, x: Tensor, t: Tensor, c: Tensor | None = None) -> Tensor:
         """Pre-readout body H_HTF(x), shape (B, d, hidden_dim). Hollow at every site.
 
         Accepts +-1 float spins (training) or 0/1 Long indices (tests).
+        `c` is the D.11 target composition; see `_conditioning`.
         """
         x_idx = ((x + 1) / 2).long()
         x_emb = self.token_embedder(x_idx)              # (B, d, h)
-        cond_t = self.time_embedder(t).unsqueeze(1)     # (B, 1, h)
+        cond_t = self._conditioning(t, c)               # (B, 1, h)
 
         fwd_in = torch.cat([cond_t, x_emb], dim=1)      # (B, 1+d, h)
         fwd_x = self.fwd_stack(fwd_in)                  # (B, 1+d, h)
@@ -369,9 +459,9 @@ class LeTFRateMatrix(nn.Module):
 
         return self.attention_readout(fwd_x, bwd_x, cond_t)
 
-    def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        H = self.compute_body(x, t)
-        H = self.output_norm(H) + self.time_embedder(t).unsqueeze(1)
+    def forward(self, x: Tensor, t: Tensor, c: Tensor | None = None) -> Tensor:
+        H = self.compute_body(x, t, c)
+        H = self.output_norm(H) + self._conditioning(t, c)
         x_idx = ((x + 1) / 2).long()
         omega_all = self.omega.weight                    # (S, h)
         omega_xi = self.omega(x_idx)                     # (B, d, h)

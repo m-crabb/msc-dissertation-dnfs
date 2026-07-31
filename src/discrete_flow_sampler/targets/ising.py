@@ -1,6 +1,7 @@
 """Ising target distribution. Paper Eq. (11): p(x) ∝ exp(x^T J x + b · Σx). """
 
 import math
+from contextlib import contextmanager
 
 import torch
 from torch import Tensor
@@ -76,6 +77,9 @@ class IsingTarget:
         self.target_composition = target_composition
         self.composition_penalty_strength = composition_penalty_strength
         self.base_composition = base_composition
+        # Per-row composition bound by `composition_batch` (D.11). None means
+        # the scalar `target_composition` is in force — the specialist path.
+        self._bound_composition: Tensor | None = None
 
         A = torch.zeros((self.d, self.d), device=self.device)
 
@@ -168,6 +172,90 @@ class IsingTarget:
         """
         return (x @ self.J * x).sum(dim=-1)  + (self.bias * x.sum(dim=1))
 
+    @contextmanager
+    def composition_batch(self, composition: Tensor):
+        """Bind a per-row target composition for the duration of the block.
+
+        D.11 amortisation (`docs/plans/2026-07-31-soft-amortisation-d11.md`,
+        decision D2). One model is trained to serve many compositions, so a
+        training batch carries a *different* c per row:
+
+            log p_c(x_b) = x_b^T J x_b − λ · d · (c_+(x_b) − c_b)^2
+
+        c is bound rather than passed as an argument because the penalty is
+        reached indirectly through `log_prob` → `log_p_tilde_t` /
+        `dt_log_p_tilde_t`, which are called from ~15 sites across
+        `kolmogorov.py`, `_neighbours.py`, `ctmc.py` and the swap stack.
+        Threading an argument through all of them would churn signatures the
+        hard leg also depends on.
+
+        Args:
+            composition: (n_blocks,) tensor of target compositions in [0, 1],
+                one per row of the batch this block will evaluate. Batches
+                that are an integer multiple of `n_blocks` are expanded
+                b-major — see `_row_composition`.
+
+        On exit the previous binding is restored, including when the block
+        raises, so no run can leak a bound vector into a later evaluation.
+        """
+        composition = torch.as_tensor(
+            composition, dtype=torch.float, device=self.device
+        )
+        if composition.ndim != 1:
+            raise ValueError(
+                f"composition must be 1-D (one entry per block), got shape "
+                f"{tuple(composition.shape)}"
+            )
+        if not ((composition >= 0.0) & (composition <= 1.0)).all():
+            raise ValueError("composition entries must lie in [0, 1]")
+
+        previous = self._bound_composition
+        self._bound_composition = composition
+        try:
+            yield
+        finally:
+            self._bound_composition = previous
+
+    def _row_composition(self, x: Tensor) -> Tensor | float | None:
+        """Target composition for each row of `x`. Scalar when nothing is bound.
+
+        **The b-major expansion rule.** Every batch-expanding call site in
+        this codebase builds its expanded batch b-major and rides `t` along
+        with `t.repeat_interleave(k)`:
+
+            `_neighbours._log_p_tilde_at_neighbours`  k = d · S
+            `kolmogorov.residual_general`             k = d
+            `ctmc._compute_xi_t_general`              k = d
+
+        So row (b·k + j) of an expanded batch descends from row b of the
+        original, for every j < k. A bound composition vector must follow
+        the identical rule — `composition.repeat_interleave(k)` with
+        k = x.shape[0] // n_blocks — or row b silently inherits row b'’s
+        target composition. That failure never raises; it only shows up as
+        a quietly worse ESS, which is why the divisibility check must be a
+        hard error rather than a broadcast.
+
+        Returns:
+            None when no composition is configured at all, the scalar
+            `self.target_composition` when nothing is bound, else a (B,)
+            tensor aligned row-for-row with `x`.
+        """
+        if self._bound_composition is None:
+            return self.target_composition
+
+        batch_size = x.shape[0]
+        n_blocks = self._bound_composition.shape[0]
+        if batch_size % n_blocks != 0:
+            raise ValueError(
+                f"batch of {batch_size} rows is not an integer multiple of "
+                f"the {n_blocks} bound compositions, so the b-major "
+                "expansion rule cannot align them. Every expansion in this "
+                "codebase repeats each row a fixed number of times; a "
+                "ragged batch means the caller expanded some other way and "
+                "the row-to-composition map is unknown."
+            )
+        return self._bound_composition.repeat_interleave(batch_size // n_blocks)
+
     def composition_penalty(self, x: Tensor) -> Tensor:
         """Extensive soft-composition penalty, shape (B,).
 
@@ -177,11 +265,13 @@ class IsingTarget:
             λ · d · (c_+(x) - c_target)^2
 
         It is subtracted from `log_prob`, equivalently added to the target
-        energy.
+        energy. Under `composition_batch` the scalar c_target becomes a
+        per-row vector; the expression is otherwise unchanged.
         """
-        if self.target_composition is None or self.composition_penalty_strength == 0.0:
+        composition = self._row_composition(x)
+        if composition is None or self.composition_penalty_strength == 0.0:
             return torch.zeros(x.shape[0], device=x.device, dtype=x.dtype)
-        diff = self.composition_fraction(x) - self.target_composition
+        diff = self.composition_fraction(x) - composition
         return self.composition_penalty_strength * self.d * diff.pow(2)
 
     def log_prob(self, x: Tensor) -> Tensor:
