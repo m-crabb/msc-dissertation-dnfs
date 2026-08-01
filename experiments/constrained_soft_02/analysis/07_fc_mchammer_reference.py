@@ -13,7 +13,9 @@ framing:
     *absolute* canonical free energy A(c) at each composition: no offset/anchor
     fudge, and forward vs backward integration brackets the hysteresis error.
 
-Embedding (from the 2026-06-13 spike, scripts/icet_vcsgc_spike.py): the 2D Ising
+Embedding (validated 2026-06-13; lives in
+`discrete_flow_sampler.mcmc.mchammer_ising`, pinned by
+`tests/test_mchammer_ising.py`): the 2D Ising
 torus is a single-layer vacuum-padded cell; the target
 log p(x) = 2*sigma*sum_<ij> x_i x_j + bias*sum_i x_i maps to a binary CE with
 ECI = [0, -bias, -4*sigma]. We work in natural units (kT = 1: temperature = 1,
@@ -42,33 +44,18 @@ import itertools
 from pathlib import Path
 
 import numpy as np
-from ase import Atoms
-from icet import ClusterSpace, ClusterExpansion
 from mchammer.calculators import ClusterExpansionCalculator
 from mchammer.ensembles import ThermodynamicIntegrationEnsemble
 from mchammer.free_energy_tools import get_free_energy_thermodynamic_integration
 
+from discrete_flow_sampler.mcmc.mchammer_ising import (
+    ising_cluster_expansion,
+    ising_supercell as _supercell,
+)
+
 # natural units: kT = 1 so exp(-E/kT) = exp(-E) = p(x)
 _KB = 1.0
 _T0 = 1.0
-
-
-def ising_cluster_expansion(sigma: float, bias: float = 0.0):
-    """Binary CE whose total energy equals -log p of the IsingTarget.
-
-    Single-layer cell with a 10-unit z vacuum gap and a pair cutoff in
-    (1, sqrt(2)): exactly one NN pair orbit (4 neighbours/site), no spurious
-    z-image or 2nd-NN bonds. (Verified in the spike.)
-    """
-    prim = Atoms("Au", positions=[(0, 0, 0)],
-                 cell=[[1, 0, 0], [0, 1, 0], [0, 0, 10]], pbc=True)
-    cs = ClusterSpace(prim, cutoffs=[1.1], chemical_symbols=["Au", "Ag"])
-    ce = ClusterExpansion(cs, parameters=[0.0, -bias, -4.0 * sigma])
-    return prim, cs, ce
-
-
-def _supercell(prim, D: int):
-    return prim.repeat((D, D, 1))
 
 
 def exact_canonical_F(cs, ce, sc0, n_up: int) -> float:

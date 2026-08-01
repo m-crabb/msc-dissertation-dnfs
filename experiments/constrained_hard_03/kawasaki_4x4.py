@@ -18,19 +18,13 @@ Example:
         --sigmas 0.10 0.223 --n-trial-steps 200000
 """
 import argparse
-import importlib
 from pathlib import Path
 
 import numpy as np
 from mchammer.calculators import ClusterExpansionCalculator
 from mchammer.ensembles import CanonicalEnsemble
 
-# The soft-02 module name starts with a digit, so importlib rather than an
-# import statement; the embedding itself was validated in the 2026-06-13 spike.
-_fc_reference = importlib.import_module(
-    "experiments.constrained_soft_02.analysis.07_fc_mchammer_reference"
-)
-ising_cluster_expansion = _fc_reference.ising_cluster_expansion
+from discrete_flow_sampler.mcmc.mchammer_ising import ising_cluster_expansion
 
 
 def site_index_map(supercell, D: int) -> np.ndarray:

@@ -4,8 +4,9 @@ This is the apples-to-apples DNFS-vs-vcSGC comparison the F(c) overlay
 (`08_fc_compare.py`) deliberately left off its plot. Both samplers target the SAME
 semigrand object here: the soft/penalised 2D Ising at penalty strength lambda is
 exactly mchammer's variance-constrained semigrand-canonical (vcSGC) ensemble at
-kappa = lambda, phi_1 = -2*c_target (pinned in the 2026-06-13 spike,
-scripts/icet_vcsgc_spike.py). So at each window we can lay DNFS's
+kappa = lambda, phi_1 = -2*c_target (validated 2026-06-13; the mapping now
+lives in `discrete_flow_sampler.mcmc.mchammer_ising`, pinned by
+`tests/test_mchammer_ising.py`). So at each window we can lay DNFS's
 importance-weighted observables directly against a literal VCSGCEnsemble chain, no
 free-energy reconciliation needed.
 
@@ -54,11 +55,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from ase.units import kB
-from mchammer.calculators import ClusterExpansionCalculator
-from mchammer.ensembles import VCSGCEnsemble
 
-from scripts.icet_vcsgc_spike import ising_cluster_expansion
+from discrete_flow_sampler.mcmc.mchammer_ising import run_vcsgc
 
 
 # --------------------------------------------------------------------------- #
@@ -146,31 +144,22 @@ def dnfs_observables(run_dir: Path, D: int, sigma: float, n_boot: int, rng):
 
 
 def vcsgc_observables(D: int, sigma: float, c_target: float, lam: float,
-                      n_steps: int, seeds, burn_frac: float = 1.0 / 3.0):
+                      n_steps: int, seeds):
     """Native VCSGCEnsemble reference at kappa=lam, phi=-2*c_target, kT=1.
 
-    Returns per-observable (mean over seeds, between-seed std). c_std is the
-    within-chain composition spread averaged over seeds.
+    Chains are delegated to `mchammer_ising.run_vcsgc`, which keeps the same
+    on-target init, 1/3 burn-in and write interval this function used when the
+    loop was inline. Returns per-observable (mean over seeds, between-seed
+    std). c_std is the within-chain composition spread averaged over seeds.
     """
-    prim, _, ce = ising_cluster_expansion(sigma)
     d = D * D
     per_seed = {k: [] for k in ("c_mean", "c_std", "e_site", "sro")}
     for s in seeds:
-        sc = prim.repeat((D, D, 1))
-        N = len(sc)
-        n_up = int(round(c_target * N))
-        syms = ["Au"] * n_up + ["Ag"] * (N - n_up)
-        np.random.default_rng(s).shuffle(syms)
-        sc.set_chemical_symbols(syms)
-        calc = ClusterExpansionCalculator(sc, ce)
-        ens = VCSGCEnsemble(sc, calc, temperature=1.0 / kB, kappa=lam,
-                            phis={"Au": -2.0 * c_target}, random_seed=s,
-                            ensemble_data_write_interval=100)
-        ens.run(n_steps)
-        df = ens.data_container.data
-        keep = df.iloc[int(len(df) * burn_frac):]
-        c = keep["Au_count"].values / N
-        pot = keep["potential"].values                  # total CE energy
+        traces = run_vcsgc(D=D, sigma=sigma, penalty_strength=lam,
+                           target_composition=c_target, n_steps=n_steps,
+                           seed=s)["traces"]
+        c = traces["composition"]
+        pot = traces["potential"]                       # total CE energy
         per_seed["c_mean"].append(c.mean())
         per_seed["c_std"].append(c.std())
         per_seed["e_site"].append((pot / d).mean())
