@@ -44,7 +44,7 @@ def _exact_slice(target, D, t_scalar):
 
 @torch.no_grad()
 def test_xi_t_swap_is_unbiased_for_dt_log_Z():
-    # E_{p_t^C}[ξ_t] = ∂_t log Z_t^C for ANY valid rate (design §3.3), checked
+    # E_{p_t^C}[ξ_t] = ∂_t log Z_t^C for ANY valid rate, checked
     # exactly on the 2×2 slice at random init — no training.
     head, tgt = _head_and_target()
     for t_scalar in (0.1, 0.5, 0.9):

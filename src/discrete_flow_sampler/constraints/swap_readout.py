@@ -1,7 +1,5 @@
 """Paired-swap antisymmetric rate readout (swap-DNFS, instantiation A).
 
-See docs/design/2026-06-29-swap-readout-antisymmetry-design.md.
-
 A composition-preserving swap exchanges the spins at two sites (i, j). The swap
 rate is read off a context HOLLOW IN BOTH sites against the token difference:
 
@@ -24,7 +22,7 @@ Both read H_ij at the SECOND index j, so they agree numerically: the leTF
 readout at j already ignores j's own input, so additionally masking j is a
 no-op. The heads are NOT label-symmetric (H_ij != H_ji), so the downstream
 swap residual must order each unordered pair by site index (i<j), never by
-spin (design note section 4). LeTFRateMatrix is reused untouched.
+spin. LeTFRateMatrix is reused untouched.
 """
 
 from collections.abc import Callable, Iterable
@@ -218,7 +216,7 @@ class LeTFMaskOneSwapHead(nn.Module):
 def antisymmetrise(
     raw_head: Callable[[Tensor, Tensor], Tensor], x: Tensor, t: Tensor
 ) -> Tensor:
-    """Explicit antisymmetrisation of any raw pair score (design note 2.4).
+    """Explicit antisymmetrisation of any raw pair score.
 
     G_swap(i, j | x) := 1/2 [ raw(i, j | x) - raw(i, j | Swap2(x, i, j)) ]
 

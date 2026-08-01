@@ -1,9 +1,7 @@
 """Three-interval (leave-two-out) swap head: all-pairs H_ij in ONE body pass.
 
-Direction (b) of the pair-equivariant spike (design walkthrough 2026-07-07;
-literature scout: docs/findings/2026-07-07-pair-equivariant-readout-literature-
-scout.md). The readout is unchanged from swap_readout.py (the pair form of
-DNFS Prop. 2 / Eq. (9)):
+Direction (b) of the pair-equivariant spike (2026-07-07). The readout is
+unchanged from swap_readout.py (the pair form of DNFS Prop. 2 / Eq. (9)):
 
     G_swap(i, j | x) = < H_ij(x_{-{i,j}}),  omega_{x_i} - omega_{x_j} >
 

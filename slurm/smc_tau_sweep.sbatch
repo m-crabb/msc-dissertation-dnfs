@@ -10,7 +10,7 @@
 
 # SMC-resampled eval-only pass over the frozen MA d64 100k run: one array
 # task per ESS threshold tau. Writes eval_smc_tau<tau>/metrics.json beside
-# the untouched plain-IS eval/ (see docs/plans/2026-07-24-smc-resampling.md).
+# the untouched plain-IS eval/, which stays the quoted baseline.
 #
 # sbatch does not load ~/.bashrc, so pixi is addressed by absolute path.
 # --frozen: activate the already-installed locked env, never re-solve.

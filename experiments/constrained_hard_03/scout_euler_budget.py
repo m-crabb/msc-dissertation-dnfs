@@ -1,14 +1,14 @@
-"""Item-B scouting (pre-reg §6): does one-event n_euler_steps ∝ O(d) hold the
+"""Euler-budget scouting: does one-event n_euler_steps ∝ O(d) hold the
 swap-CTMC clip fraction under threshold, or is the matching multi-event step
 needed as d grows?
 
 Decision infra, not a research-bearing computation: orchestrates the tested
-swap stack and aggregates the two frozen §6 diagnostics for the total swap
+swap stack and aggregates the two frozen diagnostics for the total swap
 escape rate Λ(x, t) = Σ_{i<j} [G_swap(i,j | x)]_+ and dt = 1/(n_euler_steps−1):
     - expected events per site per step = mean(Λ·dt)/d   (threshold ≤ 0.1)
     - clipped-step fraction              = P(Λ·dt > 1)    (threshold < 1%)
 The one-event step fires ≤1 swap/step, so Λ·dt > 1 is exactly where it
-under-fires (§B).
+under-fires.
 
 The decisive question is how Λ scales with d. Λ splits into a LOCAL part over
 the 2d adjacent pairs (swap ΔE touches only bonds at i, j) and a part over the

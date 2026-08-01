@@ -1,8 +1,8 @@
 """LEAPS-style deep locally-equivariant convolutional rate matrix.
 
 Reference: Holderrieth, Albergo & Jaakkola (2025), 'LEAPS: A discrete
-neural sampler via locally equivariant networks', papers/leaps.pdf,
-Section 9 + Figure 3 + Figure 7 (kernel-schedule ablation).
+neural sampler via locally equivariant networks', Section 9 + Figure 3 +
+Figure 7 (kernel-schedule ablation).
 
 Architecture (LEAPS Section 9, with explicit DNFS time conditioning and
 optional hollow global context):

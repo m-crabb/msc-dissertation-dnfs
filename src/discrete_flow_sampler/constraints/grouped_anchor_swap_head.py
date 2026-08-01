@@ -1,6 +1,6 @@
 """Grouped-anchor swap head: mask a GROUP of sites per pass, not a single one.
 
-Motivation (avenues doc 2026-07-22 §4c, after the stencil verdict). The head
+Motivation (2026-07-22, after the stencil verdict). The head
 family had only ever been sampled at its two endpoints: `LeTFMaskOneSwapHead`
 runs **d** masked body passes (one anchor site each, ESS frac 0.9103 at the
 d=64 sigma_c rung), and the one-pass heads (`interval_swap_head.py`,

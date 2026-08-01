@@ -155,11 +155,11 @@ def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt)
     """Multi-event swap Euler step: fire a vertex-disjoint matching of pairs.
 
     Thin every pair by its firing probability rate·dt, then keep a random
-    vertex-disjoint matching of the proposals (§B). Returns (new_state,
+    vertex-disjoint matching of the proposals. Returns (new_state,
     pair_scores) to match `_euler_step_swap`'s contract, so `sample_swap_ctmc`
     can swap the two step kinds. Correct to O(dt): proposal conflicts are O(dt²)
     as dt → 0, so this collapses to the one-event step in that limit. The caller
-    controls dt to hold the expected events per site per step ≤ 0.1 (pre-reg §6).
+    controls dt to hold the expected events per site per step ≤ 0.1.
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)
@@ -189,7 +189,7 @@ def sample_swap_ctmc(
 
     `multi_event=True` uses the vertex-disjoint-matching step (many swaps/step,
     O(d) trajectory length at scale); the default one-event step fires ≤1
-    swap/step (O(d²) steps at the critical coupling — followups §B).
+    swap/step (O(d²) steps at the critical coupling).
 
     `resampling` (requires `return_log_weights=True`) enables the eval-time
     SMC upgrade (`samplers.resampling`): adaptive systematic resampling of

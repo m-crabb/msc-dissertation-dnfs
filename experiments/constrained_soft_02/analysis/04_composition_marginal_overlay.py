@@ -25,8 +25,8 @@ several the DNFS marginal is drawn as the across-seed mean with a min-max band.
 Two modes (--mode):
   single      -- the original d=4 single-lambda figure above. Default; output
                  unchanged.
-  lambda-pair -- the experiments.tex sibling figure next to tab:soft-lambda-sweep
-                 (spec 2026-06-11/12): D=10 composition marginals at a weak and a
+  lambda-pair -- the companion overlay figure for the lambda-sweep comparison
+                 (2026-06-11/12): D=10 composition marginals at a weak and a
                  strong lambda overlaid as curves. Exact enumeration is impossible
                  at 2^100 states, so the trusted reference per lambda is a long
                  penalty-aware Gibbs chain (the report's D=10 convention; cached

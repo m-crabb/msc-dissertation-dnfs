@@ -1,6 +1,6 @@
 """Potts target: S=2 reduction to Ising, closed-form swap ratio vs the generic
 oracle, multiset-manifold base, and the claim that the swap sampler is
-S-agnostic (scope doc `docs/design/2026-07-31-potts-extension-scope.md`).
+S-agnostic.
 
 The load-bearing tests are:
   * `test_s2_potts_swap_ratio_matches_ising` — S=2 Potts at 2σ must reproduce
@@ -278,11 +278,10 @@ def test_off_manifold_states_rejected():
 def test_swap_sampler_runs_unchanged_on_potts():
     """`sample_swap_ctmc` + a stock head must run on S=3 with NO code changes.
 
-    This is the extension's whole premise (scope doc §"Why this is cheaper
-    than expected"): the move set only permutes positions, and the readout
-    indexes an `nn.Embedding(vocab_size, ·)`. Composition is conserved
-    exactly — a swap cannot change a multiset — so the hard constraint holds
-    for S species for free.
+    This is the extension's whole premise: the move set only permutes
+    positions, and the readout indexes an `nn.Embedding(vocab_size, ·)`.
+    Composition is conserved exactly — a swap cannot change a multiset — so
+    the hard constraint holds for S species for free.
     """
     torch.manual_seed(7)
     potts = FixedCompositionPottsTarget(

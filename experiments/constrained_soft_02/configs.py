@@ -3,9 +3,9 @@
 Imports the shared schema dataclasses from the baseline experiment and
 defines its own CONFIGS dict for soft-constraint cells. The cells set
 `target_composition` and `composition_penalty_strength` on `IsingCfg`,
-which `IsingTarget` consumes natively to add a penalty term to
-`log_prob` (see docs/findings/2026-05-13-constrained-binary-alloy-probe.md
-for derivation).
+which `IsingTarget` consumes natively to subtract the extensive VCSGC-style
+penalty lambda * d * (c(x) - c_target)^2 from `log_prob` (see
+`IsingTarget.composition_penalty` for the form and its rationale).
 
 Cell-name format: `S<alphabet>_d<dim>_c<c_target_x100>_l<lambda>`.
 """
@@ -513,7 +513,8 @@ CONFIGS: dict[str, StageCfg] = {
     # F(c) campaign gate windows (2026-06-13): off-centre clones of the won
     # anneal rung, varying only target_composition. c=0.65 (typical) and
     # c=0.80 (stress) launch first and gate the rest of the composition sweep
-    # against the failure criteria in the campaign design doc. The anneal
+    # against the pre-declared failure criteria, including the ESS 0.30 floor
+    # the fallback rung below cites. The anneal
     # schedule and every other knob are held fixed so the off-centre runs are a
     # controlled test of whether the recipe generalises away from c=0.5.
     "S2_d10_c065_l50_letf_ne64_anneal": StageCfg(

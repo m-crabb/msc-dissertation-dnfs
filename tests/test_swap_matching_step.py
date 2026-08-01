@@ -1,4 +1,4 @@
-"""Matching-based multi-event swap Euler step (followups §B, item B).
+"""Matching-based multi-event swap Euler step.
 
 The one-event step fires ≤1 swap/step, so a trajectory needs O(d²) steps at the
 critical coupling (Λ ∝ d²; scouting 2026-07-05). The matching step fires a

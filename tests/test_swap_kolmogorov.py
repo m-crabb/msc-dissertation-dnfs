@@ -41,7 +41,7 @@ def test_residual_swap_shape_and_finite():
 @torch.no_grad()
 def test_residual_swap_zero_mean_at_exact_dt_log_Z():
     # E_{p_t^C}[δ_t] = ∂_t log Z_t^C − dt_log_Zt = 0 when dt_log_Zt is exact,
-    # for ANY head (design §3.3). Bit-close on the 6-state 2×2 slice.
+    # for ANY head. Bit-close on the 6-state 2×2 slice.
     head, tgt = _head_and_target()
     for t_scalar in (0.1, 0.5, 0.9):
         slice_states, p_cond, dt_log_Z = _exact_slice(tgt, 2, t_scalar)

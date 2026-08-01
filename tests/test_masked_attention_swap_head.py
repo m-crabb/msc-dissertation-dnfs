@@ -259,7 +259,7 @@ def test_head_parameters_receive_grad_and_grads_finite():
 
 
 def _stencil_head(d=16, offsets=(1, 4), lattice_side=4, seed=42):
-    """MA head with the 5-point stencil family live (design 2026-07-08 §5.i).
+    """MA head with the 5-point stencil family live (2026-07-08).
 
     d=16 / lattice_side=4 is the smallest square grid where a wide pair such
     as (0, 15) admits interior stencil centres (i+side < k < j-side), so the
@@ -401,7 +401,7 @@ def test_stencil_head_parameters_receive_finite_grad():
 
 
 def test_blindness_holds_at_tuned_band_capacity():
-    """The band-capacity knobs (design 2026-07-08) must not perturb the
+    """The band-capacity knobs (2026-07-08) must not perturb the
     exclusion logic: H_ij stays EXACTLY unchanged under any flip of x_i /
     x_j at non-default widths and offsets, including an offset (4) that is
     neither row nor column adjacency."""

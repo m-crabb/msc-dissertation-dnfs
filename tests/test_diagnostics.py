@@ -384,7 +384,7 @@ def test_diagonal_correlation_checkerboard_is_plus_one():
 
 def test_half_magnetisation_order_parameter_modes_and_checkerboard():
     """phi = +1 / -1 on the two phase-separated modes, 0 on the checkerboard:
-    the coverage observable of the frozen probe metric (pre-reg §2)."""
+    the coverage observable of the frozen probe metric."""
     from discrete_flow_sampler.diagnostics.metrics import (
         half_magnetisation_order_parameter,
     )

@@ -14,7 +14,7 @@ The sigma-ladder cells (`_dh` suffix) probe the swap-CTMC across the Ising
 phase transition (σ_c ≈ 0.22305) with the correctness-gate
 `DoublyHollowSwapHead`; the `_na` cell pairs the subcritical floor rung with
 `NonAntisymSwapHead`, a deliberately antisymmetry-breaking negative control
-for Task 9's ablation.
+for the antisymmetry ablation.
 """
 
 from dataclasses import dataclass, replace
@@ -78,27 +78,28 @@ class HardStageCfg(StageCfg):
     # only — the Euler loop's data-dependent sampling would graph-break.
     compile_head: bool = False
     # Band-capacity knobs for the interval / masked_attention heads
-    # (band-capacity push, design docs/design/2026-07-08-band-capacity-push-
-    # design.md). None = the constructions every prior run used:
+    # (band-capacity push, 2026-07-08). None = the constructions every prior
+    # run used:
     # band_feature_dim 16, attention_dim 32, pair_offsets (1, D) — row and
     # column adjacency of the flattened D x D lattice. attention_dim is
     # masked_attention-only (the interval head has no attention).
     band_feature_dim: int | None = None
     attention_dim: int | None = None
     pair_offsets: tuple[int, ...] | None = None
-    # Round-2 stencil family (design §5.i): add the 5-point lattice-stencil
+    # Round-2 stencil family: add the 5-point lattice-stencil
     # band-feature family to the masked_attention head. False = the depth-1
     # unary+offset band every prior run used. lattice_side is cfg.ising.D
     # (the flattened D x D grid), so no separate field is needed.
     use_stencil: bool = False
-    # Grouped-anchor head knobs (avenues doc 2026-07-22 §4c). n_groups is k,
+    # Grouped-anchor head knobs (2026-07-22). n_groups is k,
     # the number of masked body passes: k = d reproduces mask_one bit-exactly,
     # smaller k trades masked-site count for passes. Only read when head_kind
     # is "grouped_anchor", so every other cell stays byte-identical.
     n_groups: int | None = None
     grouping: str = "diagonal"
     group_chunk_size: int | None = None
-    # Target family on the fixed-composition manifold (Potts plan Step 2).
+    # Target family on the fixed-composition manifold (Potts extension,
+    # 2026-07-31).
     # "ising" = FixedCompositionIsingTarget, composition a scalar n_plus held
     # in `ising.target_composition`; "potts" = FixedCompositionPottsTarget,
     # composition an S-vector held in `potts_composition` below. Both fields
@@ -125,7 +126,7 @@ class NonAntisymSwapHead(nn.Module):
     the run is comparable to the `_dh` cells -- but `H[:, j, :]` now sees the
     live value of `x_i` too (nothing masks it), so the exact swap-
     antisymmetry `G(i, j | x) = -G(i, j | Swap2(x, i, j))` does NOT hold.
-    This is exactly the property Task 9's antisymmetry-ablation control must
+    This is exactly the property the antisymmetry-ablation control must
     falsify. Gate/ablation only -- never use this head for a real run.
     """
 
@@ -277,11 +278,11 @@ def _d64_curriculum_cell(
     """The d=64 sigma_c curriculum recipe — the shape of the PASSED D=8 rung.
     Every band-capacity-push cell shares it verbatim and differs only in
     head_kind and the declared head knobs, so outcome differences are
-    attributable to the declared change (design 2026-07-08; twin-ness is
+    attributable to the declared change (2026-07-08; twin-ness is
     pinned by test_band_push_cells_mirror_ma_twin_except_declared_fields).
 
     `n_steps` defaults to the 50k budget every batch-1 / round-2 cell used.
-    The horizon-extension cells (avenues doc §4a) pass 100_000: the sigma
+    The horizon-extension cells pass 100_000: the sigma
     ladder is a tuple of absolute start_steps, so it does NOT stretch with the
     budget — the extra steps all land on the final sigma=0.223 plateau, which
     is the phase the training logs show still descending at 50k. n_steps is
@@ -299,7 +300,7 @@ def _d64_curriculum_cell(
 
 
 CONFIGS: dict[str, HardStageCfg] = {
-    # First Potts cell (plan docs/plans/2026-07-31-potts-extension.md Step 2):
+    # First Potts cell (2026-07-31):
     # the training path on S=3, kept small enough to smoke end-to-end on CPU.
     # D=3 (d=9) is the smallest lattice that is BOTH non-degenerate (on the L=2
     # torus a site's two neighbours coincide) and divisible by 3, so the equal
@@ -324,7 +325,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d16_c50_s040_letf_dh": _hard_cell(
         "H2_d16_c50_s040_letf_dh", sigma=0.40, head_kind="doubly_hollow",
     ),
-    # Task 9's antisymmetry negative control: same sigma as the floor rung,
+    # Antisymmetry negative control: same sigma as the floor rung,
     # NonAntisymSwapHead instead of DoublyHollowSwapHead, same loss.
     "H2_d16_c50_s010_letf_na": _hard_cell(
         "H2_d16_c50_s010_letf_na", sigma=0.10, head_kind="non_antisym",
@@ -389,8 +390,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_ma_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr", head_kind="masked_attention",
     ),
-    # Band-capacity push batch 1 (design docs/design/2026-07-08-band-
-    # capacity-push-design.md): three single-variable twins of ma_50k_curr.
+    # Band-capacity push batch 1 (2026-07-08): three single-variable twins
+    # of ma_50k_curr.
     # The discriminator: interval head, head_kind is the ONLY change.
     # Separates "shared band content is the bottleneck" (lands in the MA
     # band ~0.75-0.78) from "the MA aggregator is" (lands well above it).
@@ -408,7 +409,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_ma_offs_50k_curr", head_kind="masked_attention",
         pair_offsets=(1, 2, 8, 16),
     ),
-    # Round-2 stencil family (design §5.i): the reported MA head + the 5-point
+    # Round-2 stencil family: the reported MA head + the 5-point
     # lattice-stencil band family (neighbours ±1, ±D on the flattened D x D
     # grid), narrow unary+offset families kept alongside to cover the collar.
     # use_stencil is the ONLY change vs ma_50k_curr -- the probe of whether a
@@ -417,7 +418,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_ma_stencil_50k_curr", head_kind="masked_attention",
         use_stencil=True,
     ),
-    # Horizon extension (avenues doc 2026-07-22 §4a). Judging the stencil
+    # Horizon extension (2026-07-22). Judging the stencil
     # exposed that the 50k budget cuts BOTH heads off mid-descent: over the
     # final 10k steps the loss still falls 12.0% (ma) / 7.4% (stencil) and
     # train ESS is still climbing, so the 0.78/0.80 "ceiling" is read off
@@ -437,7 +438,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_ma_stencil_100k_curr", head_kind="masked_attention",
         n_steps=100_000, use_stencil=True,
     ),
-    # The missing twin (judged 2026-07-22). §4a found the 50k cutoff lands
+    # The missing twin (judged 2026-07-22). It found the 50k cutoff lands
     # mid-descent for the one-pass heads -- but the SAME check on mo_50k_curr's
     # log shows mask_one was still descending fastest of the three at its own
     # cutoff (loss -25.7% over the final 15k, train ESS 0.864 -> 0.900). So the
@@ -468,8 +469,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # direction) but the whole family sits under the existing ladder at d64, so
     # no (k, cost) point here is worth having. Group SHAPE dominates k -- the
     # diagonal-vs-contiguous gap (0.572) is 4x the k gap, which vindicates the
-    # independent-set argument far past what the design predicted.
-    # Grouped-anchor batch 1 (avenues doc 2026-07-22 §4c): the head family
+    # independent-set argument far past what the original estimate predicted.
+    # Grouped-anchor batch 1 (2026-07-22): the head family
     # sampled BETWEEN its endpoints for the first time -- k masked passes
     # instead of mask_one's d (= 64) or the one-pass heads' zero. Same 50k
     # curriculum as every other ladder rung, so the result reads directly
@@ -505,8 +506,8 @@ CONFIGS: dict[str, HardStageCfg] = {
         # the eval otherwise dominates the run (profile: 92% of GPU time).
         # run.py's final eval still draws the full 5000.
         n_eval_samples_training=512,
-        # Tier-2 flags, user sign-off 2026-07-06 (perf-branch evidence in
-        # the 2026-07-05 findings doc): SDPA readout everywhere, bf16 on the
+        # Tier-2 flags, user sign-off 2026-07-06 (perf-branch evidence
+        # recorded 2026-07-05): SDPA readout everywhere, bf16 on the
         # in-training eval block only — the final 5000-sample eval runs fp32.
         use_sdpa_readout=True,
         eval_autocast_bf16=True,

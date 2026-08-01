@@ -1,7 +1,5 @@
 """Potts target distribution: the S-species generalisation of the Ising target.
 
-Scope + rationale: `docs/design/2026-07-31-potts-extension-scope.md`.
-
 Why Potts
 ---------
 Ising fixes S = 2. The Potts model keeps the same lattice and the same
@@ -57,9 +55,8 @@ States are stored in the codebase's existing affine convention
 as a float tensor, exactly as Ising stores {−1,+1}. This is deliberate: every
 head and backbone recovers the embedding index with `((x + 1) / 2).long()`
 (13 call sites), which inverts this map for ANY S. So the whole swap/head
-stack runs on Potts unchanged — see the scope doc §"Why this is cheaper than
-expected". `to_index` / `from_index` below make the convention explicit and
-give a single place to change it later.
+stack runs on Potts unchanged. `to_index` / `from_index` below make the
+convention explicit and give a single place to change it later.
 
 What is NOT carried over
 ------------------------

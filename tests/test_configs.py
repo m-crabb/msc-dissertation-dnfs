@@ -379,7 +379,7 @@ def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
 
 
 def test_hard_cfg_band_capacity_knobs_reach_band_heads():
-    """Band-capacity push (design 2026-07-08): band_feature_dim /
+    """Band-capacity push (2026-07-08): band_feature_dim /
     attention_dim / pair_offsets must be settable from HardStageCfg,
     defaulting to None = the constructions every prior run used (offsets
     (1, D), feature width 16, attention width 32), so existing cells build
@@ -417,7 +417,7 @@ def test_hard_cfg_band_capacity_knobs_reach_band_heads():
     assert interval_head.pair_offsets == (1, 2, 8, 16)
     assert interval_head.band_unary_features[-1].out_features == 32
 
-    # Stencil family (design §5.i): use_stencil defaults off (byte-identical
+    # Stencil family: use_stencil defaults off (byte-identical
     # head) and, when set, builds a stencil MLP addressing the D x D grid.
     assert cfg.use_stencil is False
     assert not hasattr(default_head, "band_stencil_features")
@@ -427,7 +427,7 @@ def test_hard_cfg_band_capacity_knobs_reach_band_heads():
 
 
 def test_band_push_cells_mirror_ma_twin_except_declared_fields():
-    """Band-capacity push batch 1 (design 2026-07-08): each cell must be a
+    """Band-capacity push batch 1 (2026-07-08): each cell must be a
     single-variable twin of H2_d64_c50_s223_letf_ma_50k_curr so its outcome
     is attributable to the declared change alone (the discriminator changes
     the head kind; the other two change exactly one capacity axis)."""
@@ -452,14 +452,14 @@ def test_band_push_cells_mirror_ma_twin_except_declared_fields():
     assert offsets.pair_offsets == (1, 2, 8, 16)
     assert replace(offsets, name=twin.name, pair_offsets=None) == twin
 
-    # Round-2 stencil family (design §5.i): use_stencil is the only change.
+    # Round-2 stencil family: use_stencil is the only change.
     stencil = CONFIGS["H2_d64_c50_s223_letf_ma_stencil_50k_curr"]
     assert stencil.use_stencil is True and twin.use_stencil is False
     assert replace(stencil, name=twin.name, use_stencil=False) == twin
 
 
 def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
-    """Horizon extension (avenues doc §4a, 2026-07-22): the 50k curriculum
+    """Horizon extension (2026-07-22): the 50k curriculum
     stops while both heads are still improving (loss -12.0% / -7.4% over the
     final 10k steps, train ESS still climbing), so the 0.78/0.80 ceiling is
     read off unconverged runs. These cells double the budget and change
@@ -508,7 +508,7 @@ def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
 
 
 def test_grouped_anchor_cells_mirror_ma_twin_except_declared_fields():
-    """Grouped-anchor batch 1 (avenues doc §4c): each cell must be a
+    """Grouped-anchor batch 1 (2026-07-22): each cell must be a
     single-variable twin of H2_d64_c50_s223_letf_ma_50k_curr apart from the
     head selection and its declared knobs, so the result reads against the
     existing ladder rungs rather than against a different recipe. ga16 differs

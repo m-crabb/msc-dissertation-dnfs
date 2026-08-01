@@ -188,7 +188,7 @@ def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
     into metrics.json, which is worse than writing nothing.
 
     So the Potts route reports no composition observables until the S-vector
-    diagnostics land (Potts plan Step 3: composition_counts, S_q asymmetry,
+    diagnostics land (planned next: composition_counts, S_q asymmetry,
     delta-based correlators). Nothing is lost from the constraint's point of
     view: composition here is enforced exactly by the swap move set, not
     measured, and `assert_on_manifold` still checks it.
@@ -244,7 +244,7 @@ def final_eval_smc(
 ) -> dict:
     """SMC-resampled end-of-run eval, written ALONGSIDE the plain-IS eval/
     (never over it — the S7 preregistration keeps the pure-IS numbers as
-    the quoted baseline; plan `docs/plans/2026-07-24-smc-resampling.md`).
+    the quoted baseline).
 
     Same draw protocol as `final_eval` (n_eval_samples, chunking, Euler
     grid), plus adaptive systematic resampling at threshold `tau` inside

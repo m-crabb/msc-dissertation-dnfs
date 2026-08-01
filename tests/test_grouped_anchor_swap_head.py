@@ -1,4 +1,4 @@
-"""Falsification suite for GroupedAnchorSwapHead (avenues doc 2026-07-22 §4c).
+"""Falsification suite for GroupedAnchorSwapHead (2026-07-22).
 
 Mirrors the structure of the existing head suites (test_swap_readout,
 test_masked_attention_swap_head) with the blindness bar at EQUALITY: masking

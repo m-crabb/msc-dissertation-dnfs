@@ -1,7 +1,7 @@
 """Tests for LeConvDeepRateMatrix (LEAPS-style deep LEC).
 
-Reference: Holderrieth, Albergo & Jaakkola (2025), papers/leaps.pdf,
-Section 9 + Figure 3.
+Reference: Holderrieth, Albergo & Jaakkola (2025), LEAPS, Section 9 +
+Figure 3.
 
 Three structural pillars (mirrors test_leconv.py) plus the architecture-
 specific concern that hollow-ness must hold *through depth* of the

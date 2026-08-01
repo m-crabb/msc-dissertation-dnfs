@@ -165,7 +165,7 @@ def _runners(args, head, target, device: torch.device) -> dict:
 
         def eval_quality_diagnostics():
             """One seeded draw: ESS fraction + composition for the flag-on vs
-            flag-off within-noise comparison (Tier-2 evidence, plan Task 7)."""
+            flag-off within-noise comparison (Tier-2 evidence)."""
             from discrete_flow_sampler.diagnostics.metrics import (
                 ess_from_log_weights,
             )

@@ -1,7 +1,5 @@
 """Adaptive systematic resampling: the eval-time AIS -> SMC upgrade.
 
-Design: `docs/design/2026-07-22-unexplored-avenues-inference-distillation.md`,
-
 Why resampling
 --------------
 Plain annealed-IS eval accumulates log w = ∫₀¹ ξ_t(x_t) dt per particle
@@ -80,7 +78,7 @@ class ResamplingStats:
         form. Final estimate = `smc_log_z_estimate(stats, final_log_w)`.
     n_events / event_steps: how often and at which Euler steps resampling
         fired — the interesting diagnostic when comparing τ settings
-        (D.15 cost-vs-quality grid).
+        (the cost-vs-quality grid comparison).
     """
 
     log_z_increment: Tensor

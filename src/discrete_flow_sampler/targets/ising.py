@@ -408,9 +408,9 @@ class FixedCompositionIsingTarget(IsingTarget):
     def swap_log_ratio(self, x, t, pairs):
         """Closed-form swap log-ratio on the fixed-N slice, shape (B, P).
 
-        followups doc §A / Task A. Because base_log_eta is constant on the slice
-        (so the (1 − t) term cancels) and bias·Σx is swap-invariant, only the
-        t·σ·Δ(xᵀAx) term survives:
+        Because base_log_eta is constant on the slice (so the (1 − t) term
+        cancels) and bias·Σx is swap-invariant, only the t·σ·Δ(xᵀAx) term
+        survives:
 
             log p̃_t(Swap2(x, i, j)) − log p̃_t(x)
                 = t·σ·[ 2(x_j − x_i)(h_i − h_j) − 2(x_j − x_i)²·A_ij ],   h = x·A

@@ -1,4 +1,4 @@
-"""Tests for the paired-swap antisymmetric readout (P1.1, design note 2026-06-29 §5)."""
+"""Tests for the paired-swap antisymmetric readout (P1.1, 2026-06-29)."""
 
 import pytest
 import torch
@@ -199,7 +199,7 @@ def test_mask_one_label_asymmetry_pinned():
 def _naive_factoring(model, x, t):
     """Negative control: G(x_j,i|x) + G(x_i,j|x) from the real single-site readout.
 
-    Provably breaks paired-swap antisymmetry (design note 2.2). Built as a raw
+    Provably breaks paired-swap antisymmetry. Built as a raw
     (B, d, d) callable for both the negative control and the antisymmetrise
     oracle. B=1 assumed (test fixture).
     """

@@ -70,7 +70,7 @@ class TrainCfg:
     # seed std drops ~50x. Step-0 only — does NOT re-fire at curriculum
     # σ-transitions, because that failure mode is structurally different (not
     # random-init) and the curriculum's LR drops already play the warmup role
-    # at sensitive transitions. See docs/findings/2026-05-13-letf-init-basin.md.
+    # at sensitive transitions.
     warmup_steps: int = 500              # 0 to disable; e.g. paper-faithful runs
 
 
@@ -572,8 +572,9 @@ CONFIGS: dict[str, StageCfg] = {
     ),
     # 10k-step probe of stage_4_d10_paper with LR warmup enabled. Used for
     # the 4-seed gate (42/43/44/45) measuring whether warmup recovers the
-    # init-basin sensitivity exposed by adding seed_everything. See
-    # docs/findings/2026-05-13-letf-init-basin.md.
+    # init-basin sensitivity exposed by adding seed_everything (finding
+    # recorded 2026-05-13; see the TrainCfg.warmup_steps comment for the
+    # outcome).
     "stage_4_d10_paper_probe_warmup": StageCfg(
         name="stage_4_d10_paper_probe_warmup",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),

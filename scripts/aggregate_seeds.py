@@ -1,8 +1,7 @@
 """Aggregate per-seed eval metrics into mean +/- std rows for the report tables.
 
-Phase 1 of the final-report plan: the headline numbers in `experiments.tex`
-need error bars, so we run each consolidation config across seeds 42-45 and
-summarise here. This is pure post-hoc aggregation: it reads the scalar fields
+The report's headline numbers need error bars, so we run each consolidation
+config across seeds 42-45 and summarise here. This is pure post-hoc aggregation: it reads the scalar fields
 already written to each run's `eval/metrics.json` by `run.py` (ESS fraction,
 energy-marginal biases, composition mean/std, ...) and reports
 `mean +/- std` with the sample standard deviation (ddof=1, i.e. statistics.stdev).

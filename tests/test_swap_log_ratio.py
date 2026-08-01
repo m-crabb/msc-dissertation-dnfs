@@ -3,7 +3,7 @@
 Encodes "what correct looks like" for `swap_log_ratio(x, t, pairs) -> (B, P)`
 before the closed form is implemented (TDD). The oracle is the already-tested
 neighbour helper `_log_p_tilde_at_swap_neighbours`, so a shared bug cannot pass
-both sides. Closed form (followups doc §A, Task A):
+both sides. Closed form:
 
     log p̃_t(Swap2(x, i, j)) − log p̃_t(x)
         = t·σ·[ 2(x_j − x_i)(h_i − h_j) − 2(x_j − x_i)²·A_ij ],   h = x·A
@@ -30,7 +30,7 @@ def _oracle_log_ratio(x, t, target):
     return neighbours - target.log_p_tilde_t(x, t)[:, None]
 
 
-# (D, sigma, c, batch) — the four numerically-verified cells from followups §A.
+# (D, sigma, c, batch) — four numerically-verified cells.
 CLOSED_FORM_CELLS = [
     (4, 0.1, 0.5, 32),
     (4, 0.3, 0.375, 32),     # Z2-broken composition

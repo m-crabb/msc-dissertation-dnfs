@@ -88,7 +88,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
     Args (beyond IntervalSwapHead's):
         attention_dim: query/key width of the per-family band attention.
         use_stencil: add the 5-point lattice-stencil band-feature family
-            (design 2026-07-08 §5.i). Off by default so every existing MA
+            (2026-07-08). Off by default so every existing MA
             cell keeps building a byte-identical head. See `band_summaries`.
         lattice_side: side length D of the flattened D x D grid the stencil's
             column neighbours x_{k±D} address. None infers round(sqrt(d))
@@ -189,8 +189,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         triangle's visibility set is empty, so it holds zeros here.
 
         When use_stencil is set, a final 5-point lattice-stencil family is
-        appended (trailing F channels); see the inline note below and design
-        2026-07-08 §5.i.
+        appended (trailing F channels); see the inline note below.
         """
         del t
         x_idx = ((x + 1) / 2).long()
@@ -238,7 +237,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 )
             )
         if self.use_stencil:
-            # 5-point lattice-stencil family (design 2026-07-08 §5.i). Per-term
+            # 5-point lattice-stencil family (2026-07-08). Per-term
             # feature s_k = MLP(emb(x_k) ++ emb(x_{k±1}) ++ emb(x_{k±side})) --
             # a 2D neighbourhood statistic, richer than the unary/offset terms
             # that capped the one-pass family at ~0.78 (H-shared).

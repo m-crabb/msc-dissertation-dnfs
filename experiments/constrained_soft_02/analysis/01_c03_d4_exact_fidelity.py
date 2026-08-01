@@ -12,7 +12,7 @@ Reports:
   - composition marginal (17 support points k/16) exact vs IS-weighted + TVD
   - log p̃ (energy) marginal exact vs IS-weighted (binned) + TVD
   - context for the metrics.json F/D bias (+0.18): the IS weight-tail
-    signature (design §1.2)
+    signature
 
 Marginal TVDs (low-dim: 17 / ~40 bins) are informative at N=5000; the
 full 2^16-state TVD is sample-floored at this budget (project_tvd_floor).

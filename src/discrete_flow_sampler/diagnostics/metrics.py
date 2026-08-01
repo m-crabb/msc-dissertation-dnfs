@@ -468,8 +468,8 @@ def half_magnetisation_order_parameter(x: Tensor, D: int) -> Tensor:
     At fixed
     50/50 composition the two phase-separated modes give phi = +1 / -1 while
     total magnetisation is constant on the slice, so phi is the mode-coverage
-    observable of the frozen mixing-probe metric (pre-registration 2026-07-03
-    §2); E_pi[phi] = 0 by the global spin-flip symmetry of the slice.
+    observable of the frozen mixing-probe metric (pre-registration
+    2026-07-03); E_pi[phi] = 0 by the global spin-flip symmetry of the slice.
     """
     grid = x.float().reshape(*x.shape[:-1], D, D)
     m_left = grid[..., :, : D // 2].mean(dim=(-2, -1))
