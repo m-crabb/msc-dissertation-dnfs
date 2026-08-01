@@ -22,13 +22,17 @@ NULL_CONTROL_CELL = "S2_d4_cnull_l50_letf"
 BUDGET_TWIN_CELL = "S2_d4_camort_50k_l50_letf"
 ANNEALED_TWIN_CELL = "S2_d4_camort_50k_l50_letf_anneal"
 OFFSET_ANNEAL_CELL = "S2_d4_camort_50k_l50_letf_anneal_offset"
+CLIP_CELLS = {
+    "S2_d4_camort_50k_l50_letf_anneal_offset_clip50": 50.0,
+    "S2_d4_camort_50k_l50_letf_anneal_offset_clip100": 100.0,
+}
 D10_AMORTISED_CELLS = (
     "S2_d10_camort_l50_letf_ne128_anneal",
     "S2_d10_cgrid_l50_letf_ne128_anneal",
 )
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
-    ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *D10_AMORTISED_CELLS,
+    ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
 )
 
 # The compositions with archived per-composition specialists; the grid cell
@@ -185,6 +189,42 @@ def test_offset_anneal_finishes_its_ramp_before_the_window_widens():
         stages[-1].composition_penalty_strength
         == offset.ising.composition_penalty_strength
     )
+
+
+@pytest.mark.parametrize("cell_name,max_norm", sorted(CLIP_CELLS.items()))
+def test_clip_cells_vary_only_the_gradient_clip(cell_name, max_norm):
+    """Same offset recipe, a tighter gradient clip, nothing else.
+
+    Every death in the offset cell is preceded by the same optimiser
+    signature: at the final window widening the pre-clip gradient norm jumps
+    from ~30 to 10^3-10^5 and the clip fires on essentially every subsequent
+    step, while the one surviving seed peaks at ~111 and stops clipping within
+    2k steps. Clipping at 500 does not contain that, it *sustains* it -- a
+    clipped step has magnitude exactly 500, about 17x a healthy step, taken in
+    a direction estimated from importance weights that have just degenerated.
+    So the update magnitude stops carrying information about the descent
+    direction's quality precisely when it is least trustworthy.
+
+    Two values rather than one because the healthy phase also spikes (the
+    unconditioned specialist trains fine with 4% of steps above 500), so the
+    tighter cell risks squashing informative tail gradients; 100 hedges that
+    while still keeping a clipped step within ~4x a healthy one.
+
+    Nothing else may differ, or a survival change cannot be attributed.
+    """
+    offset = CONFIGS[OFFSET_ANNEAL_CELL]
+    clipped = CONFIGS[cell_name]
+
+    assert clipped.train.grad_clip_max_norm == max_norm
+    assert offset.train.grad_clip_max_norm > max_norm
+    assert replace(
+        clipped,
+        name=offset.name,
+        train=replace(
+            clipped.train,
+            grad_clip_max_norm=offset.train.grad_clip_max_norm,
+        ),
+    ) == offset
 
 
 def test_null_control_is_the_specialist_reached_through_the_amortised_path():

@@ -149,6 +149,32 @@ def test_sides_are_seed_meaned_before_joining(tmp_path):
     assert row["mcmc_over_dnfs"] == pytest.approx(3.0)
 
 
+def test_seed_filter_isolates_a_survivor_from_the_seed_mean(tmp_path):
+    """Restricting to one seed must report THAT seed's cost, not the mean.
+
+    The amortised cells contain both collapsed and healthy seeds, and cost per
+    effective sample is 1/ESS, so a collapsed seed contributes an enormous
+    number that dominates any average. The seed-mean therefore describes no
+    run that exists: it neither reports what the recipe costs when it works
+    nor how often it works. Both are needed, so the filter has to be able to
+    pull the survivor out.
+    """
+    for seed, ess_fraction in ((42, 0.001), (44, 0.5)):
+        _write_dnfs_run(
+            tmp_path, f"cell_seed{seed}", seed=seed,
+            draw_seconds=10.0, ess_fraction=ess_fraction, n_eval=1000,
+        )
+
+    everything = grid.collect_dnfs(tmp_path, D=10)
+    survivor = grid.collect_dnfs(tmp_path, D=10, seeds=[44])
+
+    assert sorted(everything["seed"]) == [42, 44]
+    assert list(survivor["seed"]) == [44]
+    # 10 s / 500 effective samples, not the mean of that and 10 s / 1.
+    assert survivor["dnfs_s_per_eff"].iloc[0] == pytest.approx(0.02)
+    assert everything["dnfs_s_per_eff"].mean() > 1.0
+
+
 def test_swept_run_contributes_one_row_per_composition(tmp_path):
     """An amortised run is costed at every composition it was swept at.
 

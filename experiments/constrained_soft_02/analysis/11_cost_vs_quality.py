@@ -60,18 +60,30 @@ def _seconds_per_effective_sample(metrics: dict) -> float | None:
     return seconds / ess
 
 
-def collect_dnfs(results_dir: Path, *, D: int) -> pd.DataFrame:
+def collect_dnfs(
+    results_dir: Path, *, D: int, seeds: list[int] | None = None
+) -> pd.DataFrame:
     """One row per (run, composition) that carries timing.
 
     Reads both artefact shapes: a swept amortised run contributes one row per
     composition from `composition_sweep.json`, a specialist contributes its
     single `metrics.json` row at its own target composition.
+
+    `seeds` restricts which runs are read, and it exists because cost here is
+    1/ESS: a seed that collapsed contributes a huge number that dominates the
+    seed-mean, so the averaged row describes no run that was ever performed.
+    The amortised cells mix collapsed and healthy seeds, and the two questions
+    "what does this recipe cost when it works" and "how often does it work"
+    have to be answered separately. Quote a filtered row only alongside the
+    survival rate — on its own it is cherry-picking.
     """
     rows = []
     for config_path in sorted(results_dir.glob("*/config.json")):
         run_dir = config_path.parent
         cfg = json.loads(config_path.read_text())
         if cfg["ising"]["D"] != D:
+            continue
+        if seeds is not None and cfg["train"]["seed"] not in seeds:
             continue
         sweep_path = run_dir / "eval" / "composition_sweep.json"
         metrics_path = run_dir / "eval" / "metrics.json"
@@ -161,10 +173,15 @@ def main():
     parser.add_argument("--results-dir", default="results/02_constrained_soft")
     parser.add_argument("--baseline-dir", default=str(MCHAMMER_SOFT))
     parser.add_argument("--D", type=int, default=10)
+    parser.add_argument(
+        "--seeds", nargs="+", type=int,
+        help="Restrict the DNFS side to these seeds. Quote such a row only "
+             "next to the survival rate of the cell it came from.",
+    )
     parser.add_argument("--out", help="Optional CSV path for the grid")
     args = parser.parse_args()
 
-    dnfs = collect_dnfs(Path(args.results_dir), D=args.D)
+    dnfs = collect_dnfs(Path(args.results_dir), D=args.D, seeds=args.seeds)
     mcmc = collect_mchammer(Path(args.baseline_dir), D=args.D)
 
     print(f"DNFS timed runs at D={args.D}: {len(dnfs)} rows")

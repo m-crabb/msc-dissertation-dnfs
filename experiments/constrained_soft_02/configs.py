@@ -385,6 +385,125 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # GRADIENT-CLIP PROBE, two strengths. Everything is the offset cell above;
+    # only `grad_clip_max_norm` moves, from 500 down to 50 and 100.
+    #
+    # Why: with the lambda ramp moved off the window boundaries, the acute
+    # collapse at the lambda steps disappears -- all four seeds cross every
+    # boundary healthy and are still at training ESS ~3400 at step 20k. Three
+    # of them then die *slowly*, over the following 10-30k steps, and the
+    # optimiser trace says why. At the final widening the pre-clip gradient
+    # norm goes from ~30 to 2.4e3-1.5e4 and the clip fires on 55-100% of every
+    # subsequent step; the one surviving seed peaks at 111, clips on 22% of
+    # steps for 2k steps, and returns to normal. The damage is uniform across
+    # the draw window (median training ESS is as bad at c=0.5 as at the edges),
+    # which rules out "the wider window asks for unreachable compositions" and
+    # points at the update itself rather than the target.
+    #
+    # The mechanism. `clip_grad_norm_` rescales rather than skips, so once the
+    # clip saturates every step has magnitude exactly max_norm -- about 17x a
+    # healthy step here -- in a direction estimated from importance weights
+    # that have just degenerated. Step size is then set by the clip, not by the
+    # gradient, so a batch carrying almost no information produces the largest
+    # update the run has ever taken. That is a runaway: worse model, higher
+    # weight variance, larger gradients, another maximal step. Clipping tighter
+    # bounds each such step to ~2-4x a healthy one, which is the smallest
+    # intervention consistent with the diagnosis.
+    #
+    # Two values because the healthy phase spikes as well -- the unconditioned
+    # specialist trains to ESS 0.80 with 4% of steps above 500 and a p99 norm
+    # near 4900 -- so clipping at 50 may squash tail gradients that were doing
+    # real work. 100 keeps more of that tail and still removes the runaway.
+    # If both survive 4/4 the tighter one is preferred as the stronger claim;
+    # if only 100 survives, the tail matters and that is worth reporting.
+    "S2_d4_camort_50k_l50_letf_anneal_offset_clip50": StageCfg(
+        name="S2_d4_camort_50k_l50_letf_anneal_offset_clip50",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
+            seed=42, grad_clip_max_norm=50.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d4_camort_50k_l50_letf_anneal_offset_clip100": StageCfg(
+        name="S2_d4_camort_50k_l50_letf_anneal_offset_clip100",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
+            seed=42, grad_clip_max_norm=100.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # NULL CONTROL for the amortisation machinery. Conditioning is ON, but the
     # draw window has zero width, so every outer cycle draws c = 0.5 exactly.
     # Mathematically this IS the S2_d4_c05_l50_letf specialist — same target,
