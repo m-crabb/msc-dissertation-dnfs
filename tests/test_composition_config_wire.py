@@ -20,13 +20,14 @@ VALIDATION_CELL = "S2_d4_camort_l50_letf"
 NARROW_WINDOW_CELL = "S2_d4_camort_w15_l50_letf"
 NULL_CONTROL_CELL = "S2_d4_cnull_l50_letf"
 BUDGET_TWIN_CELL = "S2_d4_camort_50k_l50_letf"
+ANNEALED_TWIN_CELL = "S2_d4_camort_50k_l50_letf_anneal"
 D10_AMORTISED_CELLS = (
     "S2_d10_camort_l50_letf_ne128_anneal",
     "S2_d10_cgrid_l50_letf_ne128_anneal",
 )
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
-    *D10_AMORTISED_CELLS,
+    ANNEALED_TWIN_CELL, *D10_AMORTISED_CELLS,
 )
 
 # The compositions with archived per-composition specialists; the grid cell
@@ -124,6 +125,32 @@ def test_budget_twin_varies_only_the_training_budget():
             for s in twin.composition.curriculum] == [
         s.start_step / wide.train.n_steps
         for s in wide.composition.curriculum
+    ]
+
+
+def test_annealed_twin_varies_only_the_lambda_schedule():
+    """The budget twin plus the surviving lambda anneal, nothing else.
+
+    Fixed lambda=50 over 50k steps reproduced the from-scratch fragility
+    (seed 42's Z2-breaking collapse, 2026-08-01), so this cell tests whether
+    the anneal restores seed survival while keeping the budget-bought
+    obedience. The final stage must land on the operating point lambda=50,
+    or the cell samples a different soft target than every comparator.
+    """
+    twin = CONFIGS[BUDGET_TWIN_CELL]
+    annealed = CONFIGS[ANNEALED_TWIN_CELL]
+
+    assert replace(annealed, name=twin.name, lambda_curriculum=None) == twin
+    stages = annealed.lambda_curriculum.stages
+    assert [s.composition_penalty_strength for s in stages] == [10.0, 25.0, 50.0]
+    assert (
+        stages[-1].composition_penalty_strength
+        == annealed.ising.composition_penalty_strength
+    )
+    # The lambda schedule steps on the same boundaries as the window widening,
+    # so easy-to-hard moves together on both axes (the D=10 recipe's coupling).
+    assert [s.start_step for s in stages] == [
+        s.start_step for s in annealed.composition.curriculum
     ]
 
 

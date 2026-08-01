@@ -263,6 +263,59 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # The budget twin plus the lambda anneal, nothing else. The fixed-lambda
+    # twin answered the obedience question (a surviving seed reaches the
+    # exact target's slope at 5x budget) but reproduced the from-scratch
+    # fragility: seed 42 collapsed into one Z2 mode with ESS ~ 0
+    # (2026-08-01). This cell tests the remaining attribution: does the
+    # anneal restore seed survival without giving back the obedience? The
+    # lambda schedule steps on the SAME boundaries as the window widening,
+    # so the penalty tightens exactly as the window opens (the D=10 cells'
+    # coupling), and the final stage lands on the operating point lambda=50
+    # so the reported target matches every comparator.
+    "S2_d4_camort_50k_l50_letf_anneal": StageCfg(
+        name="S2_d4_camort_50k_l50_letf_anneal",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=10_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=20_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # NULL CONTROL for the amortisation machinery. Conditioning is ON, but the
     # draw window has zero width, so every outer cycle draws c = 0.5 exactly.
     # Mathematically this IS the S2_d4_c05_l50_letf specialist — same target,
