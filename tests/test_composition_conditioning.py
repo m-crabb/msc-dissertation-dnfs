@@ -14,7 +14,7 @@ batch-expanding call site in this codebase (`_log_p_tilde_at_neighbours`,
 `kolmogorov.residual_general`, `ctmc._compute_xi_t_general`) expands the
 batch axis b-major by an integer factor and rides `t` along with
 `t.repeat_interleave(k)`. A bound composition vector must ride along by
-exactly the same rule, or row b's penalty silently gets row b'’s target
+exactly the same rule, or row b's penalty silently gets row b''s target
 composition — a bias that would never raise, only degrade.
 
 MODEL — c is embedded by a second `TimestepEmbedder` and SUMMED into
