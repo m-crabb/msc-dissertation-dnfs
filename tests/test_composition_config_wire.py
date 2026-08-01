@@ -19,12 +19,14 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 VALIDATION_CELL = "S2_d4_camort_l50_letf"
 NARROW_WINDOW_CELL = "S2_d4_camort_w15_l50_letf"
 NULL_CONTROL_CELL = "S2_d4_cnull_l50_letf"
+BUDGET_TWIN_CELL = "S2_d4_camort_50k_l50_letf"
 D10_AMORTISED_CELLS = (
     "S2_d10_camort_l50_letf_ne128_anneal",
     "S2_d10_cgrid_l50_letf_ne128_anneal",
 )
 AMORTISED_CELLS = (
-    VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, *D10_AMORTISED_CELLS
+    VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
+    *D10_AMORTISED_CELLS,
 )
 
 # The compositions with archived per-composition specialists; the grid cell
@@ -95,6 +97,34 @@ def test_narrow_window_cell_differs_only_in_the_window():
     # would credit the model with coverage it never trained on.
     narrow_edge = narrow.composition.centre - narrow.composition.curriculum[-1].half_width
     assert narrow_edge > 0.30
+
+
+def test_budget_twin_varies_only_the_training_budget():
+    """5x the steps, nothing else — so a slope change is attributable.
+
+    The curriculum boundaries move with the run length so the model spends the
+    same fraction of training at each window width; that keeps the schedule
+    the same experiment rather than a second variable.
+    """
+    wide = CONFIGS[VALIDATION_CELL]
+    twin = CONFIGS[BUDGET_TWIN_CELL]
+
+    assert twin.train.n_steps == 5 * wide.train.n_steps
+    assert replace(
+        twin,
+        name=wide.name,
+        train=replace(twin.train, n_steps=wide.train.n_steps),
+        composition=wide.composition,
+    ) == wide
+    # Same widths, same fractions of the run.
+    assert [s.half_width for s in twin.composition.curriculum] == [
+        s.half_width for s in wide.composition.curriculum
+    ]
+    assert [s.start_step / twin.train.n_steps
+            for s in twin.composition.curriculum] == [
+        s.start_step / wide.train.n_steps
+        for s in wide.composition.curriculum
+    ]
 
 
 def test_null_control_is_the_specialist_reached_through_the_amortised_path():

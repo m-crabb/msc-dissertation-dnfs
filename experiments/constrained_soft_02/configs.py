@@ -217,6 +217,52 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # Budget twin of S2_d4_camort_l50_letf: 50k steps instead of 10k, and
+    # NOTHING else changed — same Euler budget, same fixed λ, same capacity,
+    # same widening window. One variable, so a change in conditioning fidelity
+    # is attributable to training budget alone.
+    #
+    # This is not a proxy for the D=10 launch, and that distinction is the
+    # reason it is worth the GPU time. The attenuation result — realised
+    # composition tracking requested composition at slope 0.39 against the
+    # exact target's 0.984 — can only be stated where the target is
+    # enumerable, i.e. d = 16 here. At D=10 the lattice is d = 100 sites, so
+    # there are 2^100 states, no exact slope exists to compare against, and
+    # the claim cannot be made at all. If attenuation survives a 5x budget it
+    # is a property of the method rather than of undertraining, and that is a
+    # far stronger statement than the 10k runs can support.
+    "S2_d4_camort_50k_l50_letf": StageCfg(
+        name="S2_d4_camort_50k_l50_letf",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        # Same shape of widening, stretched over the longer run so the model
+        # spends the same FRACTION of training at each width as the 10k cell.
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # NULL CONTROL for the amortisation machinery. Conditioning is ON, but the
     # draw window has zero width, so every outer cycle draws c = 0.5 exactly.
     # Mathematically this IS the S2_d4_c05_l50_letf specialist — same target,
