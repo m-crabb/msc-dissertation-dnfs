@@ -21,13 +21,14 @@ NARROW_WINDOW_CELL = "S2_d4_camort_w15_l50_letf"
 NULL_CONTROL_CELL = "S2_d4_cnull_l50_letf"
 BUDGET_TWIN_CELL = "S2_d4_camort_50k_l50_letf"
 ANNEALED_TWIN_CELL = "S2_d4_camort_50k_l50_letf_anneal"
+OFFSET_ANNEAL_CELL = "S2_d4_camort_50k_l50_letf_anneal_offset"
 D10_AMORTISED_CELLS = (
     "S2_d10_camort_l50_letf_ne128_anneal",
     "S2_d10_cgrid_l50_letf_ne128_anneal",
 )
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
-    ANNEALED_TWIN_CELL, *D10_AMORTISED_CELLS,
+    ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *D10_AMORTISED_CELLS,
 )
 
 # The compositions with archived per-composition specialists; the grid cell
@@ -152,6 +153,38 @@ def test_annealed_twin_varies_only_the_lambda_schedule():
     assert [s.start_step for s in stages] == [
         s.start_step for s in annealed.composition.curriculum
     ]
+
+
+def test_offset_anneal_finishes_its_ramp_before_the_window_widens():
+    """Same lambda ramp as the annealed twin, moved off the window boundaries.
+
+    The annealed twin's training ESS collapses at exactly the steps where
+    lambda rises, and those are also the steps where the draw window widens and
+    the replay buffer is cleared -- three simultaneous shocks. This cell keeps
+    the ramp identical in values but lands it entirely before the first
+    widening, so a surviving run attributes the twin's deaths to the pile-up
+    rather than to a lambda step as such. Nothing else may differ, or the
+    attribution is lost.
+    """
+    annealed = CONFIGS[ANNEALED_TWIN_CELL]
+    offset = CONFIGS[OFFSET_ANNEAL_CELL]
+
+    assert (
+        replace(offset, name=annealed.name, lambda_curriculum=None)
+        == replace(annealed, lambda_curriculum=None)
+    )
+    stages = offset.lambda_curriculum.stages
+    assert [s.composition_penalty_strength for s in stages] == [
+        s.composition_penalty_strength for s in annealed.lambda_curriculum.stages
+    ]
+    # The whole point: the ramp is done before the window first widens, and it
+    # still lands on the operating point every comparator samples.
+    first_widening = offset.composition.curriculum[1].start_step
+    assert max(s.start_step for s in stages) < first_widening
+    assert (
+        stages[-1].composition_penalty_strength
+        == offset.ising.composition_penalty_strength
+    )
 
 
 def test_null_control_is_the_specialist_reached_through_the_amortised_path():

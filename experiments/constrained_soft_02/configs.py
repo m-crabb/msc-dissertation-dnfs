@@ -316,6 +316,75 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # OFFSET ANNEAL. Same lambda ramp as the annealed twin, but finished by
+    # step 5k -- before the composition window first widens at 10k.
+    #
+    # Why this cell exists: the annealed twin collapsed on 3 of 4 seeds, and
+    # the training traces localise the damage to the exact steps where lambda
+    # steps up (median training ESS 4900 -> 11..630 at step 10k on all four
+    # seeds, and again at 20k), while the fixed-lambda twin passes the very
+    # same window boundaries almost unscathed (3456 -> 3255). At those shared
+    # boundaries the annealed cell takes three hits at once: the target moves
+    # (lambda 10 -> 25), the replay buffer is cleared because the target moved
+    # (`_clear_replay`), and the draw window triples. This cell separates the
+    # lambda discontinuity from that pile-up by moving the ramp off the window
+    # boundaries entirely, so each shock is absorbed on its own.
+    #
+    # Prediction if the pile-up is the cause: survival returns to the
+    # fixed-lambda twin's rate, because by the time the window opens the target
+    # has been at lambda=50 for 5k steps and the model has re-converged.
+    # Prediction if a lambda step is intrinsically fatal here: it still dies,
+    # just earlier, and the anneal is simply the wrong recipe at D=4.
+    #
+    # 2k/5k rather than something later: the ramp must complete far enough
+    # before 10k for the model to re-converge, but the low-lambda phase must
+    # stay short, because at D=4 the composition quantum is 1/16 = 0.0625 --
+    # wider than the stage-1 half-width of 0.05 -- so at lambda=10 the
+    # requested composition barely distinguishes the reachable states and the
+    # conditioning input carries almost no gradient signal.
+    "S2_d4_camort_50k_l50_letf_anneal_offset": StageCfg(
+        name="S2_d4_camort_50k_l50_letf_anneal_offset",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # NULL CONTROL for the amortisation machinery. Conditioning is ON, but the
     # draw window has zero width, so every outer cycle draws c = 0.5 exactly.
     # Mathematically this IS the S2_d4_c05_l50_letf specialist — same target,
