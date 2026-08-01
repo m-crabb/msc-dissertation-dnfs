@@ -144,6 +144,9 @@ def left_minus_right(x, D):
 
     Labels WHICH way the system has phase-separated at fixed composition:
     +domain on the left → ~ +2, on the right → ~ -2, symmetric/mixed → ~ 0.
+    NOTE `diagnostics.metrics.half_magnetisation_order_parameter` is the same
+    observable scaled by 1/2 (phi in [-1, 1]) — the two figure families are
+    on different axes scales.
     Unlike energy, this distinguishes spatial modes, so its between-chain R̂
     detects ergodicity breaking (the §3.1 mode-coverage failure).
     """

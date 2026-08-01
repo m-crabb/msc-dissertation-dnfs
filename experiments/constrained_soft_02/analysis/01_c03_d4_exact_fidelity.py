@@ -28,20 +28,14 @@ from discrete_flow_sampler.diagnostics.metrics import (
     exact_log_probs,
 )
 from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.diagnostics.metrics import (
+    composition_fraction_up as composition,
+    marginal_tvd,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUN_DIR = REPO_ROOT / "results" / "02_constrained_soft" / "S2_d4_c03_l50_seed42"
 N_SITES = 16  # D=4 ⇒ d = 16
-
-
-def composition(x: torch.Tensor) -> torch.Tensor:
-    """Fraction of +1 spins per state, shape (...,)."""
-    return ((x + 1.0) * 0.5).mean(dim=-1)
-
-
-def marginal_tvd(p: torch.Tensor, q: torch.Tensor) -> float:
-    """½ Σ |p − q| over a shared 1-D support (both sum to 1)."""
-    return 0.5 * (p - q).abs().sum().item()
 
 
 def main() -> None:

@@ -36,6 +36,7 @@ import torch
 from discrete_flow_sampler.diagnostics.metrics import gelman_rubin
 from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.diagnostics.metrics import marginal_tvd
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RESULTS = REPO_ROOT / "results" / "01_baseline"
@@ -50,10 +51,6 @@ GIBBS_N_RECORDS = 50  # 100 chains x 50 records = 5000 reference samples
 
 def magnetisation(x: torch.Tensor) -> torch.Tensor:
     return x.mean(dim=-1)
-
-
-def marginal_tvd(p: torch.Tensor, q: torch.Tensor) -> float:
-    return 0.5 * (p - q).abs().sum().item()
 
 
 def gibbs_reference(sigma: float, cache_path: Path, seed: int = 0) -> torch.Tensor:

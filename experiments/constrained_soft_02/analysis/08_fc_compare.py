@@ -66,20 +66,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-
-
-def _latest_run_dir(results_dir: Path, config: str, seed: int) -> Path | None:
-    """Newest run dir for (config, seed) carrying an eval/metrics.json.
-
-    Matches both the timestamped `{config}_seed{seed}_<timestamp>` form and the
-    bare `{config}_seed{seed}` form (same discovery as 06_fc_curve.py).
-    """
-    matches = set(results_dir.glob(f"{config}_seed{seed}_*"))
-    bare = results_dir / f"{config}_seed{seed}"
-    if bare.exists():
-        matches.add(bare)
-    matches = sorted(m for m in matches if (m / "eval" / "metrics.json").exists())
-    return matches[-1] if matches else None
+from experiments.constrained_soft_02.analysis._common import latest_run_dir, seed_of
 
 
 def _load_record(run_dir: Path) -> dict:
@@ -119,10 +106,6 @@ def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng) -> tuple[float, np.nda
     return point, boot
 
 
-def _seed_of(name: str) -> str:
-    return name.split("_seed")[1].split("_")[0]
-
-
 def _laplace_offset(lam: float, d: int, Fp_total: float, Fpp_total: float) -> float:
     """Soft -> canonical correction (total, nats): F_can = F_lambda + offset.
 
@@ -156,7 +139,7 @@ def main() -> None:
     records, missing = [], []
     for config in args.configs:
         for seed in args.seeds:
-            rd = _latest_run_dir(args.results_dir, config, seed)
+            rd = latest_run_dir(args.results_dir, config, seed)
             if rd is None:
                 missing.append(f"{config} seed{seed}")
                 continue
@@ -270,7 +253,7 @@ def main() -> None:
         line = (f"{c_t:>6.3f} {len(gated):>2}/{len(rows):<3} {ess_lo:>6.3f}-{ess_hi:<6.3f} "
                 f"{F_raw:>11.4f} +/-{F_raw_err:<5.4f} {F_corr:>10.4f}{'':>5} "
                 f"{_fmt(F_truth)} {_fmt(raw_gap)} {_fmt(corr_gap)}  "
-                + ",".join(f"{_seed_of(r['name'])}:{r['ess_frac']:.2f}" for r in excluded))
+                + ",".join(f"{seed_of(r['name'])}:{r['ess_frac']:.2f}" for r in excluded))
         print(line)
         curve.append(dict(c=c_t, raw=F_raw, raw_err=F_raw_err, corr=F_corr,
                           corr_err=F_corr_err, truth=F_truth, n=len(gated)))

@@ -28,16 +28,12 @@ from discrete_flow_sampler.diagnostics.metrics import (
     z2_asymmetry_from_samples,
 )
 from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.diagnostics.metrics import (
+    composition_fraction_up as composition,
+    marginal_tvd,
+)
 
 N_SITES = 16  # D=4 -> d = 16; 2^16 = 65,536 enumerable states
-
-
-def composition(x: torch.Tensor) -> torch.Tensor:
-    return ((x + 1.0) * 0.5).mean(dim=-1)
-
-
-def marginal_tvd(p: torch.Tensor, q: torch.Tensor) -> float:
-    return 0.5 * (p - q).abs().sum().item()
 
 
 def main() -> None:

@@ -57,23 +57,7 @@ import numpy as np
 import torch
 
 from discrete_flow_sampler.mcmc.mchammer_ising import run_vcsgc
-
-
-# --------------------------------------------------------------------------- #
-# run discovery (cloned from 08_fc_compare.py; helpers aren't shared by house
-# convention in this analysis dir)
-# --------------------------------------------------------------------------- #
-def _latest_run_dir(results_dir: Path, config: str, seed: int) -> Path | None:
-    matches = set(results_dir.glob(f"{config}_seed{seed}_*"))
-    bare = results_dir / f"{config}_seed{seed}"
-    if bare.exists():
-        matches.add(bare)
-    matches = sorted(m for m in matches if (m / "eval" / "metrics.json").exists())
-    return matches[-1] if matches else None
-
-
-def _seed_of(name: str) -> str:
-    return name.split("_seed")[1].split("_")[0]
+from experiments.constrained_soft_02.analysis._common import latest_run_dir, seed_of
 
 
 def _load_meta(run_dir: Path) -> dict:
@@ -190,7 +174,7 @@ def main() -> None:
     metas, missing = [], []
     for config in args.configs:
         for seed in args.seeds:
-            rd = _latest_run_dir(args.results_dir, config, seed)
+            rd = latest_run_dir(args.results_dir, config, seed)
             (metas if rd is not None else missing).append(
                 _load_meta(rd) if rd is not None else f"{config} seed{seed}")
     if missing:
@@ -258,7 +242,7 @@ def main() -> None:
             b = float(np.std(pts[k], ddof=1) / np.sqrt(len(pts[k]))) if len(pts[k]) > 1 else 0.0
             d_err[k] = float(np.hypot(w, b))
 
-        exc = ",".join(f"{_seed_of(m['name'])}:{m['ess_frac']:.2f}" for m in excluded)
+        exc = ",".join(f"{seed_of(m['name'])}:{m['ess_frac']:.2f}" for m in excluded)
         print(f"{'':>6} {'DNFS':>6} {len(gated):>2}/{len(rows):<3} "
               f"{d_pt['c_mean']:>8.4f}+/-{d_err['c_mean']:<6.4f} "
               f"{d_pt['c_std']:>8.4f}+/-{d_err['c_std']:<6.4f} "

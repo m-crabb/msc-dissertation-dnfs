@@ -15,18 +15,14 @@ import matplotlib.pyplot as plt
 import torch
 
 from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.diagnostics.metrics import (
+    composition_fraction_up as composition,
+    marginal_tvd,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
 N_SITES = 100  # D=10 ⇒ d = 100
-
-
-def composition(x: torch.Tensor) -> torch.Tensor:
-    return ((x + 1.0) * 0.5).mean(dim=-1)
-
-
-def marginal_tvd(p: torch.Tensor, q: torch.Tensor) -> float:
-    return 0.5 * (p - q).abs().sum().item()
 
 
 def main() -> None:

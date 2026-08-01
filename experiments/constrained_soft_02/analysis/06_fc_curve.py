@@ -39,21 +39,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-
-
-def _latest_run_dir(results_dir: Path, config: str, seed: int) -> Path | None:
-    """Newest run dir for this (config, seed) with an eval/metrics.json.
-
-    Matches both the timestamped `{config}_seed{seed}_<timestamp>` form that
-    `batch_seeds` writes and the bare `{config}_seed{seed}` form of older
-    one-off runs.
-    """
-    matches = set(results_dir.glob(f"{config}_seed{seed}_*"))
-    bare = results_dir / f"{config}_seed{seed}"
-    if bare.exists():
-        matches.add(bare)
-    matches = sorted(m for m in matches if (m / "eval" / "metrics.json").exists())
-    return matches[-1] if matches else None
+from experiments.constrained_soft_02.analysis._common import latest_run_dir
 
 
 def _load_record(run_dir: Path) -> dict:
@@ -96,7 +82,7 @@ def main() -> None:
     missing = []
     for config in args.configs:
         for seed in args.seeds:
-            rd = _latest_run_dir(args.results_dir, config, seed)
+            rd = latest_run_dir(args.results_dir, config, seed)
             if rd is None:
                 missing.append(f"{config} seed{seed}")
                 continue

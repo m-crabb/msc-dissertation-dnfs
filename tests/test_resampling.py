@@ -1,7 +1,6 @@
 """Tests for the eval-time SMC resampling upgrade (samplers/resampling.py).
 
-Written before the bodies (house convention) — they encode "what correct
-looks like":
+Written before the bodies — they encode "what correct looks like":
 
     1) systematic resampling: counts_i within 1 of B·w̄_i (the low-variance
        floor/ceil property), uniform weights -> every particle exactly once.
@@ -13,7 +12,7 @@ looks like":
        (swap) and returns the (state, log_w, stats) contract (both samplers).
     4) estimator unbiasedness on a toy problem: SMC product-form log Ẑ
        matches the enumerated log(Z_1/Z_0) on the 2x2 fixed-composition
-       slice, as does plain IS (high-value test per CLAUDE.md).
+       slice, as does plain IS.
 """
 
 import pytest

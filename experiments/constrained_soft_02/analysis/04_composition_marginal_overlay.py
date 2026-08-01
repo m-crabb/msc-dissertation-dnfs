@@ -56,12 +56,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
 )
 from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.diagnostics.metrics import composition_fraction_up as composition
 
 N_SITES = 16  # D=4 -> d = 16; 2^16 = 65,536 enumerable states
-
-
-def composition(x: torch.Tensor) -> torch.Tensor:
-    return ((x + 1.0) * 0.5).mean(dim=-1)
 
 
 def dnfs_composition_pmf(run_dir: Path, n_sites: int = N_SITES) -> torch.Tensor:

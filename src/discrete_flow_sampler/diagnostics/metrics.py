@@ -61,6 +61,11 @@ def composition_fraction_up(x: Tensor) -> Tensor:
     return ((x.float() + 1.0) * 0.5).mean(dim=-1)
 
 
+def marginal_tvd(p: Tensor, q: Tensor) -> float:
+    """½ Σ |p − q| between two pmfs on a shared 1-D support (both sum to 1)."""
+    return 0.5 * (p - q).abs().sum().item()
+
+
 def magnetisation(x: Tensor) -> Tensor:
     """Mean Ising spin in each sample, shape (B,)."""
     return x.float().mean(dim=-1)
@@ -457,7 +462,10 @@ def half_magnetisation_order_parameter(x: Tensor, D: int) -> Tensor:
     """Mode order parameter phi = (m_left - m_right) / 2 on the DxD torus, (B,).
 
     m_left / m_right are the mean spins of columns [0, D//2) and [D//2, D) of
-    the row-major flattening; the half factor puts phi in [-1, 1]. At fixed
+    the row-major flattening; the half factor puts phi in [-1, 1]. NOTE the
+    numba twin `mcmc.kawasaki.left_minus_right` omits the half factor, so its
+    phi spans [-2, 2] — figures built from the two are on different scales.
+    At fixed
     50/50 composition the two phase-separated modes give phi = +1 / -1 while
     total magnetisation is constant on the slice, so phi is the mode-coverage
     observable of the frozen mixing-probe metric (pre-registration 2026-07-03

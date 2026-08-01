@@ -28,8 +28,6 @@ Stage layout (framing clarified by Zijing 2026-05-08):
     stage_2_d{4,10}     -- leMLP + Eq. 10 + control variate. Stacks
                            estimator-side variance reduction on top of
                            the architectural one.
-    stage_3_d{4,10}     -- TODO fill in
-    stage_4_d{4,10}     -- TODO fill in                      
 """
 from dataclasses import dataclass
 from typing import Literal
