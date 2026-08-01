@@ -171,6 +171,23 @@ Checkpoints that only exist on the Modal volume are pulled locally first
 (`pixi run -e default modal volume get dnfs-results <path> <local>`), then
 staged with step 2.
 
+**rsync is the only way code reaches the cluster — `git pull` there cannot
+work.** The cluster has no key registered with GitHub (`ssh -T git@github.com`
+answers `Permission denied (publickey)`), so step 1 is not merely a
+convenience. Two consequences: the cluster's `git log` reports whatever commit
+was last rsync'd *as a tree* and is **not** a provenance record — it can name
+an older commit while the working tree carries newer files — and a job must
+never be assumed to be running the code you just committed locally unless you
+rsync'd first. Either register the cluster's `~/.ssh/id_ed25519.pub` as a
+GitHub deploy key, or accept rsync and stop reading cluster `git log`.
+
+**The a30 partition assigns a GPU even when the script requests none.**
+`sbatch` prints `Assigning 1 GPU` for a CPU-only job, which then idles a GPU
+and counts against the 3-GPU per-user cap — on 2026-08-01 a CPU-only mchammer
+job blocked a GPU array this way. Pass `--gres=gpu:0` explicitly, or route
+CPU-only work to the Mac (which is also ~3x faster per core than these nodes
+for the mchammer baselines).
+
 ## 7. Known history / campaign log
 
 - 2026-07-09: starter-env GPU smoke test (job 258416, A16 node gpuvm36) —
