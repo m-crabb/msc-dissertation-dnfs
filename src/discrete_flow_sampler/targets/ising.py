@@ -7,6 +7,7 @@ import torch
 from torch import Tensor
 
 from discrete_flow_sampler.composition import expand_b_major
+from discrete_flow_sampler.samplers._neighbours import DEFAULT_LOG_RATIO_CLAMP
 
 
 class IsingTarget:
@@ -49,7 +50,12 @@ class IsingTarget:
         target_composition: float | None = None,
         composition_penalty_strength: float = 0.0,
         base_composition: float = 0.5,
+        log_ratio_clamp: float = DEFAULT_LOG_RATIO_CLAMP,
     ):
+        if log_ratio_clamp <= 0.0:
+            raise ValueError(
+                "log_ratio_clamp must be positive, got " f"{log_ratio_clamp}"
+            )
         if not 0.0 < base_composition < 1.0:
             raise ValueError(
                 "base_composition must be in the open interval (0, 1), "
@@ -79,6 +85,11 @@ class IsingTarget:
         self.target_composition = target_composition
         self.composition_penalty_strength = composition_penalty_strength
         self.base_composition = base_composition
+        # Ceiling for log p̃_t(y)/p̃_t(x) at single-flip neighbours. The
+        # composition penalty contributes ∓2λ·(c(x)−c_target) to that ratio,
+        # so the paper's 5 binds once the obedience error exceeds 5/(2λ) —
+        # 0.05 at λ=50, inside the error a conditioned sampler achieves.
+        self.log_ratio_clamp = log_ratio_clamp
         # Per-row composition bound by `composition_batch`. None means the
         # scalar `target_composition` is in force — the specialist path.
         self._bound_composition: Tensor | None = None

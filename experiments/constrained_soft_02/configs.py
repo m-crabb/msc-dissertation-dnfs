@@ -1384,4 +1384,203 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # ---------------------------------------------------------------------
+    # Neighbour log-ratio saturation. Four arms, all cloned from
+    # `..._anneal_offset_clip50` above, which is the control and is on disk.
+    #
+    # The mechanism. `residual_lenet` bounds log p̃_t(y)/p̃_t(x) at a ceiling
+    # (paper App. E.1.1 fixes it at 5, calibrated for an unpenalised Ising
+    # target). Flipping one site moves the composition by exactly 1/d, so the
+    # penalty λd(c−c_target)² contributes ∓2λΔ to that ratio, Δ = c(x)−c_target.
+    # The ceiling therefore starts binding once
+    #
+    #     Δ  >  ceiling / (2λ)         — independent of d
+    #
+    # At λ=50 that is Δ* = 0.05, inside the obedience error a conditioned
+    # sampler achieves; the control run sits at Δ = 0.078 with 26% of ratios
+    # saturated and a 99th percentile of 9.9, against the 9.8 the expression
+    # predicts. Once saturated, `site_terms` is evaluated at exp(5)=148 rather
+    # than the true exp(9.9)≈2e4, and because ∂_t log Z_t is the MEAN of
+    # (∂_t log p̃ + site_terms) it inherits the same inflation. The residual
+    # then becomes a difference of two large numbers — 717.7 − 717.7 = 27.5 in
+    # the control — and squaring that difference is what wrecks the gradient.
+    #
+    # Two ways to stop it binding, at two doses each, so they bracket:
+    #   LOWER λ    shrinks the true ratio. Keeps the paper's ceiling and every
+    #              comparator (the exact 4×4 0.984, and mchammer VC-SGC via
+    #              κ=λ). Costs constraint tightness.
+    #   RAISE the  leaves the ratio alone and stops truncating it. Keeps
+    #   ceiling    tightness, but exp(2λΔ) grows without bound if Δ drifts.
+    #
+    # PRE-REGISTERED, written before any arm ran. λ=10 survives (Δ*=0.25);
+    # λ=25 marginal (Δ*=0.10); both ceiling arms fail by gradient runaway
+    # rather than by saturation, because they trade a bounded bias for an
+    # unbounded term. The ceiling arms are the ones that could refute the
+    # reading above: an offline probe over trained checkpoints showed the
+    # residual exploding as the ceiling rises, but those models had TRAINED at
+    # 5, so the probe cannot say what training at 20 from step 0 does — a
+    # model never allowed to truncate may simply never let Δ grow.
+    # Read `log_ratio_clamp_frac` as the mediating variable in every arm.
+    "S2_d10_camort_offset_clip50_lam10": StageCfg(
+        name="S2_d10_camort_offset_clip50_lam10",
+        ising=IsingCfg(
+            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            composition_penalty_strength=10.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, outer_batch_size=256,
+            replay_buffer_cycles=4, lr=1e-3, seed=42,
+            grad_clip_max_norm=50.0, warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        # No λ ramp: the terminal λ IS 10, so there is nothing to anneal to.
+        # Holding it fixed also removes the λ-step boundaries entirely, which
+        # keeps this arm from confounding "lower λ" with "fewer boundaries" —
+        # the control's own offset schedule already showed the boundaries
+        # survivable, so a fixed λ is the cleaner single-variable change.
+        lambda_curriculum=None,
+        composition=CompositionCfg(
+            centre=0.5, half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d10_camort_offset_clip50_lam25": StageCfg(
+        name="S2_d10_camort_offset_clip50_lam25",
+        ising=IsingCfg(
+            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            composition_penalty_strength=25.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, outer_batch_size=256,
+            replay_buffer_cycles=4, lr=1e-3, seed=42,
+            grad_clip_max_norm=50.0, warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        # One ramp step only, 10 -> 25 at 2k, finishing well before the first
+        # widening at 10k so the boundaries stay disjoint.
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5, half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    # Ceiling 20: unbinds up to Δ = 0.20 at λ=50, comfortably past the 0.078
+    # the control reaches, while exp(20)≈4.9e8 stays far inside float32.
+    "S2_d10_camort_offset_clip50_clamp20": StageCfg(
+        name="S2_d10_camort_offset_clip50_clamp20",
+        ising=IsingCfg(
+            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            composition_penalty_strength=50.0, log_ratio_clamp=20.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, outer_batch_size=256,
+            replay_buffer_cycles=4, lr=1e-3, seed=42,
+            grad_clip_max_norm=50.0, warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5, half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
+    # Ceiling 50: unbinds to Δ = 0.50, i.e. never binds anywhere in the swept
+    # range. The aggressive end of the bracket — if raising the ceiling helps
+    # at all, it helps here; if the unbounded inflow term is the problem, this
+    # is where it shows worst. exp(50)≈5e21, still finite in float32.
+    "S2_d10_camort_offset_clip50_clamp50": StageCfg(
+        name="S2_d10_camort_offset_clip50_clamp50",
+        ising=IsingCfg(
+            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            composition_penalty_strength=50.0, log_ratio_clamp=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, outer_batch_size=256,
+            replay_buffer_cycles=4, lr=1e-3, seed=42,
+            grad_clip_max_norm=50.0, warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5, half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
 }

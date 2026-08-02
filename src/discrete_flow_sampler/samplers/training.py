@@ -39,7 +39,10 @@ from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
 from discrete_flow_sampler.models.composition_conditioned import (
     CompositionConditioned,
 )
-from discrete_flow_sampler.samplers._neighbours import _log_p_tilde_at_neighbours
+from discrete_flow_sampler.samplers._neighbours import (
+    _log_p_tilde_at_neighbours,
+    log_ratio_clamp,
+)
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.samplers.log_z_estimators import compute_c_t_grid
@@ -151,12 +154,17 @@ def _rate_diagnostics(
     changing the training objective.
 
     When `target` is supplied AND the model is locally equivariant, also
-    logs the saturation fraction of the log-target ratio against the 5.0
-    clamp at `kolmogorov.residual_lenet` and `ctmc._compute_xi_t_lenet`.
-    `log_ratio_clamp_frac` is the share of (B, d, S) entries that exceed
-    the ceiling; `log_ratio_p99` is the unclipped 99th percentile so the
-    magnitude of the saturated tail is visible (saturation alone is
-    ambiguous between "just above 5" and "an order of magnitude above").
+    logs the saturation fraction of the log-target ratio against whatever
+    ceiling is actually in force at `kolmogorov.residual_lenet` and
+    `ctmc._compute_xi_t_lenet` — `_neighbours.log_ratio_clamp(target)`,
+    the paper's 5.0 unless the target overrides it. Reading the live value
+    rather than a literal is what keeps the column comparable across cells
+    that vary the ceiling: it always means "saturating the clamp this run
+    is using". `log_ratio_clamp_frac` is the share of (B, d, S) entries
+    that exceed the ceiling; `log_ratio_p99` is the unclipped 99th
+    percentile so the magnitude of the saturated tail is visible
+    (saturation alone is ambiguous between "just above" and "an order of
+    magnitude above").
     """
     if getattr(model, "is_locally_equivariant", False):
         rates = F.relu(model(x, t)).sum(dim=-1)  # (B, d), per-site outflow
@@ -180,7 +188,7 @@ def _rate_diagnostics(
         log_p_x = target.log_p_tilde_t(x, t)
         log_ratio = log_p_neighbours - log_p_x[:, None, None]
         metrics["log_ratio_clamp_frac"] = (
-            (log_ratio > 5.0).float().mean().item()
+            (log_ratio > log_ratio_clamp(target)).float().mean().item()
         )
         metrics["log_ratio_p99"] = torch.quantile(
             log_ratio.reshape(-1), 0.99

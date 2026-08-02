@@ -8,6 +8,8 @@ value set has drifted away from the specialists it is meant to be compared to.
 """
 from dataclasses import replace
 
+import math
+
 import pytest
 from experiments.constrained_soft_02.configs import CONFIGS
 from experiments.dnfs_baseline_01.run import _build_model
@@ -29,16 +31,36 @@ CLIP_CELLS = {
 D10_BASE_AMORTISED_CELL = "S2_d10_camort_l50_letf_ne128_anneal"
 D10_TRANSFER_CELL = "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50"
 D10_DEEP_BUFFER_CELL = "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50_cyc8"
+# Four arms probing neighbour log-ratio saturation, reaching the same
+# unbinding threshold Delta* = clamp/(2*lambda) by two different routes:
+# shrink the true ratio (lower lambda) or stop truncating it (raise the
+# ceiling). Keeping both routes in one tuple is deliberate — they must stay
+# identical in every respect except the one variable each moves.
+D10_SATURATION_CELLS = (
+    "S2_d10_camort_offset_clip50_lam10",
+    "S2_d10_camort_offset_clip50_lam25",
+    "S2_d10_camort_offset_clip50_clamp20",
+    "S2_d10_camort_offset_clip50_clamp50",
+)
 D10_AMORTISED_CELLS = (
     D10_BASE_AMORTISED_CELL,
     "S2_d10_cgrid_l50_letf_ne128_anneal",
     D10_TRANSFER_CELL,
     D10_DEEP_BUFFER_CELL,
 )
+# Deliberately NOT in D10_AMORTISED_CELLS: that tuple drives
+# `test_amortised_cell_inherits_the_surviving_recipe`, and these arms exist
+# precisely to depart from that recipe. They are still amortised cells, so
+# they join AMORTISED_CELLS for the conditioning and specialist guards.
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
     ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
+    *D10_SATURATION_CELLS,
 )
+# The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
+# advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the
+# one whose collapse is on disk as the control for this comparison.
+SATURATION_CONTROL_CELL = D10_TRANSFER_CELL
 
 # The compositions with archived per-composition specialists; the grid cell
 # exists to amortise over exactly these, so drift here breaks the comparison.
@@ -374,6 +396,66 @@ def test_grid_control_draws_exactly_the_specialist_compositions():
     cfg = CONFIGS["S2_d10_cgrid_l50_letf_ne128_anneal"]
     assert cfg.composition.values == SPECIALIST_COMPOSITIONS
     assert cfg.composition.curriculum is None
+
+
+@pytest.mark.parametrize("cell_name", D10_SATURATION_CELLS)
+def test_saturation_arms_differ_from_the_control_in_one_variable_only(cell_name):
+    """Each arm must be the control cell with exactly one thing moved.
+
+    The comparison is worthless if an arm also picked up a different seed,
+    buffer depth, integration budget or window schedule: any of those would
+    supply an alternative explanation for a survival difference, and the
+    control is a single run so there is no seed spread to absorb it.
+    """
+    control = CONFIGS[SATURATION_CONTROL_CELL]
+    arm = CONFIGS[cell_name]
+
+    assert arm.train == control.train, "training knobs must be identical"
+    assert arm.model == control.model
+    assert arm.ctmc == control.ctmc
+    assert arm.eval == control.eval
+    assert arm.estimator == control.estimator
+    assert arm.composition == control.composition, "window schedule is shared"
+
+    # The one permitted axis: the terminal penalty strength, or the ceiling.
+    moved = {
+        field
+        for field in ("composition_penalty_strength", "log_ratio_clamp")
+        if getattr(arm.ising, field) != getattr(control.ising, field)
+    }
+    assert moved, f"{cell_name} moves nothing relative to the control"
+    assert moved <= {"composition_penalty_strength", "log_ratio_clamp"}
+    # Everything else about the target is held fixed.
+    for field in ("D", "sigma", "bias", "target_composition", "base_composition"):
+        assert getattr(arm.ising, field) == getattr(control.ising, field), field
+
+
+@pytest.mark.parametrize("cell_name", D10_SATURATION_CELLS)
+def test_saturation_arms_raise_delta_star_above_the_control(cell_name):
+    """Every arm must actually widen the unbinding threshold.
+
+    Delta* = clamp / (2 * lambda) is the composition error at which the
+    ceiling starts truncating the neighbour ratio. The control sits at 0.05
+    against a measured error of 0.078 — i.e. already saturating. An arm that
+    did not raise Del* above the control would not be testing anything.
+    """
+    def delta_star(cfg):
+        return cfg.ising.log_ratio_clamp / (
+            2.0 * cfg.ising.composition_penalty_strength
+        )
+
+    control_star = delta_star(CONFIGS[SATURATION_CONTROL_CELL])
+    assert control_star == pytest.approx(0.05)
+    assert delta_star(CONFIGS[cell_name]) > control_star
+
+
+@pytest.mark.parametrize("cell_name", D10_SATURATION_CELLS)
+def test_saturation_arms_stay_inside_float32(cell_name):
+    """exp(ceiling) multiplies the inflow term, so a ceiling above ~88
+    overflows float32 and would fail for a reason unrelated to the
+    hypothesis. Leave a wide margin rather than sit near the edge."""
+    ceiling = CONFIGS[cell_name].ising.log_ratio_clamp
+    assert math.exp(ceiling) < 1e30
 
 
 def test_specialist_cells_are_untouched():

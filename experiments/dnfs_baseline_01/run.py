@@ -400,6 +400,7 @@ def train(
         target_composition=cfg.ising.target_composition,
         composition_penalty_strength=target_lambda_init,
         base_composition=cfg.ising.base_composition,
+        log_ratio_clamp=cfg.ising.log_ratio_clamp,
     )
     model = _build_model(cfg, target)
 

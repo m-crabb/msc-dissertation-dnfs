@@ -41,6 +41,11 @@ class IsingCfg:
     target_composition: float | None = None
     composition_penalty_strength: float = 0.0
     base_composition: float = 0.5
+    # Ceiling on log p̃_t(y)/p̃_t(x) at single-flip neighbours. The paper's 5
+    # suits an unpenalised Ising target; a composition penalty of strength λ
+    # adds ∓2λ·(c(x)−c_target) to the same ratio, so 5 binds once obedience
+    # error exceeds 5/(2λ). Raise it only in cells that mean to test that.
+    log_ratio_clamp: float = 5.0
 
 
 @dataclass(frozen=True)

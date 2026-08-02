@@ -2,6 +2,32 @@
 import torch
 from torch import Tensor
 
+# Paper App. E.1.1 clips the neighbour ratio log p_t(y)/p_t(x) at 5. That
+# value is calibrated for an *unmodified* Ising target, whose single-flip
+# log-ratios are O(a few). A VCSGC-style composition penalty
+# lambda*d*(c(x) - c_target)^2 adds -+2*lambda*Delta to the same quantity,
+# because flipping one site moves c by exactly 1/d — so the ceiling starts
+# binding once Delta > clamp/(2*lambda), a threshold that does NOT depend
+# on d. Binding is a bias rather than noise: the inflow term is then
+# evaluated at exp(clamp) instead of the true ratio, so no rate field
+# zeroes the residual and the loss acquires an irreducible floor. Targets
+# may override it; the default keeps the replication faithful.
+DEFAULT_LOG_RATIO_CLAMP = 5.0
+
+
+def log_ratio_clamp(target) -> float:
+    """Ceiling in force for `log p_t(y)/p_t(x)`, read off the target.
+
+    It lives on the target because it bounds a pure-target quantity, and
+    because `target` is the one object in scope at all three places that
+    must agree on it: the loss (`kolmogorov.residual_lenet`), the
+    control-variate integrand (`ctmc._compute_xi_t_lenet`) and the
+    `log_ratio_clamp_frac` diagnostic. If the first two ever disagreed, the
+    control variate would be centred on a different quantity than the loss
+    it corrects — a bias with no symptom that would reveal it.
+    """
+    return getattr(target, "log_ratio_clamp", DEFAULT_LOG_RATIO_CLAMP)
+
 
 def _log_p_tilde_at_neighbours(
     x: Tensor,

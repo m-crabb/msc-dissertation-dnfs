@@ -50,7 +50,13 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from discrete_flow_sampler.samplers._neighbours import _log_p_tilde_at_neighbours
+from discrete_flow_sampler.samplers._neighbours import (
+    DEFAULT_LOG_RATIO_CLAMP,
+    _log_p_tilde_at_neighbours,
+    log_ratio_clamp,
+)
+
+__all__ = ["DEFAULT_LOG_RATIO_CLAMP", "residual_general", "residual_lenet", "loss"]
 
 
 def _flip_signs_matrix(n_sites: int, *, device, dtype) -> Tensor:
@@ -175,7 +181,7 @@ def residual_lenet(
     log_p_neighbours = _log_p_tilde_at_neighbours(x, t, target, vocab_size)
     log_p_x = target.log_p_tilde_t(x, t)
     log_ratio = log_p_neighbours - log_p_x[:, None, None]
-    log_ratio = log_ratio.clamp(max=5.0)  # paper App. E.1.1: clip log p_t(y)/p_t(x) at 5
+    log_ratio = log_ratio.clamp(max=log_ratio_clamp(target))
     site_terms = (G_plus - neg_G_plus * log_ratio.exp()).sum(dim=(-2, -1))
     dt_log_pt_x = target.dt_log_p_tilde_t(x, t) - dt_log_Zt
     return dt_log_pt_x + site_terms

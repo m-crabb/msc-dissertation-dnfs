@@ -42,7 +42,10 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
-from discrete_flow_sampler.samplers._neighbours import _log_p_tilde_at_neighbours
+from discrete_flow_sampler.samplers._neighbours import (
+    _log_p_tilde_at_neighbours,
+    log_ratio_clamp,
+)
 from discrete_flow_sampler.samplers.resampling import (
     ResamplingConfig,
     ResamplingStats,
@@ -121,7 +124,7 @@ def _compute_xi_t_lenet(
     log_p_neighbours = _log_p_tilde_at_neighbours(state, t, target, vocab_size)
     log_p_x = target.log_p_tilde_t(state, t)
     log_ratio = log_p_neighbours - log_p_x[:, None, None]
-    log_ratio = log_ratio.clamp(max=5.0)  # paper App. E.1.1: clip log p_t(y)/p_t(x) at 5
+    log_ratio = log_ratio.clamp(max=log_ratio_clamp(target))
     neighbour_ratio = log_ratio.exp()                                   # (B, D, S)
 
     outflow_sum = G_plus.sum(dim=(-2, -1))                             # (B,)
