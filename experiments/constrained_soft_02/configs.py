@@ -1199,6 +1199,84 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # The D=10 amortised recipe carrying BOTH D=4 fixes, and nothing else.
+    #
+    # Two changes from the cell above, each earned separately at D=4:
+    #
+    #  1. The penalty ramp finishes at 5k, before the first window widening at
+    #     10k. Sharing a boundary with the widening turns a lambda step into an
+    #     unrecoverable collapse -- the target moves while coverage is being
+    #     stretched, and the sampler has no settled regime to fall back on.
+    #     Offsetting removed the acute collapse at D=4 in all four seeds.
+    #  2. grad_clip_max_norm 500 -> 50. This is the larger claim.
+    #     `clip_grad_norm_` RESCALES rather than skips, so once the clip
+    #     saturates every step has magnitude exactly max_norm regardless of how
+    #     trustworthy its direction is. At 500 that is ~17x a healthy step
+    #     (median norm ~30), taken along a direction estimated from importance
+    #     weights that have just degenerated -- so the least informative batch
+    #     produces the largest update of the run, which worsens the model,
+    #     which raises the weight variance again. At 50 a saturated step is
+    #     ~2x a healthy one and the loop cannot close: at D=4 the post-widening
+    #     norm falls back instead of escalating, and the three seeds that died
+    #     at 500 all survive.
+    #
+    # Deliberately NOT changed: replay_buffer_cycles stays at 4 (D=4 uses 8).
+    # Depth is the only thing that mixes compositions within a batch, so 4
+    # means each batch spans ~4 compositions on a 100-site task -- a plausible
+    # contributor to the earlier D=10 collapses, but untested. This run buys
+    # one seed at ~15 h; adding a third simultaneous change would make a
+    # failure unattributable. Buffer depth is the next lever if this collapses
+    # at the widening with the same signature.
+    "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50": StageCfg(
+        name="S2_d10_camort_l50_letf_ne128_anneal_offset_clip50",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # Control: amortise over ONLY the six compositions we have specialists
     # for. Held-out points between those atoms separate genuine
     # interpolation from memorising the training set.

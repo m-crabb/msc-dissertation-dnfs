@@ -26,9 +26,12 @@ CLIP_CELLS = {
     "S2_d4_camort_50k_l50_letf_anneal_offset_clip50": 50.0,
     "S2_d4_camort_50k_l50_letf_anneal_offset_clip100": 100.0,
 }
+D10_BASE_AMORTISED_CELL = "S2_d10_camort_l50_letf_ne128_anneal"
+D10_TRANSFER_CELL = "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50"
 D10_AMORTISED_CELLS = (
-    "S2_d10_camort_l50_letf_ne128_anneal",
+    D10_BASE_AMORTISED_CELL,
     "S2_d10_cgrid_l50_letf_ne128_anneal",
+    D10_TRANSFER_CELL,
 )
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
@@ -225,6 +228,50 @@ def test_clip_cells_vary_only_the_gradient_clip(cell_name, max_norm):
             grad_clip_max_norm=offset.train.grad_clip_max_norm,
         ),
     ) == offset
+
+
+def test_d10_transfer_cell_carries_exactly_the_two_d4_fixes():
+    """The D=10 cell may differ from its parent only by the offset and the clip.
+
+    Both interventions were established separately at D=4: finishing the
+    penalty ramp before the first widening (so a moving target never shares a
+    boundary with stretching coverage), and lowering the gradient clip so a
+    saturated step is ~2x a healthy one rather than ~17x. Together they took
+    the D=4 cell from 1/4 surviving seeds to 4/4.
+
+    This run buys a single seed, so a third simultaneous change would make a
+    failure unattributable -- notably replay_buffer_cycles, which stays at the
+    parent's 4 even though D=4 uses 8 and buffer depth is what mixes
+    compositions within a batch. That is a named next lever, not a silent one.
+    """
+    parent = CONFIGS[D10_BASE_AMORTISED_CELL]
+    transfer = CONFIGS[D10_TRANSFER_CELL]
+
+    assert transfer.train.grad_clip_max_norm == 50.0
+    assert parent.train.grad_clip_max_norm > transfer.train.grad_clip_max_norm
+    assert transfer.train.replay_buffer_cycles == parent.train.replay_buffer_cycles
+
+    # The ramp visits the same strengths, but lands before coverage widens.
+    stages = transfer.lambda_curriculum.stages
+    assert [s.composition_penalty_strength for s in stages] == [
+        s.composition_penalty_strength for s in parent.lambda_curriculum.stages
+    ]
+    assert max(s.start_step for s in stages) < transfer.composition.curriculum[1].start_step
+    assert (
+        stages[-1].composition_penalty_strength
+        == transfer.ising.composition_penalty_strength
+    )
+
+    # Nothing else moved.
+    assert replace(
+        transfer,
+        name=parent.name,
+        train=replace(
+            transfer.train,
+            grad_clip_max_norm=parent.train.grad_clip_max_norm,
+        ),
+        lambda_curriculum=parent.lambda_curriculum,
+    ) == parent
 
 
 def test_null_control_is_the_specialist_reached_through_the_amortised_path():
