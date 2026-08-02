@@ -1277,6 +1277,66 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # Buffer depth, the lever named above. The clip50 cell still ran away at
+    # the first widening: the gradient norm stepped from a median of ~800 to
+    # ~76,000 across step 10,000 and never fell back, and ESS went from ~40 to
+    # 1.0 for the remaining 40,000 steps. Clipping bounds the step but cannot
+    # fix a batch whose composition labels are stale: with 4 cycles the replay
+    # buffer holds states drawn under the PREVIOUS half-width, so at a widening
+    # the model is scored on compositions its buffer never visited. Doubling to
+    # 8 cycles halves the rate at which fresh compositions enter relative to
+    # optimiser steps, so the buffer tracks the widened window before the loss
+    # starts charging for it. Costs ~2x the outer sampling; single seed.
+    "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50_cyc8": StageCfg(
+        name="S2_d10_camort_l50_letf_ne128_anneal_offset_clip50_cyc8",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=8,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # Control: amortise over ONLY the six compositions we have specialists
     # for. Held-out points between those atoms separate genuine
     # interpolation from memorising the training set.

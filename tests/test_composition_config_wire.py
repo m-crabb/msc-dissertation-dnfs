@@ -28,10 +28,12 @@ CLIP_CELLS = {
 }
 D10_BASE_AMORTISED_CELL = "S2_d10_camort_l50_letf_ne128_anneal"
 D10_TRANSFER_CELL = "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50"
+D10_DEEP_BUFFER_CELL = "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50_cyc8"
 D10_AMORTISED_CELLS = (
     D10_BASE_AMORTISED_CELL,
     "S2_d10_cgrid_l50_letf_ne128_anneal",
     D10_TRANSFER_CELL,
+    D10_DEEP_BUFFER_CELL,
 )
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
@@ -228,6 +230,39 @@ def test_clip_cells_vary_only_the_gradient_clip(cell_name, max_norm):
             grad_clip_max_norm=offset.train.grad_clip_max_norm,
         ),
     ) == offset
+
+
+def test_deep_buffer_cell_varies_only_the_replay_buffer_depth():
+    """Same D=10 recipe, twice the buffer depth, nothing else.
+
+    The transfer cell carried both D=4 fixes and still ran away at the first
+    widening: median gradient norm ~800 before step 10k and ~7.6e4 just after,
+    escalating rather than falling back, with training ESS pinned at 1.0 for
+    the remaining 40k steps. So a bounded step is not sufficient at 100 sites,
+    and the remaining untested difference from the D=4 recipe is buffer depth.
+
+    Depth matters here in a way it never did for a specialist. Batches are
+    drawn uniformly across the buffer, so depth is the only mechanism mixing
+    requested compositions *within* an update; and because the buffer holds
+    states generated under the previous half-width, at a widening the model is
+    scored on compositions its buffer has never visited. Doubling the depth
+    halves the rate at which fresh compositions enter per optimiser step, so
+    the buffer tracks the widened window before the loss charges for it.
+
+    Nothing else may differ, or a survival change cannot be attributed.
+    """
+    transfer = CONFIGS[D10_TRANSFER_CELL]
+    deep = CONFIGS[D10_DEEP_BUFFER_CELL]
+
+    assert deep.train.replay_buffer_cycles == 2 * transfer.train.replay_buffer_cycles
+    assert replace(
+        deep,
+        name=transfer.name,
+        train=replace(
+            deep.train,
+            replay_buffer_cycles=transfer.train.replay_buffer_cycles,
+        ),
+    ) == transfer
 
 
 def test_d10_transfer_cell_carries_exactly_the_two_d4_fixes():
