@@ -77,6 +77,15 @@ class TrainCfg:
     # random-init) and the curriculum's LR drops already play the warmup role
     # at sensitive transitions.
     warmup_steps: int = 500              # 0 to disable; e.g. paper-faithful runs
+    # Save a step-tagged checkpoint every N inner steps (None = only the
+    # rolling `latest.pt` + end-of-run `final.pt`). Motivation: a run whose
+    # late-training loss enters an excursion/recovery cycle ends with a
+    # `final.pt` sampling an arbitrary phase of that cycle, so eval on it can
+    # understate the model the run actually reached by an order of magnitude
+    # (observed at D=10: in-run states at loss ~5 while final.pt scored
+    # obedience slope 0.079). Step tags let eval select the healthiest state
+    # by a rule fixed before the run.
+    checkpoint_every: int | None = None
 
 
 @dataclass(frozen=True)

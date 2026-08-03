@@ -1455,6 +1455,58 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # The staircase cell: flat λ=10 with coverage capped at half-width 0.20
+    # and widened gradually. Rationale, from the archived λ=10 arm above:
+    # that run was pristine through 20k (loss 2.76, grad 44, clamp_frac
+    # 0.0000 — no saturation at Δ*=0.25) and was knocked into a permanent
+    # excursion/recovery cycle by the single hw 0.15→0.30 jump, a
+    # penalty-variance transient (var_dt_log_p̃ 11→224 in one step), not a
+    # clamp event. Three changes follow directly:
+    #   CAP hw at 0.20 — covers requested compositions [0.3, 0.7] exactly;
+    #     the inherited 0.30 over-covered to [0.2, 0.8], and the extra width
+    #     is what delivered the killing variance dose (λd·hw² at 0.30 is
+    #     2.25× the 0.20 value).
+    #   WIDEN in ≤0.05 increments with ≥8k dwell — the archived arm survived
+    #     a +0.10 widening at 10k (recovery ~5–6k steps under clip 50), so
+    #     +0.05 per stage is a sub-fatal dose by construction. First widening
+    #     at 20k so the hw=0.05 phase can prove in-loop ESS first.
+    #   CHECKPOINT every 2.5k — the λ=10 arm's final.pt landed mid-excursion
+    #     (obedience slope 0.079 against in-run states at loss ~5); eval must
+    #     be able to select a healthy state by a rule fixed in advance
+    #     (clamp_frac == 0, grad fallen back, CV ratio < 1).
+    "S2_d10_camort_offset_clip50_lam10_hw20": StageCfg(
+        name="S2_d10_camort_offset_clip50_lam10_hw20",
+        ising=IsingCfg(
+            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            composition_penalty_strength=10.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, outer_batch_size=256,
+            replay_buffer_cycles=4, lr=1e-3, seed=42,
+            grad_clip_max_norm=50.0, warmup_steps=2000,
+            checkpoint_every=2_500,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        # Flat λ, as in the arm above: the terminal λ is 10 and holding it
+        # fixed keeps the staircase the only moving schedule.
+        lambda_curriculum=None,
+        composition=CompositionCfg(
+            centre=0.5, half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.10),
+                CompositionCurriculumStageCfg(start_step=28_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=36_000, half_width=0.20),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     "S2_d10_camort_offset_clip50_lam25": StageCfg(
         name="S2_d10_camort_offset_clip50_lam25",
         ising=IsingCfg(

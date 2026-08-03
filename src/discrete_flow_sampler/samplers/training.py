@@ -699,6 +699,21 @@ def train(
                         )
                     wandb.log(log_dict, step=step)
 
+                # Step-tagged checkpoints (opt-in): `final.pt` alone cannot
+                # serve runs whose late loss cycles through excursions, since
+                # it samples an arbitrary phase of the cycle. Zero-padded so
+                # lexicographic order is step order; step 0 (random init)
+                # is excluded.
+                checkpoint_every = getattr(train_cfg, "checkpoint_every", None)
+                if (
+                    checkpoint_every is not None
+                    and step > 0
+                    and step % checkpoint_every == 0
+                ):
+                    torch.save(
+                        model.state_dict(), ckpt_dir / f"step_{step:06d}.pt"
+                    )
+
                 step += 1
 
     torch.save(model.state_dict(), ckpt_dir / "final.pt")

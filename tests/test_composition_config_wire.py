@@ -42,6 +42,10 @@ D10_SATURATION_CELLS = (
     "S2_d10_camort_offset_clip50_clamp20",
     "S2_d10_camort_offset_clip50_clamp50",
 )
+# The staircase cell departs from the arms again (capped, gradual widening;
+# periodic checkpoints), so like them it joins only the conditioning and
+# specialist guards, not the surviving-recipe inheritance check.
+D10_STAIRCASE_CELL = "S2_d10_camort_offset_clip50_lam10_hw20"
 D10_AMORTISED_CELLS = (
     D10_BASE_AMORTISED_CELL,
     "S2_d10_cgrid_l50_letf_ne128_anneal",
@@ -55,7 +59,7 @@ D10_AMORTISED_CELLS = (
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
     ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
-    *D10_SATURATION_CELLS,
+    *D10_SATURATION_CELLS, D10_STAIRCASE_CELL,
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the
@@ -465,3 +469,35 @@ def test_specialist_cells_are_untouched():
             continue
         assert cfg.composition is None, name
         assert cfg.model.condition_on_composition is False, name
+
+
+def test_staircase_cell_caps_and_paces_the_widening():
+    """The staircase cell's three load-bearing choices, pinned.
+
+    (1) Coverage is capped at half-width 0.20 — the requested composition
+    range [0.3, 0.7] needs no more, and 0.30 is the width whose variance
+    dose killed the flat-lambda arm. (2) Widening arrives in <= 0.05
+    increments with >= 8k dwell, after a >= 20k proving phase at 0.05 —
+    each increment is under half the dose the arm survived at 10k.
+    (3) lambda is flat at 10 and checkpoints are periodic, so the staircase
+    is the only moving schedule and eval can select a healthy state.
+    """
+    cfg = CONFIGS[D10_STAIRCASE_CELL]
+    stages = cfg.composition.curriculum
+    widths = [stage.half_width for stage in stages]
+    starts = [stage.start_step for stage in stages]
+    assert max(widths) == pytest.approx(0.20)
+    assert all(
+        later - earlier <= 0.05 + 1e-9
+        for earlier, later in zip(widths, widths[1:])
+    )
+    assert all(
+        later - earlier >= 8_000
+        for earlier, later in zip(starts, starts[1:])
+    )
+    assert starts[1] >= 20_000
+    assert cfg.lambda_curriculum is None
+    assert cfg.ising.composition_penalty_strength == 10.0
+    assert cfg.train.checkpoint_every == 2_500
+    assert cfg.train.grad_clip_max_norm == 50.0
+    assert cfg.ising.log_ratio_clamp is None or cfg.ising.log_ratio_clamp == 5.0

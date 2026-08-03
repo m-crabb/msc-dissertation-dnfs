@@ -86,6 +86,47 @@ def test_train_runs_outer_inner_without_error(tmp_path):
     )
     assert (tmp_path / "checkpoints" / "final.pt").exists()
     assert (tmp_path / "checkpoints" / "latest.pt").exists()
+    # Step-tagged checkpoints are opt-in; without `checkpoint_every` the
+    # checkpoint dir holds only the rolling latest + end-of-run final.
+    assert not list((tmp_path / "checkpoints").glob("step_*.pt"))
+
+
+def test_train_periodic_checkpoints_are_step_tagged(tmp_path):
+    """`checkpoint_every=N` saves loadable step-tagged checkpoints.
+
+    Why this exists: a run whose late-training loss enters an
+    excursion/recovery cycle ends with a `final.pt` that samples an
+    arbitrary phase of that cycle, so eval on it can understate the model
+    the run actually reached. Step-tagged checkpoints let eval select the
+    healthiest state by a rule fixed before the run. Tags land at steps
+    that are positive multiples of N (step 0 is the random init and is
+    excluded), zero-padded so lexicographic order is step order.
+    """
+    torch.manual_seed(0)
+    target = IsingTarget(D=2, sigma=0.1)
+    n_sites = target.D * target.D
+    model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
+
+    train_cfg = _tiny_train_cfg(
+        n_steps=20, inner_steps_per_outer=10,
+        batch_size=8, outer_batch_size=8,
+    )
+    train_cfg.checkpoint_every = 10
+    ctmc_cfg = SimpleNamespace(n_euler_steps=4)
+    eval_cfg = SimpleNamespace(eval_every=10, n_eval_samples=8)
+
+    train(
+        model=model, target=target,
+        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
+        output_dir=tmp_path, use_wandb=False,
+        estimator_mode="control_variate",
+    )
+
+    ckpt_dir = tmp_path / "checkpoints"
+    tagged = sorted(path.name for path in ckpt_dir.glob("step_*.pt"))
+    assert tagged == ["step_000010.pt"], tagged
+    state = torch.load(ckpt_dir / "step_000010.pt", weights_only=True)
+    assert set(state) == set(model.state_dict().keys())
 
 
 def test_train_loss_decreases_on_d2(tmp_path):
