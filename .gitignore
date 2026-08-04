@@ -225,3 +225,6 @@ wandb/
 .DS_Store
 Thumbs.db
 
+
+# Cluster job logs (rsync'd down for post-mortems; sacct is dead on this cluster)
+slurm/logs/
