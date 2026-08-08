@@ -549,6 +549,107 @@ CONFIGS: dict[str, StageCfg] = {
         composition=CompositionCfg(centre=0.5, half_width=0.0),
         wandb_project="dnfs-constraints",
     ),
+    # NULL CONTROL AT THE FINAL RECIPE. The original cnull pair above prices
+    # the conditioning machinery at the pre-fix recipe (10k steps, clip 500),
+    # where it measured a 0.155 ESS-fraction deficit against its matched
+    # specialist (0.801 -> 0.646, seed means). But the delivered amortised
+    # family (50k, clip 50, offset lambda anneal) sits at 0.754 at c = 0.5 —
+    # only ~0.05 below that specialist ceiling — so the 0.155 cannot be quoted
+    # as the cost of the final recipe. This pair re-prices the machinery with
+    # everything else set to the final recipe. Same isolation logic as the
+    # cell above: identical target, identical schedule, and the only
+    # difference between this cell and its `_c05_` twin below is the
+    # conditioning path itself.
+    #
+    # Expectations, recorded before any result (seed means at c = 0.5,
+    # specialist-minus-null):
+    #   - cost ~0.05: the 0.155 was recipe-confounded (short training and a
+    #     saturating clip amplify the machinery's variance overhead) and the
+    #     writeup quotes this pair as the machinery cost of the system as
+    #     delivered.
+    #   - cost ~0.155 persisting: the machinery cost is recipe-independent,
+    #     and the amortised family's 0.754 beating its own null control means
+    #     drawing a RANGE of compositions helps training at the centre —
+    #     report both facts, do not average them.
+    # Either branch is reportable; a null that fails to train at all (any
+    # seed ESS < 0.1) would instead indict the zero-width path and block
+    # quoting any machinery number.
+    "S2_d4_cnull_50k_l50_letf_anneal_offset_clip50": StageCfg(
+        name="S2_d4_cnull_50k_l50_letf_anneal_offset_clip50",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
+            seed=42, grad_clip_max_norm=50.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(centre=0.5, half_width=0.0),
+        wandb_project="dnfs-constraints",
+    ),
+    # The matched specialist ceiling for the null control above: identical in
+    # every field except that conditioning is off and no composition is drawn.
+    # The archived 10k/clip500 specialist ceiling (0.801) cannot serve here —
+    # reusing it against a 50k/clip50 null would rebuild exactly the recipe
+    # confound this pair exists to remove. The lambda anneal is target-level
+    # and independent of conditioning, so it applies cleanly to a specialist.
+    "S2_d4_c05_50k_l50_letf_anneal_offset_clip50": StageCfg(
+        name="S2_d4_c05_50k_l50_letf_anneal_offset_clip50",
+        ising=IsingCfg(
+            D=4,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
+            seed=42, grad_clip_max_norm=50.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=50),
+        eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     "S2_d10_c03_l50_letf_ne128": StageCfg(
         name="S2_d10_c03_l50_letf_ne128",
         ising=IsingCfg(

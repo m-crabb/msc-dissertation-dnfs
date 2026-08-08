@@ -21,6 +21,12 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 VALIDATION_CELL = "S2_d4_camort_l50_letf"
 NARROW_WINDOW_CELL = "S2_d4_camort_w15_l50_letf"
 NULL_CONTROL_CELL = "S2_d4_cnull_l50_letf"
+# The re-priced machinery-cost pair: null control and specialist ceiling both
+# at the final recipe (50k steps, clip 50, offset lambda anneal). They must
+# stay identical in every field except the conditioning path, or the
+# specialist-minus-null difference stops measuring the machinery.
+FINAL_RECIPE_NULL_CELL = "S2_d4_cnull_50k_l50_letf_anneal_offset_clip50"
+FINAL_RECIPE_SPECIALIST_CELL = "S2_d4_c05_50k_l50_letf_anneal_offset_clip50"
 BUDGET_TWIN_CELL = "S2_d4_camort_50k_l50_letf"
 ANNEALED_TWIN_CELL = "S2_d4_camort_50k_l50_letf_anneal"
 OFFSET_ANNEAL_CELL = "S2_d4_camort_50k_l50_letf_anneal_offset"
@@ -59,7 +65,7 @@ D10_AMORTISED_CELLS = (
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
     ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
-    *D10_SATURATION_CELLS, D10_STAIRCASE_CELL,
+    *D10_SATURATION_CELLS, D10_STAIRCASE_CELL, FINAL_RECIPE_NULL_CELL,
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the
@@ -501,3 +507,37 @@ def test_staircase_cell_caps_and_paces_the_widening():
     assert cfg.train.checkpoint_every == 2_500
     assert cfg.train.grad_clip_max_norm == 50.0
     assert cfg.ising.log_ratio_clamp is None or cfg.ising.log_ratio_clamp == 5.0
+
+
+def test_final_recipe_machinery_pair_differs_only_in_conditioning():
+    """The re-priced machinery-cost pair must isolate the conditioning path.
+
+    Specialist-minus-null at c = 0.5 is quoted as the cost of the
+    conditioning machinery at the final recipe (50k steps, clip 50, offset
+    lambda anneal). That subtraction only measures the machinery if the two
+    cells agree on every other field; any second difference becomes a
+    confound riding inside the quoted number.
+    """
+    null_cfg = CONFIGS[FINAL_RECIPE_NULL_CELL]
+    specialist_cfg = CONFIGS[FINAL_RECIPE_SPECIALIST_CELL]
+
+    assert null_cfg.model.condition_on_composition is True
+    assert specialist_cfg.model.condition_on_composition is False
+    assert replace(null_cfg.model, condition_on_composition=False) == (
+        specialist_cfg.model
+    )
+
+    assert null_cfg.composition.half_width == 0.0
+    assert null_cfg.composition.centre == 0.5
+    assert null_cfg.composition.curriculum is None
+    assert specialist_cfg.composition is None
+
+    for shared_field in (
+        "ising", "train", "ctmc", "eval", "estimator", "lambda_curriculum"
+    ):
+        assert getattr(null_cfg, shared_field) == (
+            getattr(specialist_cfg, shared_field)
+        ), shared_field
+
+    assert null_cfg.train.n_steps == 50_000
+    assert null_cfg.train.grad_clip_max_norm == 50.0
