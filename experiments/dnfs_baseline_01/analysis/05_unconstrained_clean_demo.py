@@ -200,28 +200,41 @@ def main() -> None:
                   f"mass(m<0) = {mass_minus:.3f}")
 
     subcritical, critical = panels
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2))
 
-    for ax, panel, tag in ((axes[0], subcritical, "(a)"), (axes[1], critical, "(b)")):
-        ess_mean, ess_std = panel["ess"]
-        plot_marginal_panel(
-            ax, panel["energy"]["centres"], panel["energy"]["ref"],
-            panel["energy"]["seeds"], r"$\log \tilde p(x)$",
-            f"{tag} log-density marginal, $\\sigma={panel['sigma']:g}$\n"
-            f"ESS fraction ${ess_mean:.3f} \\pm {ess_std:.3f}$ (4 seeds)")
-        ax.legend(fontsize=8, framealpha=0.9)
-
-    ax_m = axes[2]
+    # Two outputs rather than one three-panel strip: rendered at \textwidth the
+    # strip put ~5pt tick labels on the page. The critical panels (the ones the
+    # argument leans on) are drawn at close to their printed size for the main
+    # text; the subcritical panel becomes its own appendix figure.
+    fig, (ax_energy, ax_magnet) = plt.subplots(1, 2, figsize=(6.8, 3.4))
+    ess_mean, ess_std = critical["ess"]
     plot_marginal_panel(
-        ax_m, critical["magnet"]["support"], critical["magnet"]["ref"],
+        ax_energy, critical["energy"]["centres"], critical["energy"]["ref"],
+        critical["energy"]["seeds"], r"$\log \tilde p(x)$",
+        f"log-density marginal, $\\sigma_c={critical['sigma']:g}$\n"
+        f"ESS fraction ${ess_mean:.3f} \\pm {ess_std:.3f}$ (4 seeds)")
+    ax_energy.legend(fontsize=8, framealpha=0.9)
+    plot_marginal_panel(
+        ax_magnet, critical["magnet"]["support"], critical["magnet"]["ref"],
         critical["magnet"]["seeds"], r"magnetisation $m$",
-        f"(c) magnetisation marginal, $\\sigma={critical['sigma']:g}$\n"
+        f"magnetisation marginal, $\\sigma_c={critical['sigma']:g}$\n"
         "one DNFS pass covers both $Z_2$ modes")
-    ax_m.legend(fontsize=8, framealpha=0.9)
-
+    ax_magnet.legend(fontsize=8, framealpha=0.9)
     fig.tight_layout()
-    fig.savefig(args.out, dpi=150)
-    print(f"\nsaved figure to {args.out}")
+    critical_out = args.out.with_name(f"{args.out.stem}_critical.png")
+    fig.savefig(critical_out, dpi=200)
+
+    fig_sub, ax_sub = plt.subplots(figsize=(4.6, 3.2))
+    ess_mean, ess_std = subcritical["ess"]
+    plot_marginal_panel(
+        ax_sub, subcritical["energy"]["centres"], subcritical["energy"]["ref"],
+        subcritical["energy"]["seeds"], r"$\log \tilde p(x)$",
+        f"log-density marginal, $\\sigma={subcritical['sigma']:g}$\n"
+        f"ESS fraction ${ess_mean:.3f} \\pm {ess_std:.3f}$ (4 seeds)")
+    ax_sub.legend(fontsize=8, framealpha=0.9)
+    fig_sub.tight_layout()
+    subcritical_out = args.out.with_name(f"{args.out.stem}_subcritical.png")
+    fig_sub.savefig(subcritical_out, dpi=200)
+    print(f"\nsaved figures to {critical_out} and {subcritical_out}")
 
 
 if __name__ == "__main__":
