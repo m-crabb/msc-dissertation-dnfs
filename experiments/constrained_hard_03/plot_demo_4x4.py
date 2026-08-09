@@ -67,11 +67,9 @@ def plot_energy_marginals(neural, out_path):
     axes[1, 0].set_ylabel("probability mass", fontsize=8, color=MUTED)
     handles, labels = axes.flat[0].get_legend_handles_labels()
     axes.flat[0].legend(handles, labels, fontsize=7, frameon=False)
-    fig.suptitle(
-        "4x4 demo cells, 10k steps: IS-weighted energy marginal vs exact "
-        "enumeration (12,870-state slice)", fontsize=10, color=INK,
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    # No suptitle: this figure prints as hard.tex fig:hard-4x4-marginals,
+    # whose LaTeX caption carries the description (layout review 2026-08-08).
+    fig.tight_layout()
     fig.savefig(out_path, dpi=180)
     plt.close(fig)
 
