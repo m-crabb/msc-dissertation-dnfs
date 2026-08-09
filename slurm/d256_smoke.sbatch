@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=d256-smoke
-#SBATCH --partition=a40
+#SBATCH --partition=a100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
@@ -15,6 +15,7 @@
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline
+export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
