@@ -81,6 +81,31 @@ def test_final_eval_multi_event_writes_own_dir_and_stays_on_manifold(tmp_path):
     assert metrics["n_eval_samples"] == 10
 
 
+def test_final_eval_matching_canonical_cell_writes_plain_eval_dir(tmp_path):
+    """A cell that declares the matching step canonical (the 16x16 rung's
+    CTMCCfg.use_matching_step=True) gets its matching-step artefacts in plain
+    eval/ — the dir train() short-circuits on and the frozen-eval comparison
+    reads — with no multi_event argument needed: the default resolves to the
+    config's step. The one-event CONTRAST on such a cell lands in
+    eval_one_event/ so neither clobbers the other."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4)
+    cfg = replace(cfg, ctmc=replace(cfg.ctmc, use_matching_step=True))
+    target, head = build_target_and_head(cfg, "cpu")
+
+    metrics = final_eval(head, target, cfg, Path(tmp_path))
+
+    assert (tmp_path / "eval" / "metrics.json").exists()
+    assert not (tmp_path / "eval_multi_event").exists()
+    assert metrics["multi_event"] is True
+    samples = torch.load(tmp_path / "eval" / "samples.pt")
+    assert ((samples == 1).float().mean(dim=1) == 0.5).all()
+
+    contrast_metrics = final_eval(head, target, cfg, Path(tmp_path), multi_event=False)
+    assert (tmp_path / "eval_one_event" / "metrics.json").exists()
+    assert contrast_metrics["multi_event"] is False
+
+
 def test_final_eval_unchunked_when_chunk_is_none(tmp_path):
     torch.manual_seed(0)
     cfg = _tiny_cfg(n_eval_samples=6, eval_sample_chunk=None)

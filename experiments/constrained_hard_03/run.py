@@ -201,7 +201,7 @@ def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
 
 
 def final_eval(
-    head, target, cfg: HardStageCfg, run_dir: Path, multi_event: bool = False
+    head, target, cfg: HardStageCfg, run_dir: Path, multi_event: bool | None = None
 ) -> dict:
     """End-of-run eval: (samples, IS log-weights) over the full t = 0 -> 1
     trajectory, streamed in `eval_sample_chunk` slices. The vectorised swap
@@ -209,15 +209,28 @@ def final_eval(
     batch OOMs at large d (all three d=64 sigma_c seeds died here,
     2026-07-06); slicing changes nothing statistically because the IS
     weights are independent per sample. Runs fp32 — the bf16 opt-in covers
-    the in-training diagnostic eval only. Writes eval/ artefacts into
-    `run_dir` (eval_multi_event/ under `multi_event=True`, so the one-event
-    baseline is never clobbered — the two dirs on the same checkpoint are
-    the --compare-multi-event probe) and returns the metrics dict."""
+    the in-training diagnostic eval only.
+
+    `multi_event=None` (the default) resolves to the cell's own canonical
+    trajectory step, `cfg.ctmc.use_matching_step` — so a matching-canonical
+    cell (the 16x16 rung) lands its matching-step artefacts in plain eval/,
+    the dir train() short-circuits on and frozen-eval comparisons read.
+    Passing the NON-canonical step explicitly writes a contrast dir instead
+    (eval_multi_event/ on a one-event cell — the --compare-multi-event
+    probe — or eval_one_event/ on a matching cell), so the canonical
+    baseline is never clobbered."""
+    if multi_event is None:
+        multi_event = cfg.ctmc.use_matching_step
     eval_samples, eval_log_weights, _ = _chunked_eval_draw(
         head, target, cfg, multi_event=multi_event, smc_tau=None
     )
 
-    eval_dir = run_dir / ("eval_multi_event" if multi_event else "eval")
+    canonical_step = multi_event == cfg.ctmc.use_matching_step
+    step_suffix = (
+        "" if canonical_step
+        else ("_multi_event" if multi_event else "_one_event")
+    )
+    eval_dir = run_dir / f"eval{step_suffix}"
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
@@ -240,7 +253,7 @@ def final_eval_smc(
     cfg: HardStageCfg,
     run_dir: Path,
     tau: float = 0.5,
-    multi_event: bool = False,
+    multi_event: bool | None = None,
 ) -> dict:
     """SMC-resampled end-of-run eval, written ALONGSIDE the plain-IS eval/
     (never over it — the S7 preregistration keeps the pure-IS numbers as
@@ -256,11 +269,17 @@ def final_eval_smc(
     overstates independent-sample count when this drops well below
     n_eval_samples. Artefacts land in eval_smc_tau<τ>/ per (τ, step-kind)
     so sweeps never clobber each other."""
+    if multi_event is None:
+        multi_event = cfg.ctmc.use_matching_step
     eval_samples, pooled_log_weights, chunk_stats = _chunked_eval_draw(
         head, target, cfg, multi_event=multi_event, smc_tau=tau
     )
 
-    dir_name = f"eval_smc_tau{tau:g}" + ("_multi_event" if multi_event else "")
+    canonical_step = multi_event == cfg.ctmc.use_matching_step
+    dir_name = f"eval_smc_tau{tau:g}" + (
+        "" if canonical_step
+        else ("_multi_event" if multi_event else "_one_event")
+    )
     eval_dir = run_dir / dir_name
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
@@ -408,7 +427,8 @@ def _backfill_missing_defaults(saved: dict, cfg_class) -> None:
 
 
 def eval_only(
-    run_dir: str | Path, multi_event: bool = False, smc_tau: float | None = None
+    run_dir: str | Path, multi_event: bool | None = None,
+    smc_tau: float | None = None,
 ) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
     checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
@@ -513,7 +533,12 @@ def main():
 
     if args.eval_only is not None:
         eval_only(
-            args.eval_only, multi_event=args.multi_event, smc_tau=args.smc_tau
+            args.eval_only,
+            # None = the run's own canonical step (cfg.ctmc.use_matching_step);
+            # the flag forces the matching step on a one-event cell (the
+            # --compare-multi-event probe).
+            multi_event=True if args.multi_event else None,
+            smc_tau=args.smc_tau,
         )
         return
     if args.smc_tau is not None:

@@ -80,6 +80,49 @@ def test_train_swap_logs_swap_rate_diagnostics_and_preserves_composition(tmp_pat
     tgt.assert_on_manifold(x_final)
 
 
+def test_train_swap_use_matching_step_threads_through_sampler(tmp_path, monkeypatch):
+    """CTMCCfg.use_matching_step=True must reach EVERY trajectory simulation
+    in the training loop — the buffer rebuild and the in-training eval draw
+    alike. The 16x16 rung trains on the matching step at n_euler=128, which
+    is only clip-safe because the matching step decouples trajectory length
+    from Λ (one-event would need ~390 steps at d=256); a knob that silently
+    left one call site one-event would void that clip-safety argument."""
+    import discrete_flow_sampler.samplers.swap_training as swap_training_module
+
+    torch.manual_seed(0)
+    recorded_multi_event = []
+    real_sample_swap_ctmc = swap_training_module.sample_swap_ctmc
+
+    def recording_sample_swap_ctmc(*args, **kwargs):
+        recorded_multi_event.append(kwargs.get("multi_event", False))
+        return real_sample_swap_ctmc(*args, **kwargs)
+
+    monkeypatch.setattr(
+        swap_training_module, "sample_swap_ctmc", recording_sample_swap_ctmc
+    )
+
+    tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+    head = _tiny_head()
+    train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
+    ctmc_cfg.use_matching_step = True
+    train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
+               use_wandb=False, estimator_mode="control_variate")
+
+    assert recorded_multi_event, "training never simulated a trajectory"
+    assert all(recorded_multi_event), (
+        "a training-loop sample_swap_ctmc call ignored use_matching_step"
+    )
+
+    # Default (no field, as every archived config bag): stays one-event.
+    recorded_multi_event.clear()
+    tgt_default = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+    train_cfg2, ctmc_cfg2, eval_cfg2 = _tiny_cfgs()
+    train_swap(_tiny_head(), tgt_default, train_cfg2, ctmc_cfg2, eval_cfg2,
+               Path(tmp_path) / "default", use_wandb=False,
+               estimator_mode="control_variate")
+    assert recorded_multi_event and not any(recorded_multi_event)
+
+
 def test_train_swap_eval_sample_chunk_bounds_head_batch(tmp_path):
     """With eval_sample_chunk set, the ESS eval streams n_eval_samples through
     sample_swap_ctmc in slices, so the head never sees the full eval batch at

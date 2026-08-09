@@ -92,6 +92,15 @@ class TrainCfg:
 class CTMCCfg:
     n_euler_steps: int = 100
     time_grid: Literal["uniform"] = "uniform"
+    # Simulate swap-CTMC trajectories with the vertex-disjoint matching
+    # (multi-event) step everywhere the cell samples: training buffer
+    # rebuilds, in-training eval draws, and the canonical final eval. Needed
+    # from the 16x16 hard rung up, where clip-safe one-event simulation would
+    # take ~390 Euler steps while the matching step holds n_euler_steps at
+    # 128 by decoupling trajectory length from the total rate. The default
+    # False reproduces every archived run bit-for-bit, which is what lets
+    # `_backfill_missing_defaults` treat absence as "ran with the default".
+    use_matching_step: bool = False
 
 
 @dataclass(frozen=True)

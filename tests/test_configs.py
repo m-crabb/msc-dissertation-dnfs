@@ -507,6 +507,46 @@ def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
     assert replace(long_stencil, name=long_ma.name, use_stencil=False) == long_ma
 
 
+def test_d256_rung_mirrors_ma_twin_except_declared_scale_fields():
+    """The 16x16 rung (hard.tex §5.6 plan of record): the d64
+    masked-attention curriculum cell rescaled and nothing else — same head,
+    same 50k sigma ladder on absolute start_steps, same n_euler=128. That
+    Euler budget is only clip-safe at d=256 because the matching step is
+    declared canonical (CTMCCfg.use_matching_step; clip-safe one-event
+    extrapolates to ~390 steps), so the knob must be True and must be the
+    ONLY trajectory-step difference. Eval deltas are diagnostics-only —
+    cadence and in-training draw shrink because the per-pass cost is ~16x
+    the d64 cell's; the final eval keeps the 5000-draw protocol."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    d256 = CONFIGS["H2_d256_c50_s223_letf_ma_50k_curr"]
+
+    assert d256.ising.D == 16
+    assert d256.ctmc.use_matching_step is True
+    assert twin.ctmc.use_matching_step is False
+    assert d256.ctmc.n_euler_steps == twin.ctmc.n_euler_steps == 128
+    assert d256.curriculum == twin.curriculum
+
+    # Declared eval deltas, stated exactly.
+    assert d256.eval.n_eval_samples == 5000
+    assert d256.eval.eval_every == 500
+    assert d256.eval.n_eval_samples_training == 256
+    assert d256.eval.eval_sample_chunk == 64
+
+    # Nothing else moved.
+    rebuilt = replace(
+        d256,
+        name=twin.name,
+        ising=replace(d256.ising, D=8),
+        ctmc=replace(d256.ctmc, use_matching_step=False),
+        eval=twin.eval,
+    )
+    assert rebuilt == twin
+
+
 def test_grouped_anchor_cells_mirror_ma_twin_except_declared_fields():
     """Grouped-anchor batch 1 (2026-07-22): each cell must be a
     single-variable twin of H2_d64_c50_s223_letf_ma_50k_curr apart from the

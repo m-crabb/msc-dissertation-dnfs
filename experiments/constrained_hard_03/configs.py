@@ -204,8 +204,10 @@ def _hard_cell(
     n_eval_samples: int = 512,
     eval_sample_chunk: int | None = None,
     n_eval_samples_training: int | None = None,
+    eval_every: int = 200,
     use_sdpa_readout: bool = False,
     eval_autocast_bf16: bool = False,
+    use_matching_step: bool = False,
     curriculum: CurriculumCfg | None = None,
     potts_composition: tuple[float, ...] | None = None,
 ) -> HardStageCfg:
@@ -235,9 +237,11 @@ def _hard_cell(
             n_steps=n_steps, batch_size=128, replay_buffer_cycles=8,
             lr=1e-3, seed=42, warmup_steps=500,
         ),
-        ctmc=CTMCCfg(n_euler_steps=n_euler_steps),
+        ctmc=CTMCCfg(
+            n_euler_steps=n_euler_steps, use_matching_step=use_matching_step,
+        ),
         eval=EvalCfg(
-            eval_every=200, n_eval_samples=n_eval_samples,
+            eval_every=eval_every, n_eval_samples=n_eval_samples,
             eval_sample_chunk=eval_sample_chunk,
             n_eval_samples_training=n_eval_samples_training,
             eval_autocast_bf16=eval_autocast_bf16,
@@ -455,6 +459,29 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_mo_100k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_mo_100k_curr", head_kind="mask_one",
         n_steps=100_000,
+    ),
+    # The 16x16 rung — hard.tex §5.6's plan of record, the last training rung
+    # (launched 2026-08-09). The reported masked-attention head on the
+    # vertex-disjoint matching step (validated as a drop-in at the converged
+    # 8x8 checkpoint: ESS 0.906 vs 0.910, composition bitwise-preserved), at
+    # the 8x8 rung's 50k sigma-ladder recipe UNCHANGED — the ladder holds
+    # absolute start_steps, so the schedule is identical, not stretched.
+    # n_euler_steps stays 128 only BECAUSE the matching step decouples
+    # trajectory length from the total rate: the clip-safe one-event budget
+    # extrapolates to ~390 steps at this size (hard.tex subsec:rate-field).
+    # Eval deltas are diagnostics-only: cadence 200 -> 500 and in-training
+    # draw 512 -> 256 (each network pass scores ~16x the d64 cell's pairs, so
+    # the d64 cadence would spend most of the job evaluating), chunk
+    # 256 -> 64 to bound the eval batch at 4x the sites. The final eval keeps
+    # the 5000-draw protocol the probe and the d64 ladder report on.
+    "H2_d256_c50_s223_letf_ma_50k_curr": _hard_cell(
+        "H2_d256_c50_s223_letf_ma_50k_curr", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
     ),
     # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
     # these three cells are the only way to reproduce a NEGATIVE result the

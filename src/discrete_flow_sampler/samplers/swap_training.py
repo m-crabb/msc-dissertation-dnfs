@@ -218,6 +218,11 @@ def train_swap(
     inner_batch = train_cfg.batch_size
     outer_batch = train_cfg.outer_batch_size or train_cfg.batch_size
     n_grid = ctmc_cfg.n_euler_steps
+    # Trajectory step for every simulation in this loop (buffer rebuild and
+    # in-training eval draw): the matching step is required from d=256 up,
+    # where one-event clip-safety would need ~3x the Euler grid. getattr
+    # because test call sites pass bare config bags without the field.
+    multi_event = getattr(ctmc_cfg, "use_matching_step", False)
     inner_steps_per_outer = train_cfg.inner_steps_per_outer
     replay_buffer_cycles = getattr(train_cfg, "replay_buffer_cycles", 1)
     if replay_buffer_cycles < 1:
@@ -370,6 +375,7 @@ def train_swap(
             with torch.no_grad():
                 x_traj = sample_swap_ctmc(
                     head, x_initial, t_grid, return_all_states=True,
+                    multi_event=multi_event,
                 )                                              # (T, M, D)
                 c_t_grid, integrand_per_t = compute_c_t_grid_swap(
                     t_grid, x_traj, target, head, mode=estimator_mode,
@@ -487,6 +493,7 @@ def train_swap(
                             _, slice_log_weights = sample_swap_ctmc(
                                 head, x_eval_initial, eval_grid,
                                 return_log_weights=True, target=target,
+                                multi_event=multi_event,
                             )
                             log_weight_slices.append(slice_log_weights)
                             remaining -= n_slice
