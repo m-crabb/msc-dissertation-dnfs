@@ -77,6 +77,22 @@ class TrainCfg:
     # random-init) and the curriculum's LR drops already play the warmup role
     # at sensitive transitions.
     warmup_steps: int = 500              # 0 to disable; e.g. paper-faithful runs
+    # Optimiser selection. "adamw" is the recipe of record for every archived
+    # run. "stable_adamw" adds Adafactor-style per-tensor UPDATE clipping
+    # (StableAdamW, Wortsman et al. 2023): the trust-region alternative to
+    # raw-gradient-norm clipping, whose threshold is unit-free and therefore
+    # size-invariant — the 16x16 rung showed grad_clip_max_norm's units are
+    # extensive (an unnormalised pair-sum loss), so one clip value means
+    # "spike guard" at d=64 and "permanent normalisation" at d=256.
+    optimiser: str = "adamw"
+    # Re-apply the lr warmup ramp at every curriculum sigma-transition, not
+    # only at step 0. The comment above warmup_steps records the d=10-era
+    # decision NOT to do this ("the curriculum's LR drops already play the
+    # warmup role"); the d=256 log refutes that at scale — each sigma step
+    # clears the replay buffer and jumps the target, launching an
+    # initialisation-scale transient with no ramp. Off by default so every
+    # archived run's semantics are unchanged.
+    rewarmup_on_stage: bool = False
     # Save a step-tagged checkpoint every N inner steps (None = only the
     # rolling `latest.pt` + end-of-run `final.pt`). Motivation: a run whose
     # late-training loss enters an excursion/recovery cycle ends with a
