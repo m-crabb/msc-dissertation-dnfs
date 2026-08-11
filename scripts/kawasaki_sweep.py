@@ -59,7 +59,26 @@ SPIN_CMAP = ListedColormap(["#3B3A6B", "#F2C14E"])
 N_CHAINS = 8
 
 
+def _annealed_tau_rows():
+    """Annealed-start tau_int rows for the overlay, if the check has been run.
+
+    Produced by `scripts/kawasaki_annealed_check.py full_curve` (simulated-
+    annealing initialisation walked up a sigma ladder, then the identical
+    measurement protocol). Drawn as hollow markers on the tau panel so the
+    figure itself answers the cold-start objection: if the slowing-down curve
+    were an initialisation artefact, the annealed markers would fall below the
+    cold bands. Returns {(D, sigma): mean} or empty if the check hasn't run.
+    """
+    path = Path("results/kawasaki/annealed_check/tau_full_curve.json")
+    if not path.exists():
+        return {}
+    import json
+    return {(row["D"], round(row["sigma"], 5)): row["tau_int_sweeps_mean"]
+            for row in json.loads(path.read_text())["rows"]}
+
+
 def failure_curves():
+    annealed_tau = _annealed_tau_rows()
     fig, ax = plt.subplots(1, 2, figsize=(12, 4.5))
     for D in DEMO_D:
         d_sites = D * D
@@ -104,6 +123,11 @@ def failure_curves():
             color=line0.get_color(),
             alpha=0.2,
         )
+        annealed = [annealed_tau.get((D, round(s, 5))) for s in CURVE_SIGMAS]
+        if any(a is not None for a in annealed):
+            have = [(s, a) for s, a in zip(CURVE_SIGMAS, annealed) if a is not None]
+            ax[0].plot([s for s, _ in have], [a for _, a in have], "o",
+                       color=line0.get_color(), markerfacecolor="none", ms=9)
         (line1,) = ax[1].plot(CURVE_SIGMAS, ess_mean, "o-", label=f"D={D}")
         ax[1].fill_between(
             CURVE_SIGMAS,
@@ -128,7 +152,13 @@ def failure_curves():
     ax[1].set_ylim(0, 1.05)
     ax[1].set_ylabel("normalised ESS (indep. samples / sweep)")
     ax[1].set_title("sampling efficiency collapse")
-    ax[0].legend(fontsize=8)
+    handles, _ = ax[0].get_legend_handles_labels()
+    if annealed_tau:
+        from matplotlib.lines import Line2D
+        handles.append(Line2D([0], [0], marker="o", linestyle="none",
+                              markerfacecolor="none", markeredgecolor="grey",
+                              label="open: annealed start"))
+    ax[0].legend(handles=handles, fontsize=8)
     fig.suptitle(
         r"Kawasaki on the hard-composition canonical Ising ($c=0.5$): "
         r"mixing degrades past $\sigma_c$, worsening with lattice size"

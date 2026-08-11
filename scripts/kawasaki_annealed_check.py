@@ -37,8 +37,10 @@ accelerate the neural sampler), and this script must not amend a frozen
 pre-registration through the back door.
 
 Run:  pixi run python -m scripts.kawasaki_annealed_check
+      pixi run python -m scripts.kawasaki_annealed_check full_curve
 """
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -100,34 +102,75 @@ def annealed_init(D, sigma_target, seed):
     return x
 
 
+def _tau_row(D, sigma, init_kind):
+    """One (D, sigma, init) cell of Arm A: TAU_CHAINS chains, tau_int in sweeps."""
+    d = D * D
+    taus = []
+    for chain in range(TAU_CHAINS):
+        seed = TAU_SEED + chain
+        if init_kind == "cold":
+            x = init_random_at_composition(d, 0.5, np.random.default_rng(seed))
+        else:
+            x = annealed_init(D, sigma, seed)
+        energy, x_final, _ = run_chain(x, D, sigma, TAU_STEPS, seed)
+        assert int((x_final == 1).sum()) == d // 2
+        kept = energy[TAU_BURN::TAU_THIN]
+        taus.append(integrated_autocorr(kept) * TAU_THIN / d)
+    taus = np.array(taus)  # in sweeps, as printed in hard.tex
+    row = {
+        "D": D, "sigma": sigma, "init": init_kind,
+        "tau_int_sweeps_mean": float(taus.mean()),
+        "tau_int_sweeps_std": float(taus.std(ddof=1)),
+    }
+    print(f"[tau] D={D} sigma={sigma} {init_kind}: "
+          f"{taus.mean():.2f} +/- {taus.std(ddof=1):.2f} sweeps")
+    return row
+
+
 def tau_arm():
     """Arm A: cold vs annealed tau_int under the identical measurement."""
+    return [_tau_row(D, sigma, init_kind)
+            for D in TAU_D
+            for sigma in TAU_SIGMAS
+            for init_kind in ("cold", "annealed")]
+
+
+def full_curve_arm():
+    """Arm A extended: annealed tau_int at every sigma failure_curves() plots.
+
+    The spot check above answers the fairness question in prose; the printed
+    figure plots the full CURVE_SIGMAS grid, so for the chapter's opening
+    figure to preempt the cold-start question itself it needs an annealed
+    marker at every plotted sigma. The protocol is identical to tau_arm (same
+    budgets, thinning and seed base), so (D, sigma) cells already measured in
+    an archived summary.json are reused rather than recomputed: a recompute
+    under an identical protocol could only add noise, and the archived numbers
+    are the ones the prose already quotes.
+    """
+    prior = {}
+    summary_path = OUT / "summary.json"
+    if summary_path.exists():
+        for row in json.loads(summary_path.read_text())["tau_arm"]:
+            if row["init"] == "annealed":
+                prior[(row["D"], round(row["sigma"], 5))] = row
+    from scripts.kawasaki_sweep import CURVE_SIGMAS  # the figure's sigma grid
     rows = []
     for D in TAU_D:
-        d = D * D
-        for sigma in TAU_SIGMAS:
-            for init_kind in ("cold", "annealed"):
-                taus = []
-                for chain in range(TAU_CHAINS):
-                    seed = TAU_SEED + chain
-                    rng = np.random.default_rng(seed)
-                    if init_kind == "cold":
-                        x = init_random_at_composition(d, 0.5, rng)
-                    else:
-                        x = annealed_init(D, sigma, seed)
-                    energy, x_final, _ = run_chain(x, D, sigma, TAU_STEPS, seed)
-                    assert int((x_final == 1).sum()) == d // 2
-                    kept = energy[TAU_BURN::TAU_THIN]
-                    taus.append(integrated_autocorr(kept) * TAU_THIN / d)
-                taus = np.array(taus)  # in sweeps, as printed in hard.tex
-                rows.append({
-                    "D": D, "sigma": sigma, "init": init_kind,
-                    "tau_int_sweeps_mean": float(taus.mean()),
-                    "tau_int_sweeps_std": float(taus.std(ddof=1)),
-                })
-                print(f"[tau] D={D} sigma={sigma} {init_kind}: "
-                      f"{taus.mean():.2f} +/- {taus.std(ddof=1):.2f} sweeps")
-    return rows
+        for sigma in CURVE_SIGMAS:
+            cached = prior.get((D, round(sigma, 5)))
+            if cached is not None:
+                print(f"[tau] D={D} sigma={sigma} annealed: reused archived row")
+                rows.append(cached)
+            else:
+                rows.append(_tau_row(D, sigma, "annealed"))
+    payload = {
+        "design": "annealed-start tau_int across the failure-curve sigma grid",
+        "dwell_steps_per_rung": DWELL_STEPS,
+        "rows": rows,
+    }
+    out_path = OUT / "tau_full_curve.json"
+    out_path.write_text(json.dumps(payload, indent=2))
+    print(f"wrote {out_path}")
 
 
 def ergodicity_arm():
@@ -164,6 +207,9 @@ def ergodicity_arm():
 
 
 def main():
+    if "full_curve" in sys.argv[1:]:
+        full_curve_arm()
+        return
     summary = {
         "design": "annealed-start robustness check for the section 5.1 demos",
         "dwell_steps_per_rung": DWELL_STEPS,
