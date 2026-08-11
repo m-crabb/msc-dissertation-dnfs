@@ -59,7 +59,16 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
     `lambda_dt_clipped_frac` is the fraction of states with Lambda*dt > 1 --
     when this clips, `_euler_step_swap`'s stay slot clamps to 0 and
     `torch.multinomial` renormalises the pair probabilities, forcing exactly
-    one swap that step (see that function's docstring).
+    one swap that step (see that function's docstring). NOTE: that clipping
+    exists in the ONE-EVENT step only. Under `use_matching_step=True` this
+    column is a diagnostic of one-event clip-safety, not of the running
+    step; the matching step's own fidelity is the `proposal_drop_frac` and
+    `events_per_site_per_step` columns (accumulated at the buffer rebuild),
+    which is what the d256 divergence review (2026-08-11) found missing.
+    `lambda_dt_p99` records the tail of the per-state rate load directly,
+    since the one-event Euler budget rule reads the tail and the state
+    distribution of Lambda is too fat-tailed to reconstruct it from the
+    mean and an exceedance fraction.
 
     `log_ratio_clamp_frac` is the fraction of pair log-ratios
     log p_tilde_t(swap) - log p_tilde_t(x) reaching `SWAP_LOG_RATIO_CLAMP`
@@ -80,6 +89,13 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
             forward_rates.reshape(-1).float(), 0.99
         ).item(),
         "lambda_dt_clipped_frac": (lambda_dt > 1.0).float().mean().item(),
+        # p99 of the per-state total-rate load: the one-event budget rule
+        # (n_euler from the tail of Lambda) needs the tail directly — the
+        # d256 review showed it is NOT recoverable from mean + exceedance
+        # because the state distribution of Lambda is fat-tailed.
+        "lambda_dt_p99": torch.quantile(
+            lambda_dt.float(), 0.99
+        ).item(),
         "log_ratio_clamp_frac": (
             (log_ratio > SWAP_LOG_RATIO_CLAMP).float().mean().item()
         ),
@@ -337,7 +353,9 @@ def train_swap(
                 ["step", "loss", "ess", "var_dt_log_p_tilde",
                  "var_estimator_integrand", "grad_norm",
                  "rate_pair_mean", "rate_pair_p99",
-                 "lambda_dt_clipped_frac", "log_ratio_clamp_frac",
+                 "lambda_dt_clipped_frac", "lambda_dt_p99",
+                 "log_ratio_clamp_frac",
+                 "proposal_drop_frac", "events_per_site_per_step",
                  "sigma_current", "lr_current", "wall_clock_step_s"]
             )
 
@@ -454,10 +472,12 @@ def train_swap(
             # the paper's R_t^{θ_sg} (stop-gradient) treatment.
             t_grid = torch.linspace(0.0, 1.0, n_grid, device=device)
             x_initial = target.sample_base(outer_batch, device=device)
+            outer_matching_stats: dict | None = {} if multi_event else None
             with torch.no_grad():
                 x_traj = sample_swap_ctmc(
                     head, x_initial, t_grid, return_all_states=True,
                     multi_event=multi_event,
+                    matching_stats=outer_matching_stats,
                 )                                              # (T, M, D)
                 c_t_grid, integrand_per_t = compute_c_t_grid_swap(
                     t_grid, x_traj, target, head, mode=estimator_mode,
@@ -476,6 +496,28 @@ def train_swap(
                 var_estimator_integrand = (
                     integrand_per_t.var(dim=-1).mean().item()
                 )
+
+            # Matching-native fidelity for THIS outer cycle's buffer states
+            # (constant across the cycle's inner rows). This is the running
+            # step's own certificate: `lambda_dt_clipped_frac` gates the
+            # dormant one-event path, and the Luby matching silently drops
+            # proposals still contested after its round budget — without
+            # these two columns a multi-event run has no logged evidence it
+            # stayed in the regime the matching step was validated for
+            # (drop_frac ~< 1%, events/site/step <= 0.1).
+            if multi_event and outer_matching_stats.get("state_steps"):
+                proposed_total = float(outer_matching_stats["proposed"])
+                accepted_total = float(outer_matching_stats["accepted"])
+                proposal_drop_frac = (
+                    1.0 - accepted_total / proposed_total
+                    if proposed_total > 0 else 0.0
+                )
+                events_per_site_per_step = accepted_total / (
+                    float(outer_matching_stats["state_steps"]) * n_dims
+                )
+            else:
+                proposal_drop_frac = float("nan")
+                events_per_site_per_step = float("nan")
 
             t_idx_buffer = (
                 torch.arange(n_grid, device=device)
@@ -539,6 +581,7 @@ def train_swap(
                     "rate_pair_mean": float("nan"),
                     "rate_pair_p99": float("nan"),
                     "lambda_dt_clipped_frac": float("nan"),
+                    "lambda_dt_p99": float("nan"),
                     "log_ratio_clamp_frac": float("nan"),
                 }
                 if step % eval_cfg.eval_every == 0:
@@ -597,7 +640,9 @@ def train_swap(
                      grad_norm.item(), rate_diag["rate_pair_mean"],
                      rate_diag["rate_pair_p99"],
                      rate_diag["lambda_dt_clipped_frac"],
+                     rate_diag["lambda_dt_p99"],
                      rate_diag["log_ratio_clamp_frac"],
+                     proposal_drop_frac, events_per_site_per_step,
                      float(target.sigma), optimiser.param_groups[0]["lr"],
                      wall_clock_step_s]
                 )

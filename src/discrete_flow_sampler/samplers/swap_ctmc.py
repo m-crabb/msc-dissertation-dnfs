@@ -5,6 +5,8 @@ step reuse the merged swap readout head; the residual/ξ_t read one i<j
 representative per unordered pair so the single-pass reverse rate is exact.
 """
 
+import functools
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -151,7 +153,8 @@ def _apply_swaps(state: Tensor, accepted: Tensor, pairs: Tensor) -> Tensor:
     return state.gather(1, perm[:, :d])
 
 
-def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt):
+def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt,
+                              stats: dict | None = None):
     """Multi-event swap Euler step: fire a vertex-disjoint matching of pairs.
 
     Thin every pair by its firing probability rate·dt, then keep a random
@@ -160,6 +163,16 @@ def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt)
     can swap the two step kinds. Correct to O(dt): proposal conflicts are O(dt²)
     as dt → 0, so this collapses to the one-event step in that limit. The caller
     controls dt to hold the expected events per site per step ≤ 0.1.
+
+    `stats` (optional dict) accumulates the step's own fidelity numbers —
+    proposed/accepted swap counts and states visited, kept as device tensors
+    so no per-step host sync — because this is the RUNNING step's only
+    faithfulness record: `lambda_dt_clipped_frac` in the training log gates
+    the one-event step, which this function replaces, and the Luby matching
+    silently drops proposals still contested after its round budget. The
+    d256 divergence review (2026-08-11) found the run formally outside its
+    validated envelope precisely because no matching-native diagnostic was
+    logged; the drop fraction this feeds is that missing certificate.
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)
@@ -168,6 +181,10 @@ def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt)
     proposed = torch.bernoulli(fire_prob).bool()
     priority = torch.rand(batch_size, pairs.shape[0], device=state.device)
     accepted = _vertex_disjoint_matching(proposed, priority, pairs, d)
+    if stats is not None:
+        stats["proposed"] = stats.get("proposed", 0) + proposed.sum()
+        stats["accepted"] = stats.get("accepted", 0) + accepted.sum()
+        stats["state_steps"] = stats.get("state_steps", 0) + batch_size
     return _apply_swaps(state, accepted, pairs), pair_scores
 
 
@@ -181,6 +198,7 @@ def sample_swap_ctmc(
     target=None,
     multi_event: bool = False,
     resampling: ResamplingConfig | None = None,
+    matching_stats: dict | None = None,
 ):
     """Swap-CTMC trajectory sampler. Same contract as `ctmc.sample_ctmc`.
 
@@ -190,6 +208,11 @@ def sample_swap_ctmc(
     `multi_event=True` uses the vertex-disjoint-matching step (many swaps/step,
     O(d) trajectory length at scale); the default one-event step fires ≤1
     swap/step (O(d²) steps at the critical coupling).
+
+    `matching_stats` (optional dict, multi_event only) accumulates the
+    matching step's fidelity counters — proposed/accepted swaps and states
+    visited — for the `proposal_drop_frac` / `events_per_site_per_step`
+    training-log columns (see `_euler_step_swap_matching`).
 
     `resampling` (requires `return_log_weights=True`) enables the eval-time
     SMC upgrade (`samplers.resampling`): adaptive systematic resampling of
@@ -231,7 +254,12 @@ def sample_swap_ctmc(
         else None
     )
 
-    step_fn = _euler_step_swap_matching if multi_event else _euler_step_swap
+    if multi_event:
+        step_fn = functools.partial(
+            _euler_step_swap_matching, stats=matching_stats
+        )
+    else:
+        step_fn = _euler_step_swap
     pairs = upper_tri_pairs(d, x0.device)
     dts = ts[1:] - ts[:-1]
     for step in range(len(ts) - 1):
