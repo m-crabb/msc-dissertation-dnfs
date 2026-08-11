@@ -271,8 +271,12 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
     symmetry-implied point at 1-c_t: the same value for std/energy/SRO, and
     1-value for the mean. This fills the RHS-heavy sampled grid
     ({0.30,0.50,0.55,0.60,0.65}) on the left. Skip c=0.5 and any reflection that
-    lands on an already-sampled window. Returns (c, vc, dn) tuples; these are
-    symmetry-implied, not independently sampled, so we draw them open-faced.
+    lands on an already-sampled window. Returns (c, vc, vc_err, dn, dn_err)
+    tuples reusing the source window's errors; these are symmetry-implied, not
+    independently sampled, but they are drawn identically to the sampled windows
+    — the filled/open marker split confused more than it informed (reader
+    feedback 2026-08-11), so the reflection is stated once in the dissertation
+    body text instead of per-marker.
     """
     sampled = {round(r["c"], 4) for r in have}
     flip = (lambda v: 1.0 - v) if key == "c_mean" else (lambda v: v)
@@ -281,13 +285,13 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
         cm = round(1.0 - r["c"], 4)
         if abs(r["c"] - 0.5) < 1e-6 or cm in sampled:
             continue
-        out.append((cm, flip(r["vcsgc"][key]), flip(r["dnfs"][key])))
+        out.append((cm, flip(r["vcsgc"][key]), r["vcsgc_err"][key],
+                    flip(r["dnfs"][key]), r["dnfs_err"][key]))
     return out
 
 
 def _plot(curve, lam, analytic_cstd, out: Path) -> None:
     import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
 
     have = [r for r in curve if r["dnfs"] is not None]
     cs = [r["c"] for r in have]
@@ -297,24 +301,23 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
               ("sro", r"$\langle x_i x_j\rangle_{NN}$", "NN short-range order")]
     fig, axes = plt.subplots(1, 4, figsize=(18, 4.2))
     for ax, (key, ylab, title) in zip(axes, panels):
-        vc = [r["vcsgc"][key] for r in have]
-        vce = [r["vcsgc_err"][key] for r in have]
-        dn = [r["dnfs"][key] for r in have]
-        dne = [r["dnfs_err"][key] for r in have]
-        # both series as discrete markers (no connecting line): the comparison is
-        # per-composition agreement at five matched windows, not a trend, so a
-        # joining line would imply interpolation neither sampler measures.
-        ax.errorbar(cs, vc, yerr=vce, fmt="ko", capsize=3,
-                    label="vcSGC (mchammer)")
-        ax.errorbar(cs, dn, yerr=dne, fmt="s", color="tab:blue", capsize=3,
-                    label="DNFS soft (IS)")
-        # Z_2 reflections fill the sparse left side (open markers = symmetry-implied)
+        # sampled + Z_2-reflected points merged into one uniformly-drawn series,
+        # sorted by composition (the reflection is stated in the body text)
         mir = _zmirror(have, key)
-        if mir:
-            mc = [m[0] for m in mir]
-            ax.plot(mc, [m[1] for m in mir], "o", color="k", markerfacecolor="none")
-            ax.plot(mc, [m[2] for m in mir], "s", color="tab:blue", markerfacecolor="none")
-        allcs = sorted(cs + [m[0] for m in mir])
+        pts = sorted(
+            [(r["c"], r["vcsgc"][key], r["vcsgc_err"][key],
+              r["dnfs"][key], r["dnfs_err"][key]) for r in have] + mir)
+        pc = [p[0] for p in pts]
+        vc, vce = [p[1] for p in pts], [p[2] for p in pts]
+        dn, dne = [p[3] for p in pts], [p[4] for p in pts]
+        # both series as discrete markers (no connecting line): the comparison is
+        # per-composition agreement at matched windows, not a trend, so a
+        # joining line would imply interpolation neither sampler measures.
+        ax.errorbar(pc, vc, yerr=vce, fmt="ko", capsize=3,
+                    label="vcSGC (mchammer)")
+        ax.errorbar(pc, dn, yerr=dne, fmt="s", color="tab:blue", capsize=3,
+                    label="DNFS soft (IS)")
+        allcs = pc
         if key == "c_mean":
             ax.plot(allcs, allcs, ":", color="grey", lw=0.8, label="$c=c_t$")
         if key == "c_std":
@@ -327,12 +330,7 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
         ax.set_xlabel("composition $c$")
         ax.set_ylabel(ylab)
         ax.set_title(title)
-        handles, _ = ax.get_legend_handles_labels()
-        if mir:
-            handles.append(Line2D([0], [0], marker="o", linestyle="none",
-                                  markerfacecolor="none", markeredgecolor="grey",
-                                  label="open: $Z_2$ mirror"))
-        ax.legend(handles=handles, fontsize=8)
+        ax.legend(fontsize=8)
     fig.suptitle(f"DNFS soft vs vcSGC at matched $\\kappa=\\lambda={lam:g}$", y=1.02)
     fig.tight_layout()
     fig.savefig(out, dpi=150, bbox_inches="tight")

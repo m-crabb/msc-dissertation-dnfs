@@ -279,9 +279,11 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
     segment and the 0.70 tail are empty. Reflecting each off-centre point across
     c=0.5 fills them in. These are symmetry-implied, NOT independently trained
     compositions (the canonical reference's own Z_2 check is <=0.00013/site), so
-    they reuse the source point's value/error and the same truth; we draw them
-    open-faced to keep that distinction visible. Skip c=0.5 and any reflection
-    that lands on an already-sampled window.
+    they reuse the source point's value/error and the same truth. They are drawn
+    identically to the trained windows — the filled/open marker split confused
+    more than it informed (reader feedback 2026-08-11), so the reflection is
+    stated once in the dissertation body text instead of per-marker. Skip c=0.5
+    and any reflection that lands on an already-sampled window.
     """
     sampled = {round(r["c"], 4) for r in rows}
     mirrored = []
@@ -297,19 +299,18 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
 
 def _plot(curve, ref_c, ref_F_persite, lam, n_eulers, out: Path) -> None:
     import matplotlib.pyplot as plt
-    from matplotlib.lines import Line2D
 
     rows = [r for r in curve if not np.isnan(r["raw"])]
     mirror = _mirror_rows(rows)
-    cs = [r["c"] for r in rows]
-    raw = [r["raw"] for r in rows]
-    raw_e = [r["raw_err"] for r in rows]
-    corr = [r["corr"] for r in rows]
-    corr_e = [r["corr_err"] for r in rows]
-    truth = [r["truth"] for r in rows]
-    mcs = [r["c"] for r in mirror]
-    mraw = [r["raw"] for r in mirror]
-    mcorr = [r["corr"] for r in mirror]
+    # One uniform curve: sampled + symmetry-implied points drawn identically,
+    # sorted by composition (the reflection is stated in the body text).
+    allrows = sorted(rows + mirror, key=lambda r: r["c"])
+    cs = [r["c"] for r in allrows]
+    raw = [r["raw"] for r in allrows]
+    raw_e = [r["raw_err"] for r in allrows]
+    corr = [r["corr"] for r in allrows]
+    corr_e = [r["corr_err"] for r in allrows]
+    truth = [r["truth"] for r in allrows]
 
     fig, (ax, axr) = plt.subplots(1, 2, figsize=(12, 4.4))
     ax.plot(ref_c, ref_F_persite, "k-", lw=1.4, label="canonical ground truth (mchammer TI)")
@@ -317,37 +318,19 @@ def _plot(curve, ref_c, ref_F_persite, lam, n_eulers, out: Path) -> None:
                 capsize=3, label="DNFS soft, raw ($\\times 2\\sigma$)")
     ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color="tab:blue",
                 capsize=3, label="DNFS soft, Laplace-corrected")
-    if mirror:
-        ax.plot(mcs, mraw, "o", color="tab:orange", alpha=0.55, markerfacecolor="none")
-        ax.plot(mcs, mcorr, "s", color="tab:blue", markerfacecolor="none")
     ax.set_xlabel("composition $c$")
     ax.set_ylabel("$F/d$ (nats per site)")
     ax.set_title(f"F(c): soft vs canonical ($\\lambda={lam:g}$, n_euler={n_eulers})")
-    handles, labels = ax.get_legend_handles_labels()
-    if mirror:
-        handles.append(Line2D([0], [0], marker="o", linestyle="none",
-                              markerfacecolor="none", markeredgecolor="grey",
-                              label="open: $Z_2$ mirror"))
-    ax.legend(handles=handles, fontsize=8)
+    ax.legend(fontsize=8)
 
     if all(t is not None for t in truth):
         axr.axhline(0, color="grey", lw=0.8)
-        # connect sampled + mirror as one symmetric curve, mark which is which
-        allrows = sorted(rows + mirror, key=lambda r: r["c"])
-        ac = [r["c"] for r in allrows]
-        araw_res = [r["raw"] - r["truth"] for r in allrows]
-        acorr_res = [r["corr"] - r["truth"] for r in allrows]
-        axr.plot(ac, araw_res, "-", color="tab:orange", alpha=0.5)
-        axr.plot(ac, acorr_res, "-", color="tab:blue", alpha=0.5)
-        axr.plot(cs, [r - t for r, t in zip(raw, truth)], "o", color="tab:orange",
-                 alpha=0.7, label="raw $-$ truth (offset $+$ IS bias)")
-        axr.plot(cs, [c - t for c, t in zip(corr, truth)], "s", color="tab:blue",
+        araw_res = [r - t for r, t in zip(raw, truth)]
+        acorr_res = [c - t for c, t in zip(corr, truth)]
+        axr.plot(cs, araw_res, "o-", color="tab:orange", alpha=0.7,
+                 label="raw $-$ truth (offset $+$ IS bias)")
+        axr.plot(cs, acorr_res, "s-", color="tab:blue",
                  label="corrected $-$ truth (IS bias)")
-        if mirror:
-            axr.plot(mcs, [r["raw"] - r["truth"] for r in mirror], "o",
-                     color="tab:orange", alpha=0.7, markerfacecolor="none")
-            axr.plot(mcs, [r["corr"] - r["truth"] for r in mirror], "s",
-                     color="tab:blue", markerfacecolor="none")
         axr.set_xlabel("composition $c$")
         axr.set_ylabel("$F/d$ residual (nats per site)")
         axr.set_title("residual vs canonical truth")
