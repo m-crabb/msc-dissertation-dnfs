@@ -1438,6 +1438,66 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # StableAdamW test of the amortisation forensics' PRINTED recommendation
+    # (2026-08-11; prereg docs/plans/2026-08-11-amort-stadamw-test.md, gates
+    # frozen before launch). This is a NEW dated experiment, not a reopening
+    # of the closed campaign: one run, seed 42, testing whether the
+    # "normalised or trust-region update" soft.tex 4.4 recommends clears the
+    # G0 bar (eval ESS fraction >= 0.10) that the clipped recipe failed at
+    # 0.0147 (job 269622). Identical to the cyc8 cell above except the
+    # optimiser: stable_adamw with the raw-gradient clip disabled, so the
+    # per-tensor update-RMS threshold is the only bounding mechanism.
+    "S2_d10_camort_offset_cyc8_stadamw": StageCfg(
+        name="S2_d10_camort_offset_cyc8_stadamw",
+        ising=IsingCfg(
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=8,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=1e9,
+            warmup_steps=2000,
+            optimiser="stable_adamw",
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            condition_on_composition=True,
+        ),
+        estimator="control_variate",
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(
+                    start_step=0, composition_penalty_strength=10.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=2_000, composition_penalty_strength=25.0
+                ),
+                LambdaCurriculumStageCfg(
+                    start_step=5_000, composition_penalty_strength=50.0
+                ),
+            )
+        ),
+        composition=CompositionCfg(
+            centre=0.5,
+            half_width=0.05,
+            curriculum=(
+                CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
+                CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
+                CompositionCurriculumStageCfg(start_step=20_000, half_width=0.30),
+            ),
+        ),
+        wandb_project="dnfs-constraints",
+    ),
     # Control: amortise over ONLY the six compositions we have specialists
     # for. Held-out points between those atoms separate genuine
     # interpolation from memorising the training set.

@@ -278,9 +278,23 @@ def train(
     ckpt_dir.mkdir(exist_ok=True)
 
     seed_everything(train_cfg.seed)
-    optimiser = torch.optim.AdamW(
-        model.parameters(), lr=train_cfg.lr, weight_decay=1e-4
-    )
+    optimiser_kind = getattr(train_cfg, "optimiser", "adamw")
+    if optimiser_kind == "adamw":
+        optimiser = torch.optim.AdamW(
+            model.parameters(), lr=train_cfg.lr, weight_decay=1e-4
+        )
+    elif optimiser_kind == "stable_adamw":
+        # The normalised/trust-region update the amortisation forensics
+        # recommend over a raw-gradient clip (see samplers/optim.py for the
+        # algorithm and why the update-RMS threshold is the size-invariant
+        # object the clip threshold is not).
+        from discrete_flow_sampler.samplers.optim import StableAdamW
+
+        optimiser = StableAdamW(
+            model.parameters(), lr=train_cfg.lr, weight_decay=1e-4
+        )
+    else:
+        raise ValueError(f"unknown optimiser {optimiser_kind!r}")
 
     if use_wandb:
         import wandb

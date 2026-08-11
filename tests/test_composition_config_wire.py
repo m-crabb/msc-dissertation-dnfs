@@ -52,6 +52,11 @@ D10_SATURATION_CELLS = (
 # periodic checkpoints), so like them it joins only the conditioning and
 # specialist guards, not the surviving-recipe inheritance check.
 D10_STAIRCASE_CELL = "S2_d10_camort_offset_clip50_lam10_hw20"
+# The StableAdamW test of soft.tex 4.4's trust-region recommendation
+# (prereg 2026-08-11-amort-stadamw-test.md): deliberately departs from the
+# surviving recipe in exactly {optimiser, clip}, so like the arms above it
+# joins only the conditioning and specialist guards.
+D10_STADAMW_CELL = "S2_d10_camort_offset_cyc8_stadamw"
 D10_AMORTISED_CELLS = (
     D10_BASE_AMORTISED_CELL,
     "S2_d10_cgrid_l50_letf_ne128_anneal",
@@ -65,7 +70,8 @@ D10_AMORTISED_CELLS = (
 AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
     ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
-    *D10_SATURATION_CELLS, D10_STAIRCASE_CELL, FINAL_RECIPE_NULL_CELL,
+    *D10_SATURATION_CELLS, D10_STAIRCASE_CELL, D10_STADAMW_CELL,
+    FINAL_RECIPE_NULL_CELL,
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the
