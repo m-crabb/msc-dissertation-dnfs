@@ -210,6 +210,7 @@ def _hard_cell(
     use_matching_step: bool = False,
     curriculum: CurriculumCfg | None = None,
     potts_composition: tuple[float, ...] | None = None,
+    grad_clip_max_norm: float = 500.0,
 ) -> HardStageCfg:
     """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
     only sigma and head_kind (all otherwise identical). The keyword knobs open
@@ -236,6 +237,7 @@ def _hard_cell(
         train=TrainCfg(
             n_steps=n_steps, batch_size=128, replay_buffer_cycles=8,
             lr=1e-3, seed=42, warmup_steps=500,
+            grad_clip_max_norm=grad_clip_max_norm,
         ),
         ctmc=CTMCCfg(
             n_euler_steps=n_euler_steps, use_matching_step=use_matching_step,
@@ -482,6 +484,26 @@ CONFIGS: dict[str, HardStageCfg] = {
         use_sdpa_readout=True, eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
+    ),
+    # Clip-50 twin of the cell above (job 271892 diverged 2026-08-10). The
+    # inherited clip of 500 was exceeded twelve-fold from initialisation at
+    # d=256, so every step ran at the rescale-not-skip ceiling and the norm
+    # escalated to ~2e5 without ever falling back — the same optimiser runaway
+    # the soft chapter's amortised cells died of, where clip=50 took survival
+    # from 1/4 to 4/4. Health criterion, stated before launch: success is the
+    # pre-clip norm FALLING BACK between curriculum rungs and train ESS
+    # climbing off ~1/128; a norm pinned at the threshold with flat ESS is the
+    # runaway persisting, and the next move is a normalised/trust-region
+    # update, not another threshold. Everything else identical to the twin.
+    "H2_d256_c50_s223_letf_ma_50k_curr_clip50": _hard_cell(
+        "H2_d256_c50_s223_letf_ma_50k_curr_clip50", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        grad_clip_max_norm=50.0,
     ),
     # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
     # these three cells are the only way to reproduce a NEGATIVE result the
