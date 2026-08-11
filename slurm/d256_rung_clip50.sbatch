@@ -7,11 +7,12 @@
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Clip-50 twin of the diverged 16x16 rung (job 271892; see the config's
-# comment for the mechanism and the pre-stated health criterion). NOT
-# auto-launched — the recipe change is outside the _100k horizon rule the
-# first rung was launched under, so this waits on an explicit user decision.
-# Fixed --tag so a resubmission resumes from checkpoints/resume.pt.
+# RETIRED BEFORE LAUNCH (2026-08-11) — DO NOT SUBMIT. The adversarial review
+# refuted this arm by algebra: the diverged twin's minimum pre-clip norm was
+# 186, so clip=50 saturates every step, and AdamW erases the constant factor
+# between two always-saturated thresholds — this job would near-exactly
+# retrace job 271892. Kept as the record of a rejected arm; superseded by
+# slurm/d256_smoke12k_arm.sbatch (the five-arm smoke ladder).
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

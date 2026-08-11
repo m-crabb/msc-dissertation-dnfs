@@ -211,6 +211,9 @@ def _hard_cell(
     curriculum: CurriculumCfg | None = None,
     potts_composition: tuple[float, ...] | None = None,
     grad_clip_max_norm: float = 500.0,
+    estimator: str = "control_variate",
+    optimiser: str = "adamw",
+    rewarmup_on_stage: bool = False,
 ) -> HardStageCfg:
     """Shared shape for the sigma-ladder + control cells: the D=4 gate cells fix
     only sigma and head_kind (all otherwise identical). The keyword knobs open
@@ -238,6 +241,7 @@ def _hard_cell(
             n_steps=n_steps, batch_size=128, replay_buffer_cycles=8,
             lr=1e-3, seed=42, warmup_steps=500,
             grad_clip_max_norm=grad_clip_max_norm,
+            optimiser=optimiser, rewarmup_on_stage=rewarmup_on_stage,
         ),
         ctmc=CTMCCfg(
             n_euler_steps=n_euler_steps, use_matching_step=use_matching_step,
@@ -253,7 +257,7 @@ def _hard_cell(
             vocab_size=len(potts_composition) if is_potts else 2,
             use_sdpa_readout=use_sdpa_readout,
         ),
-        estimator="control_variate",
+        estimator=estimator,
         head_kind=head_kind,
         wandb_project="dnfs-constraints",
         curriculum=curriculum,
@@ -495,6 +499,13 @@ CONFIGS: dict[str, HardStageCfg] = {
     # climbing off ~1/128; a norm pinned at the threshold with flat ESS is the
     # runaway persisting, and the next move is a normalised/trust-region
     # update, not another threshold. Everything else identical to the twin.
+    # RETIRED BEFORE LAUNCH (2026-08-11, adversarial-review verdict): with
+    # AdamW, two thresholds that BOTH saturate every step produce gradient
+    # sequences differing by a constant factor, which Adam's per-parameter
+    # normalisation erases -- and the diverged twin's minimum pre-clip norm
+    # over all 50k steps was 186, so clip=50 saturates always and would
+    # near-exactly retrace the clip=500 trajectory. Kept as the record of a
+    # rejected arm; superseded by the smoke12k ladder below. Do not launch.
     "H2_d256_c50_s223_letf_ma_50k_curr_clip50": _hard_cell(
         "H2_d256_c50_s223_letf_ma_50k_curr_clip50", sigma=0.223,
         head_kind="masked_attention",
@@ -504,6 +515,91 @@ CONFIGS: dict[str, HardStageCfg] = {
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
         grad_clip_max_norm=50.0,
+    ),
+    # ---- 16x16 rescue smoke ladder (2026-08-11) -------------------------
+    # Five 12k-step arms, ONE mechanism each, launched CONCURRENTLY after
+    # the four-lens adversarial review of the diverged rung. 12k crosses the
+    # sigma=0.14 (5k) and sigma=0.17 (10k) boundaries -- 0.17 is where the
+    # diverged twin's per-rung re-ignition began, so every arm is scored on
+    # (i) escaping the clip ceiling on rung 0 (grad_norm below ~500-scale by
+    # step ~3k; the twin managed this once, loss 392->11) and (ii) surviving
+    # the 10k transition (within-rung loss slope <= 0 on 10k-12k; the twin's
+    # rose on every rung past the first). Pre-stated per-arm criteria live in
+    # the launch plan; identical eval cadence keeps columns comparable.
+    "H2_d256_smoke12k_unclip": _hard_cell(
+        # Arm A: restore clip=500's d64 SEMANTICS (fires on spikes only) by
+        # raising the threshold above the working-regime norm; under AdamW
+        # this is also exactly the per-pair-normalised-loss arm (the two
+        # differ by a constant the optimiser erases).
+        "H2_d256_smoke12k_unclip", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        grad_clip_max_norm=20_000.0,
+    ),
+    "H2_d256_smoke12k_naive": _hard_cell(
+        # Arm B: kill the inverted control variate (it ADDS variance at
+        # d=256: integrand/naive variance ratio 2.3x at rung 0 -> ~70x late,
+        # vs an 8-30x REDUCTION at d64) by estimating c_t naively. Also the
+        # cheapest arm (~0.7x: skips the c_t head pass).
+        "H2_d256_smoke12k_naive", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        estimator="naive_mc",
+    ),
+    "H2_d256_smoke12k_warm": _hard_cell(
+        # Arm C: warm-start from the converged d64 ma_100k checkpoint
+        # (110/116 keys shape-identical; positional tables bilinearly
+        # interpolated by scripts/warm_start_swap_head.py, supplied via
+        # run.py --init-from). Attacks the init-scale term directly: 96% of
+        # the d256 init loss is the head's own coherent pair-sum noise.
+        # Recipe otherwise UNCHANGED (clip 500) -- if this arm alone
+        # escapes, initialisation was the story.
+        "H2_d256_smoke12k_warm", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+    ),
+    "H2_d256_smoke12k_stadamw": _hard_cell(
+        # Arm D: StableAdamW -- per-tensor UPDATE clipping (unit-free,
+        # size-invariant trust region), the "normalised or trust-region
+        # update" the soft chapter's clip forensics already recommend in
+        # print. Raw-gradient clip effectively disabled so the update
+        # clipping is the only bounding mechanism (one variable per arm).
+        "H2_d256_smoke12k_stadamw", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        grad_clip_max_norm=1e9,
+        optimiser="stable_adamw",
+    ),
+    "H2_d256_smoke12k_rewarmup": _hard_cell(
+        # Arm E: re-run the lr warmup ramp at every sigma transition. The
+        # twin's one healthy window ended exactly at a transition (buffer
+        # cleared + target jumped, no ramp); warmup was the only mechanism
+        # that ever carried it through a transient. Clip left at the
+        # inherited 500 to isolate the transition variable.
+        "H2_d256_smoke12k_rewarmup", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        rewarmup_on_stage=True,
     ),
     # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
     # these three cells are the only way to reproduce a NEGATIVE result the

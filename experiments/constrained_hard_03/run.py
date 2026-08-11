@@ -312,6 +312,7 @@ def train(
     use_wandb: bool = True,
     tag: str | None = None,
     on_checkpoint=None,
+    init_from: str | Path | None = None,
 ):
     """Train a swap head on the fixed-composition target and save eval artefacts.
 
@@ -367,6 +368,23 @@ def train(
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     target, head = build_target_and_head(cfg, device)
+    if init_from is not None:
+        # Warm-start: partial state dict built by
+        # scripts/warm_start_swap_head.py (cross-size transfer -- shape-
+        # identical keys copied, positional tables interpolated). strict=False
+        # because the transfer deliberately omits reinitialised keys (e.g.
+        # the dead attention_readout table); the printed report is the record
+        # of exactly what loaded. A resume.pt takes precedence over this
+        # (train_swap loads it after), which is the desired restart semantics.
+        transfer = torch.load(init_from, map_location=device, weights_only=True)
+        missing, unexpected = head.load_state_dict(transfer, strict=False)
+        print(f"[init_from] {init_from}: loaded {len(transfer)} keys, "
+              f"missing {sorted(missing)}, unexpected {sorted(unexpected)}")
+        if unexpected:
+            raise ValueError(f"init_from has keys the model lacks: {unexpected}")
+        (run_dir / "init_from.txt").write_text(
+            f"{init_from}\nmissing (kept fresh init): {sorted(missing)}\n"
+        )
     if cfg.curriculum is not None:
         # Start the flow at the stage-0 coupling so the step-0 stiffness
         # diagnostic fires at the sigma training actually begins from (the
@@ -516,6 +534,13 @@ def main():
         "--tag", default=None, help="Run-dir suffix (default: wall-clock timestamp)"
     )
     parser.add_argument(
+        "--init-from",
+        default=None,
+        metavar="STATE_DICT_PT",
+        help="Warm-start: load this (possibly partial) state dict into the "
+        "head before training (see scripts/warm_start_swap_head.py)",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help="Shrink to a fast end-to-end check: 4 steps, 8 Euler steps, 64 "
@@ -558,6 +583,7 @@ def main():
         output_dir=args.output_dir,
         use_wandb=not args.no_wandb,
         tag=args.tag,
+        init_from=args.init_from,
     )
 
 
