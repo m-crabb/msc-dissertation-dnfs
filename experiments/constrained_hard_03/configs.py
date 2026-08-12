@@ -281,6 +281,11 @@ _D64_SIGMA_LADDER = CurriculumCfg(
     )
 )
 
+# The 12k smoke arms only ever reach the ladder's first three stages, and the
+# curriculum validator (correctly) rejects stages starting beyond n_steps, so
+# the smokes share this truncated view of the SAME ladder rather than a copy.
+_SMOKE12K_SIGMA_LADDER = CurriculumCfg(stages=_D64_SIGMA_LADDER.stages[:3])
+
 
 def _d64_curriculum_cell(
     name: str, head_kind: str, n_steps: int = 50_000, **head_knobs
@@ -526,6 +531,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     # the 10k transition (within-rung loss slope <= 0 on 10k-12k; the twin's
     # rose on every rung past the first). Pre-stated per-arm criteria live in
     # the launch plan; identical eval cadence keeps columns comparable.
+    # 2026-08-12: the first wave (jobs 272749-53) all died at startup --
+    # the cells carried the full 50k ladder, whose 15k stage trips the
+    # strict start_step < n_steps validator at n_steps=12k. The smokes only
+    # ever reach the first three stages, so they now share this truncated
+    # view of the SAME ladder (identical sigmas/lrs/boundaries at 0/5k/10k).
     "H2_d256_smoke12k_unclip": _hard_cell(
         # Arm A: restore clip=500's d64 SEMANTICS (fires on spikes only) by
         # raising the threshold above the working-regime norm; under AdamW
@@ -537,7 +547,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
         use_sdpa_readout=True, eval_autocast_bf16=True,
         use_matching_step=True,
-        curriculum=_D64_SIGMA_LADDER,
+        curriculum=_SMOKE12K_SIGMA_LADDER,
         grad_clip_max_norm=20_000.0,
     ),
     "H2_d256_smoke12k_naive": _hard_cell(
@@ -551,7 +561,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
         use_sdpa_readout=True, eval_autocast_bf16=True,
         use_matching_step=True,
-        curriculum=_D64_SIGMA_LADDER,
+        curriculum=_SMOKE12K_SIGMA_LADDER,
         estimator="naive_mc",
     ),
     "H2_d256_smoke12k_warm": _hard_cell(
@@ -568,7 +578,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
         use_sdpa_readout=True, eval_autocast_bf16=True,
         use_matching_step=True,
-        curriculum=_D64_SIGMA_LADDER,
+        curriculum=_SMOKE12K_SIGMA_LADDER,
     ),
     "H2_d256_smoke12k_stadamw": _hard_cell(
         # Arm D: StableAdamW -- per-tensor UPDATE clipping (unit-free,
@@ -582,7 +592,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
         use_sdpa_readout=True, eval_autocast_bf16=True,
         use_matching_step=True,
-        curriculum=_D64_SIGMA_LADDER,
+        curriculum=_SMOKE12K_SIGMA_LADDER,
         grad_clip_max_norm=1e9,
         optimiser="stable_adamw",
     ),
@@ -598,7 +608,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
         use_sdpa_readout=True, eval_autocast_bf16=True,
         use_matching_step=True,
-        curriculum=_D64_SIGMA_LADDER,
+        curriculum=_SMOKE12K_SIGMA_LADDER,
         rewarmup_on_stage=True,
     ),
     # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
