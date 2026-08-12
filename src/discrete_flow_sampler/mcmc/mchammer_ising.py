@@ -253,6 +253,134 @@ def run_vcsgc(
     return summary
 
 
+def run_canonical_probe(
+    D: int,
+    sigma: float,
+    initial_spins: np.ndarray,
+    n_proposals: int,
+    snapshot_interval: int,
+    seed: int,
+    bias: float = 0.0,
+) -> dict:
+    """Canonical (non-local unlike-pair swap) chain recording full ±1 spin
+    snapshots at an exact proposal interval — the mixing probe's non-local
+    variant carrier. Differs from `run_canonical` in three ways:
+
+    * explicit initial state: the supercell's symbols are set from
+      ``initial_spins`` before the ensemble is built, so reference chains can
+      be seeded IN a chosen phi mode (phase-separated left/right) rather than
+      at a random slice point;
+    * exact-interval snapshot capture: ``ensemble.run(snapshot_interval)`` is
+      driven in a loop and the structure read back between calls — the
+      simplest capture whose intervals are exact in trial steps (mchammer's
+      trajectory observer is bypassed; its rows would also cost memory);
+    * raw arrays + counters are returned instead of summary statistics: the
+      probe's analysis stage owns burn-in and R̂ decisions, so nothing is
+      discarded here.
+
+    Site indexing: spin index i == atom index i of the D x D x 1 ``repeat``
+    supercell. ASE's repeat enumerates the two in-plane lattice vectors
+    lexicographically, so reading atom order as a row-major D x D flattening
+    reproduces the torus adjacency exactly (neighbours are i±1 and i±D with
+    wraparound); energy and both correlation observables are invariant to
+    which in-plane axis plays "rows", and the phi half-split axis is
+    self-consistent because the SAME indexing writes the initial state and
+    reads every snapshot. A scrambled atom order would silently corrupt all
+    spatial observables — which is why ``potential_per_snapshot`` (mchammer's
+    own exactly-recomputed CE energy at each snapshot step) rides along: it
+    must equal -sigma * x^T A x recomputed from the returned snapshots, and
+    the probe's tests pin that equality.
+
+    snapshots[k] is the state after k * snapshot_interval proposals
+    (snapshots[0] = the initial state, matching the numba runners'
+    record-at-top convention); the state after the final interval is not
+    recorded. ``n_proposals`` must be a multiple of ``snapshot_interval``:
+    acceptance is recovered from mchammer's per-interval ``acceptance_ratio``
+    rows, and a trailing partial interval would silently undercount it.
+
+    Returns a dict with ``snapshots`` (int8, [n_kept, d]), ``n_proposals``
+    (read back from ``ensemble.step`` — the exact trial-step currency),
+    ``n_accepted``, ``potential_per_snapshot``, ``composition_is_constant``,
+    ``wall_seconds_setup`` and ``wall_seconds_run`` (setup — cluster-space and
+    calculator construction — must never be folded into per-proposal cost).
+    """
+    d = D * D
+    initial_spins = np.asarray(initial_spins)
+    if initial_spins.shape != (d,):
+        raise ValueError(
+            f"initial_spins must have shape ({d},), got {initial_spins.shape}"
+        )
+    if n_proposals % snapshot_interval != 0:
+        raise ValueError(
+            f"n_proposals={n_proposals} must be a multiple of "
+            f"snapshot_interval={snapshot_interval}: acceptance counting "
+            "relies on full ensemble-data write intervals."
+        )
+
+    setup_start = time.perf_counter()
+    primitive, _, expansion = ising_cluster_expansion(sigma, bias)
+    supercell = ising_supercell(primitive, D)
+    supercell.set_chemical_symbols(spins_to_symbols(initial_spins))
+    calculator = ClusterExpansionCalculator(supercell, expansion)
+    ensemble = CanonicalEnsemble(
+        supercell,
+        calculator,
+        temperature=NATURAL_TEMPERATURE,
+        boltzmann_constant=NATURAL_BOLTZMANN,
+        ensemble_data_write_interval=snapshot_interval,
+        trajectory_write_interval=np.inf,     # snapshots are captured directly
+        dc_filename=None,
+        random_seed=seed,
+    )
+    wall_seconds_setup = time.perf_counter() - setup_start
+
+    n_snapshots = n_proposals // snapshot_interval
+    snapshots = np.empty((n_snapshots, d), dtype=np.int8)
+    run_start = time.perf_counter()
+    for k in range(n_snapshots):
+        snapshots[k] = atoms_to_spins(
+            ensemble.structure.get_chemical_symbols()
+        ).astype(np.int8)
+        ensemble.run(snapshot_interval)
+    wall_seconds_run = time.perf_counter() - run_start
+
+    data = ensemble.data_container.data
+    recorded_steps = data["mctrial"].to_numpy()
+    expected_steps = np.arange(n_snapshots + 1) * snapshot_interval
+    if not np.array_equal(recorded_steps, expected_steps):
+        # Defensive: the acceptance/potential bookkeeping below assumes
+        # mchammer writes ensemble data at exactly every write interval; a
+        # version drift in that cadence must fail loudly, not skew counters.
+        raise RuntimeError(
+            "unexpected mchammer ensemble-data cadence: "
+            f"mctrials {recorded_steps[:5]}... vs expected multiples of "
+            f"{snapshot_interval}"
+        )
+    # Row at step k*T holds the acceptance count over ((k-1)T, kT] divided by
+    # T, so the interval-weighted sum over all rows is the total accepted.
+    n_accepted = int(round(
+        float(data["acceptance_ratio"].to_numpy().sum()) * snapshot_interval
+    ))
+    # Rows 0..n_kept-1 are written at the same trial step as snapshots
+    # 0..n_kept-1; the final row (post-run state) has no snapshot.
+    potential_per_snapshot = data["potential"].to_numpy()[:n_snapshots]
+
+    final_spins = atoms_to_spins(ensemble.structure.get_chemical_symbols())
+    composition_is_constant = int(np.sum(final_spins > 0)) == int(
+        np.sum(initial_spins > 0)
+    )
+
+    return {
+        "snapshots": snapshots,
+        "n_proposals": int(ensemble.step),
+        "n_accepted": n_accepted,
+        "potential_per_snapshot": potential_per_snapshot,
+        "composition_is_constant": composition_is_constant,
+        "wall_seconds_setup": wall_seconds_setup,
+        "wall_seconds_run": wall_seconds_run,
+    }
+
+
 def run_canonical(
     D: int,
     sigma: float,

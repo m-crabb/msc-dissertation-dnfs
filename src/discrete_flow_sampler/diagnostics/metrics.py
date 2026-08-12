@@ -419,6 +419,35 @@ def gelman_rubin(chains) -> float:
     return float(np.sqrt(var_hat / within_var))
 
 
+def split_half_gelman_rubin(chains) -> float:
+    """Split-half R̂ (Vehtari et al. 2021 convention): each chain is cut into
+    two halves and the 2m halves enter the plain multi-chain `gelman_rubin`
+    as if they were independent chains.
+
+    Why the split matters: plain R̂ only compares BETWEEN-chain means, so m
+    chains drifting in lockstep (all still relaxing from comparable inits,
+    none stationary) can pass it while every chain is biased the same way.
+    Halving makes each chain's own first-half/second-half disagreement count
+    as a between-"chain" discrepancy — exactly the non-stationarity a
+    reference-chain validity bar must catch. For odd chain lengths the middle
+    sample is dropped so both halves are equal length (rank-normalisation and
+    folding from the full Vehtari recipe are intentionally out of scope: the
+    probe gates on location/scale mixing of near-Gaussian observables).
+    """
+    chains = np.asarray(chains, dtype=np.float64)
+    n_samples = chains.shape[1]
+    half = n_samples // 2
+    if half < 2:
+        raise ValueError(
+            "split-half R-hat needs at least 4 samples per chain; got "
+            f"{n_samples}"
+        )
+    halves = np.concatenate(
+        [chains[:, :half], chains[:, n_samples - half:]], axis=0
+    )
+    return gelman_rubin(halves)
+
+
 def nn_correlation(x: Tensor, adjacency: Tensor) -> Tensor:
     """Mean nearest-neighbour spin product <s_i s_j> over lattice edges, (B,).
 

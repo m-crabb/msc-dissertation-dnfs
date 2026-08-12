@@ -1,12 +1,16 @@
 """Kawasaki (composition-preserving swap) MCMC for the hard-constrained Ising
 canonical ensemble.
 
-The move exchanges the spins of one +1 site and one -1 site chosen uniformly at
-random anywhere on the torus (non-local swap — the practitioner-standard
-canonical-ensemble move, and a deliberately strong baseline). Composition
-c(x) = #{+1}/d is therefore invariant by construction: there is no penalty term,
-and the hard constraint c(x) = c_target holds exactly at every step. This is the
-§3.1 counterpart to the soft VCSGC sampler in scripts/vcsgc_mcmc_validation.py.
+Two move sets live here. run_chain / run_chain_order_param exchange the spins
+of one +1 site and one -1 site chosen uniformly at random anywhere on the
+torus (non-local swap — the practitioner-standard canonical-ensemble move, and
+a deliberately strong baseline). run_local_swap_chain_snapshots swaps a
+uniform random nearest-neighbour bond instead (local Kawasaki — the textbook
+conserved-order-parameter dynamics, and the mixing probe's slow competitor).
+Either way composition c(x) = #{+1}/d is invariant by construction: there is
+no penalty term, and the hard constraint c(x) = c_target holds exactly at
+every step. This is the §3.1 counterpart to the soft VCSGC sampler in
+scripts/vcsgc_mcmc_validation.py.
 
 Energy convention matches IsingTarget.base_log_prob (bias=0, swap-invariant):
 
@@ -179,6 +183,76 @@ def init_phase_separated(D, side):
         if (side == 0 and in_left) or (side == 1 and not in_left):
             x[i] = 1
     return x
+
+
+@njit(cache=True)
+def neighbour_site(i, direction, D):
+    """Index of the up/down/left/right (direction 0-3) torus neighbour of i."""
+    r = i // D
+    c = i % D
+    if direction == 0:
+        return ((r - 1) % D) * D + c
+    if direction == 1:
+        return ((r + 1) % D) * D + c
+    if direction == 2:
+        return r * D + (c - 1) % D
+    return r * D + (c + 1) % D
+
+
+@njit(cache=True)
+def run_local_swap_chain_snapshots(x, D, sigma, n_steps, seed, thin):
+    """LOCAL nearest-neighbour-swap Kawasaki chain recording full int8 spin
+    snapshots every `thin` proposals. Returns (snapshots, x_final, n_accept).
+
+    Move set — deliberately DIFFERENT from run_chain / run_chain_order_param,
+    which swap arbitrary unlike pairs (non-local Kawasaki, the mchammer
+    CanonicalEnsemble move): here a site i is drawn uniformly, then one of its
+    4 torus neighbours j uniformly, i.e. a uniform random directed NN bond.
+    Local composition-conserving dynamics transports magnetisation
+    diffusively, so domain coarsening and mode traversal near criticality are
+    drastically slower than under non-local swaps — that gap is the quantity
+    the mixing probe measures, so silently reusing the non-local move here
+    would erase the phenomenon under study.
+
+    Trial-step currency: EVERY proposal costs one step, including like-spin
+    bonds where the swap is the identity (the sampler cannot know a bond is
+    like-spin without touching it — this is the standard local-Kawasaki
+    accounting). Identity proposals are counted as rejections; the rejected
+    alternative (proposing only unlike bonds) needs a live unlike-bond list,
+    which is a different, rejection-free algorithm with a different currency.
+    Unlike-pair swaps use the same closed-form Metropolis delta as the
+    non-local runner (`kawasaki_delta_log_prob`; its shared-bond correction is
+    always active here since i ~ j by construction), so acceptance is
+    min(1, exp(sigma * Delta(x^T A x))) and composition is invariant exactly.
+
+    snapshots[k] is the state after k*thin proposals — snapshots[0] is the
+    initial configuration, matching run_chain_order_param's record-at-top
+    convention; the final state is returned separately, not recorded.
+    """
+    np.random.seed(seed)
+    d = D * D
+    n_record = n_steps // thin
+    snapshots = np.empty((n_record, d), dtype=np.int8)
+    rec = 0
+    n_accept = 0
+
+    for step in range(n_steps):
+        if step % thin == 0 and rec < n_record:
+            for k in range(d):
+                snapshots[rec, k] = x[k]
+            rec += 1
+        i = np.random.randint(d)
+        j = neighbour_site(i, np.random.randint(4), D)
+        if x[i] == x[j]:
+            continue                          # identity proposal: rejected
+        delta = kawasaki_delta_log_prob(x, i, j, D, sigma)
+        if delta >= 0.0 or np.random.random() < np.exp(delta):
+            spin_i = x[i]
+            x[i] = x[j]
+            x[j] = spin_i
+            n_accept += 1
+
+    return snapshots[:rec], x, n_accept
 
 
 @njit(cache=True)
