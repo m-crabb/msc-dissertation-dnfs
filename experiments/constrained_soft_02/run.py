@@ -30,10 +30,23 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/02_constrained_soft")
     parser.add_argument("--no-wandb", action="store_true")
+    parser.add_argument(
+        "--tag",
+        default=None,
+        help="Run-dir suffix (default: wall-clock timestamp). A fixed tag "
+             "makes resubmission after preemption reuse the run dir and "
+             "skip a completed run; it does NOT resume mid-run",
+    )
     args = parser.parse_args()
 
     cfg = CONFIGS[args.cfg]
-    train(cfg, seed=args.seed, output_dir=args.output_dir, use_wandb=not args.no_wandb)
+    train(
+        cfg,
+        seed=args.seed,
+        output_dir=args.output_dir,
+        use_wandb=not args.no_wandb,
+        tag=args.tag,
+    )
 
 
 if __name__ == "__main__":

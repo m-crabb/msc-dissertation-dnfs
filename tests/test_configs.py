@@ -657,6 +657,46 @@ def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():
         assert rebuilt == ladder
 
 
+def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
+    """Walk-back-to-8x8 slate (2026-08-12). The three experiment chapters
+    shared no non-enumerable lattice size — baseline and soft ran 10x10,
+    hard ran 8x8 and 16x16 — so 8x8 (d = 64 sites, the lattice the hard
+    cells name d64) becomes the shared cross-chapter comparison size, and
+    10x10 keeps its paper-replication role. This cell must be a D=8 twin of
+    the d10 critical paper-curriculum record: EVERY knob except the lattice
+    side copied — same sigma ladder and LR drops, same 200k budget, same
+    ne64 — so any difference against the d10 four-seed family is
+    attributable to lattice size alone."""
+    from dataclasses import replace
+
+    base = BASELINE_CONFIGS["stage_4_d10_critical_paper_curriculum"]
+    twin = BASELINE_CONFIGS["stage_4_d8_critical_paper_curriculum"]
+    assert twin.ising.D == 8
+    rebuilt = replace(twin, name=base.name, ising=replace(twin.ising, D=10))
+    assert rebuilt == base
+
+
+def test_walkback_d8_soft_twins_mirror_d10_except_lattice_side():
+    """Soft-family walk-back twins (2026-08-12): same recipe, same sigma,
+    same lambda — only the lattice side moves, so differences vs the d10
+    records are attributable to size. The c03 twin mirrors the relaunch
+    recipe (warmup 2000) that the current d10 entry records; the superseded
+    first c03 batch ran warmup 500."""
+    from dataclasses import replace
+
+    pairs = {
+        "S2_d8_c05_l10_letf_ne64": "S2_d10_c05_l10_letf_ne64",
+        "S2_d8_c05_l50_letf_ne64": "S2_d10_c05_l50_letf_ne64",
+        "S2_d8_c03_l50_letf_ne128": "S2_d10_c03_l50_letf_ne128",
+    }
+    for twin_name, base_name in pairs.items():
+        base = CONSTRAINED_CONFIGS[base_name]
+        twin = CONSTRAINED_CONFIGS[twin_name]
+        assert twin.ising.D == 8, twin_name
+        rebuilt = replace(twin, name=base.name, ising=replace(twin.ising, D=10))
+        assert rebuilt == base, twin_name
+
+
 def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]

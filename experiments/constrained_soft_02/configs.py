@@ -1796,4 +1796,101 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
+    # ---------------------------------------------------------------
+    # Walk-back-to-8x8 twins (2026-08-12). The three experiment chapters
+    # shared no non-enumerable lattice size — baseline and soft ran 10x10
+    # while the hard chapter ran 8x8 and 16x16 — so 8x8 (d = 64 sites, the
+    # lattice the hard cells name d64) becomes the shared cross-chapter
+    # comparison size. Each cell below is a D=8 twin of a load-bearing d10
+    # specialist: SAME recipe, SAME sigma, SAME lambda, launched on the same
+    # seeds — only the lattice side changes, so any number difference
+    # against the archived d10 family is attributable to size alone.
+    # n_euler stays at the source cell's value (ne64 / ne128): it is part of
+    # the recipe the twin exists to hold fixed, and the hard chapter's own
+    # practice holds ne128 fixed from d64 to d256 rather than scaling it
+    # with site count.
+    #
+    # The c03 twin mirrors the RELAUNCH recipe (warmup 2000) recorded by the
+    # current d10 entry above; the superseded first c03 batch ran warmup 500
+    # and differs in nothing else. One caveat only c03 carries: c = 0.3 is
+    # exactly representable at d = 100 (30 up-sites) but not at d = 64
+    # (nearest reachable composition 19/64 ≈ 0.297), so cross-size obedience
+    # comparisons at this cell inherit a ~0.003 composition floor that is a
+    # property of the lattice, not of the sampler.
+    # ---------------------------------------------------------------
+    "S2_d8_c05_l10_letf_ne64": StageCfg(
+        name="S2_d8_c05_l10_letf_ne64",
+        ising=IsingCfg(
+            D=8,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=10.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d8_c05_l50_letf_ne64": StageCfg(
+        name="S2_d8_c05_l50_letf_ne64",
+        ising=IsingCfg(
+            D=8,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
+    "S2_d8_c03_l50_letf_ne128": StageCfg(
+        name="S2_d8_c03_l50_letf_ne128",
+        ising=IsingCfg(
+            D=8,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.3,
+            composition_penalty_strength=50.0,
+        ),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+            warmup_steps=2000,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=128),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
+        estimator="control_variate",
+        wandb_project="dnfs-constraints",
+    ),
 }

@@ -316,18 +316,35 @@ def train(
     seed: int = 42,
     output_dir: str | Path = "results/01_baseline",
     use_wandb: bool = True,
+    tag: str | None = None,
 ):
     """Top-level training entry. Importable from CLI or modal_app.
 
     Builds the target / model / estimator from the resolved config, kicks off
     `samplers.training.train`, and persists end-of-run eval samples + IS
     log-weights for downstream analysis notebooks.
+
+    `tag` replaces the run dir's wall-clock timestamp suffix (mirroring the
+    hard experiment's runner): a Slurm job resubmitted after preemption then
+    lands in the SAME run dir instead of minting a sibling, and a run that
+    already finished is detected and skipped. Unlike the hard runner there is
+    NO mid-run checkpoint resume here — a retried run restarts from step 0,
+    overwriting in place — so a fixed tag buys idempotency for completed runs
+    and a stable directory identity, not warm continuation.
     """
     # Apply the per-invocation seed without mutating the frozen config.
     cfg = replace(cfg, train=replace(cfg.train, seed=seed))
 
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    run_dir = Path(output_dir) / f"{cfg.name}_seed{seed}_{timestamp}"
+    tag = tag or time.strftime("%Y%m%d-%H%M%S")
+    run_dir = Path(output_dir) / f"{cfg.name}_seed{seed}_{tag}"
+    # eval/metrics.json is the last artefact train writes, so its presence
+    # means the run completed; the guard must fire before any file is
+    # (re)written so a resubmitted finished job leaves the record untouched.
+    # With the default timestamp suffix the dir is always fresh and this
+    # never triggers, keeping every archived run's semantics unchanged.
+    if (run_dir / "eval" / "metrics.json").exists():
+        print(f"[train] {run_dir.name} already complete; nothing to do")
+        return run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # Persist the resolved config and host metadata next to the artefacts
@@ -367,7 +384,7 @@ def train(
         wandb.init(
             project=cfg.wandb_project,
             group=cfg.name,
-            name=f"{cfg.name}_seed{seed}_{timestamp}",
+            name=f"{cfg.name}_seed{seed}_{tag}",
             config=asdict(cfg),
             tags=tags,
         )
@@ -663,6 +680,13 @@ def main():
     parser.add_argument("--output-dir", default="results/01_baseline")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument(
+        "--tag",
+        default=None,
+        help="Run-dir suffix (default: wall-clock timestamp). A fixed tag "
+             "makes resubmission after preemption reuse the run dir and "
+             "skip a completed run; it does NOT resume mid-run",
+    )
+    parser.add_argument(
         "--eval-only",
         action="store_true",
         help="Skip training; recompute eval/metrics.json from saved samples",
@@ -720,6 +744,7 @@ def main():
         seed=args.seed,
         output_dir=args.output_dir,
         use_wandb=not args.no_wandb,
+        tag=args.tag,
     )
 
 

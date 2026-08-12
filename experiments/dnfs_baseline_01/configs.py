@@ -684,4 +684,50 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
     ),
+    # Walk-back-to-8x8 comparison cell (2026-08-12). The three experiment
+    # chapters shared no non-enumerable lattice size — baseline and soft ran
+    # 10x10 while the hard chapter ran 8x8 and 16x16 — so beyond the
+    # enumerable 4x4 correctness gate no cross-chapter cost/quality
+    # comparison was possible. 8x8 (d = 64 sites; the same lattice the hard
+    # cells name d64, which counts sites where this experiment's names count
+    # the lattice side) is now the shared comparison size; 10x10 keeps its
+    # paper-replication role. This is a D=8 twin of
+    # `stage_4_d10_critical_paper_curriculum`: every knob except the lattice
+    # side is copied — same sigma ladder and LR drops, same 200k budget,
+    # same batch/replay/clip/warmup, same ne64 — so any difference against
+    # the archived d10 four-seed record is attributable to lattice size
+    # alone. n_euler is deliberately NOT rescaled with site count: the hard
+    # chapter holds ne128 fixed from d64 to d256, and rescaling here would
+    # break the twin.
+    "stage_4_d8_critical_paper_curriculum": StageCfg(
+        name="stage_4_d8_critical_paper_curriculum",
+        ising=IsingCfg(D=8, sigma=0.22305, bias=0.0),
+        train=TrainCfg(
+            n_steps=200_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=30_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=40_000, sigma=0.205, lr=1e-3),
+                CurriculumStageCfg(start_step=55_000, sigma=0.215, lr=5e-4),
+                CurriculumStageCfg(start_step=70_000, sigma=0.220, lr=5e-4),
+                CurriculumStageCfg(start_step=85_000, sigma=0.22305, lr=3e-4),
+            )
+        ),
+    ),
 }
