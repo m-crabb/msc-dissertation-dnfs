@@ -84,6 +84,15 @@ scheduling/GPU smoke test that is independent of our env.
   accounting/QOS policy", and the error goes to stderr (a `2>/dev/null` on the
   ssh will eat it and the submission silently doesn't happen). For big batches
   use a re-runnable top-up script (`slurm/topup_walkback.sh` is the pattern).
+- **Priority inversion through the per-user GPU cap** (bitten 2026-08-13):
+  the 3-GPU cap is consumed by whichever of your jobs can start FIRST, not
+  by priority order. An a30 job (20 GPUs, good availability) grabs a freed
+  cap slot instantly, while an a100-only job additionally needs a free a100
+  at that same moment — so cheap a30 work (walkback top-ups, probe evals)
+  can starve a100-gating jobs even at `--nice=1000`, since nice only orders
+  jobs competing for the same resources. Rule: while deadline-gating a100
+  jobs are PENDING, do not submit (or `scontrol hold`) your a30 jobs, and
+  release the holds once the a100 jobs are running.
 - **`sbatch` does not source `~/.bashrc`** — export everything explicitly in
   the script and use absolute paths (this is why job scripts hardcode the
   pixi path).
