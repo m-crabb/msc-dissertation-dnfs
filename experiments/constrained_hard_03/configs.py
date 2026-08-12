@@ -471,6 +471,21 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_mo_100k_curr", head_kind="mask_one",
         n_steps=100_000,
     ),
+    # Mixing-probe floor cell (sigma=0.10, 8x8) — the probe's control operating
+    # point, where Kawasaki mixes happily; it exists to show the diagnostic
+    # does not flag failure everywhere. Direct subcritical training with NO
+    # curriculum, mirroring how the d16 sigma=0.10 cells trained: the sigma
+    # ladder exists to reach sigma_c, and a floor cell that took the ladder
+    # would measure the curriculum, not the operating point. Every other knob
+    # is the d64 sigma_c shape verbatim (one-event n_euler=128 clip-safe per
+    # the scout, 5000-draw final eval, seed 42 = the d64 ladder seed) so the
+    # probe's floor-vs-headline contrast isolates sigma.
+    "H2_d64_c50_s010_letf_ma_50k": _hard_cell(
+        "H2_d64_c50_s010_letf_ma_50k", sigma=0.10, head_kind="masked_attention",
+        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=256, n_eval_samples_training=512,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+    ),
     # The 16x16 rung — hard.tex §5.6's plan of record, the last training rung
     # (launched 2026-08-09). The reported masked-attention head on the
     # vertex-disjoint matching step (validated as a drop-in at the converged
