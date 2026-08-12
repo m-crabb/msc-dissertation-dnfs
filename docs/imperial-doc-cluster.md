@@ -201,3 +201,24 @@ for the mchammer baselines).
   `/vol/gpudata/mc625-dnfs`; cold training start dropped to ~3 min. wandb auth
   gotcha diagnosed (§5a). Full training path proven via a `WANDB_MODE=offline`
   smoke; online wandb pending a one-time `wandb login` after key rotation.
+
+## 8. mars-node (verified 2026-08-12)
+
+Shared single-node Slurm box, borrowed capacity — **spillover only, never the
+primary queue**. Owner-priority etiquette is mandatory: submit only when a GPU
+is genuinely idle (check `nvidia-smi` — "0 % util" is NOT idle if memory is
+parked by a serving job), one GPU max (`--gres=gpu:1`), clearly-named `dnfs-*`
+jobs, short walltimes, and the other user's jobs always outrank ours.
+
+- Access: `ssh mars-node` (alias in `~/.ssh/config`, user `mcrabb`, host cig1).
+- Hardware: 8× NVIDIA B200 183 GB, 220 cores, 2.5 TB RAM, one `gpu` partition.
+- Repo: `~/msc-dissertation-dnfs` (chmod 700 — shared box), synced by rsync
+  from the Mac with the standard excludes **plus `--exclude 'results'`**.
+- Env: locked pixi `cuda` env installed 2026-08-12 (`~/.pixi/bin/pixi`,
+  cache `~/.pixi-cache`) — same solve as DoC/Modal, torch 2.10.0 cuda-built
+  verified. First real job should sanity-check a CUDA kernel actually fires
+  on the B200s (sm_100); import-level checks pass.
+- Typical occupancy (2026-08-12): four GPUs parked by a long-lived inference
+  server at 0 % util, four at 100 % training, plus a dependency chain of
+  pending jobs — i.e. "idle-looking" is usually held. Freed slots flow to the
+  owner's dependency chain first.
