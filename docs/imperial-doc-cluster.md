@@ -79,6 +79,11 @@ scheduling/GPU smoke test that is independent of our env.
 - Partitions (GPU / count): `a100` 80 GB ×12 (contended, often queued),
   `a40` 48 GB ×7, `a30` 24 GB ×20 (best availability in practice), `a16`,
   `t4`. Per-user cap: 3 GPUs, 32 cores, 200 GB RAM. Walltime cap: 3 days.
+- **Submission cap: 8 jobs queued+running per user** (`QOSMaxSubmitJobPerUserLimit`,
+  discovered 2026-08-12) — sbatch beyond it fails with "Job violates
+  accounting/QOS policy", and the error goes to stderr (a `2>/dev/null` on the
+  ssh will eat it and the submission silently doesn't happen). For big batches
+  use a re-runnable top-up script (`slurm/topup_walkback.sh` is the pattern).
 - **`sbatch` does not source `~/.bashrc`** — export everything explicitly in
   the script and use absolute paths (this is why job scripts hardcode the
   pixi path).
