@@ -509,6 +509,25 @@ CONFIGS: dict[str, HardStageCfg] = {
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
     ),
+    # 50k rescue candidate (2026-08-12, prepped DURING the smoke wave): the
+    # naive-estimator twin of the diverged cell above. Arm B's mechanism —
+    # kill the inverted control variate (adds 2.3-70x variance at d=256 vs
+    # an 8-30x reduction at d64) — is the only arm showing a converging loss
+    # mid-smoke. DO NOT LAUNCH until (i) all five smoke verdicts are judged
+    # against the pre-stated criteria and (ii) the user makes the launch
+    # call (frozen amendment: launch by 14 Aug EOD or 16x16 degrades to
+    # smoke-level evidence). Everything except the estimator is identical
+    # to the diverged twin, so the comparison isolates the CV.
+    "H2_d256_c50_s223_letf_ma_50k_curr_naive": _hard_cell(
+        "H2_d256_c50_s223_letf_ma_50k_curr_naive", sigma=0.223,
+        head_kind="masked_attention",
+        D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        estimator="naive_mc",
+    ),
     # Clip-50 twin of the cell above (job 271892 diverged 2026-08-10). The
     # inherited clip of 500 was exceeded twelve-fold from initialisation at
     # d=256, so every step ran at the rescale-not-skip ceiling and the norm
