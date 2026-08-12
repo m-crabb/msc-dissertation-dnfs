@@ -201,7 +201,8 @@ def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
 
 
 def final_eval(
-    head, target, cfg: HardStageCfg, run_dir: Path, multi_event: bool | None = None
+    head, target, cfg: HardStageCfg, run_dir: Path,
+    multi_event: bool | None = None, replicate_seed: int | None = None,
 ) -> dict:
     """End-of-run eval: (samples, IS log-weights) over the full t = 0 -> 1
     trajectory, streamed in `eval_sample_chunk` slices. The vectorised swap
@@ -230,7 +231,13 @@ def final_eval(
         "" if canonical_step
         else ("_multi_event" if multi_event else "_one_event")
     )
-    eval_dir = run_dir / f"eval{step_suffix}"
+    # Probe replicate draws (S7 amendment DECIDE-1: a replicate is a fresh
+    # eval seed off the one converged checkpoint) land in their own dir so
+    # the frozen eval/ the headline numbers were read from is never touched.
+    replicate_suffix = (
+        "" if replicate_seed is None else f"_replicate_s{replicate_seed}"
+    )
+    eval_dir = run_dir / f"eval{step_suffix}{replicate_suffix}"
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
@@ -242,6 +249,8 @@ def final_eval(
         "multi_event": multi_event,
     }
     eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
+    if replicate_seed is not None:
+        eval_metrics["replicate_seed"] = replicate_seed
     eval_metrics.update(_composition_metrics(cfg, eval_samples))
     (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
     return eval_metrics
@@ -446,7 +455,7 @@ def _backfill_missing_defaults(saved: dict, cfg_class) -> None:
 
 def eval_only(
     run_dir: str | Path, multi_event: bool | None = None,
-    smc_tau: float | None = None,
+    smc_tau: float | None = None, replicate_seed: int | None = None,
 ) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
     checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
@@ -458,7 +467,21 @@ def eval_only(
     With `smc_tau` set, runs ONLY the SMC-resampled eval (final_eval_smc,
     artefacts to eval_smc_tau<τ>/): the plain-IS eval/ of a completed run
     already exists, and re-drawing it costs real GPU-hours at d=64 — run
-    without smc_tau first if it is genuinely missing."""
+    without smc_tau first if it is genuinely missing.
+
+    With `replicate_seed` set, draws a probe REPLICATE: the S7 amendment's
+    DECIDE-1 defines a neural replicate as an independent sampling run with
+    a fresh eval seed off the one converged checkpoint, so the draw RNG is
+    seeded with `replicate_seed` instead of the training seed and artefacts
+    land in eval_replicate_s<seed>/ — the frozen eval/ the headline numbers
+    were read from is never touched. Plain IS only: the probe's N_eff(O)
+    comparison is defined on unresampled weights, so combining with
+    `smc_tau` is refused."""
+    if smc_tau is not None and replicate_seed is not None:
+        raise ValueError(
+            "replicate draws are plain-IS by the S7 preregistration; "
+            "run smc_tau and replicate_seed evals separately"
+        )
     run_dir = Path(run_dir)
     saved = json.loads((run_dir / "config.json").read_text())
     _backfill_missing_defaults(saved, HardStageCfg)
@@ -475,7 +498,7 @@ def eval_only(
             f"config.json in {run_dir} does not match CONFIGS[{saved['name']!r}]"
         )
 
-    seed_everything(cfg.train.seed)
+    seed_everything(cfg.train.seed if replicate_seed is None else replicate_seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     target, head = build_target_and_head(cfg, device)
     head.load_state_dict(
@@ -491,7 +514,8 @@ def eval_only(
         )
     else:
         eval_metrics = final_eval(
-            head, target, cfg, run_dir, multi_event=multi_event
+            head, target, cfg, run_dir, multi_event=multi_event,
+            replicate_seed=replicate_seed,
         )
     print(f"[eval_only] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
     return eval_metrics
@@ -526,6 +550,15 @@ def main():
         help="With --eval-only: run the SMC-resampled eval (adaptive "
         "systematic resampling when interim ESS < TAU*B) instead of the "
         "plain-IS one; writes eval_smc_tau<TAU>/ alongside eval/",
+    )
+    parser.add_argument(
+        "--eval-seed",
+        type=int,
+        default=None,
+        metavar="SEED",
+        help="With --eval-only: draw a probe replicate with this fresh "
+        "sampling seed (S7 amendment DECIDE-1); artefacts land in "
+        "eval_replicate_s<SEED>/ beside the frozen eval/",
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/03_hard")
@@ -564,11 +597,15 @@ def main():
             # --compare-multi-event probe).
             multi_event=True if args.multi_event else None,
             smc_tau=args.smc_tau,
+            replicate_seed=args.eval_seed,
         )
         return
     if args.smc_tau is not None:
         parser.error("--smc-tau requires --eval-only (SMC is inference-time "
                      "only; run it against a completed run dir)")
+    if args.eval_seed is not None:
+        parser.error("--eval-seed requires --eval-only (replicate draws run "
+                     "against a completed run dir's checkpoint)")
     if args.cfg is None:
         parser.error("--cfg is required unless --eval-only is given")
 

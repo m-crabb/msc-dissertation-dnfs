@@ -235,6 +235,63 @@ def test_eval_only_smc_tau_runs_smc_variant_only(tmp_path, monkeypatch):
     assert metrics["smc_tau"] == 1.0
 
 
+def test_eval_only_replicate_seed_writes_replicate_dir_and_preserves_eval(
+    tmp_path, monkeypatch
+):
+    """Probe replicate draws (prereg amendment DECIDE-1: a neural replicate is
+    an independent sampling run with a fresh eval seed off the ONE converged
+    checkpoint) must land in eval_replicate_s<seed>/ and never create or touch
+    the frozen eval/ dir the headline numbers were read from."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg()
+    monkeypatch.setattr(
+        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
+    )
+    run_dir = tmp_path / "tiny_hard_eval_seed7_rep"
+    (run_dir / "checkpoints").mkdir(parents=True)
+    seeded = replace(cfg, train=replace(cfg.train, seed=7))
+    (run_dir / "config.json").write_text(json.dumps(asdict(seeded)))
+    _, head = build_target_and_head(cfg, "cpu")
+    torch.save(head.state_dict(), run_dir / "checkpoints" / "final.pt")
+
+    metrics = eval_only(run_dir, replicate_seed=101)
+
+    replicate_dir = run_dir / "eval_replicate_s101"
+    assert (replicate_dir / "metrics.json").exists()
+    assert not (run_dir / "eval").exists()
+    assert metrics["replicate_seed"] == 101
+    samples = torch.load(replicate_dir / "samples.pt")
+    assert ((samples == 1).float().mean(dim=1) == 0.5).all()
+
+
+def test_eval_only_replicate_seeds_differ_and_reproduce(tmp_path, monkeypatch):
+    """Replicates must be genuinely independent draws (different seeds give
+    different weights) yet reproducible (same seed twice gives bit-identical
+    weights) — the two properties the probe's MSE-across-replicates estimate
+    rests on."""
+    torch.manual_seed(0)
+    cfg = _tiny_cfg()
+    monkeypatch.setattr(
+        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
+    )
+    run_dir = tmp_path / "tiny_hard_eval_seed7_reps"
+    (run_dir / "checkpoints").mkdir(parents=True)
+    seeded = replace(cfg, train=replace(cfg.train, seed=7))
+    (run_dir / "config.json").write_text(json.dumps(asdict(seeded)))
+    _, head = build_target_and_head(cfg, "cpu")
+    torch.save(head.state_dict(), run_dir / "checkpoints" / "final.pt")
+
+    eval_only(run_dir, replicate_seed=101)
+    eval_only(run_dir, replicate_seed=102)
+    first = torch.load(run_dir / "eval_replicate_s101" / "log_weights.pt")
+    second = torch.load(run_dir / "eval_replicate_s102" / "log_weights.pt")
+    assert not torch.equal(first, second)
+
+    eval_only(run_dir, replicate_seed=101)
+    rerun = torch.load(run_dir / "eval_replicate_s101" / "log_weights.pt")
+    assert torch.equal(rerun, first)
+
+
 def test_eval_only_rejects_config_drift(tmp_path, monkeypatch):
     """A run dir whose recorded config no longer matches CONFIGS must fail
     loudly rather than silently eval under the wrong settings."""
