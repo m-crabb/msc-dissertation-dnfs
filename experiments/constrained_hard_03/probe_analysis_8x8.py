@@ -850,9 +850,16 @@ def main(argv=None):
             "margin observable: the freeze fixes the observable SET but "
             "not which observable carries the margin rule; energy (the "
             "demo pack's headline row) used here, full set in the tables",
-            "cross-currency division: each ratio prices both samplers per "
-            "unit of one currency's honest count (Kawasaki's trial is both "
-            "its energy eval and its elementary op)",
+            "cross-currency division (SETTLED 2026-08-13, user ruling): "
+            "the two currencies BRACKET the method between its best and "
+            "worst defensible accounting and carry NO single-number claim "
+            "- a backbone row and a pair-Delta-E differ by ~1e4-1e5 FLOPs, "
+            "so the unit-for-unit ratio is a robustness bracket, not a "
+            "price. No cross-currency headline in prose; wall-clock at "
+            "this size (favouring the classical chain on closed-form "
+            "energies) disclosed in one plain sentence; regime "
+            "interpretation (amortised / many-target / larger-lattice) "
+            "carries the argument",
             "coverage operationalisation: TV-excess-over-noise-floor + "
             "balance tolerance 0.1",
         ],
