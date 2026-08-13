@@ -64,6 +64,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
 )
 from discrete_flow_sampler.samplers.budget_masked import (
     GatedBudgetTiltOffset,
+    log_variance_loss,
     MaskedConditionalNet,
     feasibility_clamped_p_plus,
     masked_count_and_budget,
@@ -282,6 +283,35 @@ def plateau_step(train_ess_series):
     return None
 
 
+class ExponentialMovingAverage:
+    """Shadow copy of the trainables, updated as shadow <- decay*shadow +
+    (1-decay)*param after every optimiser step; evaluation swaps the
+    shadow in (the paper's protocol: "we always use EMA", decay 0.9999,
+    and D.2.2 evaluates the EMA parameters). Kept as plain tensors — no
+    optimiser state, no grad."""
+
+    def __init__(self, parameters, decay):
+        self.decay = decay
+        self.parameters = list(parameters)
+        self.shadow = [p.detach().clone() for p in self.parameters]
+
+    def update(self):
+        with torch.no_grad():
+            for shadow, parameter in zip(self.shadow, self.parameters):
+                shadow.mul_(self.decay).add_(parameter, alpha=1 - self.decay)
+
+    def swap_in(self):
+        with torch.no_grad():
+            self._backup = [p.detach().clone() for p in self.parameters]
+            for parameter, shadow in zip(self.parameters, self.shadow):
+                parameter.copy_(shadow)
+
+    def swap_out(self):
+        with torch.no_grad():
+            for parameter, backup in zip(self.parameters, self._backup):
+                parameter.copy_(backup)
+
+
 def near_boundary_loss_weight(boost):
     """eta(context) = 1 + boost*1[b in {1, m-1}] — minimiser-safe (context-
     measurable; see wdce_cross_entropy's docstring) gradient reallocation
@@ -295,7 +325,8 @@ def near_boundary_loss_weight(boost):
 
 
 def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
-              device, boost=0.0):
+              device, boost=0.0, objective="wdce", replicates=None,
+              optimiser_kind="adam", ema_decay=0.0):
     seed_everything(seed)
     net = MaskedConditionalNet(N_SITES).to(device)
     logit_fn, gated_offset = make_logit_fn(net, target.A, sigma, mode)
@@ -303,7 +334,12 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
     if gated_offset is not None:
         gated_offset.to(device)
         trainables += list(gated_offset.parameters())
-    optimiser = torch.optim.Adam(trainables, lr=LEARNING_RATE)
+    optimiser_class = {"adam": torch.optim.Adam,
+                       "adamw": torch.optim.AdamW}[optimiser_kind]
+    optimiser = optimiser_class(trainables, lr=LEARNING_RATE)
+    ema = (ExponentialMovingAverage(trainables, ema_decay)
+           if ema_decay > 0 else None)
+    replicates = replicates or CORRUPTION_REPLICATES
     context_weight = near_boundary_loss_weight(boost) if boost > 0 else None
     rollout_generator = torch.Generator(device=device).manual_seed(seed)
     corruption_generator = torch.Generator(device=device).manual_seed(
@@ -316,12 +352,19 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
     log_rows, train_off_fibre = [], 0
     started = time.time()
     for step in range(steps):
-        with torch.no_grad():
-            terminals, rollout_log_prob = rollout_budget_masked(
-                logit_fn, TRAIN_ROLLOUTS_PER_STEP, N_SITES, N_PLUS,
-                rollout_generator,
+        if objective == "lv":
+            loss, terminals, log_w = log_variance_loss(
+                logit_fn, target.log_prob, TRAIN_ROLLOUTS_PER_STEP,
+                N_SITES, N_PLUS, rollout_generator,
             )
-            log_w = target.log_prob(terminals) - rollout_log_prob
+        else:
+            with torch.no_grad():
+                terminals, rollout_log_prob = rollout_budget_masked(
+                    logit_fn, TRAIN_ROLLOUTS_PER_STEP, N_SITES, N_PLUS,
+                    rollout_generator,
+                )
+                log_w = target.log_prob(terminals) - rollout_log_prob
+        with torch.no_grad():
             weights = torch.softmax(log_w, dim=0)
             train_off_fibre += int(
                 (((terminals + 1) / 2).sum(dim=1) != N_PLUS).sum().item()
@@ -329,10 +372,11 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
             ess_fraction = (
                 ess_from_log_weights(log_w).item() / TRAIN_ROLLOUTS_PER_STEP
             )
-        loss = wdce_cross_entropy(
-            logit_fn, terminals, weights, CORRUPTION_REPLICATES,
-            corruption_generator, context_loss_weight=context_weight,
-        )
+        if objective == "wdce":
+            loss = wdce_cross_entropy(
+                logit_fn, terminals, weights, replicates,
+                corruption_generator, context_loss_weight=context_weight,
+            )
         optimiser.zero_grad()
         loss.backward()
         grad_norm = torch.norm(torch.stack([
@@ -340,6 +384,8 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
             if parameter.grad is not None
         ])).item()
         optimiser.step()
+        if ema is not None:
+            ema.update()
         log_rows.append(
             {"step": step, "loss": loss.item(),
              "train_ess_fraction": ess_fraction,
@@ -351,12 +397,15 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
         writer = csv.DictWriter(handle, fieldnames=list(log_rows[0]))
         writer.writeheader()
         writer.writerows(log_rows)
+    if ema is not None:
+        ema.swap_in()      # evaluation sees the EMA parameters (D.2.2)
     return (net, logit_fn, gated_offset, run_dir, log_rows,
             train_off_fibre, wall_clock)
 
 
 def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
-              eval_rollouts, eval_contexts, boost=0.0):
+              eval_rollouts, eval_contexts, boost=0.0, objective="wdce",
+              replicates=None, optimiser_kind="adam", ema_decay=0.0):
     target = FixedCompositionIsingTarget(
         D=LATTICE_SIDE, sigma=sigma, target_composition=0.5, device=device
     )
@@ -398,7 +447,8 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
             (net, logit_fn, gated_offset, run_dir, log_rows,
              train_off_fibre, wall) = \
                 train_arm(arm, mode, target, sigma, seed, steps,
-                          results_root, tag, device, boost)
+                          results_root, tag, device, boost, objective,
+                          replicates, optimiser_kind, ema_decay)
             trained_kl, trained_late_error = conditional_kl_and_late_error(
                 logit_fn, contexts, slice_states, slice_log_p_cond, device
             )
@@ -410,6 +460,10 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 "arm": arm, "preconditioner": mode, "sigma": sigma,
                 "seed": seed, "steps": steps, "device": str(device),
                 "near_boundary_boost": boost,
+                "objective": objective,
+                "replicates": replicates or CORRUPTION_REPLICATES,
+                "optimiser": optimiser_kind,
+                "ema_decay": ema_decay,
                 "learned_gates": (
                     {"gate_budget": gated_offset.gate_budget.item(),
                      "gate_field": gated_offset.gate_field.item()}
@@ -503,6 +557,19 @@ def main(argv=None):
     parser.add_argument("--near-boundary-boost", type=float, default=0.0,
                         help="eta(context) boost kappa on b in {1, m-1} "
                              "contexts; 0 = frozen-protocol loss (default)")
+    parser.add_argument("--objective", choices=["wdce", "lv"],
+                        default="wdce",
+                        help="lv = constrained F_LV (their strongest 4x4 "
+                             "objective; Amendment 02)")
+    parser.add_argument("--replicates", type=int, default=None,
+                        help="WDCE corruption replicates R (default: the "
+                             "frozen protocol's 2; paper 4x4 uses 16, "
+                             "ablation-insensitive on 8-64)")
+    parser.add_argument("--optimiser", choices=["adam", "adamw"],
+                        default="adam")
+    parser.add_argument("--ema-decay", type=float, default=0.0,
+                        help="0 = off (frozen protocol); paper always "
+                             "uses 0.9999 and evaluates the EMA weights")
     args = parser.parse_args(argv)
     torch.set_num_threads(args.threads)
     device = torch.device(args.device)
@@ -515,7 +582,8 @@ def main(argv=None):
         reports = run_slate(
             sigma, seeds, arms, args.steps, results_root, args.tag,
             device, args.eval_rollouts, args.eval_contexts,
-            args.near_boundary_boost,
+            args.near_boundary_boost, args.objective, args.replicates,
+            args.optimiser, args.ema_decay,
         )
         all_reports[f"sigma_{sigma}"] = {
             "reports": reports,

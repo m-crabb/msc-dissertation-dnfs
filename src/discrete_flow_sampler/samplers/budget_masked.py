@@ -279,6 +279,14 @@ def rollout_budget_masked(
     The trajectory importance weight is then
         log w = log p_tilde(X_1) - rollout_log_prob   (+ constants),
     with log p_tilde the unnormalised target log-density (sigma * x^T A x).
+
+    Gradient flow is governed by the CALLER's grad mode: the body takes
+    no stance, so a caller under torch.no_grad() gets the cheap detached
+    rollout (WDCE's sampling step), while a caller in default grad mode
+    gets rollout_log_prob differentiable through the model (what F_LV
+    needs — it differentiates the trajectory RN derivative). The DRAWS
+    themselves are constants either way: this is the paper's v = u-bar
+    convention (gradient-free sampling measure), not a REINFORCE term.
     """
     device = generator.device        # CPU and CUDA generators both carry it
     x_masked = torch.zeros(n_rollouts, n_sites, device=device)
@@ -382,3 +390,47 @@ def wdce_cross_entropy(
         per_replicate = per_replicate * eta
     per_terminal = per_replicate.view(n_terminals, n_replicates).mean(dim=1)
     return (normalised_weights.detach() * per_terminal).sum()
+
+
+def log_variance_loss(
+    logit_diff_fn,
+    target_log_prob_fn,
+    n_rollouts: int,
+    n_sites: int,
+    n_plus_target: int,
+    generator: torch.Generator,
+) -> Tensor:
+    """The constrained F_LV (the paper's Eq. (10) with v = u-bar, via the
+    Eq. (15) simplification): the batch variance of the trajectory
+    log-RN-derivative,
+
+        F_LV^c = Var_batch( log p_tilde(X_1) - rollout_log_prob ).
+
+    Why this transfers to the fibre with no extra terms: the exact
+    log dP*/dP^u adds the reference's trajectory constant and the
+    uniform-on-fibre base constant to the expression above, and a
+    variance is invariant to additive constants — the same cancellation
+    the batch softmax buys WDCE, bought here by Var instead. The paper's
+    4x4 case studies rank F_LV their strongest objective at this size
+    (their Tabs. 2 and 4: at beta_critical ESS 0.9809 / path-KL 0.0083
+    vs WDCE's 0.9644 / 0.0177), which is why the gate plan pre-scoped it
+    as the robustness arm. Cost note: unlike WDCE this differentiates
+    through every species draw of the rollout (the paper's stated reason
+    to prefer WDCE at 16x16 scale); at d = 16 the graph is 16 tiny-MLP
+    calls deep and fits trivially.
+
+    Trained UNCLAMPED: like the WDCE loss, the objective sees the raw
+    parameterised conditional; the feasibility clamp remains a
+    generation-time guard (boundary steps contribute log q = 0 with zero
+    gradient either way, since the clamp forces q = 1 there).
+
+    Returns (loss, terminals, detached log-RN) so a training loop can
+    log ESS/feasibility off the SAME rollout that carried the gradient —
+    F_LV consumes one rollout per step where WDCE consumes rollout + a
+    separate corruption pass.
+    """
+    terminals, rollout_log_prob = rollout_budget_masked(
+        logit_diff_fn, n_rollouts, n_sites, n_plus_target, generator
+    )
+    log_rn = target_log_prob_fn(terminals) - rollout_log_prob
+    return log_rn.var(), terminals.detach(), log_rn.detach()

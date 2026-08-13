@@ -7,16 +7,12 @@
 #SBATCH --time=2:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# PREPARED, NOT LAUNCHED — user call required (forensics slate,
-# docs/reviews/2026-08-13-mdns-budget-4x4-gate-run.md forensics section).
-# Two factorised interventions at the sigma_c point, 10k steps, so each
-# compares against the existing Amendment-01 a/c rows at MATCHED budget:
-#   1) arm A' (a2): V0 with learnable two-term gate — does the C-over-A
-#      unlearning bill vanish when the prior's scale is a trainable
-#      parameter instead of trunk cancellation?
-#   2) arm A + near-boundary loss boost kappa=4 — minimiser-safe gradient
-#      reallocation to the starved b in {1, m-1} contexts.
-# ~15 min GPU total (0.34 of the 44-min 18-run slate).
+# PREPARED, NOT LAUNCHED — user call required. Amendment-02 slate
+# (docs/plans/2026-08-13-mdns-budget-4x4-gate.md): four factorised
+# sigma_c invocations at 10k steps, all carrying the paper-recipe bundle
+# (EMA 0.9999 + AdamW + R=8) so single-variable diffs read against
+# invocation 1, and invocation 1 reads against the Amendment-01 arm-a
+# row for the recipe effect itself. ~30 min GPU total.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline
@@ -24,20 +20,20 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
+RESULTS=results/03_hard/mdns_budget_gate3_4x4
+COMMON="--steps 10000 --seeds 42,43,44 --sigmas 0.223 --device cuda \
+    --optimiser adamw --ema-decay 0.9999 --replicates 8 \
+    --results-dir $RESULTS"
 
 cd "$REPO"
 echo "node=$(hostname)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-"$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.mdns_budget_gate_4x4 \
-    --steps 10000 --seeds 42,43,44 --sigmas 0.223 --arms a2 \
-    --device cuda --tag 20260813-gate3-gated \
-    --results-dir results/03_hard/mdns_budget_gate3_4x4
+RUN="$PIXI run --frozen -e cuda python -m \
+    experiments.constrained_hard_03.mdns_budget_gate_4x4"
 
-"$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.mdns_budget_gate_4x4 \
-    --steps 10000 --seeds 42,43,44 --sigmas 0.223 --arms a \
-    --near-boundary-boost 4.0 \
-    --device cuda --tag 20260813-gate3-nbboost \
-    --results-dir results/03_hard/mdns_budget_gate3_4x4
+$RUN $COMMON --arms a  --tag 20260813-gate3-recipe
+$RUN $COMMON --arms a  --objective lv --tag 20260813-gate3-lv
+$RUN $COMMON --arms a2 --tag 20260813-gate3-gated
+$RUN $COMMON --arms a  --near-boundary-boost 4.0 \
+    --tag 20260813-gate3-nbboost

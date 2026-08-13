@@ -455,3 +455,78 @@ def test_context_loss_weight_none_is_the_frozen_protocol():
                 context_loss_weight=context_weight,
             ).item())
     assert isclose(losses[0], losses[1], rel_tol=1e-6)
+
+
+def test_log_variance_loss_is_near_zero_at_the_exact_conditional():
+    """F_LV's optimality signature: at the exact conditional the trajectory
+    log-RN-derivative is CONSTANT across trajectories (Var = 0 up to float
+    noise); a perturbed conditional must score strictly higher. Also pins
+    that gradients flow to the model through the rollout (the property
+    WDCE never exercises)."""
+    from discrete_flow_sampler.samplers.budget_masked import (
+        log_variance_loss,
+    )
+    n_sites, n_plus, sigma = 6, 3, RING_SIGMA
+    adjacency = ring_adjacency(n_sites)
+    neighbours = ring_neighbour_pairs(n_sites)
+
+    def exact_logit_fn(x_batch):
+        logits = torch.zeros(x_batch.shape[0], n_sites)
+        for row, x in enumerate(x_batch):
+            state = tuple(
+                None if spin == 0.0 else int(spin) for spin in x.tolist()
+            )
+            for site, spin in enumerate(state):
+                if spin is not None:
+                    continue
+                p_plus = exact_masked_conditional_plus(
+                    state, site, sigma, n_plus, neighbours
+                )
+                p_plus = min(max(p_plus, 1e-9), 1 - 1e-9)
+                logits[row, site] = torch.tensor(p_plus).logit()
+        return logits
+
+    def target_log_prob(states):
+        return sigma * ring_energy_torch(states, adjacency)
+
+    with torch.no_grad():
+        exact_loss, _, _ = log_variance_loss(
+            exact_logit_fn, target_log_prob, 1024, n_sites, n_plus,
+            torch.Generator().manual_seed(51),
+        )
+        torch.manual_seed(6)
+        perturbation = torch.randn(1, n_sites)
+        perturbed_loss, _, _ = log_variance_loss(
+            lambda x: exact_logit_fn(x) + perturbation, target_log_prob,
+            1024, n_sites, n_plus, torch.Generator().manual_seed(51),
+        )
+    assert exact_loss.item() < 1e-6
+    assert perturbed_loss.item() > 100 * max(exact_loss.item(), 1e-12)
+
+    net = MaskedConditionalNet(n_sites, hidden_width=16)
+    for parameter in net.parameters():
+        parameter.data.normal_(0.0, 0.2)
+    loss, terminals, log_rn = log_variance_loss(
+        lambda x: net(x), target_log_prob, 64, n_sites, n_plus,
+        torch.Generator().manual_seed(53),
+    )
+    loss.backward()
+    gradient_norms = [p.grad.abs().sum().item() for p in net.parameters()]
+    assert sum(gradient_norms) > 0
+    assert not terminals.requires_grad and not log_rn.requires_grad
+
+
+def test_ema_shadow_tracks_and_swaps():
+    from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
+        ExponentialMovingAverage,
+    )
+    parameter = torch.nn.Parameter(torch.ones(3))
+    ema = ExponentialMovingAverage([parameter], decay=0.9)
+    with torch.no_grad():
+        parameter.mul_(2.0)               # parameter now 2, shadow 1
+    ema.update()                          # shadow = 0.9*1 + 0.1*2 = 1.1
+    assert torch.allclose(ema.shadow[0], torch.full((3,), 1.1))
+    ema.swap_in()
+    assert torch.allclose(parameter.detach(), torch.full((3,), 1.1))
+    ema.swap_out()
+    assert torch.allclose(parameter.detach(), torch.full((3,), 2.0))
