@@ -11,10 +11,8 @@ constant lemma, exhaustively verified in tests/test_budget_masked_reference
 .py), which is what makes importance weights implementable: all reference
 terms cancel under self-normalisation.
 
-Three verified facts carried over from the derivation notes
-(docs/reviews/2026-08-13-mdns-budget-preconditioner.md and
-2026-08-13-constrained-wdce-derivation.md — git-excluded docs; the
-maths lives in the tests named below):
+Three verified facts, each pinned by the exhaustive tests named
+below (the tests are the durable record of the derivations):
 
 1. Constrained Lemma 3: the optimally controlled generator unmasks site i
    to species s at rate gamma(t) * Pr_pi(X^i = s | X^UM) — the CONSTRAINED

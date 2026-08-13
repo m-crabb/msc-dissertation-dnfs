@@ -8,7 +8,7 @@
 #SBATCH --output=slurm/logs/%x_%j.out
 
 # Amendment-01 rerun of the budget-masked MDNS 4x4 gate (second dated
-# pass; prereg in docs/plans/2026-08-13-mdns-budget-4x4-gate.md, cuts and
+# pass; pre-registered amendment with cuts and
 # protocol frozen BEFORE launch). Budget-only change from the first pass:
 # 10k steps (5x), 3 seeds, both operating points, all three arms — 18
 # runs. The 2k-step CPU pass took ~24 s/arm training + ~40 s eval, so the

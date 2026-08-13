@@ -4,7 +4,7 @@ DNFS anchor (corrected 2026-08-13, coordinator ruling): the 10k
 budget-matched head-twin gate record — configs
 H2_d16_c50_{s010,s223}_letf_{ma,mo}_10k, per-seed artefacts in
 results/03_hard/demo_4x4/observables_table.md (provenance:
-docs/reviews/2026-07-08-4x4-demo-pack.md). The `ma` (masked_attention)
+results/03_hard/demo_4x4/, the 10k budget-matched head-twin record). The `ma` (masked_attention)
 head is the REPORTED cell in hard.tex; `mo` (mask_one) is the reference
 row. The earlier anchor (results/03_hard/gate_4x4/verdict.json) is a
 STALE July-2 artefact of the old dh-head gate and must not anchor this

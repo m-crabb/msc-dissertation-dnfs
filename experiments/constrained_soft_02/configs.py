@@ -1439,7 +1439,7 @@ CONFIGS: dict[str, StageCfg] = {
         wandb_project="dnfs-constraints",
     ),
     # StableAdamW test of the amortisation forensics' PRINTED recommendation
-    # (2026-08-11; prereg docs/plans/2026-08-11-amort-stadamw-test.md, gates
+    # (2026-08-11; pre-registered one-run test, gates frozen before launch:
     # frozen before launch). This is a NEW dated experiment, not a reopening
     # of the closed campaign: one run, seed 42, testing whether the
     # "normalised or trust-region update" soft.tex 4.4 recommends clears the
