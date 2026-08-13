@@ -255,11 +255,25 @@ def rollout_budget_masked(
     logit_diff_fn,
     n_rollouts: int,
     n_sites: int,
-    n_plus_target: int,
+    n_plus_target: int | None,
     generator: torch.Generator,
 ) -> tuple[Tensor, Tensor]:
     """Generate terminals by sequential revelation; return
     (terminals, rollout_log_prob).
+
+    n_plus_target = None switches the budget machinery OFF: the reference
+    becomes the paper's own unconstrained masked diffusion (uniform site,
+    species +1 with probability 1/2), there is no feasibility clamp, and
+    every species draw contributes to rollout_log_prob. The trajectory
+    constant simplifies with the machinery: the budget-masked reference's
+    assignment product N_+!(d-N_+)!/d! = 1/C(d, N_+) becomes the product
+    of d independent 1/2 draws, (1/2)^d — which is EXACTLY the uniform
+    base measure on {-1,+1}^d, so it cancels in the importance weight the
+    same way the fibre constant cancels against uniform-on-the-fibre:
+    log w = log p_tilde(X_1) - rollout_log_prob in both cases, and
+    logmeanexp(log w) estimates the corresponding log Z (full-space or
+    slice). Pinned by tests/test_budget_masked_sampler.py::
+    test_unconstrained_oracle_conditionals_give_constant_weights.
 
     The embedded jump chain of the controlled CTMC: the clock gamma(t)
     cancels between reference and control (the verified tilts-sum-to-one
@@ -293,9 +307,6 @@ def rollout_budget_masked(
     rollout_log_prob = torch.zeros(n_rollouts, device=device)
     rows = torch.arange(n_rollouts, device=device)
     for step in range(n_sites):
-        masked_count, budget = masked_count_and_budget(
-            x_masked, n_plus_target
-        )
         # uniform masked site per row: Gumbel-argmax over masked positions
         noise = torch.rand(
             n_rollouts, n_sites, generator=generator, device=device
@@ -303,21 +314,31 @@ def rollout_budget_masked(
         site = noise.argmax(dim=1)
 
         logit = logit_diff_fn(x_masked).gather(1, site[:, None])[:, 0]
-        p_plus = feasibility_clamped_p_plus(
-            torch.sigmoid(logit), budget, masked_count
-        )
+        if n_plus_target is None:
+            p_plus = torch.sigmoid(logit)
+        else:
+            masked_count, budget = masked_count_and_budget(
+                x_masked, n_plus_target
+            )
+            p_plus = feasibility_clamped_p_plus(
+                torch.sigmoid(logit), budget, masked_count
+            )
         draw_plus = (
             torch.rand(n_rollouts, generator=generator, device=device)
             < p_plus
         )
         # log q via logsigmoid for saturation safety; clamped rows are
-        # forced draws with q = 1, i.e. log q = 0
-        interior = (budget > 0) & (budget < masked_count)
+        # forced draws with q = 1, i.e. log q = 0 (constrained only —
+        # the unconstrained reference never clamps, so every draw counts)
         log_q = torch.where(draw_plus, logsigmoid(logit),
                             logsigmoid(-logit))
-        rollout_log_prob += torch.where(
-            interior, log_q, torch.zeros_like(log_q)
-        )
+        if n_plus_target is None:
+            rollout_log_prob += log_q
+        else:
+            interior = (budget > 0) & (budget < masked_count)
+            rollout_log_prob += torch.where(
+                interior, log_q, torch.zeros_like(log_q)
+            )
         x_masked[rows, site] = torch.where(draw_plus, 1.0, -1.0)
     return x_masked, rollout_log_prob
 
@@ -397,7 +418,7 @@ def log_variance_loss(
     target_log_prob_fn,
     n_rollouts: int,
     n_sites: int,
-    n_plus_target: int,
+    n_plus_target: int | None,
     generator: torch.Generator,
 ) -> Tensor:
     """The constrained F_LV (the paper's Eq. (10) with v = u-bar, via the

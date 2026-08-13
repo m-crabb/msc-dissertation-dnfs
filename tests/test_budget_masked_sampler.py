@@ -530,3 +530,66 @@ def test_ema_shadow_tracks_and_swaps():
     assert torch.allclose(parameter.detach(), torch.full((3,), 1.1))
     ema.swap_out()
     assert torch.allclose(parameter.detach(), torch.full((3,), 2.0))
+
+
+# ---------------------------------------------------------------------------
+# Unconstrained control (gate-3 arm 0): n_plus_target=None switches the
+# budget machinery off and the reference becomes the paper's own masked
+# diffusion on the free space. The algebra to pin: the trajectory constant
+# becomes (1/2)^d — exactly the uniform base on {-1,+1}^d — so
+# log w = log p_tilde - rollout_log_prob still holds with no bookkeeping.
+# ---------------------------------------------------------------------------
+
+
+def test_unconstrained_rollout_log_prob_is_exact_species_product():
+    """Zero logits = the unconstrained REFERENCE process: every species
+    draw is Bernoulli(1/2) and every draw counts (no clamp, no forced
+    steps), so rollout_log_prob must be exactly d*log(1/2) on every
+    trajectory — the trajectory 'constant' of the free space. The
+    terminals must also actually leave the fibre (compositions vary),
+    otherwise the budget machinery was not off."""
+    n_sites = 16
+    generator = torch.Generator().manual_seed(0)
+    terminals, rollout_log_prob = rollout_budget_masked(
+        lambda x: torch.zeros_like(x), 512, n_sites, None, generator
+    )
+    expected = n_sites * torch.log(torch.tensor(0.5))
+    assert torch.allclose(rollout_log_prob, expected.expand(512), atol=1e-6)
+    compositions = ((terminals + 1) / 2).sum(dim=1)
+    assert len(compositions.unique()) > 1
+
+
+def test_unconstrained_oracle_conditionals_give_constant_weights():
+    """The sharp end-to-end check of the unconstrained algebra: rolling
+    out with the EXACT free-space conditionals must give importance
+    weights that are constant across trajectories (log w = log Z for
+    every rollout) — this exercises the rollout law, the log-prob
+    accumulation, and the uniform-base cancellation at once. Uses the
+    2x2 torus (d = 4, 16 states) so the oracle is an exact enumeration
+    with no sampling floor."""
+    from discrete_flow_sampler.targets.ising import IsingTarget
+
+    target = IsingTarget(D=2, sigma=0.3)
+    states = torch.cartesian_prod(*([torch.tensor([-1.0, 1.0])] * 4))
+    log_p_tilde = target.log_prob(states)
+    log_z = torch.logsumexp(log_p_tilde, dim=0)
+
+    def oracle_logit_fn(x_masked):
+        logits = torch.zeros_like(x_masked)
+        for row, context in enumerate(x_masked):
+            unmasked = context != 0.0
+            consistent = (states[:, unmasked] == context[unmasked]).all(
+                dim=1
+            )
+            posterior = torch.softmax(log_p_tilde[consistent], dim=0)
+            p_plus = posterior @ (states[consistent] == 1.0).float()
+            p_plus = p_plus.clamp(1e-9, 1 - 1e-9)
+            logits[row] = torch.log(p_plus) - torch.log1p(-p_plus)
+        return logits
+
+    generator = torch.Generator().manual_seed(1)
+    terminals, rollout_log_prob = rollout_budget_masked(
+        oracle_logit_fn, 256, 4, None, generator
+    )
+    log_w = target.log_prob(terminals) - rollout_log_prob
+    assert torch.allclose(log_w, log_z.expand(256), atol=1e-4)
