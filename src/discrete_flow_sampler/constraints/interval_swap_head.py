@@ -66,6 +66,31 @@ from torch import Tensor
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
 
+def causal_stream_summaries(
+    backbone: LeTFRateMatrix, x: Tensor, t: Tensor
+) -> tuple[Tensor, Tensor]:
+    """Prefix/suffix interval summaries from the backbone's causal stacks.
+
+    Shared by every head that assembles pair contexts from the leTF
+    slice-trick objects (this head and the factorised head). Returns
+    (prefix_summary, suffix_summary), each (B, d, h), with
+
+        prefix_summary[:, i, :] depending ONLY on {t, x_0..x_{i-1}}
+        suffix_summary[:, j, :] depending ONLY on {t, x_{j+1}..x_{d-1}}
+
+    -- see IntervalSwapHead.causal_summaries for the full derivation of the
+    slice indices; the classic failure is an off-by-one in either slice, and
+    the blindness tests probe the boundary sites specifically to catch it.
+    """
+    x_idx = ((x + 1) / 2).long()
+    x_emb = backbone.token_embedder(x_idx)                    # (B, d, h)
+    cond_t = backbone.time_embedder(t).unsqueeze(1)           # (B, 1, h)
+    fwd_x = backbone.fwd_stack(torch.cat([cond_t, x_emb], dim=1))
+    bwd_x = backbone.bwd_stack(torch.cat([cond_t, x_emb.flip(1)], dim=1)).flip(1)
+    d = x.shape[1]
+    return fwd_x[:, :d, :], bwd_x[:, 1:, :]
+
+
 class IntervalSwapHead(nn.Module):
     """One-pass doubly-hollow swap head via three-interval assembly.
 
@@ -145,18 +170,10 @@ class IntervalSwapHead(nn.Module):
         blindness tests flip x at the boundary sites specifically to catch
         it. Follow `swap_readout._masked_body` for the exact stack-call
         pattern (embed -> prepend cond_t -> fwd_stack / flipped bwd_stack).
+        The body lives in module-level `causal_stream_summaries` so the
+        factorised head can share it without inheriting this head's band.
         """
-        m = self.backbone
-        x_idx = ((x + 1) / 2).long()
-        x_emb = m.token_embedder(x_idx)                       # (B, d, h)
-        cond_t = m.time_embedder(t).unsqueeze(1)              # (B, 1, h)
-        fwd_x = m.fwd_stack(torch.cat([cond_t, x_emb], dim=1))            # (B, d+1, h)
-        bwd_x = m.bwd_stack(torch.cat([cond_t, x_emb.flip(1)], dim=1)).flip(1)
-        # fwd slot i has seen {cond_t, x_0..x_{i-1}}; flipped bwd slot k has
-        # seen {cond_t, x_k..x_{d-1}}, so slot j+1 is blind to x_{<=j}.
-        prefix_summary = fwd_x[:, : self.d, :]
-        suffix_summary = bwd_x[:, 1:, :]
-        return prefix_summary, suffix_summary
+        return causal_stream_summaries(self.backbone, x, t)
 
     def band_summaries(self, x: Tensor, t: Tensor) -> Tensor:
         """All-pairs middle-band statistics, (B, d, d, F); valid for i < j.

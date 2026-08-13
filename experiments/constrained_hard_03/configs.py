@@ -34,6 +34,9 @@ from experiments.dnfs_baseline_01.configs import (
 )
 from torch import Tensor
 
+from discrete_flow_sampler.constraints.factorised_swap_head import (
+    FactorisedSwapHead,
+)
 from discrete_flow_sampler.constraints.grouped_anchor_swap_head import (
     GroupedAnchorSwapHead,
 )
@@ -63,12 +66,14 @@ class HardStageCfg(StageCfg):
     equivalent to doubly_hollow, not numerically equal: different H), or
     "masked_attention" (MaskedAttentionSwapHead, the reported one-pass head:
     same three-interval structure, band aggregated by exclusion-mask
-    attention -- bit-exact blindness, decision 2026-07-07).
+    attention -- bit-exact blindness, decision 2026-07-07), or "factorised"
+    (FactorisedSwapHead, one-pass low-rank bilinear causal factors plus
+    hole-subtracted global context -- no per-pair network, 2026-08-13).
     """
 
     head_kind: Literal[
         "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention",
-        "grouped_anchor",
+        "grouped_anchor", "factorised",
     ] = "doubly_hollow"
     # Anchor-batch chunk for the mask_one head's vectorised forward; None =
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
@@ -98,6 +103,16 @@ class HardStageCfg(StageCfg):
     n_groups: int | None = None
     grouping: str = "diagonal"
     group_chunk_size: int | None = None
+    # Factorised-head knobs (2026-08-13). None = the head's own defaults
+    # (bilinear_rank 8, factor_dim 32, global_feature_dim 16); the two use_*
+    # switches are the head's ablation arms (bilinear-only has no interior
+    # visibility, global-only no deep exterior). Only read when head_kind is
+    # "factorised", so every other cell stays byte-identical.
+    bilinear_rank: int | None = None
+    factor_dim: int | None = None
+    global_feature_dim: int | None = None
+    use_bilinear: bool = True
+    use_global: bool = True
     # Target family on the fixed-composition manifold (Potts extension,
     # 2026-07-31).
     # "ising" = FixedCompositionIsingTarget, composition a scalar n_plus held
@@ -171,6 +186,15 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             attention_dim=cfg.attention_dim or 32,
             use_stencil=cfg.use_stencil,
             lattice_side=cfg.ising.D,
+        )
+    elif cfg.head_kind == "factorised":
+        head = FactorisedSwapHead(
+            backbone,
+            bilinear_rank=cfg.bilinear_rank or 8,
+            factor_dim=cfg.factor_dim or 32,
+            global_feature_dim=cfg.global_feature_dim or 16,
+            use_bilinear=cfg.use_bilinear,
+            use_global=cfg.use_global,
         )
     elif cfg.head_kind == "grouped_anchor":
         # k masked passes instead of mask_one's d; lattice_side is cfg.ising.D
