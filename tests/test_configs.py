@@ -657,6 +657,42 @@ def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():
         assert rebuilt == ladder
 
 
+def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
+    """Factorised-head 4x4 gate (2026-08-13): single-variable twins of the
+    MA demo cells — only name, head_kind and the declared factorised knobs
+    may differ, so the head effect stays attributable to the declared
+    change. The knob dict below is also the gate's arm table."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    arm_knobs = {
+        "fab8": {},
+        "fab16": {"bilinear_rank": 16},
+        "fbil": {"use_global": False},
+        "fglo": {"use_bilinear": False},
+    }
+    factorised_fields = (
+        "bilinear_rank", "factor_dim", "global_feature_dim",
+        "use_bilinear", "use_global",
+    )
+    for arm, knobs in arm_knobs.items():
+        for sigma_label in ("s010", "s223"):
+            name = f"H2_d16_c50_{sigma_label}_letf_{arm}_10k"
+            twin_name = f"H2_d16_c50_{sigma_label}_letf_ma_10k"
+            cell, twin = CONFIGS[name], CONFIGS[twin_name]
+            assert cell.head_kind == "factorised"
+            for field, value in knobs.items():
+                assert getattr(cell, field) == value, f"{name}: {field}"
+            rebuilt = replace(
+                cell,
+                name=twin.name,
+                head_kind=twin.head_kind,
+                **{f: getattr(twin, f) for f in factorised_fields},
+            )
+            assert rebuilt == twin, f"{name} drifts from its MA twin"
+
+
 def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
     """Walk-back-to-8x8 slate (2026-08-12). The three experiment chapters
     shared no non-enumerable lattice size — baseline and soft ran 10x10,

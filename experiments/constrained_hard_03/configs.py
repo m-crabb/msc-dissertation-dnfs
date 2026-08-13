@@ -390,6 +390,63 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d16_c50_s223_letf_mo_10k", sigma=0.223,
         head_kind="mask_one", n_steps=10_000,
     ),
+    # Factorised-head 4x4 gate cells (2026-08-13): 10k twins of the MA demo
+    # cells above -- only head_kind and the declared factorised knobs differ
+    # (pinned by test_factorised_gate_cells_mirror_ma_twin_except_declared_
+    # fields), so head effects stay attributable. Four arms: fab8 / fab16 =
+    # bilinear+global at rank 8 / 16 (rank-sensitivity read), fbil =
+    # bilinear-only (no interval-interior coverage), fglo = global-only (no
+    # deep exterior).
+    "H2_d16_c50_s010_letf_fab8_10k": _hard_cell(
+        "H2_d16_c50_s010_letf_fab8_10k", sigma=0.10,
+        head_kind="factorised", n_steps=10_000,
+    ),
+    "H2_d16_c50_s223_letf_fab8_10k": _hard_cell(
+        "H2_d16_c50_s223_letf_fab8_10k", sigma=0.223,
+        head_kind="factorised", n_steps=10_000,
+    ),
+    "H2_d16_c50_s010_letf_fab16_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s010_letf_fab16_10k", sigma=0.10,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        bilinear_rank=16,
+    ),
+    "H2_d16_c50_s223_letf_fab16_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s223_letf_fab16_10k", sigma=0.223,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        bilinear_rank=16,
+    ),
+    "H2_d16_c50_s010_letf_fbil_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s010_letf_fbil_10k", sigma=0.10,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        use_global=False,
+    ),
+    "H2_d16_c50_s223_letf_fbil_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s223_letf_fbil_10k", sigma=0.223,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        use_global=False,
+    ),
+    "H2_d16_c50_s010_letf_fglo_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s010_letf_fglo_10k", sigma=0.10,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        use_bilinear=False,
+    ),
+    "H2_d16_c50_s223_letf_fglo_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s223_letf_fglo_10k", sigma=0.223,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        use_bilinear=False,
+    ),
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
