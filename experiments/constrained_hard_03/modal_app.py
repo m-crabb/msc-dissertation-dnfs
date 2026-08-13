@@ -268,6 +268,31 @@ def scout_remote(run_dir_name: str, D: int, head_kind: str = "mask_one"):
     volume.commit()
 
 
+@app.function(gpu="L4", volumes={"/results": volume}, timeout=60 * 60)
+def mdns_gate_remote(argv: str = ""):
+    """Run the budget-masked MDNS gate driver remotely. `argv` is the
+    space-separated mdns_budget_gate_4x4 CLI string; point --results-dir
+    inside /results so the run dirs and verdict JSON persist on the
+    volume. L4 deliberately: the gate's MLP is tiny and its bands are
+    statistical, not device-paired."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
+        main as mdns_gate_main,
+    )
+
+    mdns_gate_main(argv.split())
+    volume.commit()
+
+
+@app.local_entrypoint()
+def mdns_gate(argv: str = ""):
+    """Blocking local CLI entry so the per-arm progress prints stream
+    back to the local terminal."""
+    mdns_gate_remote.remote(argv=argv)
+
+
 @app.function(gpu="A100", timeout=2 * 60 * 60)
 def bench_remote(argv: str = ""):
     """Run the profile/benchmark harness on the production GPU (A100 — the

@@ -671,6 +671,7 @@ def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
         "fab16": {"bilinear_rank": 16},
         "fbil": {"use_global": False},
         "fglo": {"use_bilinear": False},
+        "fmp40": {"factor_dim": 40},
     }
     factorised_fields = (
         "bilinear_rank", "factor_dim", "global_feature_dim",

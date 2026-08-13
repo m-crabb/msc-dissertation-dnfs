@@ -26,7 +26,7 @@ from experiments.constrained_hard_03.gate_4x4 import (
     run_gate,
 )
 
-ARMS = ["fab8", "fab16", "fbil", "fglo"]
+DEFAULT_ARMS = "fab8,fab16,fbil,fglo"
 SIGMA_TAGS = ["s010", "s223"]
 
 REPORT_COLUMNS = [
@@ -38,6 +38,9 @@ REPORT_COLUMNS = [
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", default="results/03_hard")
+    parser.add_argument("--arms", default=DEFAULT_ARMS,
+                        help="comma-separated arm tags (e.g. fmp40 for the "
+                             "matched-param pass alone)")
     parser.add_argument("--seeds", default="42,43,44")
     parser.add_argument("--n-samples", type=int, default=5000)
     parser.add_argument("--device", default="cpu")
@@ -46,7 +49,7 @@ def main(argv=None):
     seeds = [int(s) for s in args.seeds.split(",")]
 
     rows = []
-    for arm in ARMS:
+    for arm in args.arms.split(","):
         for sigma_tag in SIGMA_TAGS:
             cfg_name = f"H2_d16_c50_{sigma_tag}_letf_{arm}_10k"
             n_euler_steps = CONFIGS[cfg_name].ctmc.n_euler_steps

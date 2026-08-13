@@ -447,6 +447,25 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         use_bilinear=False,
     ),
+    # Matched-param arm (fab8 PARTIAL protocol): factor_dim 40 raises the
+    # head-owned count to 36,384 ~ the MA head's measured 34,272
+    # readout-work params (21,440 head-owned + the 12,832-param backbone
+    # attention_readout that only MA uses; the factorised head replaces
+    # it). Rules out head-parameter deficit as the PARTIAL's cause.
+    "H2_d16_c50_s010_letf_fmp40_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s010_letf_fmp40_10k", sigma=0.10,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        factor_dim=40,
+    ),
+    "H2_d16_c50_s223_letf_fmp40_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s223_letf_fmp40_10k", sigma=0.223,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        factor_dim=40,
+    ),
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event

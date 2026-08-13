@@ -324,21 +324,41 @@ def plateau_step(train_ess_series):
 
 
 class ExponentialMovingAverage:
-    """Shadow copy of the trainables, updated as shadow <- decay*shadow +
-    (1-decay)*param after every optimiser step; evaluation swaps the
+    """Shadow copy of the trainables, updated as shadow <- d_t*shadow +
+    (1-d_t)*param after every optimiser step; evaluation swaps the
     shadow in (the paper's protocol: "we always use EMA", decay 0.9999,
     and D.2.2 evaluates the EMA parameters). Kept as plain tensors — no
-    optimiser state, no grad."""
+    optimiser state, no grad.
 
-    def __init__(self, parameters, decay):
+    warmup=False is the paper-literal plain shadow, d_t = decay always.
+    Its measured failure mode (gate-3 arm 0): the shadow starts AT the
+    init weights, so after k updates it is decay^k init + (1-decay^k)
+    training iterates — 82% init at k=2000 with decay 0.9999, and
+    eval-on-EMA reads a nearly untrained model however well training
+    went. warmup=True applies the standard bias-correction schedule
+    d_t = min(decay, (1+t)/(10+t)) (the torch-ema/diffusers default):
+    the init weight becomes prod_{t<=k}(1+t)/(10+t) = 10!(k+1)!/(10+k)!
+    (~1e-17 by k=200) while d_t still reaches the requested decay for
+    t >= ~9e4, so the two schedules agree asymptotically."""
+
+    def __init__(self, parameters, decay, warmup=False):
         self.decay = decay
+        self.warmup = warmup
+        self.updates = 0
         self.parameters = list(parameters)
         self.shadow = [p.detach().clone() for p in self.parameters]
 
+    def effective_decay(self, step):
+        if not self.warmup:
+            return self.decay
+        return min(self.decay, (1 + step) / (10 + step))
+
     def update(self):
+        self.updates += 1
+        decay = self.effective_decay(self.updates)
         with torch.no_grad():
             for shadow, parameter in zip(self.shadow, self.parameters):
-                shadow.mul_(self.decay).add_(parameter, alpha=1 - self.decay)
+                shadow.mul_(decay).add_(parameter, alpha=1 - decay)
 
     def swap_in(self):
         with torch.no_grad():
@@ -366,7 +386,8 @@ def near_boundary_loss_weight(boost):
 
 def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
               device, boost=0.0, objective="wdce", replicates=None,
-              optimiser_kind="adam", ema_decay=0.0, n_plus_target=N_PLUS):
+              optimiser_kind="adam", ema_decay=0.0, ema_warmup=False,
+              n_plus_target=N_PLUS):
     seed_everything(seed)
     net = MaskedConditionalNet(N_SITES).to(device)
     logit_fn, gated_offset = make_logit_fn(net, target.A, sigma, mode)
@@ -377,7 +398,7 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
     optimiser_class = {"adam": torch.optim.Adam,
                        "adamw": torch.optim.AdamW}[optimiser_kind]
     optimiser = optimiser_class(trainables, lr=LEARNING_RATE)
-    ema = (ExponentialMovingAverage(trainables, ema_decay)
+    ema = (ExponentialMovingAverage(trainables, ema_decay, warmup=ema_warmup)
            if ema_decay > 0 else None)
     replicates = replicates or CORRUPTION_REPLICATES
     context_weight = near_boundary_loss_weight(boost) if boost > 0 else None
@@ -500,7 +521,8 @@ def build_space(constrained, sigma, device, eval_contexts):
 
 def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
               eval_rollouts, eval_contexts, boost=0.0, objective="wdce",
-              replicates=None, optimiser_kind="adam", ema_decay=0.0):
+              replicates=None, optimiser_kind="adam", ema_decay=0.0,
+              ema_warmup=False):
     spaces = {}
     for arm in arms:
         _, constrained = ARMS[arm]
@@ -535,7 +557,7 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
              train_off_fibre, wall, ema) = \
                 train_arm(arm, mode, target, sigma, seed, steps,
                           results_root, tag, device, boost, objective,
-                          replicates, optimiser_kind, ema_decay,
+                          replicates, optimiser_kind, ema_decay, ema_warmup,
                           n_plus_target)
             trained_kl, trained_late_error = conditional_kl_and_late_error(
                 logit_fn, contexts, slice_states, slice_log_p_cond, device,
@@ -581,6 +603,7 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 "replicates": replicates or CORRUPTION_REPLICATES,
                 "optimiser": optimiser_kind,
                 "ema_decay": ema_decay,
+                "ema_warmup": ema_warmup,
                 "learned_gates": (
                     {"gate_budget": gated_offset.gate_budget.item(),
                      "gate_field": gated_offset.gate_field.item()}
@@ -692,6 +715,10 @@ def main(argv=None):
     parser.add_argument("--ema-decay", type=float, default=0.0,
                         help="0 = off (frozen protocol); paper always "
                              "uses 0.9999 and evaluates the EMA weights")
+    parser.add_argument("--ema-warmup", action="store_true",
+                        help="bias-correction warmup schedule "
+                             "min(decay, (1+t)/(10+t)); off = the "
+                             "paper-literal plain shadow")
     args = parser.parse_args(argv)
     torch.set_num_threads(args.threads)
     device = torch.device(args.device)
@@ -705,7 +732,7 @@ def main(argv=None):
             sigma, seeds, arms, args.steps, results_root, args.tag,
             device, args.eval_rollouts, args.eval_contexts,
             args.near_boundary_boost, args.objective, args.replicates,
-            args.optimiser, args.ema_decay,
+            args.optimiser, args.ema_decay, args.ema_warmup,
         )
         all_reports[f"sigma_{sigma}"] = {
             "reports": reports,

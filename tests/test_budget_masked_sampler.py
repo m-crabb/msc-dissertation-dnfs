@@ -532,6 +532,46 @@ def test_ema_shadow_tracks_and_swaps():
     assert torch.allclose(parameter.detach(), torch.full((3,), 2.0))
 
 
+def test_ema_warmup_forgets_init_where_plain_shadow_cannot():
+    """The gate-3 arm-0 failure mode, pinned. A plain 0.9999 shadow after k
+    updates is decay^k init + (1-decay^k) recent-params: at k=200 that is
+    98% init, at the paper's k=2000 still 82% init, so eval-on-EMA reads a
+    nearly-untrained model no matter how good training was. The warmup
+    schedule effective_decay = min(decay, (1+t)/(10+t)) makes the init
+    weight prod_{t<=k}(1+t)/(10+t) = 10!(k+1)!/(10+k)! — already ~1e-17 at
+    k=200 — while still capping at the requested decay for t >= 9e4."""
+    from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
+        ExponentialMovingAverage,
+    )
+    init_value, trained_value = 1.0, 3.0
+    plain_parameter = torch.nn.Parameter(torch.full((3,), init_value))
+    warm_parameter = torch.nn.Parameter(torch.full((3,), init_value))
+    plain = ExponentialMovingAverage([plain_parameter], decay=0.9999)
+    warm = ExponentialMovingAverage(
+        [warm_parameter], decay=0.9999, warmup=True
+    )
+    with torch.no_grad():
+        plain_parameter.fill_(trained_value)
+        warm_parameter.fill_(trained_value)
+    for _ in range(200):
+        plain.update()
+        warm.update()
+    # Plain shadow: 0.9999^200 = 0.980 of init survives.
+    plain_expected = 0.9999**200 * init_value + (1 - 0.9999**200) * trained_value
+    assert torch.allclose(
+        plain.shadow[0], torch.full((3,), plain_expected), atol=1e-4
+    )
+    # Warmup shadow: init contribution is ~1e-17 — indistinguishable from
+    # the trained value.
+    assert torch.allclose(
+        warm.shadow[0], torch.full((3,), trained_value), atol=1e-6
+    )
+    # Late time: the schedule caps at the requested decay, so warmup and
+    # plain agree asymptotically.
+    assert warm.effective_decay(step=10**6) == 0.9999
+    assert warm.effective_decay(step=1) == 2.0 / 11.0
+
+
 # ---------------------------------------------------------------------------
 # Unconstrained control (gate-3 arm 0): n_plus_target=None switches the
 # budget machinery off and the reference becomes the paper's own masked

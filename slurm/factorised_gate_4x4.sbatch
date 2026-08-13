@@ -12,7 +12,7 @@
 # six 10k-step 4x4 runs. Cells are single-variable twins of the MA demo
 # cells (test_factorised_gate_cells_mirror_ma_twin_except_declared_fields).
 #   sbatch -J fac-gate-fab8 slurm/factorised_gate_4x4.sbatch fab8
-#   arms: fab8 | fab16 | fbil | fglo
+#   arms: fab8 | fab16 | fbil | fglo | fmp40 (matched-param arm)
 # Submitted WITHOUT nice, so these outrank the nice'd walkback topups and
 # take freed GPU slots ahead of them (user priority call, 2026-08-13).
 # Walltime: archived demo 10k 4x4 cells are minutes-scale per run on an
@@ -27,7 +27,7 @@ REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
 # Positional argument, not --export: passing values through the environment
 # made this cluster's controller fail user-env retrieval and hold the job.
-ARM=${1:?usage: sbatch factorised_gate_4x4.sbatch <fab8|fab16|fbil|fglo>}
+ARM=${1:?usage: sbatch factorised_gate_4x4.sbatch <fab8|fab16|fbil|fglo|fmp40>}
 TAG=20260813-facgate
 
 cd "$REPO"
