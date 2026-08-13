@@ -475,12 +475,19 @@ def main(argv=None):
     parser.add_argument("--snapshot-every-sweeps", type=int, default=10)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--out", default="results/kawasaki_probe")
+    parser.add_argument("--lattice-side", type=int, default=FULL_LATTICE_SIDE,
+                        help="torus side D; non-default sizes (the 16x16 "
+                             "rescue rung's reference chain) MUST also set "
+                             "--out, or the 8x8 chain dirs get overwritten")
     parser.add_argument("--smoke", action="store_true",
                         help="D=4, 2000 sweeps, 2 chains/mode, 2 workers; "
                              "output under <out>/smoke/")
     args = parser.parse_args(argv)
 
-    args.lattice_side = FULL_LATTICE_SIDE
+    if (args.lattice_side != FULL_LATTICE_SIDE
+            and args.out == "results/kawasaki_probe"):
+        parser.error("--lattice-side != 8 requires an explicit --out "
+                     "(protects the frozen 8x8 probe outputs)")
     out_root = Path(args.out)
     if args.smoke:
         args.lattice_side = SMOKE_LATTICE_SIDE
