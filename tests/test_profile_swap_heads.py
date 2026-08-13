@@ -15,12 +15,16 @@ import torch
 from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 from experiments.constrained_hard_03.profile_swap import build_head_and_target
 
-# Bench --head_kind -> the d64 cell whose cost it claims to measure.
+# Bench --head_kind -> the cell whose cost it claims to measure. The cfg
+# contributes head knobs, not dimensions (the backbone is shared), so the
+# factorised row can pin against the 4x4 fab8 gate cell while no factorised
+# d64 cell exists yet.
 BENCH_KIND_TO_CELL = {
     "mask_one": "H2_d64_c50_s223_letf_mo_50k_curr",
     "interval": "H2_d64_c50_s223_letf_iv_50k_curr",
     "masked_attention": "H2_d64_c50_s223_letf_ma_50k_curr",
     "stencil": "H2_d64_c50_s223_letf_ma_stencil_50k_curr",
+    "factorised": "H2_d16_c50_s223_letf_fab8_10k",
 }
 
 
