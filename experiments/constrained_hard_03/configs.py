@@ -113,6 +113,14 @@ class HardStageCfg(StageCfg):
     global_feature_dim: int | None = None
     use_bilinear: bool = True
     use_global: bool = True
+    # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
+    # cell). > 0 arms a warmup-corrected parameter shadow
+    # (discrete_flow_sampler.ema) updated after each optimiser step:
+    # training dynamics are untouched, eval/ stays the raw-parameter
+    # primary, and an eval_ema/ reading is recorded alongside from
+    # checkpoints/final_ema.pt. An instrument, not a recipe change — cells
+    # differing only in ema_decay train bit-identically.
+    ema_decay: float = 0.0
     # Target family on the fixed-composition manifold (Potts extension,
     # 2026-07-31).
     # "ising" = FixedCompositionIsingTarget, composition a scalar n_plus held
@@ -504,6 +512,19 @@ CONFIGS: dict[str, HardStageCfg] = {
     # network-pass currency is single-architecture across sizes.
     "H2_d64_c50_s223_letf_ma_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr", head_kind="masked_attention",
+    ),
+    # Factorised-head d64 scaling rung (2026-08-13, user GO): does the 4x4
+    # verdict transfer — the ~0.057 expressivity price AND the one-pass
+    # speed win — at the first non-enumerable size? Single-variable twin of
+    # the archived MA curriculum rung above: only head_kind and the
+    # declared ema_decay instrument differ (EMA never touches training, so
+    # the trajectory comparison vs the MA twin stays single-variable on
+    # the raw eval). Seed 42 (the d64 ladder's standing seed).
+    "H2_d64_c50_s223_letf_fab8_50k_curr": replace(
+        _d64_curriculum_cell(
+            "H2_d64_c50_s223_letf_fab8_50k_curr", head_kind="factorised",
+        ),
+        ema_decay=0.9999,
     ),
     # Band-capacity push batch 1 (2026-07-08): three single-variable twins
     # of ma_50k_curr.

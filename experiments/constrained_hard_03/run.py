@@ -203,6 +203,7 @@ def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
 def final_eval(
     head, target, cfg: HardStageCfg, run_dir: Path,
     multi_event: bool | None = None, replicate_seed: int | None = None,
+    eval_dir_suffix: str = "",
 ) -> dict:
     """End-of-run eval: (samples, IS log-weights) over the full t = 0 -> 1
     trajectory, streamed in `eval_sample_chunk` slices. The vectorised swap
@@ -237,7 +238,7 @@ def final_eval(
     replicate_suffix = (
         "" if replicate_seed is None else f"_replicate_s{replicate_seed}"
     )
-    eval_dir = run_dir / f"eval{step_suffix}{replicate_suffix}"
+    eval_dir = run_dir / f"eval{step_suffix}{replicate_suffix}{eval_dir_suffix}"
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
@@ -414,9 +415,26 @@ def train(
             cfg.curriculum.stages if cfg.curriculum is not None else None
         ),
         on_checkpoint=on_checkpoint,
+        ema_decay=getattr(cfg, "ema_decay", 0.0),
     )
 
     eval_metrics = final_eval(head, target, cfg, run_dir)
+
+    # Dual-eval instrument: eval/ (raw parameters, the primary number —
+    # comparable to every archived cell) is written FIRST and untouched;
+    # the EMA reading lands alongside in eval_ema/. Order matters: the
+    # raw eval must never depend on the shadow having been swapped.
+    ema_metrics = None
+    final_ema_path = run_dir / "checkpoints" / "final_ema.pt"
+    if final_ema_path.exists():
+        head.load_state_dict(
+            torch.load(
+                final_ema_path, map_location=target.device, weights_only=True
+            )
+        )
+        ema_metrics = final_eval(
+            head, target, cfg, run_dir, eval_dir_suffix="_ema"
+        )
 
     if use_wandb:
         wandb.log(
@@ -426,6 +444,14 @@ def train(
                 if isinstance(value, (int, float))
             }
         )
+        if ema_metrics is not None:
+            wandb.log(
+                {
+                    f"eval_ema/{key}": value
+                    for key, value in ema_metrics.items()
+                    if isinstance(value, (int, float))
+                }
+            )
         wandb.finish()
 
     return run_dir

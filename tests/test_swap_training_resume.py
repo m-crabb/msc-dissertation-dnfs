@@ -60,12 +60,12 @@ def _cfgs(n_steps: int):
     return train_cfg, ctmc_cfg, eval_cfg
 
 
-def _run(run_dir: Path, n_steps: int, head) -> None:
+def _run(run_dir: Path, n_steps: int, head, ema_decay: float = 0.0) -> None:
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(n_steps)
     train_swap(head, target, train_cfg, ctmc_cfg, eval_cfg, run_dir,
                use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM)
+               sigma_curriculum=TWO_STAGE_CURRICULUM, ema_decay=ema_decay)
 
 
 def _log_rows(run_dir: Path) -> list[dict]:
@@ -112,6 +112,45 @@ def test_resumed_run_is_bit_exact_with_uninterrupted(tmp_path):
     assert reference_state.keys() == resumed_state.keys()
     for key in reference_state:
         assert torch.equal(reference_state[key], resumed_state[key]), key
+
+
+def test_resumed_ema_shadow_is_bit_exact_with_uninterrupted(tmp_path):
+    """The dual-eval instrument's resume contract: final_ema.pt after an
+    interrupt-and-resume must equal the uninterrupted run's — which
+    requires the shadow AND the warmup counter to travel in resume.pt
+    (a re-seeded shadow or reset counter changes every subsequent
+    effective decay and the artefacts diverge)."""
+    uninterrupted_dir = tmp_path / "uninterrupted"
+    interrupted_dir = tmp_path / "interrupted"
+
+    _run(uninterrupted_dir, n_steps=8, head=_head(init_seed=0),
+         ema_decay=0.9999)
+
+    _run(interrupted_dir, n_steps=4, head=_head(init_seed=0),
+         ema_decay=0.9999)
+    (interrupted_dir / "checkpoints" / "final.pt").unlink()
+    (interrupted_dir / "checkpoints" / "final_ema.pt").unlink()
+    _run(interrupted_dir, n_steps=8, head=_head(init_seed=999),
+         ema_decay=0.9999)
+
+    reference_ema = torch.load(
+        uninterrupted_dir / "checkpoints" / "final_ema.pt", weights_only=True
+    )
+    resumed_ema = torch.load(
+        interrupted_dir / "checkpoints" / "final_ema.pt", weights_only=True
+    )
+    assert reference_ema.keys() == resumed_ema.keys()
+    for key in reference_ema:
+        assert torch.equal(reference_ema[key], resumed_ema[key]), key
+    # The shadow must differ from the raw weights (it is a trailing
+    # average, not a copy) — guards against a swap_in that never happened.
+    final_raw = torch.load(
+        uninterrupted_dir / "checkpoints" / "final.pt", weights_only=True
+    )
+    assert any(
+        not torch.equal(final_raw[key], reference_ema[key])
+        for key in final_raw
+    )
 
 
 def test_retry_on_completed_run_is_noop(tmp_path):

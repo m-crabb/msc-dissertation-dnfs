@@ -694,6 +694,25 @@ def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
             assert rebuilt == twin, f"{name} drifts from its MA twin"
 
 
+def test_fab8_d64_rung_mirrors_ma_curriculum_twin_except_declared_fields():
+    """d64 scaling rung (2026-08-13): the factorised cell must be a
+    single-variable twin of the archived MA 50k-curriculum rung — only
+    name, head_kind and the declared dual-eval EMA instrument may differ,
+    so the transfer read stays attributable to the head."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d64_c50_s223_letf_fab8_50k_curr"]
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    assert cell.head_kind == "factorised"
+    assert cell.ema_decay == 0.9999 and twin.ema_decay == 0.0
+    rebuilt = replace(
+        cell, name=twin.name, head_kind=twin.head_kind, ema_decay=0.0
+    )
+    assert rebuilt == twin
+
+
 def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
     """Walk-back-to-8x8 slate (2026-08-12). The three experiment chapters
     shared no non-enumerable lattice size — baseline and soft ran 10x10,

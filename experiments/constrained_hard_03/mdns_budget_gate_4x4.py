@@ -323,53 +323,10 @@ def plateau_step(train_ess_series):
     return None
 
 
-class ExponentialMovingAverage:
-    """Shadow copy of the trainables, updated as shadow <- d_t*shadow +
-    (1-d_t)*param after every optimiser step; evaluation swaps the
-    shadow in (the paper's protocol: "we always use EMA", decay 0.9999,
-    and D.2.2 evaluates the EMA parameters). Kept as plain tensors — no
-    optimiser state, no grad.
-
-    warmup=False is the paper-literal plain shadow, d_t = decay always.
-    Its measured failure mode (gate-3 arm 0): the shadow starts AT the
-    init weights, so after k updates it is decay^k init + (1-decay^k)
-    training iterates — 82% init at k=2000 with decay 0.9999, and
-    eval-on-EMA reads a nearly untrained model however well training
-    went. warmup=True applies the standard bias-correction schedule
-    d_t = min(decay, (1+t)/(10+t)) (the torch-ema/diffusers default):
-    the init weight becomes prod_{t<=k}(1+t)/(10+t) = 10!(k+1)!/(10+k)!
-    (~1e-17 by k=200) while d_t still reaches the requested decay for
-    t >= ~9e4, so the two schedules agree asymptotically."""
-
-    def __init__(self, parameters, decay, warmup=False):
-        self.decay = decay
-        self.warmup = warmup
-        self.updates = 0
-        self.parameters = list(parameters)
-        self.shadow = [p.detach().clone() for p in self.parameters]
-
-    def effective_decay(self, step):
-        if not self.warmup:
-            return self.decay
-        return min(self.decay, (1 + step) / (10 + step))
-
-    def update(self):
-        self.updates += 1
-        decay = self.effective_decay(self.updates)
-        with torch.no_grad():
-            for shadow, parameter in zip(self.shadow, self.parameters):
-                shadow.mul_(decay).add_(parameter, alpha=1 - decay)
-
-    def swap_in(self):
-        with torch.no_grad():
-            self._backup = [p.detach().clone() for p in self.parameters]
-            for parameter, shadow in zip(self.parameters, self.shadow):
-                parameter.copy_(shadow)
-
-    def swap_out(self):
-        with torch.no_grad():
-            for parameter, backup in zip(self.parameters, self._backup):
-                parameter.copy_(backup)
+# Moved to the library (2026-08-13) so the swap-CTMC trainer can carry the
+# same instrument; re-exported here because this module's CLI grew it first
+# and tests/tools import it from this path.
+from discrete_flow_sampler.ema import ExponentialMovingAverage  # noqa: E402
 
 
 def near_boundary_loss_weight(boost):

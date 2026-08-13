@@ -28,6 +28,7 @@ import torch
 import torch.nn.functional as F
 
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
+from discrete_flow_sampler.ema import ExponentialMovingAverage
 from discrete_flow_sampler.samplers._swap_neighbours import (
     SWAP_LOG_RATIO_CLAMP,
     gather_pair_scores,
@@ -112,6 +113,7 @@ def _save_resume_state(
     x_replay_chunks,
     t_idx_replay_chunks,
     replay_sigma: float,
+    ema=None,
 ) -> None:
     """Checkpoint full outer-boundary training state for preemption resume.
 
@@ -135,6 +137,10 @@ def _save_resume_state(
         "x_replay_chunks": [chunk.cpu() for chunk in x_replay_chunks],
         "t_idx_replay_chunks": [chunk.cpu() for chunk in t_idx_replay_chunks],
         "replay_sigma": replay_sigma,
+        # Shadow AND update counter: a resume that re-seeded the shadow at
+        # the resume-point weights would re-create the init-contamination
+        # failure; a reset counter would restart the warmup schedule.
+        "ema": ema.state_dict() if ema is not None else None,
     }
     tmp_path = ckpt_dir / "resume.pt.tmp"
     torch.save(state, tmp_path)
@@ -170,8 +176,16 @@ def train_swap(
     estimator_mode: str = "control_variate",
     sigma_curriculum=None,
     on_checkpoint=None,
+    ema_decay: float = 0.0,
 ):
     """Run paper Algorithm 1 for `train_cfg.n_steps` total inner steps.
+
+    ema_decay > 0 arms the dual-eval instrument: a warmup-corrected
+    parameter shadow (see discrete_flow_sampler.ema) updated after every
+    optimiser step and saved as checkpoints/final_ema.pt alongside the raw
+    final.pt. Training dynamics are UNTOUCHED — the shadow never feeds the
+    loss — and the raw eval stays the primary number (comparability with
+    every archived cell); the EMA eval is the recorded-alongside reading.
 
     Args:
         head: a swap-readout head (e.g. `DoublyHollowSwapHead` /
@@ -222,17 +236,40 @@ def train_swap(
         )
     else:
         raise ValueError(f"unknown optimiser {optimiser_kind!r}")
+    ema = (
+        ExponentialMovingAverage(head.parameters(), ema_decay, warmup=True)
+        if ema_decay > 0 else None
+    )
     start_step = 0
     if resume_state is not None:
         head.load_state_dict(resume_state["model"])
         optimiser.load_state_dict(resume_state["optimiser"])
         start_step = int(resume_state["step"])
+        if ema is not None:
+            saved_ema = resume_state.get("ema")
+            if saved_ema is not None:
+                ema.load_state_dict(saved_ema)
+            else:
+                # Pre-EMA checkpoint on an EMA-armed cell: the freshly
+                # constructed shadow sits at the RESUME weights, which is
+                # the init-contamination failure in miniature — say so
+                # loudly rather than silently degrading the instrument.
+                print(
+                    "[train_swap] WARNING: resume.pt has no EMA state; "
+                    "shadow re-seeded at resume weights", flush=True,
+                )
 
     if start_step >= train_cfg.n_steps:
         # Completed run being re-invoked (e.g. a Modal retry after success):
-        # make sure the terminal artefact exists, touch nothing else.
+        # make sure the terminal artefacts exist, touch nothing else. The
+        # EMA artefact can be missing alone (preempted between the two
+        # final saves), so it is backfilled from the checkpointed shadow.
         if not (ckpt_dir / "final.pt").exists():
             torch.save(head.state_dict(), ckpt_dir / "final.pt")
+        if ema is not None and not (ckpt_dir / "final_ema.pt").exists():
+            ema.swap_in()
+            torch.save(head.state_dict(), ckpt_dir / "final_ema.pt")
+            ema.swap_out()
         return
 
     if use_wandb:
@@ -511,6 +548,8 @@ def train_swap(
                     getattr(train_cfg, "grad_clip_max_norm", 500.0),
                 )
                 optimiser.step()
+                if ema is not None:
+                    ema.update()
 
                 wall_clock_step_s = time.time() - step_start
 
@@ -620,8 +659,15 @@ def train_swap(
                     x_replay_chunks=x_replay_chunks,
                     t_idx_replay_chunks=t_idx_replay_chunks,
                     replay_sigma=replay_sigma,
+                    ema=ema,
                 )
                 if on_checkpoint is not None:
                     on_checkpoint()
 
     torch.save(head.state_dict(), ckpt_dir / "final.pt")
+    if ema is not None:
+        # Full loadable state dict with EMA parameters and the original
+        # buffers: swap the shadow in, save, swap back.
+        ema.swap_in()
+        torch.save(head.state_dict(), ckpt_dir / "final_ema.pt")
+        ema.swap_out()
