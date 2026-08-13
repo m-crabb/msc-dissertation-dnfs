@@ -226,16 +226,17 @@ def rollout_budget_masked(
         log w = log p_tilde(X_1) - rollout_log_prob   (+ constants),
     with log p_tilde the unnormalised target log-density (sigma * x^T A x).
     """
-    x_masked = torch.zeros(n_rollouts, n_sites)
-    rollout_log_prob = torch.zeros(n_rollouts)
-    rows = torch.arange(n_rollouts)
+    device = generator.device        # CPU and CUDA generators both carry it
+    x_masked = torch.zeros(n_rollouts, n_sites, device=device)
+    rollout_log_prob = torch.zeros(n_rollouts, device=device)
+    rows = torch.arange(n_rollouts, device=device)
     for step in range(n_sites):
         masked_count, budget = masked_count_and_budget(
             x_masked, n_plus_target
         )
         # uniform masked site per row: Gumbel-argmax over masked positions
         noise = torch.rand(
-            n_rollouts, n_sites, generator=generator
+            n_rollouts, n_sites, generator=generator, device=device
         ).masked_fill(x_masked != 0.0, -1.0)
         site = noise.argmax(dim=1)
 
@@ -244,7 +245,8 @@ def rollout_budget_masked(
             torch.sigmoid(logit), budget, masked_count
         )
         draw_plus = (
-            torch.rand(n_rollouts, generator=generator) < p_plus
+            torch.rand(n_rollouts, generator=generator, device=device)
+            < p_plus
         )
         # log q via logsigmoid for saturation safety; clamped rows are
         # forced draws with q = 1, i.e. log q = 0
@@ -287,13 +289,15 @@ def wdce_cross_entropy(
     logit difference: -log s(+1) = softplus(-z), -log s(-1) = softplus(z).
     """
     n_terminals, n_sites = terminals.shape
+    device = terminals.device        # generator must live on the same device
     replicated = terminals.repeat_interleave(n_replicates, dim=0)
     corruption_level = torch.rand(
-        n_terminals * n_replicates, 1, generator=generator
+        n_terminals * n_replicates, 1, generator=generator, device=device
     )
     corruption_mask = (
         torch.rand(
-            n_terminals * n_replicates, n_sites, generator=generator
+            n_terminals * n_replicates, n_sites, generator=generator,
+            device=device,
         ) < corruption_level
     )
     corrupted = replicated.masked_fill(corruption_mask, 0.0)
