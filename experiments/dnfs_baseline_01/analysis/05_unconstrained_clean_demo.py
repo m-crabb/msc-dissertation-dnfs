@@ -30,6 +30,9 @@ import argparse
 import json
 from pathlib import Path
 
+from discrete_flow_sampler.diagnostics.figure_style import (
+    REFERENCE_INK, SAMPLER_HUE, NEURAL_COMPARATOR_HUE, CLASSICAL_HUE,
+    CLASSICAL_ALT_HUE, MUTED, GRID, use_house_style)
 import matplotlib.pyplot as plt
 import torch
 
@@ -148,11 +151,11 @@ def ess_fraction_summary(seed_runs: list[dict]) -> tuple[float, float]:
 
 
 def plot_marginal_panel(ax, centres, ref_pmf, seed_pmfs, xlabel, title):
-    ax.plot(centres, ref_pmf, color="C2", lw=1.8, label="Gibbs reference")
+    ax.plot(centres, ref_pmf, color=REFERENCE_INK, lw=1.8, label="Gibbs reference")
     ax.fill_between(centres, seed_pmfs.min(dim=0).values,
-                    seed_pmfs.max(dim=0).values, color="C1", alpha=0.3,
+                    seed_pmfs.max(dim=0).values, color=SAMPLER_HUE, alpha=0.18,
                     label="DNFS (seed min-max)")
-    ax.plot(centres, seed_pmfs.mean(dim=0), color="C1", lw=1.5,
+    ax.plot(centres, seed_pmfs.mean(dim=0), color=SAMPLER_HUE, lw=1.5,
             label="DNFS IS-weighted (mean)")
     ax.set_xlabel(xlabel)
     ax.set_ylabel("probability mass")

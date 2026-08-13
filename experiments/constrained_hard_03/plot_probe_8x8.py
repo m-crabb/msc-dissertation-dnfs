@@ -83,11 +83,9 @@ from experiments.constrained_hard_03.probe_analysis_8x8 import (
 
 torch.set_num_threads(2)  # the 16x16 reference chain owns the Mac's cores
 
-NEURAL_HUE = "#2a78d6"
-KAWASAKI_NONLOCAL_HUE = "#eda100"
-KAWASAKI_LOCAL_HUE = "#8e63c5"
-INK = "#1a1a19"
-MUTED = "#6f6e66"
+from discrete_flow_sampler.diagnostics.figure_style import (
+    REFERENCE_INK as INK, SAMPLER_HUE as NEURAL_HUE,
+    CLASSICAL_HUE as KAWASAKI_NONLOCAL_HUE, CLASSICAL_ALT_HUE as KAWASAKI_LOCAL_HUE, MUTED)
 
 SWEEPS_PER_CHAIN = 1_000_000
 NEURAL_SECONDS_PER_REPLICATE = 92.4          # A30; mtime-delta method, see module docstring

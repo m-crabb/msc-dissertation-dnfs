@@ -15,6 +15,9 @@ this is the two-trace version: total integrand variance, soft vs unconstrained.
 import argparse
 from pathlib import Path
 
+from discrete_flow_sampler.diagnostics.figure_style import (
+    REFERENCE_INK, SAMPLER_HUE, NEURAL_COMPARATOR_HUE, CLASSICAL_HUE,
+    CLASSICAL_ALT_HUE, MUTED, GRID, use_house_style)
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -39,29 +42,31 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("penalty_variance_traces.png"))
     args = parser.parse_args()
 
+    use_house_style()
     fig, ax = plt.subplots(figsize=(7.5, 4.4))
 
     for run_dir in args.baseline_runs:
         trace = variance_trace(run_dir)
-        ax.plot(trace.step, trace.var_estimator_integrand, color="C2", lw=1.0,
+        ax.plot(trace.step, trace.var_estimator_integrand, color=NEURAL_COMPARATOR_HUE, lw=1.0,
                 alpha=0.8)
     for run_dir in args.soft_runs:
         trace = variance_trace(run_dir)
         healthy = args.healthy_soft_seed in run_dir.name
         ax.plot(trace.step, trace.var_estimator_integrand,
-                color="C1" if not healthy else "C3", lw=1.2)
+                color=SAMPLER_HUE, lw=1.6 if healthy else 0.9,
+                alpha=1.0 if healthy else 0.55)
         if healthy:
             final = trace.iloc[-1]
             ax.annotate("the one soft seed that trains",
                         xy=(final.step, final.var_estimator_integrand),
                         xytext=(0.38, 0.20), textcoords="axes fraction",
-                        fontsize=9, color="C3",
-                        arrowprops={"arrowstyle": "->", "color": "C3", "lw": 1.0})
+                        fontsize=9, color=SAMPLER_HUE,
+                        arrowprops={"arrowstyle": "->", "color": SAMPLER_HUE, "lw": 1.0})
 
     # Proxy artists so the legend has one entry per group, not per seed.
-    ax.plot([], [], color="C1", lw=1.2, label=r"soft, $\lambda=50$ (stuck seeds)")
-    ax.plot([], [], color="C3", lw=1.2, label=r"soft, $\lambda=50$ (healthy seed)")
-    ax.plot([], [], color="C2", lw=1.0, label="unconstrained, matched config")
+    ax.plot([], [], color=SAMPLER_HUE, lw=0.9, alpha=0.55, label=r"soft, $\lambda=50$ (stuck seeds)")
+    ax.plot([], [], color=SAMPLER_HUE, lw=1.6, label=r"soft, $\lambda=50$ (healthy seed)")
+    ax.plot([], [], color=NEURAL_COMPARATOR_HUE, lw=1.0, label="unconstrained, matched config")
     ax.set_yscale("log")
     ax.set_xlabel("training step")
     ax.set_ylabel("estimator-integrand variance")

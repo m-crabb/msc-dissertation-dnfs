@@ -24,10 +24,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-HEAD_HUES = {"masked_attention": "#2a78d6", "mask_one": "#1baf7a"}
-KAWASAKI_HUE = "#eda100"
-INK = "#1a1a19"
-MUTED = "#6f6e66"
+from discrete_flow_sampler.diagnostics.figure_style import (
+    REFERENCE_INK as INK, SAMPLER_HUE, NEURAL_COMPARATOR_HUE, CLASSICAL_HUE as KAWASAKI_HUE, MUTED)
+HEAD_HUES = {"masked_attention": SAMPLER_HUE, "mask_one": NEURAL_COMPARATOR_HUE}
 OBSERVABLE_LABELS = {
     "energy": "energy",
     "nn_correlation": "nn corr.",
