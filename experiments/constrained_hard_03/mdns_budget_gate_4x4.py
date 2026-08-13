@@ -63,6 +63,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
     free_energy_lb_estimate,
 )
 from discrete_flow_sampler.samplers.budget_masked import (
+    GatedBudgetTiltOffset,
     MaskedConditionalNet,
     feasibility_clamped_p_plus,
     masked_count_and_budget,
@@ -96,6 +97,8 @@ ARMS = {
     "a": "budget_tilted",
     "b": "none",
     "c": "unconstrained",
+    "a2": "budget_tilted_gated",   # forensics arm A': V0 with learnable
+                                   # scales on its two terms (gates init 1.0)
 }
 
 # First-pass G-cuts, computed for every (sigma, seed, arm) for continuity
@@ -105,11 +108,21 @@ CUTS = {"energy_tv": 0.02, "conditional_kl": 0.01, "ess_fraction": 0.20,
 
 
 def make_logit_fn(net, adjacency, sigma, mode):
+    """(logit_fn, extra_trainables): the gated arm carries two learnable
+    scale parameters alongside the trunk; every other arm's offset is a
+    pure function."""
+    if mode == "budget_tilted_gated":
+        gated_offset = GatedBudgetTiltOffset(adjacency, sigma, N_PLUS)
+
+        def logit_fn(x_masked):
+            return net(x_masked) + gated_offset(x_masked)
+        return logit_fn, gated_offset
+
     def logit_fn(x_masked):
         return net(x_masked) + preconditioner_logit_diff(
             x_masked, adjacency, sigma, N_PLUS, mode
         )
-    return logit_fn
+    return logit_fn, None
 
 
 def draw_eval_contexts(slice_states, slice_log_p_cond, generator,
@@ -269,12 +282,29 @@ def plateau_step(train_ess_series):
     return None
 
 
+def near_boundary_loss_weight(boost):
+    """eta(context) = 1 + boost*1[b in {1, m-1}] — minimiser-safe (context-
+    measurable; see wdce_cross_entropy's docstring) gradient reallocation
+    towards the starved near-boundary contexts the Phase-1/forensics KL
+    decompositions localised."""
+    def eta(corrupted):
+        masked_count, budget = masked_count_and_budget(corrupted, N_PLUS)
+        near = (budget == 1) | (budget == masked_count - 1)
+        return 1.0 + boost * near.float()
+    return eta
+
+
 def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
-              device):
+              device, boost=0.0):
     seed_everything(seed)
     net = MaskedConditionalNet(N_SITES).to(device)
-    logit_fn = make_logit_fn(net, target.A, sigma, mode)
-    optimiser = torch.optim.Adam(net.parameters(), lr=LEARNING_RATE)
+    logit_fn, gated_offset = make_logit_fn(net, target.A, sigma, mode)
+    trainables = list(net.parameters())
+    if gated_offset is not None:
+        gated_offset.to(device)
+        trainables += list(gated_offset.parameters())
+    optimiser = torch.optim.Adam(trainables, lr=LEARNING_RATE)
+    context_weight = near_boundary_loss_weight(boost) if boost > 0 else None
     rollout_generator = torch.Generator(device=device).manual_seed(seed)
     corruption_generator = torch.Generator(device=device).manual_seed(
         seed + 1
@@ -301,14 +331,19 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
             )
         loss = wdce_cross_entropy(
             logit_fn, terminals, weights, CORRUPTION_REPLICATES,
-            corruption_generator,
+            corruption_generator, context_loss_weight=context_weight,
         )
         optimiser.zero_grad()
         loss.backward()
+        grad_norm = torch.norm(torch.stack([
+            parameter.grad.norm() for parameter in trainables
+            if parameter.grad is not None
+        ])).item()
         optimiser.step()
         log_rows.append(
             {"step": step, "loss": loss.item(),
-             "train_ess_fraction": ess_fraction}
+             "train_ess_fraction": ess_fraction,
+             "grad_norm": grad_norm}
         )
     wall_clock = time.time() - started
 
@@ -316,11 +351,12 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
         writer = csv.DictWriter(handle, fieldnames=list(log_rows[0]))
         writer.writeheader()
         writer.writerows(log_rows)
-    return net, logit_fn, run_dir, log_rows, train_off_fibre, wall_clock
+    return (net, logit_fn, gated_offset, run_dir, log_rows,
+            train_off_fibre, wall_clock)
 
 
 def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
-              eval_rollouts, eval_contexts):
+              eval_rollouts, eval_contexts, boost=0.0):
     target = FixedCompositionIsingTarget(
         D=LATTICE_SIDE, sigma=sigma, target_composition=0.5, device=device
     )
@@ -350,15 +386,19 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
             mode = ARMS[arm]
             seed_everything(seed)
             init_net = MaskedConditionalNet(N_SITES).to(device)
+            init_fn, init_gated = make_logit_fn(
+                init_net, target.A, sigma, mode)
+            if init_gated is not None:
+                init_gated.to(device)
             init_kl, init_late_error = conditional_kl_and_late_error(
-                make_logit_fn(init_net, target.A, sigma, mode), contexts,
-                slice_states, slice_log_p_cond, device,
+                init_fn, contexts, slice_states, slice_log_p_cond, device,
             )
             print(f"[gate] sigma={sigma} seed={seed} arm {arm} ({mode}): "
                   f"training {steps} steps ...", flush=True)
-            net, logit_fn, run_dir, log_rows, train_off_fibre, wall = \
+            (net, logit_fn, gated_offset, run_dir, log_rows,
+             train_off_fibre, wall) = \
                 train_arm(arm, mode, target, sigma, seed, steps,
-                          results_root, tag, device)
+                          results_root, tag, device, boost)
             trained_kl, trained_late_error = conditional_kl_and_late_error(
                 logit_fn, contexts, slice_states, slice_log_p_cond, device
             )
@@ -369,6 +409,12 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
             report = {
                 "arm": arm, "preconditioner": mode, "sigma": sigma,
                 "seed": seed, "steps": steps, "device": str(device),
+                "near_boundary_boost": boost,
+                "learned_gates": (
+                    {"gate_budget": gated_offset.gate_budget.item(),
+                     "gate_field": gated_offset.gate_field.item()}
+                    if gated_offset is not None else None
+                ),
                 "train_off_fibre_count": train_off_fibre,
                 "train_wall_clock_s": wall,
                 "final_loss": log_rows[-1]["loss"],
@@ -454,6 +500,9 @@ def main(argv=None):
                              "the default")
     parser.add_argument("--eval-contexts", type=int, default=EVAL_CONTEXTS,
                         help="plumbing smoke only")
+    parser.add_argument("--near-boundary-boost", type=float, default=0.0,
+                        help="eta(context) boost kappa on b in {1, m-1} "
+                             "contexts; 0 = frozen-protocol loss (default)")
     args = parser.parse_args(argv)
     torch.set_num_threads(args.threads)
     device = torch.device(args.device)
@@ -466,6 +515,7 @@ def main(argv=None):
         reports = run_slate(
             sigma, seeds, arms, args.steps, results_root, args.tag,
             device, args.eval_rollouts, args.eval_contexts,
+            args.near_boundary_boost,
         )
         all_reports[f"sigma_{sigma}"] = {
             "reports": reports,

@@ -263,3 +263,46 @@ def test_reference_log_weight_terms_shift_all_trajectories_equally():
     assert all(
         isclose(a, b, rel_tol=1e-12) for a, b in zip(with_constants, without)
     )
+
+
+def test_minimiser_is_invariant_to_context_dependent_loss_weights():
+    """Lead-1 licence (near-boundary exposure boost): a per-context loss
+    weight eta(m, b) — any positive function of the CONTEXT, here the
+    budget-class boost 1 + kappa*1[b in {1, m-1}] — scales every
+    completion coefficient at a fixed context equally, so the per-context
+    minimiser (the exact fibre conditional) is untouched. Same argument as
+    the size-weight invariance: eta is context-measurable, and b, m are
+    functions of the context alone. A weight depending on the TERMINAL
+    (not just the context) would NOT enjoy this — it would re-tilt the
+    posterior over completions."""
+    n_sites, n_plus, sigma = 5, 2, 0.4
+    neighbours = ring_neighbour_pairs(n_sites)
+
+    def near_boundary_boosted(sigma_, n_sites_, n_plus_, neighbours_, boost):
+        coefficients = {}
+        for terminal in fibre_states(n_sites_, n_plus_):
+            target_mass = exp(sigma_ * ring_energy(terminal, neighbours_))
+            for set_size in range(1, n_sites_ + 1):
+                for mask_set in combinations(range(n_sites_), set_size):
+                    context = corrupt_by_masking(terminal, set(mask_set))
+                    masked, budget = masked_and_budget(context, n_plus_)
+                    eta = 1.0 + boost * (budget in (1, masked - 1))
+                    weight = target_mass * eta
+                    for site in mask_set:
+                        key = (context, site)
+                        plus_mass, minus_mass = coefficients.get(
+                            key, (0.0, 0.0))
+                        if terminal[site] == +1:
+                            plus_mass += weight
+                        else:
+                            minus_mass += weight
+                        coefficients[key] = (plus_mass, minus_mass)
+        return {key: p / (p + q) for key, (p, q) in coefficients.items()}
+
+    unboosted = near_boundary_boosted(sigma, n_sites, n_plus, neighbours, 0.0)
+    boosted = near_boundary_boosted(sigma, n_sites, n_plus, neighbours, 4.0)
+    assert unboosted.keys() == boosted.keys()
+    assert all(
+        isclose(unboosted[key], boosted[key], rel_tol=1e-12)
+        for key in unboosted
+    )

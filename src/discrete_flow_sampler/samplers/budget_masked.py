@@ -144,7 +144,30 @@ def preconditioner_logit_diff(
         return 4.0 * sigma * (x_masked @ adjacency)
     if mode != "budget_tilted":
         raise ValueError(f"unknown preconditioner mode: {mode}")
+    budget_logit, energy_term, interior = budget_tilt_components(
+        x_masked, adjacency, sigma, n_plus_target
+    )
+    logit = budget_logit[:, None] + energy_term
+    # boundary rows: the delta must not be diluted by the energy field
+    boundary = ~interior
+    logit[boundary] = budget_logit[boundary][:, None].expand(
+        -1, x_masked.shape[1]
+    )
+    return logit
 
+
+def budget_tilt_components(
+    x_masked: Tensor, adjacency: Tensor, sigma: float, n_plus_target: int
+) -> tuple[Tensor, Tensor, Tensor]:
+    """V0's two logit terms, separately: (budget_logit (B,), energy_term
+    (B, d), interior (B,) bool).
+
+    budget_logit is log(b/(m-b)) on interior rows and the pseudo-infinite
+    delta on boundary rows; energy_term is 4*sigma*f with urn-mean
+    imputation. Split out so the gated variant (`GatedBudgetTiltOffset`)
+    can scale the two mechanisms independently without duplicating the
+    computation the ungated preconditioner is exhaustively tested on.
+    """
     masked_count, budget = masked_count_and_budget(x_masked, n_plus_target)
     interior = (budget > 0) & (budget < masked_count)
     # urn-mean imputation: field = A x  +  urn_mean * (A masked_indicator)
@@ -166,13 +189,44 @@ def preconditioner_logit_diff(
             torch.full_like(budget, +BOUNDARY_LOGIT, dtype=x_masked.dtype),
         ),
     )
-    logit = budget_logit[:, None] + 4.0 * sigma * field
-    # boundary rows: the delta must not be diluted by the energy field
-    boundary = ~interior
-    logit[boundary] = budget_logit[boundary][:, None].expand(
-        -1, x_masked.shape[1]
-    )
-    return logit
+    return budget_logit, 4.0 * sigma * field, interior
+
+
+class GatedBudgetTiltOffset(nn.Module):
+    """V0 with learnable scales on its two mechanisms (the Amendment-01
+    forensics' arm A': "keep the good init without the unlearning bill").
+
+        P(x) = gate_budget * log(b/(m-b)) + gate_field * energy_term
+        (interior rows; boundary rows keep the UNGATED exact deltas)
+
+    Both gates initialise at 1.0, so step 0 is EXACTLY the V0 law — the
+    first-pass finding was that V0's strong-but-imperfect near-boundary
+    opinions must be partially cancelled by the trunk (arm C ends better
+    than arm A precisely there); two scalars turn that cancellation into
+    a 2-parameter descent instead of distributed trunk weights. The
+    boundary branch stays ungated because it is exact at any coupling —
+    a gate there could only unlearn a true delta. Rejected alternative:
+    a context-conditioned gate g(m, b) (small MLP) — more capacity, but
+    the mechanism question ("is the unlearning bill the prior's scale?")
+    is answered by scalars, and scalars stay interpretable in the report.
+    """
+
+    def __init__(self, adjacency: Tensor, sigma: float, n_plus_target: int):
+        super().__init__()
+        self.register_buffer("adjacency", adjacency)
+        self.sigma = sigma
+        self.n_plus_target = n_plus_target
+        self.gate_budget = nn.Parameter(torch.tensor(1.0))
+        self.gate_field = nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, x_masked: Tensor) -> Tensor:
+        budget_logit, energy_term, interior = budget_tilt_components(
+            x_masked, self.adjacency, self.sigma, self.n_plus_target
+        )
+        gated = (self.gate_budget * budget_logit[:, None]
+                 + self.gate_field * energy_term)
+        boundary_delta = budget_logit[:, None].expand(-1, x_masked.shape[1])
+        return torch.where(interior[:, None], gated, boundary_delta)
 
 
 def feasibility_clamped_p_plus(
@@ -266,6 +320,7 @@ def wdce_cross_entropy(
     normalised_weights: Tensor,
     n_replicates: int,
     generator: torch.Generator,
+    context_loss_weight=None,
 ) -> Tensor:
     """The constrained WDCE loss (the paper's Eq. (16) on the fibre).
 
@@ -287,6 +342,19 @@ def wdce_cross_entropy(
 
     The per-site term is a numerically stable binary cross-entropy in the
     logit difference: -log s(+1) = softplus(-z), -log s(-1) = softplus(z).
+
+    context_loss_weight (optional): eta(x~) -> (B*R,) positive weights, a
+    function of the CORRUPTED CONTEXT alone (e.g. the near-boundary boost
+    1 + kappa*1[b in {1, m-1}], with b and m read off the context). Because
+    every completion coefficient at a fixed context scales equally, the
+    population minimiser is unchanged (the same argument as the w(lambda)
+    freedom; pinned by tests/test_budget_wdce.py::
+    test_minimiser_is_invariant_to_context_dependent_loss_weights) — the
+    weight reallocates GRADIENT between contexts, nothing else. It is
+    normalised to batch-mean 1 so the loss scale (and the effective
+    learning rate) is comparable across boost settings. A weight that read
+    the TERMINAL would not be minimiser-safe; the signature only exposes
+    the corrupted context to make that mistake impossible.
     """
     n_terminals, n_sites = terminals.shape
     device = terminals.device        # generator must live on the same device
@@ -307,5 +375,10 @@ def wdce_cross_entropy(
         replicated == 1.0, softplus(-logit), softplus(logit)
     )
     per_replicate = (site_nll * corruption_mask.float()).sum(dim=1)
+    if context_loss_weight is not None:
+        with torch.no_grad():
+            eta = context_loss_weight(corrupted)
+            eta = eta / eta.mean()
+        per_replicate = per_replicate * eta
     per_terminal = per_replicate.view(n_terminals, n_replicates).mean(dim=1)
     return (normalised_weights.detach() * per_terminal).sum()

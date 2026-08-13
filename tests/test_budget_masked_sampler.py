@@ -373,3 +373,85 @@ def test_wdce_loss_prefers_the_exact_conditional():
                 generator=loss_generator,
             ).item()
     assert losses["exact"] < losses["perturbed"]
+
+
+# ---------------------------------------------------------------------------
+# Forensics interventions (Amendment-01 follow-up, prepared not launched)
+# ---------------------------------------------------------------------------
+
+
+def test_gated_offset_at_init_is_exactly_v0():
+    """GatedBudgetTiltOffset with gates at their 1.0 init must reproduce
+    preconditioner_logit_diff('budget_tilted') bit-for-bit at masked sites
+    — the whole point of the gate is keeping V0's start."""
+    from discrete_flow_sampler.samplers.budget_masked import (
+        GatedBudgetTiltOffset,
+    )
+    n_sites, n_plus = 6, 3
+    adjacency = ring_adjacency(n_sites)
+    gated = GatedBudgetTiltOffset(adjacency, RING_SIGMA, n_plus)
+    for state in feasible_masked_states(n_sites, n_plus):
+        x = as_masked_tensor(state)
+        with torch.no_grad():
+            v0 = preconditioner_logit_diff(
+                x, adjacency, RING_SIGMA, n_plus, "budget_tilted"
+            )
+            gated_logit = gated(x)
+        masked_sites = x[0] == 0.0
+        assert torch.equal(gated_logit[0][masked_sites], v0[0][masked_sites])
+
+
+def test_gated_rollout_stays_on_fibre():
+    """G0 is generation-side (the feasibility clamp), so it must survive
+    arbitrary gate values — including adversarial negative ones."""
+    from discrete_flow_sampler.samplers.budget_masked import (
+        GatedBudgetTiltOffset,
+    )
+    n_sites, n_plus = 16, 8
+    adjacency = ring_adjacency(n_sites)
+    gated = GatedBudgetTiltOffset(adjacency, 0.223, n_plus)
+    with torch.no_grad():
+        gated.gate_budget.fill_(-2.0)
+        gated.gate_field.fill_(3.0)
+    generator = torch.Generator().manual_seed(3)
+    terminals, _ = rollout_budget_masked(
+        lambda x: gated(x), 2048, n_sites, n_plus, generator
+    )
+    assert torch.all(((terminals + 1) / 2).sum(dim=1) == n_plus)
+
+
+def test_context_loss_weight_none_is_the_frozen_protocol():
+    """Regression pin: the default (no context weight) computes the same
+    loss as before the argument existed, and a CONSTANT weight matches it
+    too (the batch-mean normalisation makes constant weights a no-op)."""
+    n_sites, n_plus, sigma = 6, 3, RING_SIGMA
+    adjacency = ring_adjacency(n_sites)
+    torch.manual_seed(9)
+    net = MaskedConditionalNet(n_sites, hidden_width=16)
+    for parameter in net.parameters():
+        parameter.data.normal_(0.0, 0.2)
+
+    def logit_fn(x):
+        return net(x) + preconditioner_logit_diff(
+            x, adjacency, sigma, n_plus, "budget_tilted"
+        )
+
+    with torch.no_grad():
+        generator = torch.Generator().manual_seed(13)
+        terminals, rollout_log_prob = rollout_budget_masked(
+            logit_fn, 512, n_sites, n_plus, generator
+        )
+        weights = torch.softmax(
+            sigma * ring_energy_torch(terminals, adjacency)
+            - rollout_log_prob, dim=0,
+        )
+        losses = []
+        for context_weight in (None, lambda contexts: torch.full(
+                (contexts.shape[0],), 7.0)):
+            loss_generator = torch.Generator().manual_seed(17)
+            losses.append(wdce_cross_entropy(
+                logit_fn, terminals, weights, n_replicates=4,
+                generator=loss_generator,
+                context_loss_weight=context_weight,
+            ).item())
+    assert isclose(losses[0], losses[1], rel_tol=1e-6)
