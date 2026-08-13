@@ -51,3 +51,18 @@ def test_stencil_bench_head_routes_stencil_band():
     )
     assert head.use_stencil
     assert head.stencil_side == 8
+
+
+def test_naive_bench_head_is_the_doubly_hollow_oracle():
+    """The naive rung has no trained cell (mask_one is bit-exact equal, so
+    it never ships) — its bench claim is the ORACLE's cost, so the pin is
+    class identity + shared backbone rather than a cell schema."""
+    from discrete_flow_sampler.constraints.swap_readout import (
+        DoublyHollowSwapHead,
+    )
+
+    head, _ = build_head_and_target(
+        d=64, device=torch.device("cpu"), anchor_chunk=None, head_kind="naive"
+    )
+    assert type(head) is DoublyHollowSwapHead
+    assert head.backbone.d == 64

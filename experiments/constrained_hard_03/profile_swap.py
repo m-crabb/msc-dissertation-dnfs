@@ -37,7 +37,10 @@ from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHea
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
 )
-from discrete_flow_sampler.constraints.swap_readout import LeTFMaskOneSwapHead
+from discrete_flow_sampler.constraints.swap_readout import (
+    DoublyHollowSwapHead,
+    LeTFMaskOneSwapHead,
+)
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
     gather_pair_scores,
@@ -64,8 +67,12 @@ def build_head_and_target(
     "masked_attention" benches the reported exclusion-mask head; "stencil"
     benches the MA head with the 5-point lattice-stencil band family (the
     ladder's 0.8046/0.86034 cell); "factorised" benches the rank-8
-    bilinear+global head at its fab8-arm defaults. Parity with the
-    production cells is pinned by tests/test_profile_swap_heads.py."""
+    bilinear+global head at its fab8-arm defaults; "naive" benches the
+    O(d^2) doubly-hollow oracle (mask BOTH sites of every ordered pair,
+    sequential loop — bit-exact to mask_one at the d=16 gate, so it
+    prices the naive rung of the forward-pass ladder rather than shipping
+    as a sampler; measurable only at small d). Parity with the production
+    cells is pinned by tests/test_profile_swap_heads.py."""
     side = int(round(d**0.5))
     if side * side != d:
         raise ValueError(f"--d must be a square lattice site count, got {d}")
@@ -87,6 +94,8 @@ def build_head_and_target(
         ).to(device)
     elif head_kind == "factorised":
         head = FactorisedSwapHead(backbone).to(device)
+    elif head_kind == "naive":
+        head = DoublyHollowSwapHead(backbone).to(device)
     else:
         head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
     return head, target
@@ -222,7 +231,7 @@ def main(argv=None):
     parser.add_argument(
         "--head-kind", default="mask_one",
         choices=("mask_one", "interval", "masked_attention", "stencil",
-                 "factorised"),
+                 "factorised", "naive"),
     )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)
