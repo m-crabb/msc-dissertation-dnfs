@@ -142,9 +142,10 @@ def test_c_t_uses_the_larger_rollout_set(tmp_path, monkeypatch):
 
     real_c_t = swap_training.compute_c_t_grid_swap
 
-    def c_t_spy(t_grid, x_traj, target, head, *, mode):
+    def c_t_spy(t_grid, x_traj, target, head, *, mode, chunk_rows=None):
         seen["c_t_row_counts"].append(x_traj.shape[1])
-        return real_c_t(t_grid, x_traj, target, head, mode=mode)
+        return real_c_t(t_grid, x_traj, target, head, mode=mode,
+                        chunk_rows=chunk_rows)
 
     monkeypatch.setattr(FixedCompositionIsingTarget, "sample_base", base_spy)
     monkeypatch.setattr(swap_training, "compute_c_t_grid_swap", c_t_spy)
@@ -169,9 +170,10 @@ def test_buffer_size_and_composition_unchanged(tmp_path, monkeypatch):
 
     real_c_t = swap_training.compute_c_t_grid_swap
 
-    def c_t_spy(t_grid, x_traj, target, head, *, mode):
+    def c_t_spy(t_grid, x_traj, target, head, *, mode, chunk_rows=None):
         captured["full_traj"] = x_traj
-        return real_c_t(t_grid, x_traj, target, head, mode=mode)
+        return real_c_t(t_grid, x_traj, target, head, mode=mode,
+                        chunk_rows=chunk_rows)
 
     real_append = swap_training._append_replay_buffer
 

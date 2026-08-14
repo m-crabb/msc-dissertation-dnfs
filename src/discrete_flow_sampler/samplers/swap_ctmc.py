@@ -298,11 +298,26 @@ def sample_swap_ctmc(
     return state
 
 
-def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *, mode):
+def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
+                          mode, chunk_rows: int | None = None):
     """Per-time-slot c_t for the swap loss (mirror of compute_c_t_grid).
 
     mode='naive_mc'        -> c_t = mean_m ∂_t log p̃_t(x_t^{(m)})
     mode='control_variate' -> c_t = mean_m ξ_t^swap(x_t^{(m)})   (Eq. 8, swap form)
+
+    chunk_rows (M7a, 2026-08-14; plan Task 7): None runs the per-slot
+    sequential loop — n_grid integrand calls at outer_batch rows each, the
+    byte-identical archived behaviour. When set, the (n_grid × outer_batch)
+    integrand evaluations are flattened and computed in row-chunks of at
+    most chunk_rows, cutting the per-call launch overhead that dominates
+    the no-grad c_t phase at d256 (~75% of wall there is trajectory+c_t).
+    The quantities are the SAME fp32 ops modulo batch-dim blocking, so
+    parity vs the sequential path is pinned at the established 1e-5
+    batch-blocking class (tests/test_c_t_grid_chunk.py — that parity test
+    IS the M7a gate; no quality change is permitted). The cap exists so
+    the flattened batch stays inside GPU memory: at d256-MA a no-grad call
+    peaks ~40 MB/row, so 512-2048 rows is the in-cap class on an 80 GB
+    a100. Stateless and RNG-free, so no resume contract beyond wiring.
     """
     if mode not in ("naive_mc", "control_variate"):
         raise ValueError(f"Unknown mode {mode!r}")
@@ -310,6 +325,35 @@ def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *, mode)
     integrand_per_t = torch.empty(
         (n_grid, outer_batch), dtype=x_traj.dtype, device=x_traj.device
     )
+    if chunk_rows is not None:
+        if isinstance(chunk_rows, bool) or int(chunk_rows) != chunk_rows:
+            raise TypeError(
+                f"chunk_rows must be an int or None, got {chunk_rows!r}"
+            )
+        chunk_rows = int(chunk_rows)
+        if chunk_rows < 1:
+            raise ValueError(
+                f"chunk_rows must be >= 1 when set, got {chunk_rows}"
+            )
+        # Row (k, m) of the flattened layout is grid slot k, rollout row m:
+        # reshape is row-major over (n_grid, outer_batch), so the matching
+        # time is t_grid[k] repeated outer_batch times.
+        n_rows = n_grid * outer_batch
+        x_flat = x_traj.reshape(n_rows, -1)
+        t_flat = t_grid.repeat_interleave(outer_batch)
+        integrand_flat = integrand_per_t.view(n_rows)
+        with torch.no_grad():
+            for start in range(0, n_rows, chunk_rows):
+                stop = min(start + chunk_rows, n_rows)
+                if mode == "naive_mc":
+                    integrand_flat[start:stop] = target.dt_log_p_tilde_t(
+                        x_flat[start:stop], t_flat[start:stop]
+                    )
+                else:
+                    integrand_flat[start:stop] = compute_xi_t_swap(
+                        x_flat[start:stop], t_flat[start:stop], head, target
+                    )
+        return integrand_per_t.mean(dim=-1), integrand_per_t
     with torch.no_grad():
         for k in range(n_grid):
             x_k = x_traj[k]

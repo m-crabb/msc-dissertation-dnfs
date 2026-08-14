@@ -123,6 +123,17 @@ class TrainCfg:
     # the prefix a uniform subset). None = outer_batch = OFF, the
     # byte-identical archived behaviour; candidate d256 value 512.
     c_t_batch: int | None = None
+    # Batched c_t grid calls (M7a, 2026-08-14; plan Task 7). The c_t grid
+    # costs n_grid sequential no-grad integrand calls per outer cycle; at
+    # d256 trajectory+c_t is ~75% of wall. When set, the (n_grid x
+    # n_rollout) integrand evaluations run flattened in row-chunks of at
+    # most this many rows — the same fp32 ops modulo batch-dim blocking,
+    # parity-pinned at the established 1e-5 class (the parity test IS the
+    # M7a gate: no quality change permitted). The cap keeps the flattened
+    # batch inside GPU memory (~40 MB/row no-grad at d256-MA, so 512-2048
+    # rows is the in-cap class on an 80 GB a100). None = OFF, the
+    # byte-identical per-slot sequential loop every archived run used.
+    c_t_grid_chunk_rows: int | None = None
 
 
 @dataclass(frozen=True)

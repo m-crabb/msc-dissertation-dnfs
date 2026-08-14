@@ -320,6 +320,13 @@ def train_swap(
                 f"outer_batch rollout rows, so a smaller c_t_batch would "
                 f"starve it."
             )
+    # M7a (2026-08-14): batched c_t grid calls. None = the per-slot
+    # sequential loop (byte-identical archived behaviour); when set, the
+    # (n_grid x n_rollout) integrand evaluations run flattened in
+    # row-chunks of at most this size. Validation lives in
+    # compute_c_t_grid_swap so every caller gets it; parity vs the
+    # sequential path is the M7a gate (tests/test_c_t_grid_chunk.py).
+    c_t_grid_chunk_rows = getattr(train_cfg, "c_t_grid_chunk_rows", None)
     if replay_buffer_cycles < 1:
         raise ValueError(
             f"replay_buffer_cycles must be >= 1, got {replay_buffer_cycles}"
@@ -511,6 +518,7 @@ def train_swap(
                 )                                              # (T, n_rollout, D)
                 c_t_grid, integrand_per_t = compute_c_t_grid_swap(
                     t_grid, x_traj_full, target, head, mode=estimator_mode,
+                    chunk_rows=c_t_grid_chunk_rows,
                 )                                       # (T,), (T, n_rollout)
                 # M2: smooth the grid across cycles (first cycle after
                 # construction/reset passes through raw). The rms delta
