@@ -380,6 +380,31 @@ def _d64_m2_ctema4_cell(name: str) -> HardStageCfg:
     )
 
 
+def _d64_naive_twin_cell(name: str) -> HardStageCfg:
+    """c_t transfer-function cell (2026-08-14): the archived MA 50k
+    curriculum twin with estimator control_variate -> naive_mc the ONLY
+    declared change.
+
+    Why it exists: every variance lever in flight (the Stein CV, the c_t
+    EMA, the enlarged c_t rollout) reduces c_t NOISE, but the quantity
+    that has to fall ~8x for a usable d256 is per-site Var[log w]. The
+    slope between them has never been measured — all 21 archived d64
+    cells run control_variate, so there is no naive arm at any healthy
+    size in either direction. This cell measures it where the control
+    variate is known to WORK (a healthy run), rather than where it
+    inverted (the diverged d256), which is the confound that makes the
+    d256 naive-vs-CV comparison uninterpretable.
+
+    Predictions are pre-registered in
+    test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator; the naive
+    integrand variance 26.0 is already logged as the CV runs' own
+    Var[dt log p tilde] column, so they are arithmetic, not guesses.
+    A fourth outcome is live: if training destabilises, the CV is a
+    STABILITY crutch and not only a variance reducer."""
+    cell = _d64_curriculum_cell(name, "masked_attention")
+    return replace(cell, estimator="naive_mc")
+
+
 def _d64_smoke12k_ctb512_cell(name: str) -> HardStageCfg:
     """M3 plumbing fallback (plan Task 3): the MA curriculum recipe at the
     12k smoke horizon with c_t_batch=512 the ONLY mechanism change — the
@@ -958,6 +983,10 @@ CONFIGS: dict[str, HardStageCfg] = {
     # across-cycle smoothing is not free and the lever is d256-only-judged.
     "H2_d64_c50_s223_letf_ma_50k_curr_ctema4": _d64_m2_ctema4_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr_ctema4",
+    ),
+    # --- c_t transfer function (2026-08-14): the missing naive arm -------
+    "H2_d64_c50_s223_letf_ma_50k_curr_naive": _d64_naive_twin_cell(
+        "H2_d64_c50_s223_letf_ma_50k_curr_naive",
     ),
     # --- M-campaign Task 3 (2026-08-14): decoupled c_t rollout batch ------
     # Mechanism cell, same user call: d256-naive 12k smoke with c_t_batch

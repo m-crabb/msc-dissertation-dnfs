@@ -888,6 +888,46 @@ def test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields():
     assert rebuilt == twin
 
 
+def test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator():
+    """c_t transfer-function cell (2026-08-14): the whole M2/M3/cv2 thrust
+    reduces c_t NOISE, but the quantity that has to fall ~8x for a usable
+    d256 is per-site Var[log w]. Nobody has measured the transfer between
+    them — every one of the 21 archived d64 cells runs control_variate, so
+    the slope is unmeasured in BOTH directions at every healthy size.
+
+    This cell is the archived MA 50k curriculum twin with the estimator
+    control_variate -> naive_mc as the ONLY declared change, so the
+    difference in final Var[log w]/site IS the transfer function, measured
+    where the control variate is known to work (a healthy run) rather than
+    where it inverted (the diverged d256).
+
+    Pre-registered predictions (the naive integrand variance 26.0 is
+    already logged as the Var[dt log p tilde] column of the CV runs, so
+    these are arithmetic, not guesses; twin ESS is 0.781):
+      c_t noise does not drive log-weight variance -> ESS ~ 0.78
+      transfer linear in c_t standard error        -> ESS ~ 0.25
+      transfer linear in c_t variance              -> ESS ~ 0.001
+      training destabilises                        -> the CV is a STABILITY
+        crutch, not only a variance reducer, which would mean the archived
+        d256 naive rescue ran 50k steps without one.
+    """
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    cell = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr_naive"]
+    assert cell.estimator == "naive_mc"
+    assert twin.estimator == "control_variate"
+    # The knobs the campaign added must all be OFF: this cell has to be a
+    # pure single-variable read against an archived twin that predates them.
+    assert cell.train.c_t_ema_halflife_cycles == 0.0
+    assert cell.train.c_t_batch is None
+    assert cell.ema_decay == twin.ema_decay == 0.0
+    rebuilt = replace(cell, name=twin.name, estimator=twin.estimator)
+    assert rebuilt == twin
+
+
 def test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields():
     """M3 mechanism cell (2026-08-14, plan Task 3): the d256 12k smoke must
     be the smoke12k Arm-B naive recipe with c_t_batch=512 the ONLY declared
