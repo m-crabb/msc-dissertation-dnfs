@@ -112,9 +112,9 @@ def _save_resume_state(
     optimiser,
     x_replay_chunks,
     t_idx_replay_chunks,
-        replay_sigma: float,
-        ema=None,
-        c_t_ema=None,
+    replay_sigma: float,
+    ema=None,
+    c_t_ema=None,
 ) -> None:
     """Checkpoint full outer-boundary training state for preemption resume.
 
@@ -365,14 +365,14 @@ def train_swap(
         writer = csv.writer(log_file)
         if log_mode == "w":
             writer.writerow(
-                 ["step", "loss", "ess", "var_dt_log_p_tilde",
-                  "var_estimator_integrand", "grad_norm",
-                  "rate_pair_mean", "rate_pair_p99",
-                  "lambda_dt_clipped_frac", "lambda_dt_p99",
-                  "log_ratio_clamp_frac",
-                  "proposal_drop_frac", "events_per_site_per_step",
-                  "sigma_current", "lr_current",
-                  "c_t_ema_rms_delta", "wall_clock_step_s"]
+                ["step", "loss", "ess", "var_dt_log_p_tilde",
+                 "var_estimator_integrand", "grad_norm",
+                 "rate_pair_mean", "rate_pair_p99",
+                 "lambda_dt_clipped_frac", "lambda_dt_p99",
+                 "log_ratio_clamp_frac",
+                 "proposal_drop_frac", "events_per_site_per_step",
+                 "sigma_current", "lr_current",
+                 "c_t_ema_rms_delta", "wall_clock_step_s"]
             )
 
         step = start_step

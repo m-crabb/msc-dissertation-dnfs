@@ -28,8 +28,17 @@ What correct looks like, independent of implementation:
    resume.pt: an interrupt-and-resume under the EMA must reproduce the
    uninterrupted run's training log bit-for-bit (excluding wall-clock),
    the same contract test_swap_training_resume.py pins for the base state.
+7. **Resume re-homes onto the live device.** resume.pt is deliberately
+   device-portable (the state is stored on CPU, as replay chunks and the
+   parameter shadow are), so a restored state must end up back on whatever
+   device the run is using before it is folded into the next cycle's grid.
+   Unlike the parameter EMA there are no parameters to read a device from,
+   so the contract is checked at the fold. This is the only contract in
+   this file that CPU-only runs cannot falsify — it is the resume path of
+   every GPU cell that arms the knob.
 """
 import csv
+import io
 from pathlib import Path
 
 import torch
@@ -160,6 +169,42 @@ def test_state_dict_roundtrip_continuation():
     restored = CTGridEMA(n_grid=4, halflife_cycles=4.0)
     restored.load_state_dict(state)
     actual = [restored.update(g) for g in grids]
+    for ref, got in zip(expected, actual):
+        assert torch.equal(ref, got)
+
+
+def _accelerator() -> str | None:
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return None
+
+
+def test_state_dict_roundtrip_re_homes_off_cpu():
+    """Contract 7. state_dict() stores on CPU for portability, so a resumed
+    run on an accelerator must not be left folding a CPU state into a device
+    grid. Exercised through torch.save/torch.load because that (not a bare
+    dict handoff) is what resume.pt actually does."""
+    device = _accelerator()
+    if device is None:
+        import pytest
+        pytest.skip("no accelerator: the CPU path cannot falsify contract 7")
+
+    ema = CTGridEMA(n_grid=4, halflife_cycles=4.0)
+    grids = [torch.full((4,), float(k), device=device) for k in range(1, 6)]
+    for grid in grids[:2]:
+        ema.update(grid)
+    buffer = io.BytesIO()
+    torch.save(ema.state_dict(), buffer)
+    expected = [ema.update(grid) for grid in grids[2:]]
+
+    buffer.seek(0)
+    restored = CTGridEMA(n_grid=4, halflife_cycles=4.0)
+    restored.load_state_dict(torch.load(buffer, weights_only=True))
+    actual = [restored.update(grid) for grid in grids[2:]]
+    for got in actual:
+        assert got.device.type == device
     for ref, got in zip(expected, actual):
         assert torch.equal(ref, got)
 

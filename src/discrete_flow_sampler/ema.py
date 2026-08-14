@@ -108,7 +108,9 @@ class CTGridEMA:
     * Checkpoint contract: `state_dict`/`load_state_dict` carry the state
       (or its absence) so a preempted run's continuation is bit-exact —
       the same contract test_swap_training_resume.py pins for the base
-      trainer state.
+      trainer state. The state is stored on CPU for node portability and
+      re-homed at the next `update`; see that method for why the fold,
+      not the load, is where the live device becomes known.
     """
 
     def __init__(self, n_grid: int, halflife_cycles: float):
@@ -130,10 +132,22 @@ class CTGridEMA:
         return halflife_cycles > 0
 
     def update(self, c_t_grid):
-        """Fold one outer cycle's raw grid in; return the smoothed grid."""
+        """Fold one outer cycle's raw grid in; return the smoothed grid.
+
+        The device is adopted from the incoming grid, which is what makes
+        the restore path correct: `state_dict` stores on CPU so resume.pt
+        stays portable across nodes, and — unlike the parameter EMA, which
+        re-homes at load time off `parameter.device` — this class holds no
+        parameters to read a live device from. The fold is the first point
+        where one is known, so it re-homes here. Without it a GPU run that
+        resumes from a checkpoint dies on the next outer cycle with a
+        device-mismatch RuntimeError.
+        """
         if self.state is None:
             self.state = c_t_grid.clone()
         else:
+            if self.state.device != c_t_grid.device:
+                self.state = self.state.to(c_t_grid.device)
             self.state.mul_(1 - self.alpha).add_(c_t_grid, alpha=self.alpha)
         return self.state
 
