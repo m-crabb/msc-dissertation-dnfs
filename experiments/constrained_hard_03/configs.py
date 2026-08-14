@@ -354,6 +354,19 @@ def _d64_curriculum_cell(
     return replace(cell, **head_knobs)
 
 
+def _d64_smoke12k_replay2_cell(name: str) -> HardStageCfg:
+    """M6 (plan Task 6): the MA curriculum recipe at the 12k smoke horizon,
+    replay_buffer_cycles 8 -> 2 the ONLY declared change versus the archived
+    d64 MA twin recipe (the ladder truncation to the shared 12k view is
+    forced by the validator, as on every smoke arm)."""
+    cell = _d64_curriculum_cell(name, "masked_attention", n_steps=12_000)
+    return replace(
+        cell,
+        train=replace(cell.train, replay_buffer_cycles=2),
+        curriculum=_SMOKE12K_SIGMA_LADDER,
+    )
+
+
 def _d256_cv2_cell(name: str) -> HardStageCfg:
     """Phase-2 twin of the d=256 naive rescue: same shape, estimator back to
     the control variate, NO curriculum (training continues from the naive
@@ -849,6 +862,23 @@ CONFIGS: dict[str, HardStageCfg] = {
         use_matching_step=True,
         curriculum=_SMOKE12K_SIGMA_LADDER,
         rewarmup_on_stage=True,
+    ),
+    # --- M-campaign Task 6 (2026-08-14): replay-buffer staleness ablation ---
+    # Inner steps draw from an 8-cycle replay buffer while c_t is FRESH from
+    # the latest outer cycle (swap_training.py); staleness is worst in the
+    # fast early curriculum. Config-only falsification: the d64 MA
+    # curriculum recipe at the 12k smoke horizon with the buffer window
+    # 8 -> 2 the ONLY declared change (twin-ness pinned by
+    # test_m6_replay2_smoke_mirrors_ma_recipe_except_declared_fields), read
+    # against the archived MA twin's first 12k steps. The ladder truncates
+    # to the shared 12k view because the validator rejects stages at or past
+    # n_steps (the 2026-08-12 smoke-wave lesson).
+    # Frozen bands (plan Task 6): INSENSITIVE (staleness confound ruled
+    # out) if final train-ESS is within +-10% relative of the archived MA
+    # twin at matched steps; SENSITIVE (>10% either way) -> full 50k arm +
+    # re-think the buffer window in the d256 recipe.
+    "H2_d64_smoke12k_replay2": _d64_smoke12k_replay2_cell(
+        "H2_d64_smoke12k_replay2",
     ),
     # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
     # these three cells are the only way to reproduce a NEGATIVE result the

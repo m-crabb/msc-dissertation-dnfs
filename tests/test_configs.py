@@ -458,6 +458,33 @@ def test_band_push_cells_mirror_ma_twin_except_declared_fields():
     assert replace(stencil, name=twin.name, use_stencil=False) == twin
 
 
+def test_m6_replay2_smoke_mirrors_ma_recipe_except_declared_fields():
+    """M6 (2026-08-14, plan Task 6): the replay2 12k smoke is the archived
+    MA curriculum recipe with exactly the declared deviations — the 12k
+    budget, the forced ladder truncation to the first three stages (the
+    validator rejects stages at or past n_steps), and replay_buffer_cycles
+    8 -> 2 — so its outcome attributes to the buffer window alone."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    cell = CONFIGS["H2_d64_smoke12k_replay2"]
+    assert cell.train.replay_buffer_cycles == 2
+    assert cell.train.n_steps == 12_000
+    rebuilt_twin = replace(
+        cell,
+        name=twin.name,
+        train=replace(
+            cell.train,
+            n_steps=twin.train.n_steps,
+            replay_buffer_cycles=twin.train.replay_buffer_cycles,
+        ),
+        curriculum=twin.curriculum,
+    )
+    assert rebuilt_twin == twin
+
+
 def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
     """Horizon extension (2026-07-22): the 50k curriculum
     stops while both heads are still improving (loss -12.0% / -7.4% over the
