@@ -88,12 +88,41 @@ class CTGridEMA:
     and its noise enters the loss gradient multiplicatively through
     (xi - c) * grad(xi): at d256-naive the per-slot standard error is
     ~ sqrt(110/128) ~= 0.93 nats (run-support case D2), 125x noisier than
-    the d64 record's CV-stabilised target. The Eq.-8 identity
-    E[xi_t] = dt log Z_t holds for the model's OWN law at any training
-    stage, so consecutive cycles estimate the same slowly-drifting quantity
-    and an EMA over cycles is pure variance reduction at an UNCHANGED fixed
-    point — the across-cycle complement of the Stein control variate's
-    within-cycle reduction.
+    the d64 record's CV-stabilised target.
+
+    WHAT c_t HAS TO BE, and it is not what an earlier version of this
+    docstring claimed. DNFS Eq. (8) defines c_t as dt log Z_t, and its
+    Lemma 1 (the discrete Stein identity) delivers E[xi_t] = dt log Z_t
+    for ANY admissible rate matrix at ANY training stage -- but only under
+    p_t, the ANNEALING TARGET, because Lemma 1 needs the expectation taken
+    under the same law that appears in the ratio p(y)/p(x), and in this
+    code that ratio is `target.swap_log_ratio`. Under the model's own law
+    the identity does NOT hold; the paper's licence to swap in any q_t
+    (App. A.3) is proved only AT OPTIMALITY, where the residual vanishes
+    pointwise and every distribution integrates it to zero.
+
+    What justifies smoothing is therefore not the identity but the
+    objective's shape. With c detached, one slot's loss decomposes as
+
+        E_q[(xi - c)^2] = Var_q[xi] + (E_q[xi] - c)^2 = Var_q[xi] + Delta^2
+
+    so c's VALUE is irrelevant -- only Delta, its offset from the mean of
+    xi over the distribution the LOSS averages over, ever reaches the
+    gradient, and it reaches it as a rank-one term 2*Delta*E_q[grad xi]
+    that shifts xi uniformly instead of narrowing it. At Delta = 0 the
+    detached gradient equals the exact variance gradient identically.
+    The fixed point is safe from either side: if xi becomes constant,
+    Lemma 1 pins that constant to dt log Z_t regardless of c -- PROVIDED
+    the sampled law covers p_t, which is exactly the assumption d256
+    breaks.
+
+    So this EMA is best read as an approximate Delta-CORRECTION rather
+    than as variance reduction: averaging c_t across cycles aligns it with
+    the mixture of up to `replay_buffer_cycles` past models that the
+    buffer actually holds, whereas the raw estimate is the newest
+    rollout's mean alone. Delta itself is still unlogged; the residual's
+    MEAN (not just its mean square) would measure it for free, since
+    `residual_swap` already computes xi - c on the inner batch.
 
     Contracts the trainer relies on:
 

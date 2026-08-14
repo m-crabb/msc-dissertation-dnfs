@@ -39,7 +39,10 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
     sample_swap_ctmc,
 )
 from discrete_flow_sampler.samplers.optim import StableAdamW
-from discrete_flow_sampler.samplers.swap_kolmogorov import loss_swap
+from discrete_flow_sampler.samplers.swap_kolmogorov import (
+    c_t_offset_rms,
+    loss_swap,
+)
 from discrete_flow_sampler.samplers.training import (
     _append_replay_buffer,
     _clear_replay,
@@ -372,7 +375,8 @@ def train_swap(
                  "log_ratio_clamp_frac",
                  "proposal_drop_frac", "events_per_site_per_step",
                  "sigma_current", "lr_current",
-                 "c_t_ema_rms_delta", "wall_clock_step_s"]
+                 "c_t_ema_rms_delta", "c_t_offset_rms",
+                 "wall_clock_step_s"]
             )
 
         step = start_step
@@ -596,6 +600,13 @@ def train_swap(
             )
             buffer_size = x_buffer.shape[0]
 
+            # Δ accumulators reset per outer cycle: c_t is fixed across the
+            # cycle's inner steps, so that is the window over which a per-slot
+            # residual mean estimates a single Δ_t. Carrying them across
+            # cycles would average over c_t values that no longer apply.
+            delta_residual_sum = torch.zeros(n_grid, device=device)
+            delta_residual_count = torch.zeros(n_grid, device=device)
+
             for _inner in range(inner_steps_per_outer):
                 step_start = time.time()
 
@@ -623,8 +634,22 @@ def train_swap(
                 t_sample = t_grid[t_idx_sample]                    # (N,)
                 c_t_sample = c_t_grid[t_idx_sample]                # (N,)
 
-                loss_value = loss_swap(
+                loss_value, residual_sample = loss_swap(
                     x_sample, t_sample, c_t_sample, head, target,
+                    return_residual=True,
+                )
+                # Δ diagnostic: −E[residual] per slot is the offset between
+                # c_t and the mean of ξ_t over the distribution the LOSS
+                # averages over (the buffer), which is the only channel by
+                # which c_t's value reaches the gradient. Accumulated over
+                # the cycle because c_t is fixed there and a single inner
+                # batch gives ~1 sample per slot. Sign flipped on readout,
+                # not here, so the running sums stay plain residual sums.
+                delta_residual_sum.index_add_(
+                    0, t_idx_sample, residual_sample.detach()
+                )
+                delta_residual_count.index_add_(
+                    0, t_idx_sample, torch.ones_like(residual_sample)
                 )
                 optimiser.zero_grad()
                 loss_value.backward()
@@ -696,6 +721,9 @@ def train_swap(
                         )
                     torch.save(head.state_dict(), ckpt_dir / "latest.pt")
 
+                c_t_offset_value = c_t_offset_rms(
+                    delta_residual_sum, delta_residual_count
+                )
                 writer.writerow(
                     [step, loss_value.item(), ess_value,
                      var_dt_log_p_tilde, var_estimator_integrand,
@@ -706,7 +734,8 @@ def train_swap(
                      rate_diag["log_ratio_clamp_frac"],
                      proposal_drop_frac, events_per_site_per_step,
                      float(target.sigma), optimiser.param_groups[0]["lr"],
-                     c_t_ema_rms_delta, wall_clock_step_s]
+                     c_t_ema_rms_delta, c_t_offset_value,
+                     wall_clock_step_s]
                 )
                 log_file.flush()
 
@@ -719,6 +748,7 @@ def train_swap(
                         "train/sigma_current": float(target.sigma),
                         "train/lr_current": optimiser.param_groups[0]["lr"],
                         "train/c_t_ema_rms_delta": c_t_ema_rms_delta,
+                        "train/c_t_offset_rms": c_t_offset_value,
                         "train/wall_clock_step_s": wall_clock_step_s,
                     }
                     if step % eval_cfg.eval_every == 0:

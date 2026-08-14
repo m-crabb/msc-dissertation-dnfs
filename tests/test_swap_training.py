@@ -234,3 +234,24 @@ def test_train_swap_eval_autocast_bf16_flag(tmp_path):
         )
         # Training forward/backward must stay fp32 under either flag value.
         assert False in autocast_states
+
+
+def test_train_swap_logs_c_t_offset_rms(tmp_path):
+    """Δ = E_buffer[ξ_t] − c_t, per time slot and RMS'd, is logged every step.
+
+    c_t is estimated on the fresh rollout while the loss averages over the
+    replay buffer, so this column is the only measurement of the resulting
+    mismatch — the term that enters the gradient as 2·Δ·E[∇ξ]."""
+    torch.manual_seed(0)
+    tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+    head = _tiny_head()
+    train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
+    train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
+               use_wandb=False, estimator_mode="control_variate")
+
+    rows = _read_csv_rows(Path(tmp_path) / "training_log.csv")
+    assert "c_t_offset_rms" in rows[0]
+    values = [float(row["c_t_offset_rms"]) for row in rows]
+    # Finite and non-negative on every step: it is an RMS, and every step
+    # follows at least one inner draw, so no row can be the empty-slot NaN.
+    assert all(value == value and value >= 0.0 for value in values)
