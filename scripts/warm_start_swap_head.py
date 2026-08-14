@@ -1,4 +1,4 @@
-"""Build a cross-size warm-start state dict for the swap head (d64 -> d256).
+"""Build a cross-size warm-start state dict for the swap head (e.g. d64 -> d256).
 
 Why this exists: the 16x16 rung diverged from COLD initialisation -- ~96% of
 its step-0 loss is the head's own init noise, an unnormalised coherent sum
@@ -8,18 +8,42 @@ target rate field is local and intensive per pair (the swap log-ratio is a
 5-point stencil function), so its weights are the right starting basin at any
 lattice size the architecture can address.
 
-Why it is legitimate: 110 of 116 parameter tensors are shape-identical across
-D (the backbone is a set-attention architecture over sites; band-family MLPs
-are indexed by RELATIVE offset, so the delta=D "column neighbour" family maps
-onto the new D's column neighbour with identical weights). The only
-d-dependent tensors are learned positional tables, which live on the D x D
-grid and transfer by bilinear interpolation -- the standard treatment for
-resizing learned positional embeddings. Tables carrying a leading non-grid
-row (the cond_t slot at row 0) keep that row verbatim. The one table the swap
-head never reads (the backbone's attention_readout, a single-site-route
-leftover) is deliberately NOT emitted, so the target model keeps its fresh
-init there and `load_state_dict(strict=False)` reports it as missing -- that
-printed report is the transfer's audit trail.
+Why it is legitimate: all but a handful of parameter tensors are
+shape-identical across D. The backbone is a set-attention architecture over
+sites, so every Linear/attention/LayerNorm tensor is (hidden_dim, hidden_dim)
+shaped; the band-family MLPs are indexed by RELATIVE offset, so the delta=D
+"column neighbour" family maps onto the new D's column neighbour with
+identical weights. The only d-dependent tensors are learned POSITIONAL
+tables:
+
+    backbone.{fwd,bwd}_stack.blocks.*.pos_embed   (1 + d, hidden_dim)
+    backbone.attention_readout.pos_embed          (d, d_k)
+    pair_position_embedding.weight   (interval / masked-attention heads)
+    site_position_embedding.weight   (factorised head)         (d, position_dim)
+
+Those live on the D x D grid and are resampled by `_resize_grid_rows`.
+Tables carrying a leading non-grid row (the cond_t slot at row 0) keep that
+row verbatim.
+
+Resampling choice, and the alternatives rejected (see `_resize_grid_rows`):
+BICUBIC with align_corners=False -- the standard resolution-transfer
+operation for learned ViT position embeddings -- over a CIRCULARLY padded
+grid, because the lattice is a torus.
+
+`skip_prefixes` defaults to EMPTY: transfer everything that fits. It is
+tempting to drop `backbone.attention_readout.*` because the one-pass band
+heads (interval, masked_attention, factorised) replace that module and never
+call it -- but it is the LIVE compute path for the mask_one and
+doubly_hollow heads, and dropping it there would leave the only module that
+reads the lattice at fresh init on top of a fully transferred trunk. For the
+band heads those tensors are inert (they receive no gradient), so carrying
+them costs nothing but checkpoint bytes; that asymmetry is why "copy
+everything" is the safe default and skipping is opt-in.
+
+Provenance note: the archived 2026-08-11 d64 -> d256 transfer predates this
+module's current defaults. It was built with bilinear/edge resampling and
+with the attention_readout tensors skipped, so it is not reproduced
+byte-for-byte here; that checkpoint file is its own record.
 
 Usage:
     pixi run python -m scripts.warm_start_swap_head \
@@ -39,23 +63,69 @@ from experiments.constrained_hard_03.run import build_target_and_head
 
 
 def _resize_grid_rows(rows: torch.Tensor, d_src: int, d_tgt: int) -> torch.Tensor:
-    """Bilinearly resize (d_src, C) grid-flattened rows to (d_tgt, C).
+    """Resample (d_src, C) grid-flattened rows to (d_tgt, C) on the torus.
 
-    Rows are raster-ordered over a sqrt(d) x sqrt(d) lattice; bilinear
-    interpolation commutes with the 180-degree raster flip the bwd stack
-    stores, so one helper serves fwd, bwd and pair tables alike.
+    Rows are raster-ordered over a sqrt(d) x sqrt(d) lattice. Interpolation is
+    BICUBIC with align_corners=False -- the operation used to transfer learned
+    ViT position embeddings between input resolutions, and the reason to
+    prefer it over bilinear is that a position table is a smooth field being
+    read at new sample points, where the cubic kernel's continuous first
+    derivative avoids the faceting bilinear leaves at the original grid lines.
+    align_corners=False keeps the mapping a pure rescaling of pixel CENTRES,
+    so no site is treated as an anchor pinned to the grid corner.
+
+    The torus, and why circular padding: the lattice has periodic boundary
+    conditions, so the field being resampled is periodic and no site is
+    distinguished. PyTorch's default edge handling replicates the boundary
+    row/column into the kernel's support, which manufactures exactly such a
+    distinguished edge -- the transferred table would carry a boundary
+    artefact on a system that is site-transitive. Circular padding is
+    implemented by tiling the grid 3x3 and cropping the centre after
+    resampling: with align_corners=False the scale factor is unchanged by the
+    tiling (3*L_dst / 3*L_src), so the centre block sees exactly the periodic
+    extension of the source at every sample point, for any L_src -> L_dst
+    ratio. Rejected alternative: padding by a fixed 2-pixel collar, which is
+    only correct for integer scale factors.
+
+    Commutes with the 180-degree raster reversal -- the kernel is symmetric
+    and the sampling grid is centred -- which is what makes it correct to
+    resample the bwd stack's table, whose site rows run in reversed raster
+    order because that stack reads x.flip(1), as an ordinary grid.
+
+    Failure mode guarded: silently resampling a non-grid row. Callers must
+    strip any leading conditioning row BEFORE calling this; the assertion
+    below only catches a non-square row count, not a mis-sliced one.
     """
-    D_src, D_tgt = int(d_src ** 0.5), int(d_tgt ** 0.5)
-    assert D_src * D_src == d_src and D_tgt * D_tgt == d_tgt, "non-square grid"
-    grid = rows.reshape(D_src, D_src, -1).permute(2, 0, 1).unsqueeze(0)
+    side_src, side_tgt = int(round(d_src ** 0.5)), int(round(d_tgt ** 0.5))
+    assert side_src ** 2 == d_src and side_tgt ** 2 == d_tgt, "non-square grid"
+    if side_src == side_tgt:
+        return rows
+    grid = rows.reshape(side_src, side_src, -1).permute(2, 0, 1).unsqueeze(0)
+    tiled = grid.repeat(1, 1, 3, 3)
     resized = F.interpolate(
-        grid, size=(D_tgt, D_tgt), mode="bilinear", align_corners=False
-    )
+        tiled, size=(3 * side_tgt, 3 * side_tgt), mode="bicubic",
+        align_corners=False,
+    )[:, :, side_tgt:2 * side_tgt, side_tgt:2 * side_tgt]
     return resized.squeeze(0).permute(1, 2, 0).reshape(d_tgt, -1)
 
 
-def build_transfer(source_sd: dict, target_sd: dict, d_src: int, d_tgt: int,
-                   skip_prefixes: tuple[str, ...]) -> tuple[dict, list, list]:
+def build_transfer(
+    source_sd: dict,
+    target_sd: dict,
+    d_src: int,
+    d_tgt: int,
+    skip_prefixes: tuple[str, ...] = (),
+) -> tuple[dict, list, list]:
+    """Adapt `source_sd` (lattice d_src) to load into `target_sd` (d_tgt).
+
+    Returns (transfer, interpolated_keys, skipped). Shape-identical tensors
+    are copied verbatim; a 2-D tensor whose leading dim grows by exactly
+    d_tgt - d_src is treated as a positional table over the lattice and
+    resampled, with a leading (d_src + 1)-row form understood as carrying a
+    non-site conditioning row at index 0 that is passed through untouched.
+    d_src == d_tgt therefore takes the copy branch for every tensor, making
+    same-size transfer bit-exact by construction rather than by tolerance.
+    """
     transfer, interpolated, skipped = {}, [], []
     for key, src in source_sd.items():
         if key not in target_sd:
@@ -63,7 +133,7 @@ def build_transfer(source_sd: dict, target_sd: dict, d_src: int, d_tgt: int,
             continue
         tgt_shape = target_sd[key].shape
         if any(key.startswith(p) for p in skip_prefixes):
-            skipped.append((key, "dead weight for the swap head; fresh init"))
+            skipped.append((key, "caller-skipped; left at fresh init"))
             continue
         if src.shape == tgt_shape:
             transfer[key] = src.clone()
@@ -92,6 +162,11 @@ def main() -> None:
     p.add_argument("--source_cfg", required=True, choices=list(CONFIGS))
     p.add_argument("--target_cfg", required=True, choices=list(CONFIGS))
     p.add_argument("--out", type=Path, required=True)
+    p.add_argument(
+        "--skip-prefix", action="append", default=[], metavar="PREFIX",
+        help="Leave every parameter under PREFIX at fresh init (repeatable). "
+             "Default: transfer everything that fits.",
+    )
     args = p.parse_args()
 
     src_cfg, tgt_cfg = CONFIGS[args.source_cfg], CONFIGS[args.target_cfg]
@@ -100,15 +175,14 @@ def main() -> None:
     source_sd = torch.load(args.source, map_location="cpu", weights_only=True)
     target_sd = tgt_head.state_dict()
 
+    skip_prefixes = tuple(args.skip_prefix)
     transfer, interpolated, skipped = build_transfer(
-        source_sd, target_sd, d_src, d_tgt,
-        skip_prefixes=("backbone.attention_readout.",),
+        source_sd, target_sd, d_src, d_tgt, skip_prefixes=skip_prefixes,
     )
     # The transfer must be loadable and must leave nothing accidentally
     # fresh: every target key is either transferred or knowingly skipped.
     unaccounted = set(target_sd) - set(transfer) - {
-        k for k in target_sd if any(
-            k.startswith(p) for p in ("backbone.attention_readout.",))
+        k for k in target_sd if any(k.startswith(p) for p in skip_prefixes)
     }
     if unaccounted:
         raise SystemExit(f"target keys neither transferred nor knowingly "

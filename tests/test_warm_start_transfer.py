@@ -337,6 +337,46 @@ def test_pair_context_of_a_warm_started_head_is_blind_to_both_holes(pair):
         assert torch.equal(probe, reference), f"leak flipping {sites}"
 
 
+def test_warm_started_blindness_probe_has_teeth():
+    """The probe above must be capable of failing.
+
+    Flipping a site OUTSIDE the pair has to move H_ij; otherwise the
+    blindness assertions would be satisfied by a context that ignores the
+    state entirely, and would pin nothing.
+    """
+    head = _warm_started_head()
+    site_i, site_j, outside = 4, 20, 12
+    spins = _state(36)
+    time = torch.rand(1)
+
+    reference = head.compute_pair_context(spins, time)[0, site_i, site_j]
+    flipped = spins.clone()
+    flipped[0, outside] *= -1
+    moved = head.compute_pair_context(flipped, time)[0, site_i, site_j]
+    assert (moved - reference).abs().max() > 1e-6
+
+
+def test_warm_started_head_differs_from_fresh_initialisation():
+    """Sanity: the transfer must actually change the destination weights.
+
+    LayerNorm scales and shifts are excluded: they initialise to constant
+    ones/zeros regardless of seed, so source and destination agree there for
+    reasons that have nothing to do with the transfer. Every RANDOMLY
+    initialised tensor must move.
+    """
+    head, fresh = _warm_started_head(), _head(6, seed=5)
+    warm_sd, fresh_sd = head.state_dict(), fresh.state_dict()
+    randomly_initialised = [
+        k for k in warm_sd if fresh_sd[k].std() > 0 and warm_sd[k].numel() > 1
+    ]
+    assert len(randomly_initialised) > 0.5 * len(warm_sd)
+    unchanged = [
+        k for k in randomly_initialised
+        if torch.equal(warm_sd[k], fresh_sd[k])
+    ]
+    assert unchanged == []
+
+
 def test_warm_started_head_keeps_exact_state_swap_antisymmetry():
     """G(i,j|x) = -G(i,j|Swap2(x,i,j)) -- the property the head exists for."""
     head = _warm_started_head()
