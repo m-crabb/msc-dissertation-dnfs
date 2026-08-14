@@ -325,3 +325,177 @@ def test_G_stays_fp32_under_bf16_autocast():
     with torch.autocast("cpu", dtype=torch.bfloat16):
         G = head(x, t)
     assert G.dtype == torch.float32, f"G downcast to {G.dtype} under autocast"
+
+
+# ---------------------------------------------------------------------------
+# Multi-order causal streams (the design's A-prime extension). The bilinear
+# term under the row-major ordering is structurally blind to the whole raster
+# interval between the holes (pinned by
+# test_bilinear_only_blind_to_interval_interior); running the causal stacks
+# under EXTRA site orderings gives every pair a second (prefix, suffix) split,
+# so deep coverage grows to the complement of the INTERSECTION of the
+# per-ordering intervals. Every ordering's factors are blind by causality
+# (bit-exact), so blindness and antisymmetry survive unchanged. d = 9 below
+# is a 3x3 lattice, so column-major and diagonal orderings exist.
+
+
+def _mo_head(
+    site_orderings=("row", "col"),
+    lattice_side=3,
+    d=9,
+    seed=42,
+    use_bilinear=True,
+    use_global=True,
+):
+    torch.manual_seed(seed)
+    backbone = LeTFRateMatrix(
+        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        use_sdpa_readout=False,
+    )
+    head = FactorisedSwapHead(
+        backbone,
+        bilinear_rank=3,
+        factor_dim=4,
+        global_feature_dim=6,
+        position_dim=5,
+        use_bilinear=use_bilinear,
+        use_global=use_global,
+        site_orderings=site_orderings,
+        lattice_side=lattice_side,
+    )
+    head.eval()
+    return head
+
+
+def test_default_head_state_dict_unchanged_by_ordering_feature():
+    """Archived fab8/fab16 checkpoints must keep loading: the default
+    construction registers NO new parameters or persistent buffers, and the
+    explicit single-ordering spelling is the same module tree."""
+    default = _head()
+    single = _mo_head(site_orderings=("row",), lattice_side=None)
+    assert set(default.state_dict().keys()) == set(single.state_dict().keys())
+    assert not any("ordering" in key for key in default.state_dict())
+
+
+@torch.no_grad()
+def test_single_ordering_forward_bit_exact_to_default():
+    """orderings=("row",) must be the SAME code path as the default head, not
+    a numerically-similar one: same RNG consumption at construction, same op
+    sequence in forward, bit-identical output."""
+    default = _head(hidden_dim=8, n_heads=2, bilinear_rank=3, factor_dim=4,
+                    global_feature_dim=6, position_dim=5)
+    single = _mo_head(site_orderings=("row",), lattice_side=None)
+    x = _state()
+    t = torch.rand(1)
+    assert torch.equal(default(x, t), single(x, t))
+
+
+def test_ordering_permutations_pinned_3x3():
+    """The o-position -> site maps, written out for the 3x3 lattice. col
+    walks columns (0,3,6 | 1,4,7 | 2,5,8); diag walks anti-diagonals
+    r+c = 0,1,2,3,4 with row-major tie-break."""
+    head = _mo_head(site_orderings=("row", "col", "diag"))
+    assert head.ordering_permutation("row").tolist() == list(range(9))
+    assert head.ordering_permutation("col").tolist() == [0, 3, 6, 1, 4, 7, 2, 5, 8]
+    assert head.ordering_permutation("diag").tolist() == [0, 1, 3, 2, 4, 6, 5, 7, 8]
+
+
+@torch.no_grad()
+def test_multi_order_pair_context_blind_to_both_holes():
+    """Blindness survives the extra orderings: each ordering's factor pair for
+    (i, j) reads the ordering's prefix before the earlier hole and suffix
+    after the later one, so no ordering ever sees either hole value."""
+    head = _mo_head(site_orderings=("row", "col", "diag"))
+    x = _state()
+    t = torch.rand(1)
+    H = head.compute_pair_context(x, t)
+    for i, j in PROBE_PAIRS:
+        for flips in [(i,), (j,), (i, j)]:
+            H_flipped = head.compute_pair_context(_flip(x, *flips), t)
+            assert _drift(H[:, i, j], H_flipped[:, i, j]) <= ATOL, (
+                f"pair ({i},{j}) saw hole flip {flips}"
+            )
+
+
+@torch.no_grad()
+def test_col_ordering_opens_row_interior_coverage():
+    """The mechanism A-prime exists for, two-sided. Bilinear-only, the row
+    ordering leaves pair (1, 7) blind to its whole raster interior {2..6}.
+    Under col order [0,3,6,1,4,7,2,5,8] the pair sits at positions (3, 5),
+    so site 3 (position 1) moves into the col PREFIX -- deep coverage the
+    row ordering could not provide -- while site 4 (position 4) stays
+    interior in BOTH orderings: exactly the intersection k=2 cannot see."""
+    head = _mo_head(site_orderings=("row", "col"), use_global=False)
+    x = _state()
+    t = torch.rand(1)
+    H = head.compute_pair_context(x, t)
+    newly_covered = _drift(
+        H[:, 1, 7], head.compute_pair_context(_flip(x, 3), t)[:, 1, 7]
+    )
+    both_interior = _drift(
+        H[:, 1, 7], head.compute_pair_context(_flip(x, 4), t)[:, 1, 7]
+    )
+    assert newly_covered > 1e-6, (
+        "col ordering failed to open coverage of a row-interior site"
+    )
+    assert both_interior <= ATOL, (
+        "pair (1,7) saw a site interior to BOTH orderings"
+    )
+
+
+@torch.no_grad()
+def test_multi_order_forward_matches_context_readout_and_antisymmetry():
+    """The per-ordering mirror + un-permute assembly must agree with the
+    materialised reference, and index antisymmetry must stay exact (each
+    ordering's term is exactly antisymmetric, and IEEE negation distributes
+    over the sum)."""
+    head = _mo_head(site_orderings=("row", "col", "diag"))
+    x = _state()
+    t = torch.rand(1)
+    G = head(x, t)
+    assert torch.equal(G, -G.transpose(1, 2))
+    assert torch.equal(
+        torch.diagonal(G, dim1=1, dim2=2),
+        torch.zeros_like(torch.diagonal(G, dim1=1, dim2=2)),
+    )
+    omega_factor = head.omega_projection(
+        head.backbone.omega(((x + 1) / 2).long())
+    )
+    token_difference = omega_factor.unsqueeze(2) - omega_factor.unsqueeze(1)
+    H = head.compute_pair_context(x, t)
+    G_reference = (token_difference * H).sum(-1)
+    assert _drift(G, G_reference) < ATOL
+
+
+def test_multi_order_parameters_receive_grad():
+    """The extra-ordering factor maps must be live in the graph -- a dead
+    ordering would silently reduce to the single-order head."""
+    head = _mo_head(site_orderings=("row", "col"))
+    head(_state(), torch.rand(1)).sum().backward()
+    extra_params = [
+        (name, param)
+        for name, param in head.named_parameters()
+        if "extra_ordering" in name
+    ]
+    assert extra_params, "no extra-ordering parameters registered"
+    for name, param in extra_params:
+        assert param.grad is not None, f"extra-ordering module dead: {name}"
+
+
+def test_extra_orderings_validated_at_construction():
+    """Silent no-ops and shape mismatches are rejected where they are made:
+    extras need a square lattice side matching d, the row ordering must come
+    first (it is the archived-checkpoint module tree), extras without the
+    bilinear term would be dead, and unknown ordering names are typos."""
+    with pytest.raises(ValueError):
+        _mo_head(site_orderings=("row", "col"), lattice_side=None)
+    with pytest.raises(ValueError):
+        _mo_head(site_orderings=("row", "col"), lattice_side=4)
+    with pytest.raises(ValueError):
+        _mo_head(site_orderings=("col", "row"))
+    with pytest.raises(ValueError):
+        _mo_head(site_orderings=("row", "spiral"))
+    with pytest.raises(ValueError):
+        _mo_head(site_orderings=("row", "col", "col"))
+    with pytest.raises(ValueError):
+        _mo_head(site_orderings=("row", "col"), use_bilinear=False)

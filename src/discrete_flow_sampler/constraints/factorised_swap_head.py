@@ -56,6 +56,28 @@ G[j,i] = -G[i,j] as an identity. The readable H-materialising path is kept
 as `compute_pair_context`: the reference the tests hold forward to, and the
 object the blindness probes flip spins at.
 
+Multi-order causal streams (the design's A-prime extension, opt-in via
+`site_orderings`): the bilinear term under the row-major ordering is
+structurally blind to the whole raster interval between its holes -- prefix
+stops before i, suffix starts after j -- so the interval interior is covered
+only by the shallow global term. Running the causal stacks under EXTRA site
+orderings (column-major, anti-diagonal) gives every pair a second split,
+
+    H_ij += sum_o sum_r a^o_r(P^o_first, first) * b^o_r(S^o_last, last),
+
+first/last taken in ordering o, so a site interior to the row interval but
+exterior in ordering o gains DEEP coverage; what remains invisible to the
+bilinear terms shrinks to the intersection of the per-ordering intervals.
+This adds INFORMATION, not capacity -- the rank/width axes were measured
+and refuted as the deficit's cause at the 4x4 gate, while the interior is
+where the trained field's deviation from the reference concentrates -- and
+blindness stays bit-exact by causality in every ordering (the earlier hole
+bounds the prefix, the later hole the suffix). The backbone stacks are
+SHARED across orderings (one extra forward pass each, the cheap term);
+only the factor maps are per-ordering. `("row",)` is byte-identical to the
+single-ordering head: no extra modules, no persistent state, archived
+checkpoints load unchanged.
+
 Rejected alternatives, for the record: full-context site features combined
 into pairs break blindness at layer one, and repairing them by explicit
 antisymmetrisation costs one swapped forward per ordered pair -- that is
@@ -77,6 +99,28 @@ from discrete_flow_sampler.constraints.interval_swap_head import (
     causal_stream_summaries,
 )
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
+
+
+def lattice_site_ordering(name: str, d: int, lattice_side: int) -> Tensor:
+    """o-position -> site map for a flattened lattice_side^2 lattice.
+
+    "row" is the identity (the flattening itself); "col" walks columns; "diag"
+    walks anti-diagonals r+c = 0, 1, ... with row-major tie-break, the third
+    independent sweep direction on a square lattice. A pair far apart in one
+    sweep is often close in another, which is what the multi-order extension
+    trades on.
+    """
+    if name == "row":
+        return torch.arange(d)
+    rows = torch.arange(d) // lattice_side
+    cols = torch.arange(d) % lattice_side
+    if name == "col":
+        return (cols * lattice_side + rows).argsort(stable=True)
+    if name == "diag":
+        # sort sites by (r + c, r): smaller anti-diagonal first, then row.
+        key = (rows + cols) * lattice_side + rows
+        return key.argsort(stable=True)
+    raise ValueError(f"unknown site ordering {name!r}; known: row, col, diag")
 
 
 class FactorisedSwapHead(nn.Module):
@@ -104,6 +148,15 @@ class FactorisedSwapHead(nn.Module):
             be on -- a head with both off would score every pair from time
             and positions alone, which trains to nothing informative;
             reject at construction rather than at first flat loss.
+        site_orderings: causal-sweep directions for the bilinear factors
+            (the A-prime extension; see the module docstring). Must start
+            with "row" -- the archived-checkpoint module tree -- and the
+            default ("row",) adds nothing: no extra modules, no persistent
+            state. Extras from {"col", "diag"} each add one shared-backbone
+            pass and their own factor maps.
+        lattice_side: D of the flattened D x D lattice; required by (and
+            only by) the extra orderings, whose permutations are index
+            arithmetic on (row, col).
     """
 
     def __init__(
@@ -115,6 +168,8 @@ class FactorisedSwapHead(nn.Module):
         position_dim: int = 16,
         use_bilinear: bool = True,
         use_global: bool = True,
+        site_orderings: tuple[str, ...] = ("row",),
+        lattice_side: int | None = None,
     ):
         super().__init__()
         if not (use_bilinear or use_global):
@@ -123,12 +178,34 @@ class FactorisedSwapHead(nn.Module):
                 "use_global: with both off, pair scores depend only on time "
                 "and positions."
             )
+        site_orderings = tuple(site_orderings)
+        if not site_orderings or site_orderings[0] != "row":
+            raise ValueError(
+                "site_orderings must start with 'row' (the base ordering "
+                f"whose modules archived checkpoints carry); got "
+                f"{site_orderings!r}"
+            )
+        if len(set(site_orderings)) != len(site_orderings):
+            raise ValueError(f"duplicate site ordering in {site_orderings!r}")
+        if site_orderings[1:] and not use_bilinear:
+            raise ValueError(
+                "extra site_orderings extend the bilinear term; with "
+                "use_bilinear=False they would be dead weight"
+            )
+        if site_orderings[1:]:
+            if lattice_side is None or lattice_side * lattice_side != backbone.d:
+                raise ValueError(
+                    "extra site_orderings need lattice_side with "
+                    f"lattice_side**2 == d; got lattice_side={lattice_side} "
+                    f"for d={backbone.d}"
+                )
         self.backbone = backbone
         self.d = backbone.d
         self.bilinear_rank = bilinear_rank
         self.factor_dim = factor_dim
         self.use_bilinear = use_bilinear
         self.use_global = use_global
+        self.site_orderings = site_orderings
         hidden = backbone.hidden_dim
 
         self.site_position_embedding = nn.Embedding(self.d, position_dim)
@@ -158,6 +235,66 @@ class FactorisedSwapHead(nn.Module):
                 nn.GELU(),
                 nn.Linear(global_feature_dim, factor_dim),
             )
+
+        # Extra orderings LAST, so the base modules' init draws are identical
+        # for any k at a fixed seed (and absent entirely at k=1, keeping the
+        # module tree byte-compatible with pre-extension checkpoints). The
+        # permutations ride as NON-persistent buffers: index arithmetic,
+        # reproducible from the constructor args, invisible to state_dict.
+        for name in site_orderings[1:]:
+            order = lattice_site_ordering(name, self.d, lattice_side)
+            self.register_buffer(f"_order_{name}", order, persistent=False)
+            self.register_buffer(
+                f"_order_inverse_{name}", order.argsort(), persistent=False
+            )
+        if site_orderings[1:]:
+            self.extra_ordering_modules = nn.ModuleDict({
+                name: nn.ModuleDict({
+                    "prefix_norm": nn.LayerNorm(hidden),
+                    "suffix_norm": nn.LayerNorm(hidden),
+                    "prefix_factors": nn.Linear(
+                        hidden + position_dim, bilinear_rank * factor_dim
+                    ),
+                    "suffix_factors": nn.Linear(
+                        hidden + position_dim, bilinear_rank * factor_dim
+                    ),
+                })
+                for name in site_orderings[1:]
+            })
+
+    def ordering_permutation(self, name: str) -> Tensor:
+        """o-position -> site map for one of this head's orderings."""
+        if name not in self.site_orderings:
+            raise KeyError(f"{name!r} not in {self.site_orderings!r}")
+        if name == "row":
+            return torch.arange(self.d)
+        return getattr(self, f"_order_{name}")
+
+    def _extra_factor_tensors(
+        self, name: str, x: Tensor, t: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """Bilinear factors for one extra ordering, (B, d, R, f) in o-POSITION
+        space: entry [:, p] belongs to site order[p].
+
+        a[:, p] may depend only on {t, x[order[<p]], order[p]}; b[:, q] only
+        on {t, x[order[>q]], order[q]} -- causality in the permuted sequence,
+        which is what makes every ordering's factors hole-blind for any pair:
+        the earlier-in-o hole bounds the usable prefix, the later one the
+        suffix.
+        """
+        order = getattr(self, f"_order_{name}")
+        modules = self.extra_ordering_modules[name]
+        prefix, suffix = causal_stream_summaries(self.backbone, x[:, order], t)
+        positions = self.site_position_embedding(order)
+        positions = positions.unsqueeze(0).expand(x.shape[0], -1, -1)
+        a = modules["prefix_factors"](
+            torch.cat([modules["prefix_norm"](prefix), positions], dim=-1)
+        )
+        b = modules["suffix_factors"](
+            torch.cat([modules["suffix_norm"](suffix), positions], dim=-1)
+        )
+        shape = (x.shape[0], self.d, self.bilinear_rank, self.factor_dim)
+        return a.view(shape), b.view(shape)
 
     def _site_positions(self, x: Tensor) -> Tensor:
         """(B, d, position_dim) broadcast of the site-position embedding."""
@@ -230,7 +367,18 @@ class FactorisedSwapHead(nn.Module):
         upper = torch.triu(
             torch.ones(d, d, dtype=torch.bool, device=x.device)
         ).view(1, d, d, 1)
-        return torch.where(upper, H, H.transpose(1, 2))
+        H = torch.where(upper, H, H.transpose(1, 2))
+        # Extra orderings: each term is defined on o-ordered pairs, mirrored
+        # in ITS OWN o-space (the label-symmetry convention per ordering),
+        # then un-permuted back to site indices and summed.
+        if self.use_bilinear:
+            for name in self.site_orderings[1:]:
+                factor_a, factor_b = self._extra_factor_tensors(name, x, t)
+                inverse = getattr(self, f"_order_inverse_{name}")
+                H_extra = torch.einsum("birf,bjrf->bijf", factor_a, factor_b)
+                H_extra = torch.where(upper, H_extra, H_extra.transpose(1, 2))
+                H = H + H_extra[:, inverse][:, :, inverse]
+        return H
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         """Pair-score matrix G, (B, d, d), assembled without materialising H.
@@ -242,8 +390,13 @@ class FactorisedSwapHead(nn.Module):
         batch, d = x.shape
         x_idx = ((x + 1) / 2).long()
         omega = self.backbone.omega(x_idx)                      # (B, d, h)
+        extra_factors = {}
         if self.use_bilinear:
             a, b = self._factor_tensors(x, t)
+            extra_factors = {
+                name: self._extra_factor_tensors(name, x, t)
+                for name in self.site_orderings[1:]
+            }
         if self.use_global:
             global_context = self._global_pair_context(x, t)    # (B, d, d, f)
         tau = self.time_projection(self.backbone.time_embedder(t))
@@ -268,4 +421,21 @@ class FactorisedSwapHead(nn.Module):
             time_alignment = (omega_factor * tau.float().unsqueeze(1)).sum(-1)
             scores = scores + time_alignment.unsqueeze(2) - time_alignment.unsqueeze(1)
             upper = torch.triu(scores, diagonal=1)
-            return upper - upper.transpose(1, 2)
+            pair_scores = upper - upper.transpose(1, 2)
+            # Extra orderings: raw o-space scores via the same distributed
+            # readout, mirrored in o-space (each term exactly antisymmetric),
+            # un-permuted, summed -- IEEE negation distributes over the sum,
+            # so exact index antisymmetry survives the addition.
+            for name, (factor_a, factor_b) in extra_factors.items():
+                order = getattr(self, f"_order_{name}")
+                inverse = getattr(self, f"_order_inverse_{name}")
+                omega_ranked = omega_factor[:, order].unsqueeze(2)
+                a32, b32 = factor_a.float(), factor_b.float()
+                extra = torch.einsum("birf,bjrf->bij", a32 * omega_ranked, b32)
+                extra = extra - torch.einsum(
+                    "birf,bjrf->bij", a32, b32 * omega_ranked
+                )
+                extra_upper = torch.triu(extra, diagonal=1)
+                mirrored = extra_upper - extra_upper.transpose(1, 2)
+                pair_scores = pair_scores + mirrored[:, inverse][:, :, inverse]
+            return pair_scores

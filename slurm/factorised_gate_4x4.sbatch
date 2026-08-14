@@ -13,6 +13,7 @@
 # cells (test_factorised_gate_cells_mirror_ma_twin_except_declared_fields).
 #   sbatch -J fac-gate-fab8 slurm/factorised_gate_4x4.sbatch fab8
 #   arms: fab8 | fab16 | fbil | fglo | fmp40 (matched-param arm)
+#       | fmo2 (A-prime row+col causal streams, 2026-08-14)
 # Submitted WITHOUT nice, so these outrank the nice'd walkback topups and
 # take freed GPU slots ahead of them (user priority call, 2026-08-13).
 # Walltime: archived demo 10k 4x4 cells are minutes-scale per run on an

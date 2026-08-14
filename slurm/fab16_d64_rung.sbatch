@@ -1,0 +1,30 @@
+#!/bin/bash
+#SBATCH --job-name=fac-d64-fab16
+#SBATCH --partition=a30
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --time=2-00:00:00
+#SBATCH --output=slurm/logs/%x_%j.out
+
+# Rank-at-scale arm (2026-08-14, user GO): rank-16 twin of the fab8 d64 rung
+# — name and bilinear_rank are the only config deltas (pinned in test), so
+# the rank read at the fab8 rung's measured 0.27 deficit stays
+# single-variable. Bands frozen in the cell comment (configs.py): >= 0.60
+# raw = rank binds at scale; <= 0.55 = rank refuted at scale too. Fixed
+# --tag so a resubmission resumes into the same run dir.
+export CONDA_OVERRIDE_CUDA=12.9
+export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
+export WANDB_MODE=offline
+export PYTORCH_ALLOC_CONF=expandable_segments:True
+
+REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
+PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
+TAG=20260814-fab16-d64
+
+cd "$REPO"
+echo "node=$(hostname) cfg=H2_d64_c50_s223_letf_fab16_50k_curr seed=42 tag=$TAG"
+nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
+
+"$PIXI" run --frozen -e cuda python -m experiments.constrained_hard_03.run \
+    --cfg H2_d64_c50_s223_letf_fab16_50k_curr --seed 42 --tag "$TAG"

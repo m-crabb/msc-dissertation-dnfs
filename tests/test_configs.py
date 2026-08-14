@@ -672,10 +672,11 @@ def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
         "fbil": {"use_global": False},
         "fglo": {"use_bilinear": False},
         "fmp40": {"factor_dim": 40},
+        "fmo2": {"site_orderings": ("row", "col")},
     }
     factorised_fields = (
         "bilinear_rank", "factor_dim", "global_feature_dim",
-        "use_bilinear", "use_global",
+        "use_bilinear", "use_global", "site_orderings",
     )
     for arm, knobs in arm_knobs.items():
         for sigma_label in ("s010", "s223"):
@@ -709,6 +710,53 @@ def test_fab8_d64_rung_mirrors_ma_curriculum_twin_except_declared_fields():
     assert cell.ema_decay == 0.9999 and twin.ema_decay == 0.0
     rebuilt = replace(
         cell, name=twin.name, head_kind=twin.head_kind, ema_decay=0.0
+    )
+    assert rebuilt == twin
+
+
+def test_fab16_d64_rung_mirrors_fab8_rung_except_rank():
+    """Rank-at-scale arm (2026-08-14): the fab16 d64 cell must differ from
+    the fab8 rung in name and bilinear_rank ALONE, so the rank read at the
+    0.27-deficit operating point stays single-variable."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d64_c50_s223_letf_fab16_50k_curr"]
+    twin = CONFIGS["H2_d64_c50_s223_letf_fab8_50k_curr"]
+    assert cell.bilinear_rank == 16
+    rebuilt = replace(
+        cell, name=twin.name, bilinear_rank=twin.bilinear_rank
+    )
+    assert rebuilt == twin
+
+
+def test_d256_cv2_cell_mirrors_naive_rescue_except_declared_fields():
+    """Phase-2 estimator switch (2026-08-14): the cv2 cell must be the naive
+    rescue's shape with exactly the declared deltas — estimator back to the
+    control variate, 20k flat-sigma_c steps in place of the 50k ladder
+    (training continues from the naive checkpoint via --init-from), lr
+    pinned to the ladder's final 3e-4, and the dual-eval EMA instrument —
+    so the estimator read stays attributable."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d256_c50_s223_letf_ma_20k_sc_cv2"]
+    twin = CONFIGS["H2_d256_c50_s223_letf_ma_50k_curr_naive"]
+    assert cell.estimator == "control_variate"
+    assert cell.curriculum is None and cell.ising.sigma == 0.223
+    assert cell.train.n_steps == 20_000 and cell.train.lr == 3e-4
+    assert cell.ema_decay == 0.9999
+    rebuilt = replace(
+        cell,
+        name=twin.name,
+        estimator=twin.estimator,
+        curriculum=twin.curriculum,
+        ema_decay=twin.ema_decay,
+        train=replace(
+            cell.train, n_steps=twin.train.n_steps, lr=twin.train.lr
+        ),
     )
     assert rebuilt == twin
 

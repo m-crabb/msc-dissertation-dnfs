@@ -113,6 +113,12 @@ class HardStageCfg(StageCfg):
     global_feature_dim: int | None = None
     use_bilinear: bool = True
     use_global: bool = True
+    # Causal-sweep directions for the factorised bilinear term (A-prime,
+    # 2026-08-14): extras from {"col", "diag"} give every pair a second
+    # blind (prefix, suffix) split, so deep coverage grows to the
+    # complement of the intersection of the per-ordering intervals. The
+    # default ("row",) is byte-identical to the pre-extension head.
+    site_orderings: tuple[str, ...] = ("row",)
     # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
     # cell). > 0 arms a warmup-corrected parameter shadow
     # (discrete_flow_sampler.ema) updated after each optimiser step:
@@ -203,6 +209,8 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             global_feature_dim=cfg.global_feature_dim or 16,
             use_bilinear=cfg.use_bilinear,
             use_global=cfg.use_global,
+            site_orderings=cfg.site_orderings,
+            lattice_side=cfg.ising.D,
         )
     elif cfg.head_kind == "grouped_anchor":
         # k masked passes instead of mask_one's d; lattice_side is cfg.ising.D
@@ -346,6 +354,25 @@ def _d64_curriculum_cell(
     return replace(cell, **head_knobs)
 
 
+def _d256_cv2_cell(name: str) -> HardStageCfg:
+    """Phase-2 twin of the d=256 naive rescue: same shape, estimator back to
+    the control variate, NO curriculum (training continues from the naive
+    run's final checkpoint via --init-from, so the ladder has already been
+    climbed and sigma holds flat at sigma_c), lr pinned to the ladder's
+    final 3e-4 so the optimiser regime continues rather than restarts, and
+    the dual-eval EMA instrument riding as on every new hard run."""
+    cell = _hard_cell(
+        name, sigma=0.223, head_kind="masked_attention",
+        D=16, n_steps=20_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+    )
+    return replace(
+        cell, ema_decay=0.9999, train=replace(cell.train, lr=3e-4)
+    )
+
+
 CONFIGS: dict[str, HardStageCfg] = {
     # First Potts cell (2026-07-31):
     # the training path on S=3, kept small enough to smoke end-to-end on CPU.
@@ -474,6 +501,30 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         factor_dim=40,
     ),
+    # A-prime gate arm (2026-08-14, user GO): fab8 + the column-major causal
+    # stream (site_orderings=("row","col")) -- the interior-coverage repair,
+    # adding INFORMATION where the rank/width arms only added capacity. The
+    # 4x4 cells gate the d64 spend; bands FROZEN BEFORE LAUNCH: NO-REGRESSION
+    # (>= fab8's 0.911 at s223 on >= 2/3 seeds) plus clean floor licenses the
+    # d64 arm on the mechanism case; >= 0.94 on >= 2/3 seeds (the original
+    # PASS bar, closing >= half the 0.057 gap) upgrades it to strong support;
+    # < fab8's band means the extra stream hurts and the d64 arm is off.
+    # 4x4 interiors are <= 14 sites, so a small gain here is expected even
+    # if the mechanism is right; the bands are ordered accordingly.
+    "H2_d16_c50_s010_letf_fmo2_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s010_letf_fmo2_10k", sigma=0.10,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        site_orderings=("row", "col"),
+    ),
+    "H2_d16_c50_s223_letf_fmo2_10k": replace(
+        _hard_cell(
+            "H2_d16_c50_s223_letf_fmo2_10k", sigma=0.223,
+            head_kind="factorised", n_steps=10_000,
+        ),
+        site_orderings=("row", "col"),
+    ),
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
@@ -525,6 +576,21 @@ CONFIGS: dict[str, HardStageCfg] = {
             "H2_d64_c50_s223_letf_fab8_50k_curr", head_kind="factorised",
         ),
         ema_decay=0.9999,
+    ),
+    # Rank-at-scale arm (2026-08-14, user GO): rank-16 twin of the fab8 d64
+    # rung. At 4x4 the rank axis was refuted NEAR CEILING (0.057 deficit,
+    # nothing for rank to buy); at the fab8 rung's measured 0.27 deficit it
+    # has something to buy, and the trained MA field's spectrum leaves
+    # measurable structure between rank 8 and 16 at this size. Bands FROZEN
+    # BEFORE LAUNCH: raw ess_frac >= 0.60 = rank meaningfully binds (closes
+    # >= a third of the 0.27 gap to the MA twin's 0.781); <= 0.55 = rank
+    # refuted at scale too, interior coverage becomes the only live repair.
+    "H2_d64_c50_s223_letf_fab16_50k_curr": replace(
+        _d64_curriculum_cell(
+            "H2_d64_c50_s223_letf_fab16_50k_curr", head_kind="factorised",
+        ),
+        ema_decay=0.9999,
+        bilinear_rank=16,
     ),
     # Band-capacity push batch 1 (2026-07-08): three single-variable twins
     # of ma_50k_curr.
@@ -648,6 +714,24 @@ CONFIGS: dict[str, HardStageCfg] = {
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
         estimator="naive_mc",
+    ),
+    # Phase-2 estimator switch (2026-08-14, user GO): CONTINUE the completed
+    # naive 50k (launch with --init-from <naive run>/checkpoints/final.pt)
+    # with the Stein control variate re-enabled. Mechanism, measured on the
+    # trained naive checkpoint (CPU rollout harness that reproduces the d64
+    # runs' logged CV ratios): the CV that ADDED 2.3-70x variance on the
+    # DIVERGED model now REDUCES the c_t integrand variance 7x whole-run
+    # (ratio 0.140; per-t-quarter 0.031/0.079/0.150/0.553) -- xi at the
+    # optimum is a zero-variance constant, so the ratio improves further as
+    # the model sharpens. Flat sigma_c (the ladder was already climbed),
+    # lr pinned to the ladder's final 3e-4 with the standard short warmup,
+    # dual-eval EMA rides. Bands FROZEN BEFORE LAUNCH: PASS = train-ESS
+    # > 15/256 sustained AND rising over the final 5k steps, plus final
+    # eval ess_fraction >= 0.05 (Var[log w] <= ~3.0); >= 0.20 = strong
+    # pass; train-ESS flat in single digits = the estimator lever alone is
+    # insufficient at this size and the next lever is rollout count.
+    "H2_d256_c50_s223_letf_ma_20k_sc_cv2": _d256_cv2_cell(
+        "H2_d256_c50_s223_letf_ma_20k_sc_cv2"
     ),
     # Clip-50 twin of the cell above (job 271892 diverged 2026-08-10). The
     # inherited clip of 500 was exceeded twelve-fold from initialisation at
