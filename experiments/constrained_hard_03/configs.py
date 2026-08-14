@@ -598,13 +598,36 @@ CONFIGS: dict[str, HardStageCfg] = {
     # BEFORE LAUNCH: raw ess_frac >= 0.60 = rank meaningfully binds (closes
     # >= a third of the 0.27 gap to the MA twin's 0.781); <= 0.55 = rank
     # refuted at scale too, interior coverage becomes the only live repair.
-    "H2_d64_c50_s223_letf_fab16_50k_curr": replace(
-        _d64_curriculum_cell(
-            "H2_d64_c50_s223_letf_fab16_50k_curr", head_kind="factorised",
+        "H2_d64_c50_s223_letf_fab16_50k_curr": replace(
+            _d64_curriculum_cell(
+                "H2_d64_c50_s223_letf_fab16_50k_curr", head_kind="factorised",
+            ),
+            ema_decay=0.9999,
+            bilinear_rank=16,
         ),
-        ema_decay=0.9999,
-        bilinear_rank=16,
-    ),
+        # A-prime at scale (2026-08-14, user GO — LOGGED AMENDMENT): fab8 d64
+        # rung + the column-major causal stream (site_orderings=("row","col")),
+        # seed 42, single-variable twin of the fab8 rung (pinned by
+        # test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings). The 4x4
+        # no-regression band FIRED (0.883/0.938/0.879 vs the 0.911 bar) — the
+        # amendment declares that read INCONCLUSIVE for size-dependent
+        # interior mechanisms rather than refuting: 4x4 interiors are <= 14
+        # sites (the gate was set at no-regression precisely because it is an
+        # insensitive read there), the motivating forensic (field correlation
+        # decaying with pair gap) was measured at d64, and the mean is -0.012
+        # with one seed at the 0.938 strong bar. Decided BEFORE any d64 A-prime
+        # data exists. Bands FROZEN at the amendment: MEANINGFUL raw >= 0.60
+        # (closes >= 1/3 of the 0.27 gap to MA 0.781 — the same bar fab16
+        # faced); STRONG raw >= 0.70 (the assessment's "good enough for run
+        # D"); NEGATIVE raw <= 0.55 -> A-prime refuted at scale too and R1
+        # (fint) is the only live interior repair.
+        "H2_d64_c50_s223_letf_fmo2_50k_curr": replace(
+            _d64_curriculum_cell(
+                "H2_d64_c50_s223_letf_fmo2_50k_curr", head_kind="factorised",
+            ),
+            ema_decay=0.9999,
+            site_orderings=("row", "col"),
+        ),
     # Band-capacity push batch 1 (2026-07-08): three single-variable twins
     # of ma_50k_curr.
     # The discriminator: interval head, head_kind is the ONLY change.

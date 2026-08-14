@@ -758,6 +758,24 @@ def test_fab16_d64_rung_mirrors_fab8_rung_except_rank():
     assert rebuilt == twin
 
 
+def test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings():
+    """A-prime at scale (2026-08-14, logged amendment): the fmo2 d64 cell
+    must differ from the fab8 rung in name and site_orderings ALONE, so the
+    interior-coverage read at the 0.27-deficit operating point stays
+    single-variable."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr"]
+    twin = CONFIGS["H2_d64_c50_s223_letf_fab8_50k_curr"]
+    assert cell.site_orderings == ("row", "col")
+    rebuilt = replace(
+        cell, name=twin.name, site_orderings=twin.site_orderings
+    )
+    assert rebuilt == twin
+
+
 def test_d256_cv2_cell_mirrors_naive_rescue_except_declared_fields():
     """Phase-2 estimator switch (2026-08-14): the cv2 cell must be the naive
     rescue's shape with exactly the declared deltas — estimator back to the
