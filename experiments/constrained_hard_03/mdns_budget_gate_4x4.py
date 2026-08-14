@@ -45,6 +45,7 @@ import json
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from experiments.constrained_hard_03.gate_4x4 import (
@@ -83,6 +84,38 @@ from discrete_flow_sampler.targets.ising import (
 LATTICE_SIDE = 4
 N_SITES = 16
 N_PLUS = 8
+
+
+def configure_lattice(lattice_side):
+    """Rebind the lattice size for the whole module (M4a, 2026-08-14).
+
+    Why a rebind rather than threaded parameters: every size use below
+    except three now-removed def-time defaults reads these globals at CALL
+    time, so one assignment reconfigures the driver, and the alternative —
+    threading a spec through `build_space`/`run_slate`/`train_arm`/
+    `evaluate_arm`/`conditional_kl_and_late_error` — is ~200 lines of
+    signature churn in a script whose configuration these globals already
+    are. The library underneath (`samplers/budget_masked.py`) is properly
+    parameterised and pinned; this file is the CLI around it.
+
+    The hazard the rebind creates is a stale default captured at import,
+    which is exactly why `n_plus_target` no longer defaults to `N_PLUS`
+    anywhere: after `configure_lattice(8)` such a default would silently
+    keep filling the 4x4 fibre. `tests/test_mdns_gate_driver.py` pins the
+    4x4 numbers against this refactor.
+
+    Half-filling is the fibre convention throughout the hard arc
+    (target_composition 0.5), so N_PLUS follows the site count.
+    """
+    global LATTICE_SIDE, N_SITES, N_PLUS
+    if lattice_side < 2 or lattice_side % 2:
+        raise ValueError(
+            f"lattice_side must be even and >= 2 (the half-filled fibre "
+            f"needs an even site count), got {lattice_side}"
+        )
+    LATTICE_SIDE = lattice_side
+    N_SITES = lattice_side * lattice_side
+    N_PLUS = N_SITES // 2
 SIGMA = 0.223
 TRAIN_ROLLOUTS_PER_STEP = 256
 CORRUPTION_REPLICATES = 2
@@ -179,7 +212,7 @@ def exact_conditional_per_context(context, slice_states, slice_log_p_cond):
 
 def conditional_kl_and_late_error(logit_fn, contexts, slice_states,
                                   slice_log_p_cond, device,
-                                  n_plus_target=N_PLUS):
+                                  n_plus_target):
     """Mean KL(exact || model) over (context, masked site) pairs — exact per
     context, no sampling floor — plus the late-generation (m <= 4) mean
     absolute error. The model conditional carries the same feasibility
@@ -222,12 +255,22 @@ def conditional_kl_and_late_error(logit_fn, contexts, slice_states,
 
 def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
                  exact_hist, bins, sigma, device, run_dir,
-                 eval_rollouts, save_artefacts=True,
-                 n_plus_target=N_PLUS, exact_log_z=None):
+                 eval_rollouts, n_plus_target, save_artefacts=True,
+                 exact_log_z=None, free_energy_ref=None):
     """Eval rollouts -> ESS fraction, G0 count, energy-marginal TV, plus the
     two DNFS-shared instruments (Amendment 01): within-level excess TV and
     per-site free-energy bias. Saves terminals + log-weights so any later
-    instrument can rerun off artefacts instead of GPU."""
+    instrument can rerun off artefacts instead of GPU.
+
+    `slice_states=None` is the non-enumerable regime (M4a at 8x8, where the
+    fibre is C(64,32) ~ 1.8e18): the within-level instrument needs the
+    enumerated slice and is DROPPED rather than approximated, and
+    `free_energy_ref` must then be supplied — the slice-TI constant, which
+    is the same quantity `on_slice_free_energy_reference` computes and
+    agrees with it to 5 decimals where both are computable (pinned in
+    tests/test_mdns_gate_driver.py). ESS, off-fibre count and the energy TV
+    are unaffected: they only need the reference HISTOGRAM, which comes
+    from the certified chains at 8x8 instead of enumeration."""
     terminals_all, log_w_all = [], []
     generator = torch.Generator(device=device).manual_seed(EVAL_SEED)
     with torch.no_grad():
@@ -272,31 +315,38 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
 
     n_plus = ((terminals + 1) / 2).sum(dim=1)
     off_fibre = int((n_plus != n_plus_target).sum().item())
-    slice_energies = _energy(slice_states.float(), adjacency_cpu)
-    sample_energies = _energy(terminals, adjacency_cpu)
-    levels = within_level_uniformity(
-        terminals, weights, sample_energies, slice_states.float(),
-        slice_energies,
-    )
     free_energy_model = free_energy_lb_estimate(
         log_w, sigma, N_SITES
     ).item()
-    free_energy_ref = on_slice_free_energy_reference(
-        _CpuTargetView(target), slice_states
-    ).item()
-    return {
+    if free_energy_ref is None:
+        free_energy_ref = on_slice_free_energy_reference(
+            _CpuTargetView(target), slice_states
+        ).item()
+    metrics = {
         "eval_rollouts": len(terminals),
         "off_fibre_count": off_fibre,
         "ess_fraction": ess / len(terminals),
         "energy_tv": energy_marginal_tv(model_hist, exact_hist),
-        "max_level_excess": max(
-            (level["excess"] for level in levels), default=float("nan")
-        ),
-        "within_level": levels,
         "free_energy_model": free_energy_model,
         "free_energy_ref": free_energy_ref,
         "free_energy_bias": free_energy_model - free_energy_ref,
     }
+    if slice_states is not None:
+        # Within-level uniformity needs the enumerated slice as its
+        # reference population; there is no chain substitute (it asks
+        # whether mass is uniform WITHIN an energy level, which the
+        # chains only sample, never enumerate). Omitted, not faked.
+        slice_energies = _energy(slice_states.float(), adjacency_cpu)
+        sample_energies = _energy(terminals, adjacency_cpu)
+        levels = within_level_uniformity(
+            terminals, weights, sample_energies, slice_states.float(),
+            slice_energies,
+        )
+        metrics["max_level_excess"] = max(
+            (level["excess"] for level in levels), default=float("nan")
+        )
+        metrics["within_level"] = levels
+    return metrics
 
 
 class _CpuTargetView:
@@ -344,7 +394,7 @@ def near_boundary_loss_weight(boost):
 def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
               device, boost=0.0, objective="wdce", replicates=None,
               optimiser_kind="adam", ema_decay=0.0, ema_warmup=False,
-              n_plus_target=N_PLUS):
+              *, n_plus_target):
     seed_everything(seed)
     net = MaskedConditionalNet(N_SITES).to(device)
     logit_fn, gated_offset = make_logit_fn(net, target.A, sigma, mode)
@@ -423,13 +473,68 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
             train_off_fibre, wall_clock, ema)
 
 
-def build_space(constrained, sigma, device, eval_contexts):
+def chain_reference_energies(probe_root, point, adjacency):
+    """Pooled post-burn-in energies of the certified Kawasaki reference
+    chains — the 8x8 stand-in for exact enumeration (M4a).
+
+    Two conventions have to match the enumerated path exactly or the TV is
+    meaningless, and both are matched here BY CONSTRUCTION rather than by
+    assumption:
+
+    * Energy is `_energy(x, A) = x^T A x`, the same function
+      `slice_energy_hist` applies to the model's samples. (This is also
+      what the probe's own `observable_values("energy", ...)` resolves to,
+      so this reader agrees with `plot_probe_8x8.reference_energies`.)
+    * Burn-in discard is the second half of each chain — the probe's
+      frozen convention, applied before any moment of these chains was
+      trusted.
+
+    The chains are equilibrium draws, so they enter the histogram with
+    UNIFORM weight; there is no importance weight to carry.
+    """
+    chain_dirs = sorted((Path(probe_root) / "reference" / point).glob("chain_*"))
+    if not chain_dirs:
+        raise FileNotFoundError(
+            f"no reference chains under {probe_root}/reference/{point}; the "
+            f"8x8 reference block needs the certified probe chains"
+        )
+    pooled = []
+    for chain_dir in chain_dirs:
+        spins = np.load(chain_dir / "snapshots.npz")["spins"]
+        states = torch.from_numpy(spins.astype(np.float32))
+        energies = _energy(states, adjacency)
+        pooled.append(energies[len(energies) // 2:])
+    return torch.cat(pooled)
+
+
+def build_space(constrained, sigma, device, eval_contexts, *,
+                probe_root=None, probe_point=None, free_energy_ref=None):
     """Everything an arm's training/eval needs that depends only on which
     STATE SPACE it lives on: the fibre (constrained arms) or the free
-    2^16 space (arm u). Exact enumeration both ways — the free space is
-    65,536 states, still trivially enumerable, which is what makes the
-    unconstrained control a like-for-like reproduction of the paper's
-    4x4 protocol rather than a chain-referenced comparison."""
+    2^d space (arm u).
+
+    Two reference regimes:
+
+    * **Enumeration** (`probe_root=None`, the 4x4 path, unchanged). Exact
+      both ways — the free space is 65,536 states, still trivially
+      enumerable, which is what makes the unconstrained control a
+      like-for-like reproduction of the paper's 4x4 protocol rather than a
+      chain-referenced comparison.
+    * **Chain-referenced** (M4a at 8x8). C(64,32) ~ 1.8e18 rules
+      enumeration out, so the energy histogram comes from the certified
+      8-chain Kawasaki reference and the free-energy reference from the
+      slice-TI constant. What is LOST is everything that needs the
+      enumerated slice as a population: the exact fibre conditional, hence
+      `contexts`, hence the conditional-KL and late-generation
+      instruments, and within-level uniformity. Those are dropped rather
+      than approximated — a sampled "exact conditional" would be a
+      different metric wearing the same name.
+    """
+    if probe_root is not None and not constrained:
+        raise ValueError(
+            "the chain reference is a fixed-composition (fibre) reference; "
+            "the unconstrained control arm has no chain counterpart"
+        )
     if constrained:
         target = FixedCompositionIsingTarget(
             D=LATTICE_SIDE, sigma=sigma, target_composition=0.5,
@@ -442,6 +547,33 @@ def build_space(constrained, sigma, device, eval_contexts):
         target = IsingTarget(D=LATTICE_SIDE, sigma=sigma, device=device)
         cpu_target = IsingTarget(D=LATTICE_SIDE, sigma=sigma)
     adjacency_cpu = target.A.cpu()
+    if probe_root is not None:
+        if free_energy_ref is None:
+            raise ValueError(
+                "the chain reference supplies no free-energy reference of "
+                "its own; pass the slice-TI constant for this (sigma, size)"
+            )
+        reference_energies = chain_reference_energies(
+            probe_root, probe_point, adjacency_cpu
+        )
+        bins = _categorical_energy_bins(reference_energies)
+        uniform = torch.ones(len(reference_energies))
+        # slice_energy_hist recomputes the energy from states, but the
+        # chain reference already IS energies — histogram them directly
+        # against the same bin edges the model's samples will use.
+        lower, upper = bins[:-1], bins[1:]
+        membership = (
+            (reference_energies[:, None] >= lower[None, :])
+            & (reference_energies[:, None] < upper[None, :])
+        )
+        mass = (membership.float() * (uniform / uniform.sum())[:, None]).sum(0)
+        return {
+            "target": target, "states": None, "log_p": None,
+            "bins": bins, "exact_hist": (0.5 * (lower + upper), mass),
+            "contexts": None, "exact_log_z": None,
+            "free_energy_ref": free_energy_ref,
+            "n_plus_target": N_PLUS,
+        }
     states = enumerate_states(N_SITES)
     log_pi = exact_log_probs(cpu_target, states)
     if constrained:
@@ -472,6 +604,9 @@ def build_space(constrained, sigma, device, eval_contexts):
         "target": target, "states": space_states, "log_p": space_log_p,
         "bins": bins, "exact_hist": exact_hist, "contexts": contexts,
         "exact_log_z": exact_log_z,
+        # None = "derive it from the enumerated slice in evaluate_arm";
+        # only the chain-referenced regime supplies a constant.
+        "free_energy_ref": None,
         "n_plus_target": N_PLUS if constrained else None,
     }
 
@@ -479,13 +614,16 @@ def build_space(constrained, sigma, device, eval_contexts):
 def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
               eval_rollouts, eval_contexts, boost=0.0, objective="wdce",
               replicates=None, optimiser_kind="adam", ema_decay=0.0,
-              ema_warmup=False):
+              ema_warmup=False, probe_root=None, probe_point=None,
+              free_energy_ref=None):
     spaces = {}
     for arm in arms:
         _, constrained = ARMS[arm]
         if constrained not in spaces:
             spaces[constrained] = build_space(
-                constrained, sigma, device, eval_contexts
+                constrained, sigma, device, eval_contexts,
+                probe_root=probe_root, probe_point=probe_point,
+                free_energy_ref=free_energy_ref,
             )
 
     reports = {}
@@ -504,9 +642,15 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 init_net, target.A, sigma, mode)
             if init_gated is not None:
                 init_gated.to(device)
-            init_kl, init_late_error = conditional_kl_and_late_error(
-                init_fn, contexts, slice_states, slice_log_p_cond, device,
-                n_plus_target,
+            # No enumerated slice -> no exact fibre conditional -> the KL
+            # and late-generation instruments are undefined, not merely
+            # expensive. NaN so the recorded report keeps its schema.
+            init_kl, init_late_error = (
+                conditional_kl_and_late_error(
+                    init_fn, contexts, slice_states, slice_log_p_cond,
+                    device, n_plus_target,
+                )
+                if contexts is not None else (float("nan"), float("nan"))
             )
             print(f"[gate] sigma={sigma} seed={seed} arm {arm} ({mode}): "
                   f"training {steps} steps ...", flush=True)
@@ -515,16 +659,20 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 train_arm(arm, mode, target, sigma, seed, steps,
                           results_root, tag, device, boost, objective,
                           replicates, optimiser_kind, ema_decay, ema_warmup,
-                          n_plus_target)
-            trained_kl, trained_late_error = conditional_kl_and_late_error(
-                logit_fn, contexts, slice_states, slice_log_p_cond, device,
-                n_plus_target,
+                          n_plus_target=n_plus_target)
+            trained_kl, trained_late_error = (
+                conditional_kl_and_late_error(
+                    logit_fn, contexts, slice_states, slice_log_p_cond,
+                    device, n_plus_target,
+                )
+                if contexts is not None else (float("nan"), float("nan"))
             )
             eval_metrics = evaluate_arm(
                 logit_fn, target, slice_states, slice_log_p_cond,
                 exact_hist, bins, sigma, device, run_dir, eval_rollouts,
                 n_plus_target=n_plus_target,
                 exact_log_z=space["exact_log_z"],
+                free_energy_ref=space["free_energy_ref"],
             )
             # Instrument, not a choice: when EMA is active the headline
             # eval follows the paper's protocol (EMA parameters), and the
@@ -540,10 +688,14 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                     eval_rollouts, save_artefacts=False,
                     n_plus_target=n_plus_target,
                     exact_log_z=space["exact_log_z"],
+                    free_energy_ref=space["free_energy_ref"],
                 )
-                raw_kl, raw_late = conditional_kl_and_late_error(
-                    logit_fn, contexts, slice_states, slice_log_p_cond,
-                    device, n_plus_target,
+                raw_kl, raw_late = (
+                    conditional_kl_and_late_error(
+                        logit_fn, contexts, slice_states, slice_log_p_cond,
+                        device, n_plus_target,
+                    )
+                    if contexts is not None else (float("nan"), float("nan"))
                 )
                 raw_param_eval = {
                     key: value for key, value in raw_metrics.items()
@@ -676,9 +828,32 @@ def main(argv=None):
                         help="bias-correction warmup schedule "
                              "min(decay, (1+t)/(10+t)); off = the "
                              "paper-literal plain shadow")
+    parser.add_argument("--lattice-side", type=int, default=LATTICE_SIDE,
+                        help="L for the LxL torus (M4a). 4 = the gate-3 "
+                             "enumerable size; 8 requires --probe-root and "
+                             "--free-energy-ref, since C(64,32) rules "
+                             "enumeration out")
+    parser.add_argument("--probe-root", default=None,
+                        help="certified Kawasaki reference chains, e.g. "
+                             "results/kawasaki_probe. Setting this switches "
+                             "the energy reference from enumeration to "
+                             "chains and DROPS the enumeration-only "
+                             "instruments (conditional KL, late-generation "
+                             "error, within-level uniformity)")
+    parser.add_argument("--probe-point", default=None,
+                        help="operating point under the probe root: "
+                             "'sc' (sigma_c) or 's010'")
+    parser.add_argument("--free-energy-ref", type=float, default=None,
+                        help="slice-TI F/d for this (sigma, size), the "
+                             "chain regime's stand-in for the enumerated "
+                             "on-slice reference; 8x8 sigma_c = -1.90410")
     args = parser.parse_args(argv)
     torch.set_num_threads(args.threads)
     device = torch.device(args.device)
+    if args.lattice_side != LATTICE_SIDE:
+        configure_lattice(args.lattice_side)
+    if (args.probe_root is None) != (args.probe_point is None):
+        parser.error("--probe-root and --probe-point go together")
 
     results_root = Path(args.results_dir)
     seeds = [int(seed) for seed in args.seeds.split(",")]
@@ -690,6 +865,8 @@ def main(argv=None):
             device, args.eval_rollouts, args.eval_contexts,
             args.near_boundary_boost, args.objective, args.replicates,
             args.optimiser, args.ema_decay, args.ema_warmup,
+            probe_root=args.probe_root, probe_point=args.probe_point,
+            free_energy_ref=args.free_energy_ref,
         )
         all_reports[f"sigma_{sigma}"] = {
             "reports": reports,
