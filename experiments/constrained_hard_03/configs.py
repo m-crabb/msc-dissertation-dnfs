@@ -367,6 +367,50 @@ def _d64_smoke12k_replay2_cell(name: str) -> HardStageCfg:
     )
 
 
+def _d64_m2_ctema4_cell(name: str) -> HardStageCfg:
+    """M2 (plan Task 2): the archived d64 MA 50k curriculum recipe verbatim
+    with c_t_ema_halflife_cycles 0.0 -> 4.0 the ONLY declared change
+    (twin-ness pinned by
+    test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields). The
+    dual-eval EMA instrument is deliberately NOT ridden — the no-regression
+    gate is judged raw-vs-archived-twin, so the twin stays pure."""
+    cell = _d64_curriculum_cell(name, "masked_attention")
+    return replace(
+        cell, train=replace(cell.train, c_t_ema_halflife_cycles=4.0)
+    )
+
+
+def _d64_smoke12k_ctb512_cell(name: str) -> HardStageCfg:
+    """M3 plumbing fallback (plan Task 3): the MA curriculum recipe at the
+    12k smoke horizon with c_t_batch=512 the ONLY mechanism change — the
+    25-min a30 validation of the enlarged-rollout plumbing (buffer prefix,
+    c_t over the full set, resume carriage) if a100 is blocked for the
+    d256 mechanism cell."""
+    cell = _d64_curriculum_cell(name, "masked_attention", n_steps=12_000)
+    return replace(
+        cell,
+        train=replace(cell.train, c_t_batch=512),
+        curriculum=_SMOKE12K_SIGMA_LADDER,
+    )
+
+
+def _d256_smoke12k_naive_ctb512_cell(name: str) -> HardStageCfg:
+    """M3 mechanism cell (plan Task 3): the smoke12k Arm-B naive recipe
+    verbatim with c_t_batch=512 the ONLY declared change (twin-ness pinned
+    by test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields; the
+    arg-for-arg copy of the naive arm is guarded by that pin)."""
+    cell = _hard_cell(
+        name, sigma=0.223, head_kind="masked_attention",
+        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
+        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_SMOKE12K_SIGMA_LADDER,
+        estimator="naive_mc",
+    )
+    return replace(cell, train=replace(cell.train, c_t_batch=512))
+
+
 def _d256_cv2_cell(name: str) -> HardStageCfg:
     """Phase-2 twin of the d=256 naive rescue: same shape, estimator back to
     the control variate, NO curriculum (training continues from the naive
@@ -902,6 +946,40 @@ CONFIGS: dict[str, HardStageCfg] = {
     # re-think the buffer window in the d256 recipe.
     "H2_d64_smoke12k_replay2": _d64_smoke12k_replay2_cell(
         "H2_d64_smoke12k_replay2",
+    ),
+    # --- M-campaign Task 2 (2026-08-14): c_t EMA no-regression gate -------
+    # USER CALL (session close 2026-08-14): launch WITHOUT waiting for cv2's
+    # band — the gate reads against the ARCHIVED MA twin, so cv2's outcome
+    # changes nothing about its attribution. The archived MA 50k curriculum
+    # recipe with c_t_ema_halflife_cycles=4 the ONLY change (sigma-transition
+    # resets keep the EMA honest across the ladder). Frozen band (plan Task
+    # 2): NO-REGRESSION = final eval ESS frac within the archived MA twin's
+    # seed spread, i.e. >= 0.755 (spread 0.755/0.769/0.781); below that the
+    # across-cycle smoothing is not free and the lever is d256-only-judged.
+    "H2_d64_c50_s223_letf_ma_50k_curr_ctema4": _d64_m2_ctema4_cell(
+        "H2_d64_c50_s223_letf_ma_50k_curr_ctema4",
+    ),
+    # --- M-campaign Task 3 (2026-08-14): decoupled c_t rollout batch ------
+    # Mechanism cell, same user call: d256-naive 12k smoke with c_t_batch
+    # 128 -> 512 the ONLY change — c_t's per-slot standard error halves
+    # (variance /4) while the inner batch and replay buffer stay at 128.
+    # Frozen bands (plan Task 3), read vs the archived naive 50k run's first
+    # 12k at matched steps: MEANINGFUL = train-ESS median on the sigma=0.17
+    # rung (steps 10k-12k) >= 2x the archived run's, OR the logged per-slot
+    # var_estimator_integrand down >= 2x. NEVER bundle with M2: one lever
+    # per cell keeps attribution clean. Cost ~5 h a100 (trajectory phase
+    # +2.25x on ~75% of wall); the no-grad MA pass at B=512 peaks ~20 GB,
+    # in-cap on the 80 GB a100.
+    "H2_d256_smoke12k_naive_ctb512": _d256_smoke12k_naive_ctb512_cell(
+        "H2_d256_smoke12k_naive_ctb512",
+    ),
+    # d64 plumbing fallback for the cell above (~25 min a30): validates the
+    # enlarged-rollout outer cycle end-to-end at small size FIRST if a100
+    # scheduling blocks the d256 cell. No quality band — the unit tests
+    # (test_c_t_batch.py) already pin the semantics; this is an integration
+    # smoke.
+    "H2_d64_smoke12k_ctb512": _d64_smoke12k_ctb512_cell(
+        "H2_d64_smoke12k_ctb512",
     ),
     # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
     # these three cells are the only way to reproduce a NEGATIVE result the

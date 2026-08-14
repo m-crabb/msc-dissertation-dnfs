@@ -858,3 +858,81 @@ def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
     assert cfg.estimator == base.estimator
     assert cfg.lambda_curriculum == base.lambda_curriculum
     assert cfg.wandb_project == base.wandb_project
+
+
+def test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields():
+    """M2 no-regression gate (2026-08-14, plan Task 2): the gate cell must be
+    the archived MA 50k curriculum twin with c_t_ema_halflife_cycles
+    0.0 -> 4.0 the ONLY declared change — no horizon, ladder, or instrument
+    deltas — so the no-regression read against the archived twin's seed
+    spread (band >= 0.755 of 0.755-0.781) attributes to the c_t EMA alone.
+    The dual-eval EMA instrument is deliberately NOT ridden: the gate is
+    judged raw-vs-archived-twin, and a pure twin keeps the read clean."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    cell = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr_ctema4"]
+    assert cell.train.c_t_ema_halflife_cycles == 4.0
+    assert twin.train.c_t_ema_halflife_cycles == 0.0
+    assert cell.ema_decay == twin.ema_decay == 0.0
+    rebuilt = replace(
+        cell,
+        name=twin.name,
+        train=replace(
+            cell.train,
+            c_t_ema_halflife_cycles=twin.train.c_t_ema_halflife_cycles,
+        ),
+    )
+    assert rebuilt == twin
+
+
+def test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields():
+    """M3 mechanism cell (2026-08-14, plan Task 3): the d256 12k smoke must
+    be the smoke12k Arm-B naive recipe with c_t_batch=512 the ONLY declared
+    change, so the read against the archived naive 50k run's first 12k
+    (train-ESS median on the sigma=0.17 rung, var_estimator_integrand)
+    attributes to the decoupled c_t rollout batch alone. NEVER bundle with
+    M2: attribution stays clean one lever per cell."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d256_smoke12k_naive"]
+    cell = CONFIGS["H2_d256_smoke12k_naive_ctb512"]
+    assert cell.train.c_t_batch == 512
+    assert twin.train.c_t_batch is None
+    assert cell.train.c_t_ema_halflife_cycles == 0.0
+    rebuilt = replace(
+        cell,
+        name=twin.name,
+        train=replace(cell.train, c_t_batch=twin.train.c_t_batch),
+    )
+    assert rebuilt == twin
+
+
+def test_m3_ctb512_d64_smoke_mirrors_ma_recipe_except_declared_fields():
+    """M3 d64 plumbing smoke (2026-08-14, plan Task 3 fallback): the d64 MA
+    curriculum recipe at the 12k smoke horizon (the forced ladder truncation
+    of every smoke arm) with c_t_batch=512 the ONLY mechanism change —
+    validates the enlarged-rollout plumbing (buffer prefix, c_t over the
+    full set, resume) on a 25-min a30 job before the d256 cell."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
+    cell = CONFIGS["H2_d64_smoke12k_ctb512"]
+    assert cell.train.c_t_batch == 512
+    assert cell.train.n_steps == 12_000
+    assert cell.train.c_t_ema_halflife_cycles == 0.0
+    rebuilt = replace(
+        cell,
+        name=twin.name,
+        train=replace(
+            cell.train, n_steps=twin.train.n_steps, c_t_batch=None
+        ),
+        curriculum=twin.curriculum,
+    )
+    assert rebuilt == twin
