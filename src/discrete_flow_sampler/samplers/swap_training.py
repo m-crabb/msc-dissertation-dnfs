@@ -28,7 +28,7 @@ import torch
 import torch.nn.functional as F
 
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
-from discrete_flow_sampler.ema import ExponentialMovingAverage
+from discrete_flow_sampler.ema import CTGridEMA, ExponentialMovingAverage
 from discrete_flow_sampler.samplers._swap_neighbours import (
     SWAP_LOG_RATIO_CLAMP,
     gather_pair_scores,
@@ -112,8 +112,9 @@ def _save_resume_state(
     optimiser,
     x_replay_chunks,
     t_idx_replay_chunks,
-    replay_sigma: float,
-    ema=None,
+        replay_sigma: float,
+        ema=None,
+        c_t_ema=None,
 ) -> None:
     """Checkpoint full outer-boundary training state for preemption resume.
 
@@ -141,6 +142,10 @@ def _save_resume_state(
         # the resume-point weights would re-create the init-contamination
         # failure; a reset counter would restart the warmup schedule.
         "ema": ema.state_dict() if ema is not None else None,
+        # c_t grid EMA (M2): the smoothed grid is a function of every past
+        # cycle's raw estimate, so it cannot be reconstructed at resume —
+        # it must travel for the continuation to be bit-exact.
+        "c_t_ema": c_t_ema.state_dict() if c_t_ema is not None else None,
     }
     tmp_path = ckpt_dir / "resume.pt.tmp"
     torch.save(state, tmp_path)
@@ -287,6 +292,34 @@ def train_swap(
     multi_event = getattr(ctmc_cfg, "use_matching_step", False)
     inner_steps_per_outer = train_cfg.inner_steps_per_outer
     replay_buffer_cycles = getattr(train_cfg, "replay_buffer_cycles", 1)
+    # M2 (2026-08-14): per-slot EMA of the c_t grid across outer cycles.
+    # Default 0.0 = OFF = the archived runs' implicit setting, byte-
+    # identical; see TrainCfg.c_t_ema_halflife_cycles and ema.CTGridEMA.
+    c_t_ema_halflife = float(getattr(train_cfg, "c_t_ema_halflife_cycles", 0.0))
+    c_t_ema = (
+        CTGridEMA(n_grid, c_t_ema_halflife)
+        if CTGridEMA.is_enabled(c_t_ema_halflife)
+        else None
+    )
+    # M3 (2026-08-14): decouple the c_t rollout batch from the buffer
+    # batch. c_t = mean_m xi_t over the cycle's rollout states (Eq. 8
+    # holds for the model's own law), so its standard error falls with
+    # the rollout row count; only this no-grad phase needs scaling.
+    # Default None = outer_batch = the archived setting, byte-identical.
+    c_t_batch = getattr(train_cfg, "c_t_batch", None)
+    if c_t_batch is not None:
+        if isinstance(c_t_batch, bool) or int(c_t_batch) != c_t_batch:
+            raise TypeError(
+                f"c_t_batch must be an int or None, got {c_t_batch!r}"
+            )
+        c_t_batch = int(c_t_batch)
+        if c_t_batch < outer_batch:
+            raise ValueError(
+                f"c_t_batch must be >= outer_batch ({outer_batch}) when "
+                f"set, got {c_t_batch}: the replay buffer takes the first "
+                f"outer_batch rollout rows, so a smaller c_t_batch would "
+                f"starve it."
+            )
     if replay_buffer_cycles < 1:
         raise ValueError(
             f"replay_buffer_cycles must be >= 1, got {replay_buffer_cycles}"
@@ -325,13 +358,14 @@ def train_swap(
         writer = csv.writer(log_file)
         if log_mode == "w":
             writer.writerow(
-                ["step", "loss", "ess", "var_dt_log_p_tilde",
-                 "var_estimator_integrand", "grad_norm",
-                 "rate_pair_mean", "rate_pair_p99",
-                 "lambda_dt_clipped_frac", "lambda_dt_p99",
-                 "log_ratio_clamp_frac",
-                 "proposal_drop_frac", "events_per_site_per_step",
-                 "sigma_current", "lr_current", "wall_clock_step_s"]
+                 ["step", "loss", "ess", "var_dt_log_p_tilde",
+                  "var_estimator_integrand", "grad_norm",
+                  "rate_pair_mean", "rate_pair_p99",
+                  "lambda_dt_clipped_frac", "lambda_dt_p99",
+                  "log_ratio_clamp_frac",
+                  "proposal_drop_frac", "events_per_site_per_step",
+                  "sigma_current", "lr_current",
+                  "c_t_ema_rms_delta", "wall_clock_step_s"]
             )
 
         step = start_step
@@ -376,6 +410,19 @@ def train_swap(
                 chunk.to(device) for chunk in resume_state["t_idx_replay_chunks"]
             ]
             replay_sigma = float(resume_state["replay_sigma"])
+            if c_t_ema is not None:
+                saved_c_t_ema = resume_state.get("c_t_ema")
+                if saved_c_t_ema is not None:
+                    c_t_ema.load_state_dict(saved_c_t_ema)
+                else:
+                    # Pre-M2 checkpoint on an EMA-armed cell: the next
+                    # cycle passes through raw (the re-seed path), a
+                    # one-cycle lag vs the archived trajectory — say so.
+                    print(
+                        "[train_swap] WARNING: resume.pt has no c_t_ema "
+                        "state; grid EMA re-seeded at the next cycle",
+                        flush=True,
+                    )
             # RNG restore comes LAST in the restore sequence so nothing
             # above can perturb the stream the continuation will consume.
             torch.set_rng_state(resume_state["rng_cpu"].cpu())
@@ -430,6 +477,10 @@ def train_swap(
                     if sigma_now != replay_sigma:
                         _clear_replay(x_replay_chunks, t_idx_replay_chunks)
                         replay_sigma = sigma_now
+                        if c_t_ema is not None:
+                            # c_t is a function of sigma: smoothing must
+                            # never mix estimates across the boundary.
+                            c_t_ema.reset()
                         if rewarmup_on_stage:
                             warmup_anchor = step
                     if use_wandb:
@@ -446,31 +497,57 @@ def train_swap(
             # both detached from autograd by the no_grad block; this is
             # the paper's R_t^{θ_sg} (stop-gradient) treatment.
             t_grid = torch.linspace(0.0, 1.0, n_grid, device=device)
-            x_initial = target.sample_base(outer_batch, device=device)
+            # M3: c_t's standard error falls 1/sqrt(M) in the rollout row
+            # count; the rollout is the c_t estimator's sample size.
+            # n_rollout = outer_batch when the knob is off (byte-identical).
+            n_rollout = outer_batch if c_t_batch is None else c_t_batch
+            x_initial = target.sample_base(n_rollout, device=device)
             outer_matching_stats: dict | None = {} if multi_event else None
             with torch.no_grad():
-                x_traj = sample_swap_ctmc(
+                x_traj_full = sample_swap_ctmc(
                     head, x_initial, t_grid, return_all_states=True,
                     multi_event=multi_event,
                     matching_stats=outer_matching_stats,
-                )                                              # (T, M, D)
+                )                                              # (T, n_rollout, D)
                 c_t_grid, integrand_per_t = compute_c_t_grid_swap(
-                    t_grid, x_traj, target, head, mode=estimator_mode,
-                )                                              # (T,), (T, M)
+                    t_grid, x_traj_full, target, head, mode=estimator_mode,
+                )                                       # (T,), (T, n_rollout)
+                # M2: smooth the grid across cycles (first cycle after
+                # construction/reset passes through raw). The rms delta
+                # logs how much correction the EMA is applying — 0.0 on
+                # passthrough cycles, the mechanism's own read-out.
+                c_t_ema_rms_delta = float("nan")
+                if c_t_ema is not None:
+                    raw_c_t_grid = c_t_grid
+                    c_t_grid = c_t_ema.update(c_t_grid)
+                    c_t_ema_rms_delta = (
+                        (raw_c_t_grid - c_t_grid).pow(2).mean().sqrt().item()
+                    )
 
                 # Per-outer variance bookkeeping. Average within-slot
                 # variance: keeps the column comparable across t (each
                 # slot has its own ∂_t log p̃ baseline) and meaningful as
-                # "estimator noise per time slot".
-                t_grid_per_state = t_grid.repeat_interleave(outer_batch)
-                x_traj_flat = x_traj.reshape(n_grid * outer_batch, n_dims)
+                # "estimator noise per time slot". Over the full rollout
+                # set so the column reflects the c_t estimator's own rows.
+                t_grid_per_state = t_grid.repeat_interleave(n_rollout)
+                x_traj_flat = x_traj_full.reshape(n_grid * n_rollout, n_dims)
                 naive_per_t = target.dt_log_p_tilde_t(
                     x_traj_flat, t_grid_per_state,
-                ).reshape(n_grid, outer_batch)
+                ).reshape(n_grid, n_rollout)
                 var_dt_log_p_tilde = naive_per_t.var(dim=-1).mean().item()
                 var_estimator_integrand = (
                     integrand_per_t.var(dim=-1).mean().item()
                 )
+
+            # M3: the buffer takes the FIRST outer_batch rows of the
+            # enlarged rollout. Base positions are iid draws, so a prefix
+            # is a uniform subset (no selection bias); c_t above used all
+            # n_rollout rows. .contiguous() releases the enlarged storage:
+            # replay chunks are views (training._retain_chunks detaches but
+            # shares storage), and at d256 a c_t_batch=512 chunk is ~400 MB.
+            # A no-op view when n_rollout == outer_batch (byte-identical).
+            x_traj = x_traj_full[:, :outer_batch].contiguous()
+            del x_traj_full
 
             # Matching-native fidelity for THIS outer cycle's buffer states
             # (constant across the cycle's inner rows). This is the running
@@ -621,7 +698,7 @@ def train_swap(
                      rate_diag["log_ratio_clamp_frac"],
                      proposal_drop_frac, events_per_site_per_step,
                      float(target.sigma), optimiser.param_groups[0]["lr"],
-                     wall_clock_step_s]
+                     c_t_ema_rms_delta, wall_clock_step_s]
                 )
                 log_file.flush()
 
@@ -633,6 +710,7 @@ def train_swap(
                         "train/grad_norm": grad_norm.item(),
                         "train/sigma_current": float(target.sigma),
                         "train/lr_current": optimiser.param_groups[0]["lr"],
+                        "train/c_t_ema_rms_delta": c_t_ema_rms_delta,
                         "train/wall_clock_step_s": wall_clock_step_s,
                     }
                     if step % eval_cfg.eval_every == 0:
@@ -660,6 +738,7 @@ def train_swap(
                     t_idx_replay_chunks=t_idx_replay_chunks,
                     replay_sigma=replay_sigma,
                     ema=ema,
+                    c_t_ema=c_t_ema,
                 )
                 if on_checkpoint is not None:
                     on_checkpoint()

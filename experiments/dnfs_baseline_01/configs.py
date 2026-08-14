@@ -102,6 +102,27 @@ class TrainCfg:
     # obedience slope 0.079). Step tags let eval select the healthiest state
     # by a rule fixed before the run.
     checkpoint_every: int | None = None
+    # Per-slot EMA of the c_t (dt log Z_t) grid across outer cycles
+    # (M2, 2026-08-14; plan docs/plans/2026-08-14-m-scaling-experiments.md
+    # Task 2). c_t noise enters the loss gradient multiplicatively through
+    # (xi - c)·grad(xi); at d256-naive the per-slot SE is ~0.93 nats. The
+    # Eq.-8 identity E[xi] = dt log Z_t holds for the model's own law, so
+    # smoothing across recent cycles is pure variance reduction at an
+    # unchanged fixed point — the across-cycle complement of the Stein
+    # CV's within-cycle reduction. The EMA resets at every curriculum
+    # sigma transition (c_t is a function of sigma). 0.0 = OFF, the
+    # byte-identical archived behaviour; the candidate value is 4.0 cycles.
+    c_t_ema_halflife_cycles: float = 0.0
+    # Decoupled c_t rollout batch (M3, 2026-08-14; plan Task 3). c_t =
+    # mean_m xi_t over the outer cycle's rollout states, so its standard
+    # error falls 1/sqrt(M) in the rollout row count while only the no-grad
+    # trajectory phase pays for the extra rows (the run-D rollout lever is
+    # priced at 95 h because older cells scaled EVERYTHING; here the inner
+    # batch and replay buffer stay at outer_batch). The buffer takes the
+    # first outer_batch rows of the enlarged rollout (iid base draws make
+    # the prefix a uniform subset). None = outer_batch = OFF, the
+    # byte-identical archived behaviour; candidate d256 value 512.
+    c_t_batch: int | None = None
 
 
 @dataclass(frozen=True)
