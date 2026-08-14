@@ -315,6 +315,35 @@ def bench(argv: str = ""):
     bench_remote.remote(argv=argv)
 
 
+@app.function(
+    # A100 because the sweep re-draws trajectories at the production head
+    # cost: at d=256 a masked-attention forward is ~94 ms here, and the
+    # finest arm multiplies that by the resolution. The dev Mac's MPS is
+    # emphatically the wrong home for this — a d=256 arm there runs for
+    # about an hour and starves everything else on the machine.
+    gpu="A100",
+    volumes={"/results": volume},
+    timeout=4 * 60 * 60,
+)
+def resolution_sweep_remote(argv: str = ""):
+    """Run the n_euler resolution sweep against a checkpoint staged on the
+    volume. `argv` is the space-separated CLI string, e.g.
+    "--run-dir /results/<run> --n-euler 128,256,384 --n-draws 512"."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from scripts.n_euler_resolution_sweep import main as sweep_main
+
+    sys.argv = ["n_euler_resolution_sweep", *argv.split()]
+    sweep_main()
+
+
+@app.local_entrypoint()
+def resolution_sweep(argv: str = ""):
+    """Local CLI entry: blocking so the sweep table streams back."""
+    resolution_sweep_remote.remote(argv=argv)
+
+
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42, head_kind: str = "", smoke: bool = False):
     """Local CLI entry: blocking single `train_remote` call (used for smoke

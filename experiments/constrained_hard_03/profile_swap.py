@@ -59,6 +59,7 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 def build_head_and_target(
     d: int, device: torch.device, anchor_chunk: int | None, use_sdpa: bool = False,
     head_kind: str = "mask_one",
+    site_orderings: tuple[str, ...] = ("row",),
 ):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
 
@@ -93,7 +94,9 @@ def build_head_and_target(
             backbone, pair_offsets=(1, side), use_stencil=True, lattice_side=side,
         ).to(device)
     elif head_kind == "factorised":
-        head = FactorisedSwapHead(backbone).to(device)
+        head = FactorisedSwapHead(
+            backbone, site_orderings=site_orderings, lattice_side=side,
+        ).to(device)
     elif head_kind == "naive":
         head = DoublyHollowSwapHead(backbone).to(device)
     else:
@@ -233,6 +236,13 @@ def main(argv=None):
         choices=("mask_one", "interval", "masked_attention", "stencil",
                  "factorised", "naive"),
     )
+    parser.add_argument(
+        "--site-orderings", default="row",
+        help="comma-separated causal stream orderings for the factorised "
+             "head; 'row' is the fab8 arm, 'row,col' is the fmo2 multi-order "
+             "arm, whose two streams roughly double the forward cost. Ignored "
+             "by every other head kind.",
+    )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)
     parser.add_argument("--n-euler-steps", type=int, default=128)
@@ -251,6 +261,7 @@ def main(argv=None):
     head, target = build_head_and_target(
         args.d, device, args.anchor_chunk, use_sdpa=args.sdpa,
         head_kind=args.head_kind,
+        site_orderings=tuple(args.site_orderings.split(",")),
     )
     if args.compile:
         head.compile()
