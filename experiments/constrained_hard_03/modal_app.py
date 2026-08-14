@@ -110,7 +110,13 @@ def _resolve_head_kind(head_kind: str) -> str | None:
     # workload bandwidth-bound (layernorm/copies), where the L4 is weakest;
     # the win concentrates in the eval slices. (bench_remote moved to A100
     # too on 2026-07-23, so eval-cost numbers match production hardware.)
-    gpu="A100",
+    # 80GB spelled out 2026-08-14: Modal's bare "A100" is the 40 GB variant,
+    # and the d=256 cells were sized on the DoC cluster's 80 GB a100s. A
+    # 40 GB card here is not hardware-matched to any archived d=256 run and
+    # will OOM the enlarged-rollout knobs (c_t_batch=512 peaks ~20 GB on top
+    # of training state). Small-lattice apps elsewhere in the repo keep the
+    # cheaper default deliberately.
+    gpu="A100-80GB",
     volumes={"/results": volume},
     secrets=[wandb_secret],
     timeout=24 * 60 * 60,
@@ -222,9 +228,10 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
 
 
 @app.function(
-    # A100 like train_remote: the eval slices are exactly where the perf
-    # profile showed the A100 win concentrating.
-    gpu="A100",
+    # A100-80GB like train_remote: the eval slices are exactly where the
+    # perf profile showed the A100 win concentrating, and the d=256 eval
+    # chunk sizes were tuned against 80 GB cards (see train_remote).
+    gpu="A100-80GB",
     volumes={"/results": volume},
     timeout=2 * 60 * 60,
 )
@@ -293,13 +300,18 @@ def mdns_gate(argv: str = ""):
     mdns_gate_remote.remote(argv=argv)
 
 
-@app.function(gpu="A100", timeout=2 * 60 * 60)
+@app.function(gpu="A100-80GB", timeout=2 * 60 * 60)
 def bench_remote(argv: str = ""):
-    """Run the profile/benchmark harness on the production GPU (A100 — the
-    per-head eval costs must be comparable to the recorded run wall-clocks,
-    and MO's B·d expansion saturates smaller GPUs earlier). `argv` is the
-    space-separated profile_swap CLI string, e.g.
-    "--mode eval --d 64 --batch 256 --n-euler-steps 128"."""
+    """Run the profile/benchmark harness on the production GPU. `argv` is
+    the space-separated profile_swap CLI string, e.g.
+    "--mode eval --d 64 --batch 256 --n-euler-steps 128".
+
+    A100-80GB is spelled out deliberately: Modal's bare "A100" is the 40 GB
+    variant, which OOMs the large-batch arms this harness exists to measure
+    (masked_attention peaks 5.0 GB at d=256 B=32, so a B=512 arm wants
+    ~80 GB). It also matches the DoC cluster's a100 partition, so benched
+    costs stay comparable to the recorded run wall-clocks — which is the
+    whole point of benching on production hardware."""
     import sys
 
     sys.path.insert(0, "/repo")
@@ -316,12 +328,16 @@ def bench(argv: str = ""):
 
 
 @app.function(
-    # A100 because the sweep re-draws trajectories at the production head
-    # cost: at d=256 a masked-attention forward is ~94 ms here, and the
-    # finest arm multiplies that by the resolution. The dev Mac's MPS is
-    # emphatically the wrong home for this — a d=256 arm there runs for
-    # about an hour and starves everything else on the machine.
-    gpu="A100",
+    # A100-80GB, spelled out: Modal's bare "A100" is the 40 GB variant, and
+    # every other function in this file inherits that 40 GB default. The
+    # distinction bites on d=256 batch sizing — a masked-attention forward
+    # peaks 5.0 GB at B=32, so a B=512 arm wants ~80 GB and silently OOMs a
+    # 40 GB card. Measured on Modal 2026-08-14; the DoC cluster's a100
+    # partition is 80 GB, so cluster-tuned batch sizes do NOT transfer to a
+    # bare gpu="A100" Modal function.
+    # The dev Mac's MPS is the wrong home for this entirely: one d=256 arm
+    # runs about an hour there and starves the machine.
+    gpu="A100-80GB",
     volumes={"/results": volume},
     timeout=4 * 60 * 60,
 )
