@@ -717,7 +717,19 @@ def _scr5k_ma_h128_lr03_cell(name: str) -> HardStageCfg:
     accruing under lr 1e-3. A frozen-lr h128 arm here would be positioned
     to reproduce that false negative, so the bridge arm spends its one
     slot on the (h128, lr03) corner; the fmo2 family carries the full
-    2x2 (base / h128 / lr03 / h128+lr03) that de-confounds the pair."""
+    2x2 (base / h128 / lr03 / h128+lr03) that de-confounds the pair.
+
+    NOT LAUNCHABLE ON CURRENT HARDWARE — measured, 2026-08-15: the smoke
+    OOMed an A100-80GB in the backward pass (77.0 GiB in use, 4.0 GiB
+    further requested) at this cell's exact frame (batch 128, d=256,
+    hidden 128). The archived h32 twin trains inside the same card, so the
+    4x width alone exhausts it; making it fit means moving batch,
+    precision or activation checkpointing — each a second variable that
+    would un-twin the arm. Kept registered as the measured record that
+    capacity work at 16x16 is affordable only on the factorised head
+    (fmo2: 0.87 GB at batch 32 where masked attention reads 5.00 GB, the
+    dominant (B, heads, d, 2d) score tensor being hidden-independent).
+    The capacity read at this volume therefore rides the fmo2 2x2."""
     cell = _d256_scr5k_cell(name, "masked_attention", eval_sample_chunk=128)
     return replace(
         cell,
