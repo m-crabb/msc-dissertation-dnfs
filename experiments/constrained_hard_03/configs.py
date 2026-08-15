@@ -354,6 +354,163 @@ def _d64_curriculum_cell(
     return replace(cell, **head_knobs)
 
 
+def _d144_curriculum_cell(
+    name: str, head_kind: str, n_steps: int = 50_000, **head_knobs
+) -> HardStageCfg:
+    """The 12x12 (d=144) rung — the volume between the healthy 8x8 rung and
+    the 16x16 rung that does not train.
+
+    Why this size exists at all: 8x8 reaches Var[log w]/site 0.0040 and
+    16x16 sits at 0.0707, an 18x per-site gap across a single 4x volume
+    step, with no rung in between ever run. A working 144 turns two points
+    and a failure into a scaling curve; a failing 144 brackets the wall to a
+    2.25x volume window. Either outcome is read on Var[log w]/site, not ESS:
+    the self-normalised estimator cannot report below 1/N, so once
+    Var[log w] passes ~log N the ESS column measures the largest weight in
+    the draw rather than the sampler (measured — at 64 sites
+    ESS/N = exp(-Var) holds to 1.1%, at 256 sites it is wrong by 2.3e5).
+
+    Three fields differ from the 8x8 rung, each forced by the volume rather
+    than chosen:
+
+    `use_matching_step=True` (multi-event). The one-event Euler step clips
+    when Lambda*dt > 1, and Lambda is a sum over ~d^2/2 pairs, so it is ~5x
+    the 8x8 value here. The 8x8 rung's one-event step would clip on most
+    states; this is the step the 16x16 cells already run, so the protocol
+    matches the larger rung.
+
+    `n_euler_steps=288` = 2d, the clip-safe budget the shared builder states
+    ("~2d at d=64", which the 8x8 rung honours at 128). Every 16x16 cell has
+    run 128 = 0.5d, a factor of 4 under that rule, and a resolution sweep on
+    a frozen 16x16 checkpoint found Var[log w] still falling monotonically
+    at the largest grid tested — the signature of an under-resolved grid.
+    Matching the 8x8 rung's STEP COUNT instead would give this rung a
+    coarser grid per site than the rung it is compared against, making a
+    failure unattributable between volume and discretisation. Separating
+    those two is the one thing this cell exists to do.
+
+    `eval_sample_chunk=512`: the factorised head peaks at 0.87 GB at 256
+    sites and batch 32, against masked attention's 5.00 GB, and its
+    throughput saturates by batch 512. The 64-row chunk every 16x16 cell
+    inherited was sized for masked attention and wastes most of the card.
+    Chunking is eval-only and cannot move the trained model.
+
+    Everything else — sigma ladder, batch, lr, replay depth, warmup, seed —
+    is the 8x8 recipe verbatim, so head and volume stay the declared
+    changes. The ladder is reused rather than rescaled because sigma_c in
+    this convention is the thermodynamic-limit value (ln(1+sqrt 2)/2) and is
+    already shared by the 4x4, 8x8 and 16x16 rungs."""
+    cell = _hard_cell(
+        name, sigma=0.223, head_kind=head_kind,
+        D=12, n_steps=n_steps, n_euler_steps=288, n_eval_samples=5000,
+        eval_sample_chunk=512, n_eval_samples_training=512,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+    )
+    return replace(cell, **head_knobs)
+
+
+def _d64_fmo2_h128_cell(name: str) -> HardStageCfg:
+    """The 8x8 factorised rung with hidden_dim 32 -> 128 the ONLY change.
+
+    Why capacity is suspected. `hidden_dim=32, n_layers=2, n_heads=4` is set
+    once in the shared cell builder and every cell at every volume has used
+    it, so it has never appeared in a cell diff. The object the head must
+    produce is the d x d pair field, and parameters per pair-field entry
+    fall 663 -> 42.7 -> 3.4 across the 16 / 64 / 256-site rungs while total
+    capacity grows only 1.4x. Independently, the factorised-head forensics
+    measured the REQUIRED effective rank of that field growing roughly d/8
+    at sigma_c: the function gets structurally richer with volume while the
+    network does not.
+
+    NOT proven binding, and one prior argument for it has been withdrawn.
+    The relative-fit statistic `loss / var_estimator_integrand` was read as
+    showing the 16x16 model underfitting its own training states; it does
+    not survive recomputation — it is dominated by which c_t estimator is
+    switched on (two 8x8 runs of near-identical quality read 0.446 with the
+    control variate and 0.028 without), and the 16x16 value quoted came from
+    the run that was killed for divergence rather than the health-clean one.
+    The rank argument above stands on its own and is untouched by that.
+
+    Why 128, and why at 8x8 first. Rank headroom at the healthy rung is
+    32/(64/8) = 4x; holding that ratio at 256 sites needs hidden 128.
+    Capacity cannot be bundled with a cross-volume warm start in one step,
+    because the transfer resamples positional tables across volume but every
+    weight matrix changes shape when hidden_dim moves. So this cell runs at
+    the volume whose answer is already known and serves twice: as the
+    capacity NULL (4x headroom is already present at 8x8, so neutral is
+    expected and is the informative outcome — a gain HERE would mean the
+    rank argument mis-locates the constraint), and as the transfer source
+    for a matched-capacity larger rung.
+
+    `n_heads` stays 4, so head_dim rides 8 -> 32 as a consequence of
+    widening rather than as a second knob; `n_layers` stays 2. Depth is a
+    separate cell and is deliberately not bundled."""
+    cell = replace(
+        _d64_curriculum_cell(name, head_kind="factorised"),
+        ema_decay=0.9999,
+        site_orderings=("row", "col"),
+    )
+    return replace(cell, model=replace(cell.model, hidden_dim=128))
+
+
+def _d256_fmo2_warm_cell(
+    name: str, n_euler_steps: int = 128
+) -> HardStageCfg:
+    """16x16 factorised rung continued from a trained 8x8 factorised model
+    (`--init-from` a cross-volume transfer built by the warm-start script,
+    which resamples the positional tables bicubically on the torus and keeps
+    the live readout).
+
+    The warm-start arm that was never actually run. The archived phase-2
+    continuation restarted a 16x16 model from a 16x16 checkpoint, so it
+    tested an estimator switch and not transfer; and the head that makes a
+    16x16 run affordable at all — 18.6 ms / 0.87 GB against masked
+    attention's 87.8 ms / 5.00 GB at this volume — has never been trained
+    here. Both gaps close in one cell.
+
+    No curriculum, flat sigma_c, lr pinned to the ladder's final 3e-4: the
+    source model has already climbed the sigma ladder at 8x8, so the
+    optimiser regime continues rather than restarts. That is the archived
+    continuation cell's shape exactly, which keeps the schedule from
+    becoming a second variable.
+
+    `n_euler_steps` is the arm variable, and the two registered values are
+    the point of the pair:
+
+    - **128** is what every archived 16x16 cell has run. It is also 0.5d,
+      a factor of 4 under the clip-safe budget this module's own builder
+      states ("~2d at d=64", which the 8x8 rung honours at 128). It is the
+      CONTROL, kept so the transfer read stays comparable to the archive.
+    - **512** is 2d, the rule's own value at this volume. A sweep across
+      grids on a frozen 16x16 checkpoint found Var[log w] falling
+      monotonically all the way to the largest grid tested — the signature
+      of a grid that is still too coarse — but that sweep can only ask how
+      an ALREADY-TRAINED model behaves when re-rolled finer. It cannot
+      separate "the grid is coarse" from "the model was fitted to a coarse
+      grid", because a model trained under a biased discretisation learns to
+      compensate that bias. Training at the finer grid is the only test of
+      the second reading, and it is the live hope of the pair.
+
+    Run as two arms one variable apart rather than as a single choice: if
+    only the fine arm ran and improved, the gain would not be separable from
+    the transfer itself, and if only the coarse arm ran the resolution
+    question would stay where the sweep left it."""
+    cell = _hard_cell(
+        name, sigma=0.223, head_kind="factorised",
+        D=16, n_steps=20_000, n_euler_steps=n_euler_steps,
+        n_eval_samples=5000,
+        eval_sample_chunk=512, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+    )
+    return replace(
+        cell, ema_decay=0.9999, site_orderings=("row", "col"),
+        train=replace(cell.train, lr=3e-4),
+    )
+
+
 def _d64_smoke12k_replay2_cell(name: str) -> HardStageCfg:
     """M6 (plan Task 6): the MA curriculum recipe at the 12k smoke horizon,
     replay_buffer_cycles 8 -> 2 the ONLY declared change versus the archived
@@ -696,6 +853,38 @@ CONFIGS: dict[str, HardStageCfg] = {
             ),
             ema_decay=0.9999,
             site_orderings=("row", "col"),
+        ),
+        # Scaling slate (2026-08-15). The fmo2 rung above cleared its band at
+        # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
+        # attention twin) and the cost bench priced it at 4.7x faster and
+        # 5.7x smaller than that twin at 16x16, so the head is no longer what
+        # limits volume. What limits it is unlocated: every c_t lever is
+        # measured at or under 1.19x, a 2.9x cut in estimator-integrand
+        # variance moved 16x16 eval variance by 3%, and 20k further steps
+        # moved it by 3% more — against the 7.9x a usable 16x16 needs. These
+        # four cells attack the three axes that remain untested, one variable
+        # each.
+        #
+        # 1. VOLUME. 8x8 works, 16x16 does not, nothing between has run.
+        "H2_d144_c50_s223_letf_fmo2_50k_curr": replace(
+            _d144_curriculum_cell(
+                "H2_d144_c50_s223_letf_fmo2_50k_curr",
+                head_kind="factorised",
+            ),
+            ema_decay=0.9999,
+            site_orderings=("row", "col"),
+        ),
+        # 2. CAPACITY. hidden_dim has been 32 at every volume ever run.
+        "H2_d64_c50_s223_letf_fmo2_h128_50k_curr": _d64_fmo2_h128_cell(
+            "H2_d64_c50_s223_letf_fmo2_h128_50k_curr",
+        ),
+        # 3. TRANSFER x RESOLUTION, as a two-arm pair one variable apart.
+        "H2_d256_c50_s223_letf_fmo2_20k_sc_warm": _d256_fmo2_warm_cell(
+            "H2_d256_c50_s223_letf_fmo2_20k_sc_warm",
+        ),
+        "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512": _d256_fmo2_warm_cell(
+            "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512",
+            n_euler_steps=512,
         ),
     # Band-capacity push batch 1 (2026-07-08): three single-variable twins
     # of ma_50k_curr.

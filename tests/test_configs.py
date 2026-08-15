@@ -806,6 +806,122 @@ def test_d256_cv2_cell_mirrors_naive_rescue_except_declared_fields():
     assert rebuilt == twin
 
 
+def test_d144_fmo2_rung_mirrors_d64_fmo2_rung_except_volume_scaled_fields():
+    """The 12x12 rung (2026-08-15). 8x8 trains to Var/site 0.0040 and 16x16
+    sits at 0.0707; no volume in between has ever been run, so the wall is
+    unbracketed. This cell must be the 8x8 factorised rung with ONLY the
+    volume-forced deltas: the lattice side, the multi-event step (the
+    one-event step clips once Lambda ~ d^2/2 outgrows the budget), the
+    clip-safe 2d Euler grid the shared builder's own rule asks for, and the
+    eval chunk the factorised head's memory allows. Head, sigma ladder,
+    batch, lr, replay depth and seed stay verbatim, so volume is the read."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d144_c50_s223_letf_fmo2_50k_curr"]
+    twin = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr"]
+    assert cell.ising.D == 12 and twin.ising.D == 8
+    # 2d at 144 sites; the 8x8 rung honours the same rule at 128 = 2*64.
+    assert cell.ctmc.n_euler_steps == 288
+    assert cell.ctmc.use_matching_step and not twin.ctmc.use_matching_step
+    assert cell.eval.eval_sample_chunk == 512
+    assert cell.head_kind == "factorised"
+    assert cell.site_orderings == ("row", "col")
+    assert cell.curriculum == twin.curriculum
+    assert cell.train == twin.train
+    rebuilt = replace(
+        cell,
+        name=twin.name,
+        ising=replace(cell.ising, D=twin.ising.D),
+        ctmc=twin.ctmc,
+        eval=twin.eval,
+    )
+    assert rebuilt == twin
+
+
+def test_d64_fmo2_h128_mirrors_fmo2_rung_except_hidden_dim():
+    """Capacity arm (2026-08-15): hidden_dim 32 -> 128 the ONLY change
+    against the 8x8 factorised rung. hidden_dim is set once in the shared
+    cell builder and every cell at every volume has used 32, so it has never
+    appeared in a cell diff; this pin makes the first variation of it
+    single-variable. n_heads and n_layers must NOT move with it — head_dim
+    riding 8 -> 32 is the consequence of widening, not a second knob."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d64_c50_s223_letf_fmo2_h128_50k_curr"]
+    twin = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr"]
+    assert cell.model.hidden_dim == 128 and twin.model.hidden_dim == 32
+    assert cell.model.n_heads == twin.model.n_heads == 4
+    assert cell.model.n_layers == twin.model.n_layers == 2
+    rebuilt = replace(
+        cell,
+        name=twin.name,
+        model=replace(cell.model, hidden_dim=twin.model.hidden_dim),
+    )
+    assert rebuilt == twin
+
+
+def test_d256_fmo2_warm_mirrors_cv2_continuation_shape_except_head():
+    """Cross-volume transfer arm (2026-08-15). The archived phase-2 cell
+    continued 16x16 from a 16x16 checkpoint, which cannot test transfer at
+    all; this one starts from an 8x8 factorised model resampled onto the
+    larger torus. It must share the continuation SHAPE with that archived
+    cell — no curriculum, flat sigma_c, lr at the ladder's final 3e-4, the
+    dual-eval EMA riding — so the schedule is not a second variable, and
+    differ in the head and the eval chunk the factorised head's memory
+    allows. n_euler stays at the 128 every archived 16x16 cell used even
+    though the builder's clip-safe rule asks 2d = 512 here: training on a
+    finer grid AND from a transfer would confound them, and the resolution
+    axis is read afterwards off the frozen checkpoint instead."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d256_c50_s223_letf_fmo2_20k_sc_warm"]
+    twin = CONFIGS["H2_d256_c50_s223_letf_ma_20k_sc_cv2"]
+    assert cell.head_kind == "factorised" and cell.site_orderings == ("row", "col")
+    assert cell.curriculum is None and cell.ising.sigma == 0.223
+    assert cell.train.n_steps == 20_000 and cell.train.lr == 3e-4
+    assert cell.ema_decay == 0.9999
+    assert cell.ctmc.n_euler_steps == twin.ctmc.n_euler_steps == 128
+    assert cell.eval.eval_sample_chunk == 512
+    rebuilt = replace(
+        cell,
+        name=twin.name,
+        head_kind=twin.head_kind,
+        site_orderings=twin.site_orderings,
+        eval=twin.eval,
+    )
+    assert rebuilt == twin
+
+
+def test_d256_fmo2_warm_ne512_differs_from_its_twin_in_the_grid_alone():
+    """Resolution-at-training arm (2026-08-15). A frozen-checkpoint sweep can
+    only ask how an already-trained model behaves when re-rolled on a finer
+    grid; it cannot separate "the grid is coarse" from "the model was fitted
+    to a coarse grid", since a model trained under a biased discretisation
+    learns to compensate that bias. This arm trains at 2d = 512, the
+    clip-safe budget this module's builder states, against a 128 twin that
+    is what every archived 16x16 cell ran. n_euler_steps must be the ONLY
+    difference, so any gain is attributable to the grid rather than to the
+    cross-volume transfer the pair shares."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    cell = CONFIGS["H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512"]
+    twin = CONFIGS["H2_d256_c50_s223_letf_fmo2_20k_sc_warm"]
+    assert cell.ctmc.n_euler_steps == 512 == 2 * cell.ising.D**2
+    assert twin.ctmc.n_euler_steps == 128
+    rebuilt = replace(
+        cell, name=twin.name, ctmc=replace(cell.ctmc, n_euler_steps=128)
+    )
+    assert rebuilt == twin
+
+
 def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
     """Walk-back-to-8x8 slate (2026-08-12). The three experiment chapters
     shared no non-enumerable lattice size — baseline and soft ran 10x10,
