@@ -612,6 +612,201 @@ def _d256_cv2_cell(name: str) -> HardStageCfg:
     )
 
 
+def _d256_scr5k_cell(
+    name: str, head_kind: str, *, eval_sample_chunk: int,
+    n_euler_steps: int = 128,
+) -> HardStageCfg:
+    """One arm of the 16x16 stage-1 screen: flat sigma=0.10, 5,000 steps,
+    naive c_t, the rescue recipe's shape otherwise verbatim.
+
+    Why a screen at sigma=0.10 exists. The archived 16x16 failure does not
+    appear at criticality — it is fully expressed in the first 5,000 steps
+    of the rescue run, at the ladder's easiest rung: stage-1-tail
+    loss/var_dt_log_p_tilde (FVU) reads 0.119 against the 8x8 naive twin's
+    0.033 at the matched stage, and the 256-draw train eval reads ESS/N
+    0.041 against 0.85. A flat-sigma 5k cell therefore reproduces the
+    failure for ~1/10 the cost of a ladder run, and — because the h128 8x8
+    arm lost ground specifically ACROSS sigma transitions under lr 1e-3
+    while matching its twin at fixed sigma — it also removes the
+    lr-x-moving-target interaction that made that capacity null
+    unattributable. One variable per arm; every arm reads against the
+    scr5k base of its own head family.
+
+    Pre-registered read, frozen before any arm ran: stage-tail FVU = mean
+    loss / mean var_dt_log_p_tilde over steps 3,000-4,999 (both columns in
+    training_log.csv; subtract the naive c_t noise floor 1/128 = 0.0078
+    for cross-estimator comparisons). Bands against the MA base's expected
+    0.119 (the archived rescue's own first 5k, seed 42, byte-comparable
+    recipe): LIVE if <= 0.08 (>1.5x, outside the +-0.005 within-run
+    window noise); PARITY if <= 0.04 (the 8x8 naive yardstick); NULL if
+    >= 0.10. Corroboration: final 1000-draw eval ESS/N (base expectation
+    ~0.04; floor 1/1000 is far below any band). Scope stated honestly: a
+    NULL kills an axis for the stage-1 deficit — the bulk of the failure
+    (3.6x of the final 5.1x) — not necessarily for the sigma_c increment
+    on top; a LIVE fires everywhere it fires.
+
+    Fixed fields and why: naive_mc in EVERY arm (the estimator of the
+    failure under investigation, and the c_t noise floor then cancels in
+    same-estimator comparisons); n_eval_samples=1000 not 5000 (screen
+    precision: SE(Var[log w]) ~ Var*sqrt(2/999) ~ 0.8 at the current 18,
+    ample against bands 2x apart); n_euler=128 and batch 128 as archived
+    (the ne512 arm varies both together — n_grid also sets c_t slots,
+    buffer size and the loss's t-support, and inner_batch/n_grid is the
+    per-slot gradient density, so the pair moves as one to hold density at
+    1.0); no curriculum (sigma constant means no buffer clears, no EMA
+    resets, no lr steps)."""
+    return _hard_cell(
+        name, sigma=0.10, head_kind=head_kind,
+        D=16, n_steps=5_000, n_euler_steps=n_euler_steps,
+        n_eval_samples=1000,
+        eval_sample_chunk=eval_sample_chunk, n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        estimator="naive_mc",
+    )
+
+
+def _scr5k_fmo2_cell(name: str) -> HardStageCfg:
+    """Factorised-multi-order screen arm: the scr5k shape with the fmo2
+    family's own conventions riding (EMA shadow and the two causal
+    orderings), and the eval chunk sized to the head that runs it — fmo2
+    peaks 0.87 GB at batch 32 where masked attention peaks 5.00 GB, and its
+    measured throughput saturates by batch 512, so the 64-row chunk every
+    archived 16x16 cell inherited wastes most of an 80 GB card. Chunking is
+    eval-only and cannot move the trained model."""
+    cell = _d256_scr5k_cell(name, "factorised", eval_sample_chunk=512)
+    return replace(cell, ema_decay=0.9999, site_orderings=("row", "col"))
+
+
+def _scr5k_fmo2_with(
+    name: str, *, n_euler_steps: int = 128, **overrides
+) -> HardStageCfg:
+    """One fmo2 screen arm = the fmo2 base with the named overrides the
+    ONLY changes (twin-ness pinned in tests). Overrides route to the model
+    (hidden_dim, n_layers) or training (lr, grad_clip_max_norm, batch_size)
+    dataclass by field name; anything else is a typo and must fail loudly
+    rather than silently produce an arm that is not the declared twin."""
+    model_field_names = {"hidden_dim", "n_layers"}
+    train_field_names = {"lr", "grad_clip_max_norm", "batch_size"}
+    unknown = set(overrides) - model_field_names - train_field_names
+    if unknown:
+        raise ValueError(f"unknown screen-arm override(s): {sorted(unknown)}")
+    cell = _scr5k_fmo2_cell(name)
+    model_overrides = {
+        k: v for k, v in overrides.items() if k in model_field_names
+    }
+    train_overrides = {
+        k: v for k, v in overrides.items() if k in train_field_names
+    }
+    if n_euler_steps != 128:
+        cell = replace(cell, ctmc=replace(cell.ctmc, n_euler_steps=n_euler_steps))
+    if model_overrides:
+        cell = replace(cell, model=replace(cell.model, **model_overrides))
+    if train_overrides:
+        cell = replace(cell, train=replace(cell.train, **train_overrides))
+    return cell
+
+
+def _scr5k_ma_h128_lr03_cell(name: str) -> HardStageCfg:
+    """The masked-attention bridge capacity arm: hidden 32 -> 128 WITH lr
+    1e-3 -> 3e-4 co-varied, deliberately bundled. The only capacity
+    variation ever run (8x8 fmo2 h128) came back negative with the fit
+    statistic worsening on a superset function class — which optimisation,
+    not expressivity, explains — and its per-stage trace shows the damage
+    accruing under lr 1e-3. A frozen-lr h128 arm here would be positioned
+    to reproduce that false negative, so the bridge arm spends its one
+    slot on the (h128, lr03) corner; the fmo2 family carries the full
+    2x2 (base / h128 / lr03 / h128+lr03) that de-confounds the pair."""
+    cell = _d256_scr5k_cell(name, "masked_attention", eval_sample_chunk=128)
+    return replace(
+        cell,
+        model=replace(cell.model, hidden_dim=128),
+        train=replace(cell.train, lr=3e-4),
+    )
+
+
+def _d144_ma_bracket_cell(name: str) -> HardStageCfg:
+    """The 12x12 volume bracket of the ARCHIVED failure: the 16x16 naive
+    rescue recipe with the lattice side the only mechanism change.
+
+    This supersedes the earlier fmo2 12x12 rung as the wall-bracketing
+    cell, which sat three variables from the failure it was meant to
+    bracket: factorised head (the failing archive is masked attention),
+    control-variate c_t (the from-scratch 16x16 launch diverged under the
+    CV and was rescued by naive), and n_euler=288 (every archived 16x16
+    number is 128, and 288 also moves per-slot gradient density
+    128/288 = 0.44 — the same slots/buffer/t-support coupling that made
+    the cancelled ne512 transfer arm unattributable to resolution). A
+    12x12 result from that cell could not have been charged to volume.
+    That cell stays registered for the fmo2 family's own ladder later;
+    THIS cell brackets the wall.
+
+    The read is a single-estimator, single-head, single-grid scaling curve:
+    8x8 naive 0.00472 Var[log w]/site (archived naive twin) -> 12x12 (this
+    cell) -> 16x16 naive 0.0707 (archived rescue). Read on Var/site, never
+    ESS: at Var ~ 18 the self-normalised estimator is floor-bound at 1/N.
+    En route it self-serves the stage-1 screen read at zero extra cost —
+    the ladder's first 5,000 steps ARE flat sigma=0.10, so stage-tail FVU
+    at 12x12 lands ~day one and places this rung on the healthy (0.033) or
+    failing (0.119) side before the ladder finishes.
+
+    Eval sizing is the only departure, both fields eval-only: chunk 128
+    (masked attention's (B, heads, d, 2d) score buffer at d=144 is ~1/3
+    the d=256 row cost, so 128 rows sit well inside the card that ran
+    chunk 64 at d=256) and 512-draw in-training evals (the 8x8 convention;
+    a 256-draw eval cannot read below 1/256 and this rung is expected to
+    land between 0.85 and 0.01)."""
+    return _hard_cell(
+        name, sigma=0.223, head_kind="masked_attention",
+        D=12, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=128, n_eval_samples_training=512, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        estimator="naive_mc",
+    )
+
+
+def _d256_clip2000_cont_cell(name: str) -> HardStageCfg:
+    """Clip-threshold continuation: the completed naive rescue continued
+    (via --init-from its final checkpoint) for 10k further steps at flat
+    sigma_c with grad_clip_max_norm 500 -> 2000 the only mechanism change.
+
+    Why a continuation and not a cold twin. The clip fires on ~25% of the
+    rescue's final-plateau steps (final-stage p50 grad norm 384, p99
+    ~1050), removing ~9-10% of gradient magnitude — a permanent brake
+    exactly where this arm operates. A cold unclipped 16x16 already exists
+    and failed: the clip=20000 smoke arm never escaped rung 0 (85% of its
+    final-rung steps at/above even that ceiling, final loss 328 vs the
+    naive arm's 3.16) — confounded with the then-broken CV recipe, but it
+    prices the early-phase divergence risk (the rescue's own early grad
+    max was 6.1e6) that a continuation never takes. At threshold 2000 the
+    final-plateau tail sits almost entirely unclipped (p99 ~1050), so this
+    isolates the brake's steady-state cost; the early-phase question is
+    the flat-sigma screen's clip arm.
+
+    Read against the rescue's own final plateau, which is flat (FVU
+    0.137 +- 0.005 across deciles; eval Var/site 0.0707 at N=5000): the
+    null band is that flatness continuing. lr pinned to the ladder's
+    final 3e-4 and estimator kept naive so the optimiser regime continues
+    rather than restarts — the archived cv2 continuation changed the
+    estimator at this same juncture, which is why it cannot serve as this
+    arm's control. Eval chunk 64 -> 128, eval-only."""
+    cell = _hard_cell(
+        name, sigma=0.223, head_kind="masked_attention",
+        D=16, n_steps=10_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=128, n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        estimator="naive_mc",
+        grad_clip_max_norm=2_000.0,
+    )
+    return replace(
+        cell, ema_decay=0.9999, train=replace(cell.train, lr=3e-4)
+    )
+
+
 CONFIGS: dict[str, HardStageCfg] = {
     # First Potts cell (2026-07-31):
     # the training path on S=3, kept small enough to smoke end-to-end on CPU.
@@ -886,6 +1081,79 @@ CONFIGS: dict[str, HardStageCfg] = {
             "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512",
             n_euler_steps=512,
         ),
+    # --- 16x16 stage-1 screen (2026-08-15, post-review): flat sigma=0.10,
+    # 5k steps, naive c_t, one variable per arm, read on stage-tail FVU
+    # (bands frozen in the _d256_scr5k_cell docstring BEFORE launch).
+    # The MA pair anchors the archived failure (base expectation 0.119,
+    # the rescue's own first 5k); the fmo2 arms screen the head any scaled
+    # run would use (4.7x faster / 5.7x smaller, measured at this volume).
+    # lr arms exist because lr has been varied exactly as often as
+    # hidden_dim across the whole archive: never. Every capacity arm
+    # (h128, L3) ships with an lr=3e-4 sibling because the one capacity
+    # variation ever run produced a negative attributable to the un-retuned
+    # lr rather than to capacity.
+    "H2_d256_scr5k_ma": _d256_scr5k_cell(
+        "H2_d256_scr5k_ma", "masked_attention", eval_sample_chunk=128,
+    ),
+    "H2_d256_scr5k_ma_h128_lr03": _scr5k_ma_h128_lr03_cell(
+        "H2_d256_scr5k_ma_h128_lr03",
+    ),
+    "H2_d256_scr5k_fmo2": _scr5k_fmo2_cell("H2_d256_scr5k_fmo2"),
+    "H2_d256_scr5k_fmo2_h128": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_h128", hidden_dim=128,
+    ),
+    "H2_d256_scr5k_fmo2_h128_lr03": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_h128_lr03", hidden_dim=128, lr=3e-4,
+    ),
+    "H2_d256_scr5k_fmo2_lr03": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_lr03", lr=3e-4,
+    ),
+    "H2_d256_scr5k_fmo2_L3": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_L3", n_layers=3,
+    ),
+    "H2_d256_scr5k_fmo2_L3_lr03": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_L3_lr03", n_layers=3, lr=3e-4,
+    ),
+    "H2_d256_scr5k_fmo2_clip2000": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_clip2000", grad_clip_max_norm=2_000.0,
+    ),
+    "H2_d256_scr5k_fmo2_ne512_b512": _scr5k_fmo2_with(
+        # n_grid also sets c_t slots, buffer size and the loss's t-support,
+        # and inner_batch/n_grid is the per-slot gradient density — so grid
+        # and batch move together to hold density at 1.0, or the arm tests
+        # starvation rather than resolution.
+        "H2_d256_scr5k_fmo2_ne512_b512", n_euler_steps=512, batch_size=512,
+    ),
+    "H2_d256_scr20k_fmo2": replace(
+        # The horizon control, and the first flat-subcritical 16x16 run of
+        # any length: no 16x16 model has ever trained at fixed sigma=0.10
+        # beyond the ladder's first 5k steps (8x8 has exactly one such run,
+        # the 50k floor at 0.00018 Var/site; 4x4 many). If the stage-1
+        # deficit is slow convergence rather than a floor, THIS arm falls
+        # toward 0.03 after 5k and every scr5k null gets re-read; if it
+        # stays at ~0.119 for 4x the horizon, the 5k screen read stands.
+        _scr5k_fmo2_cell("H2_d256_scr20k_fmo2"),
+        train=replace(_scr5k_fmo2_cell("H2_d256_scr20k_fmo2").train,
+                      n_steps=20_000),
+    ),
+    "H2_d256_scr5k_mo": _d256_scr5k_cell(
+        # The best 8x8 head (0.00129 Var/site at 100k, 2.2x under the MA
+        # twin) has never touched 16x16; its per-step cost there is also
+        # unbenchmarked (d anchor passes), which is why this arm runs on
+        # the cluster with a hard time cap rather than metered hardware.
+        "H2_d256_scr5k_mo", "mask_one", eval_sample_chunk=64,
+    ),
+    # --- 12x12 volume bracket of the archived failure (2026-08-15,
+    # post-review; supersedes the fmo2 12x12 cell as the bracketing rung —
+    # rationale in the builder docstring). Two seeds: this is a headline
+    # scaling-curve point, not a screen arm.
+    "H2_d144_c50_s223_letf_ma_50k_curr_naive": _d144_ma_bracket_cell(
+        "H2_d144_c50_s223_letf_ma_50k_curr_naive",
+    ),
+    # --- clip-threshold continuation of the completed naive rescue -------
+    "H2_d256_c50_s223_letf_ma_10k_sc_clip2000": _d256_clip2000_cont_cell(
+        "H2_d256_c50_s223_letf_ma_10k_sc_clip2000",
+    ),
     # Band-capacity push batch 1 (2026-07-08): three single-variable twins
     # of ma_50k_curr.
     # The discriminator: interval head, head_kind is the ONLY change.
