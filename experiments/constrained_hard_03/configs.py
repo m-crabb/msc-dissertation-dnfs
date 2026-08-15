@@ -1150,9 +1150,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     ),
     "H2_d256_scr5k_mo": _d256_scr5k_cell(
         # The best 8x8 head (0.00129 Var/site at 100k, 2.2x under the MA
-        # twin) has never touched 16x16; its per-step cost there is also
-        # unbenchmarked (d anchor passes), which is why this arm runs on
-        # the cluster with a hard time cap rather than metered hardware.
+        # twin) has never touched 16x16. NOT LAUNCHABLE ON CURRENT
+        # HARDWARE — measured 2026-08-15: the GPU smoke OOMed an
+        # A100-80GB (75.9 GiB in use, 73.4 GiB torch-allocated) at this
+        # frame (batch 128, d=256); the head's d anchor passes retain
+        # ~d trunk graphs for the backward, so its training memory scales
+        # with the lattice in a way neither other family's does. With the
+        # masked-attention h128 arm's OOM this makes it measured for all
+        # three head families that capacity-class work at 16x16 fits only
+        # the factorised head. Kept registered as that record; a batch-32
+        # mini-family (own base + arm) is the phase-2 route if the A6
+        # question still needs a d256 answer after the screen.
         "H2_d256_scr5k_mo", "mask_one", eval_sample_chunk=64,
     ),
     # --- 12x12 volume bracket of the archived failure (2026-08-15,
