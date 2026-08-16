@@ -41,7 +41,7 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
 from discrete_flow_sampler.samplers.optim import StableAdamW
 from discrete_flow_sampler.samplers.swap_kolmogorov import (
     c_t_offset_rms,
-    loss_swap,
+    loss_swap_backward_microbatched,
 )
 from discrete_flow_sampler.samplers.training import (
     _append_replay_buffer,
@@ -634,9 +634,17 @@ def train_swap(
                 t_sample = t_grid[t_idx_sample]                    # (N,)
                 c_t_sample = c_t_grid[t_idx_sample]                # (N,)
 
-                loss_value, residual_sample = loss_swap(
+                # loss_microbatch_size slices this one backward over batch
+                # rows — the gradient-identical memory schedule that fits
+                # the two measured d=256 OOM arms (see the helper's
+                # docstring); None = the archived single backward. getattr
+                # because test call sites pass bare config bags.
+                optimiser.zero_grad()
+                loss_value, residual_sample = loss_swap_backward_microbatched(
                     x_sample, t_sample, c_t_sample, head, target,
-                    return_residual=True,
+                    microbatch_size=getattr(
+                        train_cfg, "loss_microbatch_size", None
+                    ),
                 )
                 # Δ diagnostic: −E[residual] per slot is the offset between
                 # c_t and the mean of ξ_t over the distribution the LOSS
@@ -646,13 +654,11 @@ def train_swap(
                 # batch gives ~1 sample per slot. Sign flipped on readout,
                 # not here, so the running sums stay plain residual sums.
                 delta_residual_sum.index_add_(
-                    0, t_idx_sample, residual_sample.detach()
+                    0, t_idx_sample, residual_sample
                 )
                 delta_residual_count.index_add_(
                     0, t_idx_sample, torch.ones_like(residual_sample)
                 )
-                optimiser.zero_grad()
-                loss_value.backward()
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     head.parameters(),
                     getattr(train_cfg, "grad_clip_max_norm", 500.0),

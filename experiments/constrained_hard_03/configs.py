@@ -719,23 +719,52 @@ def _scr5k_ma_h128_lr03_cell(name: str) -> HardStageCfg:
     slot on the (h128, lr03) corner; the fmo2 family carries the full
     2x2 (base / h128 / lr03 / h128+lr03) that de-confounds the pair.
 
-    NOT LAUNCHABLE ON CURRENT HARDWARE — measured, 2026-08-15: the smoke
-    OOMed an A100-80GB in the backward pass (77.0 GiB in use, 4.0 GiB
-    further requested) at this cell's exact frame (batch 128, d=256,
-    hidden 128). The archived h32 twin trains inside the same card, so the
-    4x width alone exhausts it; making it fit means moving batch,
-    precision or activation checkpointing — each a second variable that
-    would un-twin the arm. Kept registered as the measured record that
-    capacity work at 16x16 is affordable only on the factorised head
-    (fmo2: 0.87 GB at batch 32 where masked attention reads 5.00 GB, the
-    dominant (B, heads, d, 2d) score tensor being hidden-independent).
-    The capacity read at this volume therefore rides the fmo2 2x2."""
+    Memory schedule (2026-08-16): the single-backward smoke OOMed an
+    A100-80GB by a whisker (77.0 GiB in use, 4.0 GiB further requested,
+    backward pass) at this cell's exact frame (batch 128, d=256, hidden
+    128), where the archived h32 twin trains inside the same card. Moving
+    batch or precision would un-twin the arm, so the fit lever is
+    loss_microbatch_size=64: the inner step's one backward runs as two
+    64-row slices, which halves the retained graph (linear in rows —
+    ample against a 4 GiB shortfall) while accumulating the IDENTICAL
+    update at the full batch 128 — a gradient-exact memory schedule, not
+    a recipe variable (loss_swap_backward_microbatched's docstring has
+    the algebra; tests/test_loss_microbatch_parity.py pins it). The
+    measured record otherwise stands: single-backward capacity work at
+    16x16 fits only the factorised head (fmo2: 0.87 GB at batch 32 where
+    masked attention reads 5.00 GB, the dominant (B, heads, d, 2d) score
+    tensor being hidden-independent)."""
     cell = _d256_scr5k_cell(name, "masked_attention", eval_sample_chunk=128)
     return replace(
         cell,
         model=replace(cell.model, hidden_dim=128),
-        train=replace(cell.train, lr=3e-4),
+        train=replace(cell.train, lr=3e-4, loss_microbatch_size=64),
     )
+
+
+def _scr5k_mo_cell(name: str) -> HardStageCfg:
+    """The mask_one screen arm: the best 8x8 head (0.00129 Var/site at
+    100k, 2.2x under the MA twin), never before run at 16x16 — the A6
+    question's d256 read.
+
+    Memory schedule (2026-08-16): the single-backward smoke OOMed an
+    A100-80GB (75.9 GiB in use, 73.4 GiB torch-allocated) at this frame
+    (batch 128, d=256) — the head's d stacked anchor passes retain ~d
+    trunk graphs per row for the backward, so its training memory scales
+    with the lattice in a way neither other family's does. The fit lever
+    is loss_microbatch_size=16: eight 16-row backward slices bound the
+    retained graph to ~1/8 of the measured 73.4 GiB (~9 GiB, linear in
+    rows) while accumulating the IDENTICAL update at the full batch 128 —
+    gradient-exact, so not a recipe variable (algebra in
+    loss_swap_backward_microbatched; pinned by
+    tests/test_loss_microbatch_parity.py). Each slice still stacks all
+    256 anchors (4096 trunk rows per forward), so per-pass GPU
+    utilisation stays dense and total FLOPs are unchanged. This
+    supersedes the briefly-registered batch-32 mini-family route, which
+    would have moved the batch — a second variable — where slicing moves
+    none."""
+    cell = _d256_scr5k_cell(name, "mask_one", eval_sample_chunk=64)
+    return replace(cell, train=replace(cell.train, loss_microbatch_size=16))
 
 
 def _d144_ma_bracket_cell(name: str) -> HardStageCfg:
@@ -1148,21 +1177,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         train=replace(_scr5k_fmo2_cell("H2_d256_scr20k_fmo2").train,
                       n_steps=20_000),
     ),
-    "H2_d256_scr5k_mo": _d256_scr5k_cell(
-        # The best 8x8 head (0.00129 Var/site at 100k, 2.2x under the MA
-        # twin) has never touched 16x16. NOT LAUNCHABLE ON CURRENT
-        # HARDWARE — measured 2026-08-15: the GPU smoke OOMed an
-        # A100-80GB (75.9 GiB in use, 73.4 GiB torch-allocated) at this
-        # frame (batch 128, d=256); the head's d anchor passes retain
-        # ~d trunk graphs for the backward, so its training memory scales
-        # with the lattice in a way neither other family's does. With the
-        # masked-attention h128 arm's OOM this makes it measured for all
-        # three head families that capacity-class work at 16x16 fits only
-        # the factorised head. Kept registered as that record; a batch-32
-        # mini-family (own base + arm) is the phase-2 route if the A6
-        # question still needs a d256 answer after the screen.
-        "H2_d256_scr5k_mo", "mask_one", eval_sample_chunk=64,
-    ),
+    "H2_d256_scr5k_mo": _scr5k_mo_cell("H2_d256_scr5k_mo"),
     # --- 12x12 volume bracket of the archived failure (2026-08-15,
     # post-review; supersedes the fmo2 12x12 cell as the bracketing rung —
     # rationale in the builder docstring). Two seeds: this is a headline

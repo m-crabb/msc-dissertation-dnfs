@@ -7,6 +7,7 @@ the SAME tensor via the readout's exact antisymmetry
 Same-spin pairs vanish for free (G_swap = 0, y_ij = x), so summing all i<j is
 correct without masking.
 """
+import torch
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -42,6 +43,64 @@ def loss_swap(x: Tensor, t: Tensor, dt_log_Zt, head, target, *,
     residual = residual.nan_to_num(posinf=1.0, neginf=-1.0, nan=0.0)
     loss = residual.pow(2).mean()
     return (loss, residual) if return_residual else loss
+
+
+def loss_swap_backward_microbatched(
+    x: Tensor, t: Tensor, dt_log_Zt, head, target, *,
+    microbatch_size: int | None,
+) -> tuple[Tensor, Tensor]:
+    """`loss_swap(...).backward()` with the retained graph bounded to
+    `microbatch_size` rows. Returns (detached full-batch loss, detached
+    per-state residual); gradients are left ACCUMULATED in `head`'s .grad
+    buffers, so the caller must zero_grad() first.
+
+    WHY THIS IS NOT A RECIPE CHANGE. The loss is a per-row mean — the
+    residual (Eq. 10, swap form) is computed row-wise, `dt_log_Zt` is a
+    per-row gather from a grid held fixed across the cycle, and the
+    nan_to_num sanitiser is row-wise — so the batch mean decomposes exactly
+    as mean_N = sum_k (n_k/N) * mean_slice_k, and autograd's linearity
+    carries that identity to the gradient: backwarding each slice's
+    weighted loss sums to the single-backward gradient, bit-for-bit up to
+    float summation order. Clipping and the optimiser step then see the
+    same total gradient (tests/test_loss_microbatch_parity.py). This would
+    NOT hold for a batch-coupled objective (self-normalised weights, batch
+    statistics); anything of that kind added to loss_swap breaks the
+    parity test before it breaks a run.
+
+    WHAT IT BUYS. Peak training memory is the retained autograd graph,
+    linear in batch rows (for mask_one, each row additionally rides its d
+    stacked anchor passes). Slicing frees each slice's graph at its own
+    backward, so the peak drops by ~N/microbatch_size at unchanged total
+    FLOPs — unlike activation checkpointing, which pays a recompute
+    forward. This is what makes the two measured A100-80GB OOM arms of the
+    16x16 screen (masked-attention h128; mask_one) launchable.
+
+    `microbatch_size=None` (or >= the batch) is the archived single-
+    backward path, op-for-op — the default every queued or archived cell
+    runs, pinned bit-exact by the parity test.
+    """
+    batch_size = x.shape[0]
+    if microbatch_size is None or microbatch_size >= batch_size:
+        loss, residual = loss_swap(
+            x, t, dt_log_Zt, head, target, return_residual=True
+        )
+        loss.backward()
+        return loss.detach(), residual.detach()
+
+    c_t_is_per_row = torch.is_tensor(dt_log_Zt) and dt_log_Zt.ndim >= 1
+    loss_total = torch.zeros((), device=x.device)
+    residual_slices = []
+    for start in range(0, batch_size, microbatch_size):
+        rows = slice(start, start + microbatch_size)
+        c_t_rows = dt_log_Zt[rows] if c_t_is_per_row else dt_log_Zt
+        slice_loss, slice_residual = loss_swap(
+            x[rows], t[rows], c_t_rows, head, target, return_residual=True
+        )
+        slice_weight = slice_residual.shape[0] / batch_size
+        (slice_loss * slice_weight).backward()
+        loss_total += slice_loss.detach() * slice_weight
+        residual_slices.append(slice_residual.detach())
+    return loss_total, torch.cat(residual_slices)
 
 
 def c_t_offset_rms(residual_sum: Tensor, residual_count: Tensor) -> float:

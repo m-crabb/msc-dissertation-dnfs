@@ -100,11 +100,32 @@ def test_ma_h128_bridge_arm_covaries_lr_with_width():
     arm = CONFIGS["H2_d256_scr5k_ma_h128_lr03"]
     assert arm.model.hidden_dim == 128
     assert arm.train.lr == 3e-4
+    # The declared fields plus the memory schedule: loss_microbatch_size
+    # is gradient-identical to the base's single backward (parity-pinned
+    # in test_loss_microbatch_parity), carried only because the h128
+    # graph is measured not to fit an A100-80GB in one backward.
+    assert arm.train.loss_microbatch_size == 64
     rebuilt = _reset(
         arm, name=base.name,
-        model={"hidden_dim": 32}, train={"lr": 1e-3},
+        model={"hidden_dim": 32},
+        train={"lr": 1e-3, "loss_microbatch_size": None},
     )
     assert rebuilt == base
+
+
+def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
+    """The backward-slicing memory schedule may live ONLY on the two arms
+    whose single-backward graph is measured to exceed an A100-80GB. It is
+    gradient-identical (test_loss_microbatch_parity), but confining it
+    keeps every other cell — the queued fleet included — running the
+    archived single-backward path byte-for-byte, which is what makes
+    deploying this code under a live queue safe."""
+    expected = {
+        "H2_d256_scr5k_ma_h128_lr03": 64,
+        "H2_d256_scr5k_mo": 16,
+    }
+    for name, cell in CONFIGS.items():
+        assert cell.train.loss_microbatch_size == expected.get(name), name
 
 
 def test_ma_screen_base_is_the_rescue_recipe_at_flat_sigma010():

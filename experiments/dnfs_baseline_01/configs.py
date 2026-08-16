@@ -67,6 +67,15 @@ class TrainCfg:
     outer_batch_size: int | None = None  # None -> falls back to batch_size
     replay_buffer_cycles: int = 1        # number of retained outer batches
     grad_clip_max_norm: float = 500.0  # some transformer runs override this
+    # Rows per inner-step backward slice (swap trainer only; None = one
+    # backward over the full batch, every archived run). A memory schedule,
+    # not a recipe variable: the swap loss is a per-row mean, so slicing the
+    # backward accumulates the IDENTICAL total gradient up to float summation
+    # order (loss_swap_backward_microbatched's docstring has the algebra;
+    # tests/test_loss_microbatch_parity.py pins it). Set on the two 16x16
+    # screen arms whose single-backward retained graph is measured to exceed
+    # an A100-80GB (masked-attention h128; mask_one at d=256).
+    loss_microbatch_size: int | None = None
     # LR warmup over the first N inner steps. **Paper deviation:** the DNFS
     # paper doesn't specify warmup; reference repo has none. Added 2026-05-13
     # after a 4-seed probe on stage_4_d10_paper showed 1/4 seeds healthy
