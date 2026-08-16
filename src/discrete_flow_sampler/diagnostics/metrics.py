@@ -504,3 +504,52 @@ def half_magnetisation_order_parameter(x: Tensor, D: int) -> Tensor:
     m_left = grid[..., :, : D // 2].mean(dim=(-2, -1))
     m_right = grid[..., :, D // 2:].mean(dim=(-2, -1))
     return 0.5 * (m_left - m_right)
+
+
+def gradient_noise_scale_components(
+    slice_sqnorm_mean: float,
+    full_sqnorm: float,
+    slice_size: int,
+    batch_size: int,
+) -> tuple[float, float]:
+    """Invert the two-batch-size gradient-noise identity of McCandlish et
+    al. (arXiv:1812.06162, App. A).
+
+    For i.i.d. per-row gradients with mean G and covariance Sigma, a
+    size-B minibatch gradient g_B satisfies
+
+        E |g_B|^2 = |G|^2 + tr(Sigma) / B ,
+
+    so squared norms measured at two batch sizes b < N solve the 2x2
+    linear system:
+
+        |G|^2      = (N * |g_N|^2 - b * |g_b|^2) / (N - b)
+        tr(Sigma)  = (|g_b|^2 - |g_N|^2) / (1/b - 1/N)
+
+    and the critical-batch predictor is B_simple = tr(Sigma) / |G|^2:
+    below B_simple, doubling the batch roughly halves the steps needed;
+    above it, extra rows buy little. In the swap trainer the inputs are
+    free by-products of one already-paid backward: `slice_sqnorm_mean` is
+    the training log's `grad_sqnorm_slice_mean` (E|g_b|^2 over the
+    micro-batch slices, b = loss_microbatch_size) and `full_sqnorm` is the
+    logged pre-clip `grad_norm` squared (the same step's |g_N|^2 at
+    N = batch_size).
+
+    Single-step estimates are noisy and |G|^2 can come out negative early
+    in training, where the true gradient is small against the noise; that
+    is information, not error (B_simple is effectively infinite there).
+    Average the two returned components separately across steps (an EMA,
+    per McCandlish) and divide at the end -- never average the ratio.
+    """
+    if slice_size >= batch_size:
+        raise ValueError(
+            f"need slice_size < batch_size for the two-point inversion, "
+            f"got {slice_size} >= {batch_size}"
+        )
+    grad_sqnorm_estimate = (
+        batch_size * full_sqnorm - slice_size * slice_sqnorm_mean
+    ) / (batch_size - slice_size)
+    trace_sigma_estimate = (slice_sqnorm_mean - full_sqnorm) / (
+        1.0 / slice_size - 1.0 / batch_size
+    )
+    return grad_sqnorm_estimate, trace_sigma_estimate

@@ -48,6 +48,7 @@ def loss_swap(x: Tensor, t: Tensor, dt_log_Zt, head, target, *,
 def loss_swap_backward_microbatched(
     x: Tensor, t: Tensor, dt_log_Zt, head, target, *,
     microbatch_size: int | None,
+    slice_grad_sqnorms_out: list | None = None,
 ) -> tuple[Tensor, Tensor]:
     """`loss_swap(...).backward()` with the retained graph bounded to
     `microbatch_size` rows. Returns (detached full-batch loss, detached
@@ -78,6 +79,20 @@ def loss_swap_backward_microbatched(
     `microbatch_size=None` (or >= the batch) is the archived single-
     backward path, op-for-op — the default every queued or archived cell
     runs, pinned bit-exact by the parity test.
+
+    NOISE-SCALE OBSERVER. `slice_grad_sqnorms_out`, when a list, collects
+    one `(rows, sqnorm)` pair per slice, where `sqnorm` is the squared
+    norm of that slice's UNWEIGHTED gradient — the E|g_b|^2 ingredient of
+    the McCandlish two-batch-size gradient-noise-scale estimator
+    (diagnostics.metrics.gradient_noise_scale_components; the |g_N|
+    partner is the pre-clip grad_norm the trainer already logs). The
+    accumulated-grad increment after slice k is (n_k/N) * g_slice_k by
+    the weighting above, so the unweighted slice gradient is recovered by
+    rescaling with N/n_k. Collection only READS `.grad` between slice
+    backwards (one clone per parameter per slice); the accumulated update
+    is bit-identical with it on or off, and the single-backward paths
+    have no slices so they never touch the list — callers log NaN from an
+    empty list, never a fabricated value.
     """
     batch_size = x.shape[0]
     if microbatch_size is None or microbatch_size >= batch_size:
@@ -90,16 +105,38 @@ def loss_swap_backward_microbatched(
     c_t_is_per_row = torch.is_tensor(dt_log_Zt) and dt_log_Zt.ndim >= 1
     loss_total = torch.zeros((), device=x.device)
     residual_slices = []
+    previous_grads: list[Tensor | None] | None = None
+    if slice_grad_sqnorms_out is not None:
+        previous_grads = [
+            None if p.grad is None else p.grad.detach().clone()
+            for p in head.parameters()
+        ]
     for start in range(0, batch_size, microbatch_size):
         rows = slice(start, start + microbatch_size)
         c_t_rows = dt_log_Zt[rows] if c_t_is_per_row else dt_log_Zt
         slice_loss, slice_residual = loss_swap(
             x[rows], t[rows], c_t_rows, head, target, return_residual=True
         )
-        slice_weight = slice_residual.shape[0] / batch_size
+        slice_rows = slice_residual.shape[0]
+        slice_weight = slice_rows / batch_size
         (slice_loss * slice_weight).backward()
         loss_total += slice_loss.detach() * slice_weight
         residual_slices.append(slice_residual.detach())
+        if slice_grad_sqnorms_out is not None:
+            increment_sqnorm = 0.0
+            for param_index, param in enumerate(head.parameters()):
+                if param.grad is None:
+                    continue
+                grad_now = param.grad.detach()
+                previous = previous_grads[param_index]
+                increment = (
+                    grad_now if previous is None else grad_now - previous
+                )
+                increment_sqnorm += float(increment.pow(2).sum())
+                previous_grads[param_index] = grad_now.clone()
+            slice_grad_sqnorms_out.append(
+                (slice_rows, increment_sqnorm / slice_weight**2)
+            )
     return loss_total, torch.cat(residual_slices)
 
 

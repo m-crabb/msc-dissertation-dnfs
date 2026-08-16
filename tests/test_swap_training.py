@@ -255,3 +255,31 @@ def test_train_swap_logs_c_t_offset_rms(tmp_path):
     # Finite and non-negative on every step: it is an RMS, and every step
     # follows at least one inner draw, so no row can be the empty-slot NaN.
     assert all(value == value and value >= 0.0 for value in values)
+
+
+def test_train_swap_logs_grad_sqnorm_slice_mean(tmp_path):
+    """When micro-batching is on, the mean squared norm of the UNWEIGHTED
+    per-slice gradients is logged each step — the E|g_b|^2 ingredient of the
+    McCandlish gradient-noise-scale pair, whose |g_N| partner is the already
+    logged pre-clip grad_norm. With micro-batching off the column is NaN:
+    no slices exist and a fabricated value would silently poison the
+    noise-scale analysis."""
+    for microbatch_on in (True, False):
+        torch.manual_seed(0)
+        tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+        head = _tiny_head()
+        train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
+        if microbatch_on:
+            train_cfg.loss_microbatch_size = 4  # batch 8 -> two full slices
+        run_dir = Path(tmp_path) / f"microbatch_{microbatch_on}"
+        run_dir.mkdir()
+        train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, run_dir,
+                   use_wandb=False, estimator_mode="control_variate")
+
+        rows = _read_csv_rows(run_dir / "training_log.csv")
+        assert "grad_sqnorm_slice_mean" in rows[0]
+        values = [float(row["grad_sqnorm_slice_mean"]) for row in rows]
+        if microbatch_on:
+            assert all(value == value and value > 0.0 for value in values)
+        else:
+            assert all(value != value for value in values)  # NaN

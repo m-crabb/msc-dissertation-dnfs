@@ -295,6 +295,7 @@ def train_swap(
     multi_event = getattr(ctmc_cfg, "use_matching_step", False)
     inner_steps_per_outer = train_cfg.inner_steps_per_outer
     replay_buffer_cycles = getattr(train_cfg, "replay_buffer_cycles", 1)
+    loss_microbatch_size = getattr(train_cfg, "loss_microbatch_size", None)
     # M2 (2026-08-14): per-slot EMA of the c_t grid across outer cycles.
     # Default 0.0 = OFF = the archived runs' implicit setting, byte-
     # identical; see TrainCfg.c_t_ema_halflife_cycles and ema.CTGridEMA.
@@ -376,6 +377,7 @@ def train_swap(
                  "proposal_drop_frac", "events_per_site_per_step",
                  "sigma_current", "lr_current",
                  "c_t_ema_rms_delta", "c_t_offset_rms",
+                 "grad_sqnorm_slice_mean",
                  "wall_clock_step_s"]
             )
 
@@ -637,14 +639,29 @@ def train_swap(
                 # loss_microbatch_size slices this one backward over batch
                 # rows — the gradient-identical memory schedule that fits
                 # the two measured d=256 OOM arms (see the helper's
-                # docstring); None = the archived single backward. getattr
-                # because test call sites pass bare config bags.
+                # docstring); None = the archived single backward. When
+                # slicing is on, the per-slice gradient squared-norms ride
+                # for free: with the pre-clip grad_norm below they form
+                # the two-batch-size pair the gradient-noise-scale
+                # estimator inverts (gradient_noise_scale_components).
                 optimiser.zero_grad()
+                slice_grad_sqnorms: list | None = (
+                    [] if loss_microbatch_size is not None else None
+                )
                 loss_value, residual_sample = loss_swap_backward_microbatched(
                     x_sample, t_sample, c_t_sample, head, target,
-                    microbatch_size=getattr(
-                        train_cfg, "loss_microbatch_size", None
-                    ),
+                    microbatch_size=loss_microbatch_size,
+                    slice_grad_sqnorms_out=slice_grad_sqnorms,
+                )
+                # Mean over FULL slices only: a ragged tail is a different
+                # batch size b and would bias E|g_b|^2.
+                full_slice_sqnorms = [
+                    sqnorm for rows, sqnorm in (slice_grad_sqnorms or [])
+                    if rows == loss_microbatch_size
+                ]
+                grad_sqnorm_slice_mean = (
+                    sum(full_slice_sqnorms) / len(full_slice_sqnorms)
+                    if full_slice_sqnorms else float("nan")
                 )
                 # Δ diagnostic: −E[residual] per slot is the offset between
                 # c_t and the mean of ξ_t over the distribution the LOSS
@@ -741,6 +758,7 @@ def train_swap(
                      proposal_drop_frac, events_per_site_per_step,
                      float(target.sigma), optimiser.param_groups[0]["lr"],
                      c_t_ema_rms_delta, c_t_offset_value,
+                     grad_sqnorm_slice_mean,
                      wall_clock_step_s]
                 )
                 log_file.flush()
@@ -755,6 +773,7 @@ def train_swap(
                         "train/lr_current": optimiser.param_groups[0]["lr"],
                         "train/c_t_ema_rms_delta": c_t_ema_rms_delta,
                         "train/c_t_offset_rms": c_t_offset_value,
+                        "train/grad_sqnorm_slice_mean": grad_sqnorm_slice_mean,
                         "train/wall_clock_step_s": wall_clock_step_s,
                     }
                     if step % eval_cfg.eval_every == 0:
