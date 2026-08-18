@@ -122,11 +122,44 @@ def train_remote(cfg_name: str, seed: int = 42):
     volume.commit()
 
 
+@app.function(
+    # L4 variant (2026-08-18, d16 unconstrained control): cheapest card the
+    # unconstrained engine sustains. The run's memory footprint is a few GB
+    # (no pair-score buffers — the leTF backbone alone), and at ~2x A100
+    # wall-clock (the attention note above, measured at d=100) the 50k
+    # compressed ladder lands ~8-12 h — inside the 24 h timeout with
+    # headroom a T4 would not have. Same body contract as train_remote.
+    gpu="L4",
+    volumes={"/results": volume},
+    secrets=[wandb_secret],
+    timeout=24 * 60 * 60,
+)
+def train_remote_l4(cfg_name: str, seed: int = 42):
+    """train_remote on an L4; see train_remote for the body contract."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.dnfs_baseline_01.run import train
+    from experiments.dnfs_baseline_01.configs import CONFIGS
+
+    train(CONFIGS[cfg_name], seed=seed, output_dir="/results")
+    volume.commit()
+
+
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call."""
     _validate_cfg_name(cfg_name)
     train_remote.remote(cfg_name=cfg_name, seed=seed)
+
+
+@app.local_entrypoint()
+def main_l4(cfg_name: str, seed: int = 42):
+    """Spawn (not block on) an L4 run — pair with `modal run --detach` so
+    a long cheap run survives the client exiting."""
+    _validate_cfg_name(cfg_name)
+    call = train_remote_l4.spawn(cfg_name=cfg_name, seed=seed)
+    print(f"spawned {cfg_name} seed {seed} on L4: {call.object_id}")
 
 
 @app.local_entrypoint()
