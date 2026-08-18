@@ -102,6 +102,19 @@ class TrainCfg:
     # initialisation-scale transient with no ramp. Off by default so every
     # archived run's semantics are unchanged.
     rewarmup_on_stage: bool = False
+    # CV-inversion tripwire (adversarial panel, 2026-08-18). The swap
+    # trainer logs `cv_var_ratio` — controlled/naive integrand variance
+    # over the same rollout rows, a validated 5/5 in-run classifier of the
+    # d256 cold-CV inversion — every step, unconditionally. When
+    # `halt_on_cv_inversion_after` is set AND the estimator is the control
+    # variate, a ratio above 1.0 for a full trailing window of outer
+    # cycles at/after that step stops the run gracefully
+    # (cv_inversion_halt.json marker; final.pt still saved). None = off =
+    # every archived cell's behaviour. Intended consumer: the registered
+    # CV CONTINUATION cell, armed past the warm-heal horizon (~1000
+    # steps) so a re-inversion cannot burn walltime unnoticed.
+    halt_on_cv_inversion_after: int | None = None
+    halt_cv_inversion_window: int = 10
     # Save a step-tagged checkpoint every N inner steps (None = only the
     # rolling `latest.pt` + end-of-run `final.pt`). Motivation: a run whose
     # late-training loss enters an excursion/recovery cycle ends with a

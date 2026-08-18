@@ -1126,3 +1126,42 @@ def test_m3_ctb512_d64_smoke_mirrors_ma_recipe_except_declared_fields():
         curriculum=twin.curriculum,
     )
     assert rebuilt == twin
+
+
+def test_swap_route_never_reads_the_ising_log_ratio_clamp_field():
+    """Dead-field pin (adversarial panel, 2026-08-18). Every hard-route
+    config.json carries `ising.log_ratio_clamp` (default 5.0), but the swap
+    path clamps at the hardcoded SWAP_LOG_RATIO_CLAMP = 30.0 and the
+    fixed-composition target never even receives the field — the config
+    value is single-site-route-only and CANNOT govern any hard-chapter run.
+    Behavioural proof: perturbing the target's attribute to an absurd value
+    must leave the swap residual bit-identical. The value is left unplumbed
+    deliberately: making the swap clamp configurable would trip eval_only's
+    config-drift guard on every archived run dir (stored 5.0 vs registry),
+    a blast radius the never-firing clamp (0 of 141,000 logged rows across
+    six d64-d256 runs; physical bound ~7.14 nats at sigma_c) does not earn.
+    This pin keeps the trap documented instead."""
+    import torch
+
+    from discrete_flow_sampler.constraints.swap_readout import (
+        LeTFMaskOneSwapHead,
+    )
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+    from discrete_flow_sampler.samplers.swap_kolmogorov import residual_swap
+    from discrete_flow_sampler.targets.ising import (
+        FixedCompositionIsingTarget,
+    )
+
+    torch.manual_seed(0)
+    head = LeTFMaskOneSwapHead(
+        LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2,
+                       n_heads=2)
+    )
+    target = FixedCompositionIsingTarget(
+        D=4, sigma=0.223, target_composition=0.5
+    )
+    x = target.sample_base(8, device="cpu")
+    t = torch.full((8,), 0.7)
+    reference = residual_swap(x, t, 0.0, head, target)
+    target.log_ratio_clamp = 1e-6  # absurd; would zero every ratio if read
+    assert torch.equal(residual_swap(x, t, 0.0, head, target), reference)

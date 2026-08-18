@@ -172,6 +172,19 @@ def _truncate_log_to_step(log_path: Path, resume_step: int) -> bool:
     return True
 
 
+def _cv_inversion_sustained(ratio_history: list[float], window: int) -> bool:
+    """True iff the trailing `window` outer-cycle var-ratios are ALL > 1.0.
+
+    Strictly-greater and windowed by design: the healthy warm-start pattern
+    opens ~30x against and crosses below 1 within ~1000 steps, so a single
+    healthy cycle inside the window must reset the case; and exactly 1.0
+    (the naive mode's wiring value) is not an inversion.
+    """
+    if len(ratio_history) < window:
+        return False
+    return all(ratio > 1.0 for ratio in ratio_history[-window:])
+
+
 def train_swap(
     head,
     target,
@@ -295,6 +308,13 @@ def train_swap(
     multi_event = getattr(ctmc_cfg, "use_matching_step", False)
     inner_steps_per_outer = train_cfg.inner_steps_per_outer
     replay_buffer_cycles = getattr(train_cfg, "replay_buffer_cycles", 1)
+    halt_on_cv_inversion_after = getattr(
+        train_cfg, "halt_on_cv_inversion_after", None
+    )
+    halt_cv_inversion_window = int(
+        getattr(train_cfg, "halt_cv_inversion_window", 10)
+    )
+    cv_var_ratio_history: list[float] = []
     loss_microbatch_size = getattr(train_cfg, "loss_microbatch_size", None)
     # M2 (2026-08-14): per-slot EMA of the c_t grid across outer cycles.
     # Default 0.0 = OFF = the archived runs' implicit setting, byte-
@@ -370,7 +390,7 @@ def train_swap(
         if log_mode == "w":
             writer.writerow(
                 ["step", "loss", "ess", "var_dt_log_p_tilde",
-                 "var_estimator_integrand", "grad_norm",
+                 "var_estimator_integrand", "cv_var_ratio", "grad_norm",
                  "rate_pair_mean", "rate_pair_p99",
                  "lambda_dt_clipped_frac", "lambda_dt_p99",
                  "log_ratio_clamp_frac",
@@ -552,6 +572,42 @@ def train_swap(
                 var_estimator_integrand = (
                     integrand_per_t.var(dim=-1).mean().item()
                 )
+
+            # CV-inversion observer (adversarial panel, 2026-08-18): the
+            # controlled/naive integrand variance ratio, formed from the two
+            # variances above — same rollout rows, no extra estimator pass.
+            # In naive mode the integrand IS the naive one, so the column
+            # reads exactly 1.0 (a wiring self-check). Sustained ratio > 1
+            # is a validated 5/5 in-run classifier of the d256 cold-CV
+            # inversion (cold: never < 1.5 across 5k steps; healthy warm:
+            # crosses below 1 within ~1000 steps — hence the window).
+            cv_var_ratio = (
+                var_estimator_integrand / var_dt_log_p_tilde
+                if var_dt_log_p_tilde > 0 else float("nan")
+            )
+            cv_var_ratio_history.append(cv_var_ratio)
+            if (
+                halt_on_cv_inversion_after is not None
+                and estimator_mode == "control_variate"
+                and step >= halt_on_cv_inversion_after
+                and _cv_inversion_sustained(
+                    cv_var_ratio_history, halt_cv_inversion_window
+                )
+            ):
+                # Tripwire for CV CONTINUATION cells (default None = off, so
+                # every archived cell is untouched): stop spending walltime
+                # on a run the classifier has already called — gracefully.
+                # Marker for the judge; loop exits; final.pt still saves.
+                (output_dir / "cv_inversion_halt.json").write_text(
+                    json.dumps({
+                        "step": step,
+                        "window": halt_cv_inversion_window,
+                        "trailing_ratios": cv_var_ratio_history[
+                            -halt_cv_inversion_window:
+                        ],
+                    }, indent=2)
+                )
+                break
 
             # M3: the buffer takes the FIRST outer_batch rows of the
             # enlarged rollout. Base positions are iid draws, so a prefix
@@ -750,6 +806,7 @@ def train_swap(
                 writer.writerow(
                     [step, loss_value.item(), ess_value,
                      var_dt_log_p_tilde, var_estimator_integrand,
+                     cv_var_ratio,
                      grad_norm.item(), rate_diag["rate_pair_mean"],
                      rate_diag["rate_pair_p99"],
                      rate_diag["lambda_dt_clipped_frac"],
@@ -768,6 +825,7 @@ def train_swap(
                         "train/loss": loss_value.item(),
                         "train/var_dt_log_p_tilde": var_dt_log_p_tilde,
                         "train/var_estimator_integrand": var_estimator_integrand,
+                        "train/cv_var_ratio": cv_var_ratio,
                         "train/grad_norm": grad_norm.item(),
                         "train/sigma_current": float(target.sigma),
                         "train/lr_current": optimiser.param_groups[0]["lr"],
