@@ -771,4 +771,65 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
     ),
+    # Unconstrained 16x16 control (2026-08-18, user GO): does the d=256
+    # sigma_c wall appear WITHOUT the constraint machinery? The hard
+    # chapter's proven 50k ladder frame (sigma stages every 5k, lr
+    # 1e-3 -> 3e-4 on reaching 0.205, final 40% of budget at sigma_c)
+    # applied to THIS experiment's engine with its own constants
+    # untouched (leT h128 L3, batch 128 / outer 256 / replay 4, clip
+    # 500, ne64, control-variate estimator) — at d=256 this is the
+    # cross-family twin of the constrained 16x16 anchors: same lattice,
+    # same schedule shape, same budget, machinery the only change. The
+    # 200k paper budget is measured overkill: the archived d8 walkback
+    # reached sigma_c at step 85k already converged (train-ESS
+    # 4733 -> 4835 over its final 115k steps). In-training eval draw
+    # 1000 (diagnostics-only at this size; floor 1/1000 sits well below
+    # the wall band); the final eval keeps the 5000-draw protocol.
+    # Bands FROZEN BEFORE LAUNCH, seed 42, read on the final 5000-draw
+    # eval ESS/N against the d8 anchors (0.970/0.943, Var[log w]/site
+    # 0.00052-0.0010): WALL-ABSENT >= 0.5 (the constraint machinery is
+    # implicated at d256); INTERMEDIATE 0.05-0.5 (shared graceful
+    # scaling — report Var/site against the d8 anchor and the
+    # constrained families' measured 10x/47x per-site growth);
+    # WALL-PRESENT <= 0.05 (the wall generalises to the unconstrained
+    # engine: a property of the method at 256 sites, not of the
+    # constraint). CV contingency, pre-registered: sustained
+    # var_estimator_integrand >= var_dt_log_p_tilde with clip
+    # saturation, or divergence, means the d256 cold-CV inversion
+    # generalises beyond the swap loss (record it as a finding);
+    # fallback is ONE naive-estimator relaunch, nothing else changed.
+    "stage_4_d16_critical_50k_ladder": StageCfg(
+        name="stage_4_d16_critical_50k_ladder",
+        ising=IsingCfg(D=16, sigma=0.22305, bias=0.0),
+        train=TrainCfg(
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=500.0,
+        ),
+        ctmc=CTMCCfg(n_euler_steps=64),
+        eval=EvalCfg(
+            eval_every=500,
+            n_eval_samples=5_000,
+            n_eval_samples_training=1_000,
+        ),
+        model=ModelCfg(
+            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
+        ),
+        estimator="control_variate",
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+                CurriculumStageCfg(start_step=30_000, sigma=0.22305, lr=3e-4),
+            )
+        ),
+    ),
 }

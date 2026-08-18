@@ -941,6 +941,40 @@ def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
     assert rebuilt == base
 
 
+def test_d16_unconstrained_control_mirrors_d8_walkback_except_declared():
+    """Unconstrained 16x16 control (2026-08-18): the d8 walkback cell with
+    exactly four declared changes — lattice side, the 50k budget, the
+    compressed sigma ladder (the hard chapter's frame: stages every 5k,
+    lr 1e-3 -> 3e-4 on reaching 0.205, final 40% at sigma_c), and the
+    1000-draw in-training eval sizing. Everything else (engine, batch,
+    replay, clip, ne64, CV estimator, 5000-draw final eval) is the
+    archived unconstrained recipe, so the d256 read is chargeable to
+    size and the cross-family read to machinery."""
+    from dataclasses import replace
+
+    base = BASELINE_CONFIGS["stage_4_d8_critical_paper_curriculum"]
+    cell = BASELINE_CONFIGS["stage_4_d16_critical_50k_ladder"]
+    assert cell.ising.D == 16
+    assert cell.train.n_steps == 50_000
+    assert cell.eval.n_eval_samples_training == 1_000
+    ladder = cell.curriculum.stages
+    assert [s.sigma for s in ladder] == [
+        0.100, 0.140, 0.170, 0.190, 0.205, 0.215, 0.22305
+    ]
+    assert [s.start_step for s in ladder] == list(range(0, 35_000, 5_000))
+    # lr drops to 3e-4 exactly on reaching sigma=0.205, per the hard recipe.
+    assert [s.lr for s in ladder] == [1e-3] * 4 + [3e-4] * 3
+    rebuilt = replace(
+        cell,
+        name=base.name,
+        ising=replace(cell.ising, D=8),
+        train=replace(cell.train, n_steps=200_000),
+        eval=replace(cell.eval, n_eval_samples_training=None),
+        curriculum=base.curriculum,
+    )
+    assert rebuilt == base
+
+
 def test_walkback_d8_soft_twins_mirror_d10_except_lattice_side():
     """Soft-family walk-back twins (2026-08-12): same recipe, same sigma,
     same lambda — only the lattice side moves, so differences vs the d10
