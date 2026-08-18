@@ -769,6 +769,38 @@ def _scr5k_mo_cell(name: str) -> HardStageCfg:
     return replace(cell, train=replace(cell.train, loss_microbatch_size=16))
 
 
+def _d256_fmo2_ladder_cell(
+    name: str, *, estimator: str, n_euler_steps: int = 128,
+    batch_size: int = 128, loss_microbatch_size: int | None = None,
+) -> HardStageCfg:
+    """The 16x16 fmo2 sigma-ladder shape: the archived MA naive-rescue
+    recipe with the factorised family's conventions riding (EMA shadow,
+    dual site orderings, the head's own eval chunk). The bare call builds
+    the anchor cell; the batch/grid/microbatch knobs build the composed
+    recipe cells (their licences and frozen bands live at the registry
+    entries, where the launch decision is made)."""
+    cell = _hard_cell(
+        name, sigma=0.223, head_kind="factorised",
+        D=16, n_steps=50_000, n_euler_steps=n_euler_steps,
+        n_eval_samples=5000, eval_sample_chunk=512,
+        n_eval_samples_training=256, eval_every=500,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_matching_step=True,
+        curriculum=_D64_SIGMA_LADDER,
+        estimator=estimator,
+    )
+    return replace(
+        cell,
+        ema_decay=0.9999,
+        site_orderings=("row", "col"),
+        train=replace(
+            cell.train,
+            batch_size=batch_size,
+            loss_microbatch_size=loss_microbatch_size,
+        ),
+    )
+
+
 def _d144_ma_bracket_cell(name: str) -> HardStageCfg:
     """The 12x12 volume bracket of the ARCHIVED failure: the 16x16 naive
     rescue recipe with the lattice side the only mechanism change.
@@ -1379,21 +1411,52 @@ CONFIGS: dict[str, HardStageCfg] = {
     # Expectation set honestly by the sigma_c evidence: FVU parity does
     # not transfer to ESS across sigma (~70x at matched FVU ~0.12), so
     # ~0.02 is the realistic target scale, not the subcritical 0.5-0.9.
-    "H2_d256_c50_s223_letf_fmo2_50k_curr_naive": replace(
-        _hard_cell(
-            "H2_d256_c50_s223_letf_fmo2_50k_curr_naive", sigma=0.223,
-            head_kind="factorised",
-            D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-            eval_sample_chunk=512, n_eval_samples_training=256,
-            eval_every=500,
-            use_sdpa_readout=True, eval_autocast_bf16=True,
-            use_matching_step=True,
-            curriculum=_D64_SIGMA_LADDER,
-            estimator="naive_mc",
-        ),
-        ema_decay=0.9999,
-        site_orderings=("row", "col"),
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_naive": _d256_fmo2_ladder_cell(
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_naive", estimator="naive_mc",
     ),
+    # The RECIPE runs (2026-08-18, registered ready-to-fire): the composed
+    # best-effort sampler at 16x16, declared openly as a demonstration
+    # arm, not a screen arm — attribution lives in the chain (archived MA
+    # naive ladder vs the fmo2 naive ladder anchor isolates the head;
+    # anchor vs recipe isolates the variance bundle; recipe_naive vs
+    # recipe_cv isolates the estimator). Ingredients and their licences:
+    # b512+ne512 moved as a pair holding per-slot gradient density at 1.0
+    # (the screen's best arm: FVU 0.0138, ESS/N 0.92, clip-free at
+    # sigma 0.1; sigma_c grid evidence: lambda_dt p99 0.98 with 1.5-2%
+    # residual clipping on the warm run at ne128 = 0.5d, vs the builder's
+    # ~2d rule); loss_microbatch_size=128 rides as the noise-scale
+    # instrument (gradient-exact, parity-pinned) so B_crit is measured
+    # along the whole ladder; horizon 50k matches the anchor so the
+    # recipe-vs-anchor read is horizon-controlled (a sigma_c plateau
+    # continuation off final.pt is the licensed extension if the tail is
+    # still descending). LAUNCH GATES, frozen 2026-08-18: the naive
+    # variant fires once the b512 screen arm reads healthy; the cv
+    # variant additionally requires the cold-CV screen arm's frozen PASS
+    # (tail var-ratio < 0.5 at base-level health) — cold CV at this size
+    # inverted on the mis-scaled-init head and must never enter a long
+    # run unlicensed. BANDS, frozen before any launch: final EMA eval
+    # ESS/N >= 0.30 = STRONG (Var[log w] <= ~1.2 — the methodology bar:
+    # a usable sampler at 256 sites); >= 0.10 = PASS (order of magnitude
+    # over every archived d256 number); >= 0.02 = PARTIAL (no gain over
+    # the single-lever warm-CV read — the composition added nothing);
+    # < 0.02 = NULL. Read Var/site + n_unique + top-weight mass alongside,
+    # per the d144 lesson.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive":
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive",
+            estimator="naive_mc", n_euler_steps=512, batch_size=512,
+            loss_microbatch_size=128,
+        ),
+    # No microbatch on the cv variant: loss_microbatch_size's
+    # gradient-exactness is parity-pinned for the archived loss only —
+    # a batch-coupled control variate would break the per-row
+    # decomposition silently, so the CV recipe keeps the single backward
+    # and the noise-scale measurement rides the naive variant alone.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv":
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv",
+            estimator="control_variate", n_euler_steps=512, batch_size=512,
+        ),
     # Phase-2 estimator switch (2026-08-14, user GO): CONTINUE the completed
     # naive 50k (launch with --init-from <naive run>/checkpoints/final.pt)
     # with the Stein control variate re-enabled. Mechanism, measured on the

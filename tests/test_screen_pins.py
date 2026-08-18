@@ -135,6 +135,7 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         "H2_d256_scr5k_ma_h128_lr03": 64,
         "H2_d256_scr5k_mo": 16,
         "H2_d256_scr5k_fmo2_b512": 128,
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name
@@ -207,6 +208,37 @@ def test_d256_fmo2_ladder_is_the_rescue_recipe_with_head_family_the_only_mechani
         ),
     )
     assert rebuilt == rescue
+
+
+RECIPE_ANCHOR = "H2_d256_c50_s223_letf_fmo2_50k_curr_naive"
+
+# recipe cell -> the reset that must reproduce the ladder anchor exactly.
+# The naive recipe's microbatch reset rides for the same reason as the
+# b512 screen arm's (noise-scale instrument, gradient-exact); the cv
+# recipe deliberately has no microbatch (see its registry comment).
+RECIPE_DECLARATIONS = {
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive": dict(
+        ctmc={"n_euler_steps": 128},
+        train={"batch_size": 128, "loss_microbatch_size": None},
+    ),
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv": dict(
+        ctmc={"n_euler_steps": 128},
+        train={"batch_size": 128},
+        estimator="naive_mc",
+    ),
+}
+
+
+@pytest.mark.parametrize("recipe_name", sorted(RECIPE_DECLARATIONS))
+def test_recipe_cell_mirrors_the_ladder_anchor_except_declared_fields(recipe_name):
+    """The composed recipe cells are read against the fmo2 ladder anchor
+    (and through it, the archived MA rescue), so each must be the anchor
+    with ONLY its declared variance-bundle fields changed — otherwise the
+    anchor-vs-recipe comparison stops isolating the bundle."""
+    anchor = CONFIGS[RECIPE_ANCHOR]
+    recipe = CONFIGS[recipe_name]
+    rebuilt = _reset(recipe, name=anchor.name, **RECIPE_DECLARATIONS[recipe_name])
+    assert rebuilt == anchor
 
 
 def test_clip2000_continuation_mirrors_cv2_continuation_except_declared_fields():
