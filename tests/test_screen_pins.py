@@ -172,6 +172,31 @@ def test_d144_bracket_is_the_rescue_recipe_with_volume_the_only_mechanism_change
     assert rebuilt == rescue
 
 
+def test_d256_fmo2_ladder_is_the_rescue_recipe_with_head_family_the_only_mechanism_change():
+    """The definitive cold fmo2 ladder at 16x16 (2026-08-18) must be the
+    archived MA naive-rescue recipe with the head family — and its two
+    riding conventions, EMA shadow and dual site orderings — the only
+    mechanism change, plus the eval chunk sized to the factorised head's
+    measured memory (eval-only, cannot move the trained model). This is
+    what licenses charging any difference from the rescue's archived
+    Var[log w]/site 0.0707 / ESS/N 0.0031 to the head family alone."""
+    rescue = CONFIGS["H2_d256_c50_s223_letf_ma_50k_curr_naive"]
+    ladder = CONFIGS["H2_d256_c50_s223_letf_fmo2_50k_curr_naive"]
+    assert ladder.head_kind == "factorised"
+    assert ladder.estimator == "naive_mc"
+    rebuilt = replace(
+        ladder,
+        name=rescue.name,
+        head_kind=rescue.head_kind,
+        ema_decay=rescue.ema_decay,
+        site_orderings=rescue.site_orderings,
+        eval=replace(
+            ladder.eval, eval_sample_chunk=rescue.eval.eval_sample_chunk
+        ),
+    )
+    assert rebuilt == rescue
+
+
 def test_clip2000_continuation_mirrors_cv2_continuation_except_declared_fields():
     """The clip continuation reuses the archived phase-2 continuation shape
     (flat sigma_c, lr 3e-4, EMA shadow riding, --init-from the rescue

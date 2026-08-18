@@ -1312,6 +1312,43 @@ CONFIGS: dict[str, HardStageCfg] = {
         curriculum=_D64_SIGMA_LADDER,
         estimator="naive_mc",
     ),
+    # The definitive cold fmo2 ladder at 16x16 (2026-08-18, user GO after
+    # the screen fleet was judged): the run every archived d256 number is
+    # missing. The archived MA naive-rescue recipe verbatim with the head
+    # family the only mechanism change (+ its riding EMA shadow and dual
+    # site orderings, and the eval chunk sized to the factorised head's
+    # measured memory — eval-only; all pinned in test_screen_pins), so any
+    # difference from the rescue's Var[log w]/site 0.0707 / ESS/N 0.0031
+    # is chargeable to the head. Bands FROZEN BEFORE LAUNCH, seeds 42+43:
+    # stage-1 self-serves at ~5k (tail FVU, steps 3000-4999; screen base
+    # band 0.036-0.044) — transfer CONFIRMED <= 0.05, >= 0.08 means the
+    # ladder frame breaks the screen result (buffer/curriculum
+    # interaction) and later rungs are not trusted until explained. Final
+    # 5000-draw eval read on Var[log w]/site + ESS/N, EMA and raw, with
+    # n_unique and top-weight mass alongside (the d144 lesson: one draw
+    # carried 19.7% of the mass and swung ESS/N 6x): NULL <= 0.005 ESS/N
+    # EMA (archived-MA scale — the head family alone does not move the
+    # sigma_c endpoint), PARTIAL < 0.02, PASS >= 0.02 (cold + ladder +
+    # naive matches the warm+CV 0.0219, the best d256 sigma_c number
+    # owned), STRONG >= 0.10 (the usability bar the rescue failed).
+    # Expectation set honestly by the sigma_c evidence: FVU parity does
+    # not transfer to ESS across sigma (~70x at matched FVU ~0.12), so
+    # ~0.02 is the realistic target scale, not the subcritical 0.5-0.9.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_naive": replace(
+        _hard_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_naive", sigma=0.223,
+            head_kind="factorised",
+            D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+            eval_sample_chunk=512, n_eval_samples_training=256,
+            eval_every=500,
+            use_sdpa_readout=True, eval_autocast_bf16=True,
+            use_matching_step=True,
+            curriculum=_D64_SIGMA_LADDER,
+            estimator="naive_mc",
+        ),
+        ema_decay=0.9999,
+        site_orderings=("row", "col"),
+    ),
     # Phase-2 estimator switch (2026-08-14, user GO): CONTINUE the completed
     # naive 50k (launch with --init-from <naive run>/checkpoints/final.pt)
     # with the Stein control variate re-enabled. Mechanism, measured on the
