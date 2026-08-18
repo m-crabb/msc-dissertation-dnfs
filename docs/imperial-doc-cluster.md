@@ -236,3 +236,26 @@ jobs, short walltimes, and the other user's jobs always outrank ours.
   server at 0 % util, four at 100 % training, plus a dependency chain of
   pending jobs — i.e. "idle-looking" is usually held. Freed slots flow to the
   owner's dependency chain first.
+- **Idle check made operational (2026-08-18):** cross-check `nvidia-smi`
+  memory (physically empty) against `scontrol show job` TRES (Slurm-free) —
+  both must agree before a GPU counts as genuinely idle. Also read the
+  owner's PENDING jobs' gres: if they request more GPUs than our job would
+  leave free, taking one delays them; if they need the whole node (as on
+  2026-08-18: two 8-GPU jobs blocked behind their own 4-GPU server), a
+  1-GPU job delays nothing.
+- **sm_100 verified 2026-08-18** (job 2148): the locked torch 2.10.0+cu129
+  carries native Blackwell kernels (`sm_100` in `get_arch_list()`, matmul
+  fired on capability (10, 0)). Single-seed d256 recipe step time measured
+  ~0.66–0.84 s overall on a B200 (~9–12 h at 50k steps) vs ~18 h on an
+  A100-80GB.
+- **MPS co-run pattern verified 2026-08-18** (job 2150,
+  `slurm/mars_d256_recipe_mps.sbatch`): two training seeds share ONE
+  allocated B200 via user-level MPS — private `CUDA_MPS_PIPE_DIRECTORY`/
+  `CUDA_MPS_LOG_DIRECTORY` under the job, `nvidia-cuda-mps-control -d`,
+  an EXIT trap for teardown, both seeds backgrounded + `wait`. Without MPS
+  two CUDA contexts only time-slice (~serial); with it kernels co-schedule
+  (two 18 GB clients observed under the one server). Caveat: any
+  `wall_clock_step_s` from a co-run is contention-contaminated — never
+  quote timings from co-run jobs. Results written on mars must be pulled
+  back explicitly (`results/` is excluded from the sync in both
+  directions).
