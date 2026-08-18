@@ -795,9 +795,12 @@ CONFIGS: dict[str, StageCfg] = {
     # same schedule shape, same budget, machinery the only change. The
     # 200k paper budget is measured overkill: the archived d8 walkback
     # reached sigma_c at step 85k already converged (train-ESS
-    # 4733 -> 4835 over its final 115k steps). In-training eval draw
-    # 1000 (diagnostics-only at this size; floor 1/1000 sits well below
-    # the wall band); the final eval keeps the 5000-draw protocol.
+    # 4733 -> 4835 over its final 115k steps). Evals keep the twin's
+    # full 5000-draw protocol — the single-site route reads only
+    # n_eval_samples — which sizes the CARD: the dense readout's
+    # (B, 4, 256, 512) score buffer is ~9.8 GiB at B=5000, measured to
+    # OOM a 22 GiB L4 at the first probe (2026-08-18); runs on the
+    # A100-40GB the modal app defaults to.
     # Bands FROZEN BEFORE LAUNCH, seed 42, read on the final 5000-draw
     # eval ESS/N against the d8 anchors (0.970/0.943, Var[log w]/site
     # 0.00052-0.0010): WALL-ABSENT >= 0.5 (the constraint machinery is
@@ -824,11 +827,7 @@ CONFIGS: dict[str, StageCfg] = {
             grad_clip_max_norm=500.0,
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
-        eval=EvalCfg(
-            eval_every=500,
-            n_eval_samples=5_000,
-            n_eval_samples_training=1_000,
-        ),
+        eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
             kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
         ),

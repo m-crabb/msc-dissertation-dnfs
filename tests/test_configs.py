@@ -943,20 +943,20 @@ def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
 
 def test_d16_unconstrained_control_mirrors_d8_walkback_except_declared():
     """Unconstrained 16x16 control (2026-08-18): the d8 walkback cell with
-    exactly four declared changes — lattice side, the 50k budget, the
+    exactly three declared changes — lattice side, the 50k budget, and the
     compressed sigma ladder (the hard chapter's frame: stages every 5k,
-    lr 1e-3 -> 3e-4 on reaching 0.205, final 40% at sigma_c), and the
-    1000-draw in-training eval sizing. Everything else (engine, batch,
-    replay, clip, ne64, CV estimator, 5000-draw final eval) is the
-    archived unconstrained recipe, so the d256 read is chargeable to
-    size and the cross-family read to machinery."""
+    lr 1e-3 -> 3e-4 on reaching 0.205, final 40% at sigma_c). Everything
+    else (engine, batch, replay, clip, ne64, CV estimator, the full
+    5000-draw eval protocol) is the archived unconstrained recipe, so the
+    d256 read is chargeable to size and the cross-family read to
+    machinery. The 5000-draw evals size the CARD (dense readout ~9.8 GiB
+    scores at d=256 — A100, not L4), deliberately not the recipe."""
     from dataclasses import replace
 
     base = BASELINE_CONFIGS["stage_4_d8_critical_paper_curriculum"]
     cell = BASELINE_CONFIGS["stage_4_d16_critical_50k_ladder"]
     assert cell.ising.D == 16
     assert cell.train.n_steps == 50_000
-    assert cell.eval.n_eval_samples_training == 1_000
     ladder = cell.curriculum.stages
     assert [s.sigma for s in ladder] == [
         0.100, 0.140, 0.170, 0.190, 0.205, 0.215, 0.22305
@@ -969,7 +969,6 @@ def test_d16_unconstrained_control_mirrors_d8_walkback_except_declared():
         name=base.name,
         ising=replace(cell.ising, D=8),
         train=replace(cell.train, n_steps=200_000),
-        eval=replace(cell.eval, n_eval_samples_training=None),
         curriculum=base.curriculum,
     )
     assert rebuilt == base

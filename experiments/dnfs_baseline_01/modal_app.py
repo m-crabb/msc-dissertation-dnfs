@@ -123,12 +123,13 @@ def train_remote(cfg_name: str, seed: int = 42):
 
 
 @app.function(
-    # L4 variant (2026-08-18, d16 unconstrained control): cheapest card the
-    # unconstrained engine sustains. The run's memory footprint is a few GB
-    # (no pair-score buffers — the leTF backbone alone), and at ~2x A100
-    # wall-clock (the attention note above, measured at d=100) the 50k
-    # compressed ladder lands ~8-12 h — inside the 24 h timeout with
-    # headroom a T4 would not have. Same body contract as train_remote.
+    # L4 variant (2026-08-18): the cheap card for SMALL-footprint cells.
+    # Sizing lesson from the d16 control's failed first launch: the eval
+    # protocol sets peak memory, not training — an unchunked 5000-draw
+    # eval through the dense readout is a (5000, 4, d, 2d) score tensor,
+    # 9.77 GiB at d=256, which OOMs the L4's 22 GiB. Check
+    # n_eval_samples x heads x d x 2d x 4B against ~20 GiB before
+    # routing a cell here; d <= 100 cells all fit.
     gpu="L4",
     volumes={"/results": volume},
     secrets=[wandb_secret],
