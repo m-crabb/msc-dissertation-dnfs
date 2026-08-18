@@ -96,6 +96,14 @@ class HardStageCfg(StageCfg):
     # unary+offset band every prior run used. lattice_side is cfg.ising.D
     # (the flattened D x D grid), so no separate field is needed.
     use_stencil: bool = False
+    # muP readout compensation for the interval/masked_attention pair
+    # score (muP-init arm, 2026-08-18): fixed multiplier on G cancelling
+    # the sqrt(hidden) init growth of <LayerNorm'd H, omega_diff> — the
+    # dot has no fan-in compensation, so score scale IS the initial rate
+    # scale (verified 2x at h32 -> h128). The muP value for width h
+    # against the h32 reference is 32/h. 1.0 = every archived cell,
+    # byte-identical (the multiply is skipped in the head's forward).
+    readout_score_scale: float = 1.0
     # Grouped-anchor head knobs (2026-07-22). n_groups is k,
     # the number of masked body passes: k = d reproduces mask_one bit-exactly,
     # smaller k trades masked-site count for passes. Only read when head_kind
@@ -189,6 +197,7 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             backbone,
             pair_offsets=cfg.pair_offsets or (1, cfg.ising.D),
             band_feature_dim=cfg.band_feature_dim or 16,
+            readout_score_scale=cfg.readout_score_scale,
         )
     elif cfg.head_kind == "masked_attention":
         # Same offsets rationale as "interval"; only the band aggregator
@@ -200,6 +209,7 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             attention_dim=cfg.attention_dim or 32,
             use_stencil=cfg.use_stencil,
             lattice_side=cfg.ising.D,
+            readout_score_scale=cfg.readout_score_scale,
         )
     elif cfg.head_kind == "factorised":
         head = FactorisedSwapHead(
@@ -744,6 +754,18 @@ def _scr5k_ma_h128_lr03_cell(name: str) -> HardStageCfg:
     )
 
 
+def _scr5k_ma_clip60k_cell(name: str) -> HardStageCfg:
+    """The MA screen base with the grad-clip threshold rescaled to d=256
+    gradient units — the only change, so the read is chargeable to clip
+    semantics alone. The threshold derivation, the pre-launch refutation
+    of the pair-count heuristic, and the frozen verdict bands live at the
+    registry entry, where the launch decision was made."""
+    cell = _d256_scr5k_cell(name, "masked_attention", eval_sample_chunk=128)
+    return replace(
+        cell, train=replace(cell.train, grad_clip_max_norm=60_000.0)
+    )
+
+
 def _scr5k_mo_cell(name: str) -> HardStageCfg:
     """The mask_one screen arm: the best 8x8 head (0.00129 Var/site at
     100k, 2.2x under the MA twin), never before run at 16x16 — the A6
@@ -1172,6 +1194,51 @@ CONFIGS: dict[str, HardStageCfg] = {
     ),
     "H2_d256_scr5k_ma_h128_lr03": _scr5k_ma_h128_lr03_cell(
         "H2_d256_scr5k_ma_h128_lr03",
+    ),
+    # muP-init arm (2026-08-18, init-review stream): the bridge arm with
+    # readout_score_scale = 32/128 the ONLY change — the causal test of
+    # the printed muP diagnosis (readout dot has no fan-in compensation;
+    # G ~ sqrt(h) at init). Comparators measured from the archived
+    # training logs BEFORE launch (2026-08-18): bridge arm (seed 42) step-0
+    # rate_pair_mean 0.00335 / lambda_dt_clip 0.352 / grad_norm 3.8e7,
+    # steps-to-FVU<1 = 825, tail FVU(3-5k) 0.0810; h32 base 0.00231 /
+    # 0.047 / 6.1e6, 65-74 steps, tail 0.1203-0.1219. FROZEN BANDS, seed
+    # 42: plumbing check — step-0 rate_pair_mean must read EXACTLY
+    # 0.25 x 0.00335 = 0.00084 (same seed, deterministic init; any other
+    # value means the knob missed the head). MECHANISM CONFIRMED iff
+    # step-0 lambda_dt_clip <= 0.05 AND step-0 grad_norm <= 1e7
+    # (h32-scale) AND steps-to-FVU<1 <= 150 (2x the h32 base's, vs the
+    # bridge's 825). TRANSIENT-PRICED iff additionally tail FVU <= 0.075
+    # (the freed ~16% of budget shows up); tail 0.078-0.084 = transient
+    # was free at this horizon (mechanism can still confirm); tail >
+    # 0.09 = the scale change damaged the trained model — report as-is.
+    # Scope frozen: does NOT reopen the MA family — the ~70x sigma_c ESS
+    # penalty at matched FVU is orthogonal to any transient fix.
+    "H2_d256_scr5k_ma_h128_lr03_mup": replace(
+        _scr5k_ma_h128_lr03_cell("H2_d256_scr5k_ma_h128_lr03_mup"),
+        readout_score_scale=32 / 128,
+    ),
+    # d-scaled clip arm (2026-08-18, init-review stream): the MA screen
+    # base with grad_clip_max_norm 500 -> 60,000 the ONLY change — the
+    # causal test of the printed "clip changes meaning with lattice
+    # size" diagnosis. Scale set by MEASUREMENT, not the pair-count
+    # heuristic: archived early(0-500) median grad_norm is 925-1108 at
+    # d64 vs 1.0-1.2e5 at d256 (ratio 91-131x), so 60,000 = 500 x ~120
+    # restores the d64 ratio p50(grad)/clip ~ 2. The pair-count ratio
+    # 16.2x is REFUTED pre-launch by the same logs (an 8,095 threshold
+    # would still bind on ~100% of early steps) — the printed clause
+    # needs that amendment regardless of this arm's outcome.
+    # Comparators (seed 42): d256 base early(0-500) clip% 100, first-5k
+    # 39.9, tail FVU 0.1203; d64 early 72-81%, first-5k 7.3-9.0. FROZEN
+    # BANDS, seed 42: SEMANTICS RESTORED iff early(0-500) clip% <= 85
+    # AND first-5k clip% <= 15 (the d64 profile); BRAKE-PRICED iff
+    # additionally tail FVU <= 0.11 (below both base seeds); NULL if
+    # tail in (0.11, 0.13); DAMAGE if tail > 0.13 or FVU >= 1 at any
+    # step past 1000 (divergence risk priced: step-0 grads 6.1e6 still
+    # clip 100x at this threshold, unlike the unguarded clip20000
+    # smoke).
+    "H2_d256_scr5k_ma_clip60k": _scr5k_ma_clip60k_cell(
+        "H2_d256_scr5k_ma_clip60k",
     ),
     "H2_d256_scr5k_fmo2": _scr5k_fmo2_cell("H2_d256_scr5k_fmo2"),
     "H2_d256_scr5k_fmo2_h128": _scr5k_fmo2_with(

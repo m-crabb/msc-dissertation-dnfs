@@ -133,12 +133,41 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
     path byte-for-byte, so archived comparisons stay bit-exact."""
     expected = {
         "H2_d256_scr5k_ma_h128_lr03": 64,
+        # The muP-init arm is the bridge arm's twin, so the h128 OOM
+        # schedule rides unchanged (2026-08-18).
+        "H2_d256_scr5k_ma_h128_lr03_mup": 64,
         "H2_d256_scr5k_mo": 16,
         "H2_d256_scr5k_fmo2_b512": 128,
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name
+
+
+def test_ma_mup_arm_is_the_bridge_arm_with_readout_scale_the_only_change():
+    """muP-init arm (2026-08-18): the bridge arm (h128 + lr03) with the
+    readout score scale 32/128 the ONLY change, so the init-transient read
+    is chargeable to parametrization alone. The value is the muP readout
+    prescription hidden_base/hidden for the verified sqrt(h) score growth
+    (the <LayerNorm'd H, omega_diff> dot has no fan-in compensation)."""
+    base = CONFIGS["H2_d256_scr5k_ma_h128_lr03"]
+    arm = CONFIGS["H2_d256_scr5k_ma_h128_lr03_mup"]
+    assert arm.readout_score_scale == 32 / 128
+    rebuilt = _reset(arm, name=base.name, readout_score_scale=1.0)
+    assert rebuilt == base
+
+
+def test_ma_clip60k_arm_is_the_screen_base_with_clip_the_only_change():
+    """d-scaled clip arm (2026-08-18): the MA screen base with the clip
+    threshold the ONLY change. 60,000 = 500 x the MEASURED early-median
+    grad-norm ratio d256/d64 (91-131x from the archived logs; the printed
+    pair-count heuristic's 16.2x is refuted by the same logs — an 8,095
+    threshold would still bind on ~100% of early steps)."""
+    base = CONFIGS["H2_d256_scr5k_ma"]
+    arm = CONFIGS["H2_d256_scr5k_ma_clip60k"]
+    assert arm.train.grad_clip_max_norm == 60_000.0
+    rebuilt = _reset(arm, name=base.name, train={"grad_clip_max_norm": 500.0})
+    assert rebuilt == base
 
 
 def test_ma_screen_base_is_the_rescue_recipe_at_flat_sigma010():

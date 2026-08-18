@@ -424,3 +424,28 @@ def test_blindness_holds_at_tuned_band_capacity():
                 x_flipped[:, site] = -x_flipped[:, site]
             H_flipped = head.compute_pair_context(x_flipped, t)
             assert torch.equal(H[:, i, j], H_flipped[:, i, j])
+
+
+def test_readout_score_scale_is_an_exact_score_multiplier():
+    """muP readout compensation (2026-08-18): `readout_score_scale` must be
+    EXACTLY a scalar multiplier on the pair scores G — a float, not a
+    parameter, so it creates no weights, consumes no RNG (a scaled head is
+    the archived head bit-for-bit in state_dict), and every blindness /
+    antisymmetry property proven above transfers by linearity of the
+    scale. The default 1.0 is the archived readout: the multiply is
+    skipped entirely, so existing cells stay byte-identical in forward."""
+    head = _head()
+    torch.manual_seed(42)  # identical RNG stream -> identical weights
+    backbone = LeTFRateMatrix(
+        d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        use_sdpa_readout=False,
+    )
+    scaled = MaskedAttentionSwapHead(
+        backbone, pair_offsets=(1, 3), readout_score_scale=0.25
+    )
+    scaled.eval()
+    assert head.readout_score_scale == 1.0
+    assert scaled.state_dict().keys() == head.state_dict().keys()
+    x = _state()
+    t = torch.rand(1)
+    assert torch.equal(scaled(x, t), head(x, t) * 0.25)

@@ -93,6 +93,9 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         lattice_side: side length D of the flattened D x D grid the stencil's
             column neighbours x_{k±D} address. None infers round(sqrt(d))
             and asserts squareness -- pass it explicitly for non-square d.
+        readout_score_scale: muP readout compensation on the pair scores;
+            see IntervalSwapHead.__init__ (the readout is inherited, so
+            the knob is too). 1.0 = every archived MA cell, byte-identical.
     """
 
     def __init__(
@@ -104,8 +107,12 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         attention_dim: int = 32,
         use_stencil: bool = False,
         lattice_side: int | None = None,
+        readout_score_scale: float = 1.0,
     ):
-        super().__init__(backbone, pair_offsets, band_feature_dim, position_dim)
+        super().__init__(
+            backbone, pair_offsets, band_feature_dim, position_dim,
+            readout_score_scale=readout_score_scale,
+        )
         self.use_stencil = use_stencil
         hidden = backbone.hidden_dim
         # The stencil is one extra band-feature family, so it gets its own

@@ -111,6 +111,28 @@ class IntervalSwapHead(nn.Module):
         position_dim: size of the head-owned site-position embedding fed to
             the pair readout (H_ij MAY depend on the positions i, j --
             blindness constrains only the token VALUES there).
+        readout_score_scale: fixed multiplier on the pair scores G — the
+            muP readout compensation (MuReadout's output multiplier, Yang
+            et al., arXiv:2203.03466), 2026-08-18. The score chain
+            `context_norm -> <H, omega_diff>` has no fan-in compensation:
+            LayerNorm pins ||H_ij|| ~ sqrt(hidden) while omega's
+            per-component std (0.002) is width-free, so G — and with it
+            the initial rates ReLU(G) — grows as sqrt(hidden) (verified
+            2x at h32 -> h128). Setting hidden_base/hidden (e.g. 32/128)
+            cancels that growth with muP's extra 1/sqrt(width) margin, so
+            rates start small and unclipped at any width. A multiplier is
+            used rather than the two rejected alternatives: zero-init of
+            pair_readout's last layer feeds context_norm an exactly-zero
+            input (LayerNorm's 1/sqrt(eps) gradient there), and shrinking
+            omega's init std touches a table shared with the backbone
+            readout, breaking archived parity for every head. ReLU is
+            positively homogeneous, so the scale is exactly a rate scale;
+            expressivity is untouched (the model can learn to undo it) —
+            what changes is the readout path's effective step size under
+            Adam, which is the intended muP dynamics change. Default 1.0
+            = every archived cell: the multiply is skipped entirely, and
+            the attribute is a float, not a parameter, so state_dict and
+            RNG consumption are unchanged either way.
     """
 
     def __init__(
@@ -119,8 +141,10 @@ class IntervalSwapHead(nn.Module):
         pair_offsets: tuple[int, ...] = (1,),
         band_feature_dim: int = 16,
         position_dim: int = 16,
+        readout_score_scale: float = 1.0,
     ):
         super().__init__()
+        self.readout_score_scale = readout_score_scale
         self.backbone = backbone
         self.d = backbone.d
         self.pair_offsets = tuple(pair_offsets)
@@ -312,4 +336,9 @@ class IntervalSwapHead(nn.Module):
         # bf16 G (crashing the fp32-only quantile rate diagnostic and
         # departing from the dtype path Tier-2 was validated on); the
         # mask-one readout keeps G fp32 the same way.
-        return (token_difference * H).sum(-1)
+        scores = (token_difference * H).sum(-1)
+        if self.readout_score_scale != 1.0:
+            # muP readout compensation (see __init__); guarded so the
+            # default path stays byte-identical to the archived readout.
+            scores = scores * self.readout_score_scale
+        return scores
