@@ -482,6 +482,7 @@ def _backfill_missing_defaults(saved: dict, cfg_class) -> None:
 def eval_only(
     run_dir: str | Path, multi_event: bool | None = None,
     smc_tau: float | None = None, replicate_seed: int | None = None,
+    n_euler_override: int | None = None,
 ) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
     checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
@@ -502,11 +503,26 @@ def eval_only(
     land in eval_replicate_s<seed>/ — the frozen eval/ the headline numbers
     were read from is never touched. Plain IS only: the probe's N_eff(O)
     comparison is defined on unresampled weights, so combining with
-    `smc_tau` is refused."""
+    `smc_tau` is refused.
+
+    With `n_euler_override` set, the sampling draw runs on that time grid
+    instead of the cell's own — artefacts to eval_ne<k>/, frozen eval/
+    untouched. Why this exists (2026-08-18): a run's eval ESS rides its
+    training n_euler, so a fine-grid arm's ESS edge confounds model
+    quality with discretisation; re-drawing a frozen checkpoint on the
+    other grid decouples the two at eval-only cost. Sampling-time only —
+    it cannot move the trained model — but the numbers are NOT the frozen
+    eval/ numbers and must never be quoted as them. Plain IS only, same
+    refusal rationale as replicates."""
     if smc_tau is not None and replicate_seed is not None:
         raise ValueError(
             "replicate draws are plain-IS by the S7 preregistration; "
             "run smc_tau and replicate_seed evals separately"
+        )
+    if smc_tau is not None and n_euler_override is not None:
+        raise ValueError(
+            "the grid-decoupling probe is plain-IS; run smc_tau and "
+            "n_euler_override evals separately"
         )
     run_dir = Path(run_dir)
     saved = json.loads((run_dir / "config.json").read_text())
@@ -522,6 +538,12 @@ def eval_only(
     if json.loads(json.dumps(asdict(cfg))) != saved:
         raise ValueError(
             f"config.json in {run_dir} does not match CONFIGS[{saved['name']!r}]"
+        )
+    # Applied AFTER the drift guard: provenance is checked against the
+    # frozen config, and only the sampling grid of THIS draw is moved.
+    if n_euler_override is not None:
+        cfg = replace(
+            cfg, ctmc=replace(cfg.ctmc, n_euler_steps=n_euler_override)
         )
 
     seed_everything(cfg.train.seed if replicate_seed is None else replicate_seed)
@@ -542,6 +564,9 @@ def eval_only(
         eval_metrics = final_eval(
             head, target, cfg, run_dir, multi_event=multi_event,
             replicate_seed=replicate_seed,
+            eval_dir_suffix=(
+                "" if n_euler_override is None else f"_ne{n_euler_override}"
+            ),
         )
     print(f"[eval_only] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
     return eval_metrics

@@ -235,7 +235,10 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
     volumes={"/results": volume},
     timeout=2 * 60 * 60,
 )
-def eval_remote(run_dir_name: str, multi_event: bool = False, smc_tau: float = 0.0):
+def eval_remote(
+    run_dir_name: str, multi_event: bool = False, smc_tau: float = 0.0,
+    n_euler_override: int = 0,
+):
     """Re-run the end-of-run eval for a run dir already on the volume
     (recovery for trainings whose final eval died, e.g. the 2026-07-06
     d=64 OOMs before final_eval chunked its draw). `multi_event=True` is
@@ -245,7 +248,9 @@ def eval_remote(run_dir_name: str, multi_event: bool = False, smc_tau: float = 0
     eval_smc_tau<τ>/, alongside the untouched plain-IS eval/); 0.0 is the
     "plain eval" sentinel — Modal's CLI can't pass None, and a τ=0 trigger
     never fires anyway, so the sentinel can't collide with a real sweep
-    point."""
+    point. `n_euler_override > 0` re-draws on that sampling grid instead
+    of the cell's own (artefacts to eval_ne<k>/; the grid-decoupling
+    probe — see run.eval_only); 0 is the same can't-collide sentinel."""
     import sys
     from pathlib import Path
 
@@ -256,6 +261,7 @@ def eval_remote(run_dir_name: str, multi_event: bool = False, smc_tau: float = 0
         Path("/results") / run_dir_name,
         multi_event=multi_event,
         smc_tau=smc_tau or None,
+        n_euler_override=n_euler_override or None,
     )
     volume.commit()
 
@@ -395,18 +401,24 @@ def phihist(seeds: str = "42,43,44", n_samples: int = 5000):
 
 
 @app.local_entrypoint()
-def evalonly(run_dirs: str, multi_event: bool = False, smc_tau: float = 0.0):
+def evalonly(
+    run_dirs: str, multi_event: bool = False, smc_tau: float = 0.0,
+    n_euler_override: int = 0,
+):
     """Spawn eval-only recovery over comma-separated run dir names on the
     volume (fire-and-forget: launch with --detach). `smc_tau > 0` runs the
-    SMC-resampled eval variant instead of the plain-IS one."""
+    SMC-resampled eval variant instead of the plain-IS one;
+    `n_euler_override > 0` the grid-decoupling probe (eval_ne<k>/)."""
     names = [n.strip() for n in run_dirs.split(",") if n.strip()]
     for name in names:
         eval_remote.spawn(
-            run_dir_name=name, multi_event=multi_event, smc_tau=smc_tau
+            run_dir_name=name, multi_event=multi_event, smc_tau=smc_tau,
+            n_euler_override=n_euler_override,
         )
     print(
         f"spawned {len(names)} eval-only jobs "
-        f"(multi_event={multi_event}, smc_tau={smc_tau}): {names}"
+        f"(multi_event={multi_event}, smc_tau={smc_tau}, "
+        f"n_euler_override={n_euler_override}): {names}"
     )
 
 

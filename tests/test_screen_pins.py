@@ -48,6 +48,15 @@ FMO2_ARM_DECLARATIONS = {
         ctmc={"n_euler_steps": 128}, train={"batch_size": 128},
     ),
     "H2_d256_scr20k_fmo2": dict(train={"n_steps": 5_000}),
+    # Phase 2 (2026-08-18): the batch-only decomposition arm — the
+    # microbatch reset rides because loss_microbatch_size on this arm is
+    # the noise-scale instrumentation, gradient-exact by parity pin, not
+    # a recipe variable.
+    "H2_d256_scr5k_fmo2_b512": dict(
+        train={"batch_size": 128, "loss_microbatch_size": None},
+    ),
+    # Phase 2 (2026-08-18): the cold-CV arm — estimator the only change.
+    "H2_d256_scr5k_fmo2_cv": dict(estimator="naive_mc"),
 }
 
 
@@ -114,15 +123,18 @@ def test_ma_h128_bridge_arm_covaries_lr_with_width():
 
 
 def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
-    """The backward-slicing memory schedule may live ONLY on the two arms
-    whose single-backward graph is measured to exceed an A100-80GB. It is
-    gradient-identical (test_loss_microbatch_parity), but confining it
-    keeps every other cell — the queued fleet included — running the
-    archived single-backward path byte-for-byte, which is what makes
-    deploying this code under a live queue safe."""
+    """The backward-slicing schedule may live ONLY on cells that declare a
+    reason for it: the two arms whose single-backward graph is measured to
+    exceed an A100-80GB, and (2026-08-18) the batch-decomposition arm,
+    where the slices ARE the gradient-noise-scale instrument (per-slice
+    sqnorms + full-batch norm invert the McCandlish two-batch identity).
+    It is gradient-identical everywhere (test_loss_microbatch_parity), but
+    confining it keeps every other cell on the archived single-backward
+    path byte-for-byte, so archived comparisons stay bit-exact."""
     expected = {
         "H2_d256_scr5k_ma_h128_lr03": 64,
         "H2_d256_scr5k_mo": 16,
+        "H2_d256_scr5k_fmo2_b512": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name

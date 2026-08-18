@@ -688,7 +688,9 @@ def _scr5k_fmo2_with(
     dataclass by field name; anything else is a typo and must fail loudly
     rather than silently produce an arm that is not the declared twin."""
     model_field_names = {"hidden_dim", "n_layers"}
-    train_field_names = {"lr", "grad_clip_max_norm", "batch_size"}
+    train_field_names = {
+        "lr", "grad_clip_max_norm", "batch_size", "loss_microbatch_size",
+    }
     unknown = set(overrides) - model_field_names - train_field_names
     if unknown:
         raise ValueError(f"unknown screen-arm override(s): {sorted(unknown)}")
@@ -1164,6 +1166,49 @@ CONFIGS: dict[str, HardStageCfg] = {
         # and batch move together to hold density at 1.0, or the arm tests
         # starvation rather than resolution.
         "H2_d256_scr5k_fmo2_ne512_b512", n_euler_steps=512, batch_size=512,
+    ),
+    # --- screen phase 2 (2026-08-18, user GO after judging): two arms, one
+    # variable each against the SAME judged base pair (0.0364/0.0442).
+    #
+    # b512: the batch-only decomposition of the ne512_b512 bundle. That arm
+    # moved (honest FVU 0.0118 vs base 0.0286 after floors of 1/512 vs
+    # 1/128) but varies grid and batch together BY DESIGN; every
+    # grid-stress instrument on it read unstressed at ne128
+    # (lambda_dt_clipped_frac 0 post-warmup, proposal drops 0.3%,
+    # lambda_dt_p99 pure dt scaling), predicting the gain is mostly batch.
+    # This arm tests that prediction: batch 512 at the base grid, density
+    # 4.0 accepted as the point under test (the bundle held it at 1.0).
+    # loss_microbatch_size=128 rides NOT for memory (fmo2 fits easily) but
+    # for the gradient-noise-scale instrumentation: four 128-row slices
+    # log grad_sqnorm_slice_mean, and with the full-batch grad_norm they
+    # invert the McCandlish two-batch identity, so this run MEASURES the
+    # critical batch size instead of guessing it — gradient-exact by
+    # test_loss_microbatch_parity, so the arm stays the declared twin.
+    # FROZEN READ: honest (floor-subtracted, 1/512) stage-tail FVU —
+    # lands at the bundle's ~0.012 => batch explains the bundle and the
+    # 50k batch lever is licensed at the base grid; lands at base's
+    # ~0.029 => the grid was the mover and the instruments misled;
+    # in between => split, both levers real. Plus the B_crit readout.
+    "H2_d256_scr5k_fmo2_b512": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_b512", batch_size=512, loss_microbatch_size=128,
+    ),
+    # cv: the published control-variate estimator, cold, on the factorised
+    # head — never run at this size (the historical "CV inverts cold at
+    # d256" was measured on MA). The 18-Aug warm-CV anatomy showed the
+    # inversion tracks RATE MIS-SCALING, not size: var-ratio 30x-worse at
+    # the shock's step 0, crossing 1 at ~step 914 as the rates healed, and
+    # 0.121 (an 8.3x cut) once healthy. fmo2's COLD init is clean
+    # (lambda_dt_clipped_frac 0.0 at init in all ten screen arms), so the
+    # precondition the inversion violated holds here from step 0. FROZEN
+    # READ: var_estimator_integrand/var_dt_log_p_tilde tail (3-5k) < 0.5
+    # AND train health at base level => CV WORKS COLD at d256 (the paper's
+    # lever needs no schedule on the right head — cross-estimator FVU
+    # compared floor-corrected only); sustained ratio > 1 beyond ~1k steps
+    # => the inversion is not init-mediated after all and the health-gated
+    # switch-in is the only CV route left.
+    "H2_d256_scr5k_fmo2_cv": replace(
+        _scr5k_fmo2_cell("H2_d256_scr5k_fmo2_cv"),
+        estimator="control_variate",
     ),
     "H2_d256_scr20k_fmo2": replace(
         # The horizon control, and the first flat-subcritical 16x16 run of
