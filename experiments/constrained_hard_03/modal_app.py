@@ -227,6 +227,27 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
     volume.commit()
 
 
+def _resolve_multi_event_trit(multi_event: int):
+    """Map the CLI-facing trit onto eval_only's three-valued multi_event.
+
+    Modal's CLI has no way to pass None, and eval_only's None is the value
+    that matters most: it defers to the cell's own canonical trajectory
+    step, which is what makes recovery evals and grid probes land in the
+    canonical eval/ (or eval_ne<k>/) dirs that frozen comparisons read.
+    A bool default therefore cannot work — False would silently force the
+    one-event step on a matching-step cell — and the `or None` trick the
+    float/int sentinels use would make an explicit one-event probe
+    (False) unrequestable. Hence a trit: -1 -> None (canonical, default),
+    0 -> False (force one-event), 1 -> True (force matching step)."""
+    trit_to_multi_event = {-1: None, 0: False, 1: True}
+    if multi_event not in trit_to_multi_event:
+        raise ValueError(
+            f"multi_event must be -1 (cell's canonical step), 0 (force "
+            f"one-event) or 1 (force matching step); got {multi_event}"
+        )
+    return trit_to_multi_event[multi_event]
+
+
 @app.function(
     # A100-80GB like train_remote: the eval slices are exactly where the
     # perf profile showed the A100 win concentrating, and the d=256 eval
@@ -239,21 +260,28 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
     timeout=6 * 60 * 60,
 )
 def eval_remote(
-    run_dir_name: str, multi_event: bool = False, smc_tau: float = 0.0,
+    run_dir_name: str, multi_event: int = -1, smc_tau: float = 0.0,
     n_euler_override: int = 0,
 ):
     """Re-run the end-of-run eval for a run dir already on the volume
     (recovery for trainings whose final eval died, e.g. the 2026-07-06
-    d=64 OOMs before final_eval chunked its draw). `multi_event=True` is
-    the --compare-multi-event probe: same checkpoint and draw protocol,
-    matching step instead of one-event, artefacts to eval_multi_event/.
-    `smc_tau > 0` runs the SMC-resampled eval instead (artefacts to
-    eval_smc_tau<τ>/, alongside the untouched plain-IS eval/); 0.0 is the
-    "plain eval" sentinel — Modal's CLI can't pass None, and a τ=0 trigger
-    never fires anyway, so the sentinel can't collide with a real sweep
-    point. `n_euler_override > 0` re-draws on that sampling grid instead
-    of the cell's own (artefacts to eval_ne<k>/; the grid-decoupling
-    probe — see run.eval_only); 0 is the same can't-collide sentinel."""
+    d=64 OOMs before final_eval chunked its draw). `multi_event` is a
+    three-state flag because the underlying eval has three behaviours and
+    Modal's CLI cannot pass None: -1 (default) defers to the cell's own
+    canonical trajectory step, so recovery/probe evals land in the
+    canonical eval/ (or eval_ne<k>/) dirs the frozen comparisons read;
+    0 forces the one-event step and 1 the matching step, each writing a
+    contrast dir (eval_one_event*/ or eval_multi_event*/) when it is the
+    non-canonical choice for the cell. A plain bool cannot carry this: an
+    explicit False silently forces one-event on a matching-step cell,
+    diverting the eval away from its canonical dir. `smc_tau > 0` runs
+    the SMC-resampled eval instead (artefacts to eval_smc_tau<τ>/,
+    alongside the untouched plain-IS eval/); 0.0 is the "plain eval"
+    sentinel — a τ=0 trigger never fires anyway, so the sentinel can't
+    collide with a real sweep point. `n_euler_override > 0` re-draws on
+    that sampling grid instead of the cell's own (artefacts to
+    eval_ne<k>/; the grid-decoupling probe — see run.eval_only); 0 is the
+    same can't-collide sentinel."""
     import sys
     from pathlib import Path
 
@@ -262,7 +290,7 @@ def eval_remote(
 
     eval_only(
         Path("/results") / run_dir_name,
-        multi_event=multi_event,
+        multi_event=_resolve_multi_event_trit(multi_event),
         smc_tau=smc_tau or None,
         n_euler_override=n_euler_override or None,
     )
@@ -405,13 +433,19 @@ def phihist(seeds: str = "42,43,44", n_samples: int = 5000):
 
 @app.local_entrypoint()
 def evalonly(
-    run_dirs: str, multi_event: bool = False, smc_tau: float = 0.0,
+    run_dirs: str, multi_event: int = -1, smc_tau: float = 0.0,
     n_euler_override: int = 0,
 ):
     """Spawn eval-only recovery over comma-separated run dir names on the
-    volume (fire-and-forget: launch with --detach). `smc_tau > 0` runs the
-    SMC-resampled eval variant instead of the plain-IS one;
+    volume (fire-and-forget: launch with --detach). `multi_event` is a
+    trit, because Modal's CLI cannot pass None and the eval has three
+    behaviours: -1 (default) uses each cell's own canonical trajectory
+    step so artefacts land in the canonical eval/ (or eval_ne<k>/) dirs;
+    0 forces the one-event step; 1 forces the matching step (the
+    non-canonical choice writes a contrast dir instead). `smc_tau > 0`
+    runs the SMC-resampled eval variant instead of the plain-IS one;
     `n_euler_override > 0` the grid-decoupling probe (eval_ne<k>/)."""
+    _resolve_multi_event_trit(multi_event)  # fail fast locally on bad values
     names = [n.strip() for n in run_dirs.split(",") if n.strip()]
     for name in names:
         eval_remote.spawn(
