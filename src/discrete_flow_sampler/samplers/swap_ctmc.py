@@ -251,12 +251,33 @@ def sample_swap_ctmc(
     and the eval-time jumps-per-site budget. None (the default) skips all
     accumulation — the historical behaviour, bit-for-bit.
 
-    `resampling` (requires `return_log_weights=True`) enables the eval-time
-    SMC upgrade (`samplers.resampling`): adaptive systematic resampling of
-    the particle batch when interim ESS < τ·B. Resampling duplicates whole
-    on-manifold rows, so composition stays bit-exact. Return becomes
-    (x_final, log_weights, ResamplingStats); the final-segment log_weights
-    feed `smc_log_z_estimate` together with the stats.
+    `resampling` (needs `target`, and one of `return_log_weights` /
+    `return_all_states`) enables adaptive systematic resampling of the
+    particle batch when interim ESS < τ·B (`samplers.resampling`).
+    Resampling duplicates whole on-manifold rows, so composition stays
+    bit-exact. Two modes:
+
+      * with `return_log_weights=True` — the EVAL mode. Return becomes
+        (x_final, log_weights, ResamplingStats); the final-segment
+        log_weights feed `smc_log_z_estimate` together with the stats.
+      * with `return_all_states=True` — the TRAINING-ROLLOUT mode (LEAPS
+        Alg. 1 lines 11-14, whose trajectories Alg. 2 line 5 trains on).
+        Weights are accumulated internally to drive the trigger ONLY, and
+        the return is (trajectory, ResamplingStats) — deliberately WITHOUT
+        the weights. They are a per-segment residue after the resets, so a
+        caller that read them as the trajectory's IS weights would silently
+        drop every banked increment; anything wanting a log Ẑ must use the
+        eval mode. Each slice is recorded AFTER that step's checkpoint, so
+        `trajectory[k]` is the equally-weighted ensemble that CONTINUES
+        from t_k — the measure whose plain batch mean estimates E_{p_t}[·]
+        (the `rollout_resample_ess_fraction` config field carries the full
+        argument for why c_t needs exactly that). Slices already written
+        are never rewritten with the ancestor permutation: replaying the
+        genealogy backwards would replace each earlier slice's filtering
+        marginal p_s with a smoothing one tilted by future weights, and
+        nothing downstream consumes a trajectory as a path — the buffer
+        stores (state, t) pairs and c_t is a per-slot mean, so only the
+        per-slot marginal has to be right.
     """
     if return_log_weights and target is None:
         raise ValueError("sample_swap_ctmc(return_log_weights=True) requires `target`.")
@@ -264,17 +285,25 @@ def sample_swap_ctmc(
         raise ValueError(
             "return_all_states and return_log_weights are mutually exclusive."
         )
-    if resampling is not None and not return_log_weights:
+    if resampling is not None and not (return_log_weights or return_all_states):
         raise ValueError(
             "sample_swap_ctmc(resampling=...) requires return_log_weights=True "
-            "— the trigger and the log-Z bookkeeping both live on the weights."
+            "or return_all_states=True — the trigger lives on the weights, and "
+            "there is nothing to hand back from a bare final state."
+        )
+    if resampling is not None and target is None:
+        raise ValueError(
+            "sample_swap_ctmc(resampling=...) requires `target`: the ESS "
+            "trigger reads log-weights, which are accumulated from ξ_t."
         )
 
     state = x0.clone()
     batch_size, d = state.shape
+    # The trigger needs weights even when the caller does not want them back.
+    accumulate_log_weights = return_log_weights or resampling is not None
     log_weights = (
         torch.zeros(batch_size, dtype=state.dtype, device=state.device)
-        if return_log_weights
+        if accumulate_log_weights
         else None
     )
     if return_all_states:
@@ -303,7 +332,7 @@ def sample_swap_ctmc(
         step_dt = dts[step]
         t_per_batch = ts[step].expand(batch_size)
         new_state, step_pair_scores = step_fn(head, state, t_per_batch, step_dt)
-        if return_log_weights:
+        if accumulate_log_weights:
             # ξ_t at the left endpoint reads the same head(state, t) the step
             # just computed; reusing its scores halves the head calls per step.
             xi_t = xi_t_swap_from_scores(
@@ -311,8 +340,6 @@ def sample_swap_ctmc(
             )
             log_weights = log_weights + xi_t * step_dt
         state = new_state
-        if return_all_states:
-            trajectory[step + 1] = state
         # Checkpoint AFTER the state advance: the particle carrying log w(t+dt)
         # is x_{t+dt}, so that is the row set resampling duplicates/kills.
         if resampling is not None and step % resampling.check_every == 0:
@@ -325,7 +352,14 @@ def sample_swap_ctmc(
                 )
                 smc_stats.n_events += 1
                 smc_stats.event_steps.append(step)
+        # Recorded after the checkpoint so the slice is the ensemble that
+        # continues (see the docstring). Unchanged when resampling is off:
+        # `state` is returned untouched by a checkpoint that does not fire.
+        if return_all_states:
+            trajectory[step + 1] = state
 
+    if return_all_states and resampling is not None:
+        return trajectory, smc_stats
     if resampling is not None:
         return state, log_weights, smc_stats
     if return_log_weights:

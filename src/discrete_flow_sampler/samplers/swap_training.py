@@ -18,6 +18,10 @@ becomes `lambda_dt_clipped_frac` (see `_swap_rate_diagnostics`). The
 neighbour log-ratios saturating `SWAP_LOG_RATIO_CLAMP`), evaluated at the
 swap neighbour set instead of the single-flip one. `log_ratio_p99` is
 dropped since neither the base instructions nor the amendment ask for it.
+`rollout_resample_events` counts the outer cycle's ESS-triggered SMC
+resampling events and reads NaN whenever the flag is off, so a run's log
+says whether the trigger ever fired (see
+`TrainCfg.rollout_resample_ess_fraction`).
 """
 import csv
 import json
@@ -36,6 +40,7 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
     gather_pair_scores,
     upper_tri_pairs,
 )
+from discrete_flow_sampler.samplers.resampling import ResamplingConfig
 from discrete_flow_sampler.samplers.swap_ctmc import (
     compute_c_t_grid_swap,
     sample_swap_ctmc,
@@ -353,6 +358,29 @@ def train_swap(
     # compute_c_t_grid_swap so every caller gets it; parity vs the
     # sequential path is the M7a gate (tests/test_c_t_grid_chunk.py).
     c_t_grid_chunk_rows = getattr(train_cfg, "c_t_grid_chunk_rows", None)
+    # ESS-triggered SMC resampling inside the buffer-rebuild rollout (LEAPS
+    # Alg. 1 lines 11-14, whose trajectories Alg. 2 line 5 trains on). None
+    # = OFF = every archived run, bit-identical. The full argument for why
+    # the c_t batch mean survives it — and why it is the resample that
+    # supplies the weighting Eq. 8 asks for — is on the config field.
+    rollout_resample_ess_fraction = getattr(
+        train_cfg, "rollout_resample_ess_fraction", None
+    )
+    if rollout_resample_ess_fraction is not None and not (
+        0.0 <= float(rollout_resample_ess_fraction) <= 1.0
+    ):
+        raise ValueError(
+            f"rollout_resample_ess_fraction must lie in [0, 1] when set, "
+            f"got {rollout_resample_ess_fraction}: it is a fraction of the "
+            f"rollout batch, and 1.0 already fires at every checkpoint."
+        )
+    rollout_resampling = (
+        ResamplingConfig(
+            ess_threshold_fraction=float(rollout_resample_ess_fraction)
+        )
+        if rollout_resample_ess_fraction is not None
+        else None
+    )
     if replay_buffer_cycles < 1:
         raise ValueError(
             f"replay_buffer_cycles must be >= 1, got {replay_buffer_cycles}"
@@ -397,6 +425,7 @@ def train_swap(
                  "lambda_dt_clipped_frac", "lambda_dt_p99",
                  "log_ratio_clamp_frac",
                  "proposal_drop_frac", "events_per_site_per_step",
+                 "rollout_resample_events",
                  "sigma_current", "lr_current",
                  "c_t_ema_rms_delta", "c_t_offset_rms",
                  "grad_sqnorm_slice_mean",
@@ -575,11 +604,25 @@ def train_swap(
             x_initial = target.sample_base(n_rollout, device=device)
             outer_matching_stats: dict | None = {} if multi_event else None
             with torch.no_grad():
-                x_traj_full = sample_swap_ctmc(
+                rollout_result = sample_swap_ctmc(
                     head, x_initial, t_grid, return_all_states=True,
                     multi_event=multi_event,
                     matching_stats=outer_matching_stats,
+                    target=target, resampling=rollout_resampling,
                 )                                              # (T, n_rollout, D)
+                if rollout_resampling is None:
+                    x_traj_full = rollout_result
+                    rollout_resample_events = float("nan")
+                else:
+                    # No log-weights come back by design: after the resets
+                    # they are a per-segment residue, and nothing in
+                    # training may read them (the `ess` column is its own
+                    # plain-IS draw below). Every slice is already the
+                    # post-resample, equally-weighted ensemble, which is
+                    # what makes the c_t mean below a mean over p_t rather
+                    # than over the raw rollout law.
+                    x_traj_full, rollout_smc_stats = rollout_result
+                    rollout_resample_events = float(rollout_smc_stats.n_events)
                 c_t_grid, integrand_per_t = compute_c_t_grid_swap(
                     t_grid, x_traj_full, target, head, mode=estimator_mode,
                     chunk_rows=c_t_grid_chunk_rows,
@@ -649,7 +692,11 @@ def train_swap(
 
             # M3: the buffer takes the FIRST outer_batch rows of the
             # enlarged rollout. Base positions are iid draws, so a prefix
-            # is a uniform subset (no selection bias); c_t above used all
+            # is a uniform subset (no selection bias) — and with rollout
+            # resampling on, a prefix of the systematic ancestors is a
+            # stratified block of the same ensemble drawn from a row order
+            # that is still exchangeable, so it stays unbiased for the same
+            # measure, just no longer literally iid; c_t above used all
             # n_rollout rows. .contiguous() releases the enlarged storage:
             # replay chunks are views (training._retain_chunks detaches but
             # shares storage), and at d256 a c_t_batch=512 chunk is ~400 MB.
@@ -884,6 +931,7 @@ def train_swap(
                      rate_diag["lambda_dt_p99"],
                      rate_diag["log_ratio_clamp_frac"],
                      proposal_drop_frac, events_per_site_per_step,
+                     rollout_resample_events,
                      float(target.sigma), optimiser.param_groups[0]["lr"],
                      c_t_ema_rms_delta, c_t_offset_value,
                      grad_sqnorm_slice_mean,

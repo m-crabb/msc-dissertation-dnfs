@@ -39,6 +39,17 @@ move set and target. `sample_ctmc` (unconstrained / soft-tilted) and
 `resample_if_needed`. In the swap case resampling duplicates whole
 on-manifold rows, so the composition constraint stays bit-exact.
 
+Two call sites, one mechanism
+-----------------------------
+Eval (`constrained_hard_03/run.py --smc-tau`) uses the product-form log Ẑ
+above. TRAINING uses the same hook inside the buffer-rebuild rollout
+(`TrainCfg.rollout_resample_ess_fraction`, the flag's comment carries the
+c_t argument), but for the opposite reason: there the point is not the
+normalising constant — nothing in training reads `log_z_increment` — it is
+that the surviving ENSEMBLE is the equally-weighted representation of p_t,
+which is the measure the c_t batch mean (Eq. 8) needs. LEAPS resamples in
+its Algorithm 1 and trains on those trajectories (Algorithm 2, line 5).
+
 RNG discipline: a checkpoint that does not fire consumes NO randomness,
 so a never-firing config is bit-identical to the plain sampler under the
 same seed (pinned in tests/test_resampling.py).

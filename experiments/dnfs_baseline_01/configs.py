@@ -195,6 +195,58 @@ class TrainCfg:
     # rows is the in-cap class on an 80 GB a100). None = OFF, the
     # byte-identical per-slot sequential loop every archived run used.
     c_t_grid_chunk_rows: int | None = None
+    # ESS-triggered SMC resampling INSIDE the training rollout (swap route
+    # only; `samplers.resampling`). None = OFF = every archived run,
+    # bit-identical — and so is any threshold that never fires, because the
+    # no-fire path consumes no RNG. Set to a fraction tau in [0, 1] to
+    # resample the buffer-rebuild population whenever its interim ESS drops
+    # below tau*M.
+    #
+    # WHY. LEAPS (Holderrieth et al. 2025) Algorithm 1 lines 11-14 resample
+    # the walkers on that trigger and reset their weights, and its training
+    # loop (Algorithm 2, line 5) draws its batch from exactly that routine —
+    # LEAPS trains on resampled trajectories. Ours never has: the rollout
+    # calls the sampler in trajectory mode, which carried no weights at all,
+    # so weight error accumulates over the whole horizon and the rollout
+    # states drift with it.
+    #
+    # WHAT IT DOES TO c_t — the research-bearing part. c_t is a batch mean
+    # of xi_t over the rollout states (Eq. 8, swap form). Eq. 8's identity
+    # E_{p_t}[xi_t] = d_t log Z_t is proved under the ANNEALED TARGET p_t
+    # (App. A.1, via the discrete Stein identity, Lemma 1); the paper's
+    # licence to average over any reference q_t instead (App. A.3) is
+    # established only AT OPTIMALITY, where the residual vanishes
+    # pointwise. Away from it, the ensemble represents p_t only through its
+    # accumulated importance weights w = exp(int xi dt), and the estimator
+    # Eq. 8 actually validates is the self-normalised weighted mean
+    # sum_i w_i xi_t(x^i). Systematic resampling draws ancestor counts with
+    # E[counts_i] = M*w_i EXACTLY, so the post-resample UNWEIGHTED batch
+    # mean is conditionally unbiased for that weighted mean: the estimator
+    # stays valid, and it is the resample that supplies the weighting the
+    # identity asks for. The trade is a distribution-axis gain (the rollout
+    # is re-projected onto p_t every event, and the buffer inherits it)
+    # bought with a little noise-axis currency (resampling noise on c_t),
+    # which is the axis measured capped at slope 0.052.
+    #
+    # THE ASYMMETRY WITH LEAPS IS REAL, not assumed away: LEAPS regresses
+    # the residual against a LEARNED scalar d_t F_t^phi, so no batch
+    # statistic of the ensemble enters its loss and resampling cannot
+    # perturb its baseline at all. Ours is a batch statistic, hence the
+    # paragraph above.
+    #
+    # FAILURE MODES GUARDED. (i) Weight bookkeeping across the reset: the
+    # trajectory-mode sampler returns NO weights, because after the resets
+    # they are a per-segment residue and a caller treating them as the
+    # path's IS weights would silently drop every banked increment.
+    # Nothing in training reads them or log_z_increment. (ii) The
+    # in-training `ess` column stays a plain-IS draw on its own call, or it
+    # would stop being comparable with every archived cell. (iii) A
+    # degenerate event collapses the population to clones of one ancestor,
+    # which enters the buffer as duplicated rows — harmless for the fixed
+    # point (the residual is pointwise) but it shrinks the effective
+    # sample; `rollout_resample_events` in the training log is what makes
+    # that visible, and tau is the knob that trades it off.
+    rollout_resample_ess_fraction: float | None = None
 
 
 @dataclass(frozen=True)
