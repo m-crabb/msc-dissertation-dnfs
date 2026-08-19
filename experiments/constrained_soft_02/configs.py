@@ -1128,6 +1128,12 @@ CONFIGS: dict[str, StageCfg] = {
     # Matched-base validation (2026-06-17): the c=0.80 ne128 anneal window with
     # a per-site Bernoulli(0.80) base, so the flow starts centred and only
     # tightens width. base_composition is the only change vs the ne128 anneal.
+    # VERDICT (corrected 2026-08-19): the archived eval ESS/N 0.171 was an
+    # eval bug — x0 drawn inline-uniform while the path used Bernoulli(0.8),
+    # fixed in de9db7c AFTER this run. Production-path A100 redraw: 0.937,
+    # PASSES its ESS >= 0.30 gate and beats the uniform twin (0.419) 2.24x.
+    # The uniform control reproduced its archived number, so the correction
+    # is attributable to the base draw alone.
     "S2_d10_c080_l50_letf_ne128_matched_anneal": StageCfg(
         name="S2_d10_c080_l50_letf_ne128_matched_anneal",
         ising=IsingCfg(
@@ -1169,6 +1175,11 @@ CONFIGS: dict[str, StageCfg] = {
     ),
     # Matched base + fixed lambda=50 (no anneal): tests whether the matched
     # start lets the lambda curriculum be dropped entirely.
+    # VERDICT (corrected 2026-08-19): archived 0.025 was the same eval bug as
+    # the matched_anneal twin. Production-path A100 redraw: 0.483 — passes
+    # the 0.30 gate, so fixed-lambda is viable from a matched start, but the
+    # anneal still buys ~1.9x (0.937 vs 0.483): the curriculum is not
+    # redundant, it is just not load-bearing for gate survival.
     "S2_d10_c080_l50_letf_ne128_matched_fixed50": StageCfg(
         name="S2_d10_c080_l50_letf_ne128_matched_fixed50",
         ising=IsingCfg(

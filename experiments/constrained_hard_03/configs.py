@@ -1181,6 +1181,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     # BEFORE LAUNCH: raw ess_frac >= 0.60 = rank meaningfully binds (closes
     # >= a third of the 0.27 gap to the MA twin's 0.781); <= 0.55 = rank
     # refuted at scale too, interior coverage becomes the only live repair.
+    # VERDICT (2026-08-19, recovered by the orphaned-results audit — the run
+    # completed 2026-08-14 as DoC job 274188 and sat unadjudicated): raw
+    # 0.5615, bootstrap 95% CI (0.5333, 0.5871), EMA 0.5920. BETWEEN-BANDS,
+    # binds-EXCLUDED (CI upper < 0.60); refuted band straddled. Rank 16 buys
+    # +0.05 raw over fab8 (~19% of the 0.27 gap), under the meaningful bar.
         "H2_d64_c50_s223_letf_fab16_50k_curr": replace(
             _d64_curriculum_cell(
                 "H2_d64_c50_s223_letf_fab16_50k_curr", head_kind="factorised",
