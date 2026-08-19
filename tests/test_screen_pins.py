@@ -343,6 +343,9 @@ D64_LOOP_ARM_DECLARATIONS = {
     "H2_d64_c50_s223_letf_fmo2_50k_curr_m512ct512": dict(
         train={"outer_batch_size": None, "c_t_batch": None},
     ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_diag": dict(
+        site_orderings=("row", "col"),
+    ),
 }
 
 

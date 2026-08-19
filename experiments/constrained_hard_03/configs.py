@@ -1929,6 +1929,26 @@ CONFIGS: dict[str, HardStageCfg] = {
         outer_batch_size=512,
         c_t_batch=512,
     ),
+    # Third causal ordering at 8x8 (2026-08-19, user call — the cheap
+    # validation BEFORE the 16x16 sibling spends a100 hours on an untested
+    # mechanism): site_orderings ("row","col") -> ("row","col","diag"),
+    # the ONLY change vs the archived rung. The ESS endpoint is
+    # near-ceiling here (rung raw 0.745 vs its masked-attention twin's
+    # 0.781), so the read is deliberately NOT ESS-first: the primary
+    # statistic is the EMA eval Var[log w], whose archived rung value is
+    # 0.2068 with bootstrap 95% CI (0.1983, 0.2152) — variance CIs
+    # resolve differences the ESS band cannot. FROZEN BANDS (seed 42):
+    # UPLIFT DETECTED iff the arm's EMA Var[log w] CI sits wholly BELOW
+    # (0.1983, ...), i.e. CI-disjoint downward; REGRESSION iff EMA eval
+    # ESS/N <= 0.78 or the Var CI sits wholly above — a regression is the
+    # early-warning verdict and the queued 16x16 third-ordering arm
+    # should be cancelled before it runs; INSENSITIVE otherwise = the
+    # orderings axis is saturated at two sweeps at this size and the
+    # 16x16 arm carries the question alone.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_diag": replace(
+        _d64_fmo2_loop_cell("H2_d64_c50_s223_letf_fmo2_50k_curr_diag"),
+        site_orderings=("row", "col", "diag"),
+    ),
     # Boundary-shock arm (2026-08-19, user GO on corrected evidence): the
     # recipe cell with rewarmup_on_stage=True the ONLY training-dynamics
     # change — a fresh 500-step LR ramp from every sigma boundary, so the
