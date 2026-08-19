@@ -1,9 +1,20 @@
 """Certified Kawasaki reference sample set for the 16x16 fixed-composition
 Ising model at the critical coupling.
 
-Produces results/kawasaki_ref_d256_sc/ containing STORED DRAWS (samples.pt),
-not just scalar statistics, for downstream observable-decoupling analysis and
-sample-montage figures.
+Produces an output directory (default results/kawasaki_ref_d256_sc/) containing
+STORED DRAWS (samples.pt), not just scalar statistics, for downstream
+observable-decoupling analysis and sample-montage figures.
+
+The coupling sigma and the output directory are command-line parameters whose
+defaults reproduce the original certified reference exactly. Sigma has to be a
+parameter because a reference set is a reference only for the sigma it was
+generated at: every certified number below (nn-correlation, energy per site,
+the Gelman-Rubin values) is a property of p(x) proportional to
+exp(sigma * x^T A x) at that one sigma. Judging model samples trained at one
+sigma against a reference drawn at another injects a systematic shift of size
+d<nn>/dsigma * delta-sigma into every comparison, which no amount of extra
+reference sampling removes. Making sigma explicit at the call site is what
+stops a stale hard-coded value from silently becoming that systematic.
 
 What makes this a CERTIFIED reference rather than just "some MCMC output":
 
@@ -37,7 +48,9 @@ baseline — NOT the slow-mixing local variant); observables and diagnostics
 from discrete_flow_sampler.diagnostics.metrics.
 
 Run:  pixi run -e default python -m experiments.constrained_hard_03.generate_kawasaki_reference_d256
+      (add --sigma / --out-dir to generate a sigma-matched twin elsewhere)
 """
+import argparse
 import json
 import math
 import socket
@@ -62,7 +75,7 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 LATTICE_SIDE = 16
 N_SITES = LATTICE_SIDE * LATTICE_SIDE          # 256
-SIGMA_CRITICAL = 0.22305                       # the project's sigma_c
+DEFAULT_SIGMA = 0.22305                        # the project's sigma_c
 TARGET_COMPOSITION = 0.5                       # 128 up / 128 down, exact
 N_CHAINS = 8                                   # 2 ordered-left, 2 ordered-right, 4 random
 BURN_IN_SWEEPS = 100_000                       # ~6000x the measured tau — cheap at numba speed
@@ -73,7 +86,7 @@ MIN_STORED_SAMPLES = 5_000
 CERTIFICATION_NN_TARGET = 0.588
 CERTIFICATION_NN_TOLERANCE = 0.004
 THINNING_SAFETY_FACTOR = 2.0                   # thin at 2x worst-chain tau, not 1x
-OUT_DIR = Path("results/kawasaki_ref_d256_sc")
+DEFAULT_OUT_DIR = Path("results/kawasaki_ref_d256_sc")
 
 # Chain start conditions: mode-balanced ordered starts (phase-separated in each
 # Z2/orientation basin) plus neutral random starts, so between-chain agreement
@@ -93,9 +106,16 @@ def build_initial_spins(init_kind, init_side, seed):
     return init_phase_separated(LATTICE_SIDE, init_side)
 
 
-def run_one_chain(chain_index):
+def run_one_chain(chain_index, sigma):
     """Burn in, then sample with dense snapshot recording. Returns
-    (snapshots int8 (n_record, d), meta dict)."""
+    (snapshots int8 (n_record, d), meta dict).
+
+    sigma is threaded through rather than read from a module constant so that
+    burn-in and sampling provably use the SAME coupling as the certification
+    statistics computed downstream — a reference whose burn-in equilibrated at
+    one sigma and whose draws were accepted at another would certify cleanly
+    and still be wrong.
+    """
     init_kind, init_side = CHAIN_START_CONDITIONS[chain_index]
     burn_seed = SEED_BASE + chain_index
     sampling_seed = SEED_BASE + 100 + chain_index
@@ -104,13 +124,13 @@ def run_one_chain(chain_index):
     burn_proposals = BURN_IN_SWEEPS * N_SITES
     t0 = time.perf_counter()
     _, spins, _ = run_nonlocal_swap_chain_snapshots(
-        spins, LATTICE_SIDE, SIGMA_CRITICAL, burn_proposals, burn_seed,
+        spins, LATTICE_SIDE, sigma, burn_proposals, burn_seed,
         thin=burn_proposals,                   # records only the (discarded) initial state
     )
     sampling_proposals = SAMPLING_SWEEPS * N_SITES
     record_every_proposals = RECORD_EVERY_SWEEPS * N_SITES
     snapshots, _, n_accepted = run_nonlocal_swap_chain_snapshots(
-        spins, LATTICE_SIDE, SIGMA_CRITICAL, sampling_proposals, sampling_seed,
+        spins, LATTICE_SIDE, sigma, sampling_proposals, sampling_seed,
         thin=record_every_proposals,
     )
     wall_seconds = time.perf_counter() - t0
@@ -136,19 +156,51 @@ def standard_error(values):
     return float(values.std(ddof=1) / math.sqrt(len(values)))
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=("Generate a certified Kawasaki reference sample set for the "
+                     "16x16 fixed-composition Ising model."),
+    )
+    parser.add_argument(
+        "--sigma", type=float, default=DEFAULT_SIGMA,
+        help=("Coupling the reference chain is simulated at. A reference set is "
+              "a reference only for the sigma it was generated at: its "
+              "nn-correlation and energy are properties of "
+              "exp(sigma * x^T A x), so comparing model samples trained at "
+              "sigma_model against a reference drawn at sigma_ref carries a "
+              "systematic of order d<nn>/dsigma * (sigma_ref - sigma_model) "
+              "that more sampling cannot average away. Set this to the sigma "
+              "the model under judgement was trained at. "
+              f"(default: {DEFAULT_SIGMA}, the project's sigma_c)"),
+    )
+    parser.add_argument(
+        "--out-dir", type=Path, default=DEFAULT_OUT_DIR,
+        help=("Directory for samples.pt, provenance.json and certification.json. "
+              "Give each sigma its own directory: overwriting an existing "
+              "reference in place would invalidate every number already quoted "
+              "from it, with nothing in the filename to reveal that it moved. "
+              f"(default: {DEFAULT_OUT_DIR})"),
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+    sigma, out_dir = args.sigma, args.out_dir
+
     wall_start = time.perf_counter()
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"sigma = {sigma!r} -> {out_dir}/")
 
     target = FixedCompositionIsingTarget(
-        LATTICE_SIDE, SIGMA_CRITICAL, TARGET_COMPOSITION
+        LATTICE_SIDE, sigma, TARGET_COMPOSITION
     )
     adjacency = target.A
 
     dense_snapshots = []
     chain_metas = []
     for chain_index in range(N_CHAINS):
-        snapshots, meta = run_one_chain(chain_index)
+        snapshots, meta = run_one_chain(chain_index, sigma)
         dense_snapshots.append(snapshots)
         chain_metas.append(meta)
         print(f"chain {chain_index} ({meta['init_kind']}"
@@ -192,7 +244,7 @@ def main():
     )
     log_prob_from_target = target.base_log_prob(samples_tensor.float())
     convention_gap = (
-        log_prob_from_target - SIGMA_CRITICAL * quadratic_per_site * N_SITES
+        log_prob_from_target - sigma * quadratic_per_site * N_SITES
     ).abs().max().item()
     if convention_gap > 1e-3:
         raise RuntimeError(
@@ -270,7 +322,7 @@ def main():
     provenance = {
         "lattice_side": LATTICE_SIDE,
         "n_sites": N_SITES,
-        "sigma": SIGMA_CRITICAL,
+        "sigma": sigma,
         "target_composition": TARGET_COMPOSITION,
         "move_set": "nonlocal unlike-pair Kawasaki swap, Metropolis on sigma * x^T A x",
         "annealing_schedule": None,            # direct simulation at sigma_c; burn-in only
@@ -288,15 +340,15 @@ def main():
         "total_wall_seconds": time.perf_counter() - wall_start,
     }
 
-    torch.save(samples_tensor, OUT_DIR / "samples.pt")
-    (OUT_DIR / "provenance.json").write_text(json.dumps(provenance, indent=2))
-    (OUT_DIR / "certification.json").write_text(json.dumps(certification, indent=2))
+    torch.save(samples_tensor, out_dir / "samples.pt")
+    (out_dir / "provenance.json").write_text(json.dumps(provenance, indent=2))
+    (out_dir / "certification.json").write_text(json.dumps(certification, indent=2))
 
     print(json.dumps(certification, indent=2))
     if not certification["certified"]:
         print("CERTIFICATION FAILED — data kept for inspection, see certification.json")
         raise SystemExit(1)
-    print(f"CERTIFIED: {samples.shape[0]} draws -> {OUT_DIR}/")
+    print(f"CERTIFIED: {samples.shape[0]} draws -> {out_dir}/")
 
 
 if __name__ == "__main__":
