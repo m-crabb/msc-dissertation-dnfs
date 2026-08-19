@@ -1834,6 +1834,16 @@ CONFIGS: dict[str, HardStageCfg] = {
     # expressivity axis is already covered by the rank-32 arm on the same
     # anchors, and the full-horizon capacity arm had just read a
     # REGRESSION. The question is NOT answered and may be relaunched.
+    # RELAUNCHED the same evening on Modal A100-80GB (tag
+    # 20260819-214730, seed 42), once the cost was measured rather than
+    # assumed: the anchor cell -- this cell's shape minus the third
+    # ordering -- runs 3h17m end-to-end on that hardware, so the a100
+    # QUEUE was the real cost, not the compute, and Modal has no queue.
+    # The extra ordering extends only the bilinear term, bounding the
+    # multiplier under 1.5x. BANDS ABOVE ARE UNCHANGED and were frozen
+    # before either launch; nothing about the read moves with the
+    # hardware, which is the same A100-80GB class the anchor pair ran on
+    # (modal_app.train_remote pins gpu="A100-80GB").
     "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_diag": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_diag",
