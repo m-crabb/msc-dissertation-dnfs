@@ -415,6 +415,17 @@ def train_swap(
         # the historical step-0-only behaviour, bit-identical.
         rewarmup_on_stage = bool(getattr(train_cfg, "rewarmup_on_stage", False))
         warmup_anchor = 0
+        # flush_replay_on_stage: empty the buffer at each sigma transition.
+        # True (default) = every archived run, bit-identical. False retains
+        # the window across the boundary; the loss recomputes both target
+        # terms at the live sigma, so retained states are evaluation points
+        # under the NEW target, not stale labels (the TrainCfg field comment
+        # carries the argument). The c_t EMA reset below stays unconditional
+        # either way -- c_t is a function of sigma, so smoothing across a
+        # boundary would mix estimates of two different quantities.
+        flush_replay_on_stage = bool(
+            getattr(train_cfg, "flush_replay_on_stage", True)
+        )
         # Per-stage best-checkpoint instrument: within each curriculum stage,
         # save the head whenever the TRAILING MEDIAN (window 3) of the
         # periodic train-eval ESS makes a new stage best. The median window
@@ -532,7 +543,10 @@ def train_swap(
                         _set_optimizer_lr(optimiser, lr_now)
                         current_intended_lr = float(lr_now)
                     if sigma_now != replay_sigma:
-                        _clear_replay(x_replay_chunks, t_idx_replay_chunks)
+                        if flush_replay_on_stage:
+                            _clear_replay(
+                                x_replay_chunks, t_idx_replay_chunks
+                            )
                         replay_sigma = sigma_now
                         if c_t_ema is not None:
                             # c_t is a function of sigma: smoothing must

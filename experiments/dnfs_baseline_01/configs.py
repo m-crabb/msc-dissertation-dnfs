@@ -102,6 +102,34 @@ class TrainCfg:
     # initialisation-scale transient with no ramp. Off by default so every
     # archived run's semantics are unchanged.
     rewarmup_on_stage: bool = False
+    # Empty the replay buffer at every curriculum sigma-transition. True =
+    # every archived run's behaviour, so the default changes nothing.
+    #
+    # WHY THIS IS A REAL CHOICE AND NOT AN OBVIOUS ONE. The swap loss
+    # (samplers/swap_kolmogorov.loss_swap) squares the Kolmogorov residual
+    # delta_t(x) = dt_log_p_tilde_t(x) - c_t + sum_{i<j}(...), and both
+    # target terms are recomputed LIVE from `target` at the sigma in force
+    # when the gradient step runs. A retained state is therefore an
+    # EVALUATION POINT, never a stale label: nothing in the buffer encodes
+    # the old target. The fixed point delta == 0 holds pointwise, so it is
+    # unchanged by which distribution the states are drawn from, as long as
+    # that distribution has support. What retention changes is the WEIGHTING
+    # of a weighted least-squares — at finite capacity, residual accuracy
+    # gets spent where the previous stage's model law put mass rather than
+    # where the new target does — plus the offset between c_t (estimated on
+    # the CURRENT cycle's fresh rollout) and the measure the loss actually
+    # averages over, which the `c_t_offset_rms` column already witnesses.
+    #
+    # The failure mode flushing guards against is that weighting mismatch;
+    # the failure mode flushing CAUSES is that the buffer collapses to a
+    # single cycle exactly at the boundary, multiplying per-state re-fit
+    # density by `replay_buffer_cycles` for the ~800 steps it takes to
+    # refill, at the moment the target has just moved. Which dominates has
+    # never been measured at any size, so it gets a flag and an arm.
+    #
+    # NOT evidence either way: the DNFS reference never flushes because it
+    # has no curriculum, so it never faced this choice.
+    flush_replay_on_stage: bool = True
     # CV-inversion tripwire (adversarial panel, 2026-08-18). The swap
     # trainer logs `cv_var_ratio` — controlled/naive integrand variance
     # over the same rollout rows, a validated 5/5 in-run classifier of the
