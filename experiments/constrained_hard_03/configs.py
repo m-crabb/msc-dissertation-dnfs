@@ -1642,6 +1642,47 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         bilinear_rank=32,
     ),
+    # Capacity arm at the anchor recipe (2026-08-19, user GO — the held
+    # full-horizon capacity read): the fmo2 naive ladder anchor with
+    # hidden_dim 32 -> 128 AND flat lr 3e-4 across all curriculum stages.
+    # Two declared fields, bundled deliberately: the 5k screen showed
+    # un-retuned lr 1e-3 penalises h128 specifically across sigma
+    # transitions (h128 tail FVU 0.0498 vs h128+lr03's 0.0380-0.0406 ~=
+    # base), so a pure-capacity arm at the ladder's early lr would return
+    # an lr artefact, not a capacity verdict — the same lesson that made
+    # every screen capacity arm ship with an lr03 sibling. Capacity
+    # context: at hidden 128 the factorised model is ~1.41M params, ~4.4x
+    # the ViT the MDNS paper trains on 16x16 Ising (~318k), so a NULL
+    # here also closes "the comparison family simply used a bigger
+    # model". Cost measured, not guessed: fmo2 h128 inner steps run ~7%
+    # slower than h32 (87.7 vs 82.9 ms on the screen's A100s), so the 50k
+    # anchor-shaped run is ~3.5 h — cheap because the factorised head's
+    # cost is dominated by d, not hidden width. FROZEN BANDS (before
+    # launch, seed 42, vs the judged anchor pair EMA eval ESS/N
+    # 0.0048/0.0058, Var[log w]/site 0.0168/0.0159): frame check —
+    # stage-1 tail FVU <= 0.05 (the anchor transfer band; a frame break
+    # voids the read); CAPACITY BINDS iff EMA eval ESS/N >= 0.010 (2x the
+    # seed-42 anchor) with bootstrap-CI separation, or Var[log w]/site
+    # <= 0.012; NULL iff within the anchor spread — capacity then joins
+    # the closed doors at FULL horizon, not just the 5k screen.
+    "H2_d256_c50_s223_letf_fmo2_h128_lr03_50k_curr_naive": (
+        lambda _cell: replace(
+            _cell,
+            model=replace(_cell.model, hidden_dim=128),
+            curriculum=replace(
+                _cell.curriculum,
+                stages=tuple(
+                    replace(stage, lr=3e-4)
+                    for stage in _cell.curriculum.stages
+                ),
+            ),
+        )
+    )(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_h128_lr03_50k_curr_naive",
+            estimator="naive_mc",
+        )
+    ),
     # Boundary-shock arm (2026-08-19, user GO on corrected evidence): the
     # recipe cell with rewarmup_on_stage=True the ONLY training-dynamics
     # change — a fresh 500-step LR ramp from every sigma boundary, so the
