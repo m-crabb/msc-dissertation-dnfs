@@ -465,6 +465,57 @@ def _d64_fmo2_h128_cell(name: str) -> HardStageCfg:
     return replace(cell, model=replace(cell.model, hidden_dim=128))
 
 
+def _d64_fmo2_loop_cell(
+    name: str,
+    *,
+    n_euler_steps: int = 128,
+    use_matching_step: bool = False,
+    **train_overrides,
+) -> HardStageCfg:
+    """The archived 8x8 factorised rung, opened on its outer/inner-loop knobs.
+
+    Every archived run at every size has carried the same outer/inner loop
+    shape — 100 gradient steps per outer cycle, rollout width tied to the
+    gradient batch, 8 retained buffer cycles — inherited from the shared
+    builders and never varied in a cell diff. The 8x8 battery built on this
+    helper measures each loop knob as a single declared variable at the size
+    where training is known-healthy, on the factorised head family the
+    larger rungs actually use.
+
+    With no overrides this reproduces `H2_d64_c50_s223_letf_fmo2_50k_curr`
+    exactly except the name (pinned in tests/test_screen_pins.py), so every
+    battery arm is a true twin: factorised head with the dual row+col causal
+    orderings, EMA shadow riding as pure instrumentation, control-variate
+    estimator, batch 128, 128-step Euler grid, one-event stepping, the
+    sigma-plateau ladder to 0.223, 50k steps, seed 42, 5000-draw frozen
+    eval. Comparator (from that twin's archived run): raw eval ESS/N 0.7452
+    / EMA 0.8104. Band convention shared by every arm, frozen before
+    launch: INSENSITIVE = within +-0.03 EMA ESS/N of 0.8104, the noise
+    scale borrowed from the d64 masked-attention cross-seed spread (~0.026;
+    the fmo2 comparator is single-seed).
+
+    `n_euler_steps` / `use_matching_step` open the trajectory-simulation
+    knobs (CTMCCfg); `train_overrides` opens the TrainCfg loop knobs
+    (inner_steps_per_outer, replay_buffer_cycles, outer_batch_size,
+    c_t_batch). Defaults are byte-identical to the archived rung."""
+    cell = replace(
+        _d64_curriculum_cell(name, head_kind="factorised"),
+        ema_decay=0.9999,
+        site_orderings=("row", "col"),
+    )
+    cell = replace(
+        cell,
+        ctmc=replace(
+            cell.ctmc,
+            n_euler_steps=n_euler_steps,
+            use_matching_step=use_matching_step,
+        ),
+    )
+    if train_overrides:
+        cell = replace(cell, train=replace(cell.train, **train_overrides))
+    return cell
+
+
 def _d256_fmo2_warm_cell(
     name: str, n_euler_steps: int = 128
 ) -> HardStageCfg:
@@ -1642,6 +1693,33 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         bilinear_rank=32,
     ),
+    # Third causal ordering at the anchor recipe (2026-08-19, user GO):
+    # site_orderings ("row","col") -> ("row","col","diag"), the ONLY
+    # change. Why this axis is live: at 8x8, adding the SECOND ordering
+    # took the factorised rung from raw ESS/N 0.514 to 0.745 — the
+    # largest single expressivity gain on the head's record — by
+    # shrinking the deep-interior blind region to the intersection of the
+    # per-ordering (prefix, suffix) intervals; a third, diagonal sweep
+    # shrinks that intersection further. Deliberately NOT run at 8x8
+    # first: the dual-ordering rung already sits 0.036 under its
+    # masked-attention twin there, inside the verdict noise band, so a
+    # third ordering has nothing measurable to buy at that size — the
+    # same near-ceiling logic that made small-lattice rank arms
+    # uninformative. 16x16 is where interior coverage could still bind;
+    # this is the orderings-axis sibling of the rank-32 arm above, one
+    # variable each against the same anchors. FROZEN BANDS (seed 42, vs
+    # the anchor pair EMA eval ESS/N 0.0048/0.0058, Var[log w]/site
+    # 0.0168/0.0159): frame check stage-1 tail FVU <= 0.05; ORDERINGS
+    # BIND iff EMA eval ESS/N >= 0.010 with bootstrap-CI separation, or
+    # Var[log w]/site <= 0.012; NULL iff within the anchor spread —
+    # interior coverage then joins rank on the closed expressivity list.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_diag": replace(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_diag",
+            estimator="naive_mc",
+        ),
+        site_orderings=("row", "col", "diag"),
+    ),
     # Capacity arm at the anchor recipe (2026-08-19, user GO — the held
     # full-horizon capacity read): the fmo2 naive ladder anchor with
     # hidden_dim 32 -> 128 AND flat lr 3e-4 across all curriculum stages.
@@ -1682,6 +1760,174 @@ CONFIGS: dict[str, HardStageCfg] = {
             "H2_d256_c50_s223_letf_fmo2_h128_lr03_50k_curr_naive",
             estimator="naive_mc",
         )
+    ),
+    # ---- 8x8 outer/inner loop battery (2026-08-19) ----------------------
+    # Eight single-variable twins of the archived fmo2 8x8 curriculum rung,
+    # built from _d64_fmo2_loop_cell (its docstring carries the shared
+    # frame: comparator raw ESS/N 0.7452 / EMA 0.8104 seed 42, and the
+    # band convention INSENSITIVE = within +-0.03 EMA ESS/N of 0.8104).
+    # The loop knobs opened here have been constants across essentially
+    # the whole archive — varied about as often as hidden_dim once was —
+    # so their scaling rules rest on provenance, not measurement. Key
+    # shared quantity: per-state draw density = expected gradient draws
+    # per buffer state over its lifetime = inner_steps x batch /
+    # (euler_grid x rollout_width); the archived 8x8 shape sits at 0.78,
+    # the reference-code default, while the 16x16 recipe that landed NULL
+    # silently ran at 0.195 (batch and grid quadrupled, inner steps not).
+    # Read on every arm: EMA + raw eval ESS/N with top-weight mass,
+    # Var[log w]/site, per-rung train-ESS medians, stage-tail FVU.
+    #
+    # Gradient steps per outer cycle 100 -> 25: draw density 0.78 -> 0.195,
+    # the exact broken density of the NULL 16x16 recipe, reproduced at the
+    # healthy size with everything else untouched. Does breaking the
+    # density invariant itself cost anything where training is otherwise
+    # known-good? ONE-SIDED by construction, declared before launch: at
+    # fixed n_steps, 4x more outer cycles also means 4x more fresh
+    # trajectories, biasing this arm toward reading insensitive — a
+    # SENSITIVE read is therefore strong evidence, an INSENSITIVE read
+    # must carry the caveat. The inner500 cell below is the opposite
+    # direction; together they bracket ~two decades of density around
+    # 0.78. FROZEN BANDS: INSENSITIVE within +-0.03 EMA ESS/N of 0.8104;
+    # SENSITIVE-UP >= +0.03 means the big-lattice recipe under-rolled per
+    # state (fresh rollouts, not density per se, were the binding margin).
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_inner25": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_inner25",
+        inner_steps_per_outer=25,
+    ),
+    # Replay depth 8 -> 2 cycles: 1024 -> 256 retained trajectories,
+    # shrinking below the ~1024-trajectory retention bound the reference
+    # code enforces. The one prior variation (a 12k masked-attention smoke
+    # at this size) read WORSE at every rung — evidence that fresher-but-
+    # fewer states hurt at 8x8 — but it confounded staleness with buffer
+    # size and never ran the full horizon or the factorised family the
+    # larger rungs use. Draw density is invariant to depth (cycle count
+    # cancels), so depth is a pure staleness-vs-diversity dial. FROZEN
+    # BANDS: SENSITIVE-DOWN <= -0.03 EMA ESS/N replicates the smoke's
+    # direction on this family at full horizon; INSENSITIVE +-0.03. Read
+    # alongside: the buffer is flushed at every sigma boundary and a
+    # 2-cycle buffer refills 4x sooner, so rung-boundary train-ESS
+    # recovery speed is the mechanism read, not just the endpoint.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_buf2": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_buf2",
+        replay_buffer_cycles=2,
+    ),
+    # Stepping-protocol control: use_matching_step False -> True at the
+    # unchanged 128-step grid. Every archived 8x8 run used one-event
+    # stepping and every 12x12/16x16 run the vertex-disjoint matching
+    # step, so no cross-size comparison has ever held the protocol fixed;
+    # this cell retires that caveat with a measured number. Expected
+    # INSENSITIVE (a frozen 8x8 checkpoint re-evaluated under the matching
+    # step read 0.906 vs 0.910). Also the required comparator for the two
+    # grid cells below: one-event stepping clips whenever total-rate x dt
+    # exceeds 1, so a coarser grid under one-event stepping would confound
+    # grid resolution with clipping — only under the matching step is the
+    # grid a clean variable. FROZEN BAND: INSENSITIVE +-0.03 EMA ESS/N
+    # of 0.8104.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_match": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_match",
+        use_matching_step=True,
+    ),
+    # Euler grid 128 -> 32 under the matching step: 0.5 x sites, the
+    # grid-to-size ratio every archived 16x16 sigma_c run trained at. Read
+    # against the matching-step control cell above, NOT the base — the
+    # protocol change rides in both, leaving the grid the only difference.
+    # This is the TRAINING-side grid question: the eval-only resolution
+    # sweep on a frozen checkpoint cannot answer it, because a model
+    # trained on a coarse grid learns to compensate that grid's bias.
+    # Declared side effects, recorded before launch: (i) draw density
+    # rises to 3.1 (fewer buffer rows per cycle at fixed inner steps),
+    # biasing this arm AGAINST finding harm — a drop is strong evidence
+    # for a grid-tracks-size rule, flat must carry the caveat; (ii) the
+    # eval sampling grid moves with the training grid (the measured
+    # eval-grid share is ~0.02 ESS/N, a rounding term at this comparator,
+    # recorded not ignored). FROZEN BAND vs the matching control:
+    # INSENSITIVE +-0.03 EMA ESS/N.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne32": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne32",
+        use_matching_step=True,
+        n_euler_steps=32,
+    ),
+    # Euler grid 128 -> 256 under the matching step: 2 x sites -> 4 x
+    # sites, the finer-grid direction. With the matching control and the
+    # 32-step cell this completes a three-point training-grid curve at
+    # sigma_c (0.5d / 2d / 4d) — the first anywhere in the archive, which
+    # contains no size at which the training grid was an isolated, tested
+    # variable at sigma_c. A monotone rise crossing +0.03 EMA ESS/N =
+    # training was grid-limited and the grid should track size; flat
+    # closes the training-side grid door with a measurement. Same
+    # eval-grid-moves-with-training-grid note as the 32-step cell. FROZEN
+    # BAND vs the matching control: INSENSITIVE +-0.03 EMA ESS/N.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne256": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne256",
+        use_matching_step=True,
+        n_euler_steps=256,
+    ),
+    # Rollout/buffer width decoupled from the gradient batch: outer batch
+    # None -> 32 with c_t_batch=128 — the FIRST run ever to set the
+    # rollout width below the gradient batch. Three sample sizes that have
+    # always been one number are separated: the buffer width falls 4x (32
+    # trajectories per cycle, so rollout compute falls ~4x), the per-slot
+    # normaliser c_t keeps its effective sample size at the base's 128
+    # because c_t_batch pins the rollout row count there (the buffer takes
+    # the first 32 rows; the trainer validates c_t_batch >= outer batch,
+    # 128 >= 32), and the gradient batch stays 128. What remains isolated
+    # is buffer width/diversity alone. If INSENSITIVE, rollout cost at any
+    # size can be cut ~4x for free — the single biggest cost lever this
+    # battery could license (rollouts were ~77% of wall on the widest
+    # 16x16 recipe). FROZEN BANDS: INSENSITIVE +-0.03 EMA ESS/N licenses
+    # narrow buffers at scale; SENSITIVE-DOWN <= -0.03 says buffer
+    # diversity binds and retention should be restated in trajectories,
+    # not cycles. Mechanism pinned tests-first in
+    # tests/test_outer_batch_decoupling.py before this cell runs.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_m32ct128": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_m32ct128",
+        outer_batch_size=32,
+        c_t_batch=128,
+    ),
+    # Gradient steps per outer cycle 100 -> 500: draw density 3.9, fresh
+    # trajectories 5x down — the over-reuse direction, paired with the
+    # inner25 cell to bracket the archived 0.78. Insensitivity here
+    # licenses cheap high-reuse recipes (rollout share of wall falls to
+    # ~15% at this shape); a drop is the first direct evidence that
+    # re-fitting the same finite buffer sample degrades the sampler. 500
+    # rather than 400 because the curriculum validator requires every
+    # sigma-stage start (multiples of 5000 on this ladder) to be a
+    # multiple of the per-cycle inner-step count, and 400 does not divide
+    # 5000. FROZEN BAND: INSENSITIVE +-0.03 EMA ESS/N of 0.8104.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_inner500": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_inner500",
+        inner_steps_per_outer=500,
+    ),
+    # Replay depth 8 -> 16 cycles: 2048 retained trajectories, the deep
+    # half that has never been tried at any size (the archive holds one
+    # shallow variation and nothing above 8). With the buf2 cell this
+    # completes the depth curve 256/1024/2048 around the reference-code
+    # retention bound of ~1024. Depth is compute-free and memory-trivial
+    # at this size, so the arm is pure information: any |delta| >= 0.03
+    # EMA ESS/N in either direction revises the retention default;
+    # INSENSITIVE keeps ~1024 trajectories as the defensible default it
+    # currently is (provenance plus one confounded shallow smoke).
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_cyc16": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_cyc16",
+        replay_buffer_cycles=16,
+    ),
+    # Rollout width 128 -> 512 at fixed gradient batch 128, c_t riding at
+    # 512 (the c_t_batch >= outer_batch constraint holding at equality):
+    # the upward direction of the width decoupling. The reference
+    # implementation itself rolled 2x its gradient batch; every run in
+    # this repo has rolled 1x. Buys 4x fresh trajectories and 4x c_t
+    # sample size per cycle at 4x rollout cost. DECLARED CONFOUND: at
+    # fixed inner steps the per-state draw density falls 0.78 -> 0.195 as
+    # a side effect (the same drop the 16x16 recipe made); the inner25
+    # cell isolates density alone, so the difference between this arm and
+    # inner25 is width-at-matched-density. FROZEN BAND: INSENSITIVE
+    # +-0.03 EMA ESS/N of 0.8104; SENSITIVE-UP >= +0.03 says rollout
+    # width was a starved axis and a wide-M d256 twin is licensed;
+    # SENSITIVE-DOWN with inner25 also down says density, not width.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_m512ct512": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_m512ct512",
+        outer_batch_size=512,
+        c_t_batch=512,
     ),
     # Boundary-shock arm (2026-08-19, user GO on corrected evidence): the
     # recipe cell with rewarmup_on_stage=True the ONLY training-dynamics

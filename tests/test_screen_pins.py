@@ -306,3 +306,83 @@ def test_clip2000_continuation_mirrors_cv2_continuation_except_declared_fields()
         ),
     )
     assert rebuilt == cv2
+
+
+D64_LOOP_BASE = "H2_d64_c50_s223_letf_fmo2_50k_curr"
+
+# 8x8 outer/inner loop battery (2026-08-19): arm name -> the reset that
+# must reproduce the archived fmo2 8x8 curriculum rung exactly. Each arm's
+# read is a difference against that rung (or, for the two grid arms, the
+# matching-step control — pinned separately below), so an undeclared
+# riding field would make the band verdicts unattributable.
+D64_LOOP_ARM_DECLARATIONS = {
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_inner25": dict(
+        train={"inner_steps_per_outer": 100},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_buf2": dict(
+        train={"replay_buffer_cycles": 8},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_match": dict(
+        ctmc={"use_matching_step": False},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne32": dict(
+        ctmc={"use_matching_step": False, "n_euler_steps": 128},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne256": dict(
+        ctmc={"use_matching_step": False, "n_euler_steps": 128},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_m32ct128": dict(
+        train={"outer_batch_size": None, "c_t_batch": None},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_inner500": dict(
+        train={"inner_steps_per_outer": 100},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_cyc16": dict(
+        train={"replay_buffer_cycles": 8},
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_m512ct512": dict(
+        train={"outer_batch_size": None, "c_t_batch": None},
+    ),
+}
+
+
+@pytest.mark.parametrize("arm_name", sorted(D64_LOOP_ARM_DECLARATIONS))
+def test_d64_loop_battery_arm_mirrors_the_fmo2_rung_except_declared_fields(
+    arm_name,
+):
+    base = CONFIGS[D64_LOOP_BASE]
+    arm = CONFIGS[arm_name]
+    rebuilt = _reset(arm, name=base.name, **D64_LOOP_ARM_DECLARATIONS[arm_name])
+    assert rebuilt == base
+
+
+def test_d64_grid_arms_mirror_the_matching_control_except_the_grid():
+    """The two Euler-grid arms are read against the matching-step control,
+    not the base (one-event stepping at a 0.5d grid clips by construction,
+    so the protocol change must ride in both sides of the comparison).
+    Each must therefore be that control with the grid the ONLY change."""
+    control = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr_match"]
+    for arm_name, n_euler_steps in {
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne32": 32,
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne256": 256,
+    }.items():
+        arm = CONFIGS[arm_name]
+        assert arm.ctmc.n_euler_steps == n_euler_steps
+        rebuilt = _reset(
+            arm, name=control.name, ctmc={"n_euler_steps": 128}
+        )
+        assert rebuilt == control
+
+
+def test_d64_decoupled_outer_batch_pins_c_t_rows_at_the_base_width():
+    """The decoupled-width arm cuts the buffer width 4x while c_t_batch
+    pins the rollout row count at the base's effective 128 — so its c_t
+    estimator sees exactly the sample size every coupled run had, and the
+    trainer's c_t_batch >= outer_batch validation is satisfied."""
+    arm = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr_m32ct128"]
+    base = CONFIGS[D64_LOOP_BASE]
+    assert arm.train.outer_batch_size == 32
+    assert arm.train.c_t_batch == 128
+    assert arm.train.c_t_batch == base.train.batch_size  # the coupled width
+    assert arm.train.c_t_batch >= arm.train.outer_batch_size
+    assert arm.train.batch_size == base.train.batch_size  # gradient batch
