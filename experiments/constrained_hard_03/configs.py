@@ -497,7 +497,20 @@ def _d64_fmo2_loop_cell(
     `n_euler_steps` / `use_matching_step` open the trajectory-simulation
     knobs (CTMCCfg); `train_overrides` opens the TrainCfg loop knobs
     (inner_steps_per_outer, replay_buffer_cycles, outer_batch_size,
-    c_t_batch). Defaults are byte-identical to the archived rung."""
+    c_t_batch) and the boundary knobs the 2026-08-19 arms declare
+    (rewarmup_on_stage, stage_best_checkpoints, flush_replay_on_stage) —
+    in fact anything TrainCfg carries, since the overrides go straight
+    into `dataclasses.replace`. Defaults are byte-identical to the
+    archived rung.
+
+    Second band convention, for arms whose read sits at the ESS ceiling:
+    the PRIMARY statistic is then the EMA eval Var[log w], rung reference
+    0.2068 with bootstrap 95% CI (0.1983, 0.2152) — the population
+    (ddof=0) variance of the frozen 5000-draw EMA eval log-weights with a
+    2000-resample percentile bootstrap — UPLIFT means a CI disjoint
+    BELOW that interval, REGRESSION a CI disjoint above, and the +-0.03
+    EMA ESS/N band above becomes the endpoint read alongside rather than
+    the verdict."""
     cell = replace(
         _d64_curriculum_cell(name, head_kind="factorised"),
         ema_decay=0.9999,
@@ -1948,6 +1961,204 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_fmo2_50k_curr_diag": replace(
         _d64_fmo2_loop_cell("H2_d64_c50_s223_letf_fmo2_50k_curr_diag"),
         site_orderings=("row", "col", "diag"),
+    ),
+    # Boundary shock at 8x8 (2026-08-19): the size-twin of the 16x16
+    # `_rw` arm below, registered so the boundary question is answered in
+    # hours at the size where training is known-healthy rather than only
+    # on a day-long a100 run. Two changes off the rung and nothing else:
+    # rewarmup_on_stage=True (a fresh 500-step LR ramp anchored at each of
+    # the six sigma boundaries, so the transient — buffer flush plus a
+    # target jump — is entered at a damped LR instead of full stride) and
+    # the per-stage best-checkpoint instrument.
+    #
+    # ONE VARIABLE, verified in the trainer rather than inherited from the
+    # sibling: the stage-best block sits inside the existing
+    # `step % eval_every == 0` branch AFTER the eval that already runs
+    # unconditionally, reads the `ess_value` that branch already computed
+    # for the CSV, and does nothing but `statistics.median`,
+    # `torch.save(head.state_dict())` and a JSON write. It draws no
+    # samples, so it consumes no RNG and the next training step sees an
+    # unchanged stream; it touches neither head, optimiser nor EMA; and
+    # `wall_clock_step_s` is stamped before the eval branch, so even the
+    # timing column is unperturbed. rewarmup_on_stage is therefore the
+    # sole training-dynamics change.
+    #
+    # MECHANISM BAND (primary read; deliberately NOT the dead
+    # peak-to-final-decay trigger, which did not survive a binned re-read
+    # at 16x16). Statistic: FVU = loss / var_dt_log_p_tilde, per-step in
+    # training_log.csv. Per boundary, "spike" means the MEDIAN of FVU over
+    # the first 500 post-boundary steps divided by the pre-boundary stage
+    # tail median, and "recovery" means the first step whose trailing-100
+    # median falls within 10% of the new stage's tail median. The median,
+    # not the max: on the two landed 16x16 parent seeds the per-boundary
+    # PEAK varies 0.68x-3.49x seed-to-seed on an identical recipe while
+    # the median-of-500 stays inside 0.82-1.22, so a peak-based band is
+    # mostly reading seed noise. Any dip statistic is derived from FVU
+    # too, never from `ess`: that column is written only every
+    # eval_every=200 steps from 512 draws, so a 500-step window holds two
+    # or three low-N points and cannot carry a verdict. (Raising the eval
+    # cadence would fix that but is NOT free here — the in-training eval
+    # draws through `target.sample_base` / `sample_swap_ctmc` with no RNG
+    # save-restore around them, unlike the step-0 init diagnostic, so
+    # eval_every is itself a training-dynamics field and moving it would
+    # cost the twin.)
+    #
+    # SHOCK-DAMPED iff the spike ratio is reduced vs the rung at >= 4 of 6
+    # boundaries AND recovery is faster wherever the rung took > 1k steps.
+    # Recorded now, before launch, so the verdict is read at its true
+    # strength: as a sign test that clause fires at 0.34 under the null;
+    # the last boundaries carry little signal at 16x16 (the parent's
+    # first-500 FVU is already at or below the stage tail there), so check
+    # rather than assume how many of the six are informative at 8x8; and
+    # the six boundaries are ONE trajectory, not six replicates — the arm
+    # and the rung are configuration-identical only up to step 5,000, so
+    # BOUNDARY 1 IS THE ONLY CONTROLLED COMPARISON and boundaries 2-6 are
+    # descriptive. Pre-registered secondary, carrying the weight the sign
+    # test cannot: the paired median-FVU-over-500 at the informative
+    # boundaries, which must clear the 0.82-1.22 seed-to-seed spread
+    # measured on the 16x16 parent pair (BORROWED noise scale — the 8x8
+    # fmo2 comparator is single-seed, so it is unverified at this size).
+    # Tie-break for the case the band is otherwise silent on — a smaller
+    # spike but slower recovery, which a damped LR can plausibly produce
+    # both halves of — is the stage-tail FVU (median of each stage's last
+    # 1,000 steps), the quantity that actually survives to the endpoint.
+    # NO-SHOCK iff the rung's own spikes are already < 1.5x and recover
+    # within 500 steps at >= 4 of 6 boundaries, which would be the
+    # informative negative: it localises the d256 boundary shock as a
+    # SCALE effect (initialisation-scale gradients at 16x16, absent at
+    # 8x8) rather than a property of the curriculum shape.
+    #
+    # PRIMARY ENDPOINT STATISTIC: EMA eval Var[log w], because ESS/N is
+    # near its ceiling at this size and cannot resolve an improvement.
+    # Rung reference 0.2068, bootstrap 95% CI (0.1983, 0.2152) —
+    # population variance of the frozen 5000-draw EMA eval log-weights,
+    # 2000-resample percentile bootstrap. UPLIFT iff the arm's CI sits
+    # wholly BELOW that CI (disjoint downward); REGRESSION iff wholly
+    # above. ENDPOINT READ ALONGSIDE (standard 8x8 convention):
+    # INSENSITIVE iff EMA eval ESS/N is within +-0.03 of 0.8104. Bootstrap
+    # 95% CIs on any near-band read.
+    #
+    # WHAT IT BUYS AT NULL: the boundary transient gets a measured price at
+    # a healthy size for the first time, which is what makes the 16x16
+    # sibling's read attributable — a live shock there against a null here
+    # is a scale claim, whereas a null in both retires the boundary axis
+    # for the whole ladder. The stage-best instrument separately gives the
+    # first checkpoint-SELECTION read at a size where final.pt is known
+    # good: if the sigma_c stage-best does not beat final.pt here but does
+    # at 16x16, selection value is scale-tied too. Judged by an eval-only
+    # pass on best_stage6.pt vs final.pt at the full 5,000-draw frozen
+    # eval WITH a bootstrap CI, and a positive gap called only if it
+    # clears that CI width — the rule picks the maximum over ~25 trailing
+    # medians per 5,000-step stage at eval_every=200, and a best-of-many
+    # maximum over a flat series carries upward selection bias that the
+    # median-of-3 damps but does not remove.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_rw": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_rw",
+        rewarmup_on_stage=True,
+        stage_best_checkpoints=True,
+    ),
+    # No-flush at 8x8 (Tier 3(c), 2026-08-19): the rung with
+    # flush_replay_on_stage False the ONLY change — the 8-cycle replay
+    # window is allowed to carry states ACROSS a sigma boundary instead of
+    # being emptied there. Depth stays 8, so this is not the buf2/cyc16
+    # axis: the single variable is whether the retention window is
+    # truncated at boundaries.
+    #
+    # REGISTERED, NOT QUEUED. The A5/no-flush decision memo (2026-08-19)
+    # recommends closing this item with a derived reason instead of
+    # spending the run; the argument is summarised below and the cell is
+    # registered so the reopen condition has something to launch. Reopen
+    # condition, recorded before any launch: the 16x16 `_rw` arm reads
+    # NULL on its MECHANISM band — i.e. damping the LR does not touch the
+    # boundary transient, leaving data starvation as the surviving
+    # suspect. And if it is reopened, prefer the clean form in the
+    # confound paragraph below over this one.
+    #
+    # MECHANISM, worked out against the loss as implemented rather than
+    # assumed. loss_swap squares delta_t(x) = dt_log_p_tilde_t(x) - c_t +
+    # sum_{i<j}([G]_+ - [-G]_+ exp(log ratio)), and BOTH target terms are
+    # recomputed from `target` at the live sigma every gradient step
+    # (`target.set_sigma` fires before the buffer is used). A retained
+    # state is an evaluation point, not a stale label, so "the buffer
+    # teaches the previous target" is FALSE in the label sense: nothing
+    # carried across the boundary encodes the old sigma. The objective's
+    # zero is delta_t(x) = 0 pointwise on the support of whatever law the
+    # states are drawn from, and old-sigma states live on the same
+    # fixed-composition manifold where the Gibbs target is strictly
+    # positive at every sigma — support is shared exactly, so the
+    # minimiser does not move and no-flush introduces no asymptotic bias.
+    #
+    # Two real effects remain. (i) COVERAGE, not bias: at finite capacity
+    # and finite samples the loss is a weighted least-squares, and stale
+    # states weight it toward where the PREVIOUS stage's model law put
+    # mass; the plateaus here are small (0.100 -> 0.140 -> ... -> 0.223)
+    # so overlap is high, and the stale fraction is evicted after exactly
+    # 8 cycles = 800 inner steps. (ii) c_t OFFSET: c_t is estimated on the
+    # current cycle's FRESH rollout while the loss averages over a buffer
+    # mixing pre- and post-boundary states, so Delta_t = E_buffer[xi] - c_t
+    # picks up a cross-sigma mismatch for those 800 steps. c_t reaches the
+    # gradient ONLY through Delta_t, and as a uniform level shift of xi
+    # rather than a distortion of its x-dependence — and the fixed point
+    # re-pins that constant to dt log Z_t. So the damage is a bounded,
+    # transient, self-healing offset, fully visible in `c_t_offset_rms`.
+    # c_t itself is never biased: it never sees a retained state.
+    #
+    # DECLARED CONFOUND, and the reason a reopened arm should not take
+    # this form. The consistent version of no-flush also moves c_t onto
+    # the buffer, because the theta-step and the c_t-step are supposed to
+    # average over the SAME reference law; leaving c_t on the fresh
+    # rollout widens exactly that gap. So a NULL from this cell is
+    # attributable to either half — retention itself, or the c_t measure
+    # mismatch it induces — and only a c_t-over-buffer variant separates
+    # them, at ~8x the c_t forward cost or on a subsample.
+    #
+    # STANDING EVIDENCE AGAINST, measured on the 16x16 parent logs before
+    # this cell was written. If the flush drove the post-boundary
+    # transient, recovery would be set by the constant 800-step refill
+    # window. It is not: across the two landed seeds, per-boundary
+    # recovery spans 100-3,057 steps and falls MONOTONICALLY down the
+    # ladder in both, tracking the shrinking sigma jump (+40% at the first
+    # boundary, +3.7% at the last); five of twelve boundary events recover
+    # FASTER than the buffer refills; and the first-500-step excess FVU
+    # area is zero or negative at the last two boundaries, including the
+    # one into the sigma_c plateau the endpoint model is downstream of.
+    # Upper bound on any benefit at 16x16: 6 x 800 = 4,800 of 50,000 steps
+    # (9.6%), only 800 of them inside the 20,000-step sigma_c plateau.
+    # NOT evidence in either direction: the DNFS reference never flushes
+    # because it has no curriculum, so it never faced this choice.
+    #
+    # PRIMARY STATISTIC: EMA eval Var[log w] (ESS/N is near-ceiling at
+    # this size). Rung reference 0.2068, bootstrap 95% CI (0.1983,
+    # 0.2152) — population variance of the frozen 5000-draw EMA eval
+    # log-weights, 2000-resample percentile bootstrap. UPLIFT iff the
+    # arm's CI is disjoint BELOW; REGRESSION iff disjoint above.
+    # ENDPOINT ALONGSIDE: INSENSITIVE iff EMA eval ESS/N within +-0.03 of
+    # 0.8104. Bootstrap 95% CI on any near-band read. Given the evidence
+    # above, INSENSITIVE is the PRE-REGISTERED EXPECTATION, not a
+    # disappointment.
+    # MECHANISM BAND, both directions declared before launch, on the
+    # per-step columns: no-flush should SHORTEN post-boundary recovery
+    # (steps for FVU = loss / var_dt_log_p_tilde to return within 10% of
+    # the new stage's tail median) at >= 4 of 6 boundaries, and should
+    # RAISE `c_t_offset_rms` over the first 800 steps after each boundary.
+    # That rise is the predicted price and is the arm's real deliverable:
+    # it is the only direct measurement of how far the loss measure and
+    # the c_t measure may drift apart before the endpoint notices. If
+    # neither column moves, the boundary is not buffer-limited and the
+    # flush is a free convention. Same one-trajectory caveat as the `_rw`
+    # arm: boundary 1 is the only controlled comparison against the rung.
+    #
+    # WHAT IT BUYS AT NULL: a never-varied convention stops being a
+    # convention, with a number rather than a derivation behind it, and
+    # the c_t_offset_rms profile prices the measure mismatch for any
+    # future arm that wants to reuse states across a moving target
+    # (SMC tempering, the c-conditioned route). A REGRESSION would be the
+    # first direct evidence that the loss's sampling MEASURE — not just
+    # its sample size — matters, which is the same axis the buf2/cyc16
+    # depth arms probe from the other side.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_noflush": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_noflush",
+        flush_replay_on_stage=False,
     ),
     # Boundary-shock arm (2026-08-19, user GO on corrected evidence): the
     # recipe cell with rewarmup_on_stage=True the ONLY training-dynamics

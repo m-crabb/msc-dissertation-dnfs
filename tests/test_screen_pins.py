@@ -346,6 +346,19 @@ D64_LOOP_ARM_DECLARATIONS = {
     "H2_d64_c50_s223_letf_fmo2_50k_curr_diag": dict(
         site_orderings=("row", "col"),
     ),
+    # The boundary-shock twin declares BOTH knobs: the stage-best
+    # instrument is pure IO (it draws no samples and touches no optimiser
+    # state), but it still has to be declared here or the twin-ness pin
+    # would silently accept an undeclared riding field.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_rw": dict(
+        train={
+            "rewarmup_on_stage": False,
+            "stage_best_checkpoints": False,
+        },
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_noflush": dict(
+        train={"flush_replay_on_stage": True},
+    ),
 }
 
 
@@ -375,6 +388,35 @@ def test_d64_grid_arms_mirror_the_matching_control_except_the_grid():
             arm, name=control.name, ctmc={"n_euler_steps": 128}
         )
         assert rebuilt == control
+
+
+def test_d64_noflush_arm_is_not_the_buffer_depth_axis():
+    """No-flush must vary ONLY whether the retention window is truncated at
+    sigma boundaries. If it also moved `replay_buffer_cycles` it would be a
+    second reading of the buf2/cyc16 depth axis and its band would be
+    unattributable."""
+    arm = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr_noflush"]
+    base = CONFIGS[D64_LOOP_BASE]
+    assert arm.train.flush_replay_on_stage is False
+    assert base.train.flush_replay_on_stage is True  # the archived default
+    assert arm.train.replay_buffer_cycles == base.train.replay_buffer_cycles
+
+
+def test_d64_boundary_shock_arm_mirrors_its_d256_sibling_knobs():
+    """The 8x8 boundary-shock cell is the size-twin of the 16x16 `_rw` arm:
+    the same two TrainCfg knobs, so the two reads differ by lattice size and
+    nothing else in the boundary treatment."""
+    d64 = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr_rw"]
+    d256 = CONFIGS[
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw"
+    ]
+    for arm in (d64, d256):
+        assert arm.train.rewarmup_on_stage is True
+        assert arm.train.stage_best_checkpoints is True
+    # Both keep the flush, which is the OTHER boundary repair and is
+    # measured by its own arm.
+    assert d64.train.flush_replay_on_stage is True
+    assert d256.train.flush_replay_on_stage is True
 
 
 def test_d64_decoupled_outer_batch_pins_c_t_rows_at_the_base_width():
