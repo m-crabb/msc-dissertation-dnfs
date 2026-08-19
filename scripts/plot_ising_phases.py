@@ -22,9 +22,13 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
-from matplotlib.colors import ListedColormap
 from matplotlib.patches import Patch
 
+from discrete_flow_sampler.diagnostics.figure_style import (
+    SPIN_CMAP,
+    SPIN_DOWN_COLOUR,
+    SPIN_UP_COLOUR,
+)
 from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -36,11 +40,10 @@ OUT = Path(__file__).resolve().parent.parent / "assets" / "ising_phases.png"
 # (or change D/SEED/PANELS) to force a resample.
 CACHE = OUT.with_name("ising_phases_states.pt")
 
-# Two-colour map. Values come from (x+1)/2, so the first colour is spin -1 (down)
-# and the second is spin +1 (up). Indigo/gold: a muted, colourblind-safe pair that
-# also separates in greyscale print.
-DOWN_COLOR, UP_COLOR = "#3B3A6B", "#F2C14E"
-CMAP = ListedColormap([DOWN_COLOR, UP_COLOR])
+# Two-colour spin map: shared house constant (this script established it;
+# it now lives in figure_style so every spin figure agrees).
+DOWN_COLOR, UP_COLOR = SPIN_DOWN_COLOUR, SPIN_UP_COLOUR
+CMAP = SPIN_CMAP
 
 # (label, sigma, n_sweeps, aligned_init)
 PANELS = [

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import matplotlib as mpl
 import numpy as np
+from matplotlib.colors import ListedColormap
 
 # --- roles (never reassign per figure) -----------------------------------
 REFERENCE_INK = "#1a1a19"          # exact enumeration / certified chain / TI truth
@@ -37,6 +38,15 @@ HARD_DELTA_HUE = "#c8503c"         # the hard-constraint delta / limit marker
 ANALYTIC_GUIDE = "#6f6e66"         # analytic envelopes and guides (dashed, muted)
 MUTED = "#6f6e66"
 GRID = "#e6e5df"
+
+# Spin-lattice rendering, established at background.tex fig:ising-phases:
+# indigo = spin -1 (down), gold = spin +1 (up); the pair separates in
+# greyscale print. Lattices plot as (x + 1) / 2 so index 0 maps to down.
+# Every figure showing raw spin configurations uses THIS map -- a montage
+# in a different palette reads as a different physical system.
+SPIN_DOWN_COLOUR = "#3B3A6B"
+SPIN_UP_COLOUR = "#F2C14E"
+SPIN_CMAP = ListedColormap([SPIN_DOWN_COLOUR, SPIN_UP_COLOUR])
 
 FONT_SIZE_TITLE = 9
 FONT_SIZE_LABEL = 8

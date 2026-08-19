@@ -22,8 +22,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import ListedColormap
-
+from discrete_flow_sampler.diagnostics.figure_style import SPIN_CMAP
 from discrete_flow_sampler.diagnostics.metrics import gelman_rubin
 from discrete_flow_sampler.mcmc.kawasaki import (
     init_phase_separated,
@@ -45,11 +44,6 @@ ERGO_D = 24
 # 4-chain ensemble under independent base seeds. The illustrative panels
 # (φ traces, trapped snapshots, φ histogram) are taken from the first seed only.
 ERGO_SEEDS = [300, 400, 500, 600]
-
-# Spin colours matching scripts/plot_ising_phases.py: indigo = -1 (down),
-# gold = +1 (up). Plotted on (x+1)/2 so 0->down, 1->up.
-SPIN_CMAP = ListedColormap(["#3B3A6B", "#F2C14E"])
-
 
 # Each (D, σ) point runs N_CHAINS independent chains (seeds seed..seed+N_CHAINS-1),
 # so τ_int is estimated N_CHAINS times over. We plot the across-chain mean with a

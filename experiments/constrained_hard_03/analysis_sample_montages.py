@@ -87,10 +87,10 @@ the identical rule rather than from typical draws.
 
 Colour
 ------
-Spins use one two-level map everywhere: dark ink = spin +1, pale =
-spin -1. Both are existing house constants (REFERENCE_INK, GRID) and the
-pair is separated by luminance, so the lattices survive greyscale print
-unchanged. Colour identity is carried by the tile FRAME instead, taking
+Spins use the house spin map everywhere (figure_style.SPIN_CMAP: indigo =
+spin -1, gold = spin +1, the pair from background.tex fig:ising-phases),
+which is luminance-separated and so survives greyscale print unchanged.
+Colour identity is carried by the tile FRAME instead, taking
 the house role hues -- our sampler blue, classical MCMC amber, the
 hard-constraint delta red where the point is the constraint or the clone
 structure -- so no figure needs the reader to distinguish two
@@ -115,16 +115,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from matplotlib.colors import ListedColormap
-
 from discrete_flow_sampler.diagnostics.figure_style import (
     CLASSICAL_HUE,
-    GRID,
     HARD_DELTA_HUE,
     MUTED,
     NEURAL_COMPARATOR_HUE,
-    REFERENCE_INK,
     SAMPLER_HUE,
+    SPIN_CMAP,
     use_house_style,
 )
 from discrete_flow_sampler.samplers.resampling import systematic_resample_indices
@@ -133,10 +130,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RESULTS_ROOT = REPO_ROOT / "results"
 OUTPUT_DIR = RESULTS_ROOT / "03_hard" / "sample_montages"
 
-# Spin fills: pale = -1 (species B / down), ink = +1 (species A / up). The
-# two are house constants, not new colours, and their luminance gap is what
-# makes the montages greyscale-safe.
-SPIN_COLOUR_MAP = ListedColormap([GRID, REFERENCE_INK])
+# Spin fills: the house spin map (indigo = -1 / down, gold = +1 / up),
+# established at background.tex fig:ising-phases. The first cut of this
+# script invented a grey/ink pair, which reads as a different system next
+# to every other lattice figure in the thesis.
+SPIN_COLOUR_MAP = SPIN_CMAP
 
 # --- run selection --------------------------------------------------------
 # Every default below is a run the writeup already cites, so a reader can
