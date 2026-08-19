@@ -147,6 +147,47 @@ def train_remote_l4(cfg_name: str, seed: int = 42):
     volume.commit()
 
 
+@app.function(
+    # A100 deliberately, matching train_remote: the archived evals were drawn
+    # on the training card, so a re-eval on the SAME device isolates whatever
+    # the re-eval changed (e.g. the corrected base draw for the 2026-06-17
+    # matched-base runs) as the single moved variable. A CPU re-run would
+    # move device and draw at once and the read becomes unattributable.
+    gpu="A100",
+    volumes={"/results": volume},
+    # Eval-only: one 5000-draw batch, minutes at D=10; 2h is generous.
+    timeout=2 * 60 * 60,
+)
+def eval_remote(run_dir_name: str, redraw: bool = False, redraw_seed: int = 0):
+    """Re-run the end-of-run eval for a run dir already on the volume.
+
+    Mirrors `constrained_hard_03.modal_app.eval_remote` but calls the
+    BASELINE `eval_only`, which is what the baseline and soft cells actually
+    use — the hard app's eval path reads hard-experiment configs and cannot
+    recover these runs. This gap (an eval recovery path existing only for
+    the hard chapter) is part of why the bugged 2026-06-17 matched-base
+    eval went unchallenged for six weeks.
+
+    `redraw=False` rescores the saved tensors; `redraw=True` draws a fresh
+    eval batch from `checkpoints/final.pt` (archiving the stale `eval/` to
+    `eval_archived_pre_redraw/` on the volume first) — required when the
+    archived DRAW itself was wrong, since a wrong x0 is baked into the
+    saved log-weights and no rescoring can remove it.
+    """
+    import json
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "/repo")
+    from experiments.dnfs_baseline_01.run import eval_only
+
+    metrics = eval_only(
+        Path("/results") / run_dir_name, redraw=redraw, redraw_seed=redraw_seed
+    )
+    print(f"[eval_remote] {run_dir_name}: {json.dumps(metrics, indent=2)}")
+    volume.commit()
+
+
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call."""

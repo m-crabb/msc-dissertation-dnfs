@@ -19,6 +19,7 @@ The same `train(cfg, seed, ...)` function is also imported by
 import argparse
 import json
 import platform
+import shutil
 import socket
 import time
 from contextlib import nullcontext
@@ -547,7 +548,9 @@ def _rebuild_from_run_dir(run_dir: Path):
     return cfg, target, device
 
 
-def eval_only(run_dir: str | Path) -> dict:
+def eval_only(
+    run_dir: str | Path, redraw: bool = False, redraw_seed: int = 0
+) -> dict:
     """Recompute eval metrics from a finished run's saved samples.
 
     Loads `eval/samples.pt` + `eval/log_weights.pt`, reconstructs the
@@ -559,9 +562,48 @@ def eval_only(run_dir: str | Path) -> dict:
     the metrics are recomputed under that binding — both to score them against
     the density they actually came from, and to label them with it. Reading
     the target's fallback scalar instead would relabel the numbers silently.
+
+    With `redraw=True` the saved tensors are ignored: the model is rebuilt
+    from `checkpoints/final.pt` and a fresh eval batch is drawn through the
+    production `_eval_at_composition` path, replacing all three `eval/`
+    artefacts. This exists because rescoring cannot repair a corrupted DRAW:
+    evals archived before de9db7c drew x0 from an inline uniform
+    `torch.randint` while a matched base was Bernoulli(0.8), omitting the
+    initial-state weight term log w0 = log[p_uniform(x0)/eta(x0)] (sd ~6.9
+    nats at D=10, c=0.8) from every saved log-weight. The first redraw
+    copies the stale `eval/` to `eval_archived_pre_redraw/` (skipped when
+    an `eval_archived_*` sibling already preserves it) — the buggy numbers
+    stay on disk as the record of what the old code produced. `redraw_seed`
+    seeds the fresh draw and is recorded in the metrics, since a redraw is
+    a NEW measurement, never a reproduction of the archived one.
     """
     run_dir = Path(run_dir)
     cfg, target, device = _rebuild_from_run_dir(run_dir)
+    eval_dir = run_dir / "eval"
+    if redraw:
+        if eval_dir.exists() and not any(run_dir.glob("eval_archived_*")):
+            shutil.copytree(eval_dir, run_dir / "eval_archived_pre_redraw")
+        model = _build_model(cfg, target)
+        model.load_state_dict(
+            torch.load(
+                run_dir / "checkpoints" / "final.pt",
+                map_location=device,
+                weights_only=True,
+            )
+        )
+        torch.manual_seed(redraw_seed)
+        eval_samples, eval_log_weights, eval_metrics = _eval_at_composition(
+            model, target, cfg, cfg.composition_centre, device
+        )
+        eval_metrics["redraw_seed"] = redraw_seed
+        eval_dir.mkdir(exist_ok=True)
+        torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
+        torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
+        eval_metrics.update(_trailing_ess_metrics(run_dir))
+        (eval_dir / "metrics.json").write_text(
+            json.dumps(eval_metrics, indent=2)
+        )
+        return eval_metrics
     eval_samples = torch.load(
         run_dir / "eval" / "samples.pt", weights_only=True
     ).to(device)
@@ -692,6 +734,20 @@ def main():
         help="Skip training; recompute eval/metrics.json from saved samples",
     )
     parser.add_argument(
+        "--redraw",
+        action="store_true",
+        help="With --eval-only: ignore the saved samples and draw a fresh "
+             "eval batch from checkpoints/final.pt (archives the stale "
+             "eval/ first; for evals whose DRAW was wrong, e.g. pre-de9db7c "
+             "matched-base runs)",
+    )
+    parser.add_argument(
+        "--redraw-seed",
+        type=int,
+        default=0,
+        help="Seed for the fresh --redraw draw (recorded in metrics.json)",
+    )
+    parser.add_argument(
         "--sweep",
         action="store_true",
         help="Per-composition eval sweep of a trained amortised run "
@@ -732,7 +788,9 @@ def main():
     if args.eval_only:
         if not args.run_dir:
             parser.error("--eval-only requires --run-dir")
-        metrics = eval_only(args.run_dir)
+        metrics = eval_only(
+            args.run_dir, redraw=args.redraw, redraw_seed=args.redraw_seed
+        )
         print(json.dumps(metrics, indent=2))
         return
 

@@ -269,3 +269,53 @@ def test_eval_only_reports_the_composition_the_samples_were_drawn_at(tmp_path):
 
     assert metrics["target_composition"] == 0.6
     assert 0.0 < metrics["ess_fraction"] <= 1.0
+
+
+def test_eval_only_redraw_goes_through_the_target_base(tmp_path, monkeypatch):
+    """`eval_only(redraw=True)` must re-DRAW from the checkpoint, not rescore
+    the saved tensors — and the initial state must come from
+    `target.sample_base`.
+
+    Why this exists: the archived 2026-06-17 matched-base evals drew x0 from
+    an inline uniform `torch.randint` while the base was Bernoulli(0.8),
+    silently omitting a log w0 term with sd ~6.9 nats (the §D4 bug, corrected
+    in de9db7c). Rescoring the saved tensors can never repair that — the
+    wrong x0 is baked into the saved log-weights — so the recovery path has
+    to redraw, and this test pins that it redraws through the corrected base.
+    """
+    from dataclasses import replace
+
+    torch.manual_seed(0)
+    cfg = _tiny_cfg("tiny_matched", conditioned=False, target_composition=0.8)
+    cfg = replace(cfg, ising=replace(cfg.ising, base_composition=0.8))
+    run_dir = train(cfg, seed=0, output_dir=tmp_path, use_wandb=False)
+
+    stale_metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
+    stale_samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True)
+
+    base_draw_sizes = []
+    original_sample_base = IsingTarget.sample_base
+
+    def recording_sample_base(self, n, device):
+        base_draw_sizes.append(n)
+        return original_sample_base(self, n, device)
+
+    monkeypatch.setattr(IsingTarget, "sample_base", recording_sample_base)
+
+    metrics = eval_only(run_dir, redraw=True, redraw_seed=7)
+
+    # The eval draw itself went through the (composition-aware) base.
+    assert cfg.eval.n_eval_samples in base_draw_sizes
+    # Artefacts were replaced by a genuinely fresh draw.
+    fresh_samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True)
+    assert not torch.equal(fresh_samples, stale_samples)
+    assert metrics["redraw_seed"] == 7
+    assert 0.0 < metrics["ess_fraction"] <= 1.0
+
+    # The stale eval was archived before being overwritten...
+    archived = run_dir / "eval_archived_pre_redraw"
+    assert json.loads((archived / "metrics.json").read_text()) == stale_metrics
+    # ...and a second redraw does not stack further archives: the FIRST
+    # archive is the record of what the bug produced, later redraws are not.
+    eval_only(run_dir, redraw=True, redraw_seed=8)
+    assert sorted(run_dir.glob("eval_archived_*")) == [archived]
