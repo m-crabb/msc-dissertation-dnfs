@@ -319,3 +319,48 @@ def test_eval_only_redraw_goes_through_the_target_base(tmp_path, monkeypatch):
     # archive is the record of what the bug produced, later redraws are not.
     eval_only(run_dir, redraw=True, redraw_seed=8)
     assert sorted(run_dir.glob("eval_archived_*")) == [archived]
+
+
+def test_eval_only_redraw_with_grid_override_leaves_eval_frozen(tmp_path):
+    """`eval_only(redraw=True, n_euler_override=k)` must write its artefacts
+    to `eval_ne<k>/` and leave the frozen `eval/` byte-untouched.
+
+    Why this exists: the ne64-vs-ne128 grid-offset measurement redraws frozen
+    checkpoints on BOTH grids, and the archived `eval/` dirs are the record
+    the printed F(c) numbers were read from — a redraw that overwrote them
+    (or even archived them, implying they were superseded) would destroy the
+    very baseline the offset is measured against. The override draw is a NEW
+    side measurement, so it gets a side directory and no archive step.
+    """
+    torch.manual_seed(0)
+    run_dir = train(
+        _tiny_cfg("tiny_grid_override", conditioned=False),
+        seed=0, output_dir=tmp_path, use_wandb=False,
+    )
+    frozen_bytes = {
+        name: (run_dir / "eval" / name).read_bytes()
+        for name in ("samples.pt", "log_weights.pt", "metrics.json")
+    }
+
+    metrics = eval_only(run_dir, redraw=True, redraw_seed=7, n_euler_override=16)
+
+    # All three artefacts landed in the side directory, on the override grid.
+    override_dir = run_dir / "eval_ne16"
+    for name in ("samples.pt", "log_weights.pt", "metrics.json"):
+        assert (override_dir / name).exists()
+    assert metrics["n_euler_steps"] == 16
+    assert (
+        json.loads((override_dir / "metrics.json").read_text())["n_euler_steps"]
+        == 16
+    )
+    assert metrics["redraw_seed"] == 7
+
+    # The frozen eval/ is byte-identical and nothing was archived.
+    for name, before in frozen_bytes.items():
+        assert (run_dir / "eval" / name).read_bytes() == before
+    assert not list(run_dir.glob("eval_archived_*"))
+
+    # A grid override without a fresh draw is meaningless: the saved tensors
+    # were drawn on the run's own grid, so rescoring cannot move it.
+    with pytest.raises(ValueError):
+        eval_only(run_dir, n_euler_override=16)

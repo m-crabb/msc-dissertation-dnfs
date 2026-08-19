@@ -158,7 +158,10 @@ def train_remote_l4(cfg_name: str, seed: int = 42):
     # Eval-only: one 5000-draw batch, minutes at D=10; 2h is generous.
     timeout=2 * 60 * 60,
 )
-def eval_remote(run_dir_name: str, redraw: bool = False, redraw_seed: int = 0):
+def eval_remote(
+    run_dir_name: str, redraw: bool = False, redraw_seed: int = 0,
+    n_euler_override: int = 0,
+):
     """Re-run the end-of-run eval for a run dir already on the volume.
 
     Mirrors `constrained_hard_03.modal_app.eval_remote` but calls the
@@ -173,6 +176,12 @@ def eval_remote(run_dir_name: str, redraw: bool = False, redraw_seed: int = 0):
     `eval_archived_pre_redraw/` on the volume first) — required when the
     archived DRAW itself was wrong, since a wrong x0 is baked into the
     saved log-weights and no rescoring can remove it.
+
+    `n_euler_override > 0` re-draws on that Euler grid instead of the run's
+    own (artefacts to eval_ne<k>/, frozen eval/ untouched and unarchived —
+    the grid-offset measurement; see run.eval_only); 0 is the "no override"
+    sentinel, mirroring the hard app's convention, because Modal's CLI
+    cannot pass None.
     """
     import json
     import sys
@@ -182,7 +191,8 @@ def eval_remote(run_dir_name: str, redraw: bool = False, redraw_seed: int = 0):
     from experiments.dnfs_baseline_01.run import eval_only
 
     metrics = eval_only(
-        Path("/results") / run_dir_name, redraw=redraw, redraw_seed=redraw_seed
+        Path("/results") / run_dir_name, redraw=redraw, redraw_seed=redraw_seed,
+        n_euler_override=n_euler_override,
     )
     print(f"[eval_remote] {run_dir_name}: {json.dumps(metrics, indent=2)}")
     volume.commit()

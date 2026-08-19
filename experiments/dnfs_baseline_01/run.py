@@ -549,7 +549,8 @@ def _rebuild_from_run_dir(run_dir: Path):
 
 
 def eval_only(
-    run_dir: str | Path, redraw: bool = False, redraw_seed: int = 0
+    run_dir: str | Path, redraw: bool = False, redraw_seed: int = 0,
+    n_euler_override: int | None = None,
 ) -> dict:
     """Recompute eval metrics from a finished run's saved samples.
 
@@ -576,12 +577,40 @@ def eval_only(
     stay on disk as the record of what the old code produced. `redraw_seed`
     seeds the fresh draw and is recorded in the metrics, since a redraw is
     a NEW measurement, never a reproduction of the archived one.
+
+    With `n_euler_override` set (mirroring the hard experiment's convention;
+    0 and None both mean "no override"), the redraw runs on that Euler time
+    grid instead of the run's own and its artefacts go to `eval_ne<k>/`,
+    leaving the frozen `eval/` byte-untouched and unarchived. This exists for
+    the eval-grid-offset measurement: F/site read at ne64 vs ne128 differs
+    (quadrature error plus finite-ESS self-normalisation bias move together
+    with the grid), and separating the eval-grid component from the training
+    grid needs the SAME checkpoint redrawn on both grids side by side — while
+    the archived `eval/` stays the untouched record the printed numbers came
+    from. The archive step is only for in-place `eval/` overwrites, so it is
+    skipped here. Requires `redraw=True`: the saved tensors were drawn on the
+    run's own grid, so a rescore cannot move it.
     """
+    if n_euler_override == 0:
+        n_euler_override = None
+    if n_euler_override is not None and not redraw:
+        raise ValueError(
+            "n_euler_override only makes sense with redraw=True: the saved "
+            "eval tensors were drawn on the run's own grid"
+        )
     run_dir = Path(run_dir)
     cfg, target, device = _rebuild_from_run_dir(run_dir)
-    eval_dir = run_dir / "eval"
+    if n_euler_override is not None:
+        cfg.ctmc = replace(cfg.ctmc, n_euler_steps=n_euler_override)
+        eval_dir = run_dir / f"eval_ne{n_euler_override}"
+    else:
+        eval_dir = run_dir / "eval"
     if redraw:
-        if eval_dir.exists() and not any(run_dir.glob("eval_archived_*")):
+        if (
+            n_euler_override is None
+            and eval_dir.exists()
+            and not any(run_dir.glob("eval_archived_*"))
+        ):
             shutil.copytree(eval_dir, run_dir / "eval_archived_pre_redraw")
         model = _build_model(cfg, target)
         model.load_state_dict(
@@ -596,6 +625,9 @@ def eval_only(
             model, target, cfg, cfg.composition_centre, device
         )
         eval_metrics["redraw_seed"] = redraw_seed
+        # The grid the draw ACTUALLY ran on — with an override this differs
+        # from config.json, and the metrics file must be self-describing.
+        eval_metrics["n_euler_steps"] = cfg.ctmc.n_euler_steps
         eval_dir.mkdir(exist_ok=True)
         torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
         torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
@@ -748,6 +780,14 @@ def main():
         help="Seed for the fresh --redraw draw (recorded in metrics.json)",
     )
     parser.add_argument(
+        "--n-euler-override",
+        type=int,
+        default=None,
+        help="With --redraw: draw on this Euler grid instead of the run's "
+             "own; artefacts go to eval_ne<k>/ and the frozen eval/ is left "
+             "untouched (grid-offset measurement)",
+    )
+    parser.add_argument(
         "--sweep",
         action="store_true",
         help="Per-composition eval sweep of a trained amortised run "
@@ -789,7 +829,8 @@ def main():
         if not args.run_dir:
             parser.error("--eval-only requires --run-dir")
         metrics = eval_only(
-            args.run_dir, redraw=args.redraw, redraw_seed=args.redraw_seed
+            args.run_dir, redraw=args.redraw, redraw_seed=args.redraw_seed,
+            n_euler_override=args.n_euler_override,
         )
         print(json.dumps(metrics, indent=2))
         return
