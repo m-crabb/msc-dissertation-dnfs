@@ -256,6 +256,60 @@ def run_local_swap_chain_snapshots(x, D, sigma, n_steps, seed, thin):
 
 
 @njit(cache=True)
+def run_nonlocal_swap_chain_snapshots(x, D, sigma, n_steps, seed, thin):
+    """NON-local Kawasaki chain recording full int8 spin snapshots every
+    `thin` proposals. Returns (snapshots, x_final, n_accept).
+
+    Same move set and accept rule as run_chain (uniform unlike-pair swap
+    anywhere on the torus, Metropolis on sigma * x^T A x, plus/minus index
+    arrays for O(1) proposals) — only the record differs: full configurations
+    rather than the scalar energy, because reference-sample generation needs
+    the stored draws themselves, not just a trace. The snapshot convention
+    matches run_local_swap_chain_snapshots: snapshots[k] is the state after
+    k*thin proposals, so snapshots[0] is the initial configuration and the
+    final state is returned separately, not recorded. Passing thin = n_steps
+    therefore turns this into a burn-in runner that stores a single snapshot.
+    """
+    np.random.seed(seed)
+    d = D * D
+    plus = np.empty(d, dtype=np.int64)
+    minus = np.empty(d, dtype=np.int64)
+    n_plus = 0
+    n_minus = 0
+    for k in range(d):
+        if x[k] == 1:
+            plus[n_plus] = k
+            n_plus += 1
+        else:
+            minus[n_minus] = k
+            n_minus += 1
+
+    n_record = n_steps // thin
+    snapshots = np.empty((n_record, d), dtype=np.int8)
+    rec = 0
+    n_accept = 0
+
+    for step in range(n_steps):
+        if step % thin == 0 and rec < n_record:
+            for k in range(d):
+                snapshots[rec, k] = x[k]
+            rec += 1
+        pi = np.random.randint(n_plus)
+        mi = np.random.randint(n_minus)
+        i = plus[pi]
+        j = minus[mi]
+        delta = kawasaki_delta_log_prob(x, i, j, D, sigma)
+        if delta >= 0.0 or np.random.random() < np.exp(delta):
+            x[i] = -1
+            x[j] = 1
+            plus[pi] = j
+            minus[mi] = i
+            n_accept += 1
+
+    return snapshots[:rec], x, n_accept
+
+
+@njit(cache=True)
 def run_chain_order_param(x, D, sigma, n_steps, seed, thin):
     """Kawasaki chain recording the left_minus_right order parameter every
     `thin` steps. Returns (phi_trace, x_final, n_accept). Same move and accept
