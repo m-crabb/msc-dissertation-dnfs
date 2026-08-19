@@ -518,8 +518,8 @@ def build_headline_8x8(
     caption = (
         f"Fixed-composition draws on the {neural.lattice_side}x"
         f"{neural.lattice_side} periodic lattice at $\\sigma_c$ = "
-        f"{neural.sigma:g}, $c$ = {neural.target_composition:g}; dark tiles "
-        "are spin $+1$, pale tiles spin $-1$. Top (blue frames): "
+        f"{neural.sigma:g}, $c$ = {neural.target_composition:g}; gold tiles "
+        "are spin $+1$, indigo tiles spin $-1$. Top (blue frames): "
         f"{n_tiles} DNFS draws selected by systematic resampling on their "
         f"importance weights, ESS/N = {neural.ess_fraction:.2f}. Bottom "
         f"(amber frames): one draw from each of the {n_reference_tiles} "
@@ -566,8 +566,8 @@ def build_d256_plain_vs_smc(
 
     caption = (
         f"{plain.lattice_side}x{plain.lattice_side} fixed-composition draws at "
-        f"$\\sigma_c$ = {plain.sigma:g}, $c$ = {plain.target_composition:g}; dark "
-        "tiles are spin $+1$, pale tiles spin $-1$. Each column is the closest "
+        f"$\\sigma_c$ = {plain.sigma:g}, $c$ = {plain.target_composition:g}; gold "
+        "tiles are spin $+1$, indigo tiles spin $-1$. Each column is the closest "
         "pair of draws, by Hamming distance $H$ (sites differing, printed "
         f"beneath), within one {plain.population_size}-particle eval population: "
         "left (blue frames) plain importance sampling, right (red frames) SMC "
@@ -622,7 +622,7 @@ def build_spine_row(
         f"Weight-resampled DNFS draws at {sigma_clause}, {n_tiles} per "
         "constraint regime: unconstrained (blue), soft composition penalty "
         f"$\\lambda$ = {penalty:g} (green), hard fixed-composition swap "
-        "dynamics (red); dark tiles are spin $+1$, pale tiles spin $-1$. "
+        "dynamics (red); gold tiles are spin $+1$, indigo tiles spin $-1$. "
         f"Up-spin fraction over each run's {regimes[0].n_draws} eval draws: "
         f"{composition_clause}. Panels are {sizes} -- no unconstrained "
         f"{regimes[2].lattice_side}x{regimes[2].lattice_side} run exists at "
