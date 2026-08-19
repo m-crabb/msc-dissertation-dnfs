@@ -1244,6 +1244,11 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d256_c50_s223_letf_fmo2_20k_sc_warm": _d256_fmo2_warm_cell(
             "H2_d256_c50_s223_letf_fmo2_20k_sc_warm",
         ),
+        # CANCELLED (2026-08-15, back-annotated 2026-08-19): never ran — do
+        # not relaunch. Its question ("does training at the finer grid beat
+        # re-rolling finer?") was answered by the b512+ne512 recipe pair
+        # (trained at ne512: endpoint NULL) and the eval-only grid sweep;
+        # the builder docstring's "live hope" framing above predates both.
         "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512": _d256_fmo2_warm_cell(
             "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512",
             n_euler_steps=512,
@@ -1275,7 +1280,12 @@ CONFIGS: dict[str, HardStageCfg] = {
     # 0.047 / 6.1e6, 65-74 steps, tail 0.1203-0.1219. FROZEN BANDS, seed
     # 42: plumbing check — step-0 rate_pair_mean must read EXACTLY
     # 0.25 x 0.00335 = 0.00084 (same seed, deterministic init; any other
-    # value means the knob missed the head). MECHANISM CONFIRMED iff
+    # value means the knob missed the head).
+    # [CORRECTION 2026-08-19: this plumbing check was MIS-SPECIFIED — the
+    # first CSV row sits on buffer states rolled under scaled rates and
+    # reads 0.00164; the honest instrument is init_diagnostics, which read
+    # 0.0023753 = exactly 0.25x the bridge's 0.0095. Do not fail the knob
+    # on the CSV row.] MECHANISM CONFIRMED iff
     # step-0 lambda_dt_clip <= 0.05 AND step-0 grad_norm <= 1e7
     # (h32-scale) AND steps-to-FVU<1 <= 150 (2x the h32 base's, vs the
     # bridge's 825). TRANSIENT-PRICED iff additionally tail FVU <= 0.075
@@ -2365,6 +2375,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     # 2): NO-REGRESSION = final eval ESS frac within the archived MA twin's
     # seed spread, i.e. >= 0.755 (spread 0.755/0.769/0.781); below that the
     # across-cycle smoothing is not free and the lever is d256-only-judged.
+    # VERDICT (2026-08-14 slate, back-annotated 2026-08-19): NO-REGRESSION
+    # met but the lever is NEUTRAL — 1.05x, inside the c_t-noise family's
+    # measured ~1.19x transfer ceiling (input variance moves 28x, Var[log w]
+    # moves 1.19x, log-log slope 0.052). The whole family is deprioritised
+    # by measurement, not argument.
     "H2_d64_c50_s223_letf_ma_50k_curr_ctema4": _d64_m2_ctema4_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr_ctema4",
     ),
@@ -2383,6 +2398,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     # per cell keeps attribution clean. Cost ~5 h a100 (trajectory phase
     # +2.25x on ~75% of wall); the no-grad MA pass at B=512 peaks ~20 GB,
     # in-cap on the 80 GB a100.
+    # VERDICT (2026-08-14 slate, back-annotated 2026-08-19): NOT MEANINGFUL
+    # — 1.09x against the >= 2x band; same ~1.19x c_t-noise transfer
+    # ceiling as ctema4 above.
     "H2_d256_smoke12k_naive_ctb512": _d256_smoke12k_naive_ctb512_cell(
         "H2_d256_smoke12k_naive_ctb512",
     ),
