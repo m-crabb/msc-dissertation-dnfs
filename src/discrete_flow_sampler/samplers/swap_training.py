@@ -21,6 +21,8 @@ dropped since neither the base instructions nor the amendment ask for it.
 """
 import csv
 import json
+import math
+import statistics
 import time
 from pathlib import Path
 
@@ -413,6 +415,28 @@ def train_swap(
         # the historical step-0-only behaviour, bit-identical.
         rewarmup_on_stage = bool(getattr(train_cfg, "rewarmup_on_stage", False))
         warmup_anchor = 0
+        # Per-stage best-checkpoint instrument: within each curriculum stage,
+        # save the head whenever the TRAILING MEDIAN (window 3) of the
+        # periodic train-eval ESS makes a new stage best. The median window
+        # exists because the archived 16x16 record shows single-step train-ESS
+        # peaks are noise excursions over a stationary series — a best-by-peak
+        # rule would checkpoint noise. Pure IO: training dynamics, the CSV
+        # schema and final.pt are untouched, and the flag is off in every
+        # archived config. Raw weights only: the EMA shadow lags mid-stage,
+        # so an "EMA best" is not well defined at the save instant.
+        stage_best_enabled = bool(
+            getattr(train_cfg, "stage_best_checkpoints", False)
+        )
+        stage_best_json_path = ckpt_dir / "stage_best.json"
+        # Reload on resume so best-so-far survives preemption; the trailing
+        # window itself restarts, which can only delay a re-save, not fake one.
+        stage_best_records: dict = (
+            json.loads(stage_best_json_path.read_text())
+            if stage_best_enabled and stage_best_json_path.exists()
+            else {}
+        )
+        stage_ess_recent: list[float] = []
+        stage_ess_stage = -1
 
         if resume_state is not None:
             # Fast-forward the curriculum EXPLICITLY rather than letting the
@@ -799,6 +823,39 @@ def train_swap(
                             target=target,
                         )
                     torch.save(head.state_dict(), ckpt_dir / "latest.pt")
+
+                    if stage_best_enabled and not math.isnan(ess_value):
+                        current_stage = max(curriculum_idx, 0)
+                        if current_stage != stage_ess_stage:
+                            # New stage: the window must not mix ESS values
+                            # across a sigma boundary — the target changed,
+                            # so cross-boundary medians compare nothing.
+                            stage_ess_recent.clear()
+                            stage_ess_stage = current_stage
+                        stage_ess_recent.append(ess_value)
+                        if len(stage_ess_recent) > 3:
+                            del stage_ess_recent[0]
+                        ess_trailing_median = statistics.median(
+                            stage_ess_recent
+                        )
+                        stage_key = str(current_stage)
+                        stage_best = stage_best_records.get(stage_key)
+                        if (
+                            stage_best is None
+                            or ess_trailing_median
+                            > stage_best["ess_trailing_median"]
+                        ):
+                            torch.save(
+                                head.state_dict(),
+                                ckpt_dir / f"best_stage{current_stage}.pt",
+                            )
+                            stage_best_records[stage_key] = {
+                                "step": step,
+                                "ess_trailing_median": ess_trailing_median,
+                            }
+                            stage_best_json_path.write_text(
+                                json.dumps(stage_best_records, indent=2)
+                            )
 
                 c_t_offset_value = c_t_offset_rms(
                     delta_residual_sum, delta_residual_count

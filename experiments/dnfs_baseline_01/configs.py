@@ -115,6 +115,17 @@ class TrainCfg:
     # steps) so a re-inversion cannot burn walltime unnoticed.
     halt_on_cv_inversion_after: int | None = None
     halt_cv_inversion_window: int = 10
+    # Per-stage best checkpoints (boundary-shock arm, 2026-08-19). When on,
+    # the swap trainer saves `checkpoints/best_stage<k>.pt` whenever the
+    # TRAILING MEDIAN (window 3) of the periodic train-eval ESS makes a new
+    # best within curriculum stage k, with the step and value recorded in
+    # `checkpoints/stage_best.json`. Median, never the single-step value:
+    # the 16x16 record shows single-step train-ESS peaks are noise
+    # excursions over a stationary series, so best-by-peak would checkpoint
+    # noise. Pure IO — dynamics, CSV schema and final.pt untouched; the
+    # frozen eval still reads final.pt, and a stage-best eval is a separate
+    # eval-only pass declared at judging. Off = every archived config.
+    stage_best_checkpoints: bool = False
     # Save a step-tagged checkpoint every N inner steps (None = only the
     # rolling `latest.pt` + end-of-run `final.pt`). Motivation: a run whose
     # late-training loss enters an excursion/recovery cycle ends with a

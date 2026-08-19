@@ -143,6 +143,10 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         # only change), so the noise-scale instrument rides unchanged
         # (2026-08-19).
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2": 128,
+        # The boundary-shock arm is likewise the recipe cell's twin
+        # (rewarmup + the pure-IO stage-best instrument), so the schedule
+        # rides unchanged (2026-08-19).
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name

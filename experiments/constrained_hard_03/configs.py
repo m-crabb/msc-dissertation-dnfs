@@ -1642,6 +1642,45 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         bilinear_rank=32,
     ),
+    # Boundary-shock arm (2026-08-19, user GO on corrected evidence): the
+    # recipe cell with rewarmup_on_stage=True the ONLY training-dynamics
+    # change — a fresh 500-step LR ramp from every sigma boundary, so the
+    # boundary transient (buffer flush + target jump at initialisation-scale
+    # gradients) is entered at a damped LR instead of full stride. The
+    # per-stage best-checkpoint instrument rides as pure IO (trailing
+    # median-of-3 train-eval ESS; see the TrainCfg field comment), so the
+    # arm stays one-variable. EVIDENCE HONESTY, recorded before launch: the
+    # original trigger (a x2.2-2.4 peak-to-final train-ESS decay in the
+    # landed recipe's sigma_c stage) did NOT survive a binned re-read —
+    # within-stage medians are flat-to-rising and the peak is a noise
+    # excursion — so the live mechanism is the TRANSIENT COST at the six
+    # boundaries (deep dips, 0-6.5k-step recoveries), not late decay.
+    # FROZEN BANDS (seed 43, vs the landed parent's EMA eval ESS/N 0.0198
+    # and its per-stage boundary profile): mechanism — first-500-step
+    # post-boundary FVU spike and dip depth reduced vs the parent at >= 4
+    # of 6 boundaries, and recovery-to-stage-median faster where the parent
+    # took > 1k steps; endpoint — CONFIRMED iff EMA eval ESS/N >= 0.04 (2x
+    # parent) with bootstrap-CI separation; NULL iff within the parent's
+    # CI (expected under the corrected trigger; the arm then still buys the
+    # measured boundary-transient cost + the stage-best instrument's
+    # checkpoint-selection read, judged by an eval-only pass on the
+    # sigma_c stage-best vs final).
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw": replace(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw",
+            estimator="naive_mc", n_euler_steps=512, batch_size=512,
+            loss_microbatch_size=128,
+        ),
+        train=replace(
+            _d256_fmo2_ladder_cell(
+                "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw",
+                estimator="naive_mc", n_euler_steps=512, batch_size=512,
+                loss_microbatch_size=128,
+            ).train,
+            rewarmup_on_stage=True,
+            stage_best_checkpoints=True,
+        ),
+    ),
     # Phase-2 estimator switch (2026-08-14, user GO): CONTINUE the completed
     # naive 50k (launch with --init-from <naive run>/checkpoints/final.pt)
     # with the Stein control variate re-enabled. Mechanism, measured on the
