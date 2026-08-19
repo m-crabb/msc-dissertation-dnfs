@@ -147,6 +147,13 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         # (rewarmup + the pure-IO stage-best instrument), so the schedule
         # rides unchanged (2026-08-19).
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw": 128,
+        # The keystone grid arm and the retention-depth arm are both the
+        # recipe cell's twins (n_euler and replay cycles respectively, one
+        # change each), so the noise-scale instrument rides unchanged --
+        # and it has to, or the arms would differ from the parent in two
+        # places at once (2026-08-19).
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive": 128,
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name

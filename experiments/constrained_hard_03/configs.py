@@ -1683,6 +1683,15 @@ CONFIGS: dict[str, HardStageCfg] = {
     # should show faster post-boundary recovery if staleness is the
     # mechanism; unchanged recovery with a moved endpoint means the
     # mechanism claim is wrong even if the number moves.
+    # CANCELLED 2026-08-19 (s37, user GO) before it ever started: the d64
+    # loop battery measured the retention curve directly -- 256/1024/2048/
+    # 4096 retained trajectories gave EMA 0.766/0.810/0.827/0.860,
+    # monotone -- so the reference's ~1024 bound is a mid-point on a
+    # continuing gain, not a target, and this arm's premise is refuted at
+    # the size where it was measurable. The informative direction is the
+    # cyc16 retention arm above. Transfer caveat, stated rather than
+    # hidden: that curve is a d64 read in a healthy regime (EMA ~0.81),
+    # and this arm would have been a d256 read in a broken one.
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2",
@@ -1696,6 +1705,78 @@ CONFIGS: dict[str, HardStageCfg] = {
                 loss_microbatch_size=128,
             ).train,
             replay_buffer_cycles=2,
+        ),
+    ),
+    # KEYSTONE grid arm (2026-08-19 s37, user GO): the recipe cell
+    # verbatim with n_euler_steps 512 -> 128 the ONLY change, so the read
+    # is chargeable to the trajectory grid alone against the landed
+    # recipe s42 (EMA eval ESS/N 0.0105, Var[log w]/site 0.0061, bootstrap
+    # CI (0.0058, 0.0064)). Why now: the recipe adopted ne512 on a
+    # clip-safety premise -- "lambda_dt p99 0.98 with 1.5-2% residual
+    # clipping at ne128" -- and the d64 loop battery has since run a cell
+    # at exactly that saturation (the ne32 grid arm: p99 0.982, 1.2% of
+    # pairs clipping) which landed INSIDE the rung band, while its
+    # ne32/ne128/ne256 arms span 8x of training grid within 0.020 EMA.
+    # The eval-side twin is measured too: the sigma_c grid sweep moves
+    # Var[log w]/site by 0.9% across 8x with all four CIs overlapping.
+    # Neither is a d256 TRAINING-grid read, which has never been taken --
+    # b512+ne512 vs b512+ne128 is the missing arm, and it is what
+    # licenses printing the cheaper recipe.
+    # FROZEN BANDS (before launch, seed 42; Var-PRIMARY because d256 ESS
+    # reads are top-weight-dominated and do not resolve):
+    #   GRID-FREE  iff Var[log w]/site CI overlaps the parent's
+    #              (0.0058, 0.0064) -- ne128 becomes the standing d256
+    #              grid, a 4x trajectory-compute cut, and downstream d256
+    #              arms re-base onto this cell.
+    #   GRID-BINDS iff Var/site CI lies wholly ABOVE the parent's -- the
+    #              d64 insensitivity does not transfer and the
+    #              d-dependence of quadrature is itself the finding.
+    #   GRID-HELPS iff Var/site CI lies wholly BELOW -- coarser is better
+    #              at d256 as it is on the eval side.
+    # Read alongside: lambda_dt_p99 and lambda_dt_clipped_frac in the
+    # sigma_c tail (the premise under test; the ne128 anchor reads p99
+    # 0.84 with clipped_frac 0), stage-tail FVU per rung, n_unique and
+    # top-weight mass.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive":
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive",
+            estimator="naive_mc", n_euler_steps=128, batch_size=512,
+            loss_microbatch_size=128,
+        ),
+    # Retention-depth arm (2026-08-19 s37, user GO): the recipe cell
+    # verbatim with replay_buffer_cycles 8 -> 16 the ONLY change --
+    # retention 4096 -> 8192 trajectories at UNCHANGED freshness, since
+    # the rollout still draws outer_batch fresh trajectories per cycle,
+    # so fresh-draws-per-gradient-step stays 5.12 and only the age of the
+    # oldest retained chunk moves. This is the opposite direction to the
+    # cancelled buf2 arm, and it is the direction the d64 battery
+    # supports: retention 256/1024/2048/4096 gave EMA 0.766/0.810/0.827/
+    # 0.860, monotone, which refutes the reference code's ~1024 bound as
+    # a target rather than a mid-point on a continuing gain.
+    # FROZEN BANDS (before launch, seed 42, vs the landed recipe s42:
+    # EMA eval ESS/N 0.0105, Var[log w]/site 0.0061 CI (0.0058, 0.0064)),
+    # Var-PRIMARY:
+    #   DEPTH BINDS iff Var/site CI lies wholly BELOW the parent's;
+    #   NULL        iff the CIs overlap -- depth is a d64-only lever and
+    #               the transport wall owns the d256 residue;
+    #   REGRESSION  iff the CI lies wholly ABOVE -- staleness costs more
+    #               than coverage buys at this size.
+    # One-sidedness declared: at fixed n_steps a deeper buffer changes
+    # only retention, never the fresh-draw count, so a positive read
+    # cannot be re-attributed to the freshness axis.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16": replace(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16",
+            estimator="naive_mc", n_euler_steps=512, batch_size=512,
+            loss_microbatch_size=128,
+        ),
+        train=replace(
+            _d256_fmo2_ladder_cell(
+                "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16",
+                estimator="naive_mc", n_euler_steps=512, batch_size=512,
+                loss_microbatch_size=128,
+            ).train,
+            replay_buffer_cycles=16,
         ),
     ),
     # Rank arm at the anchor recipe (2026-08-19, Tier 3(d) re-entered
@@ -1741,6 +1822,18 @@ CONFIGS: dict[str, HardStageCfg] = {
     # BIND iff EMA eval ESS/N >= 0.010 with bootstrap-CI separation, or
     # Var[log w]/site <= 0.012; NULL iff within the anchor spread —
     # interior coverage then joins rank on the closed expressivity list.
+    # CANCELLED 2026-08-19 (s37, user GO) before it started, on SLOT
+    # TRIAGE and not on evidence -- the distinction matters and is
+    # recorded deliberately. The d64 diag arm did land FLAT (EMA 0.8069
+    # vs the rung's 0.8104, Var/site CIs overlapping), but this cell's own
+    # reasoning above pre-declared exactly that read uninformative ("a
+    # third ordering has nothing measurable to buy at that size"), and the
+    # in-flight ledger licensed a cancel only on a d64 REGRESSION, which
+    # did not occur. What actually decided it: the a100 queue was the
+    # binding resource against the 8 Sept deadline, the neighbouring
+    # expressivity axis is already covered by the rank-32 arm on the same
+    # anchors, and the full-horizon capacity arm had just read a
+    # REGRESSION. The question is NOT answered and may be relaunched.
     "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_diag": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_diag",
