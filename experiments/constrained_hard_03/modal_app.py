@@ -233,7 +233,10 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
     # chunk sizes were tuned against 80 GB cards (see train_remote).
     gpu="A100-80GB",
     volumes={"/results": volume},
-    timeout=2 * 60 * 60,
+    # 6 h: eval draw time scales linearly with the sampling grid, and the
+    # grid-decoupling probe re-draws d=256 checkpoints at up to ne=1024 —
+    # ~8x the ~29 min measured at the ne=128 default.
+    timeout=6 * 60 * 60,
 )
 def eval_remote(
     run_dir_name: str, multi_event: bool = False, smc_tau: float = 0.0,

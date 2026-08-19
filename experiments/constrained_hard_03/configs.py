@@ -700,6 +700,7 @@ def _scr5k_fmo2_with(
     model_field_names = {"hidden_dim", "n_layers"}
     train_field_names = {
         "lr", "grad_clip_max_norm", "batch_size", "loss_microbatch_size",
+        "c_t_batch",
     }
     unknown = set(overrides) - model_field_names - train_field_names
     if unknown:
@@ -1309,6 +1310,25 @@ CONFIGS: dict[str, HardStageCfg] = {
         _scr5k_fmo2_cell("H2_d256_scr5k_fmo2_cv"),
         estimator="control_variate",
     ),
+    # c_t decoupling arm (2026-08-19, Tier 3(a) of the standing queue,
+    # user GO): the fmo2 screen base with c_t_batch=512 the ONLY change —
+    # gradient batch stays 128, only the c_t estimator draws 512. The b512
+    # arm showed batch 512 explains the ne512_b512 bundle (honest FVU
+    # 0.0115 vs base 0.0286) and its B_crit readout (~45-91) put b512 ~10x
+    # past the gradient-SNR knee, predicting the gain is c_t-estimator
+    # variance, not gradient noise. This arm is the causal test: it buys
+    # the c_t variance WITHOUT the gradient batch. Honest-FVU floor moves
+    # with the c_t draw count: subtract 1/512 here (the b512 convention),
+    # not 1/128. FROZEN BANDS (before launch, seed 42, stage-tail FVU
+    # 3000-4999): honest FVU <= 0.015 = DECOUPLING CONFIRMED (matches the
+    # b512/bundle 0.0115-0.0118 — the batch lever's whole gain is
+    # c_t-side, and the cheap lever at 50k is c_t_batch, not batch);
+    # >= 0.025 = GRADIENT-SIDE (matches base 0.0286 — the b512 gain needs
+    # the gradient batch after all, B_crit read notwithstanding);
+    # in between = SPLIT, both channels real, report the fractions.
+    "H2_d256_scr5k_fmo2_ctb512": _scr5k_fmo2_with(
+        "H2_d256_scr5k_fmo2_ctb512", c_t_batch=512,
+    ),
     "H2_d256_scr20k_fmo2": replace(
         # The horizon control, and the first flat-subcritical 16x16 run of
         # any length: no 16x16 model has ever trained at fixed sigma=0.10
@@ -1524,6 +1544,104 @@ CONFIGS: dict[str, HardStageCfg] = {
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv",
             estimator="control_variate", n_euler_steps=512, batch_size=512,
         ),
+    # CV continuation of the landed recipe (2026-08-19, user GO after the
+    # recipe pair judged NULL/NULL-grazing-PARTIAL per its own bands
+    # above): the cv2 pattern — flat sigma_c, 20k steps, lr pinned to the
+    # ladder's final 3e-4 — applied to the b512+ne512 recipe shape, run
+    # with --init-from the seed-43 recipe run's final.pt (raw weights: the
+    # EMA shadow restarts and is warmup-capped, so early eval_ema reads
+    # are transient — say so at judging). estimator back to the control
+    # variate is the arm variable; the cold-CV route stays unlicensed
+    # (screen arm FAILED), continuation is the validated warm pattern
+    # (var-ratio crossed 1 at ~step 914 on healing rates, 0.121 once
+    # healthy). No loss_microbatch: gradient-exactness is parity-pinned
+    # for the archived loss only, a batch-coupled CV would break the
+    # per-row decomposition silently. TRIPWIRE ARMED (user-set 19-Aug):
+    # halt_on_cv_inversion_after=2000 with the default window 10 — a
+    # sustained controlled/naive integrand-variance inversion after step
+    # 2000 halts the run; that halt IS the designed cost-capped negative
+    # verdict, not an accident. FROZEN BANDS (before launch, vs the
+    # parent's EMA eval ESS/N 0.0198 and the archived single-lever
+    # warm-CV 0.0219): mechanism — trailing-median cv_var_ratio < 1 by
+    # step 2000 and falling toward the ~0.12-0.14 healthy precedent;
+    # endpoint (EMA eval, bootstrap CI alongside per the addenda) —
+    # NULL < 0.03 (no separation from the parent read: the estimator
+    # lever adds nothing at this scale and the weight-construction
+    # residue stands as the whole story); PARTIAL 0.03-0.10; PASS
+    # >= 0.10; STRONG >= 0.30. Var[log w]/site, n_unique and top-weight
+    # mass read alongside (d144 lesson).
+    "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne512": replace(
+        _d256_fmo2_warm_cell(
+            "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne512",
+            n_euler_steps=512,
+        ),
+        train=replace(
+            _d256_fmo2_warm_cell(
+                "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne512",
+                n_euler_steps=512,
+            ).train,
+            batch_size=512,
+            halt_on_cv_inversion_after=2000,
+        ),
+    ),
+    # Buffer-depth-to-the-reference-invariant arm (2026-08-19, A6 of the
+    # panel queue, user GO under the recipe-NULL clause): the recipe cell
+    # verbatim with replay_buffer_cycles 8 -> 2 the ONLY change. The DNFS
+    # reference bounds retention to ~1024 trajectories
+    # (max_size = 1024 // outer_batch, FIFO — see the consult log at
+    # _retain_chunks); our cycle-count invariant held cycles at 8 while
+    # b512 quadrupled the batch, so the live recipe retains 4096
+    # trajectories, 4x the reference invariant, at HALF the per-state
+    # draw density (0.195 vs 0.78). cycles=2 at b512 restores 1024
+    # exactly — the "fresh half" configuration the d64 replay2 smoke
+    # already validated. FROZEN BANDS (before launch, seed 42, vs the
+    # landed recipe s42: EMA eval ESS/N 0.0105, Var[log w]/site 0.0061):
+    # CONFIRMED (buffer staleness binds at this scale) iff EMA ESS/N
+    # >= 0.021 (2x) with bootstrap-CI separation from the parent read;
+    # NULL iff within the parent's CI — the invariant is then refuted as
+    # a d256 lever and the deviation needs only its existing one-line
+    # defence. Stage-tail FVU per rung read alongside: a fresher buffer
+    # should show faster post-boundary recovery if staleness is the
+    # mechanism; unchanged recovery with a moved endpoint means the
+    # mechanism claim is wrong even if the number moves.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2": replace(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2",
+            estimator="naive_mc", n_euler_steps=512, batch_size=512,
+            loss_microbatch_size=128,
+        ),
+        train=replace(
+            _d256_fmo2_ladder_cell(
+                "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2",
+                estimator="naive_mc", n_euler_steps=512, batch_size=512,
+                loss_microbatch_size=128,
+            ).train,
+            replay_buffer_cycles=2,
+        ),
+    ),
+    # Rank arm at the anchor recipe (2026-08-19, Tier 3(d) re-entered
+    # under the recipe-NULL clause, user GO): the fmo2 naive ladder
+    # anchor verbatim with bilinear_rank 8 -> 32 the ONLY change. Why 32:
+    # the factorised-head forensics measured the REQUIRED effective rank
+    # of the swap-rate field growing ~d/8 with lattice side — d/8 = 32 at
+    # 256 sites, where the shipped default 8 was sized at the 4x4 gate.
+    # Run at the anchor's b128/ne128 so the read is chargeable to rank
+    # alone against the judged anchor pair (EMA eval ESS/N 0.0048/0.0058,
+    # Var[log w]/site 0.0168/0.0159). FROZEN BANDS (before launch, seed
+    # 42): frame check first — stage-1 tail FVU <= 0.05 (the anchor's own
+    # transfer band; a frame break voids the rank read). RANK BINDS iff
+    # EMA eval ESS/N >= 0.010 (2x the seed-42 anchor) with bootstrap-CI
+    # separation, or Var[log w]/site <= 0.012; NULL iff within the
+    # anchor's spread — the d/8 growth then stays a 4x4-to-d64 result
+    # and expressivity is struck from the d256 residue list alongside
+    # the other closed doors.
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_rank32": replace(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_rank32",
+            estimator="naive_mc",
+        ),
+        bilinear_rank=32,
+    ),
     # Phase-2 estimator switch (2026-08-14, user GO): CONTINUE the completed
     # naive 50k (launch with --init-from <naive run>/checkpoints/final.pt)
     # with the Stein control variate re-enabled. Mechanism, measured on the

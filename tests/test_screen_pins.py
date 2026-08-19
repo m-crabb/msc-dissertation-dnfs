@@ -139,6 +139,10 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         "H2_d256_scr5k_mo": 16,
         "H2_d256_scr5k_fmo2_b512": 128,
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive": 128,
+        # The buffer-invariant arm is the recipe cell's twin (cycles the
+        # only change), so the noise-scale instrument rides unchanged
+        # (2026-08-19).
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name
