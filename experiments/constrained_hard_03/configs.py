@@ -1405,6 +1405,12 @@ CONFIGS: dict[str, HardStageCfg] = {
     # >= 0.025 = GRADIENT-SIDE (matches base 0.0286 — the b512 gain needs
     # the gradient batch after all, B_crit read notwithstanding);
     # in between = SPLIT, both channels real, report the fractions.
+    # VENUE (2026-08-19 s37): pulled off the DoC a100 queue and run on
+    # Modal A100-80GB instead (tag 20260819-215249, seed 42). Not a scientific
+    # change -- `train_remote` pins the same 80GB A100 class the anchors
+    # ran on -- but a scheduling one: a comparable 5k d256 screen measured 18 minutes end-to-end
+    # against a three-day queue wait, so the wait was ~150x the compute. Bands above unchanged, frozen
+    # before either launch.
     "H2_d256_scr5k_fmo2_ctb512": _scr5k_fmo2_with(
         "H2_d256_scr5k_fmo2_ctb512", c_t_batch=512,
     ),
@@ -1795,6 +1801,12 @@ CONFIGS: dict[str, HardStageCfg] = {
     # anchor's spread — the d/8 growth then stays a 4x4-to-d64 result
     # and expressivity is struck from the d256 residue list alongside
     # the other closed doors.
+    # VENUE (2026-08-19 s37): pulled off the DoC a100 queue and run on
+    # Modal A100-80GB instead (tag 20260819-215307, seed 42). Not a scientific
+    # change -- `train_remote` pins the same 80GB A100 class the anchors
+    # ran on -- but a scheduling one: the anchor shape (this cell minus the rank change) measured
+    # 3h17m end-to-end against a three-day queue wait. Bands above unchanged, frozen
+    # before either launch.
     "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_rank32": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_rank32",
