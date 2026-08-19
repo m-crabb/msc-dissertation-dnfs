@@ -62,6 +62,16 @@ def _retain_chunks(
     is retained by calling this with its own chunk list, so every parallel
     quantity is appended and evicted on exactly the same schedule and cannot
     drift out of alignment with the states it describes.
+
+    Replication-discipline consult log: the quarantined DNFS reference repo
+    was consulted 2026-08-19, under explicit user authorisation and for
+    comparison only, to resolve a paper-vs-code discrepancy in this rule.
+    Algorithm 1 line 5 prints an unbounded ``B <- B U {...}`` with no
+    eviction; the released code bounds retention to ~1024 trajectories
+    (``DataBuffer.max_size = 1024 // outer_batch``, FIFO pop-oldest). The
+    bounded FIFO here matches the reference code in kind, though our
+    invariant is a constant cycle count (``max_cycles``) rather than a
+    constant trajectory count. No reference source was copied.
     """
     chunks.append(new_chunk.detach())
     if len(chunks) > max_cycles:
