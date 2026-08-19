@@ -52,7 +52,8 @@ def xi_t_swap_from_scores(
     return target.dt_log_p_tilde_t(x, t) + outflow - inflow
 
 
-def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
+def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor,
+                     stats: dict | None = None):
     """One-event swap Euler step. Returns (new_state, pair_scores) (B, n_pairs).
 
     Single global categorical over the i<j pairs plus a stay slot: at most one
@@ -66,6 +67,15 @@ def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
     The second return is the RAW gathered head output G[i,j] (relu applied
     internally where rates are needed), so the eval loop can reuse this one
     head call for the ξ_t integrand.
+
+    `stats` (optional dict) accumulates the same transport counters as the
+    matching step, so one-event trajectories get a measured jump budget too.
+    This step has no thinning/rejection stage — the categorical draws the
+    firing pair directly with probability rate·dt — so a fired event is both
+    the proposal and the acceptance and "proposed" == "accepted" by
+    construction (both keys are kept so downstream readers see one schema).
+    "accepted_state_changing" excludes fired same-spin pairs: their swap is
+    a state no-op, so counting them would overstate productive transport.
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)  # (P, 2)
@@ -81,6 +91,21 @@ def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
     chosen = pairs[choice.clamp(max=n_pairs - 1)]  # (B, 2); stay rows dummy
     site_i = torch.where(fired, chosen[:, 0], chosen.new_zeros(()))
     site_j = torch.where(fired, chosen[:, 1], chosen.new_zeros(()))
+    if stats is not None:
+        # Kept as device tensors (no per-step host sync), same style as the
+        # matching step. Stay rows collapse to site 0 -> 0, whose "endpoint
+        # spins" are trivially equal, but the fired mask excludes them anyway.
+        fired_count = fired.sum()
+        endpoint_spins_differ = (
+            state.gather(1, site_i[:, None]) != state.gather(1, site_j[:, None])
+        ).squeeze(1)
+        stats["proposed"] = stats.get("proposed", 0) + fired_count
+        stats["accepted"] = stats.get("accepted", 0) + fired_count
+        stats["accepted_state_changing"] = (
+            stats.get("accepted_state_changing", 0)
+            + (fired & endpoint_spins_differ).sum()
+        )
+        stats["state_steps"] = stats.get("state_steps", 0) + batch_size
     # Branch-free swap-or-identity permutation per row: stay rows map site
     # 0 -> 0 (a no-op), so no `.any()`/`nonzero()` host-device sync.
     perm = torch.arange(d, device=state.device).expand(batch_size, d).clone()
@@ -182,8 +207,17 @@ def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt,
     priority = torch.rand(batch_size, pairs.shape[0], device=state.device)
     accepted = _vertex_disjoint_matching(proposed, priority, pairs, d)
     if stats is not None:
+        # "accepted" includes same-spin pairs whose swap leaves the state
+        # unchanged (Swap2(x,i,j) = x when x_i == x_j), so it overstates
+        # productive transport; "accepted_state_changing" masks to pairs
+        # whose endpoint spins differ at fire time — the honest jump count.
+        endpoint_spins_differ = state[:, pairs[:, 0]] != state[:, pairs[:, 1]]
         stats["proposed"] = stats.get("proposed", 0) + proposed.sum()
         stats["accepted"] = stats.get("accepted", 0) + accepted.sum()
+        stats["accepted_state_changing"] = (
+            stats.get("accepted_state_changing", 0)
+            + (accepted & endpoint_spins_differ).sum()
+        )
         stats["state_steps"] = stats.get("state_steps", 0) + batch_size
     return _apply_swaps(state, accepted, pairs), pair_scores
 
@@ -209,10 +243,13 @@ def sample_swap_ctmc(
     O(d) trajectory length at scale); the default one-event step fires ≤1
     swap/step (O(d²) steps at the critical coupling).
 
-    `matching_stats` (optional dict, multi_event only) accumulates the
-    matching step's fidelity counters — proposed/accepted swaps and states
-    visited — for the `proposal_drop_frac` / `events_per_site_per_step`
-    training-log columns (see `_euler_step_swap_matching`).
+    `matching_stats` (optional dict) accumulates the step's transport
+    counters — proposed/accepted/state-changing swaps and states visited —
+    for BOTH step kinds (see `_euler_step_swap_matching` and
+    `_euler_step_swap` for each step's counting semantics). Feeds the
+    `proposal_drop_frac` / `events_per_site_per_step` training-log columns
+    and the eval-time jumps-per-site budget. None (the default) skips all
+    accumulation — the historical behaviour, bit-for-bit.
 
     `resampling` (requires `return_log_weights=True`) enables the eval-time
     SMC upgrade (`samplers.resampling`): adaptive systematic resampling of
@@ -259,7 +296,7 @@ def sample_swap_ctmc(
             _euler_step_swap_matching, stats=matching_stats
         )
     else:
-        step_fn = _euler_step_swap
+        step_fn = functools.partial(_euler_step_swap, stats=matching_stats)
     pairs = upper_tri_pairs(d, x0.device)
     dts = ts[1:] - ts[:-1]
     for step in range(len(ts) - 1):

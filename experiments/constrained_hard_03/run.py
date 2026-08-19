@@ -121,7 +121,15 @@ def _chunked_eval_draw(
     head, target, cfg: HardStageCfg, *, multi_event: bool, smc_tau: float | None
 ):
     """Stream the eval draw in `eval_sample_chunk` slices; returns
-    (samples, per_sample_log_weights, chunk_stats).
+    (samples, per_sample_log_weights, chunk_stats, transport_stats).
+
+    `transport_stats` accumulates the sampler's swap counters (proposed /
+    accepted / accepted_state_changing / state_steps) across ALL slices —
+    the counters are additive, so one dict threaded through every
+    `sample_swap_ctmc` call gives whole-draw totals. Without this the eval
+    draw's jump budget was never measured: an eval can post a healthy ESS
+    while firing (almost) no state-changing swaps, i.e. while sampling the
+    base distribution rather than transporting toward the target.
 
     Plain IS (`smc_tau=None`): weights are independent per sample, so
     slicing changes nothing statistically; chunk_stats is empty.
@@ -143,6 +151,7 @@ def _chunked_eval_draw(
     ts = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps + 1, device=device)
     chunk = cfg.eval.eval_sample_chunk or cfg.eval.n_eval_samples
     sample_slices, log_weight_slices, chunk_stats = [], [], []
+    transport_stats: dict = {}
     remaining = cfg.eval.n_eval_samples
     with torch.no_grad():
         while remaining > 0:
@@ -150,12 +159,12 @@ def _chunked_eval_draw(
             if smc_tau is None:
                 slice_samples, slice_log_weights = sample_swap_ctmc(
                     head, x_initial, ts, return_log_weights=True, target=target,
-                    multi_event=multi_event,
+                    multi_event=multi_event, matching_stats=transport_stats,
                 )
             else:
                 slice_samples, final_segment_log_weights, stats = sample_swap_ctmc(
                     head, x_initial, ts, return_log_weights=True, target=target,
-                    multi_event=multi_event,
+                    multi_event=multi_event, matching_stats=transport_stats,
                     resampling=ResamplingConfig(ess_threshold_fraction=smc_tau),
                 )
                 slice_log_weights = (
@@ -174,7 +183,10 @@ def _chunked_eval_draw(
             sample_slices.append(slice_samples)
             log_weight_slices.append(slice_log_weights)
             remaining -= x_initial.shape[0]
-    return torch.cat(sample_slices), torch.cat(log_weight_slices), chunk_stats
+    return (
+        torch.cat(sample_slices), torch.cat(log_weight_slices), chunk_stats,
+        transport_stats,
+    )
 
 
 def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
@@ -223,7 +235,7 @@ def final_eval(
     baseline is never clobbered."""
     if multi_event is None:
         multi_event = cfg.ctmc.use_matching_step
-    eval_samples, eval_log_weights, _ = _chunked_eval_draw(
+    eval_samples, eval_log_weights, _, transport_stats = _chunked_eval_draw(
         head, target, cfg, multi_event=multi_event, smc_tau=None
     )
 
@@ -250,6 +262,25 @@ def final_eval(
         "multi_event": multi_event,
     }
     eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
+    # Jump budget of this draw, INTEGRATED along the trajectory: per-state-
+    # per-step count, per site, times the n_euler_steps steps of the
+    # linspace(0, 1, n+1) eval grid — i.e. swap events per site over the full
+    # t=0->1 path. "accepted" includes same-spin swaps that leave the state
+    # unchanged; "state_changing" is the productive-transport count. A
+    # high-ESS eval whose state_changing budget is ~0 never left the base
+    # distribution's neighbourhood, so ESS alone cannot certify transport.
+    per_site_trajectory_norm = cfg.ctmc.n_euler_steps / (
+        float(transport_stats["state_steps"]) * target.d
+    )
+    eval_metrics["jumps_per_site_proposed"] = (
+        float(transport_stats["proposed"]) * per_site_trajectory_norm
+    )
+    eval_metrics["jumps_per_site_accepted"] = (
+        float(transport_stats["accepted"]) * per_site_trajectory_norm
+    )
+    eval_metrics["jumps_per_site_state_changing"] = (
+        float(transport_stats["accepted_state_changing"]) * per_site_trajectory_norm
+    )
     if replicate_seed is not None:
         eval_metrics["replicate_seed"] = replicate_seed
     eval_metrics.update(_composition_metrics(cfg, eval_samples))
@@ -281,7 +312,7 @@ def final_eval_smc(
     so sweeps never clobber each other."""
     if multi_event is None:
         multi_event = cfg.ctmc.use_matching_step
-    eval_samples, pooled_log_weights, chunk_stats = _chunked_eval_draw(
+    eval_samples, pooled_log_weights, chunk_stats, _ = _chunked_eval_draw(
         head, target, cfg, multi_event=multi_event, smc_tau=tau
     )
 
