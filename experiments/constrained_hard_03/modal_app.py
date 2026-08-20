@@ -297,6 +297,44 @@ def eval_remote(
     volume.commit()
 
 
+@app.function(
+    # Same A100-80GB class as eval_remote: this draws the eval's own sample
+    # count on the eval's own grid, and additionally holds the full
+    # (n_euler_steps + 1, chunk, d) trajectory, so it is strictly heavier
+    # than the eval it mirrors.
+    gpu="A100-80GB",
+    volumes={"/results": volume},
+    timeout=6 * 60 * 60,
+)
+def transport_decomposition_remote(run_dir_name: str, n_samples: int = 0):
+    """Split a run's bond-correlation transport into gross vs net.
+
+    The eval reports only the NET endpoint gap closed, which cannot tell a
+    sampler whose swaps are individually small (a TARGETING limit, fixed in
+    the architecture) from one whose swaps are large but undo each other (a
+    CANCELLATION limit, fixed in the rate field). This draws trajectories with
+    `return_all_states=True` and accumulates both, writing
+    transport_decomposition.json beside the run. It never touches eval/: the
+    trajectory mode withholds importance weights by construction, so this
+    draw is a diagnostic and is not an eval."""
+    import json
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.analysis_transport_decomposition import (
+        decompose_run,
+    )
+
+    run_dir = Path("/results") / run_dir_name
+    result = decompose_run(run_dir, n_samples=n_samples or None)
+    print(json.dumps(result, indent=2))
+    (run_dir / "transport_decomposition.json").write_text(
+        json.dumps(result, indent=2)
+    )
+    volume.commit()
+
+
 @app.function(gpu="A100", volumes={"/results": volume}, timeout=60 * 60)
 def scout_remote(run_dir_name: str, D: int, head_kind: str = "mask_one"):
     """Run the Euler-budget scout (`scout_euler_budget.from_checkpoint`) on a
