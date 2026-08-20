@@ -2054,6 +2054,34 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_fmo2_50k_curr_cyc16",
         replay_buffer_cycles=16,
     ),
+    # SMC-in-training arms (2026-08-20): first LIVE runs of
+    # rollout_resample_ess_fraction on the swap route — ESS-triggered
+    # resampling inside the buffer-rebuild rollout (LEAPS Alg. 1 lines
+    # 11-14; the full c_t argument lives on the baseline TrainCfg field).
+    # The d256 estimator wall (eval ESS/N 0.003) is the motivating target;
+    # per the validation order d256 spends nothing until d64 shows a
+    # signal. The builder makes each arm a true twin with tau the one
+    # declared variable, and flag-off bit-identity is test-pinned, so the
+    # archived rung comparator remains the valid control — no fresh
+    # control run. The ESS endpoint is near-ceiling here (rung raw 0.745),
+    # so per the diag-arm convention the read is NOT ESS-first. FROZEN
+    # BANDS (seed 42, per arm): PRIMARY = EMA eval Var[log w] against the
+    # archived rung's 0.2068, bootstrap 95% CI (0.1983, 0.2152); UPLIFT
+    # iff the arm's CI sits wholly BELOW (0.1983, ...) — the variance-axis
+    # signal that alone licenses a d256 twin; REGRESSION iff EMA eval
+    # ESS/N <= 0.78 or the Var CI sits wholly above; INSENSITIVE
+    # otherwise. Tripwire: rollout_resample_events ~ 0 beyond the first
+    # sigma stage at BOTH taus = VACUOUS-AT-TAU, a trigger-calibration
+    # finding (the healthy-d64 rollout may simply never dip under tau*M —
+    # itself worth knowing before pricing a d256 arm, where it WILL fire).
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_smc03": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_smc03",
+        rollout_resample_ess_fraction=0.3,
+    ),
+    "H2_d64_c50_s223_letf_fmo2_50k_curr_smc06": _d64_fmo2_loop_cell(
+        "H2_d64_c50_s223_letf_fmo2_50k_curr_smc06",
+        rollout_resample_ess_fraction=0.6,
+    ),
     # Rollout width 128 -> 512 at fixed gradient batch 128, c_t riding at
     # 512 (the c_t_batch >= outer_batch constraint holding at equality):
     # the upward direction of the width decoupling. The reference
