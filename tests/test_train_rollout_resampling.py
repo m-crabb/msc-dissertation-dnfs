@@ -1,6 +1,8 @@
-"""ESS-triggered SMC resampling inside the TRAINING rollout (swap route).
+"""ESS-triggered SMC resampling inside the TRAINING rollout (both routes).
 
 Written before the implementation — these encode "what correct looks like".
+Sections 1-6 pinned the swap route (landed 49dc229); section 7 holds the
+flip-route twins, written before `train()` was wired to the same flag.
 
 Background. LEAPS (Algorithm 1, lines 11-14) resamples the walker
 population whenever the interim ESS drops below a threshold and resets the
@@ -53,6 +55,7 @@ from discrete_flow_sampler.diagnostics.metrics import enumerate_states
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers import swap_ctmc as swap_ctmc_module
 from discrete_flow_sampler.samplers import swap_training
+from discrete_flow_sampler.samplers import training as training_module
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.resampling import (
     ResamplingConfig,
@@ -64,6 +67,7 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
     sample_swap_ctmc,
 )
 from discrete_flow_sampler.samplers.swap_training import train_swap
+from discrete_flow_sampler.samplers.training import train
 from discrete_flow_sampler.targets.ising import (
     FixedCompositionIsingTarget,
     IsingTarget,
@@ -231,10 +235,9 @@ def test_trajectory_mode_fires_and_every_slice_stays_on_the_manifold():
 
 @torch.no_grad()
 def test_flip_sampler_takes_the_same_trajectory_mode():
-    """Sampler-agnosticism: `sample_ctmc` carries the identical contract, so
-    the unconstrained/soft trainer is one call-site change away (its own
-    trainer is deliberately NOT wired yet). Only the swap route has a
-    config flag today, so this pins the capability it would use."""
+    """Sampler-agnosticism: `sample_ctmc` carries the identical contract the
+    swap sampler does, pinned here at the sampler level; section 7 pins the
+    flip trainer's consumption of the same config flag."""
     torch.manual_seed(3)
     target = IsingTarget(D=2, sigma=0.1)
     x_initial = torch.randint(0, 2, (16, 4)).float() * 2 - 1
@@ -472,3 +475,124 @@ def test_only_the_rollout_resamples_never_the_in_training_eval_draw(
         kwargs.get("resampling") is not None for kwargs in rollout_calls
     )
     assert all(kwargs.get("resampling") is None for kwargs in eval_calls)
+
+
+# ------------------------------------- 7. THE FLIP TRAINER'S OWN CALL SITE
+
+
+def _run_tiny_flip_training(output_dir, *, amortised=False, **train_overrides):
+    """One tiny end-to-end `train()` on the flip route; returns the run dir.
+
+    The flip loop serves both the unconstrained and soft chapters. The
+    amortised variant is the soft production shape: the rollout executes
+    inside the composition binding (`_bound`), so the ESS trigger's xi_t
+    must read the BOUND target's annealed density, not the bare one.
+    """
+    torch.manual_seed(0)
+    if amortised:
+        target = IsingTarget(
+            D=2, sigma=0.1, target_composition=0.5,
+            composition_penalty_strength=5.0,
+        )
+    else:
+        target = IsingTarget(D=2, sigma=0.1)
+    model = LeTFRateMatrix(
+        d=target.d, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2,
+        condition_on_composition=amortised,
+    )
+    train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(**train_overrides)
+    amortised_kwargs = (
+        {"composition_centre": 0.5, "composition_half_width": 0.25}
+        if amortised else {}
+    )
+    train(
+        model, target, train_cfg, ctmc_cfg, eval_cfg, Path(output_dir),
+        use_wandb=False, **amortised_kwargs,
+    )
+    return Path(output_dir)
+
+
+def test_flip_trainer_flag_absent_none_and_never_firing_are_identical(tmp_path):
+    """Twin of the swap-loop OFF test: every archived unconstrained/soft
+    recipe must be byte-identical unchanged — absent flag, explicit None,
+    and the armed-but-never-firing tau = 0.0 all land on the same weights,
+    because the no-fire path consumes no RNG."""
+    baseline_dir = _run_tiny_flip_training(tmp_path / "baseline")
+    explicit_none_dir = _run_tiny_flip_training(
+        tmp_path / "explicit_none", rollout_resample_ess_fraction=None
+    )
+    never_fires_dir = _run_tiny_flip_training(
+        tmp_path / "never_fires", rollout_resample_ess_fraction=0.0
+    )
+
+    baseline_weights = _final_weights(baseline_dir)
+    for other_dir in (explicit_none_dir, never_fires_dir):
+        other_weights = _final_weights(other_dir)
+        assert baseline_weights.keys() == other_weights.keys()
+        for name, tensor in baseline_weights.items():
+            assert torch.equal(tensor, other_weights[name]), name
+
+    baseline_losses = [row["loss"] for row in _log_rows(baseline_dir)]
+    for other_dir in (explicit_none_dir, never_fires_dir):
+        assert [row["loss"] for row in _log_rows(other_dir)] == baseline_losses
+
+
+def test_flip_trainer_event_count_reaches_the_training_log(tmp_path):
+    """Same judgement contract as the swap loop: an integer per outer cycle
+    when armed, NaN when the flag is off."""
+    fired_rows = _log_rows(
+        _run_tiny_flip_training(
+            tmp_path / "fires", rollout_resample_ess_fraction=1.0
+        )
+    )
+    assert all(
+        float(row["rollout_resample_events"]) > 0 for row in fired_rows
+    )
+
+    off_rows = _log_rows(_run_tiny_flip_training(tmp_path / "off"))
+    assert all(
+        math.isnan(float(row["rollout_resample_events"])) for row in off_rows
+    )
+
+
+def test_flip_trainer_eval_draw_never_resamples(tmp_path, monkeypatch):
+    """The flip loop's `ess` column must stay a plain-IS reading too — the
+    resampling config may reach the buffer rollout and nothing else."""
+    original_sampler = training_module.sample_ctmc
+    recorded_calls = []
+
+    def recording_sampler(*args, **kwargs):
+        recorded_calls.append(kwargs)
+        return original_sampler(*args, **kwargs)
+
+    monkeypatch.setattr(training_module, "sample_ctmc", recording_sampler)
+    _run_tiny_flip_training(tmp_path, rollout_resample_ess_fraction=1.0)
+
+    rollout_calls = [
+        kwargs for kwargs in recorded_calls
+        if kwargs.get("return_all_states")
+    ]
+    eval_calls = [
+        kwargs for kwargs in recorded_calls
+        if kwargs.get("return_log_weights")
+    ]
+    assert rollout_calls and eval_calls
+    assert all(
+        kwargs.get("resampling") is not None for kwargs in rollout_calls
+    )
+    assert all(kwargs.get("resampling") is None for kwargs in eval_calls)
+
+
+def test_flip_trainer_amortised_soft_rollout_fires_inside_the_binding(tmp_path):
+    """The soft production recipe amortises over compositions, so the rollout
+    (and therefore the ESS trigger's xi_t) runs inside `_bound`'s composition
+    binding. A firing amortised run that completes with finite losses pins
+    that the resampling machinery composes with the binding — the trigger
+    reads the annealed density of the composition the cycle actually drew."""
+    rows = _log_rows(
+        _run_tiny_flip_training(
+            tmp_path, amortised=True, rollout_resample_ess_fraction=1.0
+        )
+    )
+    assert all(float(row["rollout_resample_events"]) > 0 for row in rows)
+    assert all(math.isfinite(float(row["loss"])) for row in rows)

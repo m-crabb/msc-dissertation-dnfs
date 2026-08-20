@@ -46,6 +46,7 @@ from discrete_flow_sampler.samplers._neighbours import (
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.samplers.log_z_estimators import compute_c_t_grid
+from discrete_flow_sampler.samplers.resampling import ResamplingConfig
 from discrete_flow_sampler.seeding import seed_everything
 
 
@@ -320,6 +321,30 @@ def train(
         raise ValueError(
             f"replay_buffer_cycles must be >= 1, got {replay_buffer_cycles}"
         )
+    # ESS-triggered SMC resampling inside the buffer-rebuild rollout, the
+    # flip-route twin of the swap trainer's wiring (LEAPS Alg. 1 lines
+    # 11-14, whose trajectories Alg. 2 line 5 trains on). None = OFF =
+    # every archived run, bit-identical. The full argument for why the c_t
+    # batch mean survives it — and why the resample supplies the weighting
+    # Eq. 8 asks for — is on the config field.
+    rollout_resample_ess_fraction = getattr(
+        train_cfg, "rollout_resample_ess_fraction", None
+    )
+    if rollout_resample_ess_fraction is not None and not (
+        0.0 <= float(rollout_resample_ess_fraction) <= 1.0
+    ):
+        raise ValueError(
+            f"rollout_resample_ess_fraction must lie in [0, 1] when set, "
+            f"got {rollout_resample_ess_fraction}: it is a fraction of the "
+            f"rollout batch, and 1.0 already fires at every checkpoint."
+        )
+    rollout_resampling = (
+        ResamplingConfig(
+            ess_threshold_fraction=float(rollout_resample_ess_fraction)
+        )
+        if rollout_resample_ess_fraction is not None
+        else None
+    )
 
     if train_cfg.n_steps % inner_steps_per_outer != 0:
         raise ValueError(
@@ -367,7 +392,7 @@ def train(
              "flip_prob_clipped_frac", "log_ratio_clamp_frac",
              "log_ratio_p99", "sigma_current", "lr_current",
              "wall_clock_step_s", "composition_current",
-             "composition_half_width"]
+             "composition_half_width", "rollout_resample_events"]
         )
 
         step = 0
@@ -547,9 +572,28 @@ def train(
             with bind_cycle:
                 x_initial = target.sample_base(outer_batch, device=device)
                 with torch.no_grad():
-                    x_traj = sample_ctmc(
+                    rollout_result = sample_ctmc(
                         model_cycle, x_initial, t_grid, return_all_states=True,
+                        target=target, resampling=rollout_resampling,
                     )                                          # (T, M, D)
+                    if rollout_resampling is None:
+                        x_traj = rollout_result
+                        rollout_resample_events = float("nan")
+                    else:
+                        # No log-weights come back by design: after the
+                        # resets they are a per-segment residue, and nothing
+                        # in training may read them (the `ess` column is its
+                        # own plain-IS draw below). Every slice is already
+                        # the post-resample, equally-weighted ensemble,
+                        # which is what makes the c_t mean below a mean over
+                        # p_t rather than over the raw rollout law. Inside
+                        # bind_cycle, so the trigger's xi_t reads the
+                        # annealed density of the composition this cycle
+                        # actually drew.
+                        x_traj, rollout_smc_stats = rollout_result
+                        rollout_resample_events = float(
+                            rollout_smc_stats.n_events
+                        )
                     c_t_grid, integrand_per_t = compute_c_t_grid(
                         t_grid, x_traj, target, model_cycle, mode=estimator_mode,
                     )                                          # (T,), (T, M)
@@ -696,7 +740,8 @@ def train(
                      rate_diag["log_ratio_clamp_frac"],
                      rate_diag["log_ratio_p99"],
                      float(target.sigma), optimiser.param_groups[0]["lr"],
-                     wall_clock_step_s, composition_now, half_width_now]
+                     wall_clock_step_s, composition_now, half_width_now,
+                     rollout_resample_events]
                 )
                 log_file.flush()
 

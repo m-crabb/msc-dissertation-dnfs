@@ -29,7 +29,7 @@ Stage layout (framing clarified by Zijing 2026-05-08):
                            estimator-side variance reduction on top of
                            the architectural one.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 
@@ -195,8 +195,10 @@ class TrainCfg:
     # rows is the in-cap class on an 80 GB a100). None = OFF, the
     # byte-identical per-slot sequential loop every archived run used.
     c_t_grid_chunk_rows: int | None = None
-    # ESS-triggered SMC resampling INSIDE the training rollout (swap route
-    # only; `samplers.resampling`). None = OFF = every archived run,
+    # ESS-triggered SMC resampling INSIDE the training rollout (both
+    # trainers consume it: `swap_training.train_swap` and the flip-route
+    # `training.train`; mechanism in `samplers.resampling`). None =
+    # OFF = every archived run,
     # bit-identical — and so is any threshold that never fires, because the
     # no-fire path consumes no RNG. Set to a fraction tau in [0, 1] to
     # resample the buffer-rebuild population whenever its interim ESS drops
@@ -936,3 +938,37 @@ CONFIGS: dict[str, StageCfg] = {
         ),
     ),
 }
+
+# --- SMC-in-training characterisation arms (2026-08-20) --------------------
+# First runs of `rollout_resample_ess_fraction` on the flip route: does
+# ESS-triggered resampling inside the buffer-rebuild rollout (LEAPS Alg. 1
+# lines 11-14; the full c_t argument lives on the TrainCfg field) change
+# what the trained sampler converges to? One variable per arm: `replace`
+# copies the d8 anchor cell and moves ONLY the trigger threshold, so the
+# cell diff IS the lever. Judged against a FRESH same-venue control (the
+# base cell itself, Modal A100, seed 42) because the archived walkback
+# controls predate two months of code drift.
+# Bands FROZEN BEFORE LAUNCH, read on the final 5000-draw eval ESS/N of arm
+# vs fresh control with bootstrap 95% CIs (expectation: control lands near
+# the archived d8 anchors 0.970/0.943; below 0.90 flags drift and the arms
+# are judged against the fresh control only):
+#   PASS   CI-disjoint above control (unexpected here: the d8 endpoint is
+#          near-saturated; this side is the battery's no-harm control,
+#          the soft c=0.80 twin carries the gain case).
+#   NULL   CIs overlap.
+#   DAMAGE CI-disjoint below control.
+# Mechanism read alongside: the `rollout_resample_events` column. Expected
+# early-fire/late-silent as training health improves; zero events beyond
+# the first sigma stage at BOTH taus = VACUOUS-AT-TAU, a trigger-
+# calibration finding (quality verdict NULL by construction, not PASS).
+_SMC_FLIP_BASELINE_BASE = CONFIGS["stage_4_d8_critical_paper_curriculum"]
+for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
+    _arm_name = f"{_SMC_FLIP_BASELINE_BASE.name}_{_tau_tag}"
+    CONFIGS[_arm_name] = replace(
+        _SMC_FLIP_BASELINE_BASE,
+        name=_arm_name,
+        train=replace(
+            _SMC_FLIP_BASELINE_BASE.train,
+            rollout_resample_ess_fraction=_tau,
+        ),
+    )

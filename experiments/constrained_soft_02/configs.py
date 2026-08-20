@@ -10,6 +10,8 @@ penalty lambda * d * (c(x) - c_target)^2 from `log_prob` (see
 Cell-name format: `S<alphabet>_d<dim>_c<c_target_x100>_l<lambda>`.
 """
 
+from dataclasses import replace
+
 from experiments.dnfs_baseline_01.configs import (
     CompositionCfg,
     CompositionCurriculumStageCfg,
@@ -1905,3 +1907,37 @@ CONFIGS: dict[str, StageCfg] = {
         wandb_project="dnfs-constraints",
     ),
 }
+
+# --- SMC-in-training characterisation arms (2026-08-20) --------------------
+# The gain-case twin of the baseline d8 smc arms (see that block in
+# `dnfs_baseline_01.configs` for the battery design; the mechanism argument
+# lives on the TrainCfg field). Base cell chosen because it is the softest
+# healthy cell we own with real weight degradation: c = 0.80 is the
+# off-centre stress window, its A100 redraw control reads ESS/N 0.419, and
+# the matched-base arm moved the SAME cell to 0.937 by shortening the
+# transport — measured headroom for an intervention that corrects the
+# rollout law during training instead of moving the base. One variable per
+# arm via `replace`; judged against a FRESH same-venue control (base cell,
+# Modal A100, seed 45 = the studied lineage) launched alongside.
+# Bands FROZEN BEFORE LAUNCH, read on the final 5000-draw eval ESS/N of arm
+# vs fresh control with bootstrap 95% CIs (expectation: control near 0.419;
+# composition_mean sanity 0.79-0.80 on every cell):
+#   PASS   CI-disjoint above control. Scale reference, NOT a bar: matched
+#          base bought 0.419 -> 0.937; any CI-disjoint fraction of that
+#          from the training side alone is the headline case.
+#   NULL   CIs overlap.
+#   DAMAGE CI-disjoint below control.
+# Mechanism read alongside: `rollout_resample_events` (fire profile). The
+# in-training `ess` column stays plain-IS by construction (test-pinned),
+# so comparability with the archived cell holds.
+_SMC_FLIP_SOFT_BASE = CONFIGS["S2_d10_c080_l50_letf_ne128_anneal"]
+for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
+    _arm_name = f"{_SMC_FLIP_SOFT_BASE.name}_{_tau_tag}"
+    CONFIGS[_arm_name] = replace(
+        _SMC_FLIP_SOFT_BASE,
+        name=_arm_name,
+        train=replace(
+            _SMC_FLIP_SOFT_BASE.train,
+            rollout_resample_ess_fraction=_tau,
+        ),
+    )
