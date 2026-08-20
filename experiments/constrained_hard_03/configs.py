@@ -1669,6 +1669,53 @@ CONFIGS: dict[str, HardStageCfg] = {
             halt_on_cv_inversion_after=2000,
         ),
     ),
+    # NAIVE twin of the CV continuation above (2026-08-20, s41, user GO at
+    # judging): the same cell with `estimator` control_variate -> naive_mc
+    # the ONLY declared change, continued with --init-from the SAME seed-43
+    # recipe final.pt. Why it exists: the CV continuation judged PASS at
+    # EMA eval ESS/N 0.2655 (bootstrap CI 0.2302-0.3043) against its
+    # parent's 0.0198 — 13.4x, the largest quality number measured at this
+    # size, and at sigma_c rather than a subcritical screen. But it trains
+    # 20k steps BEYOND its parent, and no naive-estimator continuation from
+    # that checkpoint exists, so the 13.4x cannot be split between (a) the
+    # control variate and (b) 20k additional fixed-sigma_c steps. The
+    # archived warm-CV reference (0.0219) does not serve as that control:
+    # it is also control_variate AND warm-starts from a d64 EMA rather than
+    # continuing a d256 checkpoint, so it differs on two axes at once.
+    # This arm differs on exactly one.
+    # DECLARED, and deliberately NOT a second variable: the parent cell's
+    # halt_on_cv_inversion_after=2000 tripwire is dropped here because
+    # cv_var_ratio has no meaning when the control variate is not in use.
+    # It is a safety halt, never a training-affecting knob, and on the CV
+    # run it never fired — so its absence cannot move this read.
+    # FROZEN BANDS (before launch, seed 43, EMA eval ESS/N with bootstrap
+    # CI, Var[log w]/site and top-weight read alongside; references: parent
+    # 0.0198 / Var-site 0.00735, CV continuation 0.2655 / Var-site 0.00495):
+    #   CONTINUATION-OWNS iff this arm's CI OVERLAPS the CV continuation's
+    #                     (0.2302, 0.3043) -- the estimator is not the
+    #                     lever, the finding is "20k more steps at fixed
+    #                     sigma_c", and the CV chapter claim is withdrawn.
+    #   ESTIMATOR-OWNS    iff EMA eval ESS/N < 0.10 (the PASS threshold the
+    #                     CV arm cleared) with CI separation from it -- the
+    #                     control variate owns the gain and the claim
+    #                     stands as printed.
+    #   SPLIT             otherwise -- report the recovered fraction
+    #                     (naive - parent) / (cv - parent) explicitly
+    #                     rather than rounding it to either story.
+    "H2_d256_c50_s223_letf_fmo2_20k_sc_naive_b512_ne512": replace(
+        _d256_fmo2_warm_cell(
+            "H2_d256_c50_s223_letf_fmo2_20k_sc_naive_b512_ne512",
+            n_euler_steps=512,
+        ),
+        estimator="naive_mc",
+        train=replace(
+            _d256_fmo2_warm_cell(
+                "H2_d256_c50_s223_letf_fmo2_20k_sc_naive_b512_ne512",
+                n_euler_steps=512,
+            ).train,
+            batch_size=512,
+        ),
+    ),
     # Buffer-depth-to-the-reference-invariant arm (2026-08-19, A6 of the
     # panel queue, user GO under the recipe-NULL clause): the recipe cell
     # verbatim with replay_buffer_cycles 8 -> 2 the ONLY change. The DNFS

@@ -306,3 +306,71 @@ def test_eval_only_rejects_config_drift(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="does not match CONFIGS"):
         eval_only(run_dir)
+
+
+def _run_dir_with_both_checkpoints(tmp_path, cfg, seed=7):
+    """A completed run dir carrying BOTH the raw and the EMA final weights,
+    as every training run writes them."""
+    run_dir = tmp_path / "tiny_hard_eval_seed7_test"
+    (run_dir / "checkpoints").mkdir(parents=True)
+    seeded = replace(cfg, train=replace(cfg.train, seed=seed))
+    (run_dir / "config.json").write_text(json.dumps(asdict(seeded)))
+    _, raw_head = build_target_and_head(cfg, "cpu")
+    torch.save(raw_head.state_dict(), run_dir / "checkpoints" / "final.pt")
+    # A DIFFERENT parameter vector, so a test can tell which file was loaded.
+    _, ema_head = build_target_and_head(cfg, "cpu")
+    with torch.no_grad():
+        for parameter in ema_head.parameters():
+            parameter.add_(1.0)
+    torch.save(ema_head.state_dict(), run_dir / "checkpoints" / "final_ema.pt")
+    return run_dir
+
+
+def test_eval_only_ema_reads_the_ema_checkpoint_into_a_suffixed_dir(
+    tmp_path, monkeypatch
+):
+    """`use_ema` must load `final_ema.pt` — not `final.pt` — and land in
+    `eval_ema_ne<k>/`.
+
+    Why this exists: the EMA weights are the primary read for every d=256
+    verdict (raw eval ESS at sigma_c is top-weight dominated and does not
+    resolve), but `eval_only` loaded only `final.pt`, so an EMA re-draw
+    needed a hand-staged copy of `final_ema.pt` renamed to `final.pt`. That
+    workaround is silent when it goes wrong: it produces a plausible number
+    from the wrong weights. Loading the file by name removes the footgun.
+    """
+    torch.manual_seed(0)
+    cfg = _tiny_cfg()
+    monkeypatch.setattr(
+        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
+    )
+    run_dir = _run_dir_with_both_checkpoints(tmp_path, cfg)
+
+    eval_only(run_dir, n_euler_override=4, use_ema=True)
+    eval_only(run_dir, n_euler_override=4)
+
+    ema_dir = run_dir / "eval_ema_ne4"
+    raw_dir = run_dir / "eval_ne4"
+    assert (ema_dir / "metrics.json").exists()
+    assert (raw_dir / "metrics.json").exists()
+    # Different weights must give different weights-under-the-target, which
+    # is the only evidence that the intended checkpoint was the one loaded.
+    assert not torch.equal(
+        torch.load(ema_dir / "log_weights.pt"),
+        torch.load(raw_dir / "log_weights.pt"),
+    )
+
+
+def test_eval_only_ema_without_a_grid_override_is_refused(tmp_path, monkeypatch):
+    """`use_ema` alone would write `eval_ema/` — the directory the TRAINING
+    run owns and the frozen EMA numbers are read from. Re-draws must never
+    overwrite a frozen number, so this combination is refused rather than
+    silently clobbering it."""
+    cfg = _tiny_cfg()
+    monkeypatch.setattr(
+        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
+    )
+    run_dir = _run_dir_with_both_checkpoints(tmp_path, cfg)
+
+    with pytest.raises(ValueError, match="frozen"):
+        eval_only(run_dir, use_ema=True)

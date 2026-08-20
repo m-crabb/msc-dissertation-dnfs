@@ -514,6 +514,7 @@ def eval_only(
     run_dir: str | Path, multi_event: bool | None = None,
     smc_tau: float | None = None, replicate_seed: int | None = None,
     n_euler_override: int | None = None,
+    use_ema: bool = False,
 ) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
     checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
@@ -544,7 +545,29 @@ def eval_only(
     other grid decouples the two at eval-only cost. Sampling-time only —
     it cannot move the trained model — but the numbers are NOT the frozen
     eval/ numbers and must never be quoted as them. Plain IS only, same
-    refusal rationale as replicates."""
+    refusal rationale as replicates.
+
+    With `use_ema` set, the draw loads `final_ema.pt` instead of
+    `final.pt` and the artefacts gain an `_ema` prefix on the suffix
+    (eval_ema_ne<k>/). Why this exists (2026-08-20): the EMA weights are
+    the PRIMARY read for every d=256 verdict — raw eval ESS at sigma_c is
+    top-weight dominated and does not resolve — but this function loaded
+    only `final.pt`, so an EMA re-draw previously needed a hand-staged
+    copy of `final_ema.pt` renamed to `final.pt`. That workaround fails
+    SILENTLY when it goes wrong: it returns a plausible number computed
+    from the wrong weights, and nothing in the artefacts records which
+    file was read. Naming the checkpoint removes the footgun.
+
+    `use_ema` without `n_euler_override` is refused: the artefacts would
+    land in eval_ema/, the directory the TRAINING run owns and the frozen
+    EMA numbers are read from, and an eval-only re-draw must never
+    overwrite a frozen number."""
+    if use_ema and n_euler_override is None:
+        raise ValueError(
+            "use_ema without n_euler_override would overwrite eval_ema/, the "
+            "frozen EMA eval written by the training run; pass a grid "
+            "override (artefacts land in eval_ema_ne<k>/) or read eval_ema/"
+        )
     if smc_tau is not None and replicate_seed is not None:
         raise ValueError(
             "replicate draws are plain-IS by the S7 preregistration; "
@@ -582,7 +605,7 @@ def eval_only(
     target, head = build_target_and_head(cfg, device)
     head.load_state_dict(
         torch.load(
-            run_dir / "checkpoints" / "final.pt",
+            run_dir / "checkpoints" / ("final_ema.pt" if use_ema else "final.pt"),
             map_location=device,
             weights_only=True,
         )
@@ -596,7 +619,8 @@ def eval_only(
             head, target, cfg, run_dir, multi_event=multi_event,
             replicate_seed=replicate_seed,
             eval_dir_suffix=(
-                "" if n_euler_override is None else f"_ne{n_euler_override}"
+                ("_ema" if use_ema else "")
+                + ("" if n_euler_override is None else f"_ne{n_euler_override}")
             ),
         )
     print(f"[eval_only] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
@@ -642,6 +666,22 @@ def main():
         "sampling seed (S7 amendment DECIDE-1); artefacts land in "
         "eval_replicate_s<SEED>/ beside the frozen eval/",
     )
+    parser.add_argument(
+        "--eval-ne",
+        type=int,
+        default=None,
+        metavar="K",
+        help="With --eval-only: re-draw on a K-step Euler grid instead of "
+        "the cell's own; writes eval_ne<K>/ (or eval_ema_ne<K>/ with "
+        "--eval-ema). Decouples model quality from discretisation.",
+    )
+    parser.add_argument(
+        "--eval-ema",
+        action="store_true",
+        help="With --eval-only and --eval-ne: draw from checkpoints/"
+        "final_ema.pt instead of final.pt. Requires --eval-ne so the "
+        "artefacts cannot overwrite the frozen eval_ema/.",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/03_hard")
     parser.add_argument("--no-wandb", action="store_true")
@@ -680,8 +720,13 @@ def main():
             multi_event=True if args.multi_event else None,
             smc_tau=args.smc_tau,
             replicate_seed=args.eval_seed,
+            n_euler_override=args.eval_ne,
+            use_ema=args.eval_ema,
         )
         return
+    if args.eval_ne is not None or args.eval_ema:
+        parser.error("--eval-ne/--eval-ema require --eval-only (both move "
+                     "only the draw, so they run against a completed run dir)")
     if args.smc_tau is not None:
         parser.error("--smc-tau requires --eval-only (SMC is inference-time "
                      "only; run it against a completed run dir)")
