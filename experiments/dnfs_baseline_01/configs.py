@@ -248,6 +248,51 @@ class TrainCfg:
     # point (the residual is pointwise) but it shrinks the effective
     # sample; `rollout_resample_events` in the training log is what makes
     # that visible, and tau is the knob that trades it off.
+    #
+    # MEASURED OUTCOME 2026-08-20 — the argument above is a design-time
+    # case, and the experiment REFUTED it. Eight arms, tau in {0.3, 0.6}
+    # across all three chapters, bands frozen before launch: d8
+    # unconstrained NULL/NULL, d64 hard INSENSITIVE/INSENSITIVE, soft
+    # c=0.80 DAMAGE/DAMAGE (eval ESS/N 0.8994 control -> 0.8053 at tau=0.3
+    # -> 0.2666 at tau=0.6, both CI-disjoint below and surviving a
+    # family-wise correction). Damage is MONOTONE in tau. The flag is kept,
+    # default OFF and bit-identical off, as a documented negative control.
+    #
+    # THE IDENTITY THAT EXPLAINS IT, which the code never stated. The
+    # sampler accumulates log w += xi_t*dt, and the residual the loss
+    # SQUARES is delta_t(x) = xi_t(x) - d_t log Z_t (compare
+    # `samplers/ctmc.py::compute_xi_t` with the Kolmogorov residual in
+    # `samplers/kolmogorov.py` — the same expression, differing by that one
+    # term). Hence
+    #
+    #     log w_T = INT delta_t dt  +  INT d_t log Z_t dt
+    #
+    # and the second term is STATE-INDEPENDENT, common to every particle.
+    # So across particles log w differs ONLY by the time-integrated
+    # Kolmogorov residual — the quantity training exists to drive to zero.
+    # Resampling on w is therefore SELECTION ON THE TRAINING RESIDUAL:
+    # systematic resampling keeps high log w and kills low, deleting the
+    # most negative-residual trajectories, and because the loss squares
+    # delta those are among the highest-loss examples available. They never
+    # reach the replay buffer, so the gradient that would correct them is
+    # never formed. Measured on an enumerable 3x3 instance with exact p_t
+    # and d_t log Z_t: killed particles carry mean delta^2 = 5130 against
+    # 234 for survivors, and the on-policy residual mass hidden from the
+    # loss is 8.2x / 12.8x / 22.3x at tau = 0.3 / 0.6 / 0.9 — monotone in
+    # tau, matching the damage ordering.
+    #
+    # The SMC move is NOT broken; it does what the WHY block promised (on
+    # that instance it moves the rollout onto the target, TV 0.318 ->
+    # 0.064, and sharpens c_t, |c_t - d_t log Z_t| 10.1 -> 0.81). The
+    # benefit and the cost are the SAME operation: projecting the ensemble
+    # onto p_t is precisely what removes the off-target trajectories the
+    # loss needs to see. No tau escapes it, because the trigger is a
+    # function of the rollout ESS — healthy cells never fire (7 and 8
+    # events in entire d8 and d64 runs at tau=0.3, so those NULLs are null
+    # BY CONSTRUCTION), and a cell only fires once it is stressed enough
+    # for the measure shift to be large. Failure mode (iii) above is real
+    # but secondary: the diversity loss is ~1.5x against the 8-22x
+    # residual-mass effect.
     rollout_resample_ess_fraction: float | None = None
 
 

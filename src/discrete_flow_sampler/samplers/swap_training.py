@@ -692,15 +692,29 @@ def train_swap(
 
             # M3: the buffer takes the FIRST outer_batch rows of the
             # enlarged rollout. Base positions are iid draws, so a prefix
-            # is a uniform subset (no selection bias) — and with rollout
-            # resampling on, a prefix of the systematic ancestors is a
-            # stratified block of the same ensemble drawn from a row order
-            # that is still exchangeable, so it stays unbiased for the same
-            # measure, just no longer literally iid; c_t above used all
+            # is a uniform subset (no selection bias); c_t above used all
             # n_rollout rows. .contiguous() releases the enlarged storage:
             # replay chunks are views (training._retain_chunks detaches but
             # shares storage), and at d256 a c_t_batch=512 chunk is ~400 MB.
             # A no-op view when n_rollout == outer_batch (byte-identical).
+            #
+            # CORRECTED 2026-08-20: this block previously claimed the
+            # prefix stays exchangeable under rollout resampling. It does
+            # not. `systematic_resample_indices` returns ancestors in CDF
+            # order (test-pinned in tests/test_resampling.py), so once a
+            # resample has fired the rows are SORTED BY ANCESTOR: a prefix
+            # is then a contiguous low-CDF block that over-represents the
+            # low-index end and clusters duplicate lineages adjacently —
+            # a selection bias on exactly the axis c_t is estimated over,
+            # plus a diversity loss the buffer inherits for the whole
+            # cycle. Shuffling first restores the uniform-subset property.
+            # Only reachable with c_t_batch > outer_batch AND rollout
+            # resampling on; the permutation is skipped otherwise so the
+            # flag-off path stays byte-identical (the parity guarantee is
+            # test-pinned) and no RNG is consumed.
+            if rollout_resampling is not None and n_rollout > outer_batch:
+                shuffled_rows = torch.randperm(n_rollout, device=device)
+                x_traj_full = x_traj_full[:, shuffled_rows]
             x_traj = x_traj_full[:, :outer_batch].contiguous()
             del x_traj_full
 

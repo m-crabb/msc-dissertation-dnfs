@@ -279,3 +279,28 @@ def test_resampling_lifts_final_segment_ess():
     ess_plain = ess_from_log_weights(log_w_plain)
     ess_smc = ess_from_log_weights(log_w_final)
     assert ess_smc >= ess_plain
+
+
+def test_systematic_ancestors_are_sorted_so_a_prefix_is_not_a_uniform_subset():
+    """Ancestor indices come back in CDF order, so `ancestors[:k]` is a
+    contiguous low-CDF block, NOT an exchangeable subset.
+
+    This is the property that makes `swap_training`'s c_t-batch prefix
+    slice unsafe after a resample fires: with `c_t_batch > outer_batch` the
+    rollout draws n_rollout rows, resamples all of them, and the replay
+    buffer then keeps the FIRST outer_batch. When the rows are iid base
+    draws a prefix is a uniform subset and that is free; once systematic
+    resampling has ordered the rows by ancestor, the prefix over-represents
+    the low-index end of the CDF and clusters duplicate lineages together.
+    The trainer must therefore shuffle before slicing. This test pins the
+    sortedness so the requirement cannot silently lapse.
+    """
+    torch.manual_seed(0)
+    log_weights = torch.randn(16) * 2.0
+    ancestors = systematic_resample_indices(log_weights, uniform=0.5)
+
+    assert bool((ancestors[1:] >= ancestors[:-1]).all()), "ancestors not sorted"
+    # The concrete harm: the prefix carries fewer distinct lineages than the
+    # same-sized uniform subset would, because clones sit adjacent.
+    prefix_lineages = len(set(ancestors[:8].tolist()))
+    assert prefix_lineages < len(set(ancestors.tolist()))
