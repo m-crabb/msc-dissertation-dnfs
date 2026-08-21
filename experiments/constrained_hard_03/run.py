@@ -514,11 +514,54 @@ def _backfill_missing_defaults(saved: dict, cfg_class) -> None:
             _backfill_missing_defaults(saved[cfg_field.name], cfg_field.type)
 
 
+def _eval_checkpoint_and_suffix(
+    use_ema: bool, n_euler_override: int | None, stage_best: int | None
+) -> tuple[str, str]:
+    """Resolve which checkpoint an eval-only pass reads and where it writes.
+
+    Returned together, and kept pure, because the pairing IS the footgun: a
+    draw from the wrong weights returns a plausible number and nothing in
+    the artefacts records which file was read. Every checkpoint choice must
+    therefore also move the output directory, so a re-draw can never
+    overwrite a frozen number with one computed from other weights.
+
+    `stage_best` selects `best_stage<k>.pt` -- the per-stage checkpoint the
+    swap trainer keeps when `stage_best_checkpoints=True`, saved at the best
+    trailing median-of-3 train-eval ESS within that curriculum stage. It is
+    the instrument the rw cells' frozen bands declare: whether the sigma_c
+    stage's best beats `final.pt` is the first checkpoint-SELECTION read at
+    a size where final.pt is known good. The trainer saves `head.state_dict()`
+    there and no EMA shadow, so pairing it with `use_ema` is REFUSED rather
+    than served from `final_ema.pt` -- that would answer a stage question
+    with a run-end checkpoint and look entirely normal in the output.
+    """
+    if stage_best is not None and stage_best < 0:
+        raise ValueError(f"stage index must be non-negative, got {stage_best}")
+    if stage_best is not None and use_ema:
+        raise ValueError(
+            "stage-best checkpoints carry no EMA twin (the trainer saves raw "
+            "head weights per stage); the selection read is raw-vs-raw "
+            "against final.pt"
+        )
+    checkpoint = (
+        f"best_stage{stage_best}.pt"
+        if stage_best is not None
+        else ("final_ema.pt" if use_ema else "final.pt")
+    )
+    suffix = (
+        ("" if stage_best is None else f"_stage{stage_best}")
+        + ("_ema" if use_ema else "")
+        + ("" if n_euler_override is None else f"_ne{n_euler_override}")
+    )
+    return checkpoint, suffix
+
+
 def eval_only(
     run_dir: str | Path, multi_event: bool | None = None,
     smc_tau: float | None = None, replicate_seed: int | None = None,
     n_euler_override: int | None = None,
     use_ema: bool = False,
+    stage_best: int | None = None,
 ) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
     checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
@@ -565,7 +608,19 @@ def eval_only(
     `use_ema` without `n_euler_override` is refused: the artefacts would
     land in eval_ema/, the directory the TRAINING run owns and the frozen
     EMA numbers are read from, and an eval-only re-draw must never
-    overwrite a frozen number."""
+    overwrite a frozen number.
+
+    With `stage_best` set, the draw reads `checkpoints/best_stage<k>.pt`
+    and writes eval_stage<k>/ -- the checkpoint-SELECTION read the rw
+    cells pre-registered (sigma_c stage-best vs final.pt at the full
+    frozen eval, judged only against a bootstrap CI because the rule takes
+    a maximum over ~25 trailing medians per stage and a best-of-many
+    maximum over a flat series carries upward selection bias). Raw weights
+    both sides; see `_eval_checkpoint_and_suffix` for why the EMA pairing
+    is refused."""
+    checkpoint_name, eval_dir_suffix = _eval_checkpoint_and_suffix(
+        use_ema, n_euler_override, stage_best
+    )
     if use_ema and n_euler_override is None:
         raise ValueError(
             "use_ema without n_euler_override would overwrite eval_ema/, the "
@@ -609,7 +664,7 @@ def eval_only(
     target, head = build_target_and_head(cfg, device)
     head.load_state_dict(
         torch.load(
-            run_dir / "checkpoints" / ("final_ema.pt" if use_ema else "final.pt"),
+            run_dir / "checkpoints" / checkpoint_name,
             map_location=device,
             weights_only=True,
         )
@@ -622,10 +677,7 @@ def eval_only(
         eval_metrics = final_eval(
             head, target, cfg, run_dir, multi_event=multi_event,
             replicate_seed=replicate_seed,
-            eval_dir_suffix=(
-                ("_ema" if use_ema else "")
-                + ("" if n_euler_override is None else f"_ne{n_euler_override}")
-            ),
+            eval_dir_suffix=eval_dir_suffix,
         )
     print(f"[eval_only] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
     return eval_metrics
@@ -686,6 +738,15 @@ def main():
         "final_ema.pt instead of final.pt. Requires --eval-ne so the "
         "artefacts cannot overwrite the frozen eval_ema/.",
     )
+    parser.add_argument(
+        "--stage-best",
+        type=int,
+        default=None,
+        metavar="K",
+        help="With --eval-only: draw from checkpoints/best_stage<K>.pt "
+        "instead of final.pt; writes eval_stage<K>/. The pre-registered "
+        "checkpoint-selection read (sigma_c stage-best vs final).",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", default="results/03_hard")
     parser.add_argument("--no-wandb", action="store_true")
@@ -726,6 +787,7 @@ def main():
             replicate_seed=args.eval_seed,
             n_euler_override=args.eval_ne,
             use_ema=args.eval_ema,
+            stage_best=args.stage_best,
         )
         return
     if args.eval_ne is not None or args.eval_ema:

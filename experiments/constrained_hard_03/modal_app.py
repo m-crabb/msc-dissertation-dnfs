@@ -261,7 +261,7 @@ def _resolve_multi_event_trit(multi_event: int):
 )
 def eval_remote(
     run_dir_name: str, multi_event: int = -1, smc_tau: float = 0.0,
-    n_euler_override: int = 0,
+    n_euler_override: int = 0, stage_best: int = -1,
 ):
     """Re-run the end-of-run eval for a run dir already on the volume
     (recovery for trainings whose final eval died, e.g. the 2026-07-06
@@ -281,7 +281,10 @@ def eval_remote(
     collide with a real sweep point. `n_euler_override > 0` re-draws on
     that sampling grid instead of the cell's own (artefacts to
     eval_ne<k>/; the grid-decoupling probe — see run.eval_only); 0 is the
-    same can't-collide sentinel."""
+    same can't-collide sentinel. `stage_best >= 0` draws from
+    best_stage<k>.pt instead of final.pt (artefacts to eval_stage<k>/,
+    the pre-registered checkpoint-selection read); -1 is its sentinel,
+    since stage 0 is a real stage and cannot serve as one."""
     import sys
     from pathlib import Path
 
@@ -293,6 +296,7 @@ def eval_remote(
         multi_event=_resolve_multi_event_trit(multi_event),
         smc_tau=smc_tau or None,
         n_euler_override=n_euler_override or None,
+        stage_best=None if stage_best < 0 else stage_best,
     )
     volume.commit()
 
