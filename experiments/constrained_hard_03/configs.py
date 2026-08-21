@@ -1716,6 +1716,307 @@ CONFIGS: dict[str, HardStageCfg] = {
             batch_size=512,
         ),
     ),
+    # ---- ne128 x CV composition family (2026-08-21, s42, user GO) -------
+    # WHY THIS FAMILY EXISTS. s42 judging certified two d256 levers as
+    # independent and, until now, uncomposed:
+    #   * the GRID (training): `H2_..._b512_ne128_naive` reads GRID-HELPS
+    #     at EMA Var[log w]/site 0.00485 (0.00463, 0.00508) against both
+    #     ne512 parent seeds (0.00612 / 0.00735), and the 276127 grid probe
+    #     removed the shared-field caveat -- the keystone keeps its gain
+    #     when re-rolled at ne512 (0.00493), and the parent gains nothing
+    #     when re-rolled at ne128 (0.00595, CI overlapping its own 0.00612).
+    #     The advantage is in the TRAINED MODEL, not the eval sampler.
+    #   * the ESTIMATOR (continuation): `H2_..._20k_sc_cv2_b512_ne512`
+    #     reads PASS at EMA eval ESS/N 0.2655 (0.2302, 0.3043) vs its
+    #     parent's 0.0198, and 276126's naive twin split the confound --
+    #     ESTIMATOR-OWNS, 20k extra fixed-sigma_c steps alone recovering
+    #     only 10.7% of the ESS gain (2.32x of the 13.41x).
+    # Nobody has run them together: cvcont ran at ne512, and the keystone
+    # says ne128 is both better AND 4x cheaper in rollout FLOPs.
+    #
+    # COST, measured not guessed (a100, b512): ne512 costs ~110 min / 5k
+    # steps, confirmed three ways (5k screen 109 min, naivecont 20k
+    # 7h20m, rw 50k 20h03m). Of that, 5000 x 0.464 s = 38 min is the inner
+    # loss backward, which `wall_clock_step_s` measures and which reads
+    # IDENTICALLY at ne128 and ne512 (0.4673 vs 0.4638) -- it is
+    # grid-independent. Only the remaining ~72 min scales with the grid.
+    # So ne128 buys ~2.0x WALL CLOCK, not 4x; the 4x is rollout FLOPs.
+    # Budget at ne128: ~56 min / 5k steps => 20k ~3.7 h, 50k ~9.3 h,
+    # 70k ~13 h, and ~15% more at h128/L3.
+    #
+    # LOSS MICROBATCHING at 128 rides on ALL SIX arms of this family, and
+    # is NOT a declared variable on any of them. The keystone -- arm A's
+    # continuation parent and the h32 comparator for arms B and P -- runs
+    # loss_microbatch_size=128 itself, as does the ne512 recipe, so 128 is
+    # this lineage's setting and omitting it is what would make an arm
+    # differ from its own parent in an extra place. It is gradient-exact:
+    # the swap loss is a per-row mean, c_t reaches it as a detached
+    # per-row gather from a grid frozen for the cycle, and the identity is
+    # pinned for ARBITRARY per-row c_t by
+    # tests/test_loss_microbatch_parity.py -- which is why the estimator
+    # cannot affect it (the control variate changes how c_t is COMPUTED,
+    # in the outer no_grad rollout, never how the loss DECOMPOSES). The
+    # `cv2` cells' historical "no loss_microbatch" note guards against a
+    # BATCH-COUPLED control variate computed inside the loss; this code
+    # computes c_t outside it, so the note does not bind here. It also
+    # keeps the per-slice gradient-noise-scale instrument live on every
+    # arm, and removes an OOM risk at h128/L3 (~6x the activation memory
+    # of h32/L2).
+    #
+    # A: the CV continuation at the keystone's grid. One variable versus
+    # the landed cvcont (n_euler_steps 512 -> 128); continued with
+    # --init-from the keystone's own final.pt, so its parent is its own
+    # seed rather than cvcont's.
+    # PRIMARY DECLARED BEFORE THE READ, and deliberately NOT the project's
+    # default Var/site: the two levers ALREADY COINCIDE on the bulk
+    # statistic -- keystone 0.00485 (0.00463, 0.00508) and cvcont 0.00495
+    # (0.00475, 0.00515) are indistinguishable -- so Var/site has no power
+    # to resolve composition here. They differ 5x on the TAIL: EMA eval
+    # ESS/N 0.0532 vs 0.2655, top weight 0.039 vs 0.0076. The tail
+    # statistic is therefore the primary for this arm, with Var/site and
+    # top weight read alongside.
+    # FROZEN BANDS (before launch, seed 42, EMA eval ESS/N, bootstrap CI):
+    #   COMPOSES   iff CI separated ABOVE cvcont's (0.2302, 0.3043) -- the
+    #              estimator gain survives the cheaper grid and adds to it.
+    #   REDUNDANT  iff CI OVERLAPS cvcont's -- both levers reach one
+    #              ceiling; the recipe takes ne128 for the cost alone.
+    #   INTERFERES iff CI separated BELOW cvcont's -- the coarse grid
+    #              costs the control variate something, and ne512 stays
+    #              the grid for CV arms specifically.
+    #   Var/site CI wholly below 0.00463 is corroborating evidence of
+    #   composition; a Var/site read stuck at ~0.0049 with ESS above
+    #   0.3043 is the informative "tail-only" outcome and must be reported
+    #   as such rather than rounded into either story.
+    # SEED CAVEAT, recorded before the read: cvcont is seed 43 and this
+    # arm is seed 42, and the measured d256 seed-to-seed spread is 18% of
+    # mean on Var/site. The within-seed comparison (this arm vs its own
+    # keystone parent) carries no such caveat and is the safer read.
+    # TRIPWIRE ARMED at 2000, exactly as the ne512 twin: the continuation
+    # is the validated warm pattern (var-ratio crossed 1 at ~step 914 on
+    # healing rates, 0.121 once healthy), so 2000 is generous for a warm
+    # start and the halt is the designed cost-capped negative verdict.
+    "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne128": replace(
+        _d256_fmo2_warm_cell(
+            "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne128",
+            n_euler_steps=128,
+        ),
+        train=replace(
+            _d256_fmo2_warm_cell(
+                "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne128",
+                n_euler_steps=128,
+            ).train,
+            batch_size=512,
+            loss_microbatch_size=128,
+            halt_on_cv_inversion_after=2000,
+        ),
+    ),
+    # B: the same total budget with the control variate on FROM STEP 0.
+    # Matched to A by construction and that is the point: the keystone's
+    # 50k is 30k of sigma ladder + 20k at sigma_c, and A adds 20k more at
+    # sigma_c, so A is 30k ladder + 40k sigma_c = 70k. B runs 70k with the
+    # SAME ladder, whose final stage starts at 30k, giving 30k ladder +
+    # 40k sigma_c. The only difference left between A and B is WHEN the
+    # control variate joins -- warm at 50k, or cold at 0.
+    # ADVERSE PRIOR, recorded before launch: cold CV at d256 is the one
+    # configuration already measured catastrophic -- eval ESS/N 0.0069
+    # against the naive base's 0.5475 with raw FVU 2.06 (above 1 means the
+    # control variate is INJECTING variance, not removing it). That was a
+    # 5k screen at sigma=0.10 on the OLD ne512 recipe, so it does not
+    # settle this arm, but sigma=0.10 is exactly this arm's first ladder
+    # stage. The mechanism by which ne128 might change it -- a coarser
+    # grid means larger dt and a different integrand variance -- is
+    # PLAUSIBLE BUT NOT DERIVED, and is not claimed here.
+    # TRIPWIRE ARMED at 5000, deliberately LATER than the warm arms' 2000:
+    # a cold start has no healed model to recover toward, and the ~914
+    # step healing precedent is a WARM number that must not be read across.
+    # 5000 is one full ladder stage, so the arm is judged on a completed
+    # stage rather than on a transient. If it fires, that halt IS the
+    # verdict at ~55 min rather than ~13 h.
+    # FROZEN BANDS (before launch, seed 42): frame check -- stage-1 tail
+    # FVU <= 0.05 (the anchor transfer band; a frame break voids the read).
+    #   WARM-JOIN-REQUIRED iff the tripwire fires, OR final EMA eval ESS/N
+    #                      CI separated BELOW arm A's.
+    #   COLD-CV-VIABLE     iff final EMA eval ESS/N CI overlaps or is
+    #                      separated ABOVE arm A's -- the two-phase recipe
+    #                      is then a convention, not a requirement, and
+    #                      the chapter's "CV must join warm" claim is
+    #                      withdrawn.
+    "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2": (
+        lambda _cell: replace(
+            _cell,
+            train=replace(
+                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
+            ),
+        )
+    )(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2",
+            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            loss_microbatch_size=128,
+        )
+    ),
+    # ---- capacity twins of the composition family (2026-08-21, user GO) --
+    # WHY, AND AGAINST WHAT PRIOR. Capacity is a CLOSED door at d256 and
+    # the evidence points the wrong way: the full-horizon arm
+    # `H2_..._fmo2_h128_lr03_50k_curr_naive` read a REGRESSION, EMA
+    # Var[log w]/site 0.0229 (0.0219, 0.0239) against the anchor's 0.0168
+    # (0.0161, 0.0176), CI-disjoint WORSE, matching d64 (h128 0.695 vs
+    # 0.810). That is recorded here so these arms cannot be read as if the
+    # question were open.
+    # What is genuinely new, and the only reason to re-ask: that arm ran on
+    # the ANCHOR (batch 128, Var/site 0.0168) under naive_mc, a base 2.8x
+    # worse than the current recipe's 0.0061. The coherent hypothesis is
+    # that capacity could not bind while estimator variance was the binding
+    # constraint, and the control variate moves exactly that constraint.
+    # The hypothesis is NOT established and these arms are expected, on the
+    # evidence, to read NULL or REGRESSION.
+    # DECLARED FIELDS: hidden_dim 32 -> 128 and n_layers 2 -> 3, bundled.
+    # The project's own convention keeps width and depth in separate cells
+    # (see `_d64_fmo2_h128_cell`: "Depth is a separate cell and is
+    # deliberately not bundled"), and that convention is knowingly set
+    # aside here because the user's question is "does more capacity help",
+    # not "which capacity knob helps" -- a bundled arm that reads NULL
+    # closes both at once, and only a POSITIVE read would need unbundling.
+    # `n_heads` stays 4, so head_dim rides 8 -> 32 as a consequence of
+    # widening rather than as a further knob -- the same choice
+    # `_d64_fmo2_h128_cell` made and for the same reason.
+    # Loss microbatching rides at 128 as it does on all six arms of this
+    # family; the rationale is stated once in the family header above.
+    # LR: these arms keep the recipe ladder (1e-3 -> 3e-4 at stage 4), so
+    # capacity is the only knob versus their h32 twins. THE RISK IS
+    # MEASURED AND ON THE RECORD: the 5k screen found un-retuned lr 1e-3
+    # penalises h128 specifically across sigma transitions (h128 tail FVU
+    # 0.0498 vs h128+lr03's 0.0380-0.0406, base-like), which is why the
+    # landed capacity arm flattened lr to 3e-4 everywhere. The `_lr03`
+    # sibling below exists to separate that artefact from a capacity
+    # verdict rather than leaving it as a caveat.
+    #
+    # P: the naive 50k parent. Serves twice -- as arm C's continuation
+    # source (a continuation cannot start from the keystone, because every
+    # weight matrix changes shape when hidden_dim moves), and as the
+    # full-horizon capacity re-read at the CURRENT recipe under naive_mc,
+    # which is the direct comparison to the landed anchor regression.
+    # FROZEN BANDS (before launch, seed 42, EMA eval, bootstrap CI, vs its
+    # one-variable h32/L2 twin the keystone: Var[log w]/site 0.00485
+    # (0.00463, 0.00508), ESS/N 0.0532): frame check -- stage-1 tail FVU
+    # <= 0.05, a break VOIDS the read.
+    #   CAPACITY BINDS iff Var/site CI separated BELOW (0.00463, 0.00508).
+    #   NULL           iff Var/site CI overlaps it -- capacity closes at
+    #                  full horizon on the current recipe too, not just on
+    #                  the anchor.
+    #   REGRESSION     iff Var/site CI separated ABOVE it -- the anchor
+    #                  finding reproduces on a 2.8x better base, which is
+    #                  a stronger closure than the anchor read alone.
+    "H2_d256_c50_s223_letf_fmo2_h128L3_50k_curr_b512_ne128_naive": (
+        lambda _cell: replace(
+            _cell,
+            model=replace(_cell.model, hidden_dim=128, n_layers=3),
+        )
+    )(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_h128L3_50k_curr_b512_ne128_naive",
+            estimator="naive_mc", n_euler_steps=128, batch_size=512,
+            loss_microbatch_size=128,
+        )
+    ),
+    # P_lr03: P with the curriculum lr flattened to 3e-4 at EVERY stage,
+    # matching the landed capacity arm's treatment exactly. This is the
+    # lr/capacity de-confound at full horizon, the same pairing every
+    # screen capacity arm shipped with, and it is judged twice.
+    # FROZEN BANDS (before launch, seed 42, EMA eval Var/site, bootstrap
+    # CI): the P bands above apply unchanged against the keystone; PLUS
+    #   LR-ARTEFACT iff this arm's CI is separated BELOW P's -- the ladder
+    #               lr was damaging h128 and P's read is an lr verdict
+    #               rather than a capacity one, so P is void as a capacity
+    #               read and arm D must be re-run at flat lr before its
+    #               own read means anything.
+    #   LR-FREE     iff the two CIs overlap -- the h128 lr sensitivity the
+    #               5k screen measured does not survive to full horizon on
+    #               this recipe, and P's capacity read stands as written.
+    "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_50k_curr_b512_ne128_naive": (
+        lambda _cell: replace(
+            _cell,
+            model=replace(_cell.model, hidden_dim=128, n_layers=3),
+            curriculum=replace(
+                _cell.curriculum,
+                stages=tuple(
+                    replace(stage, lr=3e-4)
+                    for stage in _cell.curriculum.stages
+                ),
+            ),
+        )
+    )(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_50k_curr_b512_ne128_naive",
+            estimator="naive_mc", n_euler_steps=128, batch_size=512,
+            loss_microbatch_size=128,
+        )
+    ),
+    # C: the capacity twin of arm A -- 20k CV continuation at fixed
+    # sigma_c. PARENT CHOSEN BY A CRITERION FROZEN HERE, BEFORE EITHER
+    # PARENT LANDS, so the choice cannot be made with the answer in hand:
+    # continue from whichever of P / P_lr03 has the lower EMA eval
+    # Var[log w]/site point estimate, and if their CIs overlap take P (the
+    # recipe-ladder arm), because a tie must not silently buy the extra
+    # declared field. If BOTH fail the stage-1 tail FVU <= 0.05 frame
+    # check, this arm does not launch.
+    # FROZEN BANDS (before launch, EMA eval ESS/N with bootstrap CI,
+    # Var/site and top weight alongside; primary is the tail statistic for
+    # the same reason given at arm A):
+    #   CAPACITY-BINDS-UNDER-CV iff CI separated ABOVE arm A's.
+    #   NULL                    iff CI overlaps arm A's -- capacity does
+    #                           not bind even once the estimator
+    #                           constraint is lifted, which is the
+    #                           strongest form of the closure.
+    #   REGRESSION              iff CI separated BELOW arm A's.
+    "H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128": (
+        lambda _cell: replace(
+            _cell,
+            model=replace(_cell.model, hidden_dim=128, n_layers=3),
+            train=replace(
+                _cell.train, batch_size=512, loss_microbatch_size=128,
+                halt_on_cv_inversion_after=2000,
+            ),
+        )
+    )(
+        _d256_fmo2_warm_cell(
+            "H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128",
+            n_euler_steps=128,
+        )
+    ),
+    # D: the capacity twin of arm B -- 70k with the control variate on
+    # from step 0. Carries arm B's adverse cold-CV prior AND the capacity
+    # prior above, so it is the least likely of the six to read positive;
+    # it exists so the 2x2 {when CV joins} x {capacity} is complete and
+    # "capacity binds only when CV is cold" is separable from "capacity
+    # binds". Tripwire at 5000 for arm B's reason.
+    # NOT LAUNCHED WITH AN lr03 SIBLING, deliberately: P vs P_lr03 is the
+    # lr probe, and it is cheaper to read that first than to buy a second
+    # 70k arm speculatively. If P_lr03 reads LR-ARTEFACT, D is void as a
+    # capacity read and its flat-lr twin becomes owed.
+    # FROZEN BANDS (before launch, seed 42): frame check -- stage-1 tail
+    # FVU <= 0.05. Then, EMA eval ESS/N with bootstrap CI:
+    #   CAPACITY-BINDS-UNDER-COLD-CV iff CI separated ABOVE arm B's.
+    #   NULL                         iff CI overlaps arm B's.
+    #   REGRESSION                   iff CI separated BELOW arm B's.
+    # If arm B halts on its tripwire and this arm does not (or vice
+    # versa), that ASYMMETRY is the finding and is reported as the primary
+    # result for the pair, ahead of any endpoint number.
+    "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2": (
+        lambda _cell: replace(
+            _cell,
+            model=replace(_cell.model, hidden_dim=128, n_layers=3),
+            train=replace(
+                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
+            ),
+        )
+    )(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2",
+            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            loss_microbatch_size=128,
+        )
+    ),
     # Buffer-depth-to-the-reference-invariant arm (2026-08-19, A6 of the
     # panel queue, user GO under the recipe-NULL clause): the recipe cell
     # verbatim with replay_buffer_cycles 8 -> 2 the ONLY change. The DNFS

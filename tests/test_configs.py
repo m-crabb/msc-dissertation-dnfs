@@ -1164,3 +1164,113 @@ def test_swap_route_never_reads_the_ising_log_ratio_clamp_field():
     reference = residual_swap(x, t, 0.0, head, target)
     target.log_ratio_clamp = 1e-6  # absurd; would zero every ratio if read
     assert torch.equal(residual_swap(x, t, 0.0, head, target), reference)
+
+
+def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
+    """The ne128 x CV composition family (2026-08-21) exists to compose two
+    levers s42 certified as independent — the training grid (keystone,
+    GRID-HELPS) and the c_t estimator (cvcont, ESTIMATOR-OWNS) — plus
+    capacity twins. Each arm is only interpretable if it differs from its
+    comparator by the fields its registry comment declares and no others,
+    so every relationship in the family is pinned here by rebuilding the
+    comparator from the arm and asserting equality.
+
+    `loss_microbatch_size` is deliberately NOT a declared deviation
+    anywhere in the family: the keystone parent already carries it, so 128
+    is the lineage setting and it is gradient-exact
+    (test_loss_microbatch_parity pins the identity for arbitrary per-row
+    c_t, which is why the control variate cannot disturb it — c_t is
+    computed in the outer no_grad rollout, not inside the loss)."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    keystone = CONFIGS["H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive"]
+    cvcont = CONFIGS["H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne512"]
+    arm_a = CONFIGS["H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne128"]
+    arm_b = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
+    arm_p = CONFIGS["H2_d256_c50_s223_letf_fmo2_h128L3_50k_curr_b512_ne128_naive"]
+    arm_p03 = CONFIGS[
+        "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_50k_curr_b512_ne128_naive"
+    ]
+    arm_c = CONFIGS["H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128"]
+    arm_d = CONFIGS["H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2"]
+
+    # Every arm trains at the keystone's grid and batch, under the schedule
+    # its parent already used.
+    for arm in (arm_a, arm_b, arm_p, arm_p03, arm_c, arm_d):
+        assert arm.ctmc.n_euler_steps == 128, arm.name
+        assert arm.train.batch_size == 512, arm.name
+        assert arm.train.loss_microbatch_size == 128, arm.name
+
+    # A vs the landed ne512 CV continuation: the grid is the only lever,
+    # with the backward schedule riding for the reason above.
+    assert arm_a.estimator == "control_variate"
+    assert arm_a.train.halt_on_cv_inversion_after == 2000
+    assert replace(
+        arm_a,
+        name=cvcont.name,
+        ctmc=replace(arm_a.ctmc, n_euler_steps=cvcont.ctmc.n_euler_steps),
+        train=replace(
+            arm_a.train,
+            loss_microbatch_size=cvcont.train.loss_microbatch_size,
+        ),
+    ) == cvcont
+
+    # B vs the keystone: the estimator, the horizon and the cold-start
+    # tripwire are the three declared changes. A and B then carry the SAME
+    # budget shape — 30k of ladder plus 40k at sigma_c — so the only thing
+    # separating them is when the control variate joins.
+    assert arm_b.estimator == "control_variate"
+    assert arm_b.train.n_steps == 70_000
+    assert arm_b.train.halt_on_cv_inversion_after == 5000
+    assert arm_b.curriculum == keystone.curriculum
+    assert arm_b.curriculum.stages[-1].start_step == 30_000
+    assert replace(
+        arm_b,
+        name=keystone.name,
+        estimator=keystone.estimator,
+        train=replace(
+            arm_b.train,
+            n_steps=keystone.train.n_steps,
+            halt_on_cv_inversion_after=keystone.train.halt_on_cv_inversion_after,
+        ),
+    ) == keystone
+
+    # P vs the keystone: capacity only, width and depth bundled as declared.
+    assert (arm_p.model.hidden_dim, arm_p.model.n_layers) == (128, 3)
+    assert arm_p.model.n_heads == keystone.model.n_heads == 4
+    assert arm_p.estimator == "naive_mc"
+    assert replace(
+        arm_p,
+        name=keystone.name,
+        model=replace(
+            arm_p.model,
+            hidden_dim=keystone.model.hidden_dim,
+            n_layers=keystone.model.n_layers,
+        ),
+    ) == keystone
+
+    # P03 vs P: the curriculum lr is the only change, flattened to the
+    # ladder's final value at every stage so the h128 lr artefact the 5k
+    # screen measured is separable from a capacity verdict.
+    assert {stage.lr for stage in arm_p03.curriculum.stages} == {3e-4}
+    assert replace(
+        arm_p03, name=arm_p.name, curriculum=arm_p.curriculum
+    ) == arm_p
+
+    # C vs A and D vs B: capacity only, on each h32 arm respectively.
+    for capacity_arm, base_arm in ((arm_c, arm_a), (arm_d, arm_b)):
+        assert (capacity_arm.model.hidden_dim, capacity_arm.model.n_layers) == (
+            128,
+            3,
+        ), capacity_arm.name
+        assert replace(
+            capacity_arm,
+            name=base_arm.name,
+            model=replace(
+                capacity_arm.model,
+                hidden_dim=base_arm.model.hidden_dim,
+                n_layers=base_arm.model.n_layers,
+            ),
+        ) == base_arm, capacity_arm.name

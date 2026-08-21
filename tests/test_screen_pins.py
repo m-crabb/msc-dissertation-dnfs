@@ -154,6 +154,22 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         # places at once (2026-08-19).
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive": 128,
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16": 128,
+        # The ne128 x CV composition family (2026-08-21). Every arm sits on
+        # the keystone's lineage, and the keystone above already carries the
+        # schedule -- so 128 is what keeps each arm a one-variable twin of
+        # its own parent, and omitting it is what would add a second
+        # difference. The h128/L3 arms additionally need it: ~6x the
+        # activation memory of h32/L2 on a b512 backward. Gradient-exactness
+        # is unaffected by the control variate, which changes how c_t is
+        # COMPUTED in the outer no_grad rollout, never how the per-row loss
+        # DECOMPOSES (test_loss_microbatch_parity pins the identity for
+        # arbitrary per-row c_t).
+        "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne128": 128,
+        "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2": 128,
+        "H2_d256_c50_s223_letf_fmo2_h128L3_50k_curr_b512_ne128_naive": 128,
+        "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_50k_curr_b512_ne128_naive": 128,
+        "H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128": 128,
+        "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name
