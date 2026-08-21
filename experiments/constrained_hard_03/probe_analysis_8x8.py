@@ -1,11 +1,8 @@
 """(sigma_c, 8x8) headline-cell probe analysis: the frozen S7 N_eff(O) metric
 assembled from archived artefacts, all local, CPU only.
 
-This is the analysis the pre-registration (2026-07-03, tag
-`prereg-s7-freeze-2026-07-03`) and its amendment (2026-08-12, tag
-`prereg-s7-amend01-2026-08-12`) govern. The headline cell is (sigma_c, 8x8)
-under every smoke outcome (amendment section 1). Machinery mirrors
-demo_4x4.py — the same frozen metric
+The headline cell is (sigma_c, 8x8) under every smoke outcome (amendment
+section 1). Machinery mirrors demo_4x4.py — the same frozen metric
 
     N_eff(O) = Var_pi[O] / MSE(O_hat)                    (probe FREEZE-1)
 
