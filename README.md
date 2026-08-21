@@ -123,11 +123,11 @@ MSc dissertation, Imperial College London, 2026 (working title).
 
 ```bibtex
 @inproceedings{
-ou2025discrete,
-title={Discrete Neural Flow Samplers with Locally Equivariant Transformer},
-author={Zijing Ou and Ruixiang ZHANG and Yingzhen Li},
-booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
-year={2025},
-url={https://openreview.net/forum?id=Wk65okms3T}
+  ou2025discrete,
+  title={Discrete Neural Flow Samplers with Locally Equivariant Transformer},
+  author={Zijing Ou and Ruixiang ZHANG and Yingzhen Li},
+  booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
+  year={2025},
+  url={https://openreview.net/forum?id=Wk65okms3T}
 }
 ```
