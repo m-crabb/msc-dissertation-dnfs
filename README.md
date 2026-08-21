@@ -23,29 +23,6 @@ intractable log-partition derivative and locally equivariant architectures for a
 The dissertation extends this to constrained sampling for materials, with the constraint handled
 at the level of the CTMC move set.
 
-## Status
-
-Work in progress (MSc dissertation). Completed to date:
-
-- a faithful, staged reproduction of the unconstrained DNFS baseline (MLP -> locally equivariant
-  MLP -> Stein control variate -> locally equivariant CNN -> locally equivariant Transformer);
-- motivating failure-mode experiments for classical MCMC in the constrained, low-temperature
-  regime (critical slowing-down and mode collapse under composition-preserving Kawasaki dynamics);
-- a soft (penalty / VCSGC-style) composition-constraint extension and an analysis of its limits;
-- native hard composition constraints via a composition-preserving swap CTMC with learned rates
-  (masked-attention pair head computing all swap rates in one pass), exact on the constraint
-  manifold by construction: validated against exact enumeration at 4x4, scaled to an 8x8
-  record, and benchmarked in a pre-registered mixing probe against tuned Kawasaki baselines
-  (icet/mchammer and a compiled local-swap kernel) with certified reference chains;
-- thermodynamic-integration free-energy references on the fixed-composition slice, validated
-  at 4x4 against enumeration;
-- a second constrained sampler family: budget-masked masked diffusion (MDNS-style) with the
-  constrained reference process, weight algebra, preconditioner, and denoising loss derived
-  and gate-tested at 4x4.
-
-In progress: the 16x16 scaling run, cross-size classical baseline slates, and the dissertation
-writeup.
-
 ## Setup
 
 Environment and dependencies are managed with [pixi](https://pixi.sh):
