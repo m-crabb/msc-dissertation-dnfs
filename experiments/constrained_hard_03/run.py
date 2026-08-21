@@ -23,6 +23,7 @@ from experiments.constrained_hard_03.configs import (
     build_swap_head,
 )
 from experiments.dnfs_baseline_01.configs import CurriculumCfg
+from experiments.dnfs_baseline_01.run import write_host_metadata
 
 from discrete_flow_sampler.diagnostics.metrics import (
     composition_observables,
@@ -377,6 +378,9 @@ def train(
     # attempt the original file is the record of what the run started as.
     if not (run_dir / "config.json").exists():
         (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
+    # Every d256 wall clock in the dissertation comes through this runner, and
+    # until now none of them recorded which GPU produced it.
+    write_host_metadata(run_dir)
 
     if use_wandb:
         import wandb

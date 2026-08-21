@@ -312,6 +312,37 @@ def _eval_at_composition(model, target, cfg, composition: float | None, device):
     return samples, log_weights, metrics
 
 
+def write_host_metadata(run_dir: Path) -> None:
+    """Append this attempt's host record to `<run_dir>/metadata.json`.
+
+    The load-bearing field is `device`. A run's wall clocks are only
+    comparable to another's when both ran on the same GPU class -- mars is a
+    shared B200 that MPS-shares GPUs between configs, so its step times must
+    never be read against a DoC a100's, and `wall_clock_step_s` is
+    uninterpretable without knowing which machine produced it. Nothing
+    recorded the device until now, so venue had to be reconstructed from the
+    submission logs.
+
+    Appended, not overwritten: a resumed run can be requeued onto a different
+    node, and then both hosts are true for different step ranges of the same
+    directory. `config.json` is written once for the opposite reason -- it is
+    the record of what the run started as, and a resume must not rewrite it.
+    """
+    path = run_dir / "metadata.json"
+    attempts = json.loads(path.read_text()) if path.exists() else []
+    attempts.append(
+        {
+            "torch_version": torch.__version__,
+            "hostname": socket.gethostname(),
+            "platform": platform.platform(),
+            "device": (
+                torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+            ),
+        }
+    )
+    path.write_text(json.dumps(attempts, indent=2))
+
+
 def train(
     cfg: StageCfg,
     seed: int = 42,
@@ -351,16 +382,7 @@ def train(
     # Persist the resolved config and host metadata next to the artefacts
     # so the run is reproducible from the directory alone.
     (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
-    (run_dir / "metadata.json").write_text(
-        json.dumps(
-            {
-                "torch_version": torch.__version__,
-                "hostname": socket.gethostname(),
-                "platform": platform.platform(),
-            },
-            indent=2,
-        )
-    )
+    write_host_metadata(run_dir)
 
     if use_wandb:
         import wandb

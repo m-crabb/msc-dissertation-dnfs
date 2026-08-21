@@ -164,10 +164,9 @@ class TrainCfg:
     # by a rule fixed before the run.
     checkpoint_every: int | None = None
     # Per-slot EMA of the c_t (dt log Z_t) grid across outer cycles
-    # (M2, 2026-08-14; plan docs/plans/2026-08-14-m-scaling-experiments.md
-    # Task 2). c_t noise enters the loss gradient multiplicatively through
-    # (xi - c)·grad(xi); at d256-naive the per-slot SE is ~0.93 nats. The
-    # Eq.-8 identity E[xi] = dt log Z_t holds for the model's own law, so
+    # (M2, 2026-08-14). c_t noise enters the loss gradient multiplicatively
+    # through (xi - c)·grad(xi); at d256-naive the per-slot SE is ~0.93 nats.
+    # The Eq.-8 identity E[xi] = dt log Z_t holds for the model's own law, so
     # smoothing across recent cycles is pure variance reduction at an
     # unchanged fixed point — the across-cycle complement of the Stein
     # CV's within-cycle reduction. The EMA resets at every curriculum
