@@ -246,6 +246,27 @@ def batch_configs(configs: str = "", seed: int = 42):
 
 
 @app.local_entrypoint()
+def batch_eval(
+    run_dirs: str = "", redraw: bool = False, redraw_seed: int = 0,
+    n_euler_override: int = 0,
+):
+    """Spawn one eval per comma-separated run dir, in parallel.
+
+    The grid-offset studies re-draw the same 8 fixed checkpoints at each
+    Euler grid, and running them one `modal run` at a time serialises
+    minutes-scale work into a sitting. Spawned, not called, so the set
+    survives the client exiting -- pair with `--detach`.
+    """
+    dirs = [d.strip() for d in run_dirs.split(",") if d.strip()]
+    for run_dir in dirs:
+        eval_remote.spawn(
+            run_dir_name=run_dir, redraw=redraw, redraw_seed=redraw_seed,
+            n_euler_override=n_euler_override,
+        )
+    print(f"spawned {len(dirs)} evals at ne{n_euler_override or 'native'}: {dirs}")
+
+
+@app.local_entrypoint()
 def batch_seeds(cfg_name: str, seeds: str = "42"):
     """Spawn one config across multiple seeds in parallel.
 
