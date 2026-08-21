@@ -104,14 +104,6 @@ example `kawasaki_mcmc.py`, `compare_dnfs_vs_mcmc.py`, `vcsgc_mcmc_validation.py
 `plot_ising_phases.py`). Per-run artefacts (config, training log, checkpoints, evaluation files)
 are written under `results/` and are not tracked.
 
-## Correctness
-
-The implementation is derived from the source papers' equations rather than copied, so the test
-suite encodes "what correct looks like" before implementation. High-value checks include the
-Kolmogorov residual being identically zero for analytic rate matrices, estimator unbiasedness on
-toy problems, and locally equivariant models satisfying the required equivariance and locality.
-Run them with `pixi run -e dev test`.
-
 ## Acknowledgements
 
 This work builds on Discrete Neural Flow Samplers by Zijing Ou and collaborators; the original
