@@ -63,7 +63,6 @@ slurm/                       batch scripts for the Imperial DoC GPU cluster (pri
 tests/                       pytest suite (correctness checks, see below)
 notebooks/                   familiarisation and cross-check notebooks
 data/                        small input assets
-results/                     per-run artefacts (gitignored)
 ```
 
 ## Running experiments
