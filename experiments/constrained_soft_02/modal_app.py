@@ -91,10 +91,13 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     """Run a single constrained-soft training config on Modal.
 
     `tag` replaces the run dir's timestamp suffix (see `run.train`); "" is the
-    "no tag" sentinel because Modal's CLI cannot pass None. It exists so a
-    seed-replicate family is greppable as one unit: several of these cells
-    already have more than one archived dir at the same seed, and a bare
-    timestamp leaves the analysis picking the right one by date.
+    "no tag" sentinel because Modal's CLI cannot pass None. It does two jobs.
+    A seed-replicate family stays greppable as one unit — several of these
+    cells already have more than one archived dir at the same seed, and a
+    bare timestamp leaves the analysis picking the right one by date. And a
+    preemption re-runs this function with identical inputs, so a stable tag
+    lands the retry in the SAME run dir, where `checkpoints/resume.pt` makes
+    it continue from the last outer-cycle boundary instead of step 0.
     """
     import sys
 
