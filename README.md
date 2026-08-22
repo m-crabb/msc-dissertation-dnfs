@@ -95,15 +95,16 @@ To be released under an open-source licence (MIT recommended) at final submissio
 If you find this work useful, please cite both of the below:
 
 ```bibtex
-@thesis{crabb2026discrete,
-  title       = {Discrete Neural Flow Samplers with Constraints for Materials Discovery},
-  author      = {Crabb, Mitchell},
-  institution = {Imperial College London},
-  type        = {mathesis},
-  year        = {2026},
-  pubstate    = {inpreparation},
-  editora     = {Li, Yingzhen and Ou, Zijing and Ganose, Alex},
-  editoratype = {collaborator},
+@thesis{
+  crabb2026discrete,
+  title={Discrete Neural Flow Samplers with Constraints for Materials Discovery},
+  author={Mitchell Crabb},
+  institution={Imperial College London},
+  type={mathesis},
+  year={2026},
+  pubstate={inpreparation},
+  editora={Yingzhen Li and Zijing Ou and Alex Ganose},
+  editoratype={collaborator}
 }
 
 @inproceedings{
