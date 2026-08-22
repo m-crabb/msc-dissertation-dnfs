@@ -57,8 +57,8 @@ import matplotlib.pyplot as plt
 import torch
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    ANALYTIC_GUIDE, FONT_SIZE_ANNOTATION, HARD_DELTA_HUE, MUTED, REFERENCE_INK,
-    SAMPLER_HUE, style_axes, use_house_style)
+    FONT_SIZE_ANNOTATION, HARD_DELTA_HUE, MUTED, REFERENCE_FILL, REFERENCE_INK,
+    SAMPLER_HUE, parameter_ramp, style_axes, use_house_style)
 from discrete_flow_sampler.diagnostics.metrics import (
     enumerate_states,
     ess_from_log_weights,
@@ -253,7 +253,7 @@ def run_single(args: argparse.Namespace) -> None:
     hard_pmf[target_idx] = 1.0
     ax.bar(xs - width, hard_pmf[ks], width, color=HARD_DELTA_HUE, zorder=3,
            label="hard constraint")
-    ax.bar(xs, soft_pmf[ks], width, color=REFERENCE_INK, zorder=3,
+    ax.bar(xs, soft_pmf[ks], width, color=REFERENCE_FILL, zorder=3,
            label=f"soft target (exact, $\\lambda={lam:g}$)")
     yerr = torch.stack([dnfs_mean[ks] - dnfs_lo[ks], dnfs_hi[ks] - dnfs_mean[ks]])
     ax.bar(xs + width, dnfs_mean[ks], width, color=SAMPLER_HUE, yerr=yerr.numpy(),
@@ -278,7 +278,7 @@ def run_single(args: argparse.Namespace) -> None:
     # (b) violating mass vs lambda: never reaches 0 at finite, samplable lambda.
     # Both ends of the trade are marked, so the panel shows what raising lambda
     # buys as well as that it never buys exactness.
-    axr.plot(lam_grid, off_grid, "-o", color=REFERENCE_INK, lw=1.4, ms=3.5, zorder=3)
+    axr.plot(lam_grid, off_grid, "-", color=REFERENCE_INK, lw=1.6, zorder=3)
     axr.plot([args.weak_lambda], [off_slice_weak], marker="D", color=HARD_DELTA_HUE,
              mfc="white", ms=7, ls="none", zorder=4,
              label=f"weak end $\\lambda={args.weak_lambda:g}$ ({off_slice_weak:.1%})")
@@ -368,24 +368,28 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
 
     # --- Figure: the D=10 composition marginals, weak vs strong lambda ---
     # One panel, one lattice. Hue carries the ROLE per the house palette (ink =
-    # the Gibbs reference this figure is judged against, blue = our sampler,
-    # grey = the analytic guide, red = the hard-constraint limit); lambda is
-    # never a hue, separating instead by linestyle for the references and by
-    # marker shape for the sampler.
+    # the Gibbs reference this figure is judged against, blue = our sampler, red
+    # = the hard-constraint limit). Lambda is a parameter level, not a role, so
+    # the two references separate by lightness within the ink family rather than
+    # by linestyle: two solid black curves at 1.6pt tangle at the peak, which is
+    # what dash-dot was hiding badly. Each envelope then takes its own lambda's
+    # value, so colour says WHICH lambda and the dotted pattern says analytic
+    # rather than measured.
     use_house_style()
+    reference_weak_hue, reference_strong_hue = parameter_ramp(REFERENCE_INK, 2)
     fig, ax = plt.subplots(figsize=(7.5, 4.4))
 
     ks = torch.arange(target_idx - args.window_sites, target_idx + args.window_sites + 1)
     xs = ks.float() / n_sites
     hard_marker = ax.axvline(c_target, color=HARD_DELTA_HUE, lw=1.6, zorder=4,
                              label="hard constraint")
-    reference_weak, = ax.plot(xs, gibbs_w[ks], "-", color=REFERENCE_INK, lw=1.6, zorder=3,
+    reference_weak, = ax.plot(xs, gibbs_w[ks], "-", color=reference_weak_hue, lw=1.6, zorder=3,
                               label=f"soft target, $\\lambda={lam_w:g}$ (Gibbs reference)")
-    reference_strong, = ax.plot(xs, gibbs_s[ks], "-.", color=REFERENCE_INK, lw=1.6, zorder=3,
+    reference_strong, = ax.plot(xs, gibbs_s[ks], "-", color=reference_strong_hue, lw=1.6, zorder=3,
                                 label=f"soft target, $\\lambda={lam_s:g}$ (Gibbs reference)")
-    envelope, = ax.plot(xs, env_w[ks], ":", color=ANALYTIC_GUIDE, lw=1.1, zorder=2,
+    envelope, = ax.plot(xs, env_w[ks], ":", color=reference_weak_hue, lw=1.1, zorder=2,
                         label=r"analytic envelope $\propto e^{-\lambda d (c - c_\mathrm{target})^2}$")
-    ax.plot(xs, env_s[ks], ":", color=ANALYTIC_GUIDE, lw=1.1, zorder=2)
+    ax.plot(xs, env_s[ks], ":", color=reference_strong_hue, lw=1.1, zorder=2)
     dnfs_weak = ax.errorbar(xs, w_mean[ks], yerr=w_err[:, ks].numpy(), fmt="o", ms=4.5,
                             color=SAMPLER_HUE, mfc="white", elinewidth=1.0, capsize=2.0,
                             label=f"DNFS, $\\lambda={lam_w:g}$ (seed mean, min-max)", zorder=5)

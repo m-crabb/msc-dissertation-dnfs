@@ -13,6 +13,14 @@ Colour follows the ROLE, never the figure: the reference/ground truth is
 always ink, our sampler is always the same blue, classical baselines stay
 in one family. A new figure picks roles, not colours.
 
+The one exception is a figure whose contrast IS a parameter level -- two
+lambdas, two lattice sizes, two temperatures -- where every series shares
+one role and the rule above would collapse them onto a single hue, leaving
+linestyle to carry a distinction it carries badly. There, ``parameter_ramp``
+gives the role a lightness ramp: light is the low level, dark the high one.
+The hue still names the role, so a reader who has learned "ink = reference"
+keeps it, and the ramp survives greyscale print by construction.
+
 Uncertainty grammar (one convention per data shape):
 - curves with seed spread   -> ``seed_band``: mean line + shaded min-max
   band, band labelled with n in the legend entry.
@@ -26,10 +34,16 @@ from __future__ import annotations
 
 import matplotlib as mpl
 import numpy as np
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import ListedColormap, to_hex, to_rgb
 
 # --- roles (never reassign per figure) -----------------------------------
 REFERENCE_INK = "#1a1a19"          # exact enumeration / certified chain / TI truth
+REFERENCE_FILL = "#4a4943"         # the same role as a large filled area (bars,
+                                   # patches). Ink was specified for LINES: a
+                                   # thin near-black curve reads as reference,
+                                   # but a bar-sized block of it dominates the
+                                   # panel and fights the saturated hues beside
+                                   # it. Use ink for strokes, this for fills.
 SAMPLER_HUE = "#2a78d6"            # our sampler (DNFS / masked attention), every chapter
 NEURAL_COMPARATOR_HUE = "#1baf7a"  # second neural head or matched neural baseline
 CLASSICAL_HUE = "#eda100"          # classical MCMC baseline (Kawasaki nonlocal, Gibbs, VC-SGC)
@@ -85,6 +99,24 @@ def style_axes(ax, grid_axis: str = "y") -> None:
     for spine in ("left", "bottom"):
         ax.spines[spine].set_color(MUTED)
     ax.tick_params(colors=MUTED, labelsize=FONT_SIZE_LABEL)
+
+
+def parameter_ramp(hue, n_levels, lightest=0.55):
+    """Lightness ramp within ONE role, ordered low level -> high level.
+
+    For figures whose contrast is a parameter rather than a role (see the
+    module docstring). The darkest entry is the role's own hue, so a
+    single-level figure is unchanged and a two-level one reads as "same
+    thing, more of it". ``lightest`` is how far the low end is blended
+    toward white; above about 0.65 a 1.6pt line starts to disappear on the
+    light surface, which is why it is not the default.
+    """
+    base = np.array(to_rgb(hue))
+    if n_levels == 1:
+        return [hue]
+    blend_fractions = np.linspace(lightest, 0.0, n_levels)
+    return [to_hex(base + (np.ones(3) - base) * fraction)
+            for fraction in blend_fractions]
 
 
 def seed_band(ax, x, per_seed_values, hue, label):
