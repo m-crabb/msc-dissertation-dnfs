@@ -96,6 +96,7 @@ If you find this work useful, please cite both of the below:
 
 Mitchell Crabb, *Discrete Neural Flow Samplers with Constraints for Materials Discovery*,
 MSc dissertation, Imperial College London, 2026 (working title).
+Supervisors: Yingzhen Li, Zijing Ou, Alex Ganose
 
 ```bibtex
 @inproceedings{
