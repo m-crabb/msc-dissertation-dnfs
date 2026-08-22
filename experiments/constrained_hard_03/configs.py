@@ -68,7 +68,7 @@ class HardStageCfg(StageCfg):
     same three-interval structure, band aggregated by exclusion-mask
     attention -- bit-exact blindness, decision 2026-07-07), or "factorised"
     (FactorisedSwapHead, one-pass low-rank bilinear causal factors plus
-    hole-subtracted global context -- no per-pair network, 2026-08-13).
+    hole-subtracted global context -- no per-pair lattice pooling, 2026-08-13).
     """
 
     head_kind: Literal[

@@ -1,5 +1,5 @@
 """Factorised swap head: low-rank bilinear causal factors + hole-subtracted
-global context. All-pairs G in ONE body pass with NO per-pair network.
+global context. All-pairs G in ONE body pass with NO per-pair pooling.
 
 Same readout as every swap head (DNFS Prop. 2 / Eq. (9), pair form):
 
@@ -9,9 +9,9 @@ and the same blindness requirement: H_ij must not depend on the token VALUES
 at sites i and j, at any layer -- one globally-mixing layer leaks x_i into
 every representation (the two-hop leak, interval_swap_head.py). Where the
 interval/masked-attention heads push all d^2 pair rows through a per-pair
-readout MLP over concatenated summaries, here the pair context is itself
-factorised into per-site pieces, so G assembles as batched matrix products
-and the per-pair work drops to O(rank * factor_dim) multiply-adds:
+readout MLP over concatenated summaries, here the pair context is built
+from per-site pieces, so no pair ever pools over O(d) lattice terms and the
+per-pair work drops from O(d) to a d-free constant:
 
     H_ij = sum_r  a_r(prefix_i, pos_i) * b_r(suffix_j, pos_j)   [bilinear]
          + rho( LN( c(x) - psi_i - psi_j ) )                    [global]
@@ -43,18 +43,28 @@ and the per-pair work drops to O(rank * factor_dim) multiply-adds:
   is nonlinear across terms and would force H to be materialised, defeating
   the factorisation; scale control lives per-term instead.
 
-forward assembles G without materialising the (B, d, d, f) context: the
-readout distributes through the bilinear term,
+What is and is not per-pair, stated honestly because the first draft of
+this head overclaimed it: the bilinear and time terms are per-site objects
+whose readout distributes (<a_i * b_j, w_i - w_j> = <a_i * w_i, b_j> -
+<a_i, b_j * w_j>, and <tau, w_i - w_j> = <tau, w_i> - <tau, w_j>), but the
+global term does NOT distribute -- LN and rho are nonlinear in psi_i +
+psi_j -- so it is a fixed-width per-pair map over a materialised
+(B, d, d, F_g) tensor. FLOP-counted at the production backbone (hidden 32,
+2 layers) it is 34% of the head's forward at d=64 and 50% at d=256, and its
+(B, d, d, .) tensors are the head's memory footprint. The cost class is
+still O(d^2) against masked attention's O(d^3): what the factorisation
+removes is the per-pair pooling over the lattice, not per-pair work.
 
-    <a_i * b_j, w_i - w_j> = <a_i * w_i, b_j> - <a_i, b_j * w_j>,
-
-so two batched (d x Rf)(Rf x d) matmuls give every pair at once, w being the
-omega table projected to factor width. H is defined on i < j and mirrored
-down (H_ji := H_ij, the interval head's label-symmetry convention), so
-forward computes the upper triangle of the raw scores and mirrors
-G[j,i] = -G[i,j] as an identity. The readable H-materialising path is kept
-as `compute_pair_context`: the reference the tests hold forward to, and the
-object the blindness probes flip spins at.
+forward therefore materialises H once (`compute_pair_context`, the object
+the blindness probes flip spins at) and reads G off it, the interval head's
+pattern. An earlier forward distributed the bilinear readout into two
+(d x Rf)(Rf x d) matmuls to avoid the (B, d, d, f) intermediate; with the
+global term present that intermediate exists anyway, and the distributed
+form costs ~2Rf per pair against Rf + f for build-then-read (0.401 vs
+~0.35 GFLOP at d=256, B=2), so it was a FLOP loss for no memory gain and
+was removed. H is defined on i < j and mirrored down (H_ji := H_ij, the
+label-symmetry convention); the score's upper triangle is mirrored as
+G[j,i] = -G[i,j], so index antisymmetry is an identity.
 
 Multi-order causal streams (the design's A-prime extension, opt-in via
 `site_orderings`): the bilinear term under the row-major ordering is
@@ -348,94 +358,59 @@ class FactorisedSwapHead(nn.Module):
         )
 
     def compute_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
-        """Reference path: materialise H, (B, d, d, f), mirrored to i > j.
+        """The pair context H, (B, d, d, f), mirrored to i > j.
 
-        Exists so the blindness tests can probe H directly (strictly
-        stronger than probing G's antisymmetry) and as the oracle `forward`
-        must match. Not the efficient path -- forward never builds this
-        tensor.
+        The one path: forward reads G off it, and the blindness tests flip
+        hole spins at it (strictly stronger than probing G's antisymmetry).
+        The global and time terms are symmetric in (i, j) already; only the
+        bilinear terms are defined on ordered pairs and need the mirror,
+        each ordering mirrored in ITS OWN o-space before un-permuting.
+        Contractions run in fp32 (module docstring) so H, and hence G, keep
+        the fp32 contract under autocast.
         """
         batch, d = x.shape
-        H = x.new_zeros(batch, d, d, self.factor_dim)
+        bilinear_factors = []
         if self.use_bilinear:
-            a, b = self._factor_tensors(x, t)
-            H = H + torch.einsum("birf,bjrf->bijf", a, b)
-        if self.use_global:
-            H = H + self._global_pair_context(x, t)
+            bilinear_factors.append((self._factor_tensors(x, t), None))
+            bilinear_factors += [
+                (self._extra_factor_tensors(name, x, t), name)
+                for name in self.site_orderings[1:]
+            ]
+        global_context = self._global_pair_context(x, t) if self.use_global else None
         tau = self.time_projection(self.backbone.time_embedder(t))
-        H = H + tau.view(batch, 1, 1, self.factor_dim)
         upper = torch.triu(
             torch.ones(d, d, dtype=torch.bool, device=x.device)
         ).view(1, d, d, 1)
-        H = torch.where(upper, H, H.transpose(1, 2))
-        # Extra orderings: each term is defined on o-ordered pairs, mirrored
-        # in ITS OWN o-space (the label-symmetry convention per ordering),
-        # then un-permuted back to site indices and summed.
-        if self.use_bilinear:
-            for name in self.site_orderings[1:]:
-                factor_a, factor_b = self._extra_factor_tensors(name, x, t)
-                inverse = getattr(self, f"_order_inverse_{name}")
-                H_extra = torch.einsum("birf,bjrf->bijf", factor_a, factor_b)
-                H_extra = torch.where(upper, H_extra, H_extra.transpose(1, 2))
-                H = H + H_extra[:, inverse][:, :, inverse]
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            H = tau.float().view(batch, 1, 1, self.factor_dim).expand(
+                batch, d, d, self.factor_dim
+            )
+            if global_context is not None:
+                H = H + global_context.float()
+            for (factor_a, factor_b), name in bilinear_factors:
+                term = torch.einsum(
+                    "birf,bjrf->bijf", factor_a.float(), factor_b.float()
+                )
+                term = torch.where(upper, term, term.transpose(1, 2))
+                if name is not None:
+                    inverse = getattr(self, f"_order_inverse_{name}")
+                    term = term[:, inverse][:, :, inverse]
+                H = H + term
         return H
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        """Pair-score matrix G, (B, d, d), assembled without materialising H.
+        """Pair-score matrix G, (B, d, d): <H_ij, omega_i - omega_j>.
 
         Upper triangle first (the i < j definition), then the mirror
         G[j,i] = -G[i,j] applied as an identity, so index antisymmetry is
         exact by construction and the diagonal is exactly zero.
         """
-        batch, d = x.shape
+        H = self.compute_pair_context(x, t)
         x_idx = ((x + 1) / 2).long()
         omega = self.backbone.omega(x_idx)                      # (B, d, h)
-        extra_factors = {}
-        if self.use_bilinear:
-            a, b = self._factor_tensors(x, t)
-            extra_factors = {
-                name: self._extra_factor_tensors(name, x, t)
-                for name in self.site_orderings[1:]
-            }
-        if self.use_global:
-            global_context = self._global_pair_context(x, t)    # (B, d, d, f)
-        tau = self.time_projection(self.backbone.time_embedder(t))
-
-        # fp32 contract on G (see module docstring): everything above may run
-        # under autocast; the contractions below must not.
         with torch.autocast(device_type=x.device.type, enabled=False):
             omega_factor = self.omega_projection(omega.float()) # (B, d, f)
-            scores = x.new_zeros(batch, d, d, dtype=torch.float32)
-            if self.use_bilinear:
-                a32, b32 = a.float(), b.float()
-                omega_ranked = omega_factor.unsqueeze(2)        # (B, d, 1, f)
-                scores = scores + torch.einsum(
-                    "birf,bjrf->bij", a32 * omega_ranked, b32
-                )
-                scores = scores - torch.einsum(
-                    "birf,bjrf->bij", a32, b32 * omega_ranked
-                )
-            if self.use_global:
-                token_difference = omega_factor.unsqueeze(2) - omega_factor.unsqueeze(1)
-                scores = scores + (global_context.float() * token_difference).sum(-1)
-            time_alignment = (omega_factor * tau.float().unsqueeze(1)).sum(-1)
-            scores = scores + time_alignment.unsqueeze(2) - time_alignment.unsqueeze(1)
+            token_difference = omega_factor.unsqueeze(2) - omega_factor.unsqueeze(1)
+            scores = (H * token_difference).sum(-1)
             upper = torch.triu(scores, diagonal=1)
-            pair_scores = upper - upper.transpose(1, 2)
-            # Extra orderings: raw o-space scores via the same distributed
-            # readout, mirrored in o-space (each term exactly antisymmetric),
-            # un-permuted, summed -- IEEE negation distributes over the sum,
-            # so exact index antisymmetry survives the addition.
-            for name, (factor_a, factor_b) in extra_factors.items():
-                order = getattr(self, f"_order_{name}")
-                inverse = getattr(self, f"_order_inverse_{name}")
-                omega_ranked = omega_factor[:, order].unsqueeze(2)
-                a32, b32 = factor_a.float(), factor_b.float()
-                extra = torch.einsum("birf,bjrf->bij", a32 * omega_ranked, b32)
-                extra = extra - torch.einsum(
-                    "birf,bjrf->bij", a32, b32 * omega_ranked
-                )
-                extra_upper = torch.triu(extra, diagonal=1)
-                mirrored = extra_upper - extra_upper.transpose(1, 2)
-                pair_scores = pair_scores + mirrored[:, inverse][:, :, inverse]
-            return pair_scores
+            return upper - upper.transpose(1, 2)

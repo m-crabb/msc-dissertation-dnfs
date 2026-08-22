@@ -11,7 +11,7 @@ claim is that the pair context can be assembled from per-site pieces --
 
 with every piece blind to the token values at i and j, so the shared readout
 G(i,j|x) = <H_ij, omega_{x_i} - omega_{x_j}> keeps exact state-swap
-antisymmetry with NO per-pair network evaluation.
+antisymmetry with NO per-pair pooling over the lattice.
 
 The workhorse is the same blindness probe as the interval-head suite (flip a
 hole spin, demand H unchanged -- strictly stronger than antisymmetry), plus
@@ -21,8 +21,8 @@ two pins specific to this head:
     (prefix_i stops before i, suffix_j starts after j, and nothing else looks
     at x) -- the coverage hole the global term exists to fill, stated as a
     test rather than prose;
-  * forward (the einsum assembly that never materialises H) must agree with
-    the readable reference that does materialise H.
+  * forward must agree with the explicit readout <H_ij, omega_i - omega_j>
+    of compute_pair_context, the one H path (the interval-head pattern).
 """
 
 import pytest
@@ -236,10 +236,9 @@ def test_index_antisymmetry_pinned():
 @torch.no_grad()
 @pytest.mark.parametrize("use_bilinear,use_global", ABLATIONS)
 def test_forward_matches_context_readout(use_bilinear, use_global):
-    """The efficient assembly (einsum over factors, H never materialised)
-    must agree with the readable reference <H_ij, omega_i - omega_j> built
-    from compute_pair_context -- the mask-one forward/forward_looped pattern,
-    here guarding the factorised regrouping."""
+    """forward must agree with the explicit readout <H_ij, omega_i - omega_j>
+    of compute_pair_context -- the mask-one forward/forward_looped pattern,
+    here guarding the triangle-and-mirror assembly."""
     head = _head(use_bilinear=use_bilinear, use_global=use_global)
     x = _state()
     t = torch.rand(1)
