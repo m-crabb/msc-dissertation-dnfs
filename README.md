@@ -1,7 +1,7 @@
 # Discrete Neural Samplers with Constraints
 
-Code for an MSc dissertation at Imperial College London on **constrained discrete neural
-samplers for materials configurations**.
+Code accompanying my MSc thesis at Imperial College London on **constrained discrete neural
+samplers for materials configurations**, supervised by Yingzhen Li, Zijing Ou, and Alex Ganose.
 
 ## Overview
 
