@@ -17,7 +17,7 @@ later — keep job scripts portable (paths in variables at the top).
 - Submission hosts: `gpucluster2.doc.ic.ac.uk` / `gpucluster3.doc.ic.ac.uk`.
   Direct external SSH is **disabled** (since 2025-12-17); reach them via
   College VPN or a jump through `shell[1-5].doc.ic.ac.uk`.
-- `~/.ssh/config` on the user's Mac already has working aliases (key auth,
+- `~/.ssh/config` on my Mac already has working aliases (key auth,
   connection multiplexing):
   - `ssh doc-shell` → shell1.doc.ic.ac.uk (user `mc625`)
   - `ssh gpucluster` → gpucluster2 via ProxyJump doc-shell

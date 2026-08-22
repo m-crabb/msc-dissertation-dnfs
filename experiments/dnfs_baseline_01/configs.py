@@ -547,7 +547,7 @@ CONFIGS: dict[str, StageCfg] = {
     # Jaakkola, papers/leaps.pdf, Section 9 + Figure 7. Their depth-5 LEC
     # with kernels [3,5,7,9,15] hit ESS ~68% on a 15x15 critical Ising at
     # ~100k params. We trim to [3,5,7,9] (no lattice-spanning kernel since
-    # D=10) and let the user pick d_l (per-layer channel dim) at impl time.
+    # D=10) and leave d_l (per-layer channel dim) to pick at impl time.
     "stage_3_d10_critical_deep": StageCfg(
         name="stage_3_d10_critical_deep",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
@@ -934,7 +934,7 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
     ),
-    # Unconstrained 16x16 control (2026-08-18, user GO): does the d=256
+    # Unconstrained 16x16 control (2026-08-18, GO): does the d=256
     # sigma_c wall appear WITHOUT the constraint machinery? The hard
     # chapter's proven 50k ladder frame (sigma stages every 5k, lr
     # 1e-3 -> 3e-4 on reaching 0.205, final 40% of budget at sigma_c)

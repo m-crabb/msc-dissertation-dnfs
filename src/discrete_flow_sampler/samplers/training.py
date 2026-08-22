@@ -72,7 +72,7 @@ def _retain_chunks(
     drift out of alignment with the states it describes.
 
     Replication-discipline consult log: the quarantined DNFS reference repo
-    was consulted 2026-08-19, under explicit user authorisation and for
+    was consulted 2026-08-19, under explicit authorisation and for
     comparison only, to resolve a paper-vs-code discrepancy in this rule.
     Algorithm 1 line 5 prints an unbounded ``B <- B U {...}`` with no
     eviction; the released code bounds retention to ~1024 trajectories

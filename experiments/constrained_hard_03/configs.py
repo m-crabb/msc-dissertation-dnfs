@@ -1097,7 +1097,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         factor_dim=40,
     ),
-    # A-prime gate arm (2026-08-14, user GO): fab8 + the column-major causal
+    # A-prime gate arm (2026-08-14, GO): fab8 + the column-major causal
     # stream (site_orderings=("row","col")) -- the interior-coverage repair,
     # adding INFORMATION where the rank/width arms only added capacity. The
     # 4x4 cells gate the d64 spend; bands FROZEN BEFORE LAUNCH: NO-REGRESSION
@@ -1160,7 +1160,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_ma_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr", head_kind="masked_attention",
     ),
-    # Factorised-head d64 scaling rung (2026-08-13, user GO): does the 4x4
+    # Factorised-head d64 scaling rung (2026-08-13, GO): does the 4x4
     # verdict transfer — the ~0.057 expressivity price AND the one-pass
     # speed win — at the first non-enumerable size? Single-variable twin of
     # the archived MA curriculum rung above: only head_kind and the
@@ -1173,7 +1173,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         ema_decay=0.9999,
     ),
-    # Rank-at-scale arm (2026-08-14, user GO): rank-16 twin of the fab8 d64
+    # Rank-at-scale arm (2026-08-14, GO): rank-16 twin of the fab8 d64
     # rung. At 4x4 the rank axis was refuted NEAR CEILING (0.057 deficit,
     # nothing for rank to buy); at the fab8 rung's measured 0.27 deficit it
     # has something to buy, and the trained MA field's spectrum leaves
@@ -1193,7 +1193,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             ema_decay=0.9999,
             bilinear_rank=16,
         ),
-        # A-prime at scale (2026-08-14, user GO — LOGGED AMENDMENT): fab8 d64
+        # A-prime at scale (2026-08-14, GO — LOGGED AMENDMENT): fab8 d64
         # rung + the column-major causal stream (site_orderings=("row","col")),
         # seed 42, single-variable twin of the fab8 rung (pinned by
         # test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings). The 4x4
@@ -1346,7 +1346,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         # starvation rather than resolution.
         "H2_d256_scr5k_fmo2_ne512_b512", n_euler_steps=512, batch_size=512,
     ),
-    # --- screen phase 2 (2026-08-18, user GO after judging): two arms, one
+    # --- screen phase 2 (2026-08-18, GO after judging): two arms, one
     # variable each against the SAME judged base pair (0.0364/0.0442).
     #
     # b512: the batch-only decomposition of the ne512_b512 bundle. That arm
@@ -1390,7 +1390,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         estimator="control_variate",
     ),
     # c_t decoupling arm (2026-08-19, Tier 3(a) of the standing queue,
-    # user GO): the fmo2 screen base with c_t_batch=512 the ONLY change —
+    # GO): the fmo2 screen base with c_t_batch=512 the ONLY change —
     # gradient batch stays 128, only the c_t estimator draws 512. The b512
     # arm showed batch 512 explains the ne512_b512 bundle (honest FVU
     # 0.0115 vs base 0.0286) and its B_crit readout (~45-91) put b512 ~10x
@@ -1547,7 +1547,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # kill the inverted control variate (adds 2.3-70x variance at d=256 vs
     # an 8-30x reduction at d64) — is the only arm showing a converging loss
     # mid-smoke. DO NOT LAUNCH until (i) all five smoke verdicts are judged
-    # against the pre-stated criteria and (ii) the user makes the launch
+    # against the pre-stated criteria and (ii) I make the launch
     # call (frozen amendment: launch by 14 Aug EOD or 16x16 degrades to
     # smoke-level evidence). Everything except the estimator is identical
     # to the diverged twin, so the comparison isolates the CV.
@@ -1561,7 +1561,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         curriculum=_D64_SIGMA_LADDER,
         estimator="naive_mc",
     ),
-    # The definitive cold fmo2 ladder at 16x16 (2026-08-18, user GO after
+    # The definitive cold fmo2 ladder at 16x16 (2026-08-18, GO after
     # the screen fleet was judged): the run every archived d256 number is
     # missing. The archived MA naive-rescue recipe verbatim with the head
     # family the only mechanism change (+ its riding EMA shadow and dual
@@ -1629,7 +1629,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv",
             estimator="control_variate", n_euler_steps=512, batch_size=512,
         ),
-    # CV continuation of the landed recipe (2026-08-19, user GO after the
+    # CV continuation of the landed recipe (2026-08-19, GO after the
     # recipe pair judged NULL/NULL-grazing-PARTIAL per its own bands
     # above): the cv2 pattern — flat sigma_c, 20k steps, lr pinned to the
     # ladder's final 3e-4 — applied to the b512+ne512 recipe shape, run
@@ -1641,7 +1641,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # (var-ratio crossed 1 at ~step 914 on healing rates, 0.121 once
     # healthy). No loss_microbatch: gradient-exactness is parity-pinned
     # for the archived loss only, a batch-coupled CV would break the
-    # per-row decomposition silently. TRIPWIRE ARMED (user-set 19-Aug):
+    # per-row decomposition silently. TRIPWIRE ARMED (set 19-Aug):
     # halt_on_cv_inversion_after=2000 with the default window 10 — a
     # sustained controlled/naive integrand-variance inversion after step
     # 2000 halts the run; that halt IS the designed cost-capped negative
@@ -1669,7 +1669,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             halt_on_cv_inversion_after=2000,
         ),
     ),
-    # NAIVE twin of the CV continuation above (2026-08-20, s41, user GO at
+    # NAIVE twin of the CV continuation above (2026-08-20, s41, GO at
     # judging): the same cell with `estimator` control_variate -> naive_mc
     # the ONLY declared change, continued with --init-from the SAME seed-43
     # recipe final.pt. Why it exists: the CV continuation judged PASS at
@@ -1716,7 +1716,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             batch_size=512,
         ),
     ),
-    # ---- ne128 x CV composition family (2026-08-21, s42, user GO) -------
+    # ---- ne128 x CV composition family (2026-08-21, s42, GO) -------
     # WHY THIS FAMILY EXISTS. s42 judging certified two d256 levers as
     # independent and, until now, uncomposed:
     #   * the GRID (training): `H2_..._b512_ne128_naive` reads GRID-HELPS
@@ -1855,7 +1855,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # ---- capacity twins of the composition family (2026-08-21, user GO) --
+    # ---- capacity twins of the composition family (2026-08-21, GO) --
     # WHY, AND AGAINST WHAT PRIOR. Capacity is a CLOSED door at d256 and
     # the evidence points the wrong way: the full-horizon arm
     # `H2_..._fmo2_h128_lr03_50k_curr_naive` read a REGRESSION, EMA
@@ -1874,7 +1874,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # The project's own convention keeps width and depth in separate cells
     # (see `_d64_fmo2_h128_cell`: "Depth is a separate cell and is
     # deliberately not bundled"), and that convention is knowingly set
-    # aside here because the user's question is "does more capacity help",
+    # aside here because my question is "does more capacity help",
     # not "which capacity knob helps" -- a bundled arm that reads NULL
     # closes both at once, and only a POSITIVE read would need unbundling.
     # `n_heads` stays 4, so head_dim rides 8 -> 32 as a consequence of
@@ -2018,7 +2018,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         )
     ),
     # Buffer-depth-to-the-reference-invariant arm (2026-08-19, A6 of the
-    # panel queue, user GO under the recipe-NULL clause): the recipe cell
+    # panel queue, GO under the recipe-NULL clause): the recipe cell
     # verbatim with replay_buffer_cycles 8 -> 2 the ONLY change. The DNFS
     # reference bounds retention to ~1024 trajectories
     # (max_size = 1024 // outer_batch, FIFO — see the consult log at
@@ -2037,7 +2037,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # should show faster post-boundary recovery if staleness is the
     # mechanism; unchanged recovery with a moved endpoint means the
     # mechanism claim is wrong even if the number moves.
-    # CANCELLED 2026-08-19 (s37, user GO) before it ever started: the d64
+    # CANCELLED 2026-08-19 (s37, GO) before it ever started: the d64
     # loop battery measured the retention curve directly -- 256/1024/2048/
     # 4096 retained trajectories gave EMA 0.766/0.810/0.827/0.860,
     # monotone -- so the reference's ~1024 bound is a mid-point on a
@@ -2061,7 +2061,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             replay_buffer_cycles=2,
         ),
     ),
-    # KEYSTONE grid arm (2026-08-19 s37, user GO): the recipe cell
+    # KEYSTONE grid arm (2026-08-19 s37, GO): the recipe cell
     # verbatim with n_euler_steps 512 -> 128 the ONLY change, so the read
     # is chargeable to the trajectory grid alone against the landed
     # recipe s42 (EMA eval ESS/N 0.0105, Var[log w]/site 0.0061, bootstrap
@@ -2097,7 +2097,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             estimator="naive_mc", n_euler_steps=128, batch_size=512,
             loss_microbatch_size=128,
         ),
-    # Retention-depth arm (2026-08-19 s37, user GO): the recipe cell
+    # Retention-depth arm (2026-08-19 s37, GO): the recipe cell
     # verbatim with replay_buffer_cycles 8 -> 16 the ONLY change --
     # retention 4096 -> 8192 trajectories at UNCHANGED freshness, since
     # the rollout still draws outer_batch fresh trajectories per cycle,
@@ -2134,7 +2134,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
     ),
     # Rank arm at the anchor recipe (2026-08-19, Tier 3(d) re-entered
-    # under the recipe-NULL clause, user GO): the fmo2 naive ladder
+    # under the recipe-NULL clause, GO): the fmo2 naive ladder
     # anchor verbatim with bilinear_rank 8 -> 32 the ONLY change. Why 32:
     # the factorised-head forensics measured the REQUIRED effective rank
     # of the swap-rate field growing ~d/8 with lattice side — d/8 = 32 at
@@ -2162,7 +2162,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         bilinear_rank=32,
     ),
-    # Third causal ordering at the anchor recipe (2026-08-19, user GO):
+    # Third causal ordering at the anchor recipe (2026-08-19, GO):
     # site_orderings ("row","col") -> ("row","col","diag"), the ONLY
     # change. Why this axis is live: at 8x8, adding the SECOND ordering
     # took the factorised rung from raw ESS/N 0.514 to 0.745 — the
@@ -2182,7 +2182,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # BIND iff EMA eval ESS/N >= 0.010 with bootstrap-CI separation, or
     # Var[log w]/site <= 0.012; NULL iff within the anchor spread —
     # interior coverage then joins rank on the closed expressivity list.
-    # CANCELLED 2026-08-19 (s37, user GO) before it started, on SLOT
+    # CANCELLED 2026-08-19 (s37, GO) before it started, on SLOT
     # TRIAGE and not on evidence -- the distinction matters and is
     # recorded deliberately. The d64 diag arm did land FLAT (EMA 0.8069
     # vs the rung's 0.8104, Var/site CIs overlapping), but this cell's own
@@ -2211,7 +2211,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         site_orderings=("row", "col", "diag"),
     ),
-    # Capacity arm at the anchor recipe (2026-08-19, user GO — the held
+    # Capacity arm at the anchor recipe (2026-08-19, GO — the held
     # full-horizon capacity read): the fmo2 naive ladder anchor with
     # hidden_dim 32 -> 128 AND flat lr 3e-4 across all curriculum stages.
     # Two declared fields, bundled deliberately: the 5k screen showed
@@ -2448,7 +2448,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         outer_batch_size=512,
         c_t_batch=512,
     ),
-    # Third causal ordering at 8x8 (2026-08-19, user call — the cheap
+    # Third causal ordering at 8x8 (2026-08-19, my call — the cheap
     # validation BEFORE the 16x16 sibling spends a100 hours on an untested
     # mechanism): site_orderings ("row","col") -> ("row","col","diag"),
     # the ONLY change vs the archived rung. The ESS endpoint is
@@ -2666,7 +2666,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_fmo2_50k_curr_noflush",
         flush_replay_on_stage=False,
     ),
-    # Boundary-shock arm (2026-08-19, user GO on corrected evidence): the
+    # Boundary-shock arm (2026-08-19, GO on corrected evidence): the
     # recipe cell with rewarmup_on_stage=True the ONLY training-dynamics
     # change — a fresh 500-step LR ramp from every sigma boundary, so the
     # boundary transient (buffer flush + target jump at initialisation-scale
@@ -2705,7 +2705,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             stage_best_checkpoints=True,
         ),
     ),
-    # Phase-2 estimator switch (2026-08-14, user GO): CONTINUE the completed
+    # Phase-2 estimator switch (2026-08-14, GO): CONTINUE the completed
     # naive 50k (launch with --init-from <naive run>/checkpoints/final.pt)
     # with the Stein control variate re-enabled. Mechanism, measured on the
     # trained naive checkpoint (CPU rollout harness that reproduces the d64
@@ -2858,7 +2858,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_smoke12k_replay2",
     ),
     # --- M-campaign Task 2 (2026-08-14): c_t EMA no-regression gate -------
-    # USER CALL (session close 2026-08-14): launch WITHOUT waiting for cv2's
+    # MY CALL (session close 2026-08-14): launch WITHOUT waiting for cv2's
     # band — the gate reads against the ARCHIVED MA twin, so cv2's outcome
     # changes nothing about its attribution. The archived MA 50k curriculum
     # recipe with c_t_ema_halflife_cycles=4 the ONLY change (sigma-transition
@@ -2879,7 +2879,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_ma_50k_curr_naive",
     ),
     # --- M-campaign Task 3 (2026-08-14): decoupled c_t rollout batch ------
-    # Mechanism cell, same user call: d256-naive 12k smoke with c_t_batch
+    # Mechanism cell, same call: d256-naive 12k smoke with c_t_batch
     # 128 -> 512 the ONLY change — c_t's per-slot standard error halves
     # (variance /4) while the inner batch and replay buffer stay at 128.
     # Frozen bands (plan Task 3), read vs the archived naive 50k run's first
@@ -2903,7 +2903,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_smoke12k_ctb512": _d64_smoke12k_ctb512_cell(
         "H2_d64_smoke12k_ctb512",
     ),
-    # RETIRED 2026-07-22 (user call, after batch 1 landed). Kept, not deleted:
+    # RETIRED 2026-07-22 (my call, after batch 1 landed). Kept, not deleted:
     # these three cells are the only way to reproduce a NEGATIVE result the
     # writeup will cite, and the head + falsification suite they exercise stay
     # green at no run cost. Do NOT launch further ga cells at d64.
@@ -2953,7 +2953,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         # the eval otherwise dominates the run (profile: 92% of GPU time).
         # run.py's final eval still draws the full 5000.
         n_eval_samples_training=512,
-        # Tier-2 flags, user sign-off 2026-07-06 (perf-branch evidence
+        # Tier-2 flags, signed off 2026-07-06 (perf-branch evidence
         # recorded 2026-07-05): SDPA readout everywhere, bf16 on the
         # in-training eval block only — the final 5000-sample eval runs fp32.
         use_sdpa_readout=True,

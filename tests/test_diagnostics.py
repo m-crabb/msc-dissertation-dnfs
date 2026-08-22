@@ -3,7 +3,7 @@
 Tests for the IS estimators (`free_energy_lb_estimate`,
 `internal_energy_estimate`, `entropy_estimate`) and their
 enumeration-based exact references encode "what correct looks like"
-before the user fills in the bodies. They start failing with
+before the bodies are filled in. They start failing with
 NotImplementedError; they pass once each body lands.
 
 Tests for the off-paper utilities removed in the 2026-05 metric refactor

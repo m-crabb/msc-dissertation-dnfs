@@ -38,7 +38,7 @@ def test_forward_shape(model):
 
 def test_forward_nonnegative(model):
     """CTMC rates are non-negative by definition. Softplus on raw scores
-    enforces this; if the user forgets to apply it, this catches it."""
+    enforces this; if a model forgets to apply it, this catches it."""
     x = _sample_state(8, 16)
     t = torch.rand(8)
     rates = model(x, t)
@@ -46,7 +46,7 @@ def test_forward_nonnegative(model):
 
 
 def test_t_dependence(model):
-    """Rates should depend on t. If the network ignores t (e.g. user forgot
+    """Rates should depend on t. If the network ignores t (e.g. the model forgot
     to concatenate t into the input), the two outputs will be bit-equal."""
     x = _sample_state(1, 16)
     t1 = torch.zeros(1)

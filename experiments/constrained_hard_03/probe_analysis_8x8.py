@@ -45,7 +45,7 @@ balance + weighted phi histogram against the reference's own phi histogram
 split-half R-hat(phi) and its own phi TV alongside. "Covers modes at least
 as well as Kawasaki" is operationalised as TV_neural <= TV_kawasaki with the
 50/50 balance within 0.1 — an operationalisation the freeze left open,
-flagged in the output for the user's ruling.
+flagged in the output for my ruling.
 
 Verdict: frozen_verdict transcribes prereg section 7 mechanically. GO needs
 BOTH currencies at 95% CI excluding parity AND point >= 1.5x, the floor not
@@ -59,8 +59,8 @@ network passes) is operationalised as: each ratio prices BOTH samplers per
 unit of ONE currency's honest count — energy-eval ratio charges the neural
 side its pair-Delta-E bill; network-pass ratio charges the neural side its
 backbone rows against Kawasaki's per-trial bill (its elementary operation
-and its energy evaluation coincide). Flagged in the output as a ruling the
-user must own before print.
+and its energy evaluation coincide). Flagged in the output as a ruling I
+must own before print.
 """
 import argparse
 import json
@@ -499,7 +499,7 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
 
     coverage_ok = (neural TV excess over its floor <= kawasaki's excess)
     AND |balance - 0.5| <= 0.1. The freeze fixed the axis, not the
-    tolerance or the floor construction — flagged for the user's ruling.
+    tolerance or the floor construction — flagged for my ruling.
     """
     rng = np.random.default_rng(20260813)
     balances = []
@@ -574,7 +574,7 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
             "<= kawasaki's excess) AND |balance - 0.5| <= 0.1; effective "
             "sizes = Kish ESS (neural) and n/tau_int(phi) (chains). The "
             "freeze fixed the axis but not this construction — ruling owed "
-            "by the user before print"
+            "before print"
         ),
     }
 
@@ -847,7 +847,7 @@ def main(argv=None):
             "margin observable: the freeze fixes the observable SET but "
             "not which observable carries the margin rule; energy (the "
             "demo pack's headline row) used here, full set in the tables",
-            "cross-currency division (SETTLED 2026-08-13, user ruling): "
+            "cross-currency division (SETTLED 2026-08-13, my ruling): "
             "the two currencies BRACKET the method between its best and "
             "worst defensible accounting and carry NO single-number claim "
             "- a backbone row and a pair-Delta-E differ by ~1e4-1e5 FLOPs, "
@@ -876,7 +876,7 @@ def main(argv=None):
             f"narrative: {v['narrative']}"
             + (f" — pending: {v['pending']}" if v["pending"] else "")
         )
-    lines += ["", "### Open rulings (owed by the user before print)", ""]
+    lines += ["", "### Open rulings (owed before print)", ""]
     lines += [f"- {r}" for r in verdict["open_rulings"]]
     lines += [
         "", "### FREEZE-5 discharge", "",

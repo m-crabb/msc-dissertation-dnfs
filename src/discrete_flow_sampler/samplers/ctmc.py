@@ -27,7 +27,7 @@ where xi_t is the local IS integrand. The exact form is the design choice:
        Needs the target (for log p_tilde at flipped neighbours -- the
        ratio collapses to exp(log_p_tilde(x_flip) - log_p_tilde(x))).
     b) Simpler model-only variant the paper uses for ESS: see Eq. (13).
-The user picks one (driven by what Eq. 8 / 13 in the paper specifies).
+The caller picks one (driven by what Eq. 8 / 13 in the paper specifies).
 
 Caller contract
 ---------------

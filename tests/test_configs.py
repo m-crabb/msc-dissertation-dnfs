@@ -294,7 +294,7 @@ def test_hard_ladder_covers_three_sigmas_plus_control():
 
 
 def test_hard_d64_cell_enables_tier2_flags():
-    """User sign-off 2026-07-06 (perf-branch evidence): the D=8 scaling cell
+    """Signed off 2026-07-06 (perf-branch evidence): the D=8 scaling cell
     runs with the SDPA readout and bf16 IN-TRAINING evals only — run.py's
     final 5,000-sample eval stays fp32. The D=4 gate cells stay flag-off:
     Tier-2 enablement is a per-cell decision, never a global default."""
