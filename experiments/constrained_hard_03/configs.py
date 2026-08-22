@@ -1960,6 +1960,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     # recipe-ladder arm), because a tie must not silently buy the extra
     # declared field. If BOTH fail the stage-1 tail FVU <= 0.05 frame
     # check, this arm does not launch.
+    # LOGGED AMENDMENT (2026-08-22, GO): launched from BOTH parents, not
+    # from the criterion's winner. The criterion existed to stop the parent
+    # being chosen with the answer in hand; running both removes the choice
+    # entirely rather than deferring it, which is strictly stronger, and it
+    # decides the arm on C's own endpoint without needing P / P_lr03 judged
+    # first. Two conditions hold it honest and are fixed HERE, before either
+    # C lands: (i) BOTH endpoints are reported, never only the better one --
+    # reporting one after the fact would be exactly the cherry-pick the
+    # frozen criterion was written to prevent; (ii) the C-vs-A comparison is
+    # now made TWICE, so it carries a Bonferroni factor of 2 (alpha 0.05 ->
+    # 0.025 per arm). Tags 20260822-C-cvcont-h128L3-fromP and -fromP03.
     # FROZEN BANDS (before launch, EMA eval ESS/N with bootstrap CI,
     # Var/site and top weight alongside; primary is the tail statistic for
     # the same reason given at arm A):
