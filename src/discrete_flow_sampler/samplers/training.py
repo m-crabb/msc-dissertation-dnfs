@@ -47,6 +47,13 @@ from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.samplers.log_z_estimators import compute_c_t_grid
 from discrete_flow_sampler.samplers.resampling import ResamplingConfig
+from discrete_flow_sampler.samplers.resume import (
+    capture_rng_state,
+    load_resume_state,
+    restore_rng_state,
+    save_resume_state,
+    truncate_log_to_step,
+)
 from discrete_flow_sampler.seeding import seed_everything
 
 
@@ -224,6 +231,7 @@ def train(
     composition_half_width: float = 0.0,
     composition_values=None,
     composition_curriculum=None,
+    on_checkpoint=None,
 ):
     """Run paper Algorithm 1 for `train_cfg.n_steps` total inner steps.
 
@@ -275,6 +283,28 @@ def train(
             widening the draw window during training. Same boundary rules as
             the other two curricula but — deliberately — it does NOT clear the
             replay buffer; see `_clear_replay`.
+        on_checkpoint: optional zero-arg callable invoked after each resume
+            checkpoint lands on disk (Modal passes `volume.commit` so the
+            checkpoint survives a preemption that skips the death-flush).
+
+    Preemption resume: every `train_cfg.resume_every_outer` outer cycles
+    (default 10) the full outer-boundary state is checkpointed to
+    `checkpoints/resume.pt`; if that file exists on entry, training restores
+    it and continues instead of starting over. The outer boundary is the only
+    valid checkpoint instant — mid-cycle the replay buffer and c_t grid are
+    half-rebuilt. What travels, and why each piece has to: model weights and
+    AdamW moments (a fresh optimiser would re-warm its second-moment estimate
+    and take a different-sized first step), the step counter (every curriculum
+    is keyed on it), the torch RNG states (or the continuation diverges at the
+    first draw despite identical weights), and all four replay-chunk lists
+    (with `replay_buffer_cycles > 1` the buffer holds past outer trajectories
+    reconstructible from nothing else — and for an amortised run each retained
+    state carries its own composition and its own c_t baseline, so dropping
+    those two lists would train states against baselines they never came
+    with: a wrong number, not a crash). Curriculum stage indices are NOT
+    stored — they are derivable from the step counter because every ladder
+    uses absolute `start_step`s — and the optimiser LR travels inside the
+    optimiser state dict, warmup scaling included.
 
     Amortisation and ∂_t log Z_t: the annealing path makes Z_t a function of
     the target composition, so the `c_t` baseline is only valid for the
@@ -306,6 +336,15 @@ def train(
         )
     else:
         raise ValueError(f"unknown optimiser {optimiser_kind!r}")
+
+    # Restore before anything else reads model or optimiser state. The weights
+    # loaded here are also what the RNG restore further down is paired with:
+    # together they are the run, and half of either is a different run.
+    resume_state = load_resume_state(ckpt_dir, map_location=target.device)
+    if resume_state is not None:
+        model.load_state_dict(resume_state["model"])
+        optimiser.load_state_dict(resume_state["optimiser"])
+    start_step = int(resume_state["step"]) if resume_state is not None else 0
 
     if use_wandb:
         import wandb
@@ -353,6 +392,15 @@ def train(
             f"inner contract requires whole outer cycles."
         )
     n_outer = train_cfg.n_steps // inner_steps_per_outer
+    if start_step % inner_steps_per_outer != 0:
+        raise ValueError(
+            f"resume.pt records step {start_step}, not an outer-cycle "
+            f"boundary (inner_steps_per_outer={inner_steps_per_outer}). "
+            f"Mid-cycle the replay buffer and c_t grid are half-rebuilt, so "
+            f"there is no consistent state to continue from."
+        )
+    start_outer = start_step // inner_steps_per_outer
+    resume_every_outer = int(getattr(train_cfg, "resume_every_outer", 10))
     curriculum = _normalise_curriculum(
         sigma_curriculum,
         n_steps=train_cfg.n_steps,
@@ -383,19 +431,28 @@ def train(
     half_width_now = float(composition_half_width)
 
     log_path = output_dir / "training_log.csv"
-    with log_path.open("w", newline="") as log_file:
+    # Append on resume, but only after dropping the rows a dead attempt
+    # flushed past its last checkpoint -- those steps are about to be redone
+    # and must not appear twice. A missing log falls back to a fresh header.
+    log_mode = (
+        "a"
+        if resume_state is not None and truncate_log_to_step(log_path, start_step)
+        else "w"
+    )
+    with log_path.open(log_mode, newline="") as log_file:
         writer = csv.writer(log_file)
-        writer.writerow(
-            ["step", "loss", "ess", "var_dt_log_p_tilde",
-             "var_estimator_integrand", "grad_norm",
-             "rate_site_mean", "rate_site_p99", "flip_prob_site_p99",
-             "flip_prob_clipped_frac", "log_ratio_clamp_frac",
-             "log_ratio_p99", "sigma_current", "lr_current",
-             "wall_clock_step_s", "composition_current",
-             "composition_half_width", "rollout_resample_events"]
-        )
+        if log_mode == "w":
+            writer.writerow(
+                ["step", "loss", "ess", "var_dt_log_p_tilde",
+                 "var_estimator_integrand", "grad_norm",
+                 "rate_site_mean", "rate_site_p99", "flip_prob_site_p99",
+                 "flip_prob_clipped_frac", "log_ratio_clamp_frac",
+                 "log_ratio_p99", "sigma_current", "lr_current",
+                 "wall_clock_step_s", "composition_current",
+                 "composition_half_width", "rollout_resample_events"]
+            )
 
-        step = 0
+        step = start_step
         curriculum_idx = -1
         lambda_idx = -1
         composition_idx = -1
@@ -432,37 +489,112 @@ def train(
                 target.composition_batch(composition),
             )
 
+        if resume_state is not None:
+            # Fast-forward all three ladders EXPLICITLY rather than letting
+            # the transition loops below replay them: those loops call
+            # `_clear_replay` on a σ or λ change, which would destroy the
+            # very chunks being restored two blocks down. The optimiser LR is
+            # deliberately not set here -- `load_state_dict` above already
+            # carries the exact value, warmup scaling included -- but
+            # `current_intended_lr` still has to advance, because it is what
+            # the warmup ramp multiplies and what a LATER stage boundary
+            # would otherwise be measured against.
+            while (
+                curriculum
+                and curriculum_idx + 1 < len(curriculum)
+                and step >= curriculum[curriculum_idx + 1][0]
+            ):
+                curriculum_idx += 1
+                _start, _sigma_now, lr_now = curriculum[curriculum_idx]
+                if lr_now is not None:
+                    current_intended_lr = float(lr_now)
+            if curriculum_idx >= 0:
+                target.set_sigma(curriculum[curriculum_idx][1])
+            while (
+                lambda_stages
+                and lambda_idx + 1 < len(lambda_stages)
+                and step >= lambda_stages[lambda_idx + 1][0]
+            ):
+                lambda_idx += 1
+                _start, _lambda_now, lr_now = lambda_stages[lambda_idx]
+                if lr_now is not None:
+                    current_intended_lr = float(lr_now)
+            if lambda_idx >= 0:
+                target.set_composition_penalty_strength(
+                    lambda_stages[lambda_idx][1]
+                )
+            while (
+                composition_stages
+                and composition_idx + 1 < len(composition_stages)
+                and step >= composition_stages[composition_idx + 1][0]
+            ):
+                composition_idx += 1
+                _start, half_width_now, lr_now = (
+                    composition_stages[composition_idx]
+                )
+                if lr_now is not None:
+                    current_intended_lr = float(lr_now)
+
+            # The replay tags come from the checkpoint, not from the target:
+            # they record the σ and λ the RETAINED states were drawn under,
+            # which is what the next boundary compares against to decide
+            # whether those states are still valid training data.
+            x_replay_chunks = [
+                chunk.to(device) for chunk in resume_state["x_replay_chunks"]
+            ]
+            t_idx_replay_chunks = [
+                chunk.to(device)
+                for chunk in resume_state["t_idx_replay_chunks"]
+            ]
+            composition_replay_chunks = [
+                chunk.to(device)
+                for chunk in resume_state["composition_replay_chunks"]
+            ]
+            c_t_replay_chunks = [
+                chunk.to(device) for chunk in resume_state["c_t_replay_chunks"]
+            ]
+            replay_sigma = float(resume_state["replay_sigma"])
+            replay_lambda = float(resume_state["replay_lambda"])
+            # RNG restore comes LAST so nothing above can perturb the stream
+            # the continuation is about to consume.
+            restore_rng_state(resume_state)
+
         # Pre-training stiff-sampler / init-basin diagnostic. Computed at t=0
         # before the first optimiser step; RNG state is saved and restored so
         # the diagnostic does not perturb training-trajectory randomness.
         # The logged `flip_prob_clipped_frac` here is the only place the
         # init-time stiffness signal is captured -- the in-loop diagnostic
         # only ever sees the post-first-update model.
-        rng_state_cpu = torch.get_rng_state()
-        rng_state_cuda = (
-            torch.cuda.get_rng_state() if torch.cuda.is_available() else None
-        )
-        model_diag, bind_diag = _bound(centre_composition)
-        with torch.no_grad(), bind_diag:
-            x_diag = target.sample_base(outer_batch, device=device)
-            t_diag = torch.zeros(outer_batch, device=device)
-            init_diag = _rate_diagnostics(
-                model_diag, x_diag, t_diag,
-                step_dt=1.0 / max(n_grid - 1, 1),
-                target=target,
+        # Skipped on resume: it describes step 0, it is already on disk, and
+        # recomputing it against the resumed weights would both overwrite the
+        # real init record and answer a different question than the file name
+        # claims.
+        if resume_state is None:
+            rng_state_cpu = torch.get_rng_state()
+            rng_state_cuda = (
+                torch.cuda.get_rng_state() if torch.cuda.is_available() else None
             )
-        torch.set_rng_state(rng_state_cpu)
-        if rng_state_cuda is not None:
-            torch.cuda.set_rng_state(rng_state_cuda)
-        (output_dir / "init_diagnostics.json").write_text(
-            json.dumps(init_diag, indent=2)
-        )
-        if use_wandb:
-            wandb.log(
-                {f"init/{k}": v for k, v in init_diag.items()}, step=0
+            model_diag, bind_diag = _bound(centre_composition)
+            with torch.no_grad(), bind_diag:
+                x_diag = target.sample_base(outer_batch, device=device)
+                t_diag = torch.zeros(outer_batch, device=device)
+                init_diag = _rate_diagnostics(
+                    model_diag, x_diag, t_diag,
+                    step_dt=1.0 / max(n_grid - 1, 1),
+                    target=target,
+                )
+            torch.set_rng_state(rng_state_cpu)
+            if rng_state_cuda is not None:
+                torch.cuda.set_rng_state(rng_state_cuda)
+            (output_dir / "init_diagnostics.json").write_text(
+                json.dumps(init_diag, indent=2)
             )
+            if use_wandb:
+                wandb.log(
+                    {f"init/{k}": v for k, v in init_diag.items()}, step=0
+                )
 
-        for outer in range(n_outer):
+        for outer in range(start_outer, n_outer):
             # Update σ before rebuilding the buffer so inner-step samples are
             # consistent with the σ they will be trained against. Curriculum
             # runs are piecewise-constant plateaus.
@@ -784,5 +916,38 @@ def train(
                     )
 
                 step += 1
+
+            # END OF OUTER CYCLE -- the only instant at which the training
+            # state is self-consistent (the buffer and c_t grid are whole,
+            # and the next cycle rebuilds both from scratch), so the only
+            # instant at which a resume checkpoint is valid. Also fires on
+            # the last cycle so a run killed between its final inner step
+            # and `final.pt` is recoverable without redoing anything.
+            if (outer + 1) % resume_every_outer == 0 or outer == n_outer - 1:
+                save_resume_state(
+                    ckpt_dir,
+                    {
+                        "step": step,
+                        "model": model.state_dict(),
+                        "optimiser": optimiser.state_dict(),
+                        "x_replay_chunks": [
+                            chunk.cpu() for chunk in x_replay_chunks
+                        ],
+                        "t_idx_replay_chunks": [
+                            chunk.cpu() for chunk in t_idx_replay_chunks
+                        ],
+                        "composition_replay_chunks": [
+                            chunk.cpu() for chunk in composition_replay_chunks
+                        ],
+                        "c_t_replay_chunks": [
+                            chunk.cpu() for chunk in c_t_replay_chunks
+                        ],
+                        "replay_sigma": replay_sigma,
+                        "replay_lambda": replay_lambda,
+                        **capture_rng_state(),
+                    },
+                )
+                if on_checkpoint is not None:
+                    on_checkpoint()
 
     torch.save(model.state_dict(), ckpt_dir / "final.pt")

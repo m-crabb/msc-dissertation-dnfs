@@ -41,6 +41,13 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
     upper_tri_pairs,
 )
 from discrete_flow_sampler.samplers.resampling import ResamplingConfig
+from discrete_flow_sampler.samplers.resume import (
+    capture_rng_state,
+    load_resume_state,
+    restore_rng_state,
+    save_resume_state,
+    truncate_log_to_step,
+)
 from discrete_flow_sampler.samplers.swap_ctmc import (
     compute_c_t_grid_swap,
     sample_swap_ctmc,
@@ -126,13 +133,13 @@ def _save_resume_state(
     ema=None,
     c_t_ema=None,
 ) -> None:
-    """Checkpoint full outer-boundary training state for preemption resume.
+    """Assemble the swap trainer's outer-boundary state for preemption resume.
 
-    Saved atomically (tmp file + rename) so a preemption mid-write can never
-    leave a truncated resume.pt behind. Replay chunks move to CPU so the
-    checkpoint is device-portable; RNG states make the continuation
-    bit-identical to an uninterrupted run (exactly on CPU fp32, modulo
-    kernel nondeterminism on CUDA). Curriculum stage / warmup / intended lr
+    The write itself is `resume.save_resume_state` (atomic, shared with the
+    flip trainer); what is swap-specific is the payload. Replay chunks move
+    to CPU so the checkpoint is device-portable; RNG states make the
+    continuation bit-identical to an uninterrupted run (exactly on CPU fp32,
+    modulo kernel nondeterminism on CUDA). Curriculum stage / warmup / lr
     are NOT stored — all are derivable from `step` because the sigma ladder
     uses absolute start_steps, and the optimiser lr travels inside the
     optimiser state dict.
@@ -141,10 +148,7 @@ def _save_resume_state(
         "step": step,
         "model": head.state_dict(),
         "optimiser": optimiser.state_dict(),
-        "rng_cpu": torch.get_rng_state(),
-        "rng_cuda": (
-            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-        ),
+        **capture_rng_state(),
         "x_replay_chunks": [chunk.cpu() for chunk in x_replay_chunks],
         "t_idx_replay_chunks": [chunk.cpu() for chunk in t_idx_replay_chunks],
         "replay_sigma": replay_sigma,
@@ -157,26 +161,7 @@ def _save_resume_state(
         # it must travel for the continuation to be bit-exact.
         "c_t_ema": c_t_ema.state_dict() if c_t_ema is not None else None,
     }
-    tmp_path = ckpt_dir / "resume.pt.tmp"
-    torch.save(state, tmp_path)
-    tmp_path.replace(ckpt_dir / "resume.pt")
-
-
-def _truncate_log_to_step(log_path: Path, resume_step: int) -> bool:
-    """Drop training-log rows at/after `resume_step` (a dead attempt may have
-    flushed rows past its last checkpoint). Returns True if the log survives
-    to be appended to, False if it is missing and needs a fresh header."""
-    if not log_path.exists():
-        return False
-    with log_path.open(newline="") as log_file:
-        rows = list(csv.reader(log_file))
-    header, body = rows[0], rows[1:]
-    kept = [row for row in body if int(row[0]) < resume_step]
-    with log_path.open("w", newline="") as log_file:
-        writer = csv.writer(log_file)
-        writer.writerow(header)
-        writer.writerows(kept)
-    return True
+    save_resume_state(ckpt_dir, state)
 
 
 def _cv_inversion_sustained(ratio_history: list[float], window: int) -> bool:
@@ -244,12 +229,7 @@ def train_swap(
     ckpt_dir = output_dir / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
 
-    resume_path = ckpt_dir / "resume.pt"
-    resume_state = None
-    if resume_path.exists():
-        resume_state = torch.load(
-            resume_path, map_location=target.device, weights_only=True
-        )
+    resume_state = load_resume_state(ckpt_dir, map_location=target.device)
 
     if resume_state is None:
         seed_everything(train_cfg.seed)
@@ -412,7 +392,7 @@ def train_swap(
     log_path = output_dir / "training_log.csv"
     log_mode = (
         "a"
-        if resume_state is not None and _truncate_log_to_step(log_path, start_step)
+        if resume_state is not None and truncate_log_to_step(log_path, start_step)
         else "w"
     )
     with log_path.open(log_mode, newline="") as log_file:
@@ -522,11 +502,7 @@ def train_swap(
                     )
             # RNG restore comes LAST in the restore sequence so nothing
             # above can perturb the stream the continuation will consume.
-            torch.set_rng_state(resume_state["rng_cpu"].cpu())
-            if resume_state["rng_cuda"] is not None and torch.cuda.is_available():
-                torch.cuda.set_rng_state_all(
-                    [state.cpu() for state in resume_state["rng_cuda"]]
-                )
+            restore_rng_state(resume_state)
 
         # Pre-training stiff-sampler / init-basin diagnostic. Computed at t=0
         # before the first optimiser step; RNG state is saved and restored so

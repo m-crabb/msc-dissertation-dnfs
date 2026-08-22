@@ -34,8 +34,9 @@ def main():
         "--tag",
         default=None,
         help="Run-dir suffix (default: wall-clock timestamp). A fixed tag "
-             "makes resubmission after preemption reuse the run dir and "
-             "skip a completed run; it does NOT resume mid-run",
+             "makes resubmission after preemption reuse the run dir, skip a "
+             "completed run, and resume an unfinished one from its last "
+             "checkpoints/resume.pt outer-cycle boundary",
     )
     args = parser.parse_args()
 

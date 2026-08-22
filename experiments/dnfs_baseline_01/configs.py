@@ -163,6 +163,19 @@ class TrainCfg:
     # obedience slope 0.079). Step tags let eval select the healthiest state
     # by a rule fixed before the run.
     checkpoint_every: int | None = None
+    # Outer cycles between full-state preemption checkpoints
+    # (`checkpoints/resume.pt`). Distinct from `checkpoint_every` above,
+    # which writes weights only for eval selection: this one carries the
+    # optimiser moments, step counter, RNG streams and replay buffer, i.e.
+    # everything needed to CONTINUE rather than to score. Motivating cost:
+    # the 2026-08-21 N11 matched-base family was killed at ~94% of a 50k
+    # budget and, with only a weights-only `latest.pt` on disk, all eight
+    # runs had to restart from step 0. Cadence is a trade between rewritten
+    # work after a kill (up to one interval) and IO; 10 cycles = 1000 inner
+    # steps at the standard 100-step cycle, ~2% of a 50k run. Arming it does
+    # not move the trajectory (pinned by tests/test_training_resume.py), so
+    # runs from this trainer stay comparable to every archived one.
+    resume_every_outer: int = 10
     # Per-slot EMA of the c_t (dt log Z_t) grid across outer cycles
     # (M2, 2026-08-14). c_t noise enters the loss gradient multiplicatively
     # through (xi - c)·grad(xi); at d256-naive the per-slot SE is ~0.93 nats.

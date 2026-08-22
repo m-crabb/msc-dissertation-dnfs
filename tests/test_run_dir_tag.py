@@ -9,9 +9,11 @@ runner — gives the run a stable directory identity: the retry lands in the
 SAME dir, and a run that already finished (eval/metrics.json present) is
 detected and skipped rather than retrained.
 
-Deliberately NOT covered: mid-run checkpoint resume. This trainer has none
-(unlike the hard runner's resume.pt path); a preempted run restarts from
-step 0. The tag buys idempotency for completed runs, not warm continuation.
+Scope: this file covers the DIRECTORY-identity half of that contract only.
+Mid-run continuation from `checkpoints/resume.pt` (added 2026-08-22) is a
+separate contract with its own file, `tests/test_training_resume.py` — but
+the two compose, and the tag is what makes the resume reachable at all: a
+retry that mints a fresh dir never sees the previous attempt's checkpoint.
 """
 import sys
 

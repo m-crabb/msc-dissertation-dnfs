@@ -17,6 +17,8 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
         experiments.constrained_soft_02.modal_app::batch_seeds \\
         --cfg-name S2_d4_c05_l50_letf --seeds "42,43,44,45"
 """
+import time
+
 import modal
 
 from experiments.constrained_soft_02.configs import CONFIGS
@@ -100,15 +102,31 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     from experiments.dnfs_baseline_01.run import train
     from experiments.constrained_soft_02.configs import CONFIGS
 
-    train(CONFIGS[cfg_name], seed=seed, output_dir="/results", tag=tag or None)
+    train(
+        CONFIGS[cfg_name], seed=seed, output_dir="/results", tag=tag or None,
+        # A preemption gets no chance to flush, so the resume checkpoint has
+        # to be committed to the volume the moment it is written -- otherwise
+        # the retry finds nothing and restarts from step 0, which is exactly
+        # the failure this whole path exists to prevent.
+        on_checkpoint=volume.commit,
+    )
     volume.commit()
 
 
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
-    """Local CLI entry: spawns `train_remote` as a remote Modal call."""
+    """Local CLI entry: spawns `train_remote` as a remote Modal call.
+
+    The tag is minted HERE, once, rather than defaulted inside the container:
+    a preemption re-runs `train_remote` with identical inputs, so a tag fixed
+    at spawn time lands the retry in the same run dir and lets it resume,
+    while a container-side timestamp would mint a fresh sibling dir and start
+    over. `batch_seeds` takes the tag from the caller for the same reason.
+    """
     _validate_cfg_name(cfg_name)
-    train_remote.remote(cfg_name=cfg_name, seed=seed)
+    train_remote.remote(
+        cfg_name=cfg_name, seed=seed, tag=time.strftime("%Y%m%d-%H%M%S"),
+    )
 
 
 @app.local_entrypoint()

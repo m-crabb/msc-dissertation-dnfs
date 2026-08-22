@@ -349,6 +349,7 @@ def train(
     output_dir: str | Path = "results/01_baseline",
     use_wandb: bool = True,
     tag: str | None = None,
+    on_checkpoint=None,
 ):
     """Top-level training entry. Importable from CLI or modal_app.
 
@@ -359,10 +360,15 @@ def train(
     `tag` replaces the run dir's wall-clock timestamp suffix (mirroring the
     hard experiment's runner): a Slurm job resubmitted after preemption then
     lands in the SAME run dir instead of minting a sibling, and a run that
-    already finished is detected and skipped. Unlike the hard runner there is
-    NO mid-run checkpoint resume here — a retried run restarts from step 0,
-    overwriting in place — so a fixed tag buys idempotency for completed runs
-    and a stable directory identity, not warm continuation.
+    already finished is detected and skipped, and a `checkpoints/resume.pt`
+    there makes `train_loop` CONTINUE from its outer-cycle boundary rather
+    than restart at step 0 (added 2026-08-22, after the N11 matched-base
+    family lost eight runs at ~94% of budget for want of it; see
+    `samplers.training.train` for what travels in the checkpoint).
+
+    `on_checkpoint` is forwarded to the trainer and fires after each resume
+    checkpoint lands: Modal passes `volume.commit` so the state is on the
+    volume even when a preemption skips the death-flush.
     """
     # Apply the per-invocation seed without mutating the frozen config.
     cfg = replace(cfg, train=replace(cfg.train, seed=seed))
@@ -381,7 +387,10 @@ def train(
 
     # Persist the resolved config and host metadata next to the artefacts
     # so the run is reproducible from the directory alone.
-    (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
+    # Written once: on a resumed attempt the original file is the record of
+    # what the run started as, and rewriting it would erase that.
+    if not (run_dir / "config.json").exists():
+        (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
     write_host_metadata(run_dir)
 
     if use_wandb:
@@ -404,13 +413,24 @@ def train(
                 ]
             )
 
+        # Reuse the first attempt's wandb run on resume so the curve stays a
+        # single run (steps already logged past the checkpoint are dropped by
+        # wandb's monotonic-step rule -- the same rows the log truncation
+        # discards locally).
+        wandb_id_path = run_dir / "wandb_run_id.txt"
+        stored_run_id = (
+            wandb_id_path.read_text().strip() if wandb_id_path.exists() else None
+        )
         wandb.init(
             project=cfg.wandb_project,
             group=cfg.name,
             name=f"{cfg.name}_seed{seed}_{tag}",
             config=asdict(cfg),
+            id=stored_run_id,
+            resume="allow",
             tags=tags,
         )
+        wandb_id_path.write_text(wandb.run.id)
 
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -473,6 +493,7 @@ def train(
         composition_curriculum=(
             cfg.composition.curriculum if cfg.composition is not None else None
         ),
+        on_checkpoint=on_checkpoint,
     )
 
     # End-of-run eval: a final batch of (samples, IS log-weights) over the
@@ -779,8 +800,9 @@ def main():
         "--tag",
         default=None,
         help="Run-dir suffix (default: wall-clock timestamp). A fixed tag "
-             "makes resubmission after preemption reuse the run dir and "
-             "skip a completed run; it does NOT resume mid-run",
+             "makes resubmission after preemption reuse the run dir, skip a "
+             "completed run, and resume an unfinished one from its last "
+             "checkpoints/resume.pt outer-cycle boundary",
     )
     parser.add_argument(
         "--eval-only",
