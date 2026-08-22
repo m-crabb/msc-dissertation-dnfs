@@ -94,11 +94,18 @@ To be released under an open-source licence (MIT recommended) at final submissio
 
 If you find this work useful, please cite both of the below:
 
-Mitchell Crabb, *Discrete Neural Flow Samplers with Constraints for Materials Discovery*,
-MSc dissertation, Imperial College London, 2026 (working title).
-Supervisors: Yingzhen Li, Zijing Ou, Alex Ganose
-
 ```bibtex
+@thesis{crabb2026discrete,
+  title       = {Discrete Neural Flow Samplers with Constraints for Materials Discovery},
+  author      = {Crabb, Mitchell},
+  institution = {Imperial College London},
+  type        = {mathesis},
+  year        = {2026},
+  pubstate    = {inpreparation},
+  editora     = {Li, Yingzhen and Ou, Zijing and Ganose, Alex},
+  editoratype = {collaborator},
+}
+
 @inproceedings{
   ou2025discrete,
   title={Discrete Neural Flow Samplers with Locally Equivariant Transformer},
