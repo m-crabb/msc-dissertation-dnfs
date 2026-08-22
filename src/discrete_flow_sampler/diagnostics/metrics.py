@@ -553,3 +553,86 @@ def gradient_noise_scale_components(
         1.0 / slice_size - 1.0 / batch_size
     )
     return grad_sqnorm_estimate, trace_sigma_estimate
+
+
+# --- House evaluation-table observables (MDNS Eq. 26 / 28, DASBS EW2) ---------
+#
+# All three compare an importance-weighted sampler (x, normalised weights w)
+# against unweighted reference configurations. Spins are +-1, x is (N, L*L)
+# row-major over an L x L lattice.
+
+def _weighted_site_means(x: Tensor, weights: Tensor) -> Tensor:
+    """E_w[x_i] for every site, shape (d,)."""
+    return torch.einsum("n,nd->d", weights, x.float())
+
+
+def magnetisation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int) -> float:
+    """dMag of MDNS Eq. (26): mean absolute error of the row/column magnetisations.
+
+    M_row(k) = sum_{i in row k} E[x_i] (a SUM over the L sites of the row, not a
+    mean, so the number scales with L -- compare within a lattice size only).
+    The error is (1/2L) sum_k |M_row(k) - M_row_pi(k)| + |M_col(k) - M_col_pi(k)|,
+    i.e. a plain average over the 2L row and column profiles. Under exact Z2
+    balance every profile is ~0, so a sampler that loses one mode reads large
+    here even when its energy marginal is right -- that is why the house table
+    keeps the column at c = 0.5 where translation would make it redundant.
+    """
+    uniform = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    sampler_profile = _weighted_site_means(x, weights).view(L, L)
+    reference_profile = _weighted_site_means(reference, uniform).view(L, L)
+    gap = sampler_profile - reference_profile
+    return ((gap.sum(1).abs().sum() + gap.sum(0).abs().sum()) / (2 * L)).item()
+
+
+def _row_pair_correlations(x: Tensor, weights: Tensor, L: int) -> tuple[Tensor, Tensor]:
+    """C_row(k,l) and C_col(k,l) of MDNS Eq. (27), each (L, L).
+
+    C(i,j) = E[x_i x_j] - E[x_i]E[x_j] is the connected correlation; C_row(k,l)
+    sums it over the L site pairs (i in row k, j in row l) sharing a column.
+    Computed from the weighted second-moment matrix E_w[x x^T] (d x d) so the
+    cost is one einsum, then the (k,l) blocks are traced along the column axis.
+    """
+    x = x.float()
+    means = _weighted_site_means(x, weights)
+    second_moment = torch.einsum("n,ni,nj->ij", weights, x, x)
+    connected = (second_moment - torch.outer(means, means)).view(L, L, L, L)  # (k, c, l, c')
+    same_col = torch.eye(L)
+    row_corr = torch.einsum("kclc,cc->kl", connected, same_col)   # i=(k,c), j=(l,c)
+    col_corr = torch.einsum("rkrl,rr->kl", connected, same_col)   # i=(r,k), j=(r,l)
+    return row_corr, col_corr
+
+
+def correlation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int) -> float:
+    """dCorr of MDNS Eq. (28): (1/L^2) sum_{k,l} |C_row - C_row_pi| + |C_col - C_col_pi|.
+
+    The (k,l) sum runs over all L^2 ordered row pairs including k = l (where the
+    connected correlation is a variance), as Eq. (28) is written. Unlike dMag
+    this is Z2-blind (x -> -x leaves every C(i,j) alone), so it reads spatial
+    structure only; the two columns are complementary, not redundant.
+    """
+    uniform = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    row_s, col_s = _row_pair_correlations(x, weights, L)
+    row_r, col_r = _row_pair_correlations(reference, uniform, L)
+    return (((row_s - row_r).abs().sum() + (col_s - col_r).abs().sum()) / L**2).item()
+
+
+def energy_wasserstein2(sampler_energy: Tensor, weights: Tensor, reference_energy: Tensor,
+                        n_quantiles: int = 20_000) -> float:
+    """1-D Wasserstein-2 between a weighted and an unweighted scalar distribution.
+
+    W2^2 = int_0^1 (F^{-1}(u) - G^{-1}(u))^2 du, the closed form in one
+    dimension: sort each sample, build the weighted CDF, and read both quantile
+    functions on a common grid of u. No bins, so no sqrt(bins/N) floor (the
+    failure of the energy TVD this column replaces), and a shifted distribution
+    is charged by the shift rather than by loss of overlap. Pass energies per
+    site so cells compare across lattice sizes (DASBS uses total energy).
+    """
+    def quantile_function(values: Tensor, w: Tensor) -> Tensor:
+        order = torch.argsort(values)
+        cdf = torch.cumsum(w[order], 0)
+        u = (torch.arange(n_quantiles) + 0.5) / n_quantiles
+        return values[order][torch.searchsorted(cdf, u).clamp(max=values.numel() - 1)]
+
+    uniform = torch.full((reference_energy.shape[0],), 1.0 / reference_energy.shape[0])
+    gap = quantile_function(sampler_energy, weights) - quantile_function(reference_energy, uniform)
+    return gap.pow(2).mean().sqrt().item()
