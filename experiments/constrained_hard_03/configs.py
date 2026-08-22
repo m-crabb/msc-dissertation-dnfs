@@ -127,6 +127,14 @@ class HardStageCfg(StageCfg):
     # complement of the intersection of the per-ordering intervals. The
     # default ("row",) is byte-identical to the pre-extension head.
     site_orderings: tuple[str, ...] = ("row",)
+    # Interior band on the factorised head's per-pair path (2026-08-23):
+    # "prefix" = the interval head's prefix-sum band, "attention" = the
+    # masked-attention band, concatenated into the global term's LN -> MLP
+    # input (band_feature_dim / pair_offsets / attention_dim are read as for
+    # those heads). This is the exterior-vs-interior separation experiment:
+    # same interior as an existing head, bilinear exterior instead of its
+    # per-pair MLP. None = the archived head, byte-identical.
+    interior_band: str | None = None
     # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
     # cell). > 0 arms a warmup-corrected parameter shadow
     # (discrete_flow_sampler.ema) updated after each optimiser step:
@@ -219,6 +227,10 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             global_feature_dim=cfg.global_feature_dim or 16,
             use_bilinear=cfg.use_bilinear,
             use_global=cfg.use_global,
+            interior_band=cfg.interior_band,
+            band_feature_dim=cfg.band_feature_dim or 16,
+            pair_offsets=cfg.pair_offsets or (1, cfg.ising.D),
+            attention_dim=cfg.attention_dim or 32,
             site_orderings=cfg.site_orderings,
             lattice_side=cfg.ising.D,
         )
@@ -1121,6 +1133,43 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         site_orderings=("row", "col"),
     ),
+    # Exterior-vs-interior separation gate (2026-08-23). The head ladder
+    # varied the exterior combiner (per-pair MLP vs rank-8 bilinear) and the
+    # interior mechanism together; these cells hold an EXISTING interior
+    # fixed and change only the combiner, so the factorisation's own price
+    # is measured rather than inferred from rank/width insensitivity.
+    #   fib    = bilinear exterior + interval prefix-sum band   (twin: interval)
+    #   fatt   = bilinear exterior + masked-attention band     (twin: MA)
+    #   fimo2 / fmoatt = the same with the column ordering added.
+    #   iv     = the interval head itself at 4x4 (it never had a gate number).
+    # 4x4 READ IS NOT A GATE for interior mechanisms: fmo2 read 0.883 /
+    # 0.938 / 0.879 here (below fab8 on 2/3 seeds) and was STRONG at d64,
+    # interiors being <= 14 sites at 4x4. Bands for the TABLE only: PARITY
+    # >= 0.955 on 2/3 seeds (inside the MA twin range), MEANINGFUL >= 0.94,
+    # NULL < 0.92. The d64 rungs below launch alongside, not after.
+    **{
+        f"H2_d16_c50_{sigma_label}_letf_{arm}_10k": replace(
+            _hard_cell(
+                f"H2_d16_c50_{sigma_label}_letf_{arm}_10k", sigma=sigma,
+                head_kind="factorised", n_steps=10_000,
+            ),
+            **knobs,
+        )
+        for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
+        for arm, knobs in {
+            "fib": {"interior_band": "prefix"},
+            "fatt": {"interior_band": "attention"},
+            "fimo2": {"interior_band": "prefix", "site_orderings": ("row", "col")},
+            "fmoatt": {"interior_band": "attention", "site_orderings": ("row", "col")},
+        }.items()
+    },
+    **{
+        f"H2_d16_c50_{sigma_label}_letf_iv_10k": _hard_cell(
+            f"H2_d16_c50_{sigma_label}_letf_iv_10k", sigma=sigma,
+            head_kind="interval", n_steps=10_000,
+        )
+        for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
+    },
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
@@ -1216,6 +1265,28 @@ CONFIGS: dict[str, HardStageCfg] = {
             ema_decay=0.9999,
             site_orderings=("row", "col"),
         ),
+        # Exterior-vs-interior separation rungs (2026-08-23): twins of the
+        # fmo2 rung above (EMA instrument kept) with an interior band on the
+        # per-pair path -- see the 4x4 block for the arm table. Bands FROZEN
+        # BEFORE LAUNCH against fmo2 0.745 raw and the MA twin 0.781:
+        # STRONG >= 0.78 raw, MEANINGFUL >= 0.76, NULL <= 0.745. fatt's twin
+        # is MA itself (same interior, bilinear exterior): MA-parity there
+        # means the factorisation costs nothing, and fab-class memory is
+        # the whole gain; fib's twin is the interval rung (0.646).
+        **{
+            f"H2_d64_c50_s223_letf_{arm}_50k_curr": replace(
+                _d64_curriculum_cell(
+                    f"H2_d64_c50_s223_letf_{arm}_50k_curr", head_kind="factorised",
+                ),
+                ema_decay=0.9999,
+                **knobs,
+            )
+            for arm, knobs in {
+                "fib": {"interior_band": "prefix"},
+                "fatt": {"interior_band": "attention"},
+                "fimo2": {"interior_band": "prefix", "site_orderings": ("row", "col")},
+            }.items()
+        },
         # Scaling slate (2026-08-15). The fmo2 rung above cleared its band at
         # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
         # attention twin) and the cost bench priced it at 4.7x faster and

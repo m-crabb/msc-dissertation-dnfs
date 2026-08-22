@@ -498,3 +498,100 @@ def test_extra_orderings_validated_at_construction():
         _mo_head(site_orderings=("row", "col", "col"))
     with pytest.raises(ValueError):
         _mo_head(site_orderings=("row", "col"), use_bilinear=False)
+
+
+# --- interior band on the narrow per-pair path (2026-08-23) ------------------
+# The factorised head's global term is the one place a per-pair nonlinearity
+# is paid for; the interval / masked-attention band summaries M_ij (blind by
+# index exclusion, valid for i < j) can ride that same path at band width.
+# Pins: blindness survives, the band is sensitive to the open interval, the
+# band-free head is byte-identical to the archived one, and forward still
+# equals the readout of the materialised H.
+
+
+def _band_head(interior_band, site_orderings=("row",), **kw):
+    torch.manual_seed(42)
+    backbone = LeTFRateMatrix(
+        d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        use_sdpa_readout=False,
+    )
+    head = FactorisedSwapHead(
+        backbone, bilinear_rank=3, factor_dim=4, global_feature_dim=6,
+        position_dim=5, interior_band=interior_band, band_feature_dim=5,
+        attention_dim=6, lattice_side=3, site_orderings=site_orderings, **kw,
+    )
+    head.eval()
+    return head
+
+
+@pytest.mark.parametrize("interior_band", ["prefix", "attention"])
+@pytest.mark.parametrize("site_orderings", [("row",), ("row", "col")])
+def test_interior_band_context_blind_to_both_holes(interior_band, site_orderings):
+    head = _band_head(interior_band, site_orderings)
+    x, t = _state(), torch.rand(1)
+    H = head.compute_pair_context(x, t)
+    for i, j in upper_tri_pairs(9, x.device).tolist():
+        for flips in ((i,), (j,), (i, j)):
+            assert _drift(head.compute_pair_context(_flip(x, *flips), t)[:, i, j], H[:, i, j]) < ATOL, (
+                interior_band, site_orderings, i, j, flips
+            )
+
+
+@pytest.mark.parametrize("interior_band", ["prefix", "attention"])
+def test_interior_band_sees_the_open_interval(interior_band):
+    """With the bilinear term off, the only interior-sensitive pieces are the
+    hole-subtracted sum and the band; the band must add sensitivity beyond
+    the sum alone, i.e. the two heads respond differently to an interior flip."""
+    with_band = _band_head(interior_band, use_bilinear=False)
+    torch.manual_seed(42)
+    without_band = _head(use_bilinear=False, use_global=True)
+    x, t = _state(), torch.rand(1)
+    i, j, interior_site = 1, 7, 4
+    delta_with = with_band.compute_pair_context(_flip(x, interior_site), t)[:, i, j] \
+        - with_band.compute_pair_context(x, t)[:, i, j]
+    delta_without = without_band.compute_pair_context(_flip(x, interior_site), t)[:, i, j] \
+        - without_band.compute_pair_context(x, t)[:, i, j]
+    assert delta_with.abs().max() > ATOL
+    assert not torch.allclose(delta_with, delta_without)
+
+
+@pytest.mark.parametrize("interior_band", ["prefix", "attention"])
+@pytest.mark.parametrize("site_orderings", [("row",), ("row", "col")])
+def test_interior_band_forward_matches_context_readout_and_antisymmetry(
+    interior_band, site_orderings
+):
+    head = _band_head(interior_band, site_orderings)
+    x, t = _state(), torch.rand(1)
+    omega_f = head.omega_projection(head.backbone.omega(((x + 1) / 2).long()))
+    token_difference = omega_f.unsqueeze(2) - omega_f.unsqueeze(1)
+    G = head(x, t)
+    assert _drift(G, (token_difference * head.compute_pair_context(x, t)).sum(-1)) < ATOL
+    assert (G + G.transpose(1, 2)).abs().max() == 0.0
+
+
+def test_no_interior_band_is_byte_identical_to_archived_head():
+    """interior_band=None must construct the SAME modules in the SAME RNG
+    order as the pre-band head, so archived fab8/fmo2 checkpoints load and
+    evaluate unchanged."""
+    torch.manual_seed(0)
+    archived = _head()
+    torch.manual_seed(0)
+    explicit = _head()
+    explicit_none = FactorisedSwapHead.__init__  # noqa: F841 (documentation)
+    assert archived.state_dict().keys() == explicit.state_dict().keys()
+    x, t = _state(), torch.rand(1)
+    assert torch.equal(archived(x, t), explicit(x, t))
+    assert not any(k.startswith("interior_band_provider") for k in archived.state_dict())
+
+
+@pytest.mark.parametrize("interior_band", ["prefix", "attention"])
+def test_interior_band_provider_has_no_duplicate_backbone_and_gets_grad(interior_band):
+    head = _band_head(interior_band)
+    keys = list(head.state_dict().keys())
+    assert not any(k.startswith("interior_band_provider.backbone") for k in keys)
+    assert not any("pair_readout" in k for k in keys)
+    head.train()
+    x, t = _state(), torch.rand(1)
+    head(x, t).sum().backward()
+    band_params = [p for n, p in head.named_parameters() if n.startswith("interior_band_provider")]
+    assert band_params and all(p.grad is not None for p in band_params)

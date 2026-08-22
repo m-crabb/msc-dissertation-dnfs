@@ -700,10 +700,14 @@ def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
         "fglo": {"use_bilinear": False},
         "fmp40": {"factor_dim": 40},
         "fmo2": {"site_orderings": ("row", "col")},
+        "fib": {"interior_band": "prefix"},
+        "fatt": {"interior_band": "attention"},
+        "fimo2": {"interior_band": "prefix", "site_orderings": ("row", "col")},
+        "fmoatt": {"interior_band": "attention", "site_orderings": ("row", "col")},
     }
     factorised_fields = (
         "bilinear_rank", "factor_dim", "global_feature_dim",
-        "use_bilinear", "use_global", "site_orderings",
+        "use_bilinear", "use_global", "site_orderings", "interior_band",
     )
     for arm, knobs in arm_knobs.items():
         for sigma_label in ("s010", "s223"):
@@ -1274,3 +1278,30 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
                 n_layers=base_arm.model.n_layers,
             ),
         ) == base_arm, capacity_arm.name
+
+
+def test_interior_separation_cells_are_single_variable_twins():
+    """Exterior-vs-interior separation (2026-08-23): the 4x4 interval cell
+    differs from the MA demo cell by head_kind alone, and each d64 band rung
+    differs from the fmo2 rung by the declared interior knobs alone."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    for sigma_label in ("s010", "s223"):
+        iv = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_iv_10k"]
+        ma = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_ma_10k"]
+        assert iv.head_kind == "interval"
+        assert replace(iv, name=ma.name, head_kind=ma.head_kind) == ma
+
+    fmo2 = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr"]
+    for arm, band, orderings in (
+        ("fib", "prefix", ("row",)),
+        ("fatt", "attention", ("row",)),
+        ("fimo2", "prefix", ("row", "col")),
+    ):
+        cell = CONFIGS[f"H2_d64_c50_s223_letf_{arm}_50k_curr"]
+        assert (cell.interior_band, cell.site_orderings) == (band, orderings)
+        assert replace(
+            cell, name=fmo2.name, interior_band=None, site_orderings=("row", "col")
+        ) == fmo2

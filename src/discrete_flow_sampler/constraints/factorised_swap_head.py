@@ -66,6 +66,27 @@ was removed. H is defined on i < j and mirrored down (H_ji := H_ij, the
 label-symmetry convention); the score's upper triangle is mirrored as
 G[j,i] = -G[i,j], so index antisymmetry is an identity.
 
+Interior band on the narrow path (opt-in via `interior_band`, 2026-08-23):
+the global term is the one per-pair nonlinearity this head pays for, and it
+runs at band width, so the interval head's prefix-sum band or the
+masked-attention head's attention band (both blind by index exclusion,
+both (B, d, d, F_b), valid for i < j) can be concatenated into its input,
+
+    rho( LN( [ c - psi_i - psi_j ; M_ij ] ) ),
+
+at a width cost of F_b on tensors the term already materialises. This is
+the experiment that separates the two axes the head ladder conflated: the
+EXTERIOR combiner (per-pair MLP over [P_i, S_j] in interval / masked
+attention, rank-R bilinear here) and the INTERIOR mechanism (sum, band,
+attention, extra orderings). Holding the interior fixed and changing only
+the combiner measures what the factorisation itself costs; 4x4 rank/width
+insensitivity only ever suggested it was free. The band provider is an
+IntervalSwapHead / MaskedAttentionSwapHead instance used for its
+`band_summaries` alone: its own pair readout is deleted and its backbone
+reference is kept OFF the module tree so the shared backbone is not
+checkpointed twice. `interior_band=None` constructs nothing extra, in the
+same RNG order, so archived checkpoints stay byte-identical.
+
 Multi-order causal streams (the design's A-prime extension, opt-in via
 `site_orderings`): the bilinear term under the row-major ordering is
 structurally blind to the whole raster interval between its holes -- prefix
@@ -106,7 +127,11 @@ import torch.nn as nn
 from torch import Tensor
 
 from discrete_flow_sampler.constraints.interval_swap_head import (
+    IntervalSwapHead,
     causal_stream_summaries,
+)
+from discrete_flow_sampler.constraints.masked_attention_swap_head import (
+    MaskedAttentionSwapHead,
 )
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
@@ -178,6 +203,10 @@ class FactorisedSwapHead(nn.Module):
         position_dim: int = 16,
         use_bilinear: bool = True,
         use_global: bool = True,
+        interior_band: str | None = None,
+        band_feature_dim: int = 16,
+        pair_offsets: tuple[int, ...] | None = None,
+        attention_dim: int = 32,
         site_orderings: tuple[str, ...] = ("row",),
         lattice_side: int | None = None,
     ):
@@ -209,6 +238,10 @@ class FactorisedSwapHead(nn.Module):
                     f"lattice_side**2 == d; got lattice_side={lattice_side} "
                     f"for d={backbone.d}"
                 )
+        if interior_band not in (None, "prefix", "attention"):
+            raise ValueError(f"interior_band must be None, 'prefix' or 'attention'; got {interior_band!r}")
+        if interior_band is not None and not use_global:
+            raise ValueError("interior_band rides the global term's per-pair path; needs use_global=True")
         self.backbone = backbone
         self.d = backbone.d
         self.bilinear_rank = bilinear_rank
@@ -233,15 +266,21 @@ class FactorisedSwapHead(nn.Module):
             self.suffix_factors = nn.Linear(
                 hidden + position_dim, bilinear_rank * factor_dim
             )
+        # Band width decided up front so the per-pair map is built at its
+        # final width (no discarded init draws); 0 keeps the archived shapes.
+        self.interior_band = interior_band
+        if interior_band is not None:
+            pair_offsets = pair_offsets or (1, lattice_side or round(self.d**0.5))
+        band_dim = 0 if interior_band is None else band_feature_dim * (1 + len(pair_offsets))
         if use_global:
             self.global_site_features = nn.Sequential(
                 nn.Linear(hidden + position_dim, global_feature_dim),
                 nn.GELU(),
                 nn.Linear(global_feature_dim, global_feature_dim),
             )
-            self.global_context_norm = nn.LayerNorm(global_feature_dim)
+            self.global_context_norm = nn.LayerNorm(global_feature_dim + band_dim)
             self.global_context_readout = nn.Sequential(
-                nn.Linear(global_feature_dim, global_feature_dim),
+                nn.Linear(global_feature_dim + band_dim, global_feature_dim),
                 nn.GELU(),
                 nn.Linear(global_feature_dim, factor_dim),
             )
@@ -271,6 +310,40 @@ class FactorisedSwapHead(nn.Module):
                 })
                 for name in site_orderings[1:]
             })
+        # Band provider LAST for the same reason as the orderings: absent at
+        # interior_band=None, and never ahead of the archived modules' draws.
+        if interior_band is not None:
+            self._build_interior_band_provider(
+                backbone, interior_band, pair_offsets, band_feature_dim,
+                attention_dim, lattice_side,
+            )
+
+    def _build_interior_band_provider(
+        self, backbone, interior_band, pair_offsets, band_feature_dim,
+        attention_dim, lattice_side,
+    ) -> None:
+        """Own a band head for its `band_summaries` only (module docstring)."""
+        if interior_band == "prefix":
+            provider = IntervalSwapHead(
+                backbone, pair_offsets=pair_offsets, band_feature_dim=band_feature_dim
+            )
+        else:
+            provider = MaskedAttentionSwapHead(
+                backbone, pair_offsets=pair_offsets, band_feature_dim=band_feature_dim,
+                attention_dim=attention_dim, lattice_side=lattice_side,
+            )
+        del provider.pair_readout, provider.context_norm
+        if interior_band == "prefix":
+            # Only the attention queries and the deleted readout use pair
+            # positions; the prefix-sum band would carry them as dead weight.
+            del provider.pair_position_embedding
+        # Keep the shared backbone reachable for band_summaries but OFF the
+        # provider's module tree: a registered submodule would re-emit every
+        # backbone tensor under `interior_band_provider.backbone.*` in
+        # state_dict (parameters() dedups by identity; state_dict does not).
+        del provider._modules["backbone"]
+        provider.__dict__["backbone"] = backbone
+        self.interior_band_provider = provider
 
     def ordering_permutation(self, name: str) -> Tensor:
         """o-position -> site map for one of this head's orderings."""
@@ -337,11 +410,10 @@ class FactorisedSwapHead(nn.Module):
         The subtraction removes the only terms of c that touch the holes,
         so entry [:, i, j] is blind to x_i and x_j exactly (up to the fp
         cancellation residue). Symmetric in (i, j) by construction, so it
-        already respects the H_ji := H_ij mirror. `t` never enters: like
-        the band heads, token statistics are time-free and time arrives
-        through the dedicated time term.
+        already respects the H_ji := H_ij mirror. Token statistics are
+        time-free (`t` only reaches the band provider's signature, which
+        ignores it); time arrives through the dedicated time term.
         """
-        del t
         x_idx = ((x + 1) / 2).long()
         token_embedding = self.backbone.token_embedder(x_idx)   # (B, d, h)
         psi = self.global_site_features(
@@ -353,6 +425,15 @@ class FactorisedSwapHead(nn.Module):
             - psi.unsqueeze(2)                                  # remove psi_i
             - psi.unsqueeze(1)                                  # remove psi_j
         )
+        if self.interior_band is not None:
+            # Band summaries are defined on i < j; mirror to the label-
+            # symmetry convention so the whole global block stays symmetric.
+            band = self.interior_band_provider.band_summaries(x, t)
+            upper = torch.triu(
+                torch.ones(self.d, self.d, dtype=torch.bool, device=x.device)
+            ).view(1, self.d, self.d, 1)
+            band = torch.where(upper, band, band.transpose(1, 2))
+            hole_subtracted = torch.cat([hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1)
         return self.global_context_readout(
             self.global_context_norm(hole_subtracted)
         )
