@@ -1305,3 +1305,23 @@ def test_interior_separation_cells_are_single_variable_twins():
         assert replace(
             cell, name=fmo2.name, interior_band=None, site_orderings=("row", "col")
         ) == fmo2
+
+
+def test_bilinear_exterior_cells_change_only_the_combiner():
+    """Literal factorisation test (2026-08-23): mab / ivb differ from the
+    archived MA / interval cells by exterior_combiner alone (plus the EMA
+    instrument at d64, which never touches training)."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    for sigma_label in ("s010", "s223"):
+        for arm, twin_arm in (("mab", "ma"), ("ivb", "iv")):
+            cell = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k"]
+            twin = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{twin_arm}_10k"]
+            assert cell.exterior_combiner == "bilinear" and twin.exterior_combiner == "mlp"
+            assert replace(cell, name=twin.name, exterior_combiner="mlp") == twin
+    for arm, twin_arm in (("mab", "ma"), ("ivb", "iv")):
+        cell = CONFIGS[f"H2_d64_c50_s223_letf_{arm}_50k_curr"]
+        twin = CONFIGS[f"H2_d64_c50_s223_letf_{twin_arm}_50k_curr"]
+        assert replace(cell, name=twin.name, exterior_combiner="mlp", ema_decay=twin.ema_decay) == twin

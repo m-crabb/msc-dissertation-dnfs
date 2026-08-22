@@ -135,6 +135,11 @@ class HardStageCfg(StageCfg):
     # same interior as an existing head, bilinear exterior instead of its
     # per-pair MLP. None = the archived head, byte-identical.
     interior_band: str | None = None
+    # Exterior combiner for the interval / masked-attention heads
+    # (2026-08-23): "bilinear" moves [P_i, S_j] out of the per-pair MLP into
+    # a rank-`bilinear_rank` product, nothing else changes -- the literal
+    # single-variable test of the factorisation. "mlp" = archived heads.
+    exterior_combiner: str = "mlp"
     # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
     # cell). > 0 arms a warmup-corrected parameter shadow
     # (discrete_flow_sampler.ema) updated after each optimiser step:
@@ -206,6 +211,8 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             pair_offsets=cfg.pair_offsets or (1, cfg.ising.D),
             band_feature_dim=cfg.band_feature_dim or 16,
             readout_score_scale=cfg.readout_score_scale,
+            exterior_combiner=cfg.exterior_combiner,
+            bilinear_rank=cfg.bilinear_rank or 8,
         )
     elif cfg.head_kind == "masked_attention":
         # Same offsets rationale as "interval"; only the band aggregator
@@ -218,6 +225,8 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
             use_stencil=cfg.use_stencil,
             lattice_side=cfg.ising.D,
             readout_score_scale=cfg.readout_score_scale,
+            exterior_combiner=cfg.exterior_combiner,
+            bilinear_rank=cfg.bilinear_rank or 8,
         )
     elif cfg.head_kind == "factorised":
         head = FactorisedSwapHead(
@@ -1170,6 +1179,22 @@ CONFIGS: dict[str, HardStageCfg] = {
         )
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
     },
+    # The literal factorisation test (2026-08-23): the archived MA / interval
+    # heads with ONLY [P_i, S_j] moved from the per-pair MLP into a rank-8
+    # bilinear product (exterior_combiner="bilinear"). mab ~ MA at 4x4 and
+    # d64 means the factorisation is free; the fatt/fib cells above change
+    # the chassis as well and cannot attribute a gap. Same bands as above.
+    **{
+        f"H2_d16_c50_{sigma_label}_letf_{arm}_10k": replace(
+            _hard_cell(
+                f"H2_d16_c50_{sigma_label}_letf_{arm}_10k", sigma=sigma,
+                head_kind=head_kind, n_steps=10_000,
+            ),
+            exterior_combiner="bilinear",
+        )
+        for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
+        for arm, head_kind in (("mab", "masked_attention"), ("ivb", "interval"))
+    },
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
@@ -1517,6 +1542,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_iv_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_iv_50k_curr", head_kind="interval",
     ),
+    # Literal factorisation test at d64 (2026-08-23): the MA / interval rungs
+    # with exterior_combiner="bilinear" and the dual-eval EMA instrument
+    # (never touches training). Bands FROZEN: mab vs MA 0.781 -- PARITY
+    # >= 0.76 raw, COSTS < 0.74; ivb vs interval 0.646 -- PARITY >= 0.63.
+    **{
+        f"H2_d64_c50_s223_letf_{arm}_50k_curr": _d64_curriculum_cell(
+            f"H2_d64_c50_s223_letf_{arm}_50k_curr", head_kind=head_kind,
+            exterior_combiner="bilinear", ema_decay=0.9999,
+        )
+        for arm, head_kind in (("mab", "masked_attention"), ("ivb", "interval"))
+    },
     # H-width: double the band feature and attention widths, nothing else.
     "H2_d64_c50_s223_letf_ma_wide_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_wide_50k_curr", head_kind="masked_attention",

@@ -108,10 +108,13 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         use_stencil: bool = False,
         lattice_side: int | None = None,
         readout_score_scale: float = 1.0,
+        exterior_combiner: str = "mlp",
+        bilinear_rank: int = 8,
     ):
         super().__init__(
             backbone, pair_offsets, band_feature_dim, position_dim,
             readout_score_scale=readout_score_scale,
+            exterior_combiner=exterior_combiner, bilinear_rank=bilinear_rank,
         )
         self.use_stencil = use_stencil
         hidden = backbone.hidden_dim
@@ -148,13 +151,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             # it. The narrow one the parent drew is discarded (one wasted init
             # draw -- harmless; use_stencil=False never enters here, so those
             # cells stay byte-identical to pre-stencil code).
-            band_dim = band_feature_dim * n_families
-            readout_in = 2 * hidden + band_dim + 2 * position_dim
-            self.pair_readout = nn.Sequential(
-                nn.Linear(readout_in, 2 * hidden),
-                nn.GELU(),
-                nn.Linear(2 * hidden, hidden),
-            )
+            self.pair_readout = self._build_pair_readout(band_feature_dim * n_families)
 
     def _attend_band_family(
         self,

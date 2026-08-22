@@ -142,8 +142,31 @@ class IntervalSwapHead(nn.Module):
         band_feature_dim: int = 16,
         position_dim: int = 16,
         readout_score_scale: float = 1.0,
+        exterior_combiner: str = "mlp",
+        bilinear_rank: int = 8,
     ):
+        """exterior_combiner (2026-08-23): "mlp" is the archived head, the
+        per-pair readout over [prefix, suffix, band, positions]. "bilinear"
+        moves the deep exterior OUT of that MLP and into a rank-R product
+
+            H_ij += sum_r a_r(prefix_i, i) * b_r(suffix_j, j),
+
+        the factorised head's exterior at this head's hidden width, so the
+        per-pair MLP sees only [band, positions]. Everything else -- band,
+        context_norm, time line, H width -- is byte-identical, which makes
+        this the single-variable test of what the factorisation itself
+        costs: the factorised-head cells change the chassis at the same
+        time (global sum, per-term scaling, factor width). Blindness is
+        unchanged: the factor maps are per-site, prefix_i is blind to
+        x_{>=i} and suffix_j to x_{<=j} by causality, and the post-sum
+        LayerNorm is admissible here because H is materialised anyway.
+        """
         super().__init__()
+        if exterior_combiner not in ("mlp", "bilinear"):
+            raise ValueError(f"exterior_combiner must be 'mlp' or 'bilinear'; got {exterior_combiner!r}")
+        self.exterior_combiner = exterior_combiner
+        self.bilinear_rank = bilinear_rank
+        self.position_dim = position_dim
         self.readout_score_scale = readout_score_scale
         self.backbone = backbone
         self.d = backbone.d
@@ -164,14 +187,37 @@ class IntervalSwapHead(nn.Module):
         self.pair_position_embedding = nn.Embedding(self.d, position_dim)
 
         band_dim = band_feature_dim * (1 + len(self.pair_offsets))
-        readout_in = 2 * hidden + band_dim + 2 * position_dim
-        self.pair_readout = nn.Sequential(
-            nn.Linear(readout_in, 2 * hidden),
+        self.pair_readout = self._build_pair_readout(band_dim)
+        # Mirrors the letf readout's closing "output_norm(H) + time" line.
+        self.context_norm = nn.LayerNorm(hidden)
+        if exterior_combiner == "bilinear":
+            # After the archived modules so the "mlp" path's init draws are
+            # untouched; the factor maps mirror the factorised head's.
+            self.prefix_norm = nn.LayerNorm(hidden)
+            self.suffix_norm = nn.LayerNorm(hidden)
+            self.prefix_factors = nn.Linear(hidden + position_dim, bilinear_rank * hidden)
+            self.suffix_factors = nn.Linear(hidden + position_dim, bilinear_rank * hidden)
+
+    def _build_pair_readout(self, band_dim: int) -> nn.Sequential:
+        """Per-pair MLP; its input carries the exterior summaries only under
+        the "mlp" combiner. Shared with the masked-attention stencil rebuild."""
+        hidden = self.backbone.hidden_dim
+        exterior_dim = 2 * hidden if self.exterior_combiner == "mlp" else 0
+        return nn.Sequential(
+            nn.Linear(exterior_dim + band_dim + 2 * self.position_dim, 2 * hidden),
             nn.GELU(),
             nn.Linear(2 * hidden, hidden),
         )
-        # Mirrors the letf readout's closing "output_norm(H) + time" line.
-        self.context_norm = nn.LayerNorm(hidden)
+
+    def _bilinear_exterior(self, prefix_summary: Tensor, suffix_summary: Tensor) -> Tensor:
+        """sum_r a_r(prefix_i, i) * b_r(suffix_j, j), (B, d, d, h)."""
+        batch, d, hidden = prefix_summary.shape
+        position = self.pair_position_embedding(torch.arange(d, device=prefix_summary.device))
+        position = position.unsqueeze(0).expand(batch, -1, -1)
+        shape = (batch, d, self.bilinear_rank, hidden)
+        a = self.prefix_factors(torch.cat([self.prefix_norm(prefix_summary), position], -1)).view(shape)
+        b = self.suffix_factors(torch.cat([self.suffix_norm(suffix_summary), position], -1)).view(shape)
+        return torch.einsum("birh,bjrh->bijh", a, b)
 
     def causal_summaries(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
         """Prefix/suffix interval summaries from the backbone's causal stacks.
@@ -294,11 +340,16 @@ class IntervalSwapHead(nn.Module):
         batch, d, hidden = prefix_summary.shape
         position = self.pair_position_embedding(torch.arange(d, device=x.device))
 
+        exterior_rows = (
+            [
+                prefix_summary.unsqueeze(2).expand(batch, d, d, hidden),
+                suffix_summary.unsqueeze(1).expand(batch, d, d, hidden),
+            ]
+            if self.exterior_combiner == "mlp" else []
+        )
         H = self.pair_readout(
             torch.cat(
-                [
-                    prefix_summary.unsqueeze(2).expand(batch, d, d, hidden),
-                    suffix_summary.unsqueeze(1).expand(batch, d, d, hidden),
+                exterior_rows + [
                     band,
                     position.view(1, d, 1, -1).expand(batch, d, d, -1),
                     position.view(1, 1, d, -1).expand(batch, d, d, -1),
@@ -306,6 +357,8 @@ class IntervalSwapHead(nn.Module):
                 dim=-1,
             )
         )
+        if self.exterior_combiner == "bilinear":
+            H = H + self._bilinear_exterior(prefix_summary, suffix_summary)
         H = self.context_norm(H) + self.backbone.time_embedder(t).view(
             batch, 1, 1, hidden
         )
