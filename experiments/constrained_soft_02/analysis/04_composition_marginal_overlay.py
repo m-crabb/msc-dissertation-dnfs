@@ -23,8 +23,15 @@ Pass one run dir to prototype, or all of seeds 42-45 for the report figure: with
 several the DNFS marginal is drawn as the across-seed mean with a min-max band.
 
 Two modes (--mode):
-  single      -- the original d=4 single-lambda figure above. Default; output
-                 unchanged.
+  single      -- the d=4 figure above, in two panels: (a) the grouped-bar
+                 marginal at the operating lambda, (b) the violating mass swept
+                 over lambda with BOTH ends of the trade starred (54.4% at
+                 lam=10, 7.9% at lam=50). Panel (b) is the thesis's only copy of
+                 that sweep. lambda-pair carried a byte-identical duplicate of it
+                 until 2026-08-22, when the duplicate was dropped: this copy is
+                 cited twice in the body and that one never was, and removing it
+                 also left each figure on a single lattice (this one d=4,
+                 lambda-pair d=10) instead of mixing the two inside one float.
   lambda-pair -- the companion overlay figure for the lambda-sweep comparison
                  (2026-06-11/12): D=10 composition marginals at a weak and a
                  strong lambda overlaid as curves. Exact enumeration is impossible
@@ -49,6 +56,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 
+from discrete_flow_sampler.diagnostics.figure_style import (
+    ANALYTIC_GUIDE, FONT_SIZE_ANNOTATION, HARD_DELTA_HUE, MUTED, REFERENCE_INK,
+    SAMPLER_HUE, style_axes, use_house_style)
 from discrete_flow_sampler.diagnostics.metrics import (
     enumerate_states,
     ess_from_log_weights,
@@ -151,6 +161,10 @@ def main() -> None:
                    help="single: original d=4 figure (default); lambda-pair: D=10 weak-vs-strong lambda figure")
     p.add_argument("--run_dirs", nargs="+", type=Path,
                    help="[single] one or more d=4 c=0.5 run dirs (same cfg, different seeds)")
+    p.add_argument("--weak_lambda", type=float, default=10.0,
+                   help="[single] the weak end of the lambda trade, starred on panel (b) "
+                        "alongside the run's own operating point so one panel carries the "
+                        "whole trade (default 10, the chapter's weak cell)")
     p.add_argument("--weak_run_dirs", nargs="+", type=Path,
                    help="[lambda-pair] D=10 run dirs at the weak lambda (all seeds)")
     p.add_argument("--strong_run_dirs", nargs="+", type=Path,
@@ -199,20 +213,36 @@ def run_single(args: argparse.Namespace) -> None:
     dnfs_lo, dnfs_hi = dnfs_pmfs.min(dim=0).values, dnfs_pmfs.max(dim=0).values
 
     # Panel (b) data: violating mass vs penalty strength (temperature-independent).
-    lam_grid = torch.logspace(0, 2.7, 24)  # ~1 .. ~500
+    # 64 points rather than a coarse grid because the two operating points are
+    # marked at their exact values and lambda=10 is not itself a grid point: on
+    # a coarse grid the curve chords under the convex true curve and the marker
+    # floats visibly above its own line.
+    lam_grid = torch.logspace(0, 2.7, 64)  # ~1 .. ~500
     off_grid = torch.tensor([
         1.0 - soft_composition_pmf(cfg, float(lv), states_f)[target_idx].item()
         for lv in lam_grid
     ])
+    # The weak end of the trade, starred beside the operating point: at lam=10
+    # more than half the mass violates (54.4%) against 7.9% at lam=50, which is
+    # the contrast the lambda-sweep discussion makes in words and the lambda ->
+    # infinity argument needs on an axis.
+    off_slice_weak = 1.0 - soft_composition_pmf(
+        cfg, args.weak_lambda, states_f)[target_idx].item()
 
     print(f"=== composition marginal overlay (d=4, c_target={c_target}, lam={lam}) ===")
     print(f"  seeds aggregated          : {len(args.run_dirs)}")
     print(f"  on-slice (c=c_target) mass: {1 - off_slice:.4f}")
     print(f"  off-slice (violating) mass: {off_slice:.4f}  <-- the inexactness")
     print(f"  analytic 1/sqrt(2*lam*d)  : sigma = {sigma_analytic:.4f} (temp-indep)")
+    print(f"  violating mass at lam={args.weak_lambda:g}    : {off_slice_weak:.4f} (weak end of the trade)")
 
     # --- Figure: (a) grouped bars near c_target (linear-y), (b) violating mass vs lambda ---
-    fig, (ax, axr) = plt.subplots(1, 2, figsize=(11, 4.3))
+    # Hue carries the ROLE per the house palette: ink is the exact-enumeration
+    # reference, blue is our sampler, red is the hard-constraint limit. Lambda
+    # never gets a hue of its own -- on panel (b) the two operating points share
+    # the limit hue and separate by marker shape.
+    use_house_style()
+    fig, (ax, axr) = plt.subplots(1, 2, figsize=(9.0, 3.8))
 
     # (a) grouped bars over the discrete compositions around c_target: hard target
     # as a full-height bar, soft-exact and DNFS side by side with seed whiskers.
@@ -221,41 +251,48 @@ def run_single(args: argparse.Namespace) -> None:
     width = 1.0 / N_SITES / 4.2
     hard_pmf = torch.zeros(N_SITES + 1)
     hard_pmf[target_idx] = 1.0
-    ax.bar(xs - width, hard_pmf[ks], width, color="C3",
+    ax.bar(xs - width, hard_pmf[ks], width, color=HARD_DELTA_HUE, zorder=3,
            label="hard constraint")
-    ax.bar(xs, soft_pmf[ks], width, color="C0",
+    ax.bar(xs, soft_pmf[ks], width, color=REFERENCE_INK, zorder=3,
            label=f"soft target (exact, $\\lambda={lam:g}$)")
     yerr = torch.stack([dnfs_mean[ks] - dnfs_lo[ks], dnfs_hi[ks] - dnfs_mean[ks]])
-    ax.bar(xs + width, dnfs_mean[ks], width, color="C1", yerr=yerr.numpy(),
-           error_kw={"lw": 1.0, "capsize": 2.5},
+    ax.bar(xs + width, dnfs_mean[ks], width, color=SAMPLER_HUE, yerr=yerr.numpy(),
+           error_kw={"lw": 1.0, "capsize": 2.5, "ecolor": REFERENCE_INK}, zorder=3,
            label="DNFS (seed mean, min-max)")
     ax.text(c_target, 0.48, f"violating compositions:\n{off_slice:.1%} of soft mass in total",
-            ha="center", fontsize=9, color="0.25",
-            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.85, "pad": 2})
+            ha="center", fontsize=FONT_SIZE_ANNOTATION, color=REFERENCE_INK, zorder=4,
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.94, "pad": 3})
     for k in (target_idx - 1, target_idx + 1):
         ax.annotate("", xy=(k / N_SITES, soft_pmf[k].item() + 0.03),
-                    xytext=(c_target, 0.46),
-                    arrowprops={"arrowstyle": "->", "lw": 0.8, "color": "0.4"})
+                    xytext=(c_target, 0.46), zorder=4,
+                    arrowprops={"arrowstyle": "->", "lw": 0.8, "color": MUTED})
     ax.set_xticks(xs)
     ax.set_xticklabels([f"{k}/{N_SITES}" for k in ks.tolist()])
     ax.set_ylim(0, 1.05)
     ax.set_xlabel(r"composition $c_+$")
     ax.set_ylabel("probability mass")
     ax.set_title(f"(a) composition marginal at $\\lambda={lam:g}$")
-    ax.legend(fontsize=8, framealpha=0.9, loc="upper right")
+    style_axes(ax)
+    ax.legend(framealpha=0.9, loc="upper right")
 
     # (b) violating mass vs lambda: never reaches 0 at finite, samplable lambda.
-    axr.plot(lam_grid, off_grid, "-o", color="C0", ms=4)
-    axr.plot([lam], [off_slice], marker="*", color="C3", ms=16, ls="none",
-             label=f"operating point $\\lambda={lam:g}$ ({off_slice:.1%})")
+    # Both ends of the trade are marked, so the panel shows what raising lambda
+    # buys as well as that it never buys exactness.
+    axr.plot(lam_grid, off_grid, "-o", color=REFERENCE_INK, lw=1.4, ms=3.5, zorder=3)
+    axr.plot([args.weak_lambda], [off_slice_weak], marker="D", color=HARD_DELTA_HUE,
+             mfc="white", ms=7, ls="none", zorder=4,
+             label=f"weak end $\\lambda={args.weak_lambda:g}$ ({off_slice_weak:.1%})")
+    axr.plot([lam], [off_slice], marker="*", color=HARD_DELTA_HUE, ms=15, ls="none",
+             zorder=4, label=f"operating point $\\lambda={lam:g}$ ({off_slice:.1%})")
     axr.set_xscale("log")
     axr.set_xlabel(r"penalty strength $\lambda$")
     axr.set_ylabel(r"mass violating $c_\mathrm{target}$")
     axr.set_title("(b) the cost: violating mass falls only as $\\lambda$ grows")
-    axr.legend(fontsize=8, framealpha=0.9)
+    style_axes(axr)
+    axr.legend(framealpha=0.9)
 
     fig.tight_layout()
-    fig.savefig(args.out, dpi=150)
+    fig.savefig(args.out)
     print(f"\nsaved figure to {args.out}")
 
 
@@ -319,56 +356,57 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
         print(f"    {d.name}: own-target ESS {own:.4f} -> reweighted {rew:.4f}")
     print(f"    reweighted survival: {rews.mean().item():.3f} +/- {rews.std().item():.3f}")
 
-    # Panel (b) data: violating mass vs lambda, exact at d=4 (unchanged from
-    # the single-mode figure), with both operating points starred.
-    lam_grid = torch.logspace(0, 2.7, 24)
-    off_grid = torch.tensor([
-        1.0 - soft_composition_pmf(cfg4, float(lv), states_f)[round(c_target * N_SITES)].item()
-        for lv in lam_grid
-    ])
+    # Cross-check against the single-mode figure, which is where the sweep over
+    # lambda is drawn: 54.4% of the mass violates at lam=10 against 7.9% at
+    # lam=50. This figure used to carry a second copy of that sweep as its own
+    # panel (b); it was a d=4 object inside a d=10 float, no body text cited it,
+    # and it was computed from the same grid, so it was dropped 2026-08-22 and
+    # only the print survives as the agreement check between the two figures.
     off_w4 = 1.0 - soft_composition_pmf(cfg4, lam_w, states_f)[round(c_target * N_SITES)].item()
     off_s4 = 1.0 - soft_composition_pmf(cfg4, lam_s, states_f)[round(c_target * N_SITES)].item()
     print(f"  violating mass (exact, d=4): {off_w4:.1%} at lam={lam_w:g}, {off_s4:.1%} at lam={lam_s:g}")
 
-    # --- Figure: (a) D=10 marginals, weak vs strong; (b) violating mass vs lambda ---
-    fig, (ax, axr) = plt.subplots(1, 2, figsize=(11, 4.3))
+    # --- Figure: the D=10 composition marginals, weak vs strong lambda ---
+    # One panel, one lattice. Hue carries the ROLE per the house palette (ink =
+    # the Gibbs reference this figure is judged against, blue = our sampler,
+    # grey = the analytic guide, red = the hard-constraint limit); lambda is
+    # never a hue, separating instead by linestyle for the references and by
+    # marker shape for the sampler.
+    use_house_style()
+    fig, ax = plt.subplots(figsize=(7.5, 4.4))
 
     ks = torch.arange(target_idx - args.window_sites, target_idx + args.window_sites + 1)
     xs = ks.float() / n_sites
-    ax.axvline(c_target, color="C3", lw=1.6, label="hard constraint")
-    ax.plot(xs, gibbs_w[ks], "-", color="C0", lw=1.6,
-            label=f"soft target, $\\lambda={lam_w:g}$ (Gibbs reference)")
-    ax.plot(xs, env_w[ks], "--", color="C0", lw=0.9, alpha=0.7,
-            label=r"analytic envelope $\propto e^{-\lambda d (c - c_\mathrm{target})^2}$")
-    ax.plot(xs, gibbs_s[ks], "-", color="C2", lw=1.6,
-            label=f"soft target, $\\lambda={lam_s:g}$ (Gibbs reference)")
-    ax.plot(xs, env_s[ks], "--", color="C2", lw=0.9, alpha=0.7)
-    ax.errorbar(xs, w_mean[ks], yerr=w_err[:, ks].numpy(), fmt="o", ms=4.5,
-                color="C0", mfc="white", elinewidth=1.0, capsize=2.0,
-                label=f"DNFS, $\\lambda={lam_w:g}$ (seed mean, min-max)", zorder=5)
+    hard_marker = ax.axvline(c_target, color=HARD_DELTA_HUE, lw=1.6, zorder=4,
+                             label="hard constraint")
+    reference_weak, = ax.plot(xs, gibbs_w[ks], "-", color=REFERENCE_INK, lw=1.6, zorder=3,
+                              label=f"soft target, $\\lambda={lam_w:g}$ (Gibbs reference)")
+    reference_strong, = ax.plot(xs, gibbs_s[ks], "-.", color=REFERENCE_INK, lw=1.6, zorder=3,
+                                label=f"soft target, $\\lambda={lam_s:g}$ (Gibbs reference)")
+    envelope, = ax.plot(xs, env_w[ks], ":", color=ANALYTIC_GUIDE, lw=1.1, zorder=2,
+                        label=r"analytic envelope $\propto e^{-\lambda d (c - c_\mathrm{target})^2}$")
+    ax.plot(xs, env_s[ks], ":", color=ANALYTIC_GUIDE, lw=1.1, zorder=2)
+    dnfs_weak = ax.errorbar(xs, w_mean[ks], yerr=w_err[:, ks].numpy(), fmt="o", ms=4.5,
+                            color=SAMPLER_HUE, mfc="white", elinewidth=1.0, capsize=2.0,
+                            label=f"DNFS, $\\lambda={lam_w:g}$ (seed mean, min-max)", zorder=5)
     strong_label = (f"DNFS, $\\lambda={lam_s:g}$ (healthy seed)"
                     if len(args.strong_run_dirs) == 1
                     else f"DNFS, $\\lambda={lam_s:g}$ (healthy seeds)")
-    ax.plot(xs, s_mean[ks], "s", ms=4.5, color="C2", mfc="white",
-            label=strong_label, zorder=5)
+    dnfs_strong, = ax.plot(xs, s_mean[ks], marker="s", ms=4.5, color=SAMPLER_HUE,
+                           mfc="white", ls="none", label=strong_label, zorder=5)
     ax.set_xlabel(r"composition $c_+$")
     ax.set_ylabel("probability mass")
-    ax.set_title(f"(a) composition marginal, ${cfg_w['D']}\\times{cfg_w['D']}$")
-    ax.legend(fontsize=7.5, framealpha=0.9, loc="upper right")
-
-    axr.plot(lam_grid, off_grid, "-o", color="C0", ms=4)
-    axr.plot([lam_w], [off_w4], marker="*", color="C0", ms=16, ls="none",
-             label=f"$\\lambda={lam_w:g}$ ({off_w4:.1%})")
-    axr.plot([lam_s], [off_s4], marker="*", color="C3", ms=16, ls="none",
-             label=f"operating point $\\lambda={lam_s:g}$ ({off_s4:.1%})")
-    axr.set_xscale("log")
-    axr.set_xlabel(r"penalty strength $\lambda$")
-    axr.set_ylabel(r"mass violating $c_\mathrm{target}$")
-    axr.set_title("(b) the cost: violating mass falls only as $\\lambda$ grows")
-    axr.legend(fontsize=8, framealpha=0.9)
+    ax.set_title(f"composition marginal, ${cfg_w['D']}\\times{cfg_w['D']}$")
+    style_axes(ax)
+    # Explicit handle order: matplotlib sorts error-bar containers after plain
+    # lines, which would otherwise list the sampler at lam=50 above the one at
+    # lam=10 while the reference curves above them run the other way.
+    ax.legend(handles=[hard_marker, reference_weak, reference_strong, envelope,
+                       dnfs_weak, dnfs_strong],
+              framealpha=0.9, loc="upper right")
 
     fig.tight_layout()
-    fig.savefig(args.out, dpi=150)
+    fig.savefig(args.out)
     print(f"\nsaved figure to {args.out}")
 
 
