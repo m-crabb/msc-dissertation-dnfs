@@ -60,6 +60,7 @@ image = (
         copy=True,
         ignore=[
             ".pixi/**",
+            ".claude/**",  # agent worktrees carry their own .pixi
             "results/**",
             "wandb/**",
             ".git/**",
