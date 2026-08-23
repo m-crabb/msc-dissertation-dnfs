@@ -1232,6 +1232,33 @@ CONFIGS: dict[str, HardStageCfg] = {
             ("mab", "masked_attention", {"exterior_combiner": "bilinear"}),
         )
     },
+    # Periodic-RoPE backbone at the 4x4 gate (2026-08-23): the fimo2 twins
+    # with ONLY the backbone changed (model.kind="rope_vit", patch_size 1 or
+    # 2), run BEFORE the d64 rope cells below per the validate-at-4x4 rule.
+    # This is a correctness gate, not a fidelity table: the 4x4 bars of
+    # subsec:gate-4x4 apply (energy-marginal TV <= 0.02, antisymmetry exactly
+    # zero, observables on their enumerated values), and the fimo2 twins'
+    # sigma_c range 0.903-0.925 is the parity reference. Exact torus
+    # equivariance is a property of the bidirectional body only; the one-pass
+    # head on it is NOT equivariant, so no equivariance claim rides on these.
+    **{
+        f"H2_d16_c50_{sigma_label}_rope{patch_size}_fimo2_10k": (
+            lambda _cell, _p: replace(
+                _cell, model=replace(_cell.model, kind="rope_vit", patch_size=_p),
+            )
+        )(
+            replace(
+                _hard_cell(
+                    f"H2_d16_c50_{sigma_label}_rope{patch_size}_fimo2_10k",
+                    sigma=sigma, head_kind="factorised", n_steps=10_000,
+                ),
+                interior_band="prefix", site_orderings=("row", "col"),
+            ),
+            patch_size,
+        )
+        for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
+        for patch_size in (1, 2)
+    },
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
