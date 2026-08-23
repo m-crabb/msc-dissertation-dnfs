@@ -187,6 +187,25 @@ def test_d10_c05_l50_anneal_mirrors_ne64_with_lambda_curriculum_only():
     assert cfg.wandb_project == base.wandb_project
 
 
+def test_fc_ne128_retrain_windows_mirror_c05_ne128_with_only_composition_changed():
+    """F(c) retrain at ne128 (2026-08-23): the four missing windows are the
+    c=0.5 ne128 anneal cell with only target_composition moved, so the
+    retrained curve is one recipe end to end."""
+    from dataclasses import replace
+
+    base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
+    for key, ct in (
+        ("S2_d10_c030_l50_letf_ne128_anneal", 0.30),
+        ("S2_d10_c055_l50_letf_ne128_anneal", 0.55),
+        ("S2_d10_c060_l50_letf_ne128_anneal", 0.60),
+        ("S2_d10_c065_l50_letf_ne128_anneal", 0.65),
+    ):
+        cfg = CONSTRAINED_CONFIGS[key]
+        assert cfg.ising.target_composition == ct
+        assert replace(cfg, name=base.name, ising=base.ising) == base
+        assert cfg.ctmc.n_euler_steps == 128
+
+
 def test_fc_gate_anneal_cells_mirror_c05_anneal_with_only_composition_changed():
     """F(c) campaign gate windows (2026-06-13): off-centre clones of the won
     c=0.5 anneal rung varying only target_composition, so the off-centre runs

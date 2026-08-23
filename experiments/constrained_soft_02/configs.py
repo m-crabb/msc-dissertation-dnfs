@@ -1930,6 +1930,27 @@ CONFIGS: dict[str, StageCfg] = {
 # Mechanism read alongside: `rollout_resample_events` (fire profile). The
 # in-training `ess` column stays plain-IS by construction (test-pinned),
 # so comparability with the archived cell holds.
+# F(c) campaign RETRAIN at ne128 (2026-08-23, s55, user decision on the
+# F(c) grid question): the printed curve is drawn on the ne64 evaluation
+# grid, which is NOT converged -- redrawing the same checkpoints at ne128 and
+# ne256 moved F/site by -0.0081 at c=0.50 and -0.0316 at c=0.60 with a
+# first-order ratio (0.44 / 0.48), so the printed F(0.60)-F(0.50) step of
+# +0.0537 extrapolates to +0.0303. Retraining at ne128 halves the
+# training-grid component; the evaluation-grid component is then removed by
+# the cheap ne256/ne512 redraw + Richardson. The c=0.50 and c=0.80 windows
+# already have ne128 families (this cell and the N11 family); these four
+# complete the curve at one recipe. ONE VARIABLE versus the c=0.50 ne128
+# cell: target_composition (pinned by test). Four seeds each; the thin
+# c=0.30 tail is topped up only if it again carries fewer than three
+# seeds over the 0.30 ESS floor. Venue: DoC a30, ~12 h per run on A100.
+_FC_NE128_BASE = CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
+for _c, _c_tag in ((0.30, "c030"), (0.55, "c055"), (0.60, "c060"), (0.65, "c065")):
+    _window_name = f"S2_d10_{_c_tag}_l50_letf_ne128_anneal"
+    CONFIGS[_window_name] = replace(
+        _FC_NE128_BASE, name=_window_name,
+        ising=replace(_FC_NE128_BASE.ising, target_composition=_c),
+    )
+
 _SMC_FLIP_SOFT_BASE = CONFIGS["S2_d10_c080_l50_letf_ne128_anneal"]
 for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
     _arm_name = f"{_SMC_FLIP_SOFT_BASE.name}_{_tau_tag}"
