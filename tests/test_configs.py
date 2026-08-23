@@ -1348,3 +1348,22 @@ def test_bilinear_exterior_cells_change_only_the_combiner():
         cell = CONFIGS[f"H2_d64_c50_s223_letf_{arm}_50k_curr"]
         twin = CONFIGS[f"H2_d64_c50_s223_letf_{twin_arm}_50k_curr"]
         assert replace(cell, name=twin.name, exterior_combiner="mlp", ema_decay=twin.ema_decay) == twin
+
+
+def test_thp_d256_twins_of_arm_b():
+    """s57: the three 16x16 two-hole patch arms differ from arm B by the
+    declared head fields alone (head_kind; + exact_field_channel; + R=2)."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    arm_b = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
+    for name, fields in {
+        "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2": {},
+        "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef": {"exact_field_channel": False},
+        "H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2": {"patch_radius": None},
+    }.items():
+        cell = CONFIGS[name]
+        assert cell.head_kind == "two_hole_patch"
+        assert replace(cell, name=arm_b.name, head_kind=arm_b.head_kind, **fields) == arm_b
+        assert cell.train.loss_microbatch_size == 128 and cell.train.batch_size == 512

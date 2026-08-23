@@ -3287,3 +3287,34 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_autocast_bf16=True,
     ),
 }
+
+
+# ---- two-hole patch twins of arm B (2026-08-23, s57, user GO) ------------
+# thp at d64 = STRONG (EMA ESS 0.923 vs fimo2 0.830 and fimo2ef 0.882, 13.5
+# vs 34 ms/step; guard telemetry calmer than fimo2's: grad norm 7.5 vs 17,
+# clip/clamp never fired, cv_var_ratio 0.014 vs 0.041), so the record recipe
+# transfers verbatim. Parent = B, NOT D: D's lever is h128/L3 in the causal
+# stacks, which this head never runs. ONE variable each versus B: head_kind
+# (R=1, f=32); + exact_field_channel ("with preconditioner"); R=2 (5x5
+# patch, the head's one architectural knob). Venue Modal A100-80GB (user
+# pinned, ~7.5 h each at 2.5x B's speed). Built by `replace` on B itself so
+# the twin-ness is structural (pinned by test_thp_d256_twins_of_arm_b).
+# FROZEN BANDS (ESS currency per user, EMA eval, seed 42, raw alongside):
+#   STRONG iff EMA ESS/N > 0.430 (beats D = the 16x16 record);
+#   PASS   iff EMA ESS/N in (0.381, 0.430] (beats its parent B);
+#   NULL   iff EMA ESS/N <= 0.381.
+_ARM_B = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
+CONFIGS.update({
+    "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2": replace(
+        _ARM_B, name="H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2",
+        head_kind="two_hole_patch",
+    ),
+    "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef": replace(
+        _ARM_B, name="H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef",
+        head_kind="two_hole_patch", exact_field_channel=True,
+    ),
+    "H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2": replace(
+        _ARM_B, name="H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2",
+        head_kind="two_hole_patch", patch_radius=2,
+    ),
+})
