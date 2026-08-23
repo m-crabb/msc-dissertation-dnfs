@@ -25,7 +25,7 @@ import numpy as np
 from scipy.stats import binom
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    ANALYTIC_GUIDE, MUTED, NEURAL_COMPARATOR_HUE, REFERENCE_INK, SAMPLER_HUE,
+    ANALYTIC_GUIDE, NEURAL_COMPARATOR_HUE, REFERENCE_INK, SAMPLER_HUE,
     style_axes, use_house_style,
 )
 
