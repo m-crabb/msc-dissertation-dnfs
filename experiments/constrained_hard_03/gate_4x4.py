@@ -247,7 +247,7 @@ def load_run(run_dir, device):
         d=target.d, vocab_size=model["vocab_size"], hidden_dim=model["hidden_dim"],
         n_layers=model["n_layers"], n_heads=model["n_heads"],
     ).to(device)
-    head = build_swap_head(cfg, backbone).to(device)
+    head = build_swap_head(cfg, backbone, target).to(device)
     state = torch.load(
         run_dir / "checkpoints" / "final.pt", map_location=device, weights_only=True
     )

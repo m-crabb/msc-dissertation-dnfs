@@ -40,6 +40,7 @@ from discrete_flow_sampler.constraints.factorised_swap_head import (
 from discrete_flow_sampler.constraints.grouped_anchor_swap_head import (
     GroupedAnchorSwapHead,
 )
+from discrete_flow_sampler.constraints.exact_field_channel import ExactFieldSwapHead
 from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
@@ -140,6 +141,12 @@ class HardStageCfg(StageCfg):
     # a rank-`bilinear_rank` product, nothing else changes -- the literal
     # single-variable test of the factorisation. "mlp" = archived heads.
     exterior_combiner: str = "mlp"
+    # Exact-field channel (2026-08-23, s54): add gain(t) * sigma * Delta_ij --
+    # the closed-form Kawasaki energy change, the equilibrium swap log-ratio
+    # at t=1 -- to ANY head's score matrix, gain = a + b t learned from zero
+    # (bit-identical to the base head at init). The head then learns only
+    # the residual. See constraints/exact_field_channel.py for the argument.
+    exact_field_channel: bool = False
     # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
     # cell). > 0 arms a warmup-corrected parameter shadow
     # (discrete_flow_sampler.ema) updated after each optimiser step:
@@ -195,8 +202,12 @@ class NonAntisymSwapHead(nn.Module):
         return torch.einsum("bijh,bjh->bij", diff, H)  # G[:, i, j]
 
 
-def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
-    """Map `cfg.head_kind` to an instantiated swap-readout head."""
+def build_swap_head(
+    cfg: HardStageCfg, backbone: LeTFRateMatrix, target=None
+) -> nn.Module:
+    """Map `cfg.head_kind` to an instantiated swap-readout head. `target` is
+    required only when `cfg.exact_field_channel` is set: the channel reads
+    the target's adjacency and live sigma."""
     if cfg.head_kind == "doubly_hollow":
         head = DoublyHollowSwapHead(backbone)
     elif cfg.head_kind == "mask_one":
@@ -257,6 +268,10 @@ def build_swap_head(cfg: HardStageCfg, backbone: LeTFRateMatrix) -> nn.Module:
         )
     else:
         raise ValueError(f"Unknown head_kind: {cfg.head_kind!r}")
+    if cfg.exact_field_channel:
+        if target is None:
+            raise ValueError("exact_field_channel needs the target at build time")
+        head = ExactFieldSwapHead(head, target)
     if cfg.compile_head:
         # In-place nn.Module.compile: state_dict keys stay unprefixed
         # (torch.compile(module) wrapping would add `_orig_mod.`).
@@ -1195,6 +1210,28 @@ CONFIGS: dict[str, HardStageCfg] = {
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
         for arm, head_kind in (("mab", "masked_attention"), ("ivb", "interval"))
     },
+    # Exact-field channel (2026-08-23, s54): fimo2 and mab chassis with the
+    # closed-form sigma*Delta_ij added as a fixed score channel behind a
+    # learned gain (exact_field_channel=True, nothing else changes). The
+    # residual-only reading of the s53 regression (linear field ~ half of
+    # Var S) predicts a gain; a null says the interior already carries the
+    # field. 4x4 is a TABLE, not a gate (twins: fimo2 0.924/0.925/0.903,
+    # mab 0.970/0.973/0.973 at sigma_c).
+    **{
+        f"H2_d16_c50_{sigma_label}_letf_{arm}ef_10k": replace(
+            _hard_cell(
+                f"H2_d16_c50_{sigma_label}_letf_{arm}ef_10k", sigma=sigma,
+                head_kind=head_kind, n_steps=10_000,
+            ),
+            exact_field_channel=True, **knobs,
+        )
+        for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
+        for arm, head_kind, knobs in (
+            ("fimo2", "factorised",
+             {"interior_band": "prefix", "site_orderings": ("row", "col")}),
+            ("mab", "masked_attention", {"exterior_combiner": "bilinear"}),
+        )
+    },
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
@@ -1312,6 +1349,29 @@ CONFIGS: dict[str, HardStageCfg] = {
                 "fimo2": {"interior_band": "prefix", "site_orderings": ("row", "col")},
             }.items()
         },
+        # Exact-field channel rungs (2026-08-23, s54): the fimo2 rung above
+        # and the mab literal cell with exact_field_channel=True, nothing
+        # else changed. Bands FROZEN BEFORE LAUNCH (raw eval ESS/N, seed 42,
+        # EMA read alongside): fimo2ef vs fimo2 0.750 raw / 0.830 EMA --
+        # STRONG >= 0.78 (MA parity), MEANINGFUL >= 0.765, NULL <= 0.750;
+        # mabef vs mab 0.769 / 0.834 -- STRONG >= 0.80, MEANINGFUL >= 0.785,
+        # NULL <= 0.769. Single seed: the FP-non-determinism caveat applies
+        # to any call inside ~0.02 of a band edge. The learned gain (a, b)
+        # is read off checkpoints/final.pt after the run.
+        "H2_d64_c50_s223_letf_fimo2ef_50k_curr": replace(
+            _d64_curriculum_cell(
+                "H2_d64_c50_s223_letf_fimo2ef_50k_curr", head_kind="factorised",
+            ),
+            ema_decay=0.9999, exact_field_channel=True,
+            interior_band="prefix", site_orderings=("row", "col"),
+        ),
+        "H2_d64_c50_s223_letf_mabef_50k_curr": replace(
+            _d64_curriculum_cell(
+                "H2_d64_c50_s223_letf_mabef_50k_curr", head_kind="masked_attention",
+            ),
+            ema_decay=0.9999, exact_field_channel=True,
+            exterior_combiner="bilinear",
+        ),
         # Scaling slate (2026-08-15). The fmo2 rung above cleared its band at
         # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
         # attention twin) and the cost bench priced it at 4.7x faster and

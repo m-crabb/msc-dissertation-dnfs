@@ -115,7 +115,7 @@ def build_target_and_head(
     # .to(device) on the HEAD, not just the backbone: the wrapper heads are
     # parameterless (no-op), but IntervalSwapHead owns band/position/readout
     # modules that would otherwise stay on CPU (2026-07-07 Modal crash).
-    return target, build_swap_head(cfg, backbone).to(device)
+    return target, build_swap_head(cfg, backbone, target).to(device)
 
 
 def _chunked_eval_draw(
