@@ -41,6 +41,9 @@ from discrete_flow_sampler.constraints.swap_readout import (
     DoublyHollowSwapHead,
     LeTFMaskOneSwapHead,
 )
+from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
+    TwoHolePatchSwapHead,
+)
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
     gather_pair_scores,
@@ -62,6 +65,7 @@ def build_head_and_target(
     site_orderings: tuple[str, ...] = ("row",),
     exterior_combiner: str = "mlp",
     interior_band: str | None = None,
+    patch_radius: int = 1,
 ):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
 
@@ -74,8 +78,10 @@ def build_head_and_target(
     O(d^2) doubly-hollow oracle (mask BOTH sites of every ordered pair,
     sequential loop — bit-exact to mask_one at the d=16 gate, so it
     prices the naive rung of the forward-pass ladder rather than shipping
-    as a sampler; measurable only at small d). Parity with the production
-    cells is pinned by tests/test_profile_swap_heads.py."""
+    as a sampler; measurable only at small d); "two_hole_patch" benches the
+    ordering-free patch + pooled-levels head at radius `patch_radius`.
+    Parity with the production cells is pinned by
+    tests/test_profile_swap_heads.py."""
     side = int(round(d**0.5))
     if side * side != d:
         raise ValueError(f"--d must be a square lattice site count, got {d}")
@@ -106,6 +112,10 @@ def build_head_and_target(
         ).to(device)
     elif head_kind == "naive":
         head = DoublyHollowSwapHead(backbone).to(device)
+    elif head_kind == "two_hole_patch":
+        head = TwoHolePatchSwapHead(
+            backbone, lattice_side=side, patch_radius=patch_radius,
+        ).to(device)
     else:
         head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
     return head, target
@@ -241,7 +251,11 @@ def main(argv=None):
     parser.add_argument(
         "--head-kind", default="mask_one",
         choices=("mask_one", "interval", "masked_attention", "stencil",
-                 "factorised", "naive"),
+                 "factorised", "naive", "two_hole_patch"),
+    )
+    parser.add_argument(
+        "--patch-radius", type=int, default=1,
+        help="two_hole_patch only: hollow window radius R (2R+1 <= D).",
     )
     parser.add_argument(
         "--site-orderings", default="row",
@@ -280,6 +294,7 @@ def main(argv=None):
         site_orderings=tuple(args.site_orderings.split(",")),
         exterior_combiner=args.exterior_combiner,
         interior_band=args.interior_band,
+        patch_radius=args.patch_radius,
     )
     if args.compile:
         head.compile()
