@@ -1,5 +1,6 @@
 """Cost of the periodic-RoPE / patch-key backbone against leTF, behind the
-fimo2 head (factorised + prefix band + row/col orderings), at the production
+fimo2 head (factorised + prefix band + row/col orderings), plus the two-hole
+patch head on leTF (which never runs the stacks), at the production
 width (hidden 32, 2 layers, 4 heads): parameters, counted forward FLOPs, and
 CPU wall time of one head forward. CPU only, small batch; the numbers are
 per-sample and relative, not a GPU throughput claim.
@@ -14,6 +15,7 @@ import torch
 from torch.utils.flop_counter import FlopCounterMode
 
 from discrete_flow_sampler.constraints.factorised_swap_head import FactorisedSwapHead
+from discrete_flow_sampler.constraints.two_hole_patch_swap_head import TwoHolePatchSwapHead
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.models.rope_vit import RoPEViTRateMatrix
 
@@ -40,14 +42,23 @@ def _fimo2(backbone, lattice_side):
 
 
 def _arms(lattice_side):
+    """(name, backbone, head) triples: fimo2 on leTF, fimo2 on RoPE p=1/2/4,
+    and the two-hole patch head (R=1) on leTF -- the three rows of the
+    symmetry-heads table on ONE harness (head-total FLOPs at the same batch)."""
     d = lattice_side * lattice_side
     common = dict(d=d, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4)
     torch.manual_seed(0)
-    yield "letf", LeTFRateMatrix(**common)
+    letf = LeTFRateMatrix(**common)
+    yield "letf", letf, _fimo2(letf, lattice_side)
     for patch_size in (1, 2, 4):
         if lattice_side % patch_size == 0:
             torch.manual_seed(0)
-            yield f"rope_p{patch_size}", RoPEViTRateMatrix(patch_size=patch_size, **common)
+            rope = RoPEViTRateMatrix(patch_size=patch_size, **common)
+            yield f"rope_p{patch_size}", rope, _fimo2(rope, lattice_side)
+    torch.manual_seed(0)
+    yield "thp_R1", letf, TwoHolePatchSwapHead(
+        letf, lattice_side=lattice_side, patch_radius=1, feature_dim=32
+    ).eval()
 
 
 @torch.no_grad()
@@ -58,8 +69,7 @@ def bench(lattice_side: int, batch: int, repeats: int):
     t = torch.rand(batch)
     print(f"\n=== {lattice_side}x{lattice_side} (d={d}), batch {batch}, CPU threads {torch.get_num_threads()} ===")
     print(f"{'arm':10s} {'backbone params':>16s} {'head total':>11s} {'stack GFLOP/sample':>19s} {'head GFLOP/sample':>18s} {'attn GFLOP analytic':>20s} {'ms/sample':>10s}")
-    for name, backbone in _arms(lattice_side):
-        head = _fimo2(backbone, lattice_side)
+    for name, backbone, head in _arms(lattice_side):
         backbone_params = sum(p.numel() for p in backbone.parameters())
         total_params = sum(p.numel() for p in head.parameters())
         # Counted in train mode: eval-mode nn.MultiheadAttention takes the

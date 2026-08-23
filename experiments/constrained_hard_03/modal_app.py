@@ -168,7 +168,8 @@ def train_remote(
     timeout=4 * 60 * 60,
 )
 def gate_remote(
-    seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False
+    seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False,
+    cells: str = "", out: str = "/results/gate_4x4",
 ):
     """Run the 4x4 exact-enumeration go/no-go gate against the trained run
     dirs already on the volume; writes verdict.json + plot to /results/gate_4x4."""
@@ -180,12 +181,14 @@ def gate_remote(
     argv = [
         "--results-dir", "/results",
         "--device", "cuda",
-        "--out", "/results/gate_4x4",
+        "--out", out,
         "--seeds", seeds,
         "--n-samples", str(n_samples),
     ]
     if skip_controls:
         argv.append("--skip-controls")
+    if cells:
+        argv += ["--cells", cells]
     gate_main(argv)
     volume.commit()
 
@@ -456,10 +459,18 @@ def main(cfg_name: str, seed: int = 42, head_kind: str = "", smoke: bool = False
 
 
 @app.local_entrypoint()
-def gate(seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False):
+def gate(
+    seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False,
+    cells: str = "", out: str = "/results/gate_4x4",
+):
     """Local CLI entry for the gate: blocking `.remote()` so the per-run
-    progress prints stream back to the local terminal."""
-    gate_remote.remote(seeds=seeds, n_samples=n_samples, skip_controls=skip_controls)
+    progress prints stream back to the local terminal. `cells` = comma-
+    separated CONFIGS names to gate instead of the dh ladder (pass `out` too
+    so the ladder verdict is not overwritten)."""
+    gate_remote.remote(
+        seeds=seeds, n_samples=n_samples, skip_controls=skip_controls,
+        cells=cells, out=out,
+    )
 
 
 @app.local_entrypoint()

@@ -54,11 +54,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
     free_energy_lb_estimate,
     nn_correlation,
 )
-from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
 from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 from discrete_flow_sampler.seeding import seed_everything
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 # The three sigma-ladder rungs (subcritical / critical / hardened) + the na cell.
 RUNGS = {
@@ -230,24 +228,19 @@ def latest_run_dir(results_dir, cfg_name, seed):
 def load_run(run_dir, device):
     """Rebuild (head, target) from a run dir's config.json + checkpoints/final.pt.
 
-    The head wraps the backbone, so final.pt's keys are prefixed `backbone.` and
-    load onto the head module directly. Evaluate with the head kind recorded in
-    config.json (the ladder trained mask_one, which is bit-exact-equal to
-    doubly_hollow per the d=16 oracle pin).
+    Delegates to `run.build_target_and_head` so the gate can never drift from
+    the trainer in how it instantiates the backbone/head (the rope_vit backbone
+    and the two_hole_patch head would otherwise need re-dispatching here).
+    The head wraps the backbone, so final.pt's keys are prefixed `backbone.`
+    and load onto the head module directly. Evaluate with the head kind
+    recorded in config.json (the ladder trained mask_one, which is
+    bit-exact-equal to doubly_hollow per the d=16 oracle pin).
     """
+    from experiments.constrained_hard_03.run import build_target_and_head
+
     cfg_dict = json.loads((run_dir / "config.json").read_text())
     cfg = replace(CONFIGS[cfg_dict["name"]], head_kind=cfg_dict["head_kind"])
-    ising, model = cfg_dict["ising"], cfg_dict["model"]
-    target = FixedCompositionIsingTarget(
-        D=ising["D"], sigma=ising["sigma"],
-        target_composition=ising["target_composition"],
-        bias=ising["bias"], device=device,
-    )
-    backbone = LeTFRateMatrix(
-        d=target.d, vocab_size=model["vocab_size"], hidden_dim=model["hidden_dim"],
-        n_layers=model["n_layers"], n_heads=model["n_heads"],
-    ).to(device)
-    head = build_swap_head(cfg, backbone, target).to(device)
+    target, head = build_target_and_head(cfg, device)
     state = torch.load(
         run_dir / "checkpoints" / "final.pt", map_location=device, weights_only=True
     )
@@ -582,7 +575,11 @@ def main(argv=None):
     parser.add_argument("--out", default=None)
     parser.add_argument("--skip-controls", action="store_true",
                         help="positive-only pass (ladder rungs, no negative controls)")
+    parser.add_argument("--cells", default=None,
+                        help="comma-separated CONFIGS names to gate instead of "
+                             "the dh ladder RUNGS (e.g. the 4x4 head/backbone twins)")
     args = parser.parse_args(argv)
+    rungs = dict(zip(args.cells.split(","), args.cells.split(","))) if args.cells else RUNGS
 
     results_dir = Path(args.results_dir)
     seeds = [int(s) for s in args.seeds.split(",")]
@@ -591,7 +588,7 @@ def main(argv=None):
 
     verdict = {"rungs": {}, "controls": {}}
     hist_by_rung = {}
-    for rung, cfg_name in RUNGS.items():
+    for rung, cfg_name in rungs.items():
         n_euler = CONFIGS[cfg_name].ctmc.n_euler_steps
         per_seed = []
         for seed in seeds:
