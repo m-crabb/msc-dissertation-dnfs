@@ -38,7 +38,7 @@ SIGMA_OPERATING = 0.10  # DNFS paper operating point (subcritical)
 SIGMA_CRITICAL = 0.22305
 CURVE_SIGMAS = [0.05, 0.10, 0.16, 0.20, 0.22305, 0.26]  # monotonic τ_int regime
 ERGO_SIGMAS = [0.05, 0.10, 0.16, 0.20, 0.22305, 0.26, 0.32, 0.40]
-DEMO_D = [10, 16, 24]
+DEMO_D = [8, 16]  # capped at the largest lattice the neural sampler reaches
 ERGO_D = 24
 # R̂ is a between-chain statistic, so a band on it means repeating the whole
 # 4-chain ensemble under independent base seeds. The illustrative panels
