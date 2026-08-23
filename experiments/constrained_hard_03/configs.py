@@ -45,6 +45,9 @@ from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHea
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
 )
+from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
+    TwoHolePatchSwapHead,
+)
 from discrete_flow_sampler.constraints.swap_readout import (
     DoublyHollowSwapHead,
     LeTFMaskOneSwapHead,
@@ -69,12 +72,14 @@ class HardStageCfg(StageCfg):
     same three-interval structure, band aggregated by exclusion-mask
     attention -- bit-exact blindness, decision 2026-07-07), or "factorised"
     (FactorisedSwapHead, one-pass low-rank bilinear causal factors plus
-    hole-subtracted global context -- no per-pair lattice pooling, 2026-08-13).
+    hole-subtracted global context -- no per-pair lattice pooling, 2026-08-13),
+    or "two_hole_patch" (TwoHolePatchSwapHead, ordering-free: hollow torus
+    patch with the partner zeroed + hole-subtracted pooled levels, 2026-08-23).
     """
 
     head_kind: Literal[
         "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention",
-        "grouped_anchor", "factorised",
+        "grouped_anchor", "factorised", "two_hole_patch",
     ] = "doubly_hollow"
     # Anchor-batch chunk for the mask_one head's vectorised forward; None =
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
@@ -147,6 +152,13 @@ class HardStageCfg(StageCfg):
     # (bit-identical to the base head at init). The head then learns only
     # the residual. See constraints/exact_field_channel.py for the argument.
     exact_field_channel: bool = False
+    # Two-hole patch head knobs (2026-08-23): hollow window radius R (needs
+    # 2R+1 <= D) and the pair-context width; None = the head's defaults
+    # (R=1, feature_dim 32, patch_hidden 32, pooled radii = powers of two
+    # that fit the torus plus the global level). Only read when head_kind is
+    # "two_hole_patch", so every other cell stays byte-identical.
+    patch_radius: int | None = None
+    patch_feature_dim: int | None = None
     # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
     # cell). > 0 arms a warmup-corrected parameter shadow
     # (discrete_flow_sampler.ema) updated after each optimiser step:
@@ -253,6 +265,13 @@ def build_swap_head(
             attention_dim=cfg.attention_dim or 32,
             site_orderings=cfg.site_orderings,
             lattice_side=cfg.ising.D,
+        )
+    elif cfg.head_kind == "two_hole_patch":
+        head = TwoHolePatchSwapHead(
+            backbone,
+            lattice_side=cfg.ising.D,
+            patch_radius=cfg.patch_radius or 1,
+            feature_dim=cfg.patch_feature_dim or 32,
         )
     elif cfg.head_kind == "grouped_anchor":
         # k masked passes instead of mask_one's d; lattice_side is cfg.ising.D
