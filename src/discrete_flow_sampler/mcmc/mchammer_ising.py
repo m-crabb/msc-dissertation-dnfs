@@ -202,8 +202,27 @@ def run_vcsgc(
     seed: int,
     bias: float = 0.0,
     data_write_interval: int = 100,
+    record_spins: bool = False,
 ) -> dict:
-    """One VC-SGC chain at the soft-target operating point, with timing."""
+    """One VC-SGC chain at the soft-target operating point, with timing.
+
+    ``record_spins`` additionally returns the full +-1 configuration at every
+    ensemble-data row (post burn-in, int8) under ``traces["spins"]``. The
+    house evaluation table scores per-site magnetisation and correlation
+    profiles against the VC-SGC reference, which the scalar composition and
+    potential traces cannot supply. Capture follows ``run_canonical_probe``:
+    drive ``ensemble.run`` one write interval at a time and read the structure
+    back between calls, so frame k is the state mchammer's row k describes
+    (row-major D x D atom order, see the probe's docstring). The RNG stream is
+    untouched by chunking, so the chain is identical to the one-shot run; the
+    default keeps the cheaper one-shot path for callers that only need traces.
+    """
+    if record_spins and n_steps % data_write_interval != 0:
+        raise ValueError(
+            f"n_steps={n_steps} must be a multiple of "
+            f"data_write_interval={data_write_interval} to align spin frames "
+            "with ensemble-data rows."
+        )
     setup_start = time.perf_counter()
     primitive, _, expansion = ising_cluster_expansion(sigma, bias)
     supercell, _ = _composition_initialised_supercell(
@@ -221,12 +240,24 @@ def run_vcsgc(
     )
     wall_seconds_setup = time.perf_counter() - setup_start
 
+    n_sites = len(supercell)
+    read_spins = lambda: atoms_to_spins(
+        ensemble.structure.get_chemical_symbols()
+    ).astype(np.int8)
     run_start = time.perf_counter()
-    ensemble.run(n_steps)
+    if record_spins:
+        # Frame k = the state at trial step k * interval, matching row k of the
+        # data container (written at step 0 and after every interval).
+        spin_frames = np.empty((n_steps // data_write_interval + 1, n_sites), np.int8)
+        for k in range(len(spin_frames) - 1):
+            spin_frames[k] = read_spins()
+            ensemble.run(data_write_interval)
+        spin_frames[-1] = read_spins()
+    else:
+        ensemble.run(n_steps)
     wall_seconds_run = time.perf_counter() - run_start
 
     data = ensemble.data_container.data
-    n_sites = len(supercell)
     composition_trace = _post_burn_in(data[f"{_UP_SYMBOL}_count"].values / n_sites)
     potential_trace = _post_burn_in(data["potential"].values)
 
@@ -250,6 +281,8 @@ def run_vcsgc(
         "composition": composition_trace,
         "potential": potential_trace,
     }
+    if record_spins:
+        summary["traces"]["spins"] = _post_burn_in(spin_frames)
     return summary
 
 

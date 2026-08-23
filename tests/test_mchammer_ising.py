@@ -133,6 +133,26 @@ class TestRunners:
             0.5, abs=0.05
         )
 
+    def test_vcsgc_recorded_spins_match_the_unrecorded_chain(self):
+        """record_spins must not change the chain: chunked driving reproduces
+        the one-shot run frame for frame, and the spin frames must agree with
+        mchammer's own composition trace (the check that atom order is read
+        back consistently, as for the canonical probe)."""
+        kwargs = dict(D=D_SMALL, sigma=0.1, penalty_strength=50.0,
+                      target_composition=0.5, n_steps=4000, seed=0,
+                      data_write_interval=10)
+        plain = run_vcsgc(**kwargs)
+        recorded = run_vcsgc(**kwargs, record_spins=True)
+        spins = recorded["traces"]["spins"]
+        n_frames = len(recorded["traces"]["composition"])
+        assert spins.shape == (n_frames, D_SMALL * D_SMALL)
+        assert spins.dtype == np.int8 and set(np.unique(spins)) <= {-1, 1}
+        np.testing.assert_array_equal(
+            recorded["traces"]["composition"], plain["traces"]["composition"])
+        np.testing.assert_allclose(
+            (spins > 0).mean(axis=1), recorded["traces"]["composition"])
+        assert "spins" not in plain["traces"]
+
     def test_canonical_fixes_composition_exactly(self):
         summary = run_canonical(
             D=D_SMALL,

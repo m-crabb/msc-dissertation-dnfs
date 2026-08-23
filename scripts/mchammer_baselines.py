@@ -11,7 +11,7 @@ because an MCMC sweep has no NFE analogue.
 Layout mirrors the bespoke runs, one dir per (composition, seed):
 
     results/mchammer_vcsgc/D10_s0.1_l50.0_c0.30_seed42/
-        summary.json  composition.npy  potential.npy
+        summary.json  composition.npy  potential.npy  [spins.npy]
 
 Examples:
     # soft leg, matched to the S=2 D=10 lambda=50 campaign
@@ -47,6 +47,11 @@ def main():
     parser.add_argument("--n-steps", type=int, default=1_000_000)
     parser.add_argument("--write-interval", type=int, default=100)
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument(
+        "--record-spins", action="store_true",
+        help="vcsgc only: also save spins.npy (post-burn-in configurations, "
+             "int8) so profile observables can be scored against the chain",
+    )
     args = parser.parse_args()
 
     out_root = args.out or Path("results") / f"mchammer_{args.ensemble}"
@@ -58,6 +63,7 @@ def main():
                     target_composition=composition, n_steps=args.n_steps,
                     seed=seed, bias=args.bias,
                     data_write_interval=args.write_interval,
+                    record_spins=args.record_spins,
                 )
                 run_name = (
                     f"D{args.D}_s{args.sigma}_l{args.lam}"
