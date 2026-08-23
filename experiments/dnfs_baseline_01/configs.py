@@ -363,6 +363,10 @@ class ModelCfg:
     # construction identical to an unconditioned model, so archived
     # checkpoints stay loadable.
     condition_on_composition: bool = False
+    # rope_vit only (hard route, 2026-08-23): side of the p x p patches whose
+    # pooled keys carry the far field in the causal stacks. 1 = dense causal
+    # attention with periodic rotary positions; the leTF cells never read it.
+    patch_size: int = 1
 
 
 @dataclass(frozen=True)
