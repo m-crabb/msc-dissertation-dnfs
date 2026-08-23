@@ -1372,6 +1372,40 @@ CONFIGS: dict[str, HardStageCfg] = {
             ema_decay=0.9999, exact_field_channel=True,
             exterior_combiner="bilinear",
         ),
+        # Periodic-RoPE / patch-key backbone twins of the fimo2 rung
+        # (2026-08-23, hail mary; models/rope_vit.py). ONE variable each
+        # versus fimo2: the backbone's free absolute position tables are
+        # replaced by rotary phases 2*pi*m/L (torus-periodic, signed
+        # offsets), and at p=2 the causal stacks' far keys are pooled 2x2
+        # patches (keys per query 1+16+16 instead of 65). The head is
+        # unchanged and still carries its own absolute site-position
+        # embedding, so this tests the BACKBONE's position code only.
+        # FROZEN BANDS (before any launch, seed 42, EMA eval; primary =
+        # Var[log w]/site, bootstrap CI, ESS/N alongside) against the fimo2
+        # rung's EMA Var/site 0.00281 (0.00271, 0.00292), raw 0.00389
+        # (0.00373, 0.00406), EMA ESS/N 0.830, raw 0.750:
+        #   LIFT       iff EMA Var/site CI separated BELOW (0.00271, 0.00292);
+        #   NULL       iff the CIs overlap;
+        #   REGRESSION iff separated ABOVE.
+        # Not run at the time of writing; CPU-only until the user says so.
+        **{
+            f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr": (
+                lambda _cell, _p: replace(
+                    _cell, model=replace(_cell.model, kind="rope_vit", patch_size=_p),
+                )
+            )(
+                replace(
+                    _d64_curriculum_cell(
+                        f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr",
+                        head_kind="factorised",
+                    ),
+                    ema_decay=0.9999,
+                    interior_band="prefix", site_orderings=("row", "col"),
+                ),
+                patch_size,
+            )
+            for patch_size in (1, 2)
+        },
         # Scaling slate (2026-08-15). The fmo2 rung above cleared its band at
         # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
         # attention twin) and the cost bench priced it at 4.7x faster and

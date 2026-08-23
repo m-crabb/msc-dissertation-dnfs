@@ -30,6 +30,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
     ess_from_log_weights,
 )
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
+from discrete_flow_sampler.models.rope_vit import RoPEViTRateMatrix
 from discrete_flow_sampler.samplers.resampling import (
     ResamplingConfig,
     log_mean_exp,
@@ -104,14 +105,19 @@ def build_target_and_head(
             bias=cfg.ising.bias,
             device=device,
         )
-    backbone = LeTFRateMatrix(
+    backbone_kwargs = dict(
         d=target.d,
         vocab_size=cfg.model.vocab_size,
         hidden_dim=cfg.model.hidden_dim,
         n_layers=cfg.model.n_layers,
         n_heads=cfg.model.n_heads,
         use_sdpa_readout=cfg.model.use_sdpa_readout,
-    ).to(device)
+    )
+    if cfg.model.kind == "rope_vit":
+        backbone = RoPEViTRateMatrix(patch_size=cfg.model.patch_size, **backbone_kwargs)
+    else:
+        backbone = LeTFRateMatrix(**backbone_kwargs)
+    backbone = backbone.to(device)
     # .to(device) on the HEAD, not just the backbone: the wrapper heads are
     # parameterless (no-op), but IntervalSwapHead owns band/position/readout
     # modules that would otherwise stay on CPU (2026-07-07 Modal crash).
