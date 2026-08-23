@@ -323,3 +323,24 @@ def test_build_swap_head_wires_lattice_side_and_exact_field_wrapper():
     x = _state(64, batch=2)
     G = head(x, torch.rand(2))
     assert G.shape == (2, 64, 64) and torch.isfinite(G).all()
+
+
+def test_d64_thp_cell_mirrors_fimo2_rung_except_head_kind():
+    """The d64 twin differs from the fimo2 rung ONLY in head_kind (and the
+    fimo2-specific band/ordering knobs that head_kind makes inert), so any
+    outcome difference is attributable to the head."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from experiments.constrained_hard_03.run import build_target_and_head
+
+    cell = CONFIGS["H2_d64_c50_s223_letf_thp_50k_curr"]
+    twin = CONFIGS["H2_d64_c50_s223_letf_fimo2_50k_curr"]
+    assert cell.head_kind == "two_hole_patch"
+    assert replace(
+        cell, name=twin.name, head_kind=twin.head_kind,
+        interior_band=twin.interior_band, site_orderings=twin.site_orderings,
+    ) == twin
+    _, head = build_target_and_head(cell, torch.device("cpu"))
+    assert isinstance(head, TwoHolePatchSwapHead)
+    assert head.patch_radius == 1 and head.lattice_side == 8

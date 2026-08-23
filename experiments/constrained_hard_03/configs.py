@@ -1466,6 +1466,26 @@ CONFIGS: dict[str, HardStageCfg] = {
             )
             for patch_size in (1, 2)
         },
+        # Two-hole patch head twin of the fimo2 rung (2026-08-23, s57). ONE
+        # variable versus fimo2: head_kind (R=1, feature_dim 32; the leTF
+        # stacks are built but never run). At the 4x4 gate the head reached
+        # sigma_c ESS 0.997/0.993/0.988 (fimo2 twins 0.924/0.925/0.903) at
+        # ~10 ms/step versus ~28, so this is the rung that asks whether
+        # blindness-by-locality survives the non-local remainder at d=64.
+        # FROZEN BANDS (before launch, seed 42, EMA eval; primary = Var[log
+        # w]/site bootstrap CI, ESS/N alongside) against the fimo2 rung's
+        # EMA Var/site 0.00281 (0.00271, 0.00292), EMA ESS/N 0.830:
+        #   STRONG     iff EMA Var/site CI separated BELOW (0.00271, 0.00292)
+        #              AND EMA ESS/N >= 0.84;
+        #   PASS       iff the CIs overlap and EMA ESS/N in [0.80, 0.84);
+        #   NULL       iff EMA ESS/N < 0.70 or the CI is separated ABOVE;
+        #   in between = PARTIAL, reported as such.
+        "H2_d64_c50_s223_letf_thp_50k_curr": replace(
+            _d64_curriculum_cell(
+                "H2_d64_c50_s223_letf_thp_50k_curr", head_kind="two_hole_patch",
+            ),
+            ema_decay=0.9999,
+        ),
         # Scaling slate (2026-08-15). The fmo2 rung above cleared its band at
         # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
         # attention twin) and the cost bench priced it at 4.7x faster and
