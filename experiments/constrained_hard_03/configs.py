@@ -1278,6 +1278,20 @@ CONFIGS: dict[str, HardStageCfg] = {
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
         for patch_size in (1, 2)
     },
+    # Two-hole patch head at the 4x4 gate (2026-08-23, alongside the rope
+    # twins above): the fimo2 twin protocol with ONLY the head changed to
+    # "two_hole_patch" (R=1, feature_dim 32; the leTF stacks are built but
+    # never run by this head). Same 4x4 correctness bars as subsec:gate-4x4;
+    # fimo2 twins' sigma_c range 0.903-0.925 is the parity reference. This
+    # is the one head in the ladder whose pair rate is exactly torus
+    # translation-equivariant in a single pass.
+    **{
+        f"H2_d16_c50_{sigma_label}_letf_thp_10k": _hard_cell(
+            f"H2_d16_c50_{sigma_label}_letf_thp_10k", sigma=sigma,
+            head_kind="two_hole_patch", n_steps=10_000,
+        )
+        for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
+    },
     # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
