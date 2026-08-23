@@ -2022,6 +2022,41 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
+    # ---- exact-field twin of arm B (2026-08-23, s55, user GO) ----------
+    # ONE VARIABLE versus arm B above: exact_field_channel=True, nothing
+    # else. B is the clean 16x16 record read (h32, cold CV, 70k, ne128, EMA
+    # eval ESS/N 0.381 (0.346, 0.419), Var[log w]/site 0.00358 (0.00344,
+    # 0.00372)), and at d64 the channel was worth +0.09 raw ESS on exactly
+    # this prefix-band chassis (fimo2ef 0.839 vs fimo2 0.750, STRONG) while
+    # doing nothing on the attention-band one (mabef NULL), so the prior is
+    # a lift and the question is whether it survives 256 sites.
+    # FROZEN BANDS (before launch, seed 42, EMA eval, bootstrap CI; primary
+    # = Var/site, the project's d256 convention, ESS/N read alongside):
+    #   LIFT       iff Var/site CI separated BELOW B's (0.00344, 0.00372);
+    #              STRONG additionally iff EMA ESS/N CI separated ABOVE
+    #              B's (0.346, 0.419) -- a bulk AND tail gain.
+    #   NULL       iff Var/site CI overlaps B's.
+    #   REGRESSION iff Var/site CI separated ABOVE B's -- the fixed channel
+    #              costs the head at scale what it bought at d64.
+    # Single seed; any call inside ~0.02 of an ESS edge or 18% of a Var/site
+    # edge (the measured d256 seed spread) carries the FP caveat. Tripwire
+    # at 5000 exactly as B. Venue: DoC a100 (B ran there), pinned by the
+    # user given the ~13 h length.
+    "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2_ef": (
+        lambda _cell: replace(
+            _cell,
+            train=replace(
+                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
+            ),
+            exact_field_channel=True,
+        )
+    )(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2_ef",
+            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            loss_microbatch_size=128,
+        )
+    ),
     # ---- capacity twins of the composition family (2026-08-21, GO) --
     # WHY, AND AGAINST WHAT PRIOR. Capacity is a CLOSED door at d256 and
     # the evidence points the wrong way: the full-horizon arm

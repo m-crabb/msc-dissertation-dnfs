@@ -1202,7 +1202,11 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
 
     # Every arm trains at the keystone's grid and batch, under the schedule
     # its parent already used.
-    for arm in (arm_a, arm_b, arm_p, arm_p03, arm_c, arm_d):
+    arm_b_ef = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2_ef"]
+    # s55: the exact-field twin of B differs by the channel flag alone.
+    assert arm_b_ef.exact_field_channel and not arm_b.exact_field_channel
+    assert replace(arm_b_ef, name=arm_b.name, exact_field_channel=False) == arm_b
+    for arm in (arm_a, arm_b, arm_p, arm_p03, arm_c, arm_d, arm_b_ef):
         assert arm.ctmc.n_euler_steps == 128, arm.name
         assert arm.train.batch_size == 512, arm.name
         assert arm.train.loss_microbatch_size == 128, arm.name
