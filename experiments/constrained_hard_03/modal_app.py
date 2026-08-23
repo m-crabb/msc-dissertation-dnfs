@@ -383,7 +383,9 @@ def mdns_gate(argv: str = ""):
 def bench_remote(argv: str = ""):
     """Run the profile/benchmark harness on the production GPU. `argv` is
     the space-separated profile_swap CLI string, e.g.
-    "--mode eval --d 64 --batch 256 --n-euler-steps 128".
+    "--mode eval --d 64 --batch 256 --n-euler-steps 128". Several
+    configurations separated by ";" run back to back in the one container,
+    so a whole head ladder pays the cold start once.
 
     A100-80GB is spelled out deliberately: Modal's bare "A100" is the 40 GB
     variant, which OOMs the large-batch arms this harness exists to measure
@@ -396,7 +398,9 @@ def bench_remote(argv: str = ""):
     sys.path.insert(0, "/repo")
     from experiments.constrained_hard_03.profile_swap import main as bench_main
 
-    bench_main(argv.split())
+    for one in argv.split(";"):
+        bench_main(one.split())
+        print(flush=True)
 
 
 @app.local_entrypoint()

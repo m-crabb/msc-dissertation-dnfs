@@ -60,6 +60,8 @@ def build_head_and_target(
     d: int, device: torch.device, anchor_chunk: int | None, use_sdpa: bool = False,
     head_kind: str = "mask_one",
     site_orderings: tuple[str, ...] = ("row",),
+    exterior_combiner: str = "mlp",
+    interior_band: str | None = None,
 ):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
 
@@ -86,9 +88,13 @@ def build_head_and_target(
         use_sdpa_readout=use_sdpa,
     ).to(device)
     if head_kind == "interval":
-        head = IntervalSwapHead(backbone, pair_offsets=(1, side)).to(device)
+        head = IntervalSwapHead(
+            backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
+        ).to(device)
     elif head_kind == "masked_attention":
-        head = MaskedAttentionSwapHead(backbone, pair_offsets=(1, side)).to(device)
+        head = MaskedAttentionSwapHead(
+            backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
+        ).to(device)
     elif head_kind == "stencil":
         head = MaskedAttentionSwapHead(
             backbone, pair_offsets=(1, side), use_stencil=True, lattice_side=side,
@@ -96,6 +102,7 @@ def build_head_and_target(
     elif head_kind == "factorised":
         head = FactorisedSwapHead(
             backbone, site_orderings=site_orderings, lattice_side=side,
+            interior_band=interior_band,
         ).to(device)
     elif head_kind == "naive":
         head = DoublyHollowSwapHead(backbone).to(device)
@@ -243,6 +250,15 @@ def main(argv=None):
              "arm, whose two streams roughly double the forward cost. Ignored "
              "by every other head kind.",
     )
+    parser.add_argument(
+        "--exterior-combiner", default="mlp", choices=("mlp", "bilinear"),
+        help="interval / masked_attention only: 'bilinear' is the literal "
+             "mab / ivb cell (only [P,S] moved into a rank-8 product).",
+    )
+    parser.add_argument(
+        "--interior-band", default=None, choices=(None, "prefix", "attention"),
+        help="factorised only: the fib / fatt / fimo2 interior mechanism.",
+    )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)
     parser.add_argument("--n-euler-steps", type=int, default=128)
@@ -262,11 +278,15 @@ def main(argv=None):
         args.d, device, args.anchor_chunk, use_sdpa=args.sdpa,
         head_kind=args.head_kind,
         site_orderings=tuple(args.site_orderings.split(",")),
+        exterior_combiner=args.exterior_combiner,
+        interior_band=args.interior_band,
     )
     if args.compile:
         head.compile()
     print(
-        f"mode={args.mode} head_kind={args.head_kind} d={args.d} batch={args.batch} "
+        f"mode={args.mode} head_kind={args.head_kind} "
+        f"exterior_combiner={args.exterior_combiner} interior_band={args.interior_band} "
+        f"site_orderings={args.site_orderings} d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
         f"multi_event={args.multi_event} "
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
