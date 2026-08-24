@@ -167,6 +167,10 @@ def main() -> None:
     p.add_argument("--vcsgc_seeds", nargs="+", type=int, default=[0, 1, 2])
     p.add_argument("--vcsgc_steps", type=int, default=300_000)
     p.add_argument("--plot", type=Path, default=None)
+    p.add_argument("--flag_c", nargs="*", type=float, default=[],
+                   help="compositions drawn with a provisional ring (their Z2 "
+                        "mirrors inherit it); used while a window awaits retrain "
+                        "or prints from a different training grid")
     args = p.parse_args()
     rng = np.random.default_rng(0)
 
@@ -259,7 +263,7 @@ def main() -> None:
                           dnfs=d_pt, dnfs_err=d_err))
 
     if args.plot is not None:
-        _plot(curve, lam, analytic_cstd, args.plot)
+        _plot(curve, lam, analytic_cstd, args.flag_c, args.plot)
 
 
 def _zmirror(have: list[dict], key: str) -> list[tuple]:
@@ -290,17 +294,31 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
     return out
 
 
-def _plot(curve, lam, analytic_cstd, out: Path) -> None:
+def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
+    """House-standard 2x2 (approved s62; the 1x4 at 18 in printed ~3 pt).
+
+    Roles: VC-SGC chains = CLASSICAL_HUE (the classical comparator, not the
+    ink truth -- these are matched chains, not TI); our sampler =
+    SAMPLER_HUE; analytic guides dashed ANALYTIC_GUIDE. Shared series are
+    named once in panel (a); panels with their own guide name only the
+    guide. Compositions in `flag_c` (plus Z2 mirrors) get the provisional
+    ring on the sampler series, explained in the caption.
+    """
     import matplotlib.pyplot as plt
 
+    from discrete_flow_sampler.diagnostics.figure_style import (
+        ANALYTIC_GUIDE, CLASSICAL_HUE, FIGSIZE_FULL_2X2, MUTED, SAMPLER_HUE,
+        SAVEFIG_DPI, style_axes, use_house_style)
+
+    use_house_style()
     have = [r for r in curve if r["dnfs"] is not None]
-    cs = [r["c"] for r in have]
-    panels = [("c_mean", r"$\langle c\rangle$", "mean composition"),
-              ("c_std", r"std$(c)$", "composition width"),
-              ("e_site", r"$E/d$", "energy per site"),
-              ("sro", r"$\langle x_i x_j\rangle_{NN}$", "NN short-range order")]
-    fig, axes = plt.subplots(1, 4, figsize=(18, 4.2))
-    for ax, (key, ylab, title) in zip(axes, panels):
+    panels = [("c_mean", r"$\langle c\rangle$"),
+              ("c_std", r"std$(c)$"),
+              ("e_site", r"$E/d$"),
+              ("sro", r"$\langle x_i x_j\rangle_{NN}$")]
+    flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
+    fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_FULL_2X2)
+    for i, (ax, (key, ylab)) in enumerate(zip(axes.ravel(), panels)):
         # sampled + Z_2-reflected points merged into one uniformly-drawn series,
         # sorted by composition (the reflection is stated in the body text)
         mir = _zmirror(have, key)
@@ -313,15 +331,20 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
         # both series as discrete markers (no connecting line): the comparison is
         # per-composition agreement at matched windows, not a trend, so a
         # joining line would imply interpolation neither sampler measures.
-        ax.errorbar(pc, vc, yerr=vce, fmt="ko", capsize=3,
-                    label="vcSGC (mchammer)")
-        ax.errorbar(pc, dn, yerr=dne, fmt="s", color="tab:blue", capsize=3,
-                    label="DNFS soft (IS)")
-        allcs = pc
+        ax.errorbar(pc, vc, yerr=vce, fmt="o", color=CLASSICAL_HUE, capsize=2,
+                    lw=1.0, label="vcSGC (mchammer)" if i == 0 else None)
+        ax.errorbar(pc, dn, yerr=dne, fmt="s", color=SAMPLER_HUE, capsize=2,
+                    lw=1.0, label="DNFS soft (IS)" if i == 0 else None)
+        ring = [(c, y) for c, y in zip(pc, dn) if round(c, 4) in flagged]
+        if ring:
+            ax.scatter([c for c, _ in ring], [y for _, y in ring], s=140,
+                       facecolors="none", edgecolors=MUTED, linewidths=1.1,
+                       zorder=4)
         if key == "c_mean":
-            ax.plot(allcs, allcs, ":", color="grey", lw=0.8, label="$c=c_t$")
+            ax.plot(pc, pc, ls="--", color=ANALYTIC_GUIDE, lw=0.8,
+                    label="$c=c_t$")
         if key == "c_std":
-            ax.axhline(analytic_cstd, ls=":", color="grey", lw=0.8,
+            ax.axhline(analytic_cstd, ls="--", color=ANALYTIC_GUIDE, lw=0.8,
                        label=r"$1/\sqrt{2\lambda d}$")
             # std(c) is near-constant ~0.010, so autoscale zooms into the noise;
             # pin a +/-0.001 window around the analytic value so the tiny (and
@@ -329,11 +352,13 @@ def _plot(curve, lam, analytic_cstd, out: Path) -> None:
             ax.set_ylim(analytic_cstd - 0.001, analytic_cstd + 0.001)
         ax.set_xlabel("composition $c$")
         ax.set_ylabel(ylab)
-        ax.set_title(title)
-        ax.legend(fontsize=8)
-    fig.suptitle(f"DNFS soft vs vcSGC at matched $\\kappa=\\lambda={lam:g}$", y=1.02)
+        if ax.get_legend_handles_labels()[1]:
+            ax.legend(frameon=False, loc="best")
+        style_axes(ax)
+        ax.text(0.02, 1.02, f"({chr(97 + i)})", transform=ax.transAxes,
+                fontweight="bold", va="bottom")
     fig.tight_layout()
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+    fig.savefig(out, dpi=SAVEFIG_DPI, bbox_inches="tight")
     print(f"wrote {out}")
 
 
