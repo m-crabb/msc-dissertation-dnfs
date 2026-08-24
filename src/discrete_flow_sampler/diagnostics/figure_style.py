@@ -62,10 +62,23 @@ SPIN_DOWN_COLOUR = "#3B3A6B"
 SPIN_UP_COLOUR = "#F2C14E"
 SPIN_CMAP = ListedColormap([SPIN_DOWN_COLOUR, SPIN_UP_COLOUR])
 
+# House geometry (approved s62): figures are designed AT print size, 1:1 --
+# figsize width equals the width the figure prints at, so a point of script
+# font is a point on the page. Two tex widths only: \textwidth for
+# multi-panel figures, 0.72\textwidth for single panels (A4, 2.5 cm margins,
+# 11 pt body -> text block 6.3 in). Label size 9 pt matches the
+# \footnotesize house tables at 1:1; dpi 300 is print quality at these
+# physical sizes.
+FULL_WIDTH_IN = 6.3
+SINGLE_PANEL_WIDTH_IN = 4.54
+FIGSIZE_FULL_1X2 = (FULL_WIDTH_IN, 2.9)
+FIGSIZE_FULL_2X2 = (FULL_WIDTH_IN, 5.6)
+FIGSIZE_SINGLE = (SINGLE_PANEL_WIDTH_IN, 3.2)
+
 FONT_SIZE_TITLE = 9
-FONT_SIZE_LABEL = 8
-FONT_SIZE_ANNOTATION = 7
-SAVEFIG_DPI = 180
+FONT_SIZE_LABEL = 9
+FONT_SIZE_ANNOTATION = 8
+SAVEFIG_DPI = 300
 
 RC_PARAMS = {
     "axes.titlesize": FONT_SIZE_TITLE,
@@ -75,6 +88,9 @@ RC_PARAMS = {
     "legend.fontsize": FONT_SIZE_ANNOTATION,
     "figure.dpi": 110,
     "savefig.dpi": SAVEFIG_DPI,
+    # Body math is Computer Modern; matching mathtext keeps axis math
+    # indistinguishable from the surrounding text (approved s62).
+    "mathtext.fontset": "cm",
     "axes.edgecolor": MUTED,
     "text.color": REFERENCE_INK,
     "axes.labelcolor": MUTED,
