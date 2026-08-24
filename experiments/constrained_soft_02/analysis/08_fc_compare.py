@@ -374,8 +374,8 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        FIGSIZE_FULL_1X2, FONT_SIZE_ANNOTATION, MUTED, REFERENCE_INK,
-        SAMPLER_HUE, SAVEFIG_DPI, parameter_ramp, style_axes, use_house_style)
+        FIGSIZE_FULL_1X2, MUTED, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI,
+        parameter_ramp, style_axes, use_house_style)
 
     use_house_style()
     rows = [r for r in curve if not np.isnan(r["raw"])]
@@ -401,7 +401,9 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
                 capsize=2, lw=1.0, label="soft, Laplace-corrected")
     ax.set_xlabel("composition $c$")
     ax.set_ylabel("$F/d$ (nats per site)")
-    ax.legend(frameon=False, loc="upper left")
+    # Both panels are U-shaped with occupied top corners (the flagged tail
+    # points), so the one empty region is top-centre.
+    ax.legend(frameon=False, loc="upper center")
 
     if all(t is not None for t in truth):
         axr.axhline(0, color=MUTED, lw=0.8)
@@ -413,7 +415,9 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
                  label="corrected $-$ truth")
         axr.set_xlabel("composition $c$")
         axr.set_ylabel("$F/d$ residual (nats per site)")
-        axr.legend(frameon=False, loc="upper left")
+        # Extrapolated residuals hug the top of the panel and the raw offset
+        # the bottom; the empty band is the middle.
+        axr.legend(frameon=False, loc="center")
 
     for axis, ys in ((ax, corr), (axr, acorr_res if all(t is not None for t in truth) else None)):
         if ys is None:
@@ -423,11 +427,9 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
         if ring_c:
             axis.scatter(ring_c, ring_y, s=140, facecolors="none",
                          edgecolors=MUTED, linewidths=1.1, zorder=4)
-    if flagged and rows:
-        first = min(c for c in cs if round(c, 4) in flagged)
-        y0 = [y for c, y in zip(cs, corr) if round(c, 4) == round(first, 4)][0]
-        ax.annotate("provisional", (first, y0), textcoords="offset points",
-                    xytext=(6, -12), fontsize=FONT_SIZE_ANNOTATION, color=MUTED)
+    # The ring alone marks the provisional windows; the caption says why
+    # (a ne64-trained point, or a retrain still owed). An in-panel word
+    # collides with the legend at these tail positions.
 
     for i, axis in enumerate((ax, axr)):
         style_axes(axis)
