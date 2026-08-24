@@ -78,6 +78,17 @@ SWEEP_COMPOSITIONS = tuple(
 
 
 def _build_model(cfg, target):
+    model = _construct_model(cfg, target)
+    if getattr(cfg.model, "compile_model", False):
+        # In-place nn.Module.compile: state_dict keys stay unprefixed
+        # (torch.compile(module) wrapping would add `_orig_mod.`), so
+        # checkpoints round-trip; same contract as the hard route's
+        # compile_head.
+        model.compile()
+    return model
+
+
+def _construct_model(cfg, target):
     if cfg.model.kind == "mlp":
         return MLPRateMatrix(
             d=target.d,
