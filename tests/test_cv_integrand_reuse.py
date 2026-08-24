@@ -401,3 +401,36 @@ def test_flip_trainer_naive_mode_free_rider(tmp_path):
               estimator_mode="naive_mc")
     for row in _log_rows(tmp_path / "naive"):
         assert row["var_dt_log_p_tilde"] == row["var_estimator_integrand"]
+
+
+# --------------------------------------------------------------------------
+# 6. The new-base-recipe transform (hard route)
+
+
+def test_optimised_recipe_flips_only_the_declared_flags():
+    """`optimised_recipe` is the s60 landing vehicle for these
+    optimisations: exactly compile_head and train.c_t_from_rollout flip,
+    every other field is untouched (twin discipline — the transform must
+    never smuggle a third change into a new cell)."""
+    from dataclasses import fields
+
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS as HARD_CONFIGS,
+        optimised_recipe,
+    )
+
+    base = HARD_CONFIGS["H2_d64_c50_s223_letf_mo"]
+    optimised = optimised_recipe(base)
+    assert base.compile_head is False
+    assert optimised.compile_head is True
+    assert optimised.train.c_t_from_rollout is True
+    for field in fields(base):
+        if field.name in ("compile_head", "train"):
+            continue
+        assert getattr(optimised, field.name) == getattr(base, field.name)
+    for field in fields(base.train):
+        if field.name == "c_t_from_rollout":
+            continue
+        assert getattr(optimised.train, field.name) == getattr(
+            base.train, field.name
+        )

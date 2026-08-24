@@ -223,6 +223,25 @@ def eval_remote(
     volume.commit()
 
 
+@app.function(gpu="A100", timeout=2 * 60 * 60)
+def compile_bench_remote(cfg_name: str = "stage_4_d10", n_steps: int = 400,
+                         tail: int = 200):
+    """Same-container eager-vs-compiled bench of the flip-route trainer
+    (optimisation board section C; method in compile_bench.py — both arms
+    in one container so the ratio is same-device by construction)."""
+    from experiments.dnfs_baseline_01.compile_bench import run_bench
+
+    return run_bench(cfg_name=cfg_name, n_steps=n_steps, tail=tail)
+
+
+@app.local_entrypoint()
+def compile_bench(cfg_name: str = "stage_4_d10", n_steps: int = 400,
+                  tail: int = 200):
+    """Blocking local CLI entry for the compile bench."""
+    compile_bench_remote.remote(cfg_name=cfg_name, n_steps=n_steps,
+                                tail=tail)
+
+
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call."""

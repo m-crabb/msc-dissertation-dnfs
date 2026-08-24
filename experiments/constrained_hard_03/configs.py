@@ -700,6 +700,25 @@ def _d64_naive_twin_cell(name: str) -> HardStageCfg:
     return replace(cell, estimator="naive_mc")
 
 
+def optimised_recipe(cell: HardStageCfg) -> HardStageCfg:
+    """s60 optimisation bundle (decided 2026-08-24) as a recipe transform.
+
+    Two declared changes, nothing else: compile_head=True (measured 2.21x
+    inner updates / 4.9x rollout / -60% eval peak memory, Modal A100
+    same-container; certification gate = 22 head tests + grad parity with
+    compiled heads) and train.c_t_from_rollout=True (bit-identical c_t
+    grid from the rollout's own head forwards — removes 127 of 128 grid
+    head calls per outer at d256). Apply to NEW cells only: archived cells
+    and their eager twins keep both flags off, because compiled runs are
+    1e-5-class vs eager, never bit-parity.
+    """
+    return replace(
+        cell,
+        compile_head=True,
+        train=replace(cell.train, c_t_from_rollout=True),
+    )
+
+
 def _d64_smoke12k_ctb512_cell(name: str) -> HardStageCfg:
     """M3 plumbing fallback (plan Task 3): the MA curriculum recipe at the
     12k smoke horizon with c_t_batch=512 the ONLY mechanism change — the

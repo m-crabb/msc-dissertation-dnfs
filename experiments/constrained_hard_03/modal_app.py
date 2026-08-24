@@ -494,6 +494,24 @@ def gate(
     )
 
 
+@app.function(gpu="A100-80GB", timeout=45 * 60)
+def compile_gate_remote():
+    """GPU-stack compile certification gate (A1, s60): the s59 CPU-passed
+    gate re-run once on the training venue's stack, because inductor
+    generates different kernels per backend. Raises on failure so the
+    calling entrypoint fails loudly."""
+    from experiments.constrained_hard_03.compile_gate import main as gate_main
+
+    if gate_main() != 0:
+        raise RuntimeError("compile gate FAILED on the GPU stack")
+
+
+@app.local_entrypoint()
+def compile_gate():
+    """Blocking local CLI entry for the GPU-stack compile gate."""
+    compile_gate_remote.remote()
+
+
 @app.local_entrypoint()
 def demo(seeds: str = "42,43,44", n_samples: int = 5000, n_replicates: int = 5):
     """Blocking local CLI entry for the 4x4 demo GPU stage (per-cell progress
