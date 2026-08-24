@@ -91,19 +91,64 @@ def _load_record(run_dir: Path) -> dict:
     }
 
 
-def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng) -> tuple[float, np.ndarray]:
+def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng,
+                 eval_dir: str = "eval") -> tuple[float, np.ndarray]:
     """Per-site canonical-units free energy (nats) and a bootstrap sample of it.
 
     F_total = -mean(log w); per site = F_total / d. This reproduces
     `free_energy_per_site * 2*sigma` exactly (the stored value is
     -mean(log w)/(2*sigma*d)) but resamples the weights so we get an error bar.
+    `eval_dir` selects the frozen draw ("eval") or a grid redraw ("eval_ne256").
     """
-    logw = torch.load(run_dir / "eval" / "log_weights.pt").double().numpy().ravel()
+    logw = torch.load(run_dir / eval_dir / "log_weights.pt").double().numpy().ravel()
     point = float(-logw.mean() / d)
     n = logw.size
     idx = rng.integers(0, n, size=(n_boot, n))
     boot = -logw[idx].mean(axis=1) / d
     return point, boot
+
+
+def _grids_available(run_dir: Path, native_ne: int) -> list[tuple[int, str]]:
+    """Euler grids this checkpoint has been drawn on, coarsest first.
+
+    The frozen `eval/` is the run's native grid; `eval_ne<k>/` side dirs are
+    the redraws written by `run.eval_only(n_euler_override=k)`.
+    """
+    grids = [(native_ne, "eval")]
+    for side in run_dir.glob("eval_ne*"):
+        if (side / "log_weights.pt").exists():
+            grids.append((int(side.name.removeprefix("eval_ne")), side.name))
+    return sorted(grids)
+
+
+def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
+                  rng) -> tuple[float, np.ndarray, tuple[int, int] | None]:
+    """First-order Richardson extrapolation of F/site to the continuum grid.
+
+    The Euler-grid error is first order (pre-registered 2026-08-21: step
+    ratios 0.44-0.49 across ne64 -> 128 -> 256; reproduced by the s62
+    retrain halving the residual vs the TI truth in every window), so
+    F(g) = F(inf) + C/g and two grids g1 < g2 give
+
+        F(inf) = (g2 F(g2) - g1 F(g1)) / (g2 - g1)
+
+    (the familiar 2 F(2g) - F(g) when g2 = 2 g1). The two FINEST available
+    grids are used; the two draws are independent (fresh eval batches), so
+    the bootstrap resamples each grid's weights independently and combines
+    replicate-wise. Falls back to the native draw (pair = None) when the
+    checkpoint has no side-grid redraws -- the caller warns, so a partially
+    redrawn family cannot silently mix extrapolated and raw points.
+    """
+    grids = _grids_available(run_dir, native_ne)
+    if len(grids) < 2:
+        point, boot = _bootstrap_F(run_dir, d, n_boot, rng)
+        return point, boot, None
+    (g1, dir1), (g2, dir2) = grids[-2], grids[-1]
+    p1, b1 = _bootstrap_F(run_dir, d, n_boot, rng, dir1)
+    p2, b2 = _bootstrap_F(run_dir, d, n_boot, rng, dir2)
+    point = (g2 * p2 - g1 * p1) / (g2 - g1)
+    boot = (g2 * b2 - g1 * b1) / (g2 - g1)
+    return point, boot, (g1, g2)
 
 
 def _laplace_offset(lam: float, d: int, Fp_total: float, Fpp_total: float) -> float:
@@ -132,6 +177,13 @@ def main() -> None:
                    help="bootstrap resamples of the per-window importance weights")
     p.add_argument("--plot", type=Path, default=None,
                    help="optional output path for the overlay + residual figure")
+    p.add_argument("--richardson", action="store_true",
+                   help="extrapolate each seed's F to the continuum grid from its "
+                        "two finest available draws (eval/ + eval_ne<k>/ redraws)")
+    p.add_argument("--flag_c", nargs="*", type=float, default=[],
+                   help="compositions drawn with a provisional ring (their Z2 "
+                        "mirrors inherit it); used while a window awaits retrain "
+                        "or prints from a different training grid")
     args = p.parse_args()
     rng = np.random.default_rng(0)
 
@@ -220,11 +272,22 @@ def main() -> None:
             continue
 
         # per-seed point + bootstrap (per-site nats)
-        seed_pts, seed_boots = [], []
+        seed_pts, seed_boots, grid_pairs = [], [], []
         for r in gated:
-            pt, boot = _bootstrap_F(r["run_dir"], d, args.n_boot, rng)
+            if args.richardson:
+                pt, boot, pair = _richardson_F(
+                    r["run_dir"], r["n_euler"], d, args.n_boot, rng)
+                if pair is None:
+                    print(f"[warn] {r['name']}: no side-grid redraw, "
+                          f"point stays on the native ne{r['n_euler']} draw")
+                grid_pairs.append(pair)
+            else:
+                pt, boot = _bootstrap_F(r["run_dir"], d, args.n_boot, rng)
             seed_pts.append(pt)
             seed_boots.append(boot)
+        if args.richardson and any(gp is not None for gp in grid_pairs):
+            pairs_used = sorted({gp for gp in grid_pairs if gp is not None})
+            print(f"       richardson pairs at c_t={c_t}: {pairs_used}")
         seed_pts = np.array(seed_pts)
         F_raw = float(seed_pts.mean())
         # error of the seed-mean: within-seed MC (bootstrap of the average) plus
@@ -269,7 +332,7 @@ def main() -> None:
                   f"|gap|={abs(cmap[lo] - cmap[hi]):.4f}")
 
     if args.plot is not None:
-        _plot(curve, ref_c, ref_F_persite, lam, n_eulers, args.plot)
+        _plot(curve, ref_c, ref_F_persite, args.flag_c, args.plot)
 
 
 def _mirror_rows(rows: list[dict]) -> list[dict]:
@@ -297,9 +360,24 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
     return mirrored
 
 
-def _plot(curve, ref_c, ref_F_persite, lam, n_eulers, out: Path) -> None:
+def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
+    """House-standard overlay + residual pair (approved s62).
+
+    Roles: TI truth = REFERENCE_INK line; our sampler = SAMPLER_HUE, with the
+    corrected estimate as the filled square (the deliverable) and the raw
+    soft-ensemble read as the open, lightened circle (the same object before
+    the ensemble mapping -- one role, two intensities, never a second hue).
+    Compositions in `flag_c` (plus their Z2 mirrors) get a muted provisional
+    ring: the point prints from a different training grid or awaits retrain,
+    and the caption says which.
+    """
     import matplotlib.pyplot as plt
 
+    from discrete_flow_sampler.diagnostics.figure_style import (
+        FIGSIZE_FULL_1X2, FONT_SIZE_ANNOTATION, MUTED, REFERENCE_INK,
+        SAMPLER_HUE, SAVEFIG_DPI, parameter_ramp, style_axes, use_house_style)
+
+    use_house_style()
     rows = [r for r in curve if not np.isnan(r["raw"])]
     mirror = _mirror_rows(rows)
     # One uniform curve: sampled + symmetry-implied points drawn identically,
@@ -311,32 +389,52 @@ def _plot(curve, ref_c, ref_F_persite, lam, n_eulers, out: Path) -> None:
     corr = [r["corr"] for r in allrows]
     corr_e = [r["corr_err"] for r in allrows]
     truth = [r["truth"] for r in allrows]
+    flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
+    raw_hue = parameter_ramp(SAMPLER_HUE, 2)[0]
 
-    fig, (ax, axr) = plt.subplots(1, 2, figsize=(12, 4.4))
-    ax.plot(ref_c, ref_F_persite, "k-", lw=1.4, label="canonical ground truth (mchammer TI)")
-    ax.errorbar(cs, raw, yerr=raw_e, fmt="o", color="tab:orange", alpha=0.55,
-                capsize=3, label="DNFS soft, raw ($\\times 2\\sigma$)")
-    ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color="tab:blue",
-                capsize=3, label="DNFS soft, Laplace-corrected")
+    fig, (ax, axr) = plt.subplots(1, 2, figsize=FIGSIZE_FULL_1X2)
+    ax.plot(ref_c, ref_F_persite, color=REFERENCE_INK, lw=1.4,
+            label="canonical truth (TI)")
+    ax.errorbar(cs, raw, yerr=raw_e, fmt="o", color=raw_hue, mfc="none",
+                capsize=2, lw=1.0, label="soft, raw")
+    ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color=SAMPLER_HUE,
+                capsize=2, lw=1.0, label="soft, Laplace-corrected")
     ax.set_xlabel("composition $c$")
     ax.set_ylabel("$F/d$ (nats per site)")
-    ax.set_title(f"F(c): soft vs canonical ($\\lambda={lam:g}$, n_euler={n_eulers})")
-    ax.legend(fontsize=8)
+    ax.legend(frameon=False, loc="upper left")
 
     if all(t is not None for t in truth):
-        axr.axhline(0, color="grey", lw=0.8)
+        axr.axhline(0, color=MUTED, lw=0.8)
         araw_res = [r - t for r, t in zip(raw, truth)]
         acorr_res = [c - t for c, t in zip(corr, truth)]
-        axr.plot(cs, araw_res, "o-", color="tab:orange", alpha=0.7,
-                 label="raw $-$ truth (offset $+$ IS bias)")
-        axr.plot(cs, acorr_res, "s-", color="tab:blue",
-                 label="corrected $-$ truth (IS bias)")
+        axr.plot(cs, araw_res, "o-", color=raw_hue, mfc="none", lw=1.0,
+                 label="raw $-$ truth")
+        axr.plot(cs, acorr_res, "s-", color=SAMPLER_HUE, lw=1.0,
+                 label="corrected $-$ truth")
         axr.set_xlabel("composition $c$")
         axr.set_ylabel("$F/d$ residual (nats per site)")
-        axr.set_title("residual vs canonical truth")
-        axr.legend(fontsize=8)
+        axr.legend(frameon=False, loc="upper left")
+
+    for axis, ys in ((ax, corr), (axr, acorr_res if all(t is not None for t in truth) else None)):
+        if ys is None:
+            continue
+        ring_c = [c for c in cs if round(c, 4) in flagged]
+        ring_y = [y for c, y in zip(cs, ys) if round(c, 4) in flagged]
+        if ring_c:
+            axis.scatter(ring_c, ring_y, s=140, facecolors="none",
+                         edgecolors=MUTED, linewidths=1.1, zorder=4)
+    if flagged and rows:
+        first = min(c for c in cs if round(c, 4) in flagged)
+        y0 = [y for c, y in zip(cs, corr) if round(c, 4) == round(first, 4)][0]
+        ax.annotate("provisional", (first, y0), textcoords="offset points",
+                    xytext=(6, -12), fontsize=FONT_SIZE_ANNOTATION, color=MUTED)
+
+    for i, axis in enumerate((ax, axr)):
+        style_axes(axis)
+        axis.text(0.02, 1.02, f"({chr(97 + i)})", transform=axis.transAxes,
+                  fontweight="bold", va="bottom")
     fig.tight_layout()
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=SAVEFIG_DPI)
     print(f"\nwrote {out}")
 
 

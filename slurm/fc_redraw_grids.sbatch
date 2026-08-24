@@ -49,6 +49,13 @@ jobs += [
     ("S2_d10_c030_l50_letf_ne64_anneal", seed, (128, 256))
     for seed in (43, 44, 46, 47)
 ]
+# c=0.80 joins the plotted curve (s62): its passing pair from the N11
+# uniform-base control family (ESS 0.830 / 0.423; seeds 42/43 fail the
+# floor at 0.0004 / 0.059). Checkpoints synced up from the Modal volume.
+jobs += [
+    ("S2_d10_c080_l50_letf_ne128_anneal", seed, (256, 512))
+    for seed in (44, 45)
+]
 
 results_root = Path("results/02_constrained_soft")
 for cfg_name, seed, grids in jobs:

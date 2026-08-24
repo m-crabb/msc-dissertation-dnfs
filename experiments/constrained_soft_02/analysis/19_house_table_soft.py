@@ -59,12 +59,21 @@ N_BOOTSTRAP, BLOCK, N_EVAL = 200, 10, 5000
 CELLS = {
     (10, 0.30): "S2_d10_c03_l10_letf_ne128_seed4*",
     (10, 0.50): "S2_d10_c05_l10_letf_ne64_seed4*",
+    # The four F(c) windows print from the ne128 retrain families (s62): the
+    # ne64 residual vs the TI truth halved under the grid refinement in every
+    # window, so ne128 is the production recipe. c=0.30 stays on ne64 until
+    # its ne128 top-up (seeds 46-49) is judged -- 0/4 of the first ne128 draw
+    # cleared the 0.30 ESS floor. c=0.80 prints the N11 campaign's
+    # uniform-base CONTROL arm (shared tag = one launch family, one dir per
+    # seed): the untagged glob would also sweep in the two replicate seed-45
+    # runs kept as the FP-nondeterminism record (ESS 0.423 vs 0.899 on an
+    # identical config+seed).
     (50, 0.30): "S2_d10_c030_l50_letf_ne64_anneal_seed4*",
-    (50, 0.50): "S2_d10_c05_l50_letf_ne64_anneal_seed4*",
-    (50, 0.55): "S2_d10_c055_l50_letf_ne64_anneal_seed4*",
-    (50, 0.60): "S2_d10_c060_l50_letf_ne64_anneal_seed4*",
-    (50, 0.65): "S2_d10_c065_l50_letf_ne64_anneal_seed4*",
-    (50, 0.80): "S2_d10_c080_l50_letf_ne64_anneal_seed4*",
+    (50, 0.50): "S2_d10_c05_l50_letf_ne128_anneal_seed4*",
+    (50, 0.55): "S2_d10_c055_l50_letf_ne128_anneal_seed4*",
+    (50, 0.60): "S2_d10_c060_l50_letf_ne128_anneal_seed4*",
+    (50, 0.65): "S2_d10_c065_l50_letf_ne128_anneal_seed4*",
+    (50, 0.80): "S2_d10_c080_l50_letf_ne128_anneal_seed4?_20260822-N11mb",
 }
 FIXED_LAMBDA_CELLS = {(50, 0.50): "S2_d10_c05_l50_letf_ne64_seed4*"}
 
