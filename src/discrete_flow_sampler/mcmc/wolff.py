@@ -45,8 +45,16 @@ def wolff_sample(
     clusters_per_sample: int = 20,
     burn_in_clusters: int = 500,
     seed: int = 0,
+    cluster_size_log: list | None = None,
 ) -> Tensor:
     """Draw n_samples configurations from an unconstrained IsingTarget.
+
+    cluster_size_log: pass a list to have every flipped cluster's site count
+      appended (burn-in included -- it is part of the realistic sampling
+      price). Observation only: the RNG stream is untouched, so the same
+      seed yields bit-identical samples with or without the log, which is
+      how the certified reference pools are FLOP-recounted without being
+      rebuilt (diagnostics/flops.py::wolff_run_flops).
 
     target: duck-types IsingTarget — needs `.D`, `.sigma`, `.bias`, `.d`.
       Must have bias == 0 (see module docstring).
@@ -99,6 +107,8 @@ def wolff_sample(
             frontier = np.unique(accepted)
             in_cluster[frontier] = True
         spins[in_cluster] *= -1
+        if cluster_size_log is not None:
+            cluster_size_log.append(int(in_cluster.sum()))
 
     for _ in range(burn_in_clusters):
         flip_one_cluster()

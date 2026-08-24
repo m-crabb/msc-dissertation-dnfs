@@ -22,14 +22,23 @@ convention E/d = -log p~(x) / (2 sigma d) (metrics.internal_energy_estimate).
 """
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 
+from discrete_flow_sampler.diagnostics.flops import (
+    chain_per_effective_sample, measured_forward_flops,
+    neural_sampling_flops_per_sample, per_effective_sample)
 from discrete_flow_sampler.diagnostics.metrics import (
-    correlation_profile_error, energy_wasserstein2, magnetisation_profile_error)
+    correlation_profile_error, energy_wasserstein2, integrated_autocorr,
+    magnetisation_profile_error)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+# Run by path (numeric filenames can't be modules), so the `experiments`
+# package import inside family_flops_per_forward needs the repo root.
+import sys
+sys.path.insert(0, str(REPO_ROOT))
 RESULTS = REPO_ROOT / "results" / "01_baseline"
 L = 10
 OPERATING_POINTS = {
@@ -69,6 +78,47 @@ def mean_sd(values):
     return t.mean().item(), t.std().item()
 
 
+def family_flops_per_forward(run_dir: Path, target: IsingTarget) -> int:
+    """Measured FLOPs of one rate-matrix forward at this run's architecture.
+
+    Built eager from the run's own config (a compiled wrapper can hide ops
+    from the dispatch-level counter; compilation changes scheduling, not
+    the mathematics) at batch 1 -- the counter is batch-linear, test-pinned.
+    """
+    from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
+    from experiments.dnfs_baseline_01.configs import ModelCfg
+
+    cfg_dict = json.loads((run_dir / "config.json").read_text())
+    model_cfg = _sub_config(ModelCfg, {**cfg_dict["model"], "compile_model": False})
+    model = _construct_model(SimpleNamespace(model=model_cfg), target)
+    example = (target.sample_base(1, device="cpu"), torch.zeros(1))
+    return measured_forward_flops(model, example)
+
+
+def reference_flops_per_es(reference: torch.Tensor, n_chains: int,
+                           target: IsingTarget, sidecar_path: Path) -> float | None:
+    """Reference-row cost cell: the recounted pool build divided by its
+    effective record count, tau_int taken as the larger of the energy and
+    magnetisation reads (the slowest tabled observable, in record units)."""
+    if not sidecar_path.exists():
+        return None  # recount not run (08 --recount-flops); cell stays blank
+    sidecar = json.loads(sidecar_path.read_text())
+    n_records = reference.shape[0] // n_chains
+    by_chain = reference.view(n_records, n_chains, -1)
+    series = {
+        "m": by_chain.mean(dim=2).T,
+        "E": (-target.log_prob(reference.view(-1, target.d))
+              .view(n_records, n_chains) / (2 * target.sigma)).T,
+    }
+    tau_int = max(
+        float(torch.tensor([integrated_autocorr(chain.numpy())
+                            for chain in per_chain]).mean())
+        for per_chain in series.values()
+    )
+    return chain_per_effective_sample(
+        sidecar["total_flops"], sidecar["n_records_pooled"], max(tau_int, 1.0))
+
+
 def main():
     table = {}
     for point, spec in OPERATING_POINTS.items():
@@ -77,21 +127,38 @@ def main():
         target = IsingTarget(D=L, sigma=spec["sigma"], bias=0.0)
         floor = reference_floor(reference, n_chains, target)
 
-        per_seed = {}
+        ref_flops_per_es = reference_flops_per_es(
+            reference, n_chains, target,
+            Path(str(RESULTS / spec["reference"]) + ".flops.json"))
+
+        per_seed, per_forward = {}, None
         for run_dir in sorted(RESULTS.glob(spec["runs"])):
             x = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
             weights = torch.softmax(torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True), 0)
             metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
-            per_seed[run_dir.name] = {"ESS": metrics["ess_fraction"],
-                                      **observable_errors(x, weights, reference, target)}
+            if per_forward is None:  # one architecture per family
+                per_forward = family_flops_per_forward(run_dir, target)
+            n_euler = json.loads((run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
+            per_seed[run_dir.name] = {
+                "ESS": metrics["ess_fraction"],
+                **observable_errors(x, weights, reference, target),
+                "FLOPes": per_effective_sample(
+                    neural_sampling_flops_per_sample(per_forward, n_euler, target.d),
+                    metrics["ess_fraction"]),
+            }
 
         summary = {k: mean_sd([s[k] for s in per_seed.values()]) for k in next(iter(per_seed.values()))}
         table[point] = {"sigma": spec["sigma"], "reference_floor": floor,
                         "reference_gelman_rubin_m": ref["gelman_rubin_m"],
+                        "reference_flops_per_es": ref_flops_per_es,
+                        "dnfs_flops_per_forward": per_forward,
                         "dnfs_per_seed": per_seed, "dnfs_mean_sd": summary}
 
         print(f"\n== {point} (sigma={spec['sigma']}, {len(per_seed)} seeds)")
         print("  reference floor:", {k: f"{v:.2e}" for k, v in floor.items()})
+        print(f"  reference FLOP/es: "
+              f"{'(recount sidecar missing)' if ref_flops_per_es is None else f'{ref_flops_per_es:.2g}'}"
+              f"   DNFS forward: {per_forward:.3g} FLOPs")
         for name, s in per_seed.items():
             print(f"  {name}: " + " ".join(f"{k}={v:.4g}" for k, v in s.items()))
         print("  DNFS mean +- SD:", {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in summary.items()})
