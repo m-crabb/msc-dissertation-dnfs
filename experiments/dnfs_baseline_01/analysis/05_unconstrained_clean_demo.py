@@ -151,7 +151,7 @@ def ess_fraction_summary(seed_runs: list[dict]) -> tuple[float, float]:
 
 
 def plot_marginal_panel(ax, centres, ref_pmf, seed_pmfs, xlabel, title):
-    ax.plot(centres, ref_pmf, color=REFERENCE_INK, lw=1.8, label="Gibbs reference")
+    ax.plot(centres, ref_pmf, color=REFERENCE_INK, lw=1.8, label="Wolff reference")
     ax.fill_between(centres, seed_pmfs.min(dim=0).values,
                     seed_pmfs.max(dim=0).values, color=SAMPLER_HUE, alpha=0.18,
                     label="DNFS (seed min-max)")
@@ -179,8 +179,13 @@ def main() -> None:
         ising_cfg = json.loads((run_dirs[0] / "config.json").read_text())["ising"]
         sigma = ising_cfg["sigma"]
         target = IsingTarget(D=ising_cfg["D"], sigma=sigma, bias=ising_cfg["bias"])
-        ref_samples = gibbs_reference(
-            sigma, RESULTS / f"gibbs_ref_d10_sigma{sigma:g}.pt")
+        # Reference = the Wolff pool (the chapter's ground truth since s58
+        # 2026-08-24; built by 08_wolff_reference_pool.py, which records the
+        # demotion rationale for the Gibbs pool this figure compared against
+        # before). gibbs_reference() is kept below for the consistency exhibit.
+        ref_samples = torch.load(
+            RESULTS / f"wolff_ref_d10_sigma{sigma:g}.pt", weights_only=True
+        )["samples"].float()
         seed_runs = load_seed_runs(run_dirs)
         energy = energy_marginals(target, ref_samples, seed_runs)
         magnet = magnetisation_pmfs(ref_samples, seed_runs)

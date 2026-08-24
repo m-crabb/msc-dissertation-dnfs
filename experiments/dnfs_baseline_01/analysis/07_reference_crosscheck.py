@@ -18,7 +18,11 @@ Writes: results/01_baseline/reference_crosscheck.json + printed verdict.
 
 Verdict rule (restart-prompt item (e)): agreement -> the Gibbs reference
 stands and baseline.tex gains one sentence; disagreement -> Wolff becomes
-the reference. "Agreement" is read per observable: |mean difference| within
+the reference. POSTSCRIPT (s58, same day): the verdict was AGREE at both
+points, and the user then chose the swap anyway -- not as a correction but
+because the Wolff pool's floor is honest where the Gibbs pool's dMag floor
+at sigma_c (0.26) is mode-stickiness. 08_wolff_reference_pool.py builds the
+pools; this script remains the certification record. "Agreement" is read per observable: |mean difference| within
 3 combined standard errors, and the energy-level total variation within the
 same-size Wolff-vs-Wolff resampling scale.
 """
