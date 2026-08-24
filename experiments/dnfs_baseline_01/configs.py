@@ -216,6 +216,20 @@ class TrainCfg:
     # rows is the in-cap class on an 80 GB a100). None = OFF, the
     # byte-identical per-slot sequential loop every archived run used.
     c_t_grid_chunk_rows: int | None = None
+    # c_t grid built from the rollout's own forwards (B1/B1-flip,
+    # optimisation decision 2026-08-24). In control_variate mode the outer
+    # step re-runs the head/model on (trajectory[k], t_k) for every grid
+    # slot, but rollout step k already computed that exact forward — with
+    # this knob the sampler accumulates xi_t during the rollout and only
+    # the final slot pays a fresh call, removing T-1 of T grid forwards
+    # (~7-8 h eager per 16x16 CV run). BIT-IDENTICAL to the sequential
+    # (chunk_rows=None) grid — same tensors, same arithmetic, no RNG
+    # (tests/test_cv_integrand_reuse.py); vs a chunked grid the difference
+    # is the established 1e-5 batch-blocking class. Requires rollout
+    # resampling OFF. Supersedes c_t_grid_chunk_rows when on (the grid
+    # pass it chunked no longer runs). False = OFF, the byte-identical
+    # archived behaviour; True in the post-s60 base recipe.
+    c_t_from_rollout: bool = False
     # ESS-triggered SMC resampling INSIDE the training rollout (both
     # trainers consume it: `swap_training.train_swap` and the flip-route
     # `training.train`; mechanism in `samplers.resampling`). None =
@@ -376,6 +390,12 @@ class ModelCfg:
     # pooled keys carry the far field in the causal stacks. 1 = dense causal
     # attention with periodic rotary positions; the leTF cells never read it.
     patch_size: int = 1
+    # Opt-in torch.compile of the built rate model (optimisation board
+    # section C, decided s60 2026-08-24; mirrors the hard route's
+    # compile_head). Model only — the Euler loop's data-dependent sampling
+    # would graph-break. Compiled runs are 1e-5-class vs eager, never
+    # bit-parity. False = every archived cell byte-identical.
+    compile_model: bool = False
 
 
 @dataclass(frozen=True)
