@@ -1379,3 +1379,47 @@ def test_thp_d256_twins_of_arm_b():
         assert cell.head_kind == "two_hole_patch"
         assert replace(cell, name=arm_b.name, head_kind=arm_b.head_kind, **fields) == arm_b
         assert cell.train.loss_microbatch_size == 128 and cell.train.batch_size == 512
+
+
+def test_wave1_sigma_c_twins_mirror_their_archived_parents():
+    """s58 sigma_c migration, Wave 1 (launched s63): each `_sc` cell differs
+    from its archived 0.22305 parent by the coupling alone — `ising.sigma`
+    and the final curriculum stage move to the exact SIGMA_C, the sigma
+    ladder below the endpoint stays verbatim — plus the two declared
+    optimised_recipe flags (compile_model, c_t_from_rollout; s60 standing
+    rule for every new cell). Pinned so the retrain twins can never drift
+    from the cells whose printed rows they replace."""
+    from dataclasses import replace
+
+    from discrete_flow_sampler.targets.ising import SIGMA_C
+
+    for parent_name in [
+        "stage_4_d4_critical",
+        "stage_4_d10_critical_paper_curriculum",
+        "stage_4_d8_critical_paper_curriculum",
+    ]:
+        parent = BASELINE_CONFIGS[parent_name]
+        twin = BASELINE_CONFIGS[parent_name + "_sc"]
+
+        assert twin.ising.sigma == SIGMA_C
+        assert twin.model.compile_model and twin.train.c_t_from_rollout
+
+        if parent.curriculum is not None:
+            *twin_ladder, twin_final = twin.curriculum.stages
+            *parent_ladder, parent_final = parent.curriculum.stages
+            assert twin_final.sigma == SIGMA_C
+            assert tuple(twin_ladder) == tuple(parent_ladder)
+            assert (twin_final.start_step, twin_final.lr) == (
+                parent_final.start_step,
+                parent_final.lr,
+            )
+
+        # Everything not declared above is identical to the archived parent.
+        assert replace(
+            twin,
+            name=parent.name,
+            ising=replace(twin.ising, sigma=parent.ising.sigma),
+            train=replace(twin.train, c_t_from_rollout=False),
+            model=replace(twin.model, compile_model=False),
+            curriculum=parent.curriculum,
+        ) == parent

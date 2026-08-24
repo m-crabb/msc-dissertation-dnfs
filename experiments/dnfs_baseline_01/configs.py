@@ -41,6 +41,8 @@ Stage layout (framing clarified by Zijing 2026-05-08):
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from discrete_flow_sampler.targets.ising import SIGMA_C
+
 
 @dataclass(frozen=True)
 class IsingCfg:
@@ -504,6 +506,35 @@ def optimised_recipe(cell: StageCfg) -> StageCfg:
         cell,
         model=replace(cell.model, compile_model=True),
         train=replace(cell.train, c_t_from_rollout=True),
+    )
+
+
+def sigma_c_twin(parent: StageCfg) -> StageCfg:
+    """Wave-1 sigma_c retrain twin (s58 migration decision, launched s63).
+
+    The archived cell with the coupling — and ONLY the coupling — moved
+    0.22305 -> the exact SIGMA_C = ln(1+sqrt(2))/4, in `ising.sigma` and the
+    final curriculum stage. The sigma ladder below the endpoint stays
+    verbatim: its 0.220 stage now sits just 0.000343 below the new endpoint,
+    kept because reshaping the ladder would confound the coupling change
+    with a schedule change (and a gentler final step is the safe direction —
+    hard sigma-boundary shocks are the documented seed-killer, not soft
+    ones). The s60 optimised recipe is then applied, the two declared
+    exceptions to the twin discipline for every new cell.
+    """
+    curriculum = parent.curriculum
+    if curriculum is not None:
+        *ladder, final_stage = curriculum.stages
+        curriculum = replace(
+            curriculum, stages=(*ladder, replace(final_stage, sigma=SIGMA_C))
+        )
+    return optimised_recipe(
+        replace(
+            parent,
+            name=parent.name + "_sc",
+            ising=replace(parent.ising, sigma=SIGMA_C),
+            curriculum=curriculum,
+        )
     )
 
 
@@ -1082,3 +1113,32 @@ for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
             rollout_resample_ess_fraction=_tau,
         ),
     )
+
+# --- Wave-1 sigma_c retrain twins (s63, 2026-08-24) -------------------------
+# The s58 migration decision: one critical coupling project-wide, the exact
+# SIGMA_C = ln(1+sqrt(2))/4 = 0.220343; the archived 0.22305 cells are
+# records and stay untouched. These twins replace the printed sigma_c
+# results of the baseline chapter (tab:baseline-stage4 measured rows,
+# tab:eval-unconstrained-10x10 sigma_c half vs the 0.220343 Wolff pool,
+# fig:unconstrained-clean) and the d8 walk-back comparison the hard chapter
+# reads. Coupling is the only physics change (see `sigma_c_twin`); the s60
+# optimised recipe rides along per its standing rule.
+# Bands FROZEN BEFORE LAUNCH (final fp32 5000-draw eval/ess_fraction,
+# seeds 42-45, family passes on >= 3 of 4 seeds over its floor; SIGMA_C is
+# a marginally weaker coupling than legacy 0.22305, so at-or-above the
+# legacy family is the expectation and the floors sit ~0.05 below the
+# legacy means to catch a c030-class regression, not seed noise):
+#   stage_4_d10_critical_paper_curriculum_sc  floor 0.86  (legacy 0.911 +/- 0.014)
+#   stage_4_d8_critical_paper_curriculum_sc   floor 0.89  (legacy anchors 0.943/0.970)
+#   stage_4_d4_critical_sc                    floor 0.93  (legacy 0.980 +/- 0.010)
+# PASS -> the family's numbers/figures replace the legacy sigma_c print
+# sites and the migration todos there are discharged. FAIL -> regression
+# investigation first (c030 precedent: the retrain itself can regress);
+# legacy numbers STAY IN PRINT until a passing family exists.
+for _wave1_parent_name in (
+    "stage_4_d4_critical",
+    "stage_4_d10_critical_paper_curriculum",
+    "stage_4_d8_critical_paper_curriculum",
+):
+    _wave1_twin = sigma_c_twin(CONFIGS[_wave1_parent_name])
+    CONFIGS[_wave1_twin.name] = _wave1_twin
