@@ -174,6 +174,7 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_50k_curr_b512_ne128_naive": 128,
         "H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128": 128,
         "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2": 128,
+        "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name
