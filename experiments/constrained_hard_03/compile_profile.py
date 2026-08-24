@@ -115,7 +115,7 @@ def run_profile(cfg_name: str = THP2_CELL, microbatch: int = 128,
     def region_rollout_slice():
         sample_swap_ctmc(
             head, x_roll, ts_slice,
-            multi_event=cfg.use_matching_step,
+            multi_event=cfg.ctmc.use_matching_step,
         )
 
     @torch.no_grad()
