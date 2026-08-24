@@ -137,6 +137,58 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     volume.commit()
 
 
+@app.function(
+    # Same SKU pin as train_remote: the Richardson pair combines two
+    # independent draws, so venue is not a within-pair confound, but one SKU
+    # keeps every drawn number in the campaign on one device class.
+    gpu="A100-80GB",
+    volumes={"/results": volume},
+    timeout=60 * 60,
+)
+def redraw_remote(run_dir_name: str, n_euler: int):
+    """One eval-grid redraw against a volume run dir (run.eval_only).
+
+    Writes eval_ne<k>/ beside the frozen eval/ (which stays byte-untouched;
+    see eval_only). redraw_seed=45 is the 2026-08-21 grid-offset prereg
+    convention -- every side-grid draw in the F(c) campaign shares it.
+    Skip-if-exists makes a re-run of the batch idempotent, mirroring the
+    DoC sbatch this replaces. Needs config.json, checkpoints/final.pt and
+    training_log.csv in the run dir (the trailing-ESS block reads the log).
+    """
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from pathlib import Path
+
+    from experiments.dnfs_baseline_01.run import eval_only
+
+    run_dir = Path("/results") / run_dir_name
+    if (run_dir / f"eval_ne{n_euler}" / "metrics.json").exists():
+        print(f"skip {run_dir_name} ne{n_euler} (exists)")
+        return
+    eval_only(run_dir, redraw=True, redraw_seed=45, n_euler_override=n_euler)
+    volume.commit()
+
+
+@app.local_entrypoint()
+def redraw_batch(run_dirs: str, grids: str):
+    """Fan out redraw_remote over run_dirs x grids, one container per eval.
+
+    Both args comma-separated (Modal's CLI takes strings): every named run
+    dir is drawn on every grid. Windows with a different grid pair (the
+    ne64-trained c=0.30 fallback) go in a second invocation.
+    """
+    names = [s.strip() for s in run_dirs.split(",") if s.strip()]
+    n_eulers = [int(g.strip()) for g in grids.split(",") if g.strip()]
+    calls = [
+        redraw_remote.spawn(run_dir_name=name, n_euler=n_euler)
+        for name in names
+        for n_euler in n_eulers
+    ]
+    for call in calls:
+        call.get()
+
+
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call.
