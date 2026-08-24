@@ -1218,6 +1218,9 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
     ]
     arm_c = CONFIGS["H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128"]
     arm_d = CONFIGS["H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2"]
+    arm_d_lr03 = CONFIGS[
+        "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2"
+    ]
 
     # Every arm trains at the keystone's grid and batch, under the schedule
     # its parent already used.
@@ -1225,7 +1228,8 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
     # s55: the exact-field twin of B differs by the channel flag alone.
     assert arm_b_ef.exact_field_channel and not arm_b.exact_field_channel
     assert replace(arm_b_ef, name=arm_b.name, exact_field_channel=False) == arm_b
-    for arm in (arm_a, arm_b, arm_p, arm_p03, arm_c, arm_d, arm_b_ef):
+    for arm in (arm_a, arm_b, arm_p, arm_p03, arm_c, arm_d, arm_d_lr03,
+                arm_b_ef):
         assert arm.ctmc.n_euler_steps == 128, arm.name
         assert arm.train.batch_size == 512, arm.name
         assert arm.train.loss_microbatch_size == 128, arm.name
@@ -1301,6 +1305,14 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
                 n_layers=base_arm.model.n_layers,
             ),
         ) == base_arm, capacity_arm.name
+
+    # D_lr03 vs D: the curriculum lr is the only change, the same flat
+    # 3e-4 treatment as P03 — owed because P03 read LR-ARTEFACT (s55),
+    # voiding D's capacity read at the ladder lr.
+    assert {stage.lr for stage in arm_d_lr03.curriculum.stages} == {3e-4}
+    assert replace(
+        arm_d_lr03, name=arm_d.name, curriculum=arm_d.curriculum
+    ) == arm_d
 
 
 def test_interior_separation_cells_are_single_variable_twins():

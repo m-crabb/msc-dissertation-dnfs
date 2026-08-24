@@ -2344,6 +2344,49 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
+    # D_lr03: arm D with the curriculum lr flattened to 3e-4 at every
+    # stage, the P_lr03 treatment applied to the 70k cold-CV capacity arm.
+    # OWED by the clause frozen on P_lr03 above: it read LR-ARTEFACT
+    # (0.00295 vs P's 0.00574 EMA Var/site, CI-disjoint, 2026-08-23), so
+    # D's NULL is void as a capacity read until capacity is measured at
+    # the lr that does not damage h128. The cold-CV tripwire at 5000 rides
+    # from D unchanged (not a variable).
+    # FROZEN BANDS (2026-08-24, before launch, seed 42, EMA eval ESS/N,
+    # bootstrap CI): frame check -- stage-1 tail FVU <= 0.05, a break
+    # VOIDS the read. Then, primary (capacity leg, vs arm B):
+    #   CAPACITY-BINDS-AT-FLAT-LR iff CI separated ABOVE arm B's
+    #                             (0.346, 0.419).
+    #   NULL                      iff CI overlaps arm B's -- capacity
+    #                             closes under cold CV at flat lr too.
+    #   REGRESSION                iff CI separated BELOW arm B's.
+    # Secondary (lr leg, vs D's EMA ESS/N CI recomputed from its archived
+    # run dir at judge time; point 0.430):
+    #   LR-RECOVERY iff CI separated ABOVE D's -- the ladder lr was
+    #               damaging D exactly as P03 measured at 50k/naive.
+    #   LR-NEUTRAL  iff overlap -- the artefact does not transfer to the
+    #               70k/CV recipe and D's NULL was capacity after all.
+    "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2": (
+        lambda _cell: replace(
+            _cell,
+            model=replace(_cell.model, hidden_dim=128, n_layers=3),
+            train=replace(
+                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
+            ),
+            curriculum=replace(
+                _cell.curriculum,
+                stages=tuple(
+                    replace(stage, lr=3e-4)
+                    for stage in _cell.curriculum.stages
+                ),
+            ),
+        )
+    )(
+        _d256_fmo2_ladder_cell(
+            "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2",
+            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            loss_microbatch_size=128,
+        )
+    ),
     # Buffer-depth-to-the-reference-invariant arm (2026-08-19, A6 of the
     # panel queue, GO under the recipe-NULL clause): the recipe cell
     # verbatim with replay_buffer_cycles 8 -> 2 the ONLY change. The DNFS
