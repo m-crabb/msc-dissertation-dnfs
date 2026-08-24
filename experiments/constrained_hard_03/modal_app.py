@@ -72,14 +72,30 @@ image = (
     )
     .run_commands(
         f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
-        "pixi install --environment cuda --locked"
+        "pixi install --environment cuda --locked",
+        # torch.compile needs the CUDA driver-API header: inductor compiles a
+        # small cuda_utils.c with the system gcc, and the locked pixi env
+        # ships no CUDA dev headers (probe s59: no cuda.h anywhere in the
+        # image). The runtime wheel carries include/cuda.h; installed --no-deps
+        # so the locked env's torch/nvidia libs are untouched, and CPATH below
+        # puts the header on gcc's search path.
+        # (env python called directly: `pixi run` would re-validate the cuda
+        # virtual package, which no build container can satisfy; the env
+        # ships no pip, so ensurepip bootstraps it first)
+        f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m ensurepip && "
+        f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m pip install "
+        "--no-deps nvidia-cuda-runtime-cu12",
     )
     .env(
         {
             "PATH": (
                 f"{PIXI_ENV_BIN}:/usr/local/sbin:/usr/local/bin:"
                 "/usr/sbin:/usr/bin:/sbin:/bin"
-            )
+            ),
+            "CPATH": (
+                f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
+                "site-packages/nvidia/cuda_runtime/include"
+            ),
         }
     )
 )
