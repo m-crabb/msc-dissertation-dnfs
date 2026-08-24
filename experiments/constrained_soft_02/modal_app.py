@@ -52,9 +52,30 @@ image = (
     )
     .run_commands(
         f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
-        "pixi install --environment cuda --locked"
+        "pixi install --environment cuda --locked",
+        # torch.compile header fix, ported from the hard app (s59): the
+        # runtime wheel carries include/cuda.h for inductor's gcc step;
+        # --no-deps leaves the locked env's torch/nvidia libs untouched.
+        f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m ensurepip && "
+        f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m pip install "
+        "--no-deps nvidia-cuda-runtime-cu12",
     )
-    .env({"PATH": f"{PIXI_ENV_BIN}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"})
+    .env(
+        {
+            "PATH": (
+                f"{PIXI_ENV_BIN}:/usr/local/sbin:/usr/local/bin:"
+                "/usr/sbin:/usr/bin:/sbin:/bin"
+            ),
+            "CPATH": (
+                f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
+                "site-packages/nvidia/cuda_runtime/include"
+            ),
+            # B5 (optimisation decision, 2026-08-24): venue parity with
+            # the DoC sbatch scripts, which export this. Allocator
+            # headroom, not a speed lever.
+            "PYTORCH_ALLOC_CONF": "expandable_segments:True",
+        }
+    )
 )
 
 volume = modal.Volume.from_name("dnfs-results", create_if_missing=True)

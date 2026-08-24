@@ -96,6 +96,10 @@ image = (
                 f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
                 "site-packages/nvidia/cuda_runtime/include"
             ),
+            # B5 (optimisation decision, 2026-08-24): venue parity with the
+            # DoC sbatch scripts, which export this. Allocator headroom on
+            # the 40 GB Modal A100s, not a speed lever.
+            "PYTORCH_ALLOC_CONF": "expandable_segments:True",
         }
     )
 )
