@@ -56,7 +56,8 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
     sample_swap_ctmc,
 )
 from discrete_flow_sampler.samplers.swap_kolmogorov import loss_swap
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+from discrete_flow_sampler.targets.ising import (
+    SIGMA_C, FixedCompositionIsingTarget)
 
 
 def build_head_and_target(
@@ -87,7 +88,7 @@ def build_head_and_target(
         raise ValueError(f"--d must be a square lattice site count, got {d}")
     torch.manual_seed(42)
     target = FixedCompositionIsingTarget(
-        D=side, sigma=0.223, target_composition=0.5, device=device
+        D=side, sigma=SIGMA_C, target_composition=0.5, device=device
     )
     backbone = LeTFRateMatrix(
         d=d, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4,

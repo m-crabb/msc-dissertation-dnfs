@@ -8,7 +8,8 @@ batch shape, so fp32 reductions carry ~1e-9 residue — hence ATOL, not `==`
 import torch
 from experiments.constrained_hard_03.scout_euler_budget import _build_head, measure
 
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+from discrete_flow_sampler.targets.ising import (
+    SIGMA_C, FixedCompositionIsingTarget)
 
 ATOL = 1e-5
 
@@ -33,7 +34,7 @@ def test_measure_chunked_matches_single_slice():
     """Chunk 4 over 10 states -> slices of 4/4/2; same report to ATOL as one slice."""
     torch.manual_seed(0)
     target = FixedCompositionIsingTarget(
-        D=4, sigma=0.22305, target_composition=0.5, device="cpu"
+        D=4, sigma=SIGMA_C, target_composition=0.5, device="cpu"
     )
     head = _build_head("mask_one", target.d, "cpu")
     states = target.sample_base(10, device="cpu")

@@ -18,7 +18,7 @@ import pytest
 import torch
 
 from discrete_flow_sampler.mcmc.wolff import wolff_sample
-from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 
 def _exact_moments(D: int, sigma: float):
@@ -72,9 +72,9 @@ def test_energy_and_magnetisation_match_enumeration_3x3():
 
 
 def test_energy_distribution_matches_enumeration_4x4_critical():
-    """At the operating sigma_c: TV between the sampled and exact pmf of the
+    """At sigma_c (exact, SIGMA_C): TV between the sampled and exact pmf of the
     pair-sum (the energy sufficient statistic) is small, on its full support."""
-    sigma = 0.22305
+    sigma = SIGMA_C
     target = IsingTarget(D=4, sigma=sigma, bias=0.0, device="cpu")
     samples = wolff_sample(target, n_samples=20_000, seed=1)
     _, _, pair_sum, weights = _exact_moments(4, sigma)
@@ -90,7 +90,7 @@ def test_energy_distribution_matches_enumeration_4x4_critical():
 def test_visits_both_z2_sectors_at_criticality():
     """Cluster moves tunnel between the all-up and all-down basins — the
     failure mode of the single-site reference this sampler exists to check."""
-    target = IsingTarget(D=10, sigma=0.22305, bias=0.0, device="cpu")
+    target = IsingTarget(D=10, sigma=SIGMA_C, bias=0.0, device="cpu")
     samples = wolff_sample(target, n_samples=500, seed=2)
     magnetisation = samples.sum(dim=1)
     assert (magnetisation > 0).any() and (magnetisation < 0).any()

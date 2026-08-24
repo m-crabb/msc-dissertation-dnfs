@@ -35,9 +35,13 @@ OUT = Path("results/kawasaki/figures")
 OUT.mkdir(parents=True, exist_ok=True)
 
 SIGMA_OPERATING = 0.10  # DNFS paper operating point (subcritical)
-SIGMA_CRITICAL = 0.22305
-CURVE_SIGMAS = [0.05, 0.10, 0.16, 0.20, 0.22305, 0.26]  # monotonic τ_int regime
-ERGO_SIGMAS = [0.05, 0.10, 0.16, 0.20, 0.22305, 0.26, 0.32, 0.40]
+from discrete_flow_sampler.targets.ising import SIGMA_C
+
+SIGMA_CRITICAL = SIGMA_C  # exact since the s58 sigma_c migration; the
+                          # in-print fig:kawasaki-slowing predates it and
+                          # regenerates at the next rebuild
+CURVE_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26]  # monotonic τ_int regime
+ERGO_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26, 0.32, 0.40]
 DEMO_D = [8, 16]  # capped at the largest lattice the neural sampler reaches
 ERGO_D = 24
 # R̂ is a between-chain statistic, so a band on it means repeating the whole

@@ -58,7 +58,9 @@ from discrete_flow_sampler.mcmc.kawasaki import (
 OUT = Path("results/kawasaki/annealed_check")
 OUT.mkdir(parents=True, exist_ok=True)
 
-SIGMA_CRITICAL = 0.22305
+from discrete_flow_sampler.targets.ising import SIGMA_C
+
+SIGMA_CRITICAL = SIGMA_C  # exact since the s58 sigma_c migration
 # The training curriculum's rungs, then <=0.04 extensions past sigma_c.
 CURRICULUM_RUNGS = [0.100, 0.140, 0.170, 0.190, 0.205, 0.215, SIGMA_CRITICAL]
 DWELL_STEPS = 200_000  # per rung == the cold protocol's whole burn-in
