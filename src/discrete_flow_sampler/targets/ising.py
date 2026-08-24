@@ -365,6 +365,25 @@ class IsingTarget:
         ).reshape(batch_size, n_pairs)
         return neighbours - self.log_p_tilde_t(x, t)[:, None]
 
+    def _pair_columns(self, pairs: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """(site_i, site_j, A_ij) for a pairs tensor, cached by identity.
+
+        B4 (optimisation decision, 2026-08-24): the closed-form swap
+        log-ratios gather A[site_i, site_j] from the frozen adjacency on
+        every call, and the production samplers pass the same module-level
+        `upper_tri_pairs` cache object every step — so the (P,) gather is
+        identical each time. A single-slot cache keyed by tensor identity
+        (`is`, not value equality, so the hit stays O(1)) pays it once;
+        any other pairs tensor recomputes correctly through the miss path.
+        """
+        cached = getattr(self, "_pair_columns_cache", None)
+        if cached is not None and cached[0] is pairs:
+            return cached[1], cached[2], cached[3]
+        site_i, site_j = pairs[:, 0], pairs[:, 1]
+        adjacent = self.A[site_i, site_j]
+        self._pair_columns_cache = (pairs, site_i, site_j, adjacent)
+        return site_i, site_j, adjacent
+
 
 class FixedCompositionIsingTarget(IsingTarget):
     """Ising target on the fixed-composition manifold C = {n_plus = N_A}.
@@ -448,9 +467,8 @@ class FixedCompositionIsingTarget(IsingTarget):
         (B, P, d) neighbour materialisation.
         """
         h = x @ self.A                                    # (B, d) neighbour sums
-        site_i, site_j = pairs[:, 0], pairs[:, 1]
+        site_i, site_j, adjacent = self._pair_columns(pairs)  # (P,) each
         diff = x[:, site_j] - x[:, site_i]                # (B, P)
-        adjacent = self.A[site_i, site_j]                 # (P,) 0/1
         delta_quadratic = (
             2.0 * diff * (h[:, site_i] - h[:, site_j]) - 2.0 * diff * diff * adjacent
         )

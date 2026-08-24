@@ -318,7 +318,7 @@ class FixedCompositionPottsTarget(PottsTarget):
         onehot = F.one_hot(labels, self.n_states).to(x.dtype)  # (B, d, S)
         neighbour_counts = torch.matmul(self.A, onehot)  # (B, d, S) = n_k(c)
 
-        site_i, site_j = pairs[:, 0], pairs[:, 1]
+        site_i, site_j, adjacent_ij = self._pair_columns(pairs)  # (P,) each
         label_i, label_j = labels[:, site_i], labels[:, site_j]  # (B, P) = a, b
 
         # Flat (site, species) indexing keeps every gather at (B, P) instead of
@@ -331,7 +331,7 @@ class FixedCompositionPottsTarget(PottsTarget):
         delta_energy = 2.0 * (
             (count_at(site_i, label_j) - count_at(site_i, label_i))
             + (count_at(site_j, label_i) - count_at(site_j, label_j))
-            - 2.0 * self.A[site_i, site_j]
+            - 2.0 * adjacent_ij
         )
         delta_energy = delta_energy.masked_fill(label_i == label_j, 0.0)
         return t[:, None] * self.sigma * delta_energy

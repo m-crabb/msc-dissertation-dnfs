@@ -96,3 +96,27 @@ def test_pair_order_invariant():
         target.swap_log_ratio(x, t, pairs.flip(1)),
         atol=1e-6,
     )
+
+
+def test_pair_columns_cache_serves_hits_and_recomputes_on_new_pairs():
+    """B4 (2026-08-24): the (site_i, site_j, A_ij) gather is cached by
+    pairs-tensor IDENTITY — the same object must serve bit-equal results,
+    and a different pairs tensor must recompute, never serve stale columns."""
+    torch.manual_seed(0)
+    target = FixedCompositionIsingTarget(D=4, sigma=0.223, target_composition=0.5)
+    x = target.sample_base(8, device="cpu")
+    t = torch.rand(8)
+    pairs = upper_tri_pairs(target.d, "cpu")
+
+    first = target.swap_log_ratio(x, t, pairs)
+    # Same object again — the cache-hit path.
+    assert torch.equal(target.swap_log_ratio(x, t, pairs), first)
+
+    # A different tensor (reversed prefix of the pair list) — the miss
+    # path; column r of the result must be column 6-r of the full grid.
+    subset = pairs[:7].flip(0).clone()
+    assert torch.allclose(
+        target.swap_log_ratio(x, t, subset),
+        first[:, :7].flip(1),
+        atol=1e-6,
+    )
