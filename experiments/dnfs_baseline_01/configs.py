@@ -487,6 +487,26 @@ class StageCfg:
     wandb_project: str = "dnfs-baseline"
 
 
+def optimised_recipe(cell: StageCfg) -> StageCfg:
+    """s60 optimisation bundle (decided 2026-08-24) as a recipe transform
+    for the flip route — the mirror of the hard route's `optimised_recipe`.
+
+    Two declared changes, nothing else: model.compile_model=True (measured
+    1.58x updates / 2.01x rollout on stage_4_d10 leTF, same-container
+    Modal A100; GPU-stack gate passed) and train.c_t_from_rollout=True
+    (bit-identical c_t grid from the rollout's own forwards). STANDING
+    RULE: every NEW cell — Wave-1 retrains included — goes through this
+    transform; archived cells and eager twins of eager parents keep both
+    flags off, because compiled runs are 1e-5-class vs eager, never
+    bit-parity.
+    """
+    return replace(
+        cell,
+        model=replace(cell.model, compile_model=True),
+        train=replace(cell.train, c_t_from_rollout=True),
+    )
+
+
 CONFIGS: dict[str, StageCfg] = {
     # Stage 0: HIGH-VARIANCE BASELINE. Vanilla MLP + Eq. (7) residual.
     # Eq. 7 does not require local equivariance — it's a valid loss for

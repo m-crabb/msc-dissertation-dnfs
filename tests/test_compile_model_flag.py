@@ -48,3 +48,36 @@ def test_compile_model_flag_matches_uncompiled_and_keeps_state_dict():
     assert sorted(compiled_model.state_dict()) == keys_before
     got = compiled_model(x, t)
     assert torch.allclose(got, want, atol=1e-5)
+
+
+def test_optimised_recipe_flips_only_the_declared_flags():
+    """The flip-route `optimised_recipe` is the Wave-1 landing vehicle:
+    exactly model.compile_model and train.c_t_from_rollout flip, every
+    other field is untouched (twin discipline — the transform must never
+    smuggle a third change into a new cell)."""
+    from dataclasses import fields
+
+    from experiments.dnfs_baseline_01.configs import CONFIGS, optimised_recipe
+
+    base = CONFIGS["stage_4_d10"]
+    assert base.model.compile_model is False
+    assert getattr(base.train, "c_t_from_rollout", False) is False
+    optimised = optimised_recipe(base)
+    assert optimised.model.compile_model is True
+    assert optimised.train.c_t_from_rollout is True
+    for field in fields(base):
+        if field.name in ("model", "train"):
+            continue
+        assert getattr(optimised, field.name) == getattr(base, field.name)
+    for field in fields(base.model):
+        if field.name == "compile_model":
+            continue
+        assert getattr(optimised.model, field.name) == getattr(
+            base.model, field.name
+        )
+    for field in fields(base.train):
+        if field.name == "c_t_from_rollout":
+            continue
+        assert getattr(optimised.train, field.name) == getattr(
+            base.train, field.name
+        )
