@@ -216,7 +216,8 @@ def internal_energy_estimate(
     Returns:
         Scalar tensor: per-site internal energy E/D. For Ising D = 10×10,
         σ = 0.1, the analytic optimum is -0.4282 (Table 2 row 1); at
-        σ_c = 0.22305 it is -1.4763 ≈ -√2 (Onsager).
+        the operating σ_c = 0.22305 it is -1.4763 ≈ -√2 (Onsager;
+        exact criticality is SIGMA_C_EXACT = 0.22034, see targets/ising.py).
     """
     softmax_weights = torch.softmax(log_weights, dim=0)
     return -(softmax_weights * log_p_tilde).sum() / (2 * sigma * D)

@@ -39,7 +39,7 @@ PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
 
 # The sigma-ladder cells that `ladder()` fans out over: same D=16,
 # c_target=0.5, leTF, doubly_hollow head; sigma is the only thing that
-# varies (subcritical / critical / supercritical, sigma_c ~= 0.22305).
+# varies (subcritical / critical / supercritical, operating sigma_c = 0.22305).
 LADDER_CFGS = (
     "H2_d16_c50_s010_letf_dh",
     "H2_d16_c50_s223_letf_dh",

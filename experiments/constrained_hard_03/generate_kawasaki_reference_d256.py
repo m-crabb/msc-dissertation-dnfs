@@ -75,7 +75,7 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 LATTICE_SIDE = 16
 N_SITES = LATTICE_SIDE * LATTICE_SIDE          # 256
-DEFAULT_SIGMA = 0.22305                        # the project's sigma_c
+DEFAULT_SIGMA = 0.22305    # operating sigma_c (exact 0.22034; ising.SIGMA_C_EXACT)
 TARGET_COMPOSITION = 0.5                       # 128 up / 128 down, exact
 N_CHAINS = 8                                   # 2 ordered-left, 2 ordered-right, 4 random
 BURN_IN_SWEEPS = 100_000                       # ~6000x the measured tau — cheap at numba speed

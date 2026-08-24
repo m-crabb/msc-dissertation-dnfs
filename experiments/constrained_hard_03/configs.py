@@ -11,7 +11,8 @@ Cell-name format: `H<S>_d<dim>_c<c_target_x100>_s<sigma label>_letf_<head tag>`,
 where S is the species count — `H2_*` are the binary Ising cells, `H3_*` the
 first Potts ones (composition then means the per-species share, c33 = thirds).
 The sigma-ladder cells (`_dh` suffix) probe the swap-CTMC across the Ising
-phase transition (σ_c ≈ 0.22305) with the correctness-gate
+phase transition (operating σ_c = 0.22305; exact 0.22034, see
+targets/ising.py SIGMA_C_EXACT) with the correctness-gate
 `DoublyHollowSwapHead`; the `_na` cell pairs the subcritical floor rung with
 `NonAntisymSwapHead`, a deliberately antisymmetry-breaking negative control
 for the antisymmetry ablation.

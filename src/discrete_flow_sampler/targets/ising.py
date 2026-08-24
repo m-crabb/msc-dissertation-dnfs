@@ -9,6 +9,21 @@ from torch import Tensor
 from discrete_flow_sampler.composition import expand_b_major
 from discrete_flow_sampler.samplers._neighbours import DEFAULT_LOG_RATIO_CLAMP
 
+# Exact 2D Ising criticality under THIS repo's double-counted convention
+# (x^T J x picks up each edge twice, so the per-bond coupling is 2*sigma):
+# beta_c = ln(1+sqrt(2))/2 = 0.44069 gives sigma_c = ln(1+sqrt(2))/4.
+SIGMA_C_EXACT = math.log(1.0 + math.sqrt(2.0)) / 4.0  # = 0.220343...
+
+# The OPERATING critical coupling every "s223"/sigma_c cell in this project
+# runs at, inherited from DNFS Table 2 for replication fidelity. It sits
+# ~1.2% above SIGMA_C_EXACT, i.e. marginally into the ordered (slow-mixing)
+# phase; on the finite lattices used here the transition is rounded into a
+# pseudo-critical window that contains both values. Kept — not "corrected" —
+# because every archived run, config name and one-variable twin relationship
+# is pinned at this value; changing it mid-project would confound any new
+# cell against the whole archive.
+SIGMA_C_OPERATING = 0.22305
+
 
 class IsingTarget:
     """Periodic-boundary DxD Ising lattice with annealing path.
