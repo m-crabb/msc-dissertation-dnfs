@@ -361,6 +361,18 @@ def train_swap(
         if rollout_resample_ess_fraction is not None
         else None
     )
+    # B1 (optimisation decision, 2026-08-24): build the CV c_t grid from
+    # the rollout's own head forwards instead of re-running them —
+    # bit-identical to the sequential grid (same tensors, same arithmetic,
+    # no RNG; tests/test_cv_integrand_reuse.py), removing 127 of 128
+    # c_t-grid head forwards per outer at d256 (~7-8 h eager per 16x16 CV
+    # run). Default False = archived behaviour, byte-identical.
+    c_t_from_rollout = bool(getattr(train_cfg, "c_t_from_rollout", False))
+    if c_t_from_rollout and rollout_resampling is not None:
+        raise ValueError(
+            "c_t_from_rollout requires rollout resampling OFF: resampled "
+            "trajectories are certified only through the recompute path."
+        )
     if replay_buffer_cycles < 1:
         raise ValueError(
             f"replay_buffer_cycles must be >= 1, got {replay_buffer_cycles}"
@@ -579,14 +591,26 @@ def train_swap(
             n_rollout = outer_batch if c_t_batch is None else c_t_batch
             x_initial = target.sample_base(n_rollout, device=device)
             outer_matching_stats: dict | None = {} if multi_event else None
+            # B1: in CV mode with the knob on, the rollout hands back the
+            # per-slot ξ_t it computed from its own head forwards, and the
+            # grid recompute below is skipped entirely. Naive mode is
+            # target-only (no head in the integrand), so the grid path
+            # stays.
+            reuse_rollout_integrand = (
+                c_t_from_rollout and estimator_mode == "control_variate"
+            )
             with torch.no_grad():
                 rollout_result = sample_swap_ctmc(
                     head, x_initial, t_grid, return_all_states=True,
                     multi_event=multi_event,
                     matching_stats=outer_matching_stats,
                     target=target, resampling=rollout_resampling,
+                    return_cv_integrand=reuse_rollout_integrand,
                 )                                              # (T, n_rollout, D)
-                if rollout_resampling is None:
+                if reuse_rollout_integrand:
+                    x_traj_full, integrand_per_t = rollout_result
+                    rollout_resample_events = float("nan")
+                elif rollout_resampling is None:
                     x_traj_full = rollout_result
                     rollout_resample_events = float("nan")
                 else:
@@ -599,10 +623,16 @@ def train_swap(
                     # than over the raw rollout law.
                     x_traj_full, rollout_smc_stats = rollout_result
                     rollout_resample_events = float(rollout_smc_stats.n_events)
-                c_t_grid, integrand_per_t = compute_c_t_grid_swap(
-                    t_grid, x_traj_full, target, head, mode=estimator_mode,
-                    chunk_rows=c_t_grid_chunk_rows,
-                )                                       # (T,), (T, n_rollout)
+                if reuse_rollout_integrand:
+                    # c_t = mean_m ξ_t (Eq. 8) — the same reduction
+                    # compute_c_t_grid_swap applies, on the same values.
+                    c_t_grid = integrand_per_t.mean(dim=-1)
+                else:
+                    c_t_grid, integrand_per_t = compute_c_t_grid_swap(
+                        t_grid, x_traj_full, target, head,
+                        mode=estimator_mode,
+                        chunk_rows=c_t_grid_chunk_rows,
+                    )                                   # (T,), (T, n_rollout)
                 # M2: smooth the grid across cycles (first cycle after
                 # construction/reset passes through raw). The rms delta
                 # logs how much correction the EMA is applying — 0.0 on
@@ -620,11 +650,19 @@ def train_swap(
                 # slot has its own ∂_t log p̃ baseline) and meaningful as
                 # "estimator noise per time slot". Over the full rollout
                 # set so the column reflects the c_t estimator's own rows.
-                t_grid_per_state = t_grid.repeat_interleave(n_rollout)
-                x_traj_flat = x_traj_full.reshape(n_grid * n_rollout, n_dims)
-                naive_per_t = target.dt_log_p_tilde_t(
-                    x_traj_flat, t_grid_per_state,
-                ).reshape(n_grid, n_rollout)
+                # B1 free rider: in naive mode the integrand IS
+                # ∂_t log p̃_t on these rows, so the knob skips the (T·M)
+                # recompute (and makes cv_var_ratio exactly 1.0).
+                if c_t_from_rollout and estimator_mode == "naive_mc":
+                    naive_per_t = integrand_per_t
+                else:
+                    t_grid_per_state = t_grid.repeat_interleave(n_rollout)
+                    x_traj_flat = x_traj_full.reshape(
+                        n_grid * n_rollout, n_dims
+                    )
+                    naive_per_t = target.dt_log_p_tilde_t(
+                        x_traj_flat, t_grid_per_state,
+                    ).reshape(n_grid, n_rollout)
                 var_dt_log_p_tilde = naive_per_t.var(dim=-1).mean().item()
                 var_estimator_integrand = (
                     integrand_per_t.var(dim=-1).mean().item()

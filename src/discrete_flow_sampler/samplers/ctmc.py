@@ -96,28 +96,24 @@ def _compute_xi_t_general(
     return dt_log_p_tilde_at_state + outflow_sum - inflow_sum
 
 
-def _compute_xi_t_lenet(
+def xi_t_lenet_from_scores(
+    G_t: Tensor,
     state: Tensor,
     t: Tensor,
-    model,
     target,
 ) -> Tensor:
-    """ξ_t for a locally equivariant model — single forward pass.
+    """ξ_t for a locally equivariant model from an already-computed G_t.
 
     Local equivariance (paper Eq. 20) means G(x_i, i | y_i) = -G(y_i, i | x),
-    so the return rate at the flipped neighbour is [-G(y_i, i | x)]_+,
-    computable from the same G tensor without a second model call.
-
-    Unlike the non-LE branch, this function takes no `outflow_rates`
-    passthrough from `sample_ctmc`: the Euler step there returns
-    `R_t = F.relu(G_t)`, not `G_t` itself, so the cached value cannot be
-    reused to recover `[-G_t]_+` for the reverse rate. Re-running
-    `model(state, t)` here is the cleaner wiring at the cost of one
-    extra forward pass per IS-weighted Euler step.
+    so the forward rate is [G]_+ and the return rate at each flipped
+    neighbour is [-G]_+ of the SAME tensor — ξ_t is a single-forward
+    quantity. The Euler step evaluates the model at exactly the (state, t)
+    this integrand needs, so `sample_ctmc` passes the step's G_t here
+    instead of re-running the model (the swap sampler makes the same move
+    via `xi_t_swap_from_scores`); bit-identical because it is the same
+    deterministic forward on the same tensors.
     """
-    G_t = model(state, t)
-
-    vocab_size = model.vocab_size
+    vocab_size = G_t.shape[-1]
     G_plus     = F.relu(G_t)
     neg_G_plus = F.relu(-G_t)
 
@@ -132,6 +128,18 @@ def _compute_xi_t_lenet(
     dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)        # (B,)
 
     return dt_log_p_tilde_at_state + outflow_sum - inflow_sum
+
+
+def _compute_xi_t_lenet(
+    state: Tensor,
+    t: Tensor,
+    model,
+    target,
+) -> Tensor:
+    """ξ_t for a locally equivariant model — single forward pass, then
+    delegates to `xi_t_lenet_from_scores` (which callers holding the Euler
+    step's G_t use directly to skip this forward)."""
+    return xi_t_lenet_from_scores(model(state, t), state, t, target)
 
 
 def compute_xi_t(
@@ -158,9 +166,9 @@ def compute_xi_t(
     branch `sample_ctmc` already computed `model(state, t)` for the Euler
     step and feeds it through to skip the duplicate forward pass.
     Outer-step c_t computation omits it and lets the helper recompute.
-    The LE branch ignores the argument because the Euler step there
-    caches `[G]_+` rather than `G`, which can't be reused to recover the
-    reverse rate; see `_compute_xi_t_lenet`.
+    The LE branch ignores the argument — its reuse path is
+    `xi_t_lenet_from_scores`, fed the Euler step's pre-relu G_t directly
+    by `sample_ctmc`.
     """
     if getattr(model, "is_locally_equivariant", False):
         return _compute_xi_t_lenet(state, t, model, target)
@@ -168,14 +176,13 @@ def compute_xi_t(
 
 
 def _euler_step(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
-    """Take one forward-Euler CTMC step. Returns (new_state, outflow_rates).
+    """Take one forward-Euler CTMC step. Returns (new_state, step_scores).
 
-    The non-LE path returns (B, D) per-site flip rates that the caller
-    threads into `compute_xi_t` to avoid a duplicate forward pass at the
-    same state. The LE path returns the (B, D, S) rate tensor for
-    completeness; `compute_xi_t`'s LE branch re-runs the model anyway
-    (small extra cost; cleaner wiring), so the caller passes
-    `outflow_rates=None` to compute_xi_t in the LE case.
+    The second return is what ξ_t needs to avoid a duplicate forward pass
+    at the same state: the non-LE path returns the (B, D) per-site flip
+    rates (threaded into `compute_xi_t` as `outflow_rates`); the LE path
+    returns the pre-relu (B, D, S) scores G_t, from which both [G]_+ and
+    the reverse rate [-G]_+ are recoverable (`xi_t_lenet_from_scores`).
     """
     if getattr(model, "is_locally_equivariant", False):
         return _euler_step_lenet(model, state, t_per_batch, step_dt)
@@ -218,7 +225,10 @@ def _euler_step_lenet(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor
     in {-1, +1} using spin_of_idx = 2*idx - 1 (with the stay-index
     routed to the original state value).
 
-    Returns (new_state, R_t) where R_t = [G]_+ has shape (B, D, S).
+    Returns (new_state, G_t) — the PRE-relu (B, D, S) scores, not the
+    rates: [G]_+ is recoverable from G_t but not vice versa, and ξ_t's
+    reverse rate needs [-G]_+ of the same tensor (see
+    `xi_t_lenet_from_scores`).
     """
     G_t = model(state, t_per_batch)
     R_t = F.relu(G_t)                                      # (B, D, S)
@@ -244,7 +254,7 @@ def _euler_step_lenet(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor
         state,
         spin_of_idx[sampled_idx.clamp(max=vocab_size - 1)],
     )
-    return sampled_spin, R_t
+    return sampled_spin, G_t
 
 
 def sample_ctmc(
@@ -256,6 +266,7 @@ def sample_ctmc(
     return_all_states: bool = False,
     target=None,
     resampling: ResamplingConfig | None = None,
+    return_cv_integrand: bool = False,
 ) -> Tensor | tuple[Tensor, Tensor]:
     """Simulate a CTMC trajectory by Euler stepping along `ts`.
 
@@ -283,10 +294,21 @@ def sample_ctmc(
             training-rollout mode — see `swap_ctmc.sample_swap_ctmc` for the
             full argument; the two samplers keep one contract). Applies
             unchanged to soft-tilted targets — resampling only touches
-            (state, log_weights). Cost note for the trajectory mode: the
-            weights the trigger reads cost one ξ_t per step, which is free
-            for a plain rate model (the step's outflow rates pass through)
-            but a SECOND forward per step for a locally-equivariant one.
+            (state, log_weights). The ξ_t the trigger reads per step reuses
+            the Euler step's own forward for BOTH model kinds (non-LE: the
+            outflow rates pass through; LE: the step returns the pre-relu
+            G_t and `xi_t_lenet_from_scores` recovers both rate signs).
+        return_cv_integrand: optimisation B1-flip (decided 2026-08-24;
+            requires `return_all_states=True`, `target`, resampling OFF).
+            Additionally returns the (T, B) per-slot CV integrand ξ_t
+            (paper Eq. 8) accumulated from each Euler step's own forward
+            — only the final slot needs one fresh model call — so the
+            outer step can build the c_t grid without re-running the
+            model on states it just visited. BIT-IDENTICAL to
+            `log_z_estimators.compute_c_t_grid` (control_variate) on the
+            returned trajectory: same tensors, same arithmetic, no RNG
+            consumed (tests/test_cv_integrand_reuse.py). Return becomes
+            (trajectory, cv_integrand).
 
     Returns:
         x_final: (B, d). The state at time `ts[-1]`.
@@ -324,6 +346,22 @@ def sample_ctmc(
             "sample_ctmc(resampling=...) requires `target`: the ESS trigger "
             "reads log-weights, which are accumulated from xi_t."
         )
+    if return_cv_integrand and not return_all_states:
+        raise ValueError(
+            "sample_ctmc(return_cv_integrand=True) requires "
+            "return_all_states=True: the integrand slots are the "
+            "trajectory's grid slots."
+        )
+    if return_cv_integrand and target is None:
+        raise ValueError(
+            "sample_ctmc(return_cv_integrand=True) requires `target`: "
+            "xi_t reads the annealing density."
+        )
+    if return_cv_integrand and resampling is not None:
+        raise ValueError(
+            "sample_ctmc(return_cv_integrand=True) requires resampling "
+            "OFF: the reuse is certified only for the plain buffer rollout."
+        )
 
     state = x0.clone()
     batch_size, n_sites = state.shape
@@ -348,33 +386,46 @@ def sample_ctmc(
             dtype=state.dtype, device=state.device,
         )
         trajectory[0] = state
+    cv_integrand = (
+        torch.empty(
+            (len(ts), batch_size), dtype=state.dtype, device=state.device
+        )
+        if return_cv_integrand
+        else None
+    )
+    model_is_locally_equivariant = getattr(
+        model, "is_locally_equivariant", False
+    )
 
     for step in range(len(ts) - 1):
         t_curr = ts[step]
         step_dt = ts[step + 1] - ts[step]
         t_per_batch = t_curr.expand(batch_size)
 
-        new_state, outflow_rates = _euler_step(model, state, t_per_batch, step_dt)
+        new_state, step_scores = _euler_step(model, state, t_per_batch, step_dt)
 
-        if accumulate_log_weights:
+        if accumulate_log_weights or return_cv_integrand:
             # ξ_t per paper Eq. 8 evaluated at x_t (left endpoint of the
-            # Euler interval -- standard forward Euler). compute_xi_t
-            # encapsulates the inflow/outflow decomposition; same helper is
-            # called by samplers.log_z_estimators at training time.
-            #
-            # Pass-through optimisation only valid for the non-LE branch:
-            # there `outflow_rates` is the (B, D) rate vector and re-using
-            # it skips a forward pass inside compute_xi_t. The LE branch's
-            # compute_xi_t recomputes G internally, so we pass None.
-            passthrough = (
-                None if getattr(model, "is_locally_equivariant", False)
-                else outflow_rates
-            )
-            xi_t = compute_xi_t(
-                state, t_per_batch, model, target,
-                outflow_rates=passthrough,
-            )
-            log_weights = log_weights + xi_t * step_dt
+            # Euler interval -- standard forward Euler), reusing the Euler
+            # step's own forward: the non-LE step returns the (B, D) rate
+            # vector compute_xi_t accepts as a passthrough; the LE step
+            # returns the pre-relu G_t, from which xi_t_lenet_from_scores
+            # recovers both [G]_+ and the reverse rate [-G]_+.
+            if model_is_locally_equivariant:
+                xi_t = xi_t_lenet_from_scores(
+                    step_scores, state, t_per_batch, target
+                )
+            else:
+                xi_t = compute_xi_t(
+                    state, t_per_batch, model, target,
+                    outflow_rates=step_scores,
+                )
+            if accumulate_log_weights:
+                log_weights = log_weights + xi_t * step_dt
+            if return_cv_integrand:
+                # Slot k of the CV grid IS this ξ_t: `state` here equals
+                # trajectory[step] and t_per_batch equals t_grid[step].
+                cv_integrand[step] = xi_t
 
         state = new_state
         # Checkpoint AFTER the state advance: the particle carrying log w(t+dt)
@@ -395,6 +446,14 @@ def sample_ctmc(
         if return_all_states:
             trajectory[step + 1] = state
 
+    if return_cv_integrand:
+        # The loop covered slots 0..T-2 (each step's forward is at the
+        # slot it STARTED from); the final state never gets an Euler step,
+        # so its slot is the one fresh model call of the whole grid.
+        cv_integrand[-1] = compute_xi_t(
+            state, ts[-1].expand(batch_size), model, target
+        )
+        return trajectory, cv_integrand
     if return_all_states and resampling is not None:
         return trajectory, smc_stats
     if resampling is not None:

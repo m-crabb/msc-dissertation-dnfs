@@ -233,6 +233,7 @@ def sample_swap_ctmc(
     multi_event: bool = False,
     resampling: ResamplingConfig | None = None,
     matching_stats: dict | None = None,
+    return_cv_integrand: bool = False,
 ):
     """Swap-CTMC trajectory sampler. Same contract as `ctmc.sample_ctmc`.
 
@@ -278,6 +279,21 @@ def sample_swap_ctmc(
         nothing downstream consumes a trajectory as a path — the buffer
         stores (state, t) pairs and c_t is a per-slot mean, so only the
         per-slot marginal has to be right.
+
+    `return_cv_integrand=True` (optimisation B1, decided 2026-08-24;
+    requires `return_all_states=True`, `target`, and resampling OFF)
+    additionally returns the (T, B) per-slot CV integrand ξ_t
+    (Eq. 8, swap form) so the outer step can build the c_t grid without
+    re-running the head: step k already computed head(x_k, t_k) on
+    exactly the tensors slot k needs, so ξ_t is accumulated from the
+    step's own pair scores via `xi_t_swap_from_scores`; only the final
+    slot needs one fresh head call. BIT-IDENTICAL to the sequential
+    (chunk_rows=None) `compute_c_t_grid_swap` on the returned trajectory
+    — same tensors, same arithmetic, no RNG consumed (pinned by
+    tests/test_cv_integrand_reuse.py). At d256 this removes 127 of 128
+    c_t-grid head forwards per outer cycle (~7-8 h eager per 16x16 CV
+    run). Resampling is excluded because the reuse is certified only for
+    the plain buffer rollout. Return becomes (trajectory, cv_integrand).
     """
     if return_log_weights and target is None:
         raise ValueError("sample_swap_ctmc(return_log_weights=True) requires `target`.")
@@ -296,6 +312,22 @@ def sample_swap_ctmc(
             "sample_swap_ctmc(resampling=...) requires `target`: the ESS "
             "trigger reads log-weights, which are accumulated from ξ_t."
         )
+    if return_cv_integrand and not return_all_states:
+        raise ValueError(
+            "sample_swap_ctmc(return_cv_integrand=True) requires "
+            "return_all_states=True: the integrand slots are the "
+            "trajectory's grid slots."
+        )
+    if return_cv_integrand and target is None:
+        raise ValueError(
+            "sample_swap_ctmc(return_cv_integrand=True) requires `target`: "
+            "ξ_t reads the annealing density."
+        )
+    if return_cv_integrand and resampling is not None:
+        raise ValueError(
+            "sample_swap_ctmc(return_cv_integrand=True) requires resampling "
+            "OFF: the reuse is certified only for the plain buffer rollout."
+        )
 
     state = x0.clone()
     batch_size, d = state.shape
@@ -311,6 +343,13 @@ def sample_swap_ctmc(
             (len(ts), batch_size, d), dtype=state.dtype, device=state.device
         )
         trajectory[0] = state
+    cv_integrand = (
+        torch.empty(
+            (len(ts), batch_size), dtype=state.dtype, device=state.device
+        )
+        if return_cv_integrand
+        else None
+    )
 
     smc_stats = (
         ResamplingStats(
@@ -332,13 +371,18 @@ def sample_swap_ctmc(
         step_dt = dts[step]
         t_per_batch = ts[step].expand(batch_size)
         new_state, step_pair_scores = step_fn(head, state, t_per_batch, step_dt)
-        if accumulate_log_weights:
+        if accumulate_log_weights or return_cv_integrand:
             # ξ_t at the left endpoint reads the same head(state, t) the step
             # just computed; reusing its scores halves the head calls per step.
             xi_t = xi_t_swap_from_scores(
                 step_pair_scores, state, t_per_batch, target, pairs
             )
-            log_weights = log_weights + xi_t * step_dt
+            if accumulate_log_weights:
+                log_weights = log_weights + xi_t * step_dt
+            if return_cv_integrand:
+                # Slot k of the CV grid IS this ξ_t: `state` here equals
+                # trajectory[step] and t_per_batch equals t_grid[step].
+                cv_integrand[step] = xi_t
         state = new_state
         # Checkpoint AFTER the state advance: the particle carrying log w(t+dt)
         # is x_{t+dt}, so that is the row set resampling duplicates/kills.
@@ -358,6 +402,14 @@ def sample_swap_ctmc(
         if return_all_states:
             trajectory[step + 1] = state
 
+    if return_cv_integrand:
+        # The loop covered slots 0..T-2 (each step's scores are at the
+        # slot it STARTED from); the final state never gets an Euler step,
+        # so its slot is the one fresh head call of the whole grid.
+        cv_integrand[-1] = compute_xi_t_swap(
+            state, ts[-1].expand(batch_size), head, target
+        )
+        return trajectory, cv_integrand
     if return_all_states and resampling is not None:
         return trajectory, smc_stats
     if resampling is not None:
