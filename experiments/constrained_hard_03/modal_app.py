@@ -512,6 +512,31 @@ def compile_gate():
     compile_gate_remote.remote()
 
 
+@app.function(gpu="A100-80GB", timeout=60 * 60)
+def compile_profile_remote(cfg_name: str = "", microbatch: int = 128,
+                           rollout_batch: int = 512, rollout_steps: int = 16):
+    """Post-compile region profile of the production swap stack (method and
+    region list in compile_profile.py). Prints tables; nothing on the
+    volume."""
+    from experiments.constrained_hard_03.compile_profile import (
+        THP2_CELL,
+        run_profile,
+    )
+
+    run_profile(cfg_name=cfg_name or THP2_CELL, microbatch=microbatch,
+                rollout_batch=rollout_batch, rollout_steps=rollout_steps)
+
+
+@app.local_entrypoint()
+def compile_profile(cfg_name: str = "", microbatch: int = 128,
+                    rollout_batch: int = 512, rollout_steps: int = 16):
+    """Blocking local CLI entry for the post-compile profile."""
+    compile_profile_remote.remote(
+        cfg_name=cfg_name, microbatch=microbatch,
+        rollout_batch=rollout_batch, rollout_steps=rollout_steps,
+    )
+
+
 @app.local_entrypoint()
 def demo(seeds: str = "42,43,44", n_samples: int = 5000, n_replicates: int = 5):
     """Blocking local CLI entry for the 4x4 demo GPU stage (per-cell progress
