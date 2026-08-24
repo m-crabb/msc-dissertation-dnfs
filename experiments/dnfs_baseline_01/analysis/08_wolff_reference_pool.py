@@ -16,7 +16,8 @@ chain-block bootstrap works unchanged; burn_in / thin are measured in Wolff
 CLUSTERS, not sweeps, and the chains are genuinely independent (fresh seed
 each), which makes the Gelman--Rubin diagnostic a real multi-start check.
 
-Writes: results/01_baseline/wolff_ref_d10_sigma{0.1,0.22305}.pt (~a minute).
+Writes: results/01_baseline/wolff_ref_d10_sigma{0.1,0.220343,0.22305}.pt
+(~a minute each; 0.220343 = SIGMA_C to :g precision).
 """
 from pathlib import Path
 
@@ -24,7 +25,7 @@ import torch
 
 from discrete_flow_sampler.diagnostics.metrics import gelman_rubin
 from discrete_flow_sampler.mcmc.wolff import wolff_sample
-from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RESULTS = REPO_ROOT / "results" / "01_baseline"
@@ -52,7 +53,7 @@ def build_pool(sigma: float) -> None:
     pooled = stacked.reshape(N_RECORDS * N_CHAINS, target.d)  # record-major
     m_per_chain = stacked.mean(dim=2).T  # (chains, records)
     rhat_m = gelman_rubin(m_per_chain.numpy())
-    out = RESULTS / f"wolff_ref_d10_sigma{sigma}.pt"
+    out = RESULTS / f"wolff_ref_d10_sigma{sigma:g}.pt"
     torch.save(
         {
             "samples": pooled.to(torch.int8),
@@ -69,5 +70,12 @@ def build_pool(sigma: float) -> None:
 
 
 if __name__ == "__main__":
-    for sigma in (0.1, 0.22305):
+    # 0.22305 is the LEGACY pool (pairs with the archived pre-migration runs,
+    # kept on disk); SIGMA_C is the pool every post-migration run evaluates
+    # against. Existing pool files are not rebuilt.
+    for sigma in (0.1, SIGMA_C, 0.22305):
+        out = RESULTS / f"wolff_ref_d10_sigma{sigma:g}.pt"
+        if out.exists():
+            print(f"[wolff ref sigma={sigma:g}] exists, skipping {out.name}")
+            continue
         build_pool(sigma)

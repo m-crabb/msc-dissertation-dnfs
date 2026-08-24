@@ -1,5 +1,13 @@
 """Hard-constraint configs: swap-move CTMC on the fixed-composition manifold.
 
+SIGMA_C MIGRATION (s58, 2026-08-24): the project's critical coupling is
+targets/ising.py SIGMA_C = ln(1+sqrt(2))/4 = 0.220343 (exact). Every cell
+below with sigma=0.223/0.22305 (the "s223" label, and the 0.223 curriculum
+ladder endpoint) describes an ARCHIVED run trained at the legacy value; those
+literals are records and must not be edited (stored run configs and the eval
+config-drift guard are pinned to them). Any NEW sigma_c cell imports SIGMA_C;
+the hard-chapter retrain wave runs once the head family is finalised.
+
 Imports the shared schema dataclasses from the baseline experiment (same
 pattern as `constrained_soft_02/configs.py`) and adds `HardStageCfg`, which
 carries a `head_kind` selecting the swap-readout head. Unlike the soft-02

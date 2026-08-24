@@ -4,10 +4,11 @@ running-example section.
 Temperature is implicit in this codebase: sigma is the coupling in J = sigma*A,
 so it plays the role of inverse temperature beta. Large sigma -> strong
 coupling -> low temperature -> ordered; small sigma -> high temperature ->
-disordered. The repo pins the 2D-Ising critical point at sigma = 0.22305
-(experiments/dnfs_baseline_01/configs.py), consistent with the exact
-K_c = 0.5*ln(1+sqrt(2)) once the symmetrised-adjacency double-counting (K = 2*sigma)
-is accounted for.
+disordered. The critical panel sits at the exact 2D-Ising critical point
+sigma_c = ln(1+sqrt(2))/4 = 0.220343 (targets/ising.py SIGMA_C; K_c =
+0.5*ln(1+sqrt(2)) with the symmetrised-adjacency double-counting K = 2*sigma).
+Regenerated at the exact value in the s58 sigma_c migration (2026-08-24);
+the pre-migration panel used the legacy 0.22305.
 
 Each snapshot is a single equilibrated Gibbs state reshaped from length d = D*D
 to a D*D grid. The ordered panel is initialised from a fully aligned lattice:
@@ -30,7 +31,7 @@ from discrete_flow_sampler.diagnostics.figure_style import (
     SPIN_UP_COLOUR,
 )
 from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
-from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 D = 64
 SEED = 0
@@ -48,7 +49,7 @@ CMAP = SPIN_CMAP
 # (label, sigma, n_sweeps, aligned_init)
 PANELS = [
     ("High $T$ (disordered)", 0.05, 200, False),
-    ("Critical $T_c$", 0.22305, 1500, False),
+    ("Critical $T_c$", SIGMA_C, 1500, False),
     ("Low $T$ (ordered)", 0.45, 300, True),
 ]
 

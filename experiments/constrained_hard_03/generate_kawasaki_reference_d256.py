@@ -71,11 +71,14 @@ from discrete_flow_sampler.mcmc.kawasaki import (
     init_random_at_composition,
     run_nonlocal_swap_chain_snapshots,
 )
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+from discrete_flow_sampler.targets.ising import (
+    SIGMA_C, FixedCompositionIsingTarget)
 
 LATTICE_SIDE = 16
 N_SITES = LATTICE_SIDE * LATTICE_SIDE          # 256
-DEFAULT_SIGMA = 0.22305    # operating sigma_c (exact 0.22034; ising.SIGMA_C_EXACT)
+DEFAULT_SIGMA = SIGMA_C    # exact sigma_c since the s58 migration; the archived
+                           # d256 reference dumps were generated at legacy 0.22305
+                           # and pair ONLY with the pre-migration hard runs
 TARGET_COMPOSITION = 0.5                       # 128 up / 128 down, exact
 N_CHAINS = 8                                   # 2 ordered-left, 2 ordered-right, 4 random
 BURN_IN_SWEEPS = 100_000                       # ~6000x the measured tau — cheap at numba speed

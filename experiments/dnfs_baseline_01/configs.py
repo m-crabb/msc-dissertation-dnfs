@@ -1,5 +1,14 @@
 """Frozen, named configurations for DNFS Ising baseline runs.
 
+SIGMA_C MIGRATION (s58, 2026-08-24): the project's critical coupling is
+targets/ising.py SIGMA_C = ln(1+sqrt(2))/4 = 0.220343 (exact). Every cell
+below that carries sigma=0.22305 (or a 0.223 curriculum stage) describes an
+ARCHIVED run trained at the legacy value; those literals are records and must
+not be edited (stored run configs and the eval config-drift guard are pinned
+to them). Any NEW sigma_c cell imports SIGMA_C; the archived sigma_c cells
+are replaced by retrain waves, unconstrained chapter first, hard chapter
+once the head family is finalised.
+
 Configs are dataclasses keyed by name in `CONFIGS`; new entries show up
 automatically in `run.py` via `--cfg <name>`. The dataclasses are frozen
 so a single config object cannot be mutated mid-run (any per-seed override

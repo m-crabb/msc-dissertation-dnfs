@@ -9,20 +9,22 @@ from torch import Tensor
 from discrete_flow_sampler.composition import expand_b_major
 from discrete_flow_sampler.samplers._neighbours import DEFAULT_LOG_RATIO_CLAMP
 
-# Exact 2D Ising criticality under THIS repo's double-counted convention
-# (x^T J x picks up each edge twice, so the per-bond coupling is 2*sigma):
-# beta_c = ln(1+sqrt(2))/2 = 0.44069 gives sigma_c = ln(1+sqrt(2))/4.
-SIGMA_C_EXACT = math.log(1.0 + math.sqrt(2.0)) / 4.0  # = 0.220343...
+# THE project's critical coupling (canonical since the s58 migration,
+# 2026-08-24): exact 2D Ising criticality under THIS repo's double-counted
+# convention (x^T J x picks up each edge twice, so the per-bond coupling is
+# 2*sigma): beta_c = ln(1+sqrt(2))/2 = 0.44069 gives sigma_c = ln(1+sqrt(2))/4.
+# Every NEW cell, reference pool and figure uses this value.
+SIGMA_C = math.log(1.0 + math.sqrt(2.0)) / 4.0  # = 0.220343...
+SIGMA_C_EXACT = SIGMA_C  # alias kept for the s58 finding's test/readers
 
-# The OPERATING critical coupling every "s223"/sigma_c cell in this project
-# runs at, inherited from DNFS Table 2 for replication fidelity. It sits
-# ~1.2% above SIGMA_C_EXACT, i.e. marginally into the ordered (slow-mixing)
-# phase; on the finite lattices used here the transition is rounded into a
-# pseudo-critical window that contains both values. Kept — not "corrected" —
-# because every archived run, config name and one-variable twin relationship
-# is pinned at this value; changing it mid-project would confound any new
-# cell against the whole archive.
-SIGMA_C_OPERATING = 0.22305
+# The LEGACY critical coupling every archived pre-s58 "s223"/sigma_c run was
+# trained and evaluated at, inherited from DNFS Table 2. The s58 finding
+# (test_ising_exact.py): DNFS's own Table 2 "optimal" column at this label is
+# in fact evaluated at SIGMA_C, so 0.22305 was never anyone's exact value.
+# Archived cell definitions keep this literal (their stored configs and the
+# eval config-drift guard are pinned to it, and it is what those models were
+# trained at); scheduled retrain waves replace them with SIGMA_C cells.
+SIGMA_C_LEGACY = 0.22305
 
 
 class IsingTarget:
