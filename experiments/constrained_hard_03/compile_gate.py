@@ -81,7 +81,7 @@ def _fresh_head(device):
 
 def run_gradient_parity(device) -> tuple[bool, list[str]]:
     target = FixedCompositionIsingTarget(
-        D=4, sigma=0.223, target_composition=0.5
+        D=4, sigma=0.223, target_composition=0.5, device=device
     )
     torch.manual_seed(1)
     x = target.sample_base(16, device=device)
