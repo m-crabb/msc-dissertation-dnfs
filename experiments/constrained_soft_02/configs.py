@@ -1992,6 +1992,11 @@ for _c, _c_tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
 # its place by ablation, cite this cell. NOTE at D=4 the stage-1 half-width
 # 0.05 is below the composition quantum 1/16, so "matches" is the expected
 # outcome; the run exists to close the todo either way.
+# JUDGED s68: WORSE, decisively -- the "matches is expected" note was wrong
+# because it priced only the stage-1 discretisation, not the early-step IS
+# degeneracy the curriculum guards. 0/4 seeds healthy: obedience slope mean
+# -0.19 (printed 0.995), sweep ESS <= 0.15 at every requested c (printed
+# 0.75-0.77 centre), final loss 1e1-1e4 vs 0.2-0.3. Widening earns its place.
 # Venue: Modal batch_seeds --detach, tag 20260825-amort-flatw30.
 _FLAT_WINDOW_BASE = CONFIGS["S2_d4_camort_50k_l50_letf_anneal_offset_clip50"]
 _flat_window_name = f"{_FLAT_WINDOW_BASE.name}_flatw30"
