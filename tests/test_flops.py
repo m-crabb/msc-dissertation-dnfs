@@ -18,9 +18,10 @@ import torch
 from torch import nn
 
 from discrete_flow_sampler.diagnostics.flops import (
-    chain_per_effective_sample, gibbs_run_flops, ising_energy_eval_flops,
-    measured_forward_flops, neural_sampling_flops_per_sample,
-    per_effective_sample, wolff_run_flops)
+    GIBBS_FLOPS_PER_SITE_UPDATE, chain_per_effective_sample, gibbs_run_flops,
+    ising_energy_eval_flops, measured_forward_flops,
+    neural_sampling_flops_per_sample, per_effective_sample, vcsgc_run_flops,
+    wolff_run_flops)
 from discrete_flow_sampler.mcmc.wolff import wolff_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -81,6 +82,16 @@ def test_chain_bill_divides_by_effective_records():
 def test_gibbs_and_wolff_bills_scale_with_their_work_units():
     assert gibbs_run_flops(n_sites=100, n_sweeps=3) == 3 * gibbs_run_flops(100, 1)
     assert wolff_run_flops(total_cluster_sites=50) == 50 * wolff_run_flops(1)
+
+
+def test_vcsgc_bill_is_gibbs_class_and_scales_with_trials():
+    # One VC-SGC trial is a single-site flip proposal: the Gibbs local-field
+    # work plus an O(1) penalty-difference update off a cached composition.
+    # It must price strictly above a bare Gibbs site update and stay within
+    # its class (below 2x), and the bill is linear in trials.
+    assert vcsgc_run_flops(n_trials=1000) == 1000 * vcsgc_run_flops(1)
+    assert GIBBS_FLOPS_PER_SITE_UPDATE < vcsgc_run_flops(1) \
+        <= 2 * GIBBS_FLOPS_PER_SITE_UPDATE
 
 
 def test_wolff_cluster_log_does_not_perturb_the_chain():

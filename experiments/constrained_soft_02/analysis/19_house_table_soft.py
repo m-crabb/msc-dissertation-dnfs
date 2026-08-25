@@ -31,21 +31,44 @@ What differs for the soft target:
             applied only in the summary line, with n_pass/n_total, so the
             table can print either rule and the failed seeds are never hidden.
 
-FLOP/es and the matched-budget VC-SGC row are NOT produced (no FLOP counter
-exists yet), exactly as in the unconstrained table. sigma_c is not run in
-this chapter.
+FLOP/es cells (s64, same conventions as the unconstrained fill):
+
+  neural  -- MEASURED eager forward at the run's own architecture and
+            shapes (FlopCounterMode, batch 1, batch-linear) x n_euler
+            forwards + counted-but-negligible target evals, / the frozen
+            eval ESS fraction. Measured once per cell; n_euler read per
+            run so a mixed-grid glob cannot silently misprice.
+  chain   -- analytic VC-SGC per-trial constant (flops.py: Gibbs-class
+            single-flip + cached-composition penalty update) x 1M trials
+            per chain INCLUDING burn-in, / (pooled frames / tau_int).
+            tau_int = the slower of mchammer's own composition/potential
+            reads (summary.json, frame units), floored at 1.
+
+The matched-budget VC-SGC row was DROPPED (user, s64): mchammer's ~1e5x
+package overhead makes a matched-FLOP run unrunnable, the same argument
+that made the unconstrained baseline row run-long, and the run-long
+reference with its actually-spent FLOP/es already carries the cost story
+(reference-not-rival). sigma_c is not run in this chapter.
 """
 import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import torch
 
+from discrete_flow_sampler.diagnostics.flops import (
+    chain_per_effective_sample, measured_forward_flops,
+    neural_sampling_flops_per_sample, per_effective_sample, vcsgc_run_flops)
 from discrete_flow_sampler.diagnostics.metrics import (
     correlation_profile_error, energy_wasserstein2, magnetisation_profile_error)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+# Run by path (numeric filenames can't be modules), so the `experiments`
+# package import inside specialist_flops_per_forward needs the repo root.
+sys.path.insert(0, str(REPO_ROOT))
 SOFT_RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
 VCSGC_RESULTS = REPO_ROOT / "results" / "mchammer_vcsgc"
 L, SIGMA = 10, 0.1
@@ -95,8 +118,14 @@ def observable_errors(x, weights, reference):
 
 
 def load_vcsgc_reference(penalty_strength, c_target):
-    """Pooled post-burn-in spin frames over the reference seeds, order-checked."""
+    """Pooled post-burn-in spin frames over the reference seeds, order-checked.
+
+    Also collects the chains' cost record for the FLOP/es cell: total trials
+    (burn-in included -- paid before the first usable frame) and mchammer's
+    own per-observable tau_int in frame units, of which the slowest governs.
+    """
     frames, wall_seconds, chains = [], 0.0, 0
+    total_trials, tau_ints = 0, []
     for run_dir in sorted(VCSGC_RESULTS.glob(f"D{L}_s{SIGMA}_l{penalty_strength:.1f}_c{c_target:.2f}_seed*")):
         spins = torch.from_numpy(np.load(run_dir / "spins.npy")).float()
         potential = torch.from_numpy(np.load(run_dir / "potential.npy")).float()
@@ -104,11 +133,39 @@ def load_vcsgc_reference(penalty_strength, c_target):
         # scrambled atom order would break this equality and every profile.
         assert torch.allclose(-TARGET.base_log_prob(spins), potential, atol=1e-3), run_dir
         frames.append(spins)
-        wall_seconds += json.loads((run_dir / "summary.json").read_text())["wall_seconds_run"]
+        summary = json.loads((run_dir / "summary.json").read_text())
+        wall_seconds += summary["wall_seconds_run"]
+        total_trials += summary["n_steps"]
+        tau_ints.append(max(obs["tau_int_frames"]
+                            for obs in summary["observables"].values()))
         chains += 1
     if not frames:
         raise FileNotFoundError(f"no VC-SGC reference with spins.npy for lambda={penalty_strength} c={c_target}")
-    return torch.cat(frames), chains, wall_seconds
+    pooled = torch.cat(frames)
+    tau_int = max(sum(tau_ints) / len(tau_ints), 1.0)
+    flops_per_es = chain_per_effective_sample(
+        vcsgc_run_flops(total_trials), pooled.shape[0], tau_int)
+    return pooled, chains, wall_seconds, flops_per_es
+
+
+def specialist_flops_per_forward(run_dir: Path) -> int:
+    """Measured FLOPs of one rate-matrix forward at this run's architecture.
+
+    Eager build from the run's own config at batch 1, exactly as the
+    unconstrained fill: a compiled wrapper can hide ops from the
+    dispatch-level counter, and the counter is batch-linear (test-pinned).
+    Soft configs reuse the baseline ModelCfg, so the baseline constructor
+    applies; the model's shape depends only on the lattice, so the plain
+    Ising target supplies the example input.
+    """
+    from experiments.dnfs_baseline_01.configs import ModelCfg
+    from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
+
+    cfg_dict = json.loads((run_dir / "config.json").read_text())
+    model_cfg = _sub_config(ModelCfg, {**cfg_dict["model"], "compile_model": False})
+    model = _construct_model(SimpleNamespace(model=model_cfg), TARGET)
+    example = (TARGET.sample_base(1, device="cpu"), torch.zeros(1))
+    return measured_forward_flops(model, example)
 
 
 def reference_floor(reference, seed=0):
@@ -126,7 +183,7 @@ def reference_floor(reference, seed=0):
 
 
 def score_runs(run_glob, reference):
-    per_seed = {}
+    per_seed, per_forward = {}, None
     for run_dir in sorted(SOFT_RESULTS.glob(run_glob)):
         eval_dir = run_dir / "eval"
         if not (eval_dir / "samples.pt").exists():
@@ -134,8 +191,16 @@ def score_runs(run_glob, reference):
         x = torch.load(eval_dir / "samples.pt", weights_only=True).float()
         weights = torch.softmax(torch.load(eval_dir / "log_weights.pt", weights_only=True), 0)
         metrics = json.loads((eval_dir / "metrics.json").read_text())
-        per_seed[run_dir.name] = {"ESS": metrics["ess_fraction"],
-                                  **observable_errors(x, weights, reference)}
+        if per_forward is None:  # one architecture per cell; measured once
+            per_forward = specialist_flops_per_forward(run_dir)
+        n_euler = json.loads((run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
+        per_seed[run_dir.name] = {
+            "ESS": metrics["ess_fraction"],
+            **observable_errors(x, weights, reference),
+            "FLOPes": per_effective_sample(
+                neural_sampling_flops_per_sample(per_forward, n_euler, TARGET.d),
+                metrics["ess_fraction"]),
+        }
     return per_seed
 
 
@@ -157,15 +222,19 @@ def summarise(per_seed):
 def main():
     table = {}
     for (penalty_strength, c_target), run_glob in CELLS.items():
-        reference, n_chains, wall_seconds = load_vcsgc_reference(penalty_strength, c_target)
+        reference, n_chains, wall_seconds, ref_flops_per_es = \
+            load_vcsgc_reference(penalty_strength, c_target)
         floor = reference_floor(reference)
         cell = {"reference_floor": floor, "reference_chains": n_chains,
-                "reference_frames": reference.shape[0], "reference_wall_seconds": wall_seconds}
+                "reference_frames": reference.shape[0],
+                "reference_wall_seconds": wall_seconds,
+                "reference_flops_per_es": ref_flops_per_es}
         families = {"specialist": run_glob, **{
             "fixed_lambda": g for (lam, c), g in FIXED_LAMBDA_CELLS.items()
             if (lam, c) == (penalty_strength, c_target)}}
         print(f"\n== lambda={penalty_strength} c={c_target} ({n_chains} reference chains, {reference.shape[0]} frames)")
-        print("  reference floor:", {k: f"{v:.2e}" for k, v in floor.items()})
+        print("  reference floor:", {k: f"{v:.2e}" for k, v in floor.items()},
+              f" reference FLOP/es: {ref_flops_per_es:.2g}")
         for family, glob in families.items():
             per_seed = score_runs(glob, reference)
             if not per_seed:

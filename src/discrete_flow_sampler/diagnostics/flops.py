@@ -56,6 +56,17 @@ GIBBS_FLOPS_PER_SITE_UPDATE = 12
 WOLFF_FLOPS_PER_CLUSTER_SITE = 30
 
 
+# One VC-SGC trial: a single-site flip proposal. The Ising part is the
+# Gibbs local-field work (charged inside the 12 above); the penalty part is
+# the difference kappa*d*[(c'-c_t)^2 - (c-c_t)^2] off a CACHED running
+# composition -- c' = c +- 1/d is one add, the two squared deviations and
+# their difference ~3 more -- charged at 4. An implementation that re-sums
+# the composition each trial would pay O(d) instead; the column prices the
+# algorithmic (cached) form, consistent with pricing Gibbs off the local
+# field rather than a full energy re-evaluation.
+VCSGC_FLOPS_PER_TRIAL = GIBBS_FLOPS_PER_SITE_UPDATE + 4
+
+
 def measured_forward_flops(model, example_inputs: tuple) -> int:
     """FLOPs of one forward at the given shapes, measured by FlopCounterMode.
 
@@ -103,6 +114,15 @@ def gibbs_run_flops(n_sites: int, n_sweeps: int) -> int:
 def wolff_run_flops(total_cluster_sites: int) -> int:
     """Total price of a Wolff run whose clusters summed to this many sites."""
     return WOLFF_FLOPS_PER_CLUSTER_SITE * total_cluster_sites
+
+
+def vcsgc_run_flops(n_trials: int) -> int:
+    """Total price of a VC-SGC chain of n_trials single-flip proposals.
+
+    Burn-in trials belong in n_trials (paid before the first usable frame),
+    mirroring gibbs_run_flops / wolff_run_flops.
+    """
+    return VCSGC_FLOPS_PER_TRIAL * n_trials
 
 
 def chain_per_effective_sample(total_flops: float, n_records: int,
