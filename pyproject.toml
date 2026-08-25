@@ -70,6 +70,15 @@ platforms = ["linux-64"]
 [tool.pixi.feature.cuda.system-requirements]
 cuda = "12.4"
 
+# cuda-cudart-dev ships the CUDA toolkit headers (cuda.h) that triton's
+# runtime C-shim build needs under torch.compile; the conda-forge triton
+# build bundles no headers and the DoC nodes have no /usr/local/cuda, so
+# compiled runs died with "cuda.h: No such file or directory" (Wave-1
+# 278392/278393, 2026-08-25). Headers + static stubs only — no runtime
+# library changes, lock delta verified additive-only.
+[tool.pixi.feature.cuda.dependencies]
+cuda-cudart-dev = ">=12.9.79,<13"
+
 [tool.pixi.environments]
 dev = { features = ["dev"], solve-group = "default" }
 cuda = { features = ["dev", "cuda"], solve-group = "cuda" }
