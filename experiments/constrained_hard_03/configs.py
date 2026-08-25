@@ -57,6 +57,7 @@ from discrete_flow_sampler.constraints.masked_attention_swap_head import (
 from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
     TwoHolePatchSwapHead,
 )
+from discrete_flow_sampler.targets.ising import SIGMA_C
 from discrete_flow_sampler.constraints.swap_readout import (
     DoublyHollowSwapHead,
     LeTFMaskOneSwapHead,
@@ -3388,4 +3389,98 @@ CONFIGS.update({
         _ARM_B, name="H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2",
         head_kind="two_hole_patch", patch_radius=2,
     ),
+})
+
+# Wave-2 house-table fill (s68, 2026-08-25): the 4x4 and 8x8 rungs of
+# tab:eval-hard-* rebuilt FRESH at single provenance — four arms (mo = the
+# mask-one reference ceiling, ma, fimo2ef = the raster champion, thp = the
+# convolutional champion at R=1) x sigma in {0.10 floor, SIGMA_C exact} x
+# seeds 42/43/44, every cell on the s60 optimised recipe. s220 is the exact
+# critical label (0.220343); the archived s223 cells (legacy 0.223) stay
+# untouched as records. The d64 s220 cells keep the sigma ladder
+# reused-not-rescaled with only the endpoint moved (0.215 < 0.220343 keeps
+# stage ordering); the d64 s010 cells train flat with NO curriculum,
+# mirroring the archived floor cell — at the floor the ladder would measure
+# the curriculum, not the operating point. Twin-ness pinned by
+# test_wave2_house_cells_mirror_archived_twins_except_declared_fields.
+#
+# FROZEN JUDGING CLAUSE (before any launch). Each arm x sigma is judged
+# against its archived namesake's eval: the s010 cells at identical sigma,
+# the s220 cells against the legacy-0.223 namesakes, where the sigma shift
+# is -1.2% and expected inside seed noise. Archived references — d16 sigma_c:
+# mo/ma raw ESS 0.970/0.973/0.973, fimo2ef 0.938/0.926/0.931 (parents
+# 0.924/0.925/0.903), thp 0.997/0.993/0.988; d16 floor: heads grouped
+# 0.96-0.975, thp 0.987-0.997; d64 sigma_c (seed 42): mo 0.910, ma
+# 0.755-0.781, fimo2ef 0.839 raw / 0.882 EMA, thp 0.895 raw / 0.923 EMA.
+#   PASS iff within the archived three-seed spread (d16) or consistent with
+#        the archived seed-42 value under the FP-non-determinism caveat
+#        (d64, calls within ~0.02 of a reference are not calls);
+#   any arm separated BELOW its archived reference beyond that is HELD from
+#        print and investigated before the table fills.
+# Venues: d16 on Modal batch_seeds --detach (launch-bound); d64 queued on
+# DoC (a30 class, ~0.7-6.8 h per run by arm) — submitted jointly with the
+# user against the 3-GPU per-user cap.
+_WAVE2_ARM_KNOBS: dict[str, dict] = {
+    "mo": {"head_kind": "mask_one"},
+    "ma": {"head_kind": "masked_attention"},
+    "fimo2ef": {
+        "head_kind": "factorised", "exact_field_channel": True,
+        "interior_band": "prefix", "site_orderings": ("row", "col"),
+    },
+    "thp": {"head_kind": "two_hole_patch"},
+}
+
+_D64_SIGMA_LADDER_SC = CurriculumCfg(
+    stages=_D64_SIGMA_LADDER.stages[:-1] + (
+        replace(_D64_SIGMA_LADDER.stages[-1], sigma=SIGMA_C),
+    )
+)
+
+
+def _wave2_d16_cell(arm: str, sigma_label: str, sigma: float) -> HardStageCfg:
+    knobs = dict(_WAVE2_ARM_KNOBS[arm])
+    name = f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_w2"
+    cell = _hard_cell(
+        name, sigma=sigma, head_kind=knobs.pop("head_kind"), n_steps=10_000,
+    )
+    return optimised_recipe(replace(cell, **knobs))
+
+
+def _wave2_d64_critical_cell(arm: str) -> HardStageCfg:
+    knobs = dict(_WAVE2_ARM_KNOBS[arm])
+    name = f"H2_d64_c50_s220_letf_{arm}_50k_curr_w2"
+    cell = _d64_curriculum_cell(name, head_kind=knobs.pop("head_kind"))
+    cell = replace(
+        cell,
+        ising=replace(cell.ising, sigma=SIGMA_C),
+        curriculum=_D64_SIGMA_LADDER_SC,
+        ema_decay=0.9999,
+        **knobs,
+    )
+    return optimised_recipe(cell)
+
+
+def _wave2_d64_floor_cell(arm: str) -> HardStageCfg:
+    knobs = dict(_WAVE2_ARM_KNOBS[arm])
+    name = f"H2_d64_c50_s010_letf_{arm}_50k_w2"
+    cell = _hard_cell(
+        name, sigma=0.10, head_kind=knobs.pop("head_kind"),
+        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
+        eval_sample_chunk=256, n_eval_samples_training=512,
+        use_sdpa_readout=True, eval_autocast_bf16=True,
+    )
+    return optimised_recipe(replace(cell, ema_decay=0.9999, **knobs))
+
+
+CONFIGS.update({
+    **{
+        cell.name: cell
+        for arm in _WAVE2_ARM_KNOBS
+        for cell in (
+            _wave2_d16_cell(arm, "s010", 0.10),
+            _wave2_d16_cell(arm, "s220", SIGMA_C),
+            _wave2_d64_critical_cell(arm),
+            _wave2_d64_floor_cell(arm),
+        )
+    },
 })

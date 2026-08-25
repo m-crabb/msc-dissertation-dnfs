@@ -30,6 +30,10 @@ FINAL_RECIPE_SPECIALIST_CELL = "S2_d4_c05_50k_l50_letf_anneal_offset_clip50"
 BUDGET_TWIN_CELL = "S2_d4_camort_50k_l50_letf"
 ANNEALED_TWIN_CELL = "S2_d4_camort_50k_l50_letf_anneal"
 OFFSET_ANNEAL_CELL = "S2_d4_camort_50k_l50_letf_anneal_offset"
+# Uniform-from-start ablation of the widening curriculum (s64): a conditioned
+# twin of the printed cell, so it carries a composition block like any other
+# amortised cell (its own twin pin lives in test_configs.py).
+FLAT_WINDOW_CELL = "S2_d4_camort_50k_l50_letf_anneal_offset_clip50_flatw30"
 CLIP_CELLS = {
     "S2_d4_camort_50k_l50_letf_anneal_offset_clip50": 50.0,
     "S2_d4_camort_50k_l50_letf_anneal_offset_clip100": 100.0,
@@ -71,7 +75,7 @@ AMORTISED_CELLS = (
     VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
     ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
     *D10_SATURATION_CELLS, D10_STAIRCASE_CELL, D10_STADAMW_CELL,
-    FINAL_RECIPE_NULL_CELL,
+    FINAL_RECIPE_NULL_CELL, FLAT_WINDOW_CELL,
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the

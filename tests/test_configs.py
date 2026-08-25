@@ -1468,3 +1468,124 @@ def test_flat_window_ablation_mirrors_conditioned_cell_except_curriculum():
                             curriculum=base.composition.curriculum),
     )
     assert rebuilt == base
+
+
+def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
+    """Wave-2 house-table fill (s68): every cell in the 4x4/8x8 fresh matrix
+    must be the declared transform of its archived namesake and NOTHING else
+    -- the s220 cells move sigma from the legacy 0.223 to the exact SIGMA_C
+    (cell sigma AND curriculum endpoint, ladder reused-not-rescaled), every
+    cell takes the s60 optimised recipe (compile_head + c_t_from_rollout),
+    and the d64 cells carry the dual-eval EMA instrument. Any other field
+    drifting would make the retrained table unattributable to the sigma
+    correction."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from discrete_flow_sampler.targets.ising import SIGMA_C, SIGMA_C_LEGACY
+
+    def deoptimised(cell):
+        return replace(
+            cell,
+            compile_head=False,
+            train=replace(cell.train, c_t_from_rollout=False),
+        )
+
+    # --- d16: archived twins exist at BOTH sigma labels ---------------------
+    for arm in ("mo", "ma", "fimo2ef", "thp"):
+        for lbl, archived_lbl in (("s010", "s010"), ("s220", "s223")):
+            w2 = CONFIGS[f"H2_d16_c50_{lbl}_letf_{arm}_10k_w2"]
+            twin = CONFIGS[f"H2_d16_c50_{archived_lbl}_letf_{arm}_10k"]
+            assert w2.compile_head and w2.train.c_t_from_rollout, w2.name
+            rebuilt = deoptimised(w2)
+            if lbl == "s220":
+                assert w2.ising.sigma == SIGMA_C, w2.name
+                assert twin.ising.sigma == 0.223, twin.name
+                rebuilt = replace(
+                    rebuilt, ising=replace(rebuilt.ising, sigma=twin.ising.sigma)
+                )
+            rebuilt = replace(rebuilt, name=twin.name)
+            assert rebuilt == twin, w2.name
+
+    # --- d64 s220: curriculum cells against the legacy-0.223 namesakes ------
+    for arm, archived in (
+        ("mo", "H2_d64_c50_s223_letf_mo_50k_curr"),
+        ("ma", "H2_d64_c50_s223_letf_ma_50k_curr"),
+        ("fimo2ef", "H2_d64_c50_s223_letf_fimo2ef_50k_curr"),
+        ("thp", "H2_d64_c50_s223_letf_thp_50k_curr"),
+    ):
+        w2 = CONFIGS[f"H2_d64_c50_s220_letf_{arm}_50k_curr_w2"]
+        twin = CONFIGS[archived]
+        assert w2.ising.sigma == SIGMA_C, w2.name
+        assert w2.ema_decay == 0.9999, w2.name
+        # Ladder reused, not rescaled: only the final stage moves to SIGMA_C.
+        assert w2.curriculum.stages[:-1] == twin.curriculum.stages[:-1], w2.name
+        final_w2, final_twin = w2.curriculum.stages[-1], twin.curriculum.stages[-1]
+        assert final_w2.sigma == SIGMA_C and final_twin.sigma == 0.223, w2.name
+        assert (final_w2.start_step, final_w2.lr) == (
+            final_twin.start_step, final_twin.lr), w2.name
+        rebuilt = replace(
+            deoptimised(w2),
+            name=twin.name,
+            ema_decay=twin.ema_decay,
+            ising=replace(w2.ising, sigma=twin.ising.sigma),
+            curriculum=twin.curriculum,
+        )
+        assert rebuilt == twin, w2.name
+
+    # --- d64 s010: flat floor cells against the archived MA floor cell ------
+    floor_twin = CONFIGS["H2_d64_c50_s010_letf_ma_50k"]
+    declared = {
+        "mo": {"head_kind": "mask_one"},
+        "ma": {"head_kind": "masked_attention"},
+        "fimo2ef": {
+            "head_kind": "factorised",
+            "exact_field_channel": True,
+            "interior_band": "prefix",
+            "site_orderings": ("row", "col"),
+        },
+        "thp": {"head_kind": "two_hole_patch"},
+    }
+    for arm, fields in declared.items():
+        w2 = CONFIGS[f"H2_d64_c50_s010_letf_{arm}_50k_w2"]
+        assert w2.curriculum is None, w2.name
+        assert w2.ising.sigma == 0.10, w2.name
+        assert w2.ema_decay == 0.9999, w2.name
+        for field_name, value in fields.items():
+            assert getattr(w2, field_name) == value, (w2.name, field_name)
+        rebuilt = replace(
+            deoptimised(w2),
+            name=floor_twin.name,
+            ema_decay=floor_twin.ema_decay,
+            head_kind=floor_twin.head_kind,
+            exact_field_channel=False,
+            interior_band=None,
+            site_orderings=("row",),
+        )
+        assert rebuilt == floor_twin, w2.name
+
+    # The sigma shift itself, stated once: -1.2% from the legacy label.
+    assert abs(SIGMA_C / SIGMA_C_LEGACY - 1) < 0.013
+
+
+def test_wave2_house_cells_build_their_heads():
+    """Construction check for the 16 wave-2 cells: build_swap_head must
+    instantiate every arm (the ef cells need the target for the field
+    channel's adjacency), so a knob typo fails here and not on the GPU."""
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
+    wave2 = [name for name in CONFIGS if name.endswith("_w2")]
+    assert len(wave2) == 16
+    for name in wave2:
+        cfg = CONFIGS[name]
+        d = cfg.ising.D ** 2
+        backbone = LeTFRateMatrix(
+            d=d, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
+        )
+        target = FixedCompositionIsingTarget(
+            D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
+        )
+        head = build_swap_head(cfg, backbone, target=target)
+        assert head is not None, name
