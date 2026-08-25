@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --partition=a30
+#SBATCH --partition=a100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --time=48:00:00
+#SBATCH --time=36:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
 # Wave-2 d64 house-table cells (s68): runs SEQUENTIALLY through cfg:seed
@@ -12,11 +12,11 @@
 # Fixed tag: a resubmit after timeout or preemption reuses each run dir,
 # skips finished seeds and resumes the unfinished one from resume.pt, so a
 # bundle that overruns the walltime just gets resubmitted with the same
-# tokens. a30 default header; the mo bundles are user-routed to a100 via
-#   sbatch --partition=a100 ...
-# (mo ~6.8 h/run a100-class, ~2x on a30; the other arms 0.7-1.3 h). Honour
-# the priority-inversion rule: hold a30 submissions while a100-gating d256
-# jobs are PENDING.
+# tokens. a100 header (user, s68): the mo bundles run here (~6.8 h/run,
+# 3-seed bundle ~20.4 h + headroom). Cheaper one-pass bundles may be
+# routed to a30 at submit time via `sbatch --partition=a30` (~2x slower);
+# honour the priority-inversion rule there — hold a30 submissions while
+# a100-gating d256 jobs are PENDING.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline
