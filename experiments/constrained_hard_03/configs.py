@@ -3427,6 +3427,25 @@ _WAVE2_ARM_KNOBS: dict[str, dict] = {
         "head_kind": "factorised", "exact_field_channel": True,
         "interior_band": "prefix", "site_orderings": ("row", "col"),
     },
+    # Fifth arm by board extension (s68, user-approved): ef on the GLOBAL
+    # interior chassis — the archived fmo2 (two orderings, no interior_band)
+    # plus the exact-field channel. ef was NEVER run on this chassis at any
+    # size (fimo2ef's evidence is the prefix-band chassis), so this arm has
+    # no archived namesake and gets its own frozen clause:
+    #   primary = the w2 fimo2ef sibling at matched sigma and seed set;
+    #   PARITY iff within that arm's seed spread — the cost-for-fidelity
+    #   question this arm exists to answer (the global interior is the
+    #   cheaper chassis);
+    #   plain-parent reference alongside: archived fmo2 d64 s223 seed 42 =
+    #   0.745 raw / 0.810 EMA.
+    # Mechanism prior: ef supplies the neighbour-field difference the
+    # per-site global sum structurally lacks, so the prior is a LIFT over
+    # the plain parent; a NULL is itself informative (the global term would
+    # then already carry the field, against the results-paragraph claim).
+    "fmo2ef": {
+        "head_kind": "factorised", "exact_field_channel": True,
+        "site_orderings": ("row", "col"),
+    },
     "thp": {"head_kind": "two_hole_patch"},
 }
 

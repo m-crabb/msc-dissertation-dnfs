@@ -1491,13 +1491,22 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
             train=replace(cell.train, c_t_from_rollout=False),
         )
 
-    # --- d16: archived twins exist at BOTH sigma labels ---------------------
-    for arm in ("mo", "ma", "fimo2ef", "thp"):
+    # --- d16: archived twins exist at BOTH sigma labels. The fmo2ef arm has
+    # NO archived namesake at any size (ef never ran on the global chassis),
+    # so it pins against the archived plain-fmo2 parent with the ef flag the
+    # one extra declared delta. ------------------------------------------------
+    for arm, archived_arm, extra in (
+        ("mo", "mo", {}),
+        ("ma", "ma", {}),
+        ("fimo2ef", "fimo2ef", {}),
+        ("fmo2ef", "fmo2", {"exact_field_channel": False}),
+        ("thp", "thp", {}),
+    ):
         for lbl, archived_lbl in (("s010", "s010"), ("s220", "s223")):
             w2 = CONFIGS[f"H2_d16_c50_{lbl}_letf_{arm}_10k_w2"]
-            twin = CONFIGS[f"H2_d16_c50_{archived_lbl}_letf_{arm}_10k"]
+            twin = CONFIGS[f"H2_d16_c50_{archived_lbl}_letf_{archived_arm}_10k"]
             assert w2.compile_head and w2.train.c_t_from_rollout, w2.name
-            rebuilt = deoptimised(w2)
+            rebuilt = replace(deoptimised(w2), **extra)
             if lbl == "s220":
                 assert w2.ising.sigma == SIGMA_C, w2.name
                 assert twin.ising.sigma == 0.223, twin.name
@@ -1507,12 +1516,15 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
             rebuilt = replace(rebuilt, name=twin.name)
             assert rebuilt == twin, w2.name
 
-    # --- d64 s220: curriculum cells against the legacy-0.223 namesakes ------
-    for arm, archived in (
-        ("mo", "H2_d64_c50_s223_letf_mo_50k_curr"),
-        ("ma", "H2_d64_c50_s223_letf_ma_50k_curr"),
-        ("fimo2ef", "H2_d64_c50_s223_letf_fimo2ef_50k_curr"),
-        ("thp", "H2_d64_c50_s223_letf_thp_50k_curr"),
+    # --- d64 s220: curriculum cells against the legacy-0.223 namesakes (the
+    # fmo2ef arm against its plain-fmo2 parent, as above) --------------------
+    for arm, archived, extra in (
+        ("mo", "H2_d64_c50_s223_letf_mo_50k_curr", {}),
+        ("ma", "H2_d64_c50_s223_letf_ma_50k_curr", {}),
+        ("fimo2ef", "H2_d64_c50_s223_letf_fimo2ef_50k_curr", {}),
+        ("fmo2ef", "H2_d64_c50_s223_letf_fmo2_50k_curr",
+         {"exact_field_channel": False}),
+        ("thp", "H2_d64_c50_s223_letf_thp_50k_curr", {}),
     ):
         w2 = CONFIGS[f"H2_d64_c50_s220_letf_{arm}_50k_curr_w2"]
         twin = CONFIGS[archived]
@@ -1530,6 +1542,7 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
             ema_decay=twin.ema_decay,
             ising=replace(w2.ising, sigma=twin.ising.sigma),
             curriculum=twin.curriculum,
+            **extra,
         )
         assert rebuilt == twin, w2.name
 
@@ -1542,6 +1555,12 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
             "head_kind": "factorised",
             "exact_field_channel": True,
             "interior_band": "prefix",
+            "site_orderings": ("row", "col"),
+        },
+        "fmo2ef": {
+            "head_kind": "factorised",
+            "exact_field_channel": True,
+            "interior_band": None,
             "site_orderings": ("row", "col"),
         },
         "thp": {"head_kind": "two_hole_patch"},
@@ -1577,7 +1596,7 @@ def test_wave2_house_cells_build_their_heads():
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
     wave2 = [name for name in CONFIGS if name.endswith("_w2")]
-    assert len(wave2) == 16
+    assert len(wave2) == 20
     for name in wave2:
         cfg = CONFIGS[name]
         d = cfg.ising.D ** 2
