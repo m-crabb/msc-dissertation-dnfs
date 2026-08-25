@@ -1962,3 +1962,19 @@ for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
             rollout_resample_ess_fraction=_tau,
         ),
     )
+
+# 4x4 specialist twins for tab:amort-4x4 (s64, user): the conditioned rows
+# at c = 0.30/0.70/0.80 had no specialist comparator, which left the
+# amortisation-vs-specialist read hanging on the single c=0.50 pair. Recipe
+# is BYTE-IDENTICAL to the c=0.50 specialist (target_composition is the only
+# change; twin pinned in test_configs). optimised_recipe deliberately NOT
+# applied: every row these compare against is eager, and one recipe per
+# table governs over the standing cost rule (decision on record, s64).
+# Venue: Modal batch_seeds (a30 queue held by Wave 1), tag 20260825-amort-spec.
+_AMORT_SPECIALIST_BASE = CONFIGS["S2_d4_c05_50k_l50_letf_anneal_offset_clip50"]
+for _c, _c_tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
+    _twin_name = f"S2_d4_{_c_tag}_50k_l50_letf_anneal_offset_clip50"
+    CONFIGS[_twin_name] = replace(
+        _AMORT_SPECIALIST_BASE, name=_twin_name,
+        ising=replace(_AMORT_SPECIALIST_BASE.ising, target_composition=_c),
+    )

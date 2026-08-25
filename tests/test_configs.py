@@ -1423,3 +1423,25 @@ def test_wave1_sigma_c_twins_mirror_their_archived_parents():
             model=replace(twin.model, compile_model=False),
             curriculum=parent.curriculum,
         ) == parent
+
+
+def test_amort_specialist_twins_mirror_c05_except_composition():
+    """4x4 specialist twins for tab:amort-4x4 (s64): the conditioned rows at
+    c = 0.30/0.70/0.80 each get a specialist comparator. The recipe is
+    byte-identical to the c=0.50 specialist -- target_composition is the
+    ONLY change -- and optimised_recipe is deliberately NOT applied: every
+    row these compare against is eager, and one recipe per table governs
+    over the standing cost rule (decision on record, s64)."""
+    from dataclasses import replace
+
+    base = CONSTRAINED_CONFIGS["S2_d4_c05_50k_l50_letf_anneal_offset_clip50"]
+    for c_target, tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
+        name = f"S2_d4_{tag}_50k_l50_letf_anneal_offset_clip50"
+        twin = CONSTRAINED_CONFIGS[name]
+        assert twin.ising.target_composition == c_target, name
+        rebuilt = replace(
+            twin, name=base.name,
+            ising=replace(twin.ising,
+                          target_composition=base.ising.target_composition),
+        )
+        assert rebuilt == base, name
