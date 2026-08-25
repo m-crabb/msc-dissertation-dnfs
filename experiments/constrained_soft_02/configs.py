@@ -1978,3 +1978,26 @@ for _c, _c_tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
         _AMORT_SPECIALIST_BASE, name=_twin_name,
         ising=replace(_AMORT_SPECIALIST_BASE.ising, target_composition=_c),
     )
+
+# Uniform-from-start ablation of the widening curriculum (s64, user): the
+# widening was adopted by analogy with the sigma/lambda curricula (easy end
+# = c near 0.5 where the uniform base overlaps; off-centre rollouts give
+# degenerate IS weights early) but never ablated. This twin draws c from
+# the full final window [0.20, 0.80] from step 0; everything else is
+# byte-identical to the printed conditioned cell (test-pinned). FROZEN
+# judgement: compare against the printed conditioned rows (tab:amort-4x4:
+# centre ESS 0.75-0.77, edge 0.55 +- 0.35, obedience slope mean 0.995) --
+# MATCHES (>=3/4 seeds healthy, sweep in-band) -> the widening is
+# unnecessary at 4x4 and the prose simplifies; WORSE -> the widening earns
+# its place by ablation, cite this cell. NOTE at D=4 the stage-1 half-width
+# 0.05 is below the composition quantum 1/16, so "matches" is the expected
+# outcome; the run exists to close the todo either way.
+# Venue: Modal batch_seeds --detach, tag 20260825-amort-flatw30.
+_FLAT_WINDOW_BASE = CONFIGS["S2_d4_camort_50k_l50_letf_anneal_offset_clip50"]
+_flat_window_name = f"{_FLAT_WINDOW_BASE.name}_flatw30"
+CONFIGS[_flat_window_name] = replace(
+    _FLAT_WINDOW_BASE, name=_flat_window_name,
+    composition=replace(
+        _FLAT_WINDOW_BASE.composition, half_width=0.30, curriculum=None,
+    ),
+)

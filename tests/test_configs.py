@@ -1445,3 +1445,26 @@ def test_amort_specialist_twins_mirror_c05_except_composition():
                           target_composition=base.ising.target_composition),
         )
         assert rebuilt == base, name
+
+
+def test_flat_window_ablation_mirrors_conditioned_cell_except_curriculum():
+    """Uniform-from-start ablation of the widening curriculum (s64): the
+    printed conditioned cell justified its widening by analogy with the
+    sigma/lambda curricula, never by ablation. This twin draws c from the
+    FULL final window from step 0 -- half_width 0.30, no curriculum -- and
+    everything else is byte-identical, so any difference vs the printed
+    conditioned rows is attributable to the widening schedule alone."""
+    from dataclasses import replace
+
+    base = CONSTRAINED_CONFIGS["S2_d4_camort_50k_l50_letf_anneal_offset_clip50"]
+    twin = CONSTRAINED_CONFIGS[
+        "S2_d4_camort_50k_l50_letf_anneal_offset_clip50_flatw30"]
+    assert twin.composition.curriculum is None
+    assert twin.composition.half_width == 0.30
+    rebuilt = replace(
+        twin, name=base.name,
+        composition=replace(twin.composition,
+                            half_width=base.composition.half_width,
+                            curriculum=base.composition.curriculum),
+    )
+    assert rebuilt == base
