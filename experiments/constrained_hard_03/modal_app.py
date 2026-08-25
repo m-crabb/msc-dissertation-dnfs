@@ -588,17 +588,21 @@ def scout(run_dir: str, d_side: int, head_kind: str = "mask_one"):
 
 
 @app.local_entrypoint()
-def batch_seeds(cfg_name: str, seeds: str = "42", head_kind: str = ""):
-    """Spawn one hard-constraint config across multiple seeds in parallel."""
+def batch_seeds(cfg_name: str, seeds: str = "42", head_kind: str = "", tag: str = ""):
+    """Spawn one hard-constraint config across multiple seeds in parallel.
+
+    `tag` defaults to a launch timestamp; pass a fixed campaign tag (e.g.
+    20260825-hard-w2) so every cell of a wave lands under one label and a
+    resubmission after preemption resumes into the same run dirs."""
     _validate_cfg_name(cfg_name)
     resolved_head_kind = _resolve_head_kind(head_kind)
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
-    tag = time.strftime("%Y%m%d-%H%M%S")
+    tag = tag or time.strftime("%Y%m%d-%H%M%S")
     for seed in seed_list:
         train_remote.spawn(
             cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind, tag=tag
         )
-    print(f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list}")
+    print(f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list} tag={tag}")
 
 
 @app.local_entrypoint()
