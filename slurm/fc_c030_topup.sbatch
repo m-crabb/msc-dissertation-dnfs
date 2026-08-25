@@ -19,6 +19,12 @@
 # the 8 total seeds clear the 0.30 floor; otherwise the printed point stays
 # on the ne64 family corrected by its own measured eval-grid offset and is
 # marked as trained on the coarser grid.
+# OUTCOME (2026-08-25, s64, job 278367): seeds 46-49 evaled at 0.0002/
+# 0.777/0.0002/0.912 -> 2 of 8 over the floor, one short of the clause.
+# USER OVERRIDE on record: c=0.30 prints from ne128 anyway (seeds 47/49),
+# for estimator uniformity across the F(c) curve and on the pair's
+# agreement (F within 0.002/site, delivered c within 2e-4, Richardson
+# residual vs TI truth +0.0004/site vs +0.0017 for corrected ne64).
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline
