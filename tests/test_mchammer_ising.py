@@ -27,6 +27,7 @@ from discrete_flow_sampler.mcmc.mchammer_ising import (
     ising_cluster_expansion,
     ising_supercell,
     run_canonical,
+    run_sgc,
     run_vcsgc,
     spins_to_symbols,
     vcsgc_parameters,
@@ -186,3 +187,108 @@ class TestRunners:
         assert summary["composition_realised"] == pytest.approx(
             round(0.53 * 16) / 16, abs=1e-12
         )
+
+
+class TestSemiGrandCanonical:
+    """Delta-mu = 0 SGC: the practitioner counterpart of the UNCONSTRAINED leg.
+
+    Written before the implementation. What correct looks like:
+
+    1. The composition FLOATS. This is the whole distinction from
+       ``run_canonical`` (swaps freeze it) and from ``run_vcsgc`` (a penalty
+       pins it): with no chemical-potential difference there is nothing
+       constraining the number of up spins, so the trace must actually move
+       and must centre on 0.5 by the Z2 symmetry of the bias-free target.
+       A units bug -- forgetting ``boltzmann_constant=NATURAL_BOLTZMANN``,
+       whose mchammer default is in eV -- would leave the chain "running
+       fine" while sampling at an absurd effective temperature, and the
+       floating composition is what makes that visible.
+    2. At Delta-mu = 0 SGC targets p̃(x) EXACTLY, the same distribution the
+       unconstrained DNFS sampler targets. That is the property the house
+       table's baseline row rests on: if the two rows do not share a target,
+       the comparison is meaningless. At 4x4 the state space is enumerable,
+       so this is checkable against the exact Boltzmann average rather than
+       against another sampler.
+    """
+
+    def _exact_mean_potential(self, D: int, sigma: float) -> float:
+        """Boltzmann average of -log p̃ over all 2^(D*D) configurations."""
+        target = IsingTarget(D=D, sigma=sigma, bias=0.0)
+        n_sites = D * D
+        bits = torch.arange(2 ** n_sites).unsqueeze(1) >> torch.arange(n_sites)
+        states = (bits & 1).float() * 2.0 - 1.0
+        log_p = target.base_log_prob(states)
+        weights = torch.softmax(log_p, dim=0)
+        return float(-(weights * log_p).sum())
+
+    def test_sgc_composition_floats_and_centres_on_half(self):
+        summary = run_sgc(
+            D=D_SMALL,
+            sigma=0.1,
+            initial_composition=0.5,
+            n_steps=20000,
+            seed=0,
+            data_write_interval=10,
+        )
+        assert summary["ensemble"] == "sgc"
+        composition = summary["traces"]["composition"]
+        # NOT frozen: the defining contrast with the canonical ensemble.
+        assert composition.std() > 0.0
+        assert summary["observables"]["composition"]["mean"] == pytest.approx(
+            0.5, abs=0.05
+        )
+
+    def test_sgc_at_zero_delta_mu_recovers_the_exact_target(self):
+        """The unbiasedness check the baseline row rests on (4x4, enumerable).
+
+        Two chains from independent random starts, pooled; the tolerance is
+        3 chain-SE on the pooled mean, which a wrong effective temperature
+        would miss by orders of magnitude rather than marginally.
+        """
+        sigma = 0.1
+        chains = [
+            run_sgc(D=D_SMALL, sigma=sigma, initial_composition=0.5,
+                    n_steps=200000, seed=seed, data_write_interval=10)
+            for seed in (0, 1)
+        ]
+        pooled = np.concatenate([c["traces"]["potential"] for c in chains])
+        tau = max(c["observables"]["potential"]["tau_int_frames"] for c in chains)
+        standard_error = pooled.std() / np.sqrt(len(pooled) / tau)
+        assert pooled.mean() == pytest.approx(
+            self._exact_mean_potential(D_SMALL, sigma), abs=3 * standard_error
+        )
+
+    def test_sgc_recorded_spins_match_the_unrecorded_chain(self):
+        """record_spins must not perturb the chain, and the spin frames must
+        agree with mchammer's own composition trace -- the check that atom
+        order is read back consistently (as for VC-SGC and the canonical
+        probe). Here it also pins the ONE thing the profile observables of
+        the house table need and the scalar traces cannot supply."""
+        kwargs = dict(D=D_SMALL, sigma=0.1, initial_composition=0.5,
+                      n_steps=4000, seed=0, data_write_interval=10)
+        plain = run_sgc(**kwargs)
+        recorded = run_sgc(**kwargs, record_spins=True)
+        spins = recorded["traces"]["spins"]
+        n_frames = len(recorded["traces"]["composition"])
+        assert spins.shape == (n_frames, D_SMALL * D_SMALL)
+        assert spins.dtype == np.int8 and set(np.unique(spins)) <= {-1, 1}
+        np.testing.assert_array_equal(
+            recorded["traces"]["composition"], plain["traces"]["composition"])
+        np.testing.assert_allclose(
+            (spins > 0).mean(axis=1), recorded["traces"]["composition"])
+        assert "spins" not in plain["traces"]
+
+    def test_sgc_reports_the_timing_currency(self):
+        summary = run_sgc(
+            D=D_SMALL, sigma=0.1, initial_composition=0.5, n_steps=4000,
+            seed=0, data_write_interval=10,
+        )
+        assert TestRunners.TIMING_KEYS <= summary.keys()
+        assert summary["wall_seconds_run"] > 0
+        for observable in ("composition", "potential"):
+            stats = summary["observables"][observable]
+            assert TestRunners.OBSERVABLE_KEYS <= stats.keys()
+            assert stats["ess"] > 0
+            assert stats["seconds_per_effective_sample"] == pytest.approx(
+                summary["wall_seconds_run"] / stats["ess"]
+            )

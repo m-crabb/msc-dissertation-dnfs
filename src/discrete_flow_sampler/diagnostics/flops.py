@@ -125,6 +125,24 @@ def vcsgc_run_flops(n_trials: int) -> int:
     return VCSGC_FLOPS_PER_TRIAL * n_trials
 
 
+def sgc_run_flops(n_trials: int) -> int:
+    """Total price of a semi-grand-canonical chain of n_trials flip proposals.
+
+    At Delta-mu = 0 an SGC trial IS a Gibbs single-site update: propose a
+    species change at one site, evaluate the local field, accept. The
+    chemical-potential term contributes mu_Au - mu_Ag = 0 to the acceptance
+    exponent, so unlike VC-SGC there is no composition rider to charge --
+    this is exactly ``VCSGC_FLOPS_PER_TRIAL`` minus its 4-FLOP cached-
+    composition update. Burn-in trials belong in n_trials, mirroring the
+    other bills.
+
+    Not expressed through ``gibbs_run_flops``: that one takes (n_sites,
+    n_sweeps) because a Gibbs sweep is defined over the lattice, whereas
+    mchammer counts individual trial moves. Same constant, different unit.
+    """
+    return GIBBS_FLOPS_PER_SITE_UPDATE * n_trials
+
+
 def kawasaki_run_flops(n_trials: int) -> int:
     """Total price of a Kawasaki (canonical swap) chain of n_trials trials.
 

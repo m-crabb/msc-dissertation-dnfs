@@ -20,7 +20,7 @@ and working in natural units (temperature 1, k_B 1) makes the Boltzmann
 weight exp(-E/kT) = exp(-E) = p̃(x) — the sampler then targets our
 distribution with no further conversion. Spin convention: Au = +1, Ag = -1.
 
-Two ensembles, matching the two constraint legs:
+Three ensembles, one per constraint leg:
 
 * soft  -> ``VCSGCEnsemble``. mchammer's variance-constrained penalty enters
   the acceptance exponent as -kappa * N * (c + phi/2)^2; at kappa = lambda,
@@ -29,6 +29,11 @@ Two ensembles, matching the two constraint legs:
 * hard  -> ``CanonicalEnsemble``. Swap moves preserve composition exactly:
   the hard constraint is enforced by the move set, not a penalty — the
   practitioner counterpart of Kawasaki dynamics.
+* none  -> ``SemiGrandCanonicalEnsemble`` at Delta-mu = 0. Free
+  single-site flips with no penalty and no conserved composition, so it
+  targets p̃(x) itself: the practitioner counterpart of the
+  UNCONSTRAINED leg, completing the one-package arc SGC / VC-SGC /
+  Canonical across the three results chapters.
 
 Timing discipline: ``wall_seconds_run`` times the MC loop alone (setup —
 cluster-space construction, calculator build — is recorded separately and
@@ -47,7 +52,8 @@ import numpy as np
 from ase import Atoms
 from icet import ClusterExpansion, ClusterSpace
 from mchammer.calculators import ClusterExpansionCalculator
-from mchammer.ensembles import CanonicalEnsemble, VCSGCEnsemble
+from mchammer.ensembles import (
+    CanonicalEnsemble, SemiGrandCanonicalEnsemble, VCSGCEnsemble)
 
 from discrete_flow_sampler.diagnostics.metrics import integrated_autocorr
 
@@ -277,6 +283,105 @@ def run_vcsgc(
     }
     # Raw post-burn-in traces ride along (numpy, not JSON-safe) so callers can
     # persist them for re-analysis; strip before serialising.
+    summary["traces"] = {
+        "composition": composition_trace,
+        "potential": potential_trace,
+    }
+    if record_spins:
+        summary["traces"]["spins"] = _post_burn_in(spin_frames)
+    return summary
+
+
+def run_sgc(
+    D: int,
+    sigma: float,
+    initial_composition: float,
+    n_steps: int,
+    seed: int,
+    bias: float = 0.0,
+    data_write_interval: int = 100,
+    record_spins: bool = False,
+) -> dict:
+    """One semi-grand-canonical chain at Delta-mu = 0: the unconstrained leg.
+
+    Equal chemical potentials mean the species term drops out of the
+    acceptance exponent entirely, leaving free single-site flips against the
+    CE energy alone — so this chain targets p̃(x), the same distribution the
+    unconstrained DNFS sampler targets, and the two are directly comparable
+    in the house evaluation table. ``chemical_potentials`` is required by
+    mchammer and carries no default; passing an unequal pair here would
+    silently sample a field-biased Ising model.
+
+    ``initial_composition`` is only a STARTING point, unlike the same
+    argument to ``run_canonical`` (where swap moves make it the composition
+    forever) or ``run_vcsgc`` (where the penalty pins it): here the
+    composition floats, and 0.5 is the neutral disordered start. At sigma_c
+    that start sits at the Z2 symmetric point and the chain magnetises into
+    one sector or the other during burn-in, independently per seed — which
+    is why the table's row pools independent seeds rather than extending one
+    chain.
+
+    ``record_spins`` follows ``run_vcsgc`` exactly: chunked driving that
+    leaves the RNG stream untouched, so the chain is identical to the
+    one-shot run and frame k is the state mchammer's row k describes. The
+    house table's magnetisation and correlation PROFILES need configurations;
+    the scalar traces cannot supply them.
+    """
+    if record_spins and n_steps % data_write_interval != 0:
+        raise ValueError(
+            f"n_steps={n_steps} must be a multiple of "
+            f"data_write_interval={data_write_interval} to align spin frames "
+            "with ensemble-data rows."
+        )
+    setup_start = time.perf_counter()
+    primitive, _, expansion = ising_cluster_expansion(sigma, bias)
+    supercell, _ = _composition_initialised_supercell(
+        primitive, D, initial_composition, seed
+    )
+    calculator = ClusterExpansionCalculator(supercell, expansion)
+    ensemble = SemiGrandCanonicalEnsemble(
+        supercell,
+        calculator,
+        temperature=NATURAL_TEMPERATURE,
+        boltzmann_constant=NATURAL_BOLTZMANN,
+        chemical_potentials={_UP_SYMBOL: 0.0, _DOWN_SYMBOL: 0.0},
+        ensemble_data_write_interval=data_write_interval,
+        random_seed=seed,
+    )
+    wall_seconds_setup = time.perf_counter() - setup_start
+
+    n_sites = len(supercell)
+    read_spins = lambda: atoms_to_spins(
+        ensemble.structure.get_chemical_symbols()
+    ).astype(np.int8)
+    run_start = time.perf_counter()
+    if record_spins:
+        spin_frames = np.empty((n_steps // data_write_interval + 1, n_sites), np.int8)
+        for k in range(len(spin_frames) - 1):
+            spin_frames[k] = read_spins()
+            ensemble.run(data_write_interval)
+        spin_frames[-1] = read_spins()
+    else:
+        ensemble.run(n_steps)
+    wall_seconds_run = time.perf_counter() - run_start
+
+    data = ensemble.data_container.data
+    composition_trace = _post_burn_in(data[f"{_UP_SYMBOL}_count"].values / n_sites)
+    potential_trace = _post_burn_in(data["potential"].values)
+
+    summary = _base_summary(
+        "sgc", D, sigma, bias, n_steps, seed, data_write_interval,
+        wall_seconds_setup, wall_seconds_run,
+    )
+    summary["initial_composition"] = initial_composition
+    summary["observables"] = {
+        "composition": _observable_stats(
+            composition_trace, data_write_interval, wall_seconds_run
+        ),
+        "potential": _observable_stats(
+            potential_trace, data_write_interval, wall_seconds_run
+        ),
+    }
     summary["traces"] = {
         "composition": composition_trace,
         "potential": potential_trace,

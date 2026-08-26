@@ -29,12 +29,13 @@ from pathlib import Path
 
 import numpy as np
 
-from discrete_flow_sampler.mcmc.mchammer_ising import run_canonical, run_vcsgc
+from discrete_flow_sampler.mcmc.mchammer_ising import (
+    run_canonical, run_sgc, run_vcsgc)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("ensemble", choices=["vcsgc", "canonical"])
+    parser.add_argument("ensemble", choices=["vcsgc", "canonical", "sgc"])
     parser.add_argument("--D", type=int, required=True)
     parser.add_argument("--sigma", type=float, required=True)
     parser.add_argument("--bias", type=float, default=0.0)
@@ -42,15 +43,20 @@ def main():
         "--lam", type=float, default=50.0,
         help="soft composition penalty strength (vcsgc only; kappa = lam)",
     )
-    parser.add_argument("--compositions", type=float, nargs="+", required=True)
+    parser.add_argument(
+        "--compositions", type=float, nargs="+", required=True,
+        help="target composition (vcsgc/canonical); for sgc the chain's "
+             "STARTING composition only -- at Delta-mu = 0 it then floats",
+    )
     parser.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44, 45])
     parser.add_argument("--n-steps", type=int, default=1_000_000)
     parser.add_argument("--write-interval", type=int, default=100)
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument(
         "--record-spins", action="store_true",
-        help="vcsgc only: also save spins.npy (post-burn-in configurations, "
-             "int8) so profile observables can be scored against the chain",
+        help="vcsgc/sgc only: also save spins.npy (post-burn-in "
+             "configurations, int8) so profile observables can be scored "
+             "against the chain",
     )
     args = parser.parse_args()
 
@@ -68,6 +74,19 @@ def main():
                 run_name = (
                     f"D{args.D}_s{args.sigma}_l{args.lam}"
                     f"_c{composition:.2f}_seed{seed}"
+                )
+            elif args.ensemble == "sgc":
+                summary = run_sgc(
+                    D=args.D, sigma=args.sigma,
+                    initial_composition=composition, n_steps=args.n_steps,
+                    seed=seed, bias=args.bias,
+                    data_write_interval=args.write_interval,
+                    record_spins=args.record_spins,
+                )
+                # c is a start, not a constraint -- tagged c0 so an SGC
+                # dir is never mistaken for a composition-pinned one.
+                run_name = (
+                    f"D{args.D}_s{args.sigma}_c0{composition:.2f}_seed{seed}"
                 )
             else:
                 summary = run_canonical(
@@ -94,7 +113,8 @@ def main():
                 f"({potential['seconds_per_effective_sample']:.2e} s/eff), "
                 + (
                     f"<c> {summary['observables']['composition']['mean']:.4f}"
-                    if args.ensemble == "vcsgc"
+                    f" +- {summary['observables']['composition']['std']:.4f}"
+                    if args.ensemble in ("vcsgc", "sgc")
                     else f"c fixed at {summary['composition_realised']:.4f}"
                 )
             )

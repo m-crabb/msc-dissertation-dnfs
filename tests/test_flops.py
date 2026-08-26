@@ -21,7 +21,7 @@ from discrete_flow_sampler.diagnostics.flops import (
     GIBBS_FLOPS_PER_SITE_UPDATE, chain_per_effective_sample, gibbs_run_flops,
     ising_energy_eval_flops, measured_forward_flops,
     kawasaki_run_flops, neural_sampling_flops_per_sample, per_effective_sample,
-    vcsgc_run_flops, wolff_run_flops)
+    sgc_run_flops, vcsgc_run_flops, wolff_run_flops)
 from discrete_flow_sampler.mcmc.wolff import wolff_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -92,6 +92,18 @@ def test_vcsgc_bill_is_gibbs_class_and_scales_with_trials():
     assert vcsgc_run_flops(n_trials=1000) == 1000 * vcsgc_run_flops(1)
     assert GIBBS_FLOPS_PER_SITE_UPDATE < vcsgc_run_flops(1) \
         <= 2 * GIBBS_FLOPS_PER_SITE_UPDATE
+
+
+def test_sgc_bill_is_a_bare_gibbs_site_update_and_scales_with_trials():
+    # One SGC trial at Delta-mu = 0 is a free single-site flip: the same
+    # local-field work Gibbs pays and nothing else. It must therefore price
+    # EXACTLY one Gibbs site update -- strictly below VC-SGC, which pays a
+    # further O(1) penalty-difference rider off its cached composition, and
+    # strictly below Kawasaki, which evaluates the field at two sites.
+    # Linear in trials like every chain bill.
+    assert sgc_run_flops(n_trials=1000) == 1000 * sgc_run_flops(1)
+    assert sgc_run_flops(1) == GIBBS_FLOPS_PER_SITE_UPDATE
+    assert sgc_run_flops(1) < vcsgc_run_flops(1) < kawasaki_run_flops(1)
 
 
 def test_kawasaki_bill_is_two_site_gibbs_class_and_scales_with_trials():
