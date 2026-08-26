@@ -56,3 +56,26 @@ def test_ew2_of_shift_is_the_shift():
     e = torch.randn(4000, generator=g)
     uniform = torch.full((4000,), 1 / 4000)
     assert abs(energy_wasserstein2(e + 0.3, uniform, e) - 0.3) < 0.01
+
+
+def test_weighted_reference_equals_duplicated_reference():
+    # The 4x4 hard house table's reference is the exactly enumerated slice
+    # with Boltzmann probabilities, entering as unique states + weights
+    # rather than as drawn samples. The extension is pinned by equivalence:
+    # weighting a reference row 2/8 must equal physically duplicating it in
+    # an unweighted reference of 8 rows.
+    x = _spins(256, 4)
+    w = torch.full((256,), 1 / 256)
+    unique = _spins(6, 5)
+    duplicated = torch.cat([unique, unique[:2]])
+    ref_w = torch.tensor([2.0, 2.0, 1.0, 1.0, 1.0, 1.0]) / 8
+    for metric in (magnetisation_profile_error, correlation_profile_error):
+        assert abs(
+            metric(x, w, duplicated, D)
+            - metric(x, w, unique, D, reference_weights=ref_w)
+        ) < 1e-5
+    assert abs(
+        energy_wasserstein2(x.sum(-1), w, duplicated.sum(-1))
+        - energy_wasserstein2(x.sum(-1), w, unique.sum(-1),
+                              reference_weights=ref_w)
+    ) < 1e-5

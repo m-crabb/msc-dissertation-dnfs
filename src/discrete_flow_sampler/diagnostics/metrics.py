@@ -567,7 +567,23 @@ def _weighted_site_means(x: Tensor, weights: Tensor) -> Tensor:
     return torch.einsum("n,nd->d", weights, x.float())
 
 
-def magnetisation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int) -> float:
+def _reference_weights_or_uniform(reference: Tensor, reference_weights) -> Tensor:
+    """Uniform weights unless the caller supplies the reference's own.
+
+    The 10x10 house tables score against drawn reference samples (uniform);
+    the 4x4 hard table's reference is the exactly enumerated composition
+    slice, entering as unique states + exact Boltzmann probabilities. The
+    two are equivalent by construction (a weight of k/N equals k duplicates
+    in an unweighted set of N; pinned in test_house_observable_errors), so
+    the extension changes no existing caller's value.
+    """
+    if reference_weights is not None:
+        return reference_weights
+    return torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+
+
+def magnetisation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int,
+                                reference_weights: Tensor | None = None) -> float:
     """dMag of MDNS Eq. (26): mean absolute error of the row/column magnetisations.
 
     M_row(k) = sum_{i in row k} E[x_i] (a SUM over the L sites of the row, not a
@@ -578,7 +594,7 @@ def magnetisation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L
     here even when its energy marginal is right -- that is why the house table
     keeps the column at c = 0.5 where translation would make it redundant.
     """
-    uniform = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    uniform = _reference_weights_or_uniform(reference, reference_weights)
     sampler_profile = _weighted_site_means(x, weights).view(L, L)
     reference_profile = _weighted_site_means(reference, uniform).view(L, L)
     gap = sampler_profile - reference_profile
@@ -603,7 +619,8 @@ def _row_pair_correlations(x: Tensor, weights: Tensor, L: int) -> tuple[Tensor, 
     return row_corr, col_corr
 
 
-def correlation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int) -> float:
+def correlation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int,
+                              reference_weights: Tensor | None = None) -> float:
     """dCorr of MDNS Eq. (28): (1/L^2) sum_{k,l} |C_row - C_row_pi| + |C_col - C_col_pi|.
 
     The (k,l) sum runs over all L^2 ordered row pairs including k = l (where the
@@ -611,14 +628,15 @@ def correlation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: 
     this is Z2-blind (x -> -x leaves every C(i,j) alone), so it reads spatial
     structure only; the two columns are complementary, not redundant.
     """
-    uniform = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    uniform = _reference_weights_or_uniform(reference, reference_weights)
     row_s, col_s = _row_pair_correlations(x, weights, L)
     row_r, col_r = _row_pair_correlations(reference, uniform, L)
     return (((row_s - row_r).abs().sum() + (col_s - col_r).abs().sum()) / L**2).item()
 
 
 def energy_wasserstein2(sampler_energy: Tensor, weights: Tensor, reference_energy: Tensor,
-                        n_quantiles: int = 20_000) -> float:
+                        n_quantiles: int = 20_000,
+                        reference_weights: Tensor | None = None) -> float:
     """1-D Wasserstein-2 between a weighted and an unweighted scalar distribution.
 
     W2^2 = int_0^1 (F^{-1}(u) - G^{-1}(u))^2 du, the closed form in one
@@ -634,6 +652,6 @@ def energy_wasserstein2(sampler_energy: Tensor, weights: Tensor, reference_energ
         u = (torch.arange(n_quantiles) + 0.5) / n_quantiles
         return values[order][torch.searchsorted(cdf, u).clamp(max=values.numel() - 1)]
 
-    uniform = torch.full((reference_energy.shape[0],), 1.0 / reference_energy.shape[0])
+    uniform = _reference_weights_or_uniform(reference_energy, reference_weights)
     gap = quantile_function(sampler_energy, weights) - quantile_function(reference_energy, uniform)
     return gap.pow(2).mean().sqrt().item()
