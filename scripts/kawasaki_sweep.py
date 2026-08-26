@@ -185,118 +185,115 @@ def curve_data():
 
 def _sigma_guides(ax, label=True):
     """The two vertical reference couplings, labelled in-axes rather than in
-    the legend: the legend has to carry the solid/dotted and open-marker
-    grammar, and four more entries would crowd it out. Only the left panel is
-    labelled -- the guides are at the same two couplings in both, and the
-    rotated text collides with the ESS curves where they sit at 1."""
-    for sigma, text in [(SIGMA_OPERATING, r"$\sigma=0.1$ (DNFS op. pt)"),
+    the legend: the legend already carries four sizes plus the marker grammar,
+    and two more entries would push it back over the data. Labels are kept to
+    the bare symbol (the caption names the operating point) and sit along the
+    BOTTOM of the tau panel, whose lower edge is the one strip both the curves
+    and the two legends leave empty; above the top spine they collided with
+    the panel title."""
+    for sigma, text in [(SIGMA_OPERATING, r"$\sigma_\mathrm{op}$"),
                         (SIGMA_CRITICAL, r"$\sigma_c$")]:
         ax.axvline(sigma, color=fs.ANALYTIC_GUIDE, ls=(0, (4, 3)), lw=0.8,
                    zorder=1)
         if label:
-            ax.text(sigma - 0.004, 0.97, text,
-                    transform=ax.get_xaxis_transform(), rotation=90,
-                    ha="right", va="top",
+            ax.text(sigma, 0.015, text, transform=ax.get_xaxis_transform(),
+                    ha="center", va="bottom",
                     fontsize=fs.FONT_SIZE_ANNOTATION, color=fs.ANALYTIC_GUIDE)
-
-
-def _direct_labels(ax, anchors, min_gap_pt=9.0):
-    """Label each curve at its right-hand end, nudged apart where two ends sit
-    on top of each other (D=24 and D=32 differ by a factor 1.2 in tau_int at
-    the last coupling, which is a few points on a log axis).
-
-    anchors is [(y_data, text, colour)] at the shared right-edge x. Positions
-    are separated greedily in DISPLAY points and the shift is applied as an
-    offset, so the label still points at the curve it names -- the house rule
-    that colour is never the only identity channel is what forces a label per
-    curve here rather than a four-entry legend.
-    """
-    x_right = CURVE_SIGMAS[-1]
-    # transData is in pixels, annotate offsets are in points: one conversion,
-    # or the nudge silently comes out 1.5x too small at figure.dpi = 110.
-    pixels_per_point = ax.figure.dpi / 72.0
-    order = sorted(range(len(anchors)), key=lambda i: anchors[i][0])
-    placed, previous = {}, -np.inf
-    for i in order:
-        y_pixels = ax.transData.transform((x_right, anchors[i][0]))[1]
-        placed[i] = max(y_pixels, previous + min_gap_pt * pixels_per_point)
-        previous = placed[i]
-    for i, (y_data, text, colour) in enumerate(anchors):
-        shift = placed[i] - ax.transData.transform((x_right, y_data))[1]
-        ax.annotate(text, xy=(x_right, y_data),
-                    xytext=(4, shift / pixels_per_point),
-                    textcoords="offset points", va="center", color=colour,
-                    fontsize=fs.FONT_SIZE_ANNOTATION)
 
 
 def failure_curves(payload=None):
     """Plot the two failure panels from the cache (computing it if absent).
 
-    Colour follows the house rule's stated exception: every curve is the same
-    ROLE (the classical Kawasaki baseline), and the contrast between them IS a
-    parameter level (lattice size), so the role's hue gets a lightness ramp,
-    light = small lattice. Linestyle carries the second, orthogonal
-    distinction the chapter needs: solid for the sizes a neural sampler is
-    trained at here, dotted for the sizes only the classical chain reaches.
+    Colour: four DISTINCT hues, one per lattice size, drawn from the house
+    palette's CVD-validated five-hue set. The house module's stated exception
+    for parameter-level contrasts (a lightness ramp within one role) was tried
+    first and rejected on review -- at four levels the ramp's neighbouring
+    steps were not separable on the printed page, which is the failure the
+    exception exists to avoid, so separability wins over role purity here.
+    Linestyle carries the orthogonal distinction the chapter needs: solid for
+    the sizes a neural sampler is trained at, dotted for the sizes only the
+    classical chain reaches.
+
+    Identity is carried by a LEGEND rather than by labels at the curve ends.
+    Direct labels were tried and were unreadable at print size: the figure is
+    ~2.4 in tall, so the four right-hand ends fall within a few points of each
+    other and the de-overlap nudge left the text too small and too crowded to
+    read. The legend sits in the tau panel's empty upper-left corner -- the
+    same corner the pre-2026-08-26 version used.
     """
     payload = payload or json.loads(CURVE_CACHE.read_text())
     rows = {(row["D"], round(row["sigma"], 6)): row for row in payload["rows"]}
     n_chains = payload["protocol"]["n_chains"]
-    colours = dict(zip(DEMO_D,
-                      fs.parameter_ramp(fs.CLASSICAL_HUE, len(DEMO_D),
-                                        lightest=0.45)))
+    # Blue and gold keep the two trained sizes on the hues the previous version
+    # of this figure used for them; purple and red extend the set for the two
+    # untrained sizes.
+    colours = dict(zip(DEMO_D, [fs.SAMPLER_HUE, fs.CLASSICAL_HUE,
+                                fs.CLASSICAL_ALT_HUE, fs.HARD_DELTA_HUE]))
 
     fs.use_house_style()
-    fig, ax = plt.subplots(1, 2, figsize=(fs.FULL_WIDTH_IN, 3.1))
-    label_anchors = {0: [], 1: []}
+    # Aspect restored to the pre-restyle figure's 12:4.5 = 2.667, at the house
+    # 1:1 print width (6.3 in = \textwidth), so the figure occupies the same
+    # share of the page as before while its text is set at a true 9 pt.
+    fig, ax = plt.subplots(1, 2, figsize=(fs.FULL_WIDTH_IN,
+                                          fs.FULL_WIDTH_IN * 4.5 / 12.0))
+    size_entries = []
     for D in DEMO_D:
         cells = [rows[(D, round(s, 6))] for s in CURVE_SIGMAS]
         colour = colours[D]
-        style = "-" if D in TRAINED_D else (0, (1.6, 1.6))
+        trained = D in TRAINED_D
+        style = "-" if trained else (0, (1.6, 1.6))
         for index, key in ((0, "tau_int_sweeps"), (1, "ess_per_sweep")):
             panel = ax[index]
-            cold = np.array([c["cold"][key] for c in cells])       # (n_sigma, n_chain)
+            cold = np.array([c["cold"][key] for c in cells])   # (n_sigma, n_chain)
             annealed = np.array([c["annealed"][key] for c in cells]).mean(axis=1)
             panel.fill_between(CURVE_SIGMAS, cold.min(axis=1), cold.max(axis=1),
                                color=colour, alpha=0.18, linewidth=0, zorder=2)
             panel.plot(CURVE_SIGMAS, cold.mean(axis=1), linestyle=style,
-                       color=colour, linewidth=1.6, marker="o", markersize=3,
+                       color=colour, linewidth=1.5, marker="o", markersize=2.6,
                        zorder=3)
             panel.plot(CURVE_SIGMAS, annealed, linestyle="none", marker="o",
-                       markersize=6, markerfacecolor="none",
-                       markeredgecolor=colour, markeredgewidth=0.9, zorder=4)
-            label_anchors[index].append((cold.mean(axis=1)[-1], f"$D={D}$", colour))
+                       markersize=5, markerfacecolor="none",
+                       markeredgecolor=colour, markeredgewidth=0.8, zorder=4)
+        size_entries.append(
+            Line2D([0], [0], color=colour, lw=1.5, ls=style,
+                   label=rf"$D={D}$" if trained else rf"$D={D}$ (untrained)"))
 
     for panel in ax:
         _sigma_guides(panel, label=panel is ax[0])
         fs.style_axes(panel)
         panel.set_xlabel(r"$\sigma$ (coupling; larger = lower $T$)")
-        panel.set_xlim(0.04, 0.30)
+        panel.set_xlim(0.04, 0.275)
     ax[0].set_yscale("log")
     ax[0].set_ylabel(r"$\tau_{\mathrm{int}}$ (sweeps)")
     ax[0].set_title("critical slowing-down")
     ax[1].set_ylim(0, 1.05)
-    ax[1].set_ylabel("norm. ESS (indep. samples / sweep)")
+    ax[1].set_ylabel("norm. ESS (samples / sweep)")
     ax[1].set_title("sampling efficiency collapse")
 
-    legend_entries = [
-        Line2D([0], [0], color=fs.ANALYTIC_GUIDE, lw=1.6,
-               label="solid: trained at here"),
-        Line2D([0], [0], color=fs.ANALYTIC_GUIDE, lw=1.6, ls=(0, (1.6, 1.6)),
-               label="dotted: not trained at"),
-        Line2D([0], [0], marker="o", linestyle="none", markersize=6,
+    grammar_entries = [
+        Line2D([0], [0], marker="o", linestyle="none", markersize=5,
                markerfacecolor="none", markeredgecolor=fs.ANALYTIC_GUIDE,
-               label="open: annealed start"),
+               label="annealed start"),
         Patch(facecolor=fs.ANALYTIC_GUIDE, alpha=0.18,
-              label=f"band: min-max, {n_chains} chains"),
+              label=f"min-max, {n_chains} chains"),
     ]
-    ax[1].legend(handles=legend_entries, loc="lower left", frameon=False,
-                 handlelength=1.8, labelspacing=0.3, borderpad=0.2)
+    # Two small legends, each in a corner its own panel leaves empty: the sizes
+    # in the tau panel's upper left (its curves rise from bottom-left to
+    # top-right), the marker grammar in the ESS panel's lower left (its curves
+    # sit at 1 until sigma_op and then fall away to the right). The rejected
+    # placement put all six entries in the ESS panel, where they covered half
+    # the data.
+    size_legend = ax[0].legend(handles=size_entries, loc="upper left",
+                               handlelength=1.9, labelspacing=0.25,
+                               borderpad=0.3, borderaxespad=0.3,
+                               handletextpad=0.5, facecolor="white",
+                               edgecolor="none", framealpha=0.92)
+    ax[0].add_artist(size_legend)
+    ax[1].legend(handles=grammar_entries, loc="lower left", handlelength=1.4,
+                 labelspacing=0.25, borderpad=0.3, borderaxespad=0.3,
+                 handletextpad=0.5, facecolor="white", edgecolor="none",
+                 framealpha=0.92)
     fig.tight_layout()
-    # Labels are placed in display coordinates, so the layout must be settled
-    # first; tight_layout after this would move the axes out from under them.
-    for index in (0, 1):
-        _direct_labels(ax[index], label_anchors[index])
     fig.savefig(OUT / "failure_curves.png", dpi=fs.SAVEFIG_DPI)
     plt.close(fig)
 
