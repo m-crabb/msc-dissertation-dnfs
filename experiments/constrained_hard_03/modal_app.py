@@ -27,6 +27,7 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     pixi run -e dev modal run -m \\
         experiments.constrained_hard_03.modal_app::gate
 """
+import os
 import time
 
 import modal
@@ -137,7 +138,12 @@ def _resolve_head_kind(head_kind: str) -> str | None:
     # will OOM the enlarged-rollout knobs (c_t_batch=512 peaks ~20 GB on top
     # of training state). Small-lattice apps elsewhere in the repo keep the
     # cheaper default deliberately.
-    gpu="A100-80GB",
+    # DNFS_TRAIN_GPU (2026-08-26): launch-time venue override, read where
+    # `modal run` executes. A100-80GB stays the default; the d64 w2 mo
+    # migration runs A100-40GB (sm_80-identical to the archived namesakes,
+    # which trained on 40 GB Modal A100s) and d256 follow-on seeds may pass
+    # H100/H200 — record the card in the run's provenance when overridden.
+    gpu=os.environ.get("DNFS_TRAIN_GPU", "A100-80GB"),
     volumes={"/results": volume},
     secrets=[wandb_secret],
     timeout=24 * 60 * 60,
