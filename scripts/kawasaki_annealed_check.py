@@ -88,18 +88,22 @@ def anneal_ladder(sigma_target):
     return ladder
 
 
-def annealed_init(D, sigma_target, seed):
+def annealed_init(D, sigma_target, seed, dwell_steps=DWELL_STEPS):
     """Random composition-0.5 start, walked up the ladder one dwell per rung.
 
     Reuses the scalar-sigma numba kernel per rung with the configuration
     carried forward; the composition assert catches any conservation bug
-    the chaining could hide."""
+    the chaining could hide. `dwell_steps` is the per-rung budget in raw swap
+    attempts; it is a parameter rather than the module constant because the
+    failure-curve figure runs a d-scaled protocol (a fixed number of SWEEPS at
+    every lattice size), and a fixed raw-step dwell would anneal a 32x32
+    lattice sixteen times less thoroughly than an 8x8 one."""
     d = D * D
     rng = np.random.default_rng(seed)
     x = init_random_at_composition(d, 0.5, rng)
     n_plus0 = int((x == 1).sum())
     for rung_index, sigma in enumerate(anneal_ladder(sigma_target)):
-        _, x, _ = run_chain(x, D, sigma, DWELL_STEPS, seed * 1000 + rung_index)
+        _, x, _ = run_chain(x, D, sigma, dwell_steps, seed * 1000 + rung_index)
         assert int((x == 1).sum()) == n_plus0, "composition not conserved!"
     return x
 
