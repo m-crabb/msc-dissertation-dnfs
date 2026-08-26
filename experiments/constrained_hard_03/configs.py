@@ -3641,12 +3641,20 @@ CONFIGS.update({
 
 # ---- 16x16 house-table fill at exact sigma_c (s71, 2026-08-26) ----------
 # The d256 rung of the hard house table rebuilt at the migrated coupling
-# SIGMA_C = 0.220343 (exact), single provenance, seed 42 at launch. Three
-# arms at sigma_c -- thp (the convolutional head at R=1), thp2 (R=2, the
-# 16x16 record: EMA eval ESS 0.760 against arm D's 0.430) and fimo2ef (the
-# raster champion: the fimo2 prefix-band chassis plus the exact-field
-# channel) -- and four at the sigma=0.10 floor, the same three plus ma, the
-# attention head the floor row of the table needs as its reference.
+# SIGMA_C = 0.220343 (exact), single provenance, seed 42 at launch. The
+# same four arms at both couplings -- thp (the convolutional head at R=1),
+# thp2 (R=2, the 16x16 record: EMA eval ESS 0.760 against arm D's 0.430),
+# fimo2ef (the raster champion: the fimo2 prefix-band chassis plus the
+# exact-field channel) and ma (masked attention), so every head the table
+# prints is read at the floor and at criticality on one recipe.
+#
+# ma AT SIGMA_C IS A RETEST, NOT A REPEAT (s74, 2026-08-26). The archived
+# d256 masked-attention cells diverged at criticality, which is why the
+# house table's MA row reads "--". Those runs are legacy 0.223 and predate
+# every lever this cell carries: the triu pair gather (d256 b128 training
+# step 28.50 GB against 55.75 eager-dense), c_t_from_rollout, and the
+# cleared cold-CV tripwire. Whether the row stays "--" is therefore an open
+# measurement, and a divergence here is a result rather than a rerun.
 #
 # CHASSIS. Every cell is a `replace` on _ARM_B, the d256 lineage cell
 # (letf h32/L2/4 heads, batch 512, n_euler 128, control variate from step
@@ -3850,8 +3858,7 @@ def _d256_house_floor_cell(arm: str) -> HardStageCfg:
 CONFIGS.update({
     cell.name: cell
     for cell in (
-        *(_d256_house_critical_cell(arm)
-          for arm in ("thp", "thp2", "fimo2ef")),
+        *(_d256_house_critical_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
         *(_d256_house_floor_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
     )
 })

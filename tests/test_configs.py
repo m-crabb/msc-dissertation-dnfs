@@ -1704,7 +1704,7 @@ def test_wave2_house_cells_build_their_heads():
 
 
 def test_d256_house_cells_are_declared_transforms_of_arm_b():
-    """16x16 house-table fill (s71, 2026-08-26): the seven `_w3` cells must
+    """16x16 house-table fill (s71, 2026-08-26): the eight `_w3` cells must
     be _ARM_B -- the d256 lineage chassis -- transformed by exactly the
     fields their registry block declares, and nothing else. Declared, per
     cell: the head knobs; the coupling (SIGMA_C at the cell AND the ladder
@@ -1750,12 +1750,12 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
 
     cells = [
         (f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3", arm,
-         "s220") for arm in ("thp", "thp2", "fimo2ef")
+         "s220") for arm in declared
     ] + [
         (f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3", arm, "s010")
         for arm in declared
     ]
-    assert len(cells) == 7
+    assert len(cells) == 8
 
     for name, arm, label in cells:
         cell = CONFIGS[name]
@@ -1830,7 +1830,7 @@ def test_d256_house_twins_isolate_the_radius_and_the_coupling():
         assert thp.patch_radius is None and thp2.patch_radius == 2
         assert replace(thp2, name=thp.name, patch_radius=None) == thp
 
-    for arm in ("thp", "thp2", "fimo2ef"):
+    for arm in ("thp", "thp2", "fimo2ef", "ma"):
         critical = CONFIGS[
             f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3"]
         floor = CONFIGS[f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3"]
@@ -1882,7 +1882,7 @@ def test_d256_fimo2ef_head_matches_the_smaller_fimo2ef_cells():
 
 
 def test_d256_house_cells_build_their_heads():
-    """Construction check for the seven 16x16 house cells: build_swap_head
+    """Construction check for the eight 16x16 house cells: build_swap_head
     must instantiate every arm at d=256 (the ef arm needs the target for the
     field channel's adjacency, and gather_triu_pairs must survive the
     factorised and masked-attention constructors), so a knob typo fails here
@@ -1892,7 +1892,7 @@ def test_d256_house_cells_build_their_heads():
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     house = [name for name in CONFIGS if name.endswith("_w3")]
-    assert len(house) == 7
+    assert len(house) == 8
     for name in house:
         cfg = CONFIGS[name]
         assert cfg.ising.D == 16, name

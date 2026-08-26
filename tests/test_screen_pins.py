@@ -187,6 +187,7 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         # (B, heads, d, 2d) score buffer is the head's footprint (ma). The
         # thp arms take the speed and carry None.
         "H2_d256_c50_s220_letf_fimo2ef_100k_curr_b512_ne128_cv2_w3": 128,
+        "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3": 128,
         "H2_d256_c50_s010_letf_fimo2ef_50k_b512_ne128_cv2_w3": 128,
         "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3": 128,
     }
