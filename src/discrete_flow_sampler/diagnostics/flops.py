@@ -125,6 +125,22 @@ def vcsgc_run_flops(n_trials: int) -> int:
     return VCSGC_FLOPS_PER_TRIAL * n_trials
 
 
+def kawasaki_run_flops(n_trials: int) -> int:
+    """Total price of a Kawasaki (canonical swap) chain of n_trials trials.
+
+    One trial is a non-local unlike-pair swap proposal (mchammer's
+    CanonicalEnsemble move, the same move set as the swap CTMC): the local
+    field at BOTH swapped sites (two Gibbs site-update budgets, whose 12
+    each already cover the exp and accept-compare once over), with the
+    unlike-pair pick off cached up/down index lists, the adjacent-pair
+    Delta-E correction and the swap bookkeeping all O(1) riders inside the
+    double charge. As with VC-SGC the column prices the algorithmic
+    (cached-lists) form, not an implementation that rescans the lattice per
+    trial. Burn-in trials belong in n_trials, mirroring the other bills.
+    """
+    return 2 * GIBBS_FLOPS_PER_SITE_UPDATE * n_trials
+
+
 def chain_per_effective_sample(total_flops: float, n_records: int,
                                tau_int: float) -> float:
     """Chain price per independent-equivalent record.

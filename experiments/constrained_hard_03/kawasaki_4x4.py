@@ -47,8 +47,14 @@ def spins_from_symbols(symbols, index_map: np.ndarray) -> np.ndarray:
 
 def run_chain(D: int, sigma: float, seed: int, n_trial_steps: int,
               snapshot_interval: int):
-    """One CanonicalEnsemble chain at 50/50 occupancy; returns (spins, mctrials)
-    with spins (S, D*D) in the target's site order."""
+    """One CanonicalEnsemble chain at 50/50 occupancy; returns
+    (spins, mctrials, wall_seconds_setup, wall_seconds_run) with spins
+    (S, D*D) in the target's site order. Wall-clock is recorded because the
+    house tables' MCMC row is priced in wall-clock per effective sample (an
+    MCMC sweep has no NFE analogue); setup — cluster-space and calculator
+    construction — is timed separately and never folded into per-proposal
+    cost, matching run_canonical_probe's convention."""
+    setup_start = time.perf_counter()
     prim, _, ce = ising_cluster_expansion(sigma)
     supercell = prim.repeat((D, D, 1))
     n_sites = len(supercell)
@@ -63,14 +69,17 @@ def run_chain(D: int, sigma: float, seed: int, n_trial_steps: int,
         trajectory_write_interval=snapshot_interval,
         dc_filename=None,
     )
+    run_start = time.perf_counter()
     ensemble.run(n_trial_steps)
+    wall_seconds_run = time.perf_counter() - run_start
     mctrials, trajectory = ensemble.data_container.get("mctrial", "trajectory")
     index_map = site_index_map(supercell, D)
     spins = np.stack([
         spins_from_symbols(atoms.get_chemical_symbols(), index_map)
         for atoms in trajectory
     ])
-    return spins, np.asarray(mctrials)
+    wall_seconds_setup = run_start - setup_start
+    return spins, np.asarray(mctrials), wall_seconds_setup, wall_seconds_run
 
 
 def main(argv=None):
@@ -89,7 +98,7 @@ def main(argv=None):
     for sigma in args.sigmas:
         sigma_tag = f"s{round(sigma * 1000):03d}"
         for seed in args.seeds:
-            spins, mctrials = run_chain(
+            spins, mctrials, wall_setup, wall_run = run_chain(
                 args.D, sigma, seed, args.n_trial_steps, args.snapshot_interval
             )
             np.savez(
@@ -98,9 +107,10 @@ def main(argv=None):
                 n_trial_steps=args.n_trial_steps,
                 snapshot_interval=args.snapshot_interval,
                 sigma=sigma, seed=seed, D=args.D,
+                wall_seconds_setup=wall_setup, wall_seconds_run=wall_run,
             )
-            print(f"[kawasaki] {sigma_tag} seed {seed}: {len(spins)} snapshots",
-                  flush=True)
+            print(f"[kawasaki] {sigma_tag} seed {seed}: {len(spins)} snapshots "
+                  f"({wall_run:.1f}s run)", flush=True)
 
 
 if __name__ == "__main__":

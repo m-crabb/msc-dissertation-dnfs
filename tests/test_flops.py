@@ -20,8 +20,8 @@ from torch import nn
 from discrete_flow_sampler.diagnostics.flops import (
     GIBBS_FLOPS_PER_SITE_UPDATE, chain_per_effective_sample, gibbs_run_flops,
     ising_energy_eval_flops, measured_forward_flops,
-    neural_sampling_flops_per_sample, per_effective_sample, vcsgc_run_flops,
-    wolff_run_flops)
+    kawasaki_run_flops, neural_sampling_flops_per_sample, per_effective_sample,
+    vcsgc_run_flops, wolff_run_flops)
 from discrete_flow_sampler.mcmc.wolff import wolff_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -92,6 +92,17 @@ def test_vcsgc_bill_is_gibbs_class_and_scales_with_trials():
     assert vcsgc_run_flops(n_trials=1000) == 1000 * vcsgc_run_flops(1)
     assert GIBBS_FLOPS_PER_SITE_UPDATE < vcsgc_run_flops(1) \
         <= 2 * GIBBS_FLOPS_PER_SITE_UPDATE
+
+
+def test_kawasaki_bill_is_two_site_gibbs_class_and_scales_with_trials():
+    # One Kawasaki (canonical non-local swap) trial evaluates the local
+    # field at BOTH swapped sites, so it must price at least two Gibbs site
+    # updates and stay within that class (below 3x — the pair pick,
+    # adjacency correction and swap bookkeeping are O(1) riders, not a
+    # third field evaluation). Linear in trials like every chain bill.
+    assert kawasaki_run_flops(n_trials=1000) == 1000 * kawasaki_run_flops(1)
+    assert 2 * GIBBS_FLOPS_PER_SITE_UPDATE <= kawasaki_run_flops(1) \
+        < 3 * GIBBS_FLOPS_PER_SITE_UPDATE
 
 
 def test_wolff_cluster_log_does_not_perturb_the_chain():
