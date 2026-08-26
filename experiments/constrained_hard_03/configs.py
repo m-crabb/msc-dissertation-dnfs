@@ -3539,3 +3539,32 @@ CONFIGS.update({
         train=replace(_W2_FIMO2EF_SC.train, c_t_from_rollout=False),
     ),
 })
+
+# HOLD round 2 (s70, 2026-08-26, user GO). Round 1 localised the depression
+# to the recipe x exact-sigma_c x ef corner (interaction -0.132; both-on
+# 0.637-0.831 vs both-off 0.874-0.944) but left two attributions open, one
+# twin each:
+#   `_cmpl` = the w2 cell with c_t_from_rollout walked back, compile_head
+#   kept. FROZEN READ: depressed (0.637-0.831 class) -> compile_head owns
+#   the interaction (suspicion on record: inductor reassociating
+#   head + gain*sigma*Delta, a ~450x dynamic-range add at exact sigma_c);
+#   healthy (0.874-0.944 class) -> c_t_from_rollout owns it.
+#   `_w2rec` = the PLAIN fimo2 chassis (ef off, nothing else touched) on
+#   the full w2 recipe at exact sigma_c. FROZEN READ: healthy (archived
+#   plain fimo2 4x4 = 0.903-0.925 at legacy sigma, eager) -> confirms the
+#   ef channel as the necessary mediator and clears the plain-chassis d64
+#   arms; depressed -> the ef attribution is wrong, the recipe hits the
+#   factorised chassis itself, and the s60 factorised certification
+#   REOPENS. Seeds 42-44, Modal, same fixed tag 20260826-hold-fimo2ef.
+CONFIGS.update({
+    "H2_d16_c50_s220_letf_fimo2ef_10k_cmpl": replace(
+        _W2_FIMO2EF_SC,
+        name="H2_d16_c50_s220_letf_fimo2ef_10k_cmpl",
+        train=replace(_W2_FIMO2EF_SC.train, c_t_from_rollout=False),
+    ),
+    "H2_d16_c50_s220_letf_fimo2_10k_w2rec": replace(
+        _W2_FIMO2EF_SC,
+        name="H2_d16_c50_s220_letf_fimo2_10k_w2rec",
+        exact_field_channel=False,
+    ),
+})

@@ -1624,6 +1624,36 @@ def test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef():
     assert rebuilt == w2
 
 
+def test_hold_round2_twins_isolate_compile_and_ef():
+    """Round-2 HOLD twins (s70): round 1 localised the fimo2ef sigma_c
+    depression to the recipe x exact-criticality x ef corner but not which
+    recipe flag carries it, nor whether the ef channel is truly necessary.
+    `_cmpl` walks back c_t_from_rollout ALONE (compile kept); `_w2rec` is
+    the plain fimo2 chassis with the ef channel ALONE walked back. Any
+    other field drifting re-confounds exactly the attribution each twin
+    exists to make."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    w2 = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_w2"]
+
+    compile_twin = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_cmpl"]
+    assert compile_twin.compile_head
+    assert not compile_twin.train.c_t_from_rollout
+    rebuilt = replace(
+        compile_twin, name=w2.name,
+        train=replace(compile_twin.train, c_t_from_rollout=True),
+    )
+    assert rebuilt == w2
+
+    no_ef_twin = CONFIGS["H2_d16_c50_s220_letf_fimo2_10k_w2rec"]
+    assert not no_ef_twin.exact_field_channel
+    assert no_ef_twin.compile_head and no_ef_twin.train.c_t_from_rollout
+    rebuilt = replace(no_ef_twin, name=w2.name, exact_field_channel=True)
+    assert rebuilt == w2
+
+
 def test_wave2_house_cells_build_their_heads():
     """Construction check for the 16 wave-2 cells: build_swap_head must
     instantiate every arm (the ef cells need the target for the field
