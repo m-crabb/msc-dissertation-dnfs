@@ -18,6 +18,7 @@ Example:
         --sigmas 0.10 0.223 --n-trial-steps 200000
 """
 import argparse
+import time
 from pathlib import Path
 
 import numpy as np
