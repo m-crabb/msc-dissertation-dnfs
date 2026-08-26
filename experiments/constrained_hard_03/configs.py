@@ -3568,3 +3568,46 @@ CONFIGS.update({
         exact_field_channel=False,
     ),
 })
+
+
+# Decision (c) cells (s70, 2026-08-26, user): factorised arms at exact
+# sigma_c train EAGER. The hold investigation (both rounds + the forward
+# residue probe, docs are session-local; numbers here are the record)
+# localised a ~40% catastrophic-seed rate to factorised x compile_head x
+# SIGMA_C (5/12 bad seeds vs 0/21 elsewhere, Fisher p=0.0033), exonerated
+# c_t_from_rollout, the ef channel and the forward numerics (compiled and
+# eager forwards agree to ~1e-5 relative on trained checkpoints, antisym
+# violation rounding-scale in both), so the effect is a training-dynamics
+# pathology under the fused kernels. These `_w2e` cells are the w2 house
+# cells with compile_head=False the ONE declared deviation (c_t kept — it
+# was exonerated and carries the d256 saving); floor cells and mo/ma/thp
+# stay on the full optimised recipe, which is clean (9/9 >= 0.968).
+# The compiled w2 sc chains keep running as the CONTRAST arm, not results.
+# FROZEN CLAUSES (before launch): fimo2ef d16 judged against the round-1
+# eager-at-SIGMA_C spread 0.874-0.944 (the archived s223 band 0.926-0.938
+# is known too tight — its seed 43 was a non-reproducible draw); fmo2ef =
+# PARITY vs its w2e fimo2ef sibling, as in the w2 campaign. d64: fimo2ef
+# vs the archived s223 namesake 0.839 raw / 0.882 EMA under the FP
+# caveat (calls within ~0.02 are not calls); fmo2ef = parity vs sibling.
+# Any seed below 0.70 at d16 reopens the investigation (the eager cell
+# should not produce catastrophic seeds).
+_W2_FMO2EF_SC = CONFIGS["H2_d16_c50_s220_letf_fmo2ef_10k_w2"]
+_W2_D64_FIMO2EF_SC = CONFIGS["H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2"]
+_W2_D64_FMO2EF_SC = CONFIGS["H2_d64_c50_s220_letf_fmo2ef_50k_curr_w2"]
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(_W2_FIMO2EF_SC,
+                name="H2_d16_c50_s220_letf_fimo2ef_10k_w2e",
+                compile_head=False),
+        replace(_W2_FMO2EF_SC,
+                name="H2_d16_c50_s220_letf_fmo2ef_10k_w2e",
+                compile_head=False),
+        replace(_W2_D64_FIMO2EF_SC,
+                name="H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2e",
+                compile_head=False),
+        replace(_W2_D64_FMO2EF_SC,
+                name="H2_d64_c50_s220_letf_fmo2ef_50k_curr_w2e",
+                compile_head=False),
+    )
+})

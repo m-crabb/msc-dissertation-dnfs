@@ -1654,6 +1654,32 @@ def test_hold_round2_twins_isolate_compile_and_ef():
     assert rebuilt == w2
 
 
+def test_decision_c_cells_are_compile_only_walks_of_the_w2_cells():
+    """Decision (c) (s70): factorised arms at exact sigma_c train eager —
+    the hold investigation localised a ~40% catastrophic-seed rate to
+    factorised x compile_head x SIGMA_C and exonerated everything else.
+    Each `_w2e` cell must be its w2 namesake with compile_head=False the
+    ONE deviation (c_t_from_rollout stays on — it was exonerated); any
+    other drift would make the eager refill unattributable to the compile
+    decision."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    for w2e_name in (
+        "H2_d16_c50_s220_letf_fimo2ef_10k_w2e",
+        "H2_d16_c50_s220_letf_fmo2ef_10k_w2e",
+        "H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2e",
+        "H2_d64_c50_s220_letf_fmo2ef_50k_curr_w2e",
+    ):
+        w2e = CONFIGS[w2e_name]
+        w2 = CONFIGS[w2e_name.removesuffix("_w2e") + "_w2"]
+        assert not w2e.compile_head, w2e_name
+        assert w2e.train.c_t_from_rollout, w2e_name
+        rebuilt = replace(w2e, name=w2.name, compile_head=True)
+        assert rebuilt == w2, w2e_name
+
+
 def test_wave2_house_cells_build_their_heads():
     """Construction check for the 16 wave-2 cells: build_swap_head must
     instantiate every arm (the ef cells need the target for the field
