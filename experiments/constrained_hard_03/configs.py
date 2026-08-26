@@ -3612,6 +3612,11 @@ CONFIGS.update({
 # caveat (calls within ~0.02 are not calls); fmo2ef = parity vs sibling.
 # Any seed below 0.70 at d16 reopens the investigation (the eager cell
 # should not produce catastrophic seeds).
+# DISPOSITION (user, 2026-08-26): fmo2ef seed 44 = 0.531 tripped the
+# reopen while eager; closed without further investigation — both 4x4
+# cells print honest numbers + dagger, the global-interior chassis
+# (fmo2ef) is retired from forward waves, fimo2ef carries the factorised
+# line at larger sizes.
 _W2_FMO2EF_SC = CONFIGS["H2_d16_c50_s220_letf_fmo2ef_10k_w2"]
 _W2_D64_FIMO2EF_SC = CONFIGS["H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2"]
 _W2_D64_FMO2EF_SC = CONFIGS["H2_d64_c50_s220_letf_fmo2ef_50k_curr_w2"]

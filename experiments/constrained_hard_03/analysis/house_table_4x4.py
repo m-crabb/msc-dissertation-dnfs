@@ -69,11 +69,16 @@ ARMS = {
 }
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
-# Frozen-clause outcome (judged 2026-08-26 upstream of this fill): the two
-# ef-on-factorised sigma_c cells are HELD from print pending the
-# sigma-vs-recipe twins; this script still computes them so the table can
-# fill the moment the hold resolves.
-HELD = {("fimo2ef", "s220"), ("fmo2ef", "s220")}
+# Hold RESOLVED (user decision 2026-08-26): the two ef-on-factorised
+# sigma_c cells print from their decision-(c) EAGER retrains (tag
+# 20260826-hard-w2e, `_w2e` configs = the w2 cells with compile_head=False
+# the one declared deviation, daggered in the table caption). The w2e
+# judging verdict was REOPEN (fmo2ef seed 44 = 0.531 < 0.70), disposed by
+# the user as: print the honest numbers, retire the global-interior
+# chassis from forward waves, no further investigation this stage.
+HELD = set()
+EAGER_REFILL = {("fimo2ef", "s220"), ("fmo2ef", "s220")}
+EAGER_TAG = "20260826-hard-w2e"
 
 
 def exact_reference(cfg):
@@ -217,7 +222,10 @@ def main(argv=None):
         table[f"floor{n_draws}_{sigma_label}"] = floor
 
         for arm in ARMS:
-            cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_w2"]
+            eager_refill = (arm, sigma_label) in EAGER_REFILL
+            recipe_suffix = "w2e" if eager_refill else "w2"
+            tag = EAGER_TAG if eager_refill else TAG
+            cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_{recipe_suffix}"]
             _, head, _, _ = exact_reference(cfg)
             example_x = ref_states[:1]
             example_t = torch.full((1,), 0.5)
@@ -225,12 +233,13 @@ def main(argv=None):
             rows = []
             for seed in SEEDS:
                 run_dir = (args.results_dir /
-                           f"{cfg.name}_seed{seed}_{TAG}")
+                           f"{cfg.name}_seed{seed}_{tag}")
                 rows.append(neural_cell(
                     run_dir, target, ref_states, ref_probs, per_forward,
                     cfg.ctmc.n_euler_steps))
             cell = aggregate(rows)
             cell["held"] = (arm, sigma_label) in HELD
+            cell["eager_refill"] = eager_refill
             cell["per_forward_flops"] = per_forward
             table[f"{arm}_{sigma_label}"] = cell
 
