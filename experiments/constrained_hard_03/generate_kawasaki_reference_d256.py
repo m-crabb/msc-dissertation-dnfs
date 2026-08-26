@@ -38,9 +38,10 @@ What makes this a CERTIFIED reference rather than just "some MCMC output":
   ordered-vs-random start-condition agreement check. A chain stuck in its
   starting basin would fail these, not silently bias the set.
 * External anchor. The set's nn-correlation mean must land within
-  0.588 +- 0.004, the project's independently measured equilibrium reference
-  for this lattice/coupling/composition. Failure is reported loudly and the
-  data kept for inspection, never deleted.
+  0.578756 +- 0.004, the equilibrium value measured with the independent
+  mchammer engine at exact sigma_c for this lattice/composition (see the
+  constant's comment below for provenance). Failure is reported loudly and
+  the data kept for inspection, never deleted.
 
 Sampler machinery is reused from discrete_flow_sampler.mcmc.kawasaki (the
 non-local unlike-pair swap chain, the deliberately strong practitioner
@@ -86,7 +87,16 @@ SAMPLING_SWEEPS = 102_400
 RECORD_EVERY_SWEEPS = 2                        # dense trace for the tau measurement
 SEED_BASE = 3000                               # disjoint from earlier probe seed ranges (1000/2000)
 MIN_STORED_SAMPLES = 5_000
-CERTIFICATION_NN_TARGET = 0.588
+# External anchor at exact SIGMA_C, measured 2026-08-26 with the independent
+# mchammer engine (icet CanonicalEnsemble, unlike-pair swaps, same CE
+# embedding): 4 seeds x 25M swap trials, ~21600 effective samples,
+# nn = 0.578756 +- 0.000391 (see results/kawasaki_ref_d256_s220/
+# mchammer_anchor_crosscheck.json). Tolerance = max(0.004, 3 x stderr) = 0.004.
+# The previous anchor 0.588 +- 0.004 was measured at LEGACY sigma 0.22305;
+# holding an exact-sigma_c set to it injected the docstring's own
+# d<nn>/dsigma systematic (~0.009 for delta-sigma 0.0027) and failed a set
+# whose internal certification was immaculate.
+CERTIFICATION_NN_TARGET = 0.578756
 CERTIFICATION_NN_TOLERANCE = 0.004
 THINNING_SAFETY_FACTOR = 2.0                   # thin at 2x worst-chain tau, not 1x
 DEFAULT_OUT_DIR = Path("results/kawasaki_ref_d256_sc")
@@ -187,9 +197,24 @@ def parse_args():
     return parser.parse_args()
 
 
+def external_nn_anchor(sigma):
+    """The mchammer-measured 0.578756 +- 0.004 external anchor, or None off sigma_c.
+
+    The anchor is the independently measured equilibrium nn-correlation AT
+    sigma_c; it is a property of that one coupling, so holding a set drawn at
+    another sigma to it would fail spuriously. Off sigma_c the certification
+    rests on the internal checks alone (Gelman-Rubin, start-condition
+    agreement) and records that no external anchor exists for the coupling.
+    """
+    if sigma == SIGMA_C:
+        return CERTIFICATION_NN_TARGET, CERTIFICATION_NN_TOLERANCE
+    return None, None
+
+
 def main():
     args = parse_args()
     sigma, out_dir = args.sigma, args.out_dir
+    nn_anchor, nn_tolerance = external_nn_anchor(sigma)
 
     wall_start = time.perf_counter()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -284,11 +309,13 @@ def main():
             "stderr": nn_stderr,
             "stderr_between_chain_means": nn_stderr_between_chains,
             "n_samples": int(len(nn_values)),
-            "reference_value": CERTIFICATION_NN_TARGET,
-            "tolerance": CERTIFICATION_NN_TOLERANCE,
-            "within_tolerance": bool(
-                abs(nn_mean - CERTIFICATION_NN_TARGET) <= CERTIFICATION_NN_TOLERANCE
+            "reference_value": nn_anchor,
+            "tolerance": nn_tolerance,
+            "within_tolerance": (
+                None if nn_anchor is None
+                else bool(abs(nn_mean - nn_anchor) <= nn_tolerance)
             ),
+            "no_external_anchor_at_this_sigma": nn_anchor is None,
         },
         "energy_per_site": {                   # sigma-free quadratic form x^T A x / d
             "mean": float(energy_values.mean()),
@@ -316,7 +343,7 @@ def main():
         },
         "energy_convention_max_gap_vs_target_class": convention_gap,
         "certified": bool(
-            abs(nn_mean - CERTIFICATION_NN_TARGET) <= CERTIFICATION_NN_TOLERANCE
+            (nn_anchor is None or abs(nn_mean - nn_anchor) <= nn_tolerance)
             and gelman_rubin(thinned_nn_stack) < 1.01
             and abs(start_gap_z) < 3.0
         ),
