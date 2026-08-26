@@ -3503,3 +3503,39 @@ CONFIGS.update({
         )
     },
 })
+
+# HOLD-investigation twins (s70, 2026-08-26). The w2 fimo2ef sigma_c cells
+# landed raw ESS 0.637/0.794/0.831 (seeds 44/43/42) against the archived
+# namesake's 0.926-0.938, tripping the frozen HOLD clause, while the floor
+# cells and the other three arms all passed — and the training curves are
+# indistinguishable from the archived runs (no collapse; final 2k-window
+# loss 0.20-0.27 vs 0.15-0.20), so the drop is in where training converges,
+# not in whether it survives. The archived-vs-w2 config diff leaves exactly
+# two live deltas, and each twin walks ONE back (one-variable pinning:
+# test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef):
+#   `_w2sig` = the w2 recipe at the archived legacy sigma 0.223;
+#   `_eager` = exact SIGMA_C with the two s60 recipe flags off.
+# FROZEN READ (before launch): whichever twin's three-seed spread stays with
+# its sigma-mates names the cause — `_w2sig` in the archived [0.926, 0.938]
+# means the sigma correction owns the drop (exact criticality is simply
+# harder for this chassis, and the archived tightness was off-critical
+# slack); `_eager` in the depressed [0.637, 0.831] confirms it from the
+# other side. `_w2sig` depressed OR `_eager` healthy instead indicts the
+# optimised recipe on this chassis — which would put the d64 w2
+# fimo2ef/fmo2ef bundles (same recipe, running on DoC) at risk and reopen
+# the s60 bundle's factorised certification. Seeds 42-44, Modal (4x4 is
+# launch-bound), tag 20260826-hold-fimo2ef.
+_W2_FIMO2EF_SC = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_w2"]
+CONFIGS.update({
+    "H2_d16_c50_s223_letf_fimo2ef_10k_w2sig": replace(
+        _W2_FIMO2EF_SC,
+        name="H2_d16_c50_s223_letf_fimo2ef_10k_w2sig",
+        ising=replace(_W2_FIMO2EF_SC.ising, sigma=0.223),
+    ),
+    "H2_d16_c50_s220_letf_fimo2ef_10k_eager": replace(
+        _W2_FIMO2EF_SC,
+        name="H2_d16_c50_s220_letf_fimo2ef_10k_eager",
+        compile_head=False,
+        train=replace(_W2_FIMO2EF_SC.train, c_t_from_rollout=False),
+    ),
+})

@@ -1587,6 +1587,43 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
     assert abs(SIGMA_C / SIGMA_C_LEGACY - 1) < 0.013
 
 
+def test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef():
+    """s70 HOLD investigation (2026-08-26): the w2 fimo2ef sigma_c cells
+    landed raw ESS 0.637-0.831 against the archived namesake's 0.926-0.938
+    with indistinguishable training curves, so the frozen clause held them
+    from print. The archived-vs-w2 config diff has exactly two live deltas
+    (sigma 0.223 -> SIGMA_C, and the s60 optimised recipe), and each twin
+    must walk exactly ONE of them back: `_w2sig` = the full w2 cell at the
+    archived legacy sigma 0.223; `_eager` = the w2 cell with only the two
+    recipe flags off. Any other field drifting re-confounds the
+    sigma-vs-recipe attribution the twins exist to separate."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from discrete_flow_sampler.targets.ising import SIGMA_C
+
+    w2 = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_w2"]
+
+    sigma_twin = CONFIGS["H2_d16_c50_s223_letf_fimo2ef_10k_w2sig"]
+    assert sigma_twin.ising.sigma == 0.223
+    assert sigma_twin.compile_head and sigma_twin.train.c_t_from_rollout
+    rebuilt = replace(
+        sigma_twin, name=w2.name,
+        ising=replace(sigma_twin.ising, sigma=SIGMA_C),
+    )
+    assert rebuilt == w2
+
+    eager_twin = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_eager"]
+    assert eager_twin.ising.sigma == SIGMA_C
+    assert not eager_twin.compile_head
+    assert not eager_twin.train.c_t_from_rollout
+    rebuilt = replace(
+        eager_twin, name=w2.name, compile_head=True,
+        train=replace(eager_twin.train, c_t_from_rollout=True),
+    )
+    assert rebuilt == w2
+
+
 def test_wave2_house_cells_build_their_heads():
     """Construction check for the 16 wave-2 cells: build_swap_head must
     instantiate every arm (the ef cells need the target for the field
