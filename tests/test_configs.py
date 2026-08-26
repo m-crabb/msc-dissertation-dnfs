@@ -1714,8 +1714,15 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
     the floor); the s60 optimised recipe; loss_microbatch_size, off on the
     thp arms where single-shot is 40% faster and fits at 24.9 GB and kept
     at 128 on the two pair-slab arms; gather_triu_pairs on the two heads
-    that read it; the archived MA eval chunk. Any other field drifting
-    would make the row unattributable to the head and the coupling."""
+    that read it; the archived MA eval chunk; and (s73)
+    halt_on_cv_inversion_after cleared to None. That last one is a DECLARED
+    deviation, not drift: the tripwire is _ARM_B's cost-capped negative
+    verdict as a cold-CV SCREENING cell, and on a production house cell it is
+    a silent truncation -- it stopped the ma and fimo2ef sigma=0.1 arms at
+    step 5000 of 50000 on trailing cv_var_ratios of only 1.08-1.76, whose
+    evals then read ESS 0.0009 and looked exactly like divergence. Any other
+    field drifting would make the row unattributable to the head and the
+    coupling."""
     from dataclasses import replace
 
     from discrete_flow_sampler.targets.ising import SIGMA_C
@@ -1755,6 +1762,8 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
         for field, value in declared[arm].items():
             assert getattr(cell, field) == value, (name, field)
         assert cell.train.c_t_from_rollout, name
+        # Production cells run to full budget; the screening tripwire is off.
+        assert cell.train.halt_on_cv_inversion_after is None, name
         assert cell.train.loss_microbatch_size == microbatch[arm], name
         assert cell.eval.eval_sample_chunk == eval_chunk.get(
             arm, arm_b.eval.eval_sample_chunk), name
@@ -1784,6 +1793,9 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
                 cell.train, n_steps=arm_b.train.n_steps,
                 loss_microbatch_size=arm_b.train.loss_microbatch_size,
                 c_t_from_rollout=False,
+                halt_on_cv_inversion_after=(
+                    arm_b.train.halt_on_cv_inversion_after
+                ),
             ),
             eval=replace(
                 cell.eval, eval_sample_chunk=arm_b.eval.eval_sample_chunk
