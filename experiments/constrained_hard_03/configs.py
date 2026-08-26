@@ -1946,11 +1946,15 @@ CONFIGS: dict[str, HardStageCfg] = {
             estimator="naive_mc", n_euler_steps=512, batch_size=512,
             loss_microbatch_size=128,
         ),
-    # No microbatch on the cv variant: loss_microbatch_size's
-    # gradient-exactness is parity-pinned for the archived loss only —
-    # a batch-coupled control variate would break the per-row
-    # decomposition silently, so the CV recipe keeps the single backward
-    # and the noise-scale measurement rides the naive variant alone.
+    # No microbatch on the cv variant: at freeze time the concern was a
+    # batch-coupled control variate breaking the per-row decomposition
+    # silently, so the CV recipe kept the single backward and the
+    # noise-scale measurement rode the naive variant alone. (s71,
+    # 2026-08-26: RESOLVED — c_t is computed in the outer no_grad rollout
+    # and reaches the loss as a detached per-row gather, so microbatching
+    # is gradient-exact for ARBITRARY per-row c_t, estimator included;
+    # see the ne128-family block below. The archived run stays as it ran;
+    # new CV cells microbatch freely.)
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv":
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv",
@@ -1966,9 +1970,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     # variate is the arm variable; the cold-CV route stays unlicensed
     # (screen arm FAILED), continuation is the validated warm pattern
     # (var-ratio crossed 1 at ~step 914 on healing rates, 0.121 once
-    # healthy). No loss_microbatch: gradient-exactness is parity-pinned
-    # for the archived loss only, a batch-coupled CV would break the
-    # per-row decomposition silently. TRIPWIRE ARMED (set 19-Aug):
+    # healthy). No loss_microbatch, per the freeze-time caution above
+    # (s71: resolved — see the cv variant's comment; archived run stays
+    # as it ran). TRIPWIRE ARMED (set 19-Aug):
     # halt_on_cv_inversion_after=2000 with the default window 10 — a
     # sustained controlled/naive integrand-variance inversion after step
     # 2000 halts the run; that halt IS the designed cost-capped negative
@@ -3626,5 +3630,209 @@ CONFIGS.update({
         replace(_W2_D64_FMO2EF_SC,
                 name="H2_d64_c50_s220_letf_fmo2ef_50k_curr_w2e",
                 compile_head=False),
+    )
+})
+
+
+# ---- 16x16 house-table fill at exact sigma_c (s71, 2026-08-26) ----------
+# The d256 rung of the hard house table rebuilt at the migrated coupling
+# SIGMA_C = 0.220343 (exact), single provenance, seed 42 at launch. Three
+# arms at sigma_c -- thp (the convolutional head at R=1), thp2 (R=2, the
+# 16x16 record: EMA eval ESS 0.760 against arm D's 0.430) and fimo2ef (the
+# raster champion: the fimo2 prefix-band chassis plus the exact-field
+# channel) -- and four at the sigma=0.10 floor, the same three plus ma, the
+# attention head the floor row of the table needs as its reference.
+#
+# CHASSIS. Every cell is a `replace` on _ARM_B, the d256 lineage cell
+# (letf h32/L2/4 heads, batch 512, n_euler 128, control variate from step
+# 0, matching step, SDPA readout, bf16 in-training eval, EMA shadow
+# 0.9999, cv-inversion tripwire armed at 5000, replay 8 cycles, grad clip
+# 500, warmup 500, lr 1e-3 ladder -> 3e-4). Building by replace rather
+# than by a fresh `_hard_cell` call is the s57 thp-twin pattern and makes
+# twin-ness structural rather than transcribed (pinned by
+# test_d256_house_cells_are_declared_transforms_of_arm_b).
+#
+# THE SIGMA ARMS. `ising.sigma` and the ladder's FINAL stage move to
+# SIGMA_C; the ladder is reused, not rescaled -- `_D64_SIGMA_LADDER_SC`
+# keeps the same absolute start_steps (0/5k/10k/15k/20k/25k/30k) and the
+# same per-stage lr, so 0.215 < 0.220343 still preserves stage ordering.
+# The floor arms carry NO curriculum and train flat at 0.10, mirroring the
+# d64 w2 floor convention: at the easy target a ladder would measure the
+# curriculum rather than the operating point.
+#
+# 100k NOT 70k on the sigma_c arms. Every d256 70k run was still descending
+# at its own endpoint -- arm B-ef's loss fell 4.11 -> 3.25 across the last
+# four 10k windows and thp2's 1.79 -> 1.60, with the integrand variance
+# still falling alongside -- so 70k is a budget, not a convergence point.
+# Because the ladder's start_steps are ABSOLUTE the extra 30k lands
+# entirely on the final sigma_c plateau: the ladder does not stretch, the
+# boundaries do not move, and the first 70k steps stay schedule-identical
+# to the 70k cells (lr is the stage value times a fixed-step warmup ramp,
+# never normalised by n_steps). The floor arms keep 50k, the d64 s010
+# convention. 50k is enough there: the floor row exists to bound the easy
+# end of the table, not to chase a plateau.
+#
+# LOSS MICROBATCHING, per arm and declared. Benched 2026-08-26 on a Modal
+# A100-80GB at d=256, one train step over 512 rows: compiled 4x128 slices
+# 0.260 s against a single-shot 0.156 s (40% faster single-shot) at 24.9 GB
+# peak, comfortably inside the 80 GB card. Slicing is gradient-exact --
+# the swap loss is a per-row mean and c_t reaches it as a detached per-row
+# gather, pinned for ARBITRARY per-row c_t by
+# tests/test_loss_microbatch_parity.py -- so this is a SPEED choice, never
+# an estimator variable, and the arms may differ on it without differing
+# on anything that moves a number. It therefore goes OFF on the two thp
+# arms (loss_microbatch_size=None) and stays at 128 on fimo2ef and ma:
+#   * the per-slice gradient-noise-scale instrument (per-slice sqnorms +
+#     the full-batch norm inverting the McCandlish two-batch identity)
+#     rides the factorised arms, which is where the d256 lineage has
+#     always read it;
+#   * ma keeps 128 conservatively -- no single-shot memory measurement
+#     exists for masked attention at b512/d256, and its (B, heads, d, 2d)
+#     score buffer is the one head footprint that is hidden-independent
+#     and grows with the lattice (5.00 GB at batch 32 where the factorised
+#     head reads 0.87 GB). Buying a 40% speedup against an unmeasured OOM
+#     is not a trade this campaign takes.
+#
+# gather_triu_pairs=True on fimo2ef and ma (the 2026-08-26 lever): the
+# interval / masked-attention / factorised heads' pair contexts are
+# label-SYMMETRIC, so the lower triangle was always the upper triangle's
+# mirror and its readout rows were computed and thrown away. Running the
+# d(d-1)/2 unordered pairs instead of the d^2 grid is bit-class equivalent
+# (~1e-7 on fp32; no parameter, no buffer, no RNG draw -- only GEMM shape),
+# and it is opt-in precisely so archived cells stay byte-identical.
+# Measured: factorised train step 0.88x time / 0.77x memory, MA forward
+# 0.54x. The thp arms do not read the flag (the two-hole patch head has no
+# symmetric per-pair slab), so it is left off there rather than set to a
+# value the head ignores.
+#
+# c_t_from_rollout=True on ALL SEVEN, via `optimised_recipe`: the c_t grid
+# is rebuilt bit-identically from the rollout's own head forwards, removing
+# 127 of 128 grid head calls per outer cycle at d256 -- the single largest
+# saving in the recipe at this size. It was one of the two suspects in the
+# s70 hold investigation and was EXONERATED there (the ~40% catastrophic
+# seed rate localised to factorised x compile_head x SIGMA_C, 5/12 bad
+# seeds against 0/21 elsewhere, Fisher p=0.0033), so it rides everywhere.
+#
+# compile_head, and the ONE declared per-arm deviation. `optimised_recipe`
+# turns it on (2.21x inner updates, 4.9x rollout, -60% eval peak memory).
+# Decision (c) (s70, user) scopes ONE exception: factorised arms at exact
+# sigma_c train EAGER, because factorised x compile x SIGMA_C is the
+# catastrophic-seed cell named above. That scope is exact-sigma_c ONLY --
+# the compiled factorised cells at the 0.10 floor were healthy (9/9 >=
+# 0.968 across the clean arms) -- so `fimo2ef` at sigma_c is the single
+# compile_head=False cell here and its s010 sibling stays compiled. The
+# thp and ma arms are not factorised and stay compiled at both couplings.
+#
+# EVAL CHUNK, eval-only and declared for ma alone: 512 -> 128. Every
+# archived d256 masked-attention cell streams its eval at 128 rows (screen)
+# or 64 (the naive rescue) against the factorised/patch heads' 512, for the
+# score-buffer reason above; gather_triu halves that slab, so 128 is the
+# archived value rather than a new one. Nothing else in `eval` moves --
+# 5000 final draws, 256 in-training draws, eval_every 500.
+#
+# FROZEN READS (before any launch).
+# sigma_c arms: the house columns -- ESS fraction, dMag, dCorr, EW2 and
+# FLOP-per-effective-sample -- read against the certified sigma_c Kawasaki
+# reference once it is built, with the lineage's health tripwires riding
+# unchanged (judge grad-clip runaway by norm fall-back and never by
+# survival count; watch max FVU after step 5000). NO namesake exists at
+# this coupling for any of the three: every archived d256 number is the
+# legacy 0.223 label, and the sigma_c cells are a HOUSE-TABLE read, not a
+# twin comparison -- so no numeric band is invented here. The archived
+# 0.223 values are recorded as ORIENTATION only, not as gates: thp2 EMA
+# eval ESS 0.760, arm D 0.430, arm B 0.381 (0.346, 0.419), arm B-ef and
+# thp/thp-ef alongside them. A cell landing far outside that neighbourhood
+# is a reason to look at the run, not a verdict.
+# fimo2ef at sigma_c, ADDITIONALLY: any catastrophic seed -- an ESS-class
+# collapse of the kind the 4x4 investigation saw -- REOPENS decision (c)
+# at d256. Eager was chosen there on 4x4 and 8x8 evidence, and a d256
+# catastrophic seed would mean compile_head was never the whole mechanism.
+# s010 arms: the easy-target floor row of the house table. Same columns,
+# same tripwires, no namesake at this size and coupling either -- the row
+# exists to bound the table's easy end and to price the four heads against
+# each other at a coupling where all of them are expected to train.
+_D256_HOUSE_ARM_KNOBS: dict[str, dict] = {
+    "thp": {"head_kind": "two_hole_patch"},
+    "thp2": {"head_kind": "two_hole_patch", "patch_radius": 2},
+    "fimo2ef": {
+        "head_kind": "factorised", "exact_field_channel": True,
+        "interior_band": "prefix", "site_orderings": ("row", "col"),
+        "gather_triu_pairs": True,
+    },
+    "ma": {"head_kind": "masked_attention", "gather_triu_pairs": True},
+}
+
+# Backward slicing per arm (rationale in the block above): off on the thp
+# arms (single-shot is 40% faster and fits at 24.9 GB), 128 on the two
+# pair-slab arms, where the noise-scale instrument rides.
+_D256_HOUSE_MICROBATCH: dict[str, int | None] = {
+    "thp": None, "thp2": None, "fimo2ef": 128, "ma": 128,
+}
+
+# Eval-only, ma alone: the archived d256 masked-attention chunk.
+_D256_HOUSE_EVAL_CHUNK: dict[str, int] = {"ma": 128}
+
+
+def _d256_house_cell(
+    arm: str, name: str, *, sigma: float, n_steps: int,
+    curriculum: CurriculumCfg | None,
+) -> HardStageCfg:
+    """One house-table cell: _ARM_B with the arm's head knobs, the coupling
+    and its schedule, and the two per-arm memory/eval fields. Everything
+    else -- backbone, batch, grid, estimator, tripwire, EMA, replay, clip,
+    warmup -- rides from the parent untouched, which is what makes the row
+    attributable to the head and the coupling."""
+    cell = replace(
+        _ARM_B,
+        name=name,
+        ising=replace(_ARM_B.ising, sigma=sigma),
+        curriculum=curriculum,
+        train=replace(
+            _ARM_B.train,
+            n_steps=n_steps,
+            loss_microbatch_size=_D256_HOUSE_MICROBATCH[arm],
+        ),
+        eval=replace(
+            _ARM_B.eval,
+            eval_sample_chunk=_D256_HOUSE_EVAL_CHUNK.get(
+                arm, _ARM_B.eval.eval_sample_chunk
+            ),
+        ),
+        **_D256_HOUSE_ARM_KNOBS[arm],
+    )
+    return optimised_recipe(cell)
+
+
+def _d256_house_critical_cell(arm: str) -> HardStageCfg:
+    """sigma_c arm: exact SIGMA_C at the cell AND the ladder endpoint, 100k
+    steps landing entirely on the final plateau. Decision (c) applies here
+    and ONLY here -- the factorised arm trains eager."""
+    cell = _d256_house_cell(
+        arm,
+        f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3",
+        sigma=SIGMA_C, n_steps=100_000, curriculum=_D64_SIGMA_LADDER_SC,
+    )
+    is_factorised = _D256_HOUSE_ARM_KNOBS[arm]["head_kind"] == "factorised"
+    return replace(cell, compile_head=not is_factorised)
+
+
+def _d256_house_floor_cell(arm: str) -> HardStageCfg:
+    """sigma=0.10 floor arm: flat coupling, NO curriculum (a ladder at the
+    floor would measure the curriculum), 50k steps as at d64. Decision (c)
+    does not reach here -- compiled factorised cells at the floor were
+    healthy -- so every floor arm keeps the full optimised recipe."""
+    return _d256_house_cell(
+        arm,
+        f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3",
+        sigma=0.10, n_steps=50_000, curriculum=None,
+    )
+
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        *(_d256_house_critical_cell(arm)
+          for arm in ("thp", "thp2", "fimo2ef")),
+        *(_d256_house_floor_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
     )
 })

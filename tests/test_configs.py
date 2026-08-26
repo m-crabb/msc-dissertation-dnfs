@@ -1701,3 +1701,194 @@ def test_wave2_house_cells_build_their_heads():
         )
         head = build_swap_head(cfg, backbone, target=target)
         assert head is not None, name
+
+
+def test_d256_house_cells_are_declared_transforms_of_arm_b():
+    """16x16 house-table fill (s71, 2026-08-26): the seven `_w3` cells must
+    be _ARM_B -- the d256 lineage chassis -- transformed by exactly the
+    fields their registry block declares, and nothing else. Declared, per
+    cell: the head knobs; the coupling (SIGMA_C at the cell AND the ladder
+    endpoint, ladder reused-not-rescaled, or flat 0.10 with NO curriculum);
+    the horizon (100k on the sigma_c arms, all of the extra 30k landing on
+    the final plateau because the ladder's start_steps are absolute; 50k at
+    the floor); the s60 optimised recipe; loss_microbatch_size, off on the
+    thp arms where single-shot is 40% faster and fits at 24.9 GB and kept
+    at 128 on the two pair-slab arms; gather_triu_pairs on the two heads
+    that read it; the archived MA eval chunk. Any other field drifting
+    would make the row unattributable to the head and the coupling."""
+    from dataclasses import replace
+
+    from discrete_flow_sampler.targets.ising import SIGMA_C
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    arm_b = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
+    declared = {
+        "thp": {"head_kind": "two_hole_patch"},
+        "thp2": {"head_kind": "two_hole_patch", "patch_radius": 2},
+        "fimo2ef": {
+            "head_kind": "factorised", "exact_field_channel": True,
+            "interior_band": "prefix", "site_orderings": ("row", "col"),
+            "gather_triu_pairs": True,
+        },
+        "ma": {"head_kind": "masked_attention", "gather_triu_pairs": True},
+    }
+    microbatch = {"thp": None, "thp2": None, "fimo2ef": 128, "ma": 128}
+    eval_chunk = {"ma": 128}
+    # Fields the arms set that _ARM_B does not; reset to rebuild the parent.
+    reset = {
+        "head_kind": arm_b.head_kind, "patch_radius": None,
+        "exact_field_channel": False, "interior_band": None,
+        "gather_triu_pairs": False,
+    }
+
+    cells = [
+        (f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3", arm,
+         "s220") for arm in ("thp", "thp2", "fimo2ef")
+    ] + [
+        (f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3", arm, "s010")
+        for arm in declared
+    ]
+    assert len(cells) == 7
+
+    for name, arm, label in cells:
+        cell = CONFIGS[name]
+        for field, value in declared[arm].items():
+            assert getattr(cell, field) == value, (name, field)
+        assert cell.train.c_t_from_rollout, name
+        assert cell.train.loss_microbatch_size == microbatch[arm], name
+        assert cell.eval.eval_sample_chunk == eval_chunk.get(
+            arm, arm_b.eval.eval_sample_chunk), name
+        if label == "s220":
+            assert cell.ising.sigma == SIGMA_C, name
+            assert cell.train.n_steps == 100_000, name
+            # Ladder reused, not rescaled: only the final stage's sigma moves.
+            assert cell.curriculum.stages[:-1] == arm_b.curriculum.stages[:-1]
+            final, b_final = cell.curriculum.stages[-1], arm_b.curriculum.stages[-1]
+            assert final.sigma == SIGMA_C and b_final.sigma == 0.223, name
+            assert (final.start_step, final.lr) == (
+                b_final.start_step, b_final.lr), name
+            # Decision (c) is scoped to factorised x exact sigma_c ONLY.
+            assert cell.compile_head == (arm != "fimo2ef"), name
+        else:
+            assert cell.curriculum is None, name
+            assert cell.ising.sigma == 0.10, name
+            assert cell.train.n_steps == 50_000, name
+            assert cell.compile_head, name
+        rebuilt = replace(
+            cell,
+            name=arm_b.name,
+            compile_head=False,
+            ising=replace(cell.ising, sigma=arm_b.ising.sigma),
+            curriculum=arm_b.curriculum,
+            train=replace(
+                cell.train, n_steps=arm_b.train.n_steps,
+                loss_microbatch_size=arm_b.train.loss_microbatch_size,
+                c_t_from_rollout=False,
+            ),
+            eval=replace(
+                cell.eval, eval_sample_chunk=arm_b.eval.eval_sample_chunk
+            ),
+            **reset,
+        )
+        assert rebuilt == arm_b, name
+
+
+def test_d256_house_twins_isolate_the_radius_and_the_coupling():
+    """The two twin relationships the 16x16 fill is read through.
+
+    (1) thp vs thp2 at either coupling differ ONLY in the patch radius, so
+    the R=1/R=2 comparison is chargeable to the head's one architectural
+    knob. (2) Each floor cell is its sigma_c sibling with the coupling and
+    its schedule walked back -- sigma, curriculum, n_steps -- plus, on
+    fimo2ef ALONE, the decision-(c) compile deviation, which is scoped to
+    exact sigma_c because the compiled factorised cells at the 0.10 floor
+    were healthy. Any third difference would confound the floor row with a
+    recipe change."""
+    from dataclasses import replace
+
+    from discrete_flow_sampler.targets.ising import SIGMA_C
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    for template in (
+        "H2_d256_c50_s220_letf_{}_100k_curr_b512_ne128_cv2_w3",
+        "H2_d256_c50_s010_letf_{}_50k_b512_ne128_cv2_w3",
+    ):
+        thp = CONFIGS[template.format("thp")]
+        thp2 = CONFIGS[template.format("thp2")]
+        assert thp.patch_radius is None and thp2.patch_radius == 2
+        assert replace(thp2, name=thp.name, patch_radius=None) == thp
+
+    for arm in ("thp", "thp2", "fimo2ef"):
+        critical = CONFIGS[
+            f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3"]
+        floor = CONFIGS[f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3"]
+        # The compile deviation is the fimo2ef sigma_c cell's alone.
+        assert (floor.compile_head != critical.compile_head) == (
+            arm == "fimo2ef"), arm
+        rebuilt = replace(
+            floor,
+            name=critical.name,
+            compile_head=critical.compile_head,
+            ising=replace(floor.ising, sigma=SIGMA_C),
+            curriculum=critical.curriculum,
+            train=replace(floor.train, n_steps=100_000),
+        )
+        assert rebuilt == critical, arm
+
+
+def test_d256_fimo2ef_head_matches_the_smaller_fimo2ef_cells():
+    """The fimo2ef chassis must be the SAME head at 4x4, 8x8 and 16x16, or
+    the house table's fimo2ef column is three different architectures. Every
+    head-shaping field is pinned across the three sizes; the two legitimate
+    size-scoped differences are asserted explicitly rather than allowed to
+    pass silently -- gather_triu_pairs is a d256 memory lever (bit-class
+    equivalent, ~1e-7 fp32) that archived cells deliberately do not carry,
+    and pair_offsets is (1, D), the lattice's own row/column adjacency."""
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    d256 = CONFIGS[
+        "H2_d256_c50_s220_letf_fimo2ef_100k_curr_b512_ne128_cv2_w3"]
+    shaping = (
+        "head_kind", "exact_field_channel", "interior_band", "site_orderings",
+        "bilinear_rank", "factor_dim", "global_feature_dim", "use_bilinear",
+        "use_global", "band_feature_dim", "attention_dim", "pair_offsets",
+        "exterior_combiner", "readout_score_scale",
+    )
+    for smaller_name in (
+        "H2_d16_c50_s220_letf_fimo2ef_10k_w2e",
+        "H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2e",
+    ):
+        smaller = CONFIGS[smaller_name]
+        for field in shaping:
+            assert getattr(d256, field) == getattr(smaller, field), (
+                smaller_name, field)
+        assert not smaller.gather_triu_pairs, smaller_name
+        # Decision (c) holds at every size for factorised x exact sigma_c.
+        assert not smaller.compile_head and not d256.compile_head
+    assert d256.gather_triu_pairs
+    assert d256.model.hidden_dim == 32 and d256.model.n_layers == 2
+
+
+def test_d256_house_cells_build_their_heads():
+    """Construction check for the seven 16x16 house cells: build_swap_head
+    must instantiate every arm at d=256 (the ef arm needs the target for the
+    field channel's adjacency, and gather_triu_pairs must survive the
+    factorised and masked-attention constructors), so a knob typo fails here
+    and not eighteen hours into an A100 run."""
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
+    house = [name for name in CONFIGS if name.endswith("_w3")]
+    assert len(house) == 7
+    for name in house:
+        cfg = CONFIGS[name]
+        assert cfg.ising.D == 16, name
+        backbone = LeTFRateMatrix(
+            d=cfg.ising.D ** 2, vocab_size=2, hidden_dim=16, n_layers=2,
+            n_heads=2,
+        )
+        target = FixedCompositionIsingTarget(
+            D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
+        )
+        assert build_swap_head(cfg, backbone, target=target) is not None, name

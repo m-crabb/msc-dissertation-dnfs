@@ -175,6 +175,20 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         "H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128": 128,
         "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2": 128,
         "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2": 128,
+        # 16x16 house-table fill (s71, 2026-08-26). The schedule is now a
+        # DECLARED per-arm field rather than a lineage constant, because it
+        # was benched: at d=256 over 512 rows a compiled 4x128 step costs
+        # 0.260 s against a single-shot 0.156 s (40% faster) at 24.9 GB
+        # peak, inside an 80 GB card. It is gradient-exact either way
+        # (test_loss_microbatch_parity, arbitrary per-row c_t), so it stays
+        # only where it earns its 40%: on the two pair-slab arms, where the
+        # per-slice gradient-noise-scale instrument rides (fimo2ef) and
+        # where no single-shot memory measurement exists at b512 and the
+        # (B, heads, d, 2d) score buffer is the head's footprint (ma). The
+        # thp arms take the speed and carry None.
+        "H2_d256_c50_s220_letf_fimo2ef_100k_curr_b512_ne128_cv2_w3": 128,
+        "H2_d256_c50_s010_letf_fimo2ef_50k_b512_ne128_cv2_w3": 128,
+        "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3": 128,
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name
