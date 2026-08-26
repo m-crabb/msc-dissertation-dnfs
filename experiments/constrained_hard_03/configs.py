@@ -151,6 +151,20 @@ class HardStageCfg(StageCfg):
     # same interior as an existing head, bilinear exterior instead of its
     # per-pair MLP. None = the archived head, byte-identical.
     interior_band: str | None = None
+    # Triu-pair gather (2026-08-26): run the per-pair nonlinear work of the
+    # interval / masked_attention / factorised heads on the d(d-1)/2
+    # unordered pairs instead of the d^2 grid, mirroring the result back.
+    # Those heads' pair contexts are label-SYMMETRIC (H_ji := H_ij), so the
+    # lower triangle was always the upper triangle's mirror and its readout
+    # rows were computed and thrown away; the diagonal never reaches G. A
+    # memory lever for D=16 (d=256), where the (B, d^2, F) activation slabs
+    # -- and the MA head's (B, d^2, n_terms) attention scores -- are the
+    # head's footprint. Read only by those three heads (mask_one,
+    # grouped_anchor and two_hole_patch have no symmetric per-pair slab), so
+    # every other cell stays byte-identical, and False = every archived
+    # cell: the flag adds no parameter, no buffer and no RNG draw, and the
+    # two paths differ only in GEMM shape (~1e-7 on fp32 CPU).
+    gather_triu_pairs: bool = False
     # Exterior combiner for the interval / masked-attention heads
     # (2026-08-23): "bilinear" moves [P_i, S_j] out of the per-pair MLP into
     # a rank-`bilinear_rank` product, nothing else changes -- the literal
@@ -246,6 +260,7 @@ def build_swap_head(
             readout_score_scale=cfg.readout_score_scale,
             exterior_combiner=cfg.exterior_combiner,
             bilinear_rank=cfg.bilinear_rank or 8,
+            gather_triu_pairs=cfg.gather_triu_pairs,
         )
     elif cfg.head_kind == "masked_attention":
         # Same offsets rationale as "interval"; only the band aggregator
@@ -260,6 +275,7 @@ def build_swap_head(
             readout_score_scale=cfg.readout_score_scale,
             exterior_combiner=cfg.exterior_combiner,
             bilinear_rank=cfg.bilinear_rank or 8,
+            gather_triu_pairs=cfg.gather_triu_pairs,
         )
     elif cfg.head_kind == "factorised":
         head = FactorisedSwapHead(
@@ -275,6 +291,7 @@ def build_swap_head(
             attention_dim=cfg.attention_dim or 32,
             site_orderings=cfg.site_orderings,
             lattice_side=cfg.ising.D,
+            gather_triu_pairs=cfg.gather_triu_pairs,
         )
     elif cfg.head_kind == "two_hole_patch":
         head = TwoHolePatchSwapHead(

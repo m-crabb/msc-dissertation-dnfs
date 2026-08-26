@@ -67,6 +67,7 @@ def build_head_and_target(
     exterior_combiner: str = "mlp",
     interior_band: str | None = None,
     patch_radius: int = 1,
+    gather_triu_pairs: bool = False,
 ):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
 
@@ -97,19 +98,22 @@ def build_head_and_target(
     if head_kind == "interval":
         head = IntervalSwapHead(
             backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
+            gather_triu_pairs=gather_triu_pairs,
         ).to(device)
     elif head_kind == "masked_attention":
         head = MaskedAttentionSwapHead(
             backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
+            gather_triu_pairs=gather_triu_pairs,
         ).to(device)
     elif head_kind == "stencil":
         head = MaskedAttentionSwapHead(
             backbone, pair_offsets=(1, side), use_stencil=True, lattice_side=side,
+            gather_triu_pairs=gather_triu_pairs,
         ).to(device)
     elif head_kind == "factorised":
         head = FactorisedSwapHead(
             backbone, site_orderings=site_orderings, lattice_side=side,
-            interior_band=interior_band,
+            interior_band=interior_band, gather_triu_pairs=gather_triu_pairs,
         ).to(device)
     elif head_kind == "naive":
         head = DoublyHollowSwapHead(backbone).to(device)
@@ -274,6 +278,12 @@ def main(argv=None):
         "--interior-band", default=None, choices=(None, "prefix", "attention"),
         help="factorised only: the fib / fatt / fimo2 interior mechanism.",
     )
+    parser.add_argument(
+        "--gather-triu-pairs", action="store_true",
+        help="interval / masked_attention / factorised only: run the per-pair "
+             "nonlinear work on the d(d-1)/2 unordered pairs instead of the "
+             "d^2 grid (the D=16 memory lever). No-op for the other heads.",
+    )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)
     parser.add_argument("--n-euler-steps", type=int, default=128)
@@ -296,6 +306,7 @@ def main(argv=None):
         exterior_combiner=args.exterior_combiner,
         interior_band=args.interior_band,
         patch_radius=args.patch_radius,
+        gather_triu_pairs=args.gather_triu_pairs,
     )
     if args.compile:
         head.compile()
@@ -304,6 +315,7 @@ def main(argv=None):
         f"exterior_combiner={args.exterior_combiner} interior_band={args.interior_band} "
         f"site_orderings={args.site_orderings} d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
+        f"gather_triu_pairs={args.gather_triu_pairs} "
         f"multi_event={args.multi_event} "
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
         f"compile={args.compile} device={device} torch={torch.__version__}"

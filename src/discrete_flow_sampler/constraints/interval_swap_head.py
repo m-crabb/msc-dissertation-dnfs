@@ -65,6 +65,60 @@ from torch import Tensor
 
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
+_TRIU_PAIR_CACHE: dict[tuple[int, torch.device], tuple[Tensor, Tensor]] = {}
+
+
+def triu_pair_indices(d: int, device) -> tuple[Tensor, Tensor]:
+    """Row/column index vectors of the d(d-1)/2 unordered pairs i < j.
+
+    Shared by every head whose per-pair work is label-symmetric (this head,
+    the masked-attention band, the factorised global term): those heads
+    compute H on all d^2 ordered pairs and then mirror the i < j triangle
+    down, so half the nonlinear work -- and half of the (B, d^2, F)
+    activation slab that is the heads' memory footprint at d = 256 -- is
+    the mirror image of the other half.
+
+    Cached per (d, device) exactly like the sampler's own pair table
+    (`_swap_neighbours.upper_tri_pairs`, kept separate so `constraints`
+    does not import `samplers`): every forward re-reads the same indices and
+    the list grows as d^2, so rebuilding it per call is pure dispatch
+    overhead. Callers treat the result as read-only.
+    """
+    key = (d, torch.device(device))
+    if key not in _TRIU_PAIR_CACHE:
+        rows, cols = torch.triu_indices(d, d, offset=1, device=device)
+        _TRIU_PAIR_CACHE[key] = (rows, cols)
+    return _TRIU_PAIR_CACHE[key]
+
+
+def scatter_symmetric_pairs(pair_values: Tensor, d: int) -> Tensor:
+    """(B, P, F) per-pair values on i < j -> the symmetric (B, d, d, F) block.
+
+    The inverse of the triu gather, and the point at which the heads' label-
+    symmetry convention H_ji := H_ij becomes an identity rather than a
+    numerical property: ONE tensor is written into both triangles, so
+    H == H.transpose(1, 2) bit-exactly and index antisymmetry of G follows.
+
+    The DIAGONAL is left at zero rather than recomputed. forward reads H
+    against omega_{x_i} - omega_{x_j}, which is identically zero at i = j, so
+    the dense path's diagonal never reaches G; reproducing it would reinstate
+    d of the rows this lever exists to drop. (Consequence, stated because it
+    is a real difference: `compute_pair_context` diagonals differ between the
+    two paths. Nothing downstream reads them.)
+
+    Written as two index_put's into one freshly-allocated output. The two
+    rejected alternatives -- `out + out.transpose(1, 2)`, and a gather
+    through a pad-slot index map -- each cost an extra (B, d, d, F)
+    tensor, which is precisely what the lever exists to save.
+    """
+    rows, cols = triu_pair_indices(d, pair_values.device)
+    out = pair_values.new_zeros(
+        pair_values.shape[0], d, d, pair_values.shape[-1]
+    )
+    out[:, rows, cols] = pair_values
+    out[:, cols, rows] = pair_values
+    return out
+
 
 def causal_stream_summaries(
     backbone: LeTFRateMatrix, x: Tensor, t: Tensor
@@ -144,6 +198,7 @@ class IntervalSwapHead(nn.Module):
         readout_score_scale: float = 1.0,
         exterior_combiner: str = "mlp",
         bilinear_rank: int = 8,
+        gather_triu_pairs: bool = False,
     ):
         """exterior_combiner (2026-08-23): "mlp" is the archived head, the
         per-pair readout over [prefix, suffix, band, positions]. "bilinear"
@@ -166,6 +221,12 @@ class IntervalSwapHead(nn.Module):
             raise ValueError(f"exterior_combiner must be 'mlp' or 'bilinear'; got {exterior_combiner!r}")
         self.exterior_combiner = exterior_combiner
         self.bilinear_rank = bilinear_rank
+        # Memory lever, opt-in (2026-08-26): run the per-pair band and readout
+        # on the d(d-1)/2 unordered pairs instead of the d^2 grid, then mirror
+        # (`scatter_symmetric_pairs`). A plain bool -- no parameter, no buffer,
+        # no RNG draw -- so a flag-off head is byte-identical to the archived
+        # one and the two paths differ only in GEMM shape.
+        self.gather_triu_pairs = gather_triu_pairs
         self.position_dim = position_dim
         self.readout_score_scale = readout_score_scale
         self.backbone = backbone
@@ -245,7 +306,9 @@ class IntervalSwapHead(nn.Module):
         """
         return causal_stream_summaries(self.backbone, x, t)
 
-    def band_summaries(self, x: Tensor, t: Tensor) -> Tensor:
+    def band_summaries(
+        self, x: Tensor, t: Tensor, pairs: tuple[Tensor, Tensor] | None = None
+    ) -> Tensor:
         """All-pairs middle-band statistics, (B, d, d, F); valid for i < j.
 
         F = band_feature_dim * (1 + len(pair_offsets)). Entry [:, i, j, :]
@@ -277,13 +340,26 @@ class IntervalSwapHead(nn.Module):
 
         `t` is unused by design: band features are token statistics; time
         dependence enters through the pair readout's summaries and time line.
+
+        `pairs` = (rows, cols) selects a LIST of pairs instead of the grid and
+        returns (B, P, F). Only the index tensors change shape -- every
+        prefix-sum and every exclusion mask below is written once and reads
+        (d, 1)/(1, d) broadcast indices or (P,) list indices interchangeably --
+        because the band is O(1) per pair either way. This is the entry point
+        the triu-pair gather uses (the band is DEFINED on i < j, so the
+        gathered form needs no mirror at all).
         """
         del t
         x_idx = ((x + 1) / 2).long()
         emb = self.backbone.token_embedder(x_idx)             # (B, d, h)
         d = self.d
-        site_i = torch.arange(d, device=x.device).view(d, 1)  # broadcast over j
-        site_j = torch.arange(d, device=x.device).view(1, d)  # broadcast over i
+        if pairs is None:
+            site_i = torch.arange(d, device=x.device).view(d, 1)  # over j
+            site_j = torch.arange(d, device=x.device).view(1, d)  # over i
+            mask_shape = (1, d, d, 1)
+        else:
+            site_i, site_j = pairs                            # (P,), (P,)
+            mask_shape = (1, -1, 1)
 
         def cumsum_with_zero(features: Tensor) -> Tensor:
             zero = features.new_zeros(features.shape[0], 1, features.shape[-1])
@@ -294,7 +370,7 @@ class IntervalSwapHead(nn.Module):
         unary_prefix = cumsum_with_zero(self.band_unary_features(emb))
         unary_sum = unary_prefix[:, site_j] - unary_prefix[:, site_i + 1]
         families.append(
-            torch.where((site_j - site_i >= 2).view(1, d, d, 1), unary_sum, 0.0)
+            torch.where((site_j - site_i >= 2).view(mask_shape), unary_sum, 0.0)
         )
         # Offset delta: u_k covers (k, k+delta), band-interior needs
         # k in [i+1, j-1-delta]  =>  cu[j-delta] - cu[i+1]; empty (and the
@@ -311,10 +387,10 @@ class IntervalSwapHead(nn.Module):
             )
             families.append(
                 torch.where(
-                    (site_j - site_i >= delta + 2).view(1, d, d, 1), pair_sum, 0.0
+                    (site_j - site_i >= delta + 2).view(mask_shape), pair_sum, 0.0
                 )
             )
-        return torch.cat(families, dim=-1)                    # (B, d, d, F)
+        return torch.cat(families, dim=-1)      # (B, d, d, F) or (B, P, F)
 
     def compute_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
         """Assemble H, (B, d, d, h): the doubly-blind context for every pair.
@@ -334,11 +410,21 @@ class IntervalSwapHead(nn.Module):
         blindness on H directly (flip x_i / x_j / both: H_ij must not move)
         -- a strictly stronger check than G's antisymmetry, which a
         symmetric leak (H depending on x_i + x_j, say) would survive.
+
+        Under `gather_triu_pairs` the same assembly runs on the d(d-1)/2
+        pairs with i < j and is mirrored by `scatter_symmetric_pairs`: the
+        mirror is what the dense path does anyway, so the lower triangle's
+        readout rows were always thrown away. Only the diagonal differs
+        (left at zero; it never reaches G -- see `scatter_symmetric_pairs`).
         """
         prefix_summary, suffix_summary = self.causal_summaries(x, t)
-        band = self.band_summaries(x, t)                      # (B, d, d, F)
         batch, d, hidden = prefix_summary.shape
         position = self.pair_position_embedding(torch.arange(d, device=x.device))
+        if self.gather_triu_pairs:
+            return self._gathered_pair_context(
+                x, t, prefix_summary, suffix_summary, position
+            )
+        band = self.band_summaries(x, t)                      # (B, d, d, F)
 
         exterior_rows = (
             [
@@ -367,6 +453,50 @@ class IntervalSwapHead(nn.Module):
             torch.ones(d, d, dtype=torch.bool, device=x.device)
         ).view(1, d, d, 1)
         return torch.where(upper, H, H.transpose(1, 2))
+
+    def _gathered_pair_context(
+        self,
+        x: Tensor,
+        t: Tensor,
+        prefix_summary: Tensor,
+        suffix_summary: Tensor,
+        position: Tensor,
+    ) -> Tensor:
+        """`compute_pair_context` on the i < j pairs only (the memory lever).
+
+        Every tensor the pair readout touches drops from (B, d^2, .) to
+        (B, d(d-1)/2, .): the band -- for the masked-attention subclass, the
+        (B, d^2, n_terms) attention SCORES its docstring flags as the d = 256
+        price -- the readout's concatenated input, its hidden activation and
+        the LayerNorm. The bilinear exterior stays DENSE and is indexed after
+        the fact: it is a single (d x Rh)(Rh x d) matmul, which is faster
+        whole than a gathered elementwise product, and its output is the same
+        size as the (B, d, d, h) result the head must return regardless.
+        """
+        batch, d, hidden = prefix_summary.shape
+        rows, cols = triu_pair_indices(d, x.device)
+        exterior_rows = (
+            [prefix_summary[:, rows], suffix_summary[:, cols]]
+            if self.exterior_combiner == "mlp" else []
+        )
+        H = self.pair_readout(
+            torch.cat(
+                exterior_rows + [
+                    self.band_summaries(x, t, (rows, cols)),
+                    position[rows].unsqueeze(0).expand(batch, -1, -1),
+                    position[cols].unsqueeze(0).expand(batch, -1, -1),
+                ],
+                dim=-1,
+            )
+        )
+        if self.exterior_combiner == "bilinear":
+            H = H + self._bilinear_exterior(prefix_summary, suffix_summary)[
+                :, rows, cols
+            ]
+        H = self.context_norm(H) + self.backbone.time_embedder(t).view(
+            batch, 1, hidden
+        )
+        return scatter_symmetric_pairs(H, d)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         """Pair-score matrix G, (B, d, d), via the swap readout.

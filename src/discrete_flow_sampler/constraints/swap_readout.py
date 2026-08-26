@@ -127,10 +127,20 @@ def _anchor_masked_bodies(
 class DoublyHollowSwapHead(nn.Module):
     """Brute-force doubly-hollow swap head: mask BOTH sites. Gate-only, O(d^2).
 
-    Architecture-agnostic correctness check. For each ordered pair (i, j) it
-    masks i and j, reads the body at j, and reads out against the token
-    difference. The diagonal (i == j) and same-spin pairs vanish automatically
-    because omega_{x_i} - omega_{x_j} = 0 there.
+    Architecture-agnostic correctness check. For each pair {i, j} it masks
+    BOTH sites, reads the body at each of them, and reads out against the
+    token difference. The diagonal (i == j) and same-spin pairs vanish
+    automatically because omega_{x_i} - omega_{x_j} = 0 there.
+
+    The loop runs over UNORDERED pairs (2026-08-26). `_masked_body` zeroes the
+    embeddings of every site in `mask_sites`, an order-independent set of
+    unconditional overrides, so the (j, i) pass recomputed the (i, j) pass
+    bit-for-bit: the old ordered-pair loop paid 2x for it. One pass now
+    supplies both entries, H[:, j] against omega_i - omega_j for G[i, j] and
+    H[:, i] against omega_j - omega_i for G[j, i], which are the same two
+    expressions on the same tensor -- hence bit-identical output, and no
+    opt-in flag (tests/test_swap_head_vectorised.py pins mask_one against
+    this head at exact equality, so a drift here would show up there too).
     """
 
     def __init__(self, backbone: LeTFRateMatrix):
@@ -145,13 +155,13 @@ class DoublyHollowSwapHead(nn.Module):
         batch, d = x.shape
         G = x.new_zeros(batch, d, d)
         for i in range(d):
-            for j in range(d):
-                if i == j:
-                    continue
+            for j in range(i + 1, d):
                 H = _masked_body(m, x, t, (i, j))  # (B, d, h)
-                H_ij = H[:, j, :]  # read at second index
-                diff = om[:, i, :] - om[:, j, :]  # omega_{x_i} - omega_{x_j}
-                G[:, i, j] = (H_ij * diff).sum(-1)
+                # Both differences written out rather than one negated: at a
+                # same-spin pair the negation would produce -0.0 where the
+                # subtraction produces +0.0, which is equal but not identical.
+                G[:, i, j] = (H[:, j, :] * (om[:, i, :] - om[:, j, :])).sum(-1)
+                G[:, j, i] = (H[:, i, :] * (om[:, j, :] - om[:, i, :])).sum(-1)
         return G
 
 

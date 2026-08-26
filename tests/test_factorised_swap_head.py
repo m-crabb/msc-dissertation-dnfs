@@ -55,6 +55,7 @@ def _head(
     position_dim=5,
     use_bilinear=True,
     use_global=True,
+    gather_triu_pairs=False,
 ):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
@@ -69,6 +70,7 @@ def _head(
         position_dim=position_dim,
         use_bilinear=use_bilinear,
         use_global=use_global,
+        gather_triu_pairs=gather_triu_pairs,
     )
     head.eval()
     return head
@@ -113,11 +115,19 @@ ABLATIONS = [
 
 
 @torch.no_grad()
+@pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 @pytest.mark.parametrize("use_bilinear,use_global", ABLATIONS)
-def test_pair_context_blind_to_both_holes(use_bilinear, use_global):
+def test_pair_context_blind_to_both_holes(
+    use_bilinear, use_global, gather_triu_pairs
+):
     """Core claim: H_ij invariant under ANY change to x_i, x_j, in every
-    ablation arm -- blindness is per-term, so no arm may leak."""
-    head = _head(use_bilinear=use_bilinear, use_global=use_global)
+    ablation arm -- blindness is per-term, so no arm may leak. Run on both
+    assembly paths: the triu-pair gather re-indexes the global term's
+    per-pair map, which is the arm that carries the hole subtraction."""
+    head = _head(
+        use_bilinear=use_bilinear, use_global=use_global,
+        gather_triu_pairs=gather_triu_pairs,
+    )
     x = _state()
     t = torch.rand(1)
     H = head.compute_pair_context(x, t)
@@ -509,7 +519,7 @@ def test_extra_orderings_validated_at_construction():
 # equals the readout of the materialised H.
 
 
-def _band_head(interior_band, site_orderings=("row",), **kw):
+def _band_head(interior_band, site_orderings=("row",), gather_triu_pairs=False, **kw):
     torch.manual_seed(42)
     backbone = LeTFRateMatrix(
         d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
@@ -518,16 +528,23 @@ def _band_head(interior_band, site_orderings=("row",), **kw):
     head = FactorisedSwapHead(
         backbone, bilinear_rank=3, factor_dim=4, global_feature_dim=6,
         position_dim=5, interior_band=interior_band, band_feature_dim=5,
-        attention_dim=6, lattice_side=3, site_orderings=site_orderings, **kw,
+        attention_dim=6, lattice_side=3, site_orderings=site_orderings,
+        gather_triu_pairs=gather_triu_pairs, **kw,
     )
     head.eval()
     return head
 
 
+@pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 @pytest.mark.parametrize("interior_band", ["prefix", "attention"])
 @pytest.mark.parametrize("site_orderings", [("row",), ("row", "col")])
-def test_interior_band_context_blind_to_both_holes(interior_band, site_orderings):
-    head = _band_head(interior_band, site_orderings)
+def test_interior_band_context_blind_to_both_holes(
+    interior_band, site_orderings, gather_triu_pairs
+):
+    """Both assembly paths: on the gathered one the band is consumed in its
+    NATIVE i < j form (no mirror at all), which is a different code path
+    through the provider, so blindness is re-pinned there."""
+    head = _band_head(interior_band, site_orderings, gather_triu_pairs)
     x, t = _state(), torch.rand(1)
     H = head.compute_pair_context(x, t)
     for i, j in upper_tri_pairs(9, x.device).tolist():

@@ -128,6 +128,28 @@ def test_doubly_hollow_trivial_swap_vanishes():
 
 
 @torch.no_grad()
+def test_doubly_hollow_unordered_pair_loop_is_bit_identical():
+    """The gate head loops UNORDERED pairs (2026-08-26): `_masked_body` zeroes
+    a SET of sites, so the (j, i) pass recomputed the (i, j) pass exactly and
+    the ordered loop paid 2x. This pins the dedup as bit-identical -- not
+    close -- against the ordered reference it replaced, so every gate number
+    taken with the old head still stands."""
+    m = _backbone(d=9)
+    x, t = _state(d=9), torch.rand(1)
+    om = m.omega(((x + 1) / 2).long())
+    reference = x.new_zeros(1, 9, 9)
+    for i in range(9):
+        for j in range(9):
+            if i == j:
+                continue
+            H = _masked_body(m, x, t, (i, j))
+            reference[:, i, j] = (
+                H[:, j, :] * (om[:, i, :] - om[:, j, :])
+            ).sum(-1)
+    assert torch.equal(DoublyHollowSwapHead(m)(x, t), reference)
+
+
+@torch.no_grad()
 def test_doubly_hollow_finite():
     """Assertion 6 (part): no NaN/Inf."""
     m = _backbone(d=9)

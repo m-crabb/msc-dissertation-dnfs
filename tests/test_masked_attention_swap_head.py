@@ -27,13 +27,18 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
 )
 
 
-def _head(d=9, offsets=(1, 3), seed=42, hidden_dim=8, n_heads=2, n_layers=2):
+def _head(
+    d=9, offsets=(1, 3), seed=42, hidden_dim=8, n_heads=2, n_layers=2,
+    gather_triu_pairs=False,
+):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
         d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers,
         n_heads=n_heads, use_sdpa_readout=False,
     )
-    head = MaskedAttentionSwapHead(backbone, pair_offsets=offsets)
+    head = MaskedAttentionSwapHead(
+        backbone, pair_offsets=offsets, gather_triu_pairs=gather_triu_pairs
+    )
     head.eval()
     return head
 
@@ -69,11 +74,15 @@ PROBE_PAIRS = [(0, 8), (3, 4), (0, 1), (7, 8), (2, 5)]
 
 
 @torch.no_grad()
-def test_pair_context_blind_to_both_holes_exactly():
+@pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
+def test_pair_context_blind_to_both_holes_exactly(gather_triu_pairs):
     """K1 core, exact form: H_ij must not move AT ALL under any change to
     x_i or x_j. Excluded terms carry softmax weight +0.0, so the residual
-    is zero in exact arithmetic AND in floating point -- assert equality."""
-    head = _head(d=9)
+    is zero in exact arithmetic AND in floating point -- assert equality.
+
+    Both assembly paths: the triu-pair gather drops the pairs nobody reads,
+    and exclusion stays index arithmetic, so the EXACT bar must still hold."""
+    head = _head(d=9, gather_triu_pairs=gather_triu_pairs)
     x = _state(d=9)
     t = torch.rand(1)
     H = head.compute_pair_context(x, t)

@@ -25,13 +25,18 @@ ATOL = 1e-5  # suite bar; subtractive band assembly leaves ~1e-6 fp residue,
 #              hole-free (blocked) assembly should sit at exactly 0.0
 
 
-def _head(d=9, offsets=(1, 3), seed=42, hidden_dim=8, n_heads=2, n_layers=2):
+def _head(
+    d=9, offsets=(1, 3), seed=42, hidden_dim=8, n_heads=2, n_layers=2,
+    gather_triu_pairs=False,
+):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
         d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers,
         n_heads=n_heads, use_sdpa_readout=False,
     )
-    head = IntervalSwapHead(backbone, pair_offsets=offsets)
+    head = IntervalSwapHead(
+        backbone, pair_offsets=offsets, gather_triu_pairs=gather_triu_pairs
+    )
     head.eval()
     return head
 
@@ -92,9 +97,14 @@ def test_causal_summaries_blindness():
 
 
 @torch.no_grad()
-def test_pair_context_blind_to_both_holes():
-    """K1 core: H_ij invariant under ANY change to x_i, x_j (not just swap)."""
-    head = _head(d=9)
+@pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
+def test_pair_context_blind_to_both_holes(gather_triu_pairs):
+    """K1 core: H_ij invariant under ANY change to x_i, x_j (not just swap).
+
+    Run on both assembly paths: the triu-pair gather re-indexes the per-pair
+    work, and blindness is a property of WHICH terms enter each pair's row,
+    so it must survive the re-indexing untouched."""
+    head = _head(d=9, gather_triu_pairs=gather_triu_pairs)
     x = _state(d=9)
     t = torch.rand(1)
     H = head.compute_pair_context(x, t)

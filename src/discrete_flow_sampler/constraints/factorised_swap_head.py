@@ -55,6 +55,12 @@ psi_j -- so it is a fixed-width per-pair map over a materialised
 still O(d^2) against masked attention's O(d^3): what the factorisation
 removes is the per-pair pooling over the lattice, not per-pair work.
 
+Half of that per-pair work is redundant, and `gather_triu_pairs` (opt-in,
+default OFF, 2026-08-26) drops it: the global term is exactly symmetric in
+(i, j), so LN and rho run on the d(d-1)/2 pairs with i < j and the result
+is mirrored back (`interval_swap_head.scatter_symmetric_pairs`). A memory
+lever for D=16 (d=256), where that slab is what threatens the card.
+
 forward therefore materialises H once (`compute_pair_context`, the object
 the blindness probes flip spins at) and reads G off it, the interval head's
 pattern. An earlier forward distributed the bilinear readout into two
@@ -129,6 +135,8 @@ from torch import Tensor
 from discrete_flow_sampler.constraints.interval_swap_head import (
     IntervalSwapHead,
     causal_stream_summaries,
+    scatter_symmetric_pairs,
+    triu_pair_indices,
 )
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
@@ -209,6 +217,7 @@ class FactorisedSwapHead(nn.Module):
         attention_dim: int = 32,
         site_orderings: tuple[str, ...] = ("row",),
         lattice_side: int | None = None,
+        gather_triu_pairs: bool = False,
     ):
         super().__init__()
         if not (use_bilinear or use_global):
@@ -249,6 +258,11 @@ class FactorisedSwapHead(nn.Module):
         self.use_bilinear = use_bilinear
         self.use_global = use_global
         self.site_orderings = site_orderings
+        # Memory lever, opt-in (2026-08-26): run the global term's per-pair
+        # LN + MLP on the d(d-1)/2 unordered pairs. A plain bool -- no
+        # parameter, no buffer, no RNG draw -- so a flag-off head is
+        # byte-identical to the archived one.
+        self.gather_triu_pairs = gather_triu_pairs
         hidden = backbone.hidden_dim
 
         self.site_position_embedding = nn.Embedding(self.d, position_dim)
@@ -413,6 +427,16 @@ class FactorisedSwapHead(nn.Module):
         already respects the H_ji := H_ij mirror. Token statistics are
         time-free (`t` only reaches the band provider's signature, which
         ignores it); time arrives through the dedicated time term.
+
+        This is the one per-pair nonlinearity the head pays for (50% of its
+        forward FLOPs at d = 256, and its (B, d, d, .) tensors ARE the head's
+        memory footprint), and it is exactly symmetric, so it is also where
+        the triu-pair gather pays: under `gather_triu_pairs` the subtraction,
+        the LayerNorm and rho run on the d(d-1)/2 pairs with i < j and the
+        result is mirrored back (`scatter_symmetric_pairs`). The band needs
+        no mirror on that path at all -- band summaries are NATIVELY defined
+        on i < j, and the dense path's `torch.where` mirror exists only to
+        make the whole block symmetric before the grid-shaped readout.
         """
         x_idx = ((x + 1) / 2).long()
         token_embedding = self.backbone.token_embedder(x_idx)   # (B, d, h)
@@ -420,6 +444,24 @@ class FactorisedSwapHead(nn.Module):
             torch.cat([token_embedding, self._site_positions(x)], dim=-1)
         )                                                       # (B, d, Fg)
         total = psi.sum(dim=1)                                  # (B, Fg)
+        if self.gather_triu_pairs:
+            rows, cols = triu_pair_indices(self.d, x.device)
+            hole_subtracted = (
+                total.unsqueeze(1) - psi[:, rows] - psi[:, cols]
+            )                                                   # (B, P, Fg)
+            if self.interior_band is not None:
+                band = self.interior_band_provider.band_summaries(
+                    x, t, (rows, cols)
+                )
+                hole_subtracted = torch.cat(
+                    [hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1
+                )
+            return scatter_symmetric_pairs(
+                self.global_context_readout(
+                    self.global_context_norm(hole_subtracted)
+                ),
+                self.d,
+            )
         hole_subtracted = (
             total.view(x.shape[0], 1, 1, -1)
             - psi.unsqueeze(2)                                  # remove psi_i

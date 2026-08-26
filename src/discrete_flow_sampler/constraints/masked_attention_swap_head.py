@@ -57,7 +57,11 @@ head pays O(1), but the O(d)-backbone-pass anchor multiplier (the ~99.5%
 term the mask-one head pays) is equally dead. The (B, d^2, n_terms) score
 tensor is the price: fine through d = 64 unchunked; d = 256 wants pair
 chunking (deferred to the D=16 repricing task, where the eval-path chunking
-already exists).
+already exists). Half of that price is removed by `gather_triu_pairs`
+(opt-in, default OFF): the band is DEFINED on i < j -- the lower triangle's
+visible set is empty and holds zeros -- so scoring the full grid computes
+d(d-1)/2 pair queries whose answer is known to be zero, plus a dead
+diagonal. See `interval_swap_head.scatter_symmetric_pairs`.
 
 Time is deliberately absent from the band, as in the interval head: band
 features are token statistics; time enters H through the pair readout's
@@ -110,11 +114,13 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         readout_score_scale: float = 1.0,
         exterior_combiner: str = "mlp",
         bilinear_rank: int = 8,
+        gather_triu_pairs: bool = False,
     ):
         super().__init__(
             backbone, pair_offsets, band_feature_dim, position_dim,
             readout_score_scale=readout_score_scale,
             exterior_combiner=exterior_combiner, bilinear_rank=bilinear_rank,
+            gather_triu_pairs=gather_triu_pairs,
         )
         self.use_stencil = use_stencil
         hidden = backbone.hidden_dim
@@ -167,21 +173,37 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         term_positions: (1, n, position_dim); visible: (d, d, n) bool by
         index arithmetic only. Exclusion-before-softmax + exact-zero
         overwrite of empty rows per the module docstring.
+
+        Under the triu-pair gather the pair axes collapse to a single list
+        axis: pair_query_input (P, 2*position_dim), visible (P, n), result
+        (B, P, F). Only the einsum subscripts move -- the DENSE subscripts are
+        left literally as they were, so the archived path's contraction order
+        (and with it its last bit) is untouched. This is where the lever pays
+        most: the (B, d^2, n_terms) score tensor is this head's largest, and
+        it is the "d = 256 wants pair chunking" price the module docstring
+        names.
         """
-        query = self.band_query_projections[family](pair_query_input)  # (d, d, A)
+        pair_axes = "ij" if pair_query_input.dim() == 3 else "p"
+        query = self.band_query_projections[family](pair_query_input)  # (..., A)
         batch, n_terms, _ = term_features.shape
         keys = self.band_key_projections[family](
             torch.cat(
                 [term_features, term_positions.expand(batch, n_terms, -1)], dim=-1
             )
         )  # (B, n, A)
-        scores = torch.einsum("ija,bka->bijk", query, keys) * self.attention_scale
+        scores = torch.einsum(
+            f"{pair_axes}a,bka->b{pair_axes}k", query, keys
+        ) * self.attention_scale
         scores = scores.masked_fill(~visible, EXCLUDED_SCORE_FILL)
-        weights = scores.softmax(dim=-1)  # (B, d, d, n)
-        pooled = torch.einsum("bijk,bkf->bijf", weights, term_features)
+        weights = scores.softmax(dim=-1)  # (B, d, d, n) or (B, P, n)
+        pooled = torch.einsum(
+            f"b{pair_axes}k,bkf->b{pair_axes}f", weights, term_features
+        )
         return torch.where(visible.any(dim=-1, keepdim=True), pooled, 0.0)
 
-    def band_summaries(self, x: Tensor, t: Tensor) -> Tensor:
+    def band_summaries(
+        self, x: Tensor, t: Tensor, pairs: tuple[Tensor, Tensor] | None = None
+    ) -> Tensor:
         """All-pairs middle-band summaries via masked attention, (B, d, d, F).
 
         Same visible sets, features and output contract as the interval
@@ -194,25 +216,38 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
 
         When use_stencil is set, a final 5-point lattice-stencil family is
         appended (trailing F channels); see the inline note below.
+
+        `pairs` = (rows, cols) selects a LIST of pairs (the triu-pair gather)
+        and returns (B, P, F). Visibility is index arithmetic in both forms,
+        so exclusion -- and with it bit-exact blindness -- is unchanged; the
+        hole terms are simply never scored for pairs nobody asked about.
         """
         del t
         x_idx = ((x + 1) / 2).long()
         emb = self.backbone.token_embedder(x_idx)  # (B, d, h)
         d = self.d
         site = torch.arange(d, device=x.device)
-        site_i = site.view(d, 1, 1)
-        site_j = site.view(1, d, 1)
-
         position = self.pair_position_embedding(site)  # (d, P)
-        pair_query_input = torch.cat(
-            [
-                position.view(d, 1, -1).expand(d, d, -1),
-                position.view(1, d, -1).expand(d, d, -1),
-            ],
-            dim=-1,
-        )  # (d, d, 2P)
+        if pairs is None:
+            site_i = site.view(d, 1, 1)
+            site_j = site.view(1, d, 1)
+            term_shape = (1, 1, -1)
+            pair_query_input = torch.cat(
+                [
+                    position.view(d, 1, -1).expand(d, d, -1),
+                    position.view(1, d, -1).expand(d, d, -1),
+                ],
+                dim=-1,
+            )  # (d, d, 2P)
+        else:
+            rows, cols = pairs
+            site_i, site_j = rows.view(-1, 1), cols.view(-1, 1)
+            term_shape = (1, -1)
+            pair_query_input = torch.cat(
+                [position[rows], position[cols]], dim=-1
+            )  # (P, 2P)
 
-        slot = site.view(1, 1, d)
+        slot = site.view(term_shape)
         families = [
             self._attend_band_family(
                 0,
@@ -229,7 +264,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             term_features = feature_mlp(
                 torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
             )
-            term_slot = site[:n_terms].view(1, 1, n_terms)
+            term_slot = site[:n_terms].view(term_shape)
             visible = (term_slot > site_i) & (term_slot + delta < site_j)
             families.append(
                 self._attend_band_family(
@@ -267,7 +302,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                     dim=-1,
                 )
             )  # (B, n_centres, F); n_centres = 0 (empty) when d <= 2*side
-            centre_slot = centres.view(1, 1, -1)
+            centre_slot = centres.view(term_shape)
             visible = (centre_slot - side > site_i) & (centre_slot + side < site_j)
             families.append(
                 self._attend_band_family(
