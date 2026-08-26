@@ -11,14 +11,26 @@ Gibbs pools were demoted; the certifying cross-check is
   dMag   -- MDNS Eq. 26, dCorr -- MDNS Eq. 28, EW2 -- 1-D W2 on E(x)/d (DASBS),
             each on importance-reweighted samples against the reference;
   reference row -- the sampling floor under each column: resample the 100
-            Gibbs chains with replacement (chain-block bootstrap, the chain is
+            WOLFF chains with replacement (chain-block bootstrap, the chain is
             the independent unit) and score the replicate against the full
             reference. A neural cell at or below this floor is indistinguishable
             from the reference at N = 5000.
+  FLOP/es -- neural: measured eager forward x n_euler / ESS; reference: the
+            recounted pool build from the .flops.json sidecar (08
+            --recount-flops) over its effective record count.
 
-FLOP/es and the matched-budget Gibbs row are NOT produced here (no FLOP counter
-exists yet); those cells stay empty. Per-site energy follows the chapter's
-convention E/d = -log p~(x) / (2 sigma d) (metrics.internal_energy_estimate).
+Per-site energy follows the chapter's convention E/d = -log p~(x) / (2 sigma d)
+(metrics.internal_energy_estimate).
+
+sigma_c MIGRATION (s73, 2026-08-26): the sigma_c point now reads the Wave-1
+`_sc` retrains at the ONE critical coupling SIGMA_C = ln(1+sqrt(2))/4 =
+0.220343, against the matching 0.220343 Wolff pool. It previously read the
+legacy 0.22305 family; those runs are archived records and are not edited.
+The retrain passed its pre-registered bands 4/4 in every family (final fp32
+5000-draw eval ESS: d10 0.902 +- 0.019 over floor 0.86, d8 0.962 +- 0.008
+over 0.89, d4 0.986 +- 0.004 over 0.93), which is what authorises the swap.
+Never mix couplings in one comparison: sigma_c runs pair with the sigma_c
+pool, legacy with legacy.
 """
 import json
 from pathlib import Path
@@ -32,7 +44,7 @@ from discrete_flow_sampler.diagnostics.flops import (
 from discrete_flow_sampler.diagnostics.metrics import (
     correlation_profile_error, energy_wasserstein2, integrated_autocorr,
     magnetisation_profile_error)
-from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 # Run by path (numeric filenames can't be modules), so the `experiments`
@@ -44,8 +56,10 @@ L = 10
 OPERATING_POINTS = {
     "sigma_0.1": dict(sigma=0.1, runs="stage_4_d10_budget_seed4*",
                       reference="wolff_ref_d10_sigma0.1.pt"),
-    "sigma_c": dict(sigma=0.22305, runs="stage_4_d10_critical_paper_curriculum_seed4*",
-                    reference="wolff_ref_d10_sigma0.22305.pt"),
+    "sigma_c": dict(
+        sigma=SIGMA_C,
+        runs="stage_4_d10_critical_paper_curriculum_sc_seed4*_20260824-wave1-sc",
+        reference="wolff_ref_d10_sigma0.220343.pt"),
 }
 N_BOOTSTRAP = 200
 
