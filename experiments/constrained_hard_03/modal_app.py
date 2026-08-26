@@ -494,6 +494,35 @@ def gate(
     )
 
 
+@app.function(gpu="A100-80GB", volumes={"/results": volume}, timeout=60 * 60)
+def residue_probe_remote(run_dirs: str, n_states: int = 256):
+    """Forward-only compile-vs-eager residue probe on trained checkpoints
+    already on the volume (s70 HOLD mechanism leg; method and instruments
+    in compile_residue_probe.py). A100-80GB deliberately: the question is
+    whether TRAINING-VENUE inductor numerics enlarge the factorised head's
+    cancellation residue, so the probe must run on the training GPU class —
+    a CPU or L4 read answers a different question."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.compile_residue_probe import (
+        main as probe_main,
+    )
+
+    probe_main([
+        "--results-dir", "/results", "--run-dirs", run_dirs,
+        "--device", "cuda", "--n-states", str(n_states),
+        "--out", "/results/compile_residue_probe/report.json",
+    ])
+    volume.commit()
+
+
+@app.local_entrypoint()
+def residue_probe(run_dirs: str, n_states: int = 256):
+    """Blocking local CLI entry so the per-checkpoint reports stream back."""
+    residue_probe_remote.remote(run_dirs=run_dirs, n_states=n_states)
+
+
 @app.function(gpu="A100-80GB", timeout=45 * 60)
 def compile_gate_remote():
     """GPU-stack compile certification gate (A1, s60): the s59 CPU-passed
