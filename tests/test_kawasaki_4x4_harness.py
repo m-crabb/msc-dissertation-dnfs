@@ -51,9 +51,12 @@ def test_ce_energy_differences_match_target_log_prob(sigma):
 
 
 def test_short_chain_conserves_composition_and_spin_domain():
-    spins, mctrials = run_chain(
+    # run_chain grew its wall-clock pair in 0bf793f (the house tables price the
+    # MCMC row per effective sample, and an MC sweep has no NFE analogue).
+    spins, mctrials, setup_seconds, run_seconds = run_chain(
         D=4, sigma=0.10, seed=7, n_trial_steps=200, snapshot_interval=10
     )
+    assert setup_seconds > 0 and run_seconds > 0
     assert set(np.unique(spins)) <= {-1.0, 1.0}
     np.testing.assert_array_equal(spins.sum(axis=1), np.zeros(len(spins)))
     assert mctrials[-1] <= 200 and len(mctrials) == len(spins)
