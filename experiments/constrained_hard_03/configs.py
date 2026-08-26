@@ -3796,6 +3796,20 @@ def _d256_house_cell(
             _ARM_B.train,
             n_steps=n_steps,
             loss_microbatch_size=_D256_HOUSE_MICROBATCH[arm],
+            # (s73) The tripwire must NOT ride from _ARM_B. That parent is a
+            # cold-CV SCREENING cell where a sustained controlled/naive
+            # variance inversion IS the answer and the halt is a designed
+            # cost-capped negative verdict. These are PRODUCTION cells that
+            # must reach their full 50k/100k budget, and there the same
+            # tripwire is a silent truncation: it halted the w3 `ma` and
+            # `fimo2ef` sigma=0.1 arms at step 5000 of 50000 on trailing
+            # cv_var_ratios of only 1.08-1.76, and the eval that followed
+            # read ESS 0.00094 / 0.00087 / 0.00021 -- numbers that look like
+            # divergence and are actually a 10%-of-budget checkpoint. An
+            # early-inverted CV is a reason to WATCH a production run, never
+            # to kill it: the healthy thp2 twin at the same size and coupling
+            # started at cv_var_ratio 1.86 and trained to eval ESS 0.998.
+            halt_on_cv_inversion_after=None,
         ),
         eval=replace(
             _ARM_B.eval,

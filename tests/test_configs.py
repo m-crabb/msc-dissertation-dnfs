@@ -1892,3 +1892,28 @@ def test_d256_house_cells_build_their_heads():
             D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
         )
         assert build_swap_head(cfg, backbone, target=target) is not None, name
+
+def test_d256_house_cells_never_carry_the_cold_cv_tripwire():
+    """Production house cells must reach their full budget.
+
+    `halt_on_cv_inversion_after` is a designed cost-capped NEGATIVE VERDICT
+    for the cold-CV screening arms, where a sustained controlled/naive
+    integrand-variance inversion is the answer being bought. The d256 house
+    cells inherit their parent `_ARM_B` wholesale (that is what makes a row
+    attributable to the head and the coupling), and in s73 the tripwire rode
+    across with it and silently truncated the `ma` and `fimo2ef` sigma=0.1
+    arms at step 5000 of 50000 on trailing cv_var_ratios of 1.08-1.76. The
+    evals that followed read ESS 0.00094 / 0.00087 / 0.00021 and were very
+    nearly recorded as divergence. An early-inverted CV is a reason to watch
+    a production run, not to kill it -- the healthy thp2 twin at the same
+    size and coupling opened at cv_var_ratio 1.86 and reached eval ESS 0.998.
+    """
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    house = [c for n, c in CONFIGS.items() if "d256" in n and "_w3" in n]
+    assert house, "no d256 w3 house cells found -- has the naming changed?"
+    for cell in house:
+        assert getattr(cell.train, "halt_on_cv_inversion_after", None) is None, (
+            f"{cell.name} carries a cold-CV tripwire; production house cells "
+            f"must run to their full n_steps={cell.train.n_steps}"
+        )
