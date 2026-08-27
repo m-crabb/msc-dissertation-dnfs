@@ -44,7 +44,7 @@ FLOP/es cells (s64, same conventions as the unconstrained fill):
             tau_int = the slower of mchammer's own composition/potential
             reads (summary.json, frame units), floored at 1.
 
-The matched-budget VC-SGC row was DROPPED (user, s64): mchammer's ~1e5x
+The matched-budget VC-SGC row was DROPPED (s64): mchammer's ~1e5x
 package overhead makes a matched-FLOP run unrunnable, the same argument
 that made the unconstrained baseline row run-long, and the run-long
 reference with its actually-spent FLOP/es already carries the cost story
@@ -85,7 +85,7 @@ CELLS = {
     # The five F(c) windows print from the ne128 retrain families (s62/s64):
     # the ne64 residual vs the TI truth halved under the grid refinement in
     # every window, so ne128 is the production recipe. c=0.30 prints from the
-    # ne128 top-up (s64 decision, user): 2 of 8 ne128 seeds (47/49) clear the
+    # ne128 top-up (s64 decision): 2 of 8 ne128 seeds (47/49) clear the
     # 0.30 ESS floor at 0.777/0.912 and agree to 0.002/site in F and 2e-4 in
     # delivered c -- tighter than the ne64 trio's 0.015 spread; the glob
     # sweeps all 8 dirs and summarise()'s floor keeps the passing pair.

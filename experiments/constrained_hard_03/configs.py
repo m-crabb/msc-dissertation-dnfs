@@ -1493,7 +1493,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         #   LIFT       iff EMA Var/site CI separated BELOW (0.00271, 0.00292);
         #   NULL       iff the CIs overlap;
         #   REGRESSION iff separated ABOVE.
-        # Not run at the time of writing; CPU-only until the user says so.
+        # Not run at the time of writing; CPU-only until it is called for.
         **{
             f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr": (
                 lambda _cell, _p: replace(
@@ -2186,7 +2186,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # ---- exact-field twin of arm B (2026-08-23, s55, user GO) ----------
+    # ---- exact-field twin of arm B (2026-08-23, s55, GO) ----------
     # ONE VARIABLE versus arm B above: exact_field_channel=True, nothing
     # else. B is the clean 16x16 record read (h32, cold CV, 70k, ne128, EMA
     # eval ESS/N 0.381 (0.346, 0.419), Var[log w]/site 0.00358 (0.00344,
@@ -2204,8 +2204,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     #              costs the head at scale what it bought at d64.
     # Single seed; any call inside ~0.02 of an ESS edge or 18% of a Var/site
     # edge (the measured d256 seed spread) carries the FP caveat. Tripwire
-    # at 5000 exactly as B. Venue: DoC a100 (B ran there), pinned by the
-    # user given the ~13 h length.
+    # at 5000 exactly as B. Venue: DoC a100 (B ran there), pinned given
+    # the ~13 h length.
     "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2_ef": (
         lambda _cell: replace(
             _cell,
@@ -3382,17 +3382,17 @@ CONFIGS: dict[str, HardStageCfg] = {
 }
 
 
-# ---- two-hole patch twins of arm B (2026-08-23, s57, user GO) ------------
+# ---- two-hole patch twins of arm B (2026-08-23, s57, GO) ------------
 # thp at d64 = STRONG (EMA ESS 0.923 vs fimo2 0.830 and fimo2ef 0.882, 13.5
 # vs 34 ms/step; guard telemetry calmer than fimo2's: grad norm 7.5 vs 17,
 # clip/clamp never fired, cv_var_ratio 0.014 vs 0.041), so the record recipe
 # transfers verbatim. Parent = B, NOT D: D's lever is h128/L3 in the causal
 # stacks, which this head never runs. ONE variable each versus B: head_kind
 # (R=1, f=32); + exact_field_channel ("with preconditioner"); R=2 (5x5
-# patch, the head's one architectural knob). Venue Modal A100-80GB (user
-# pinned, ~7.5 h each at 2.5x B's speed). Built by `replace` on B itself so
+# patch, the head's one architectural knob). Venue Modal A100-80GB (pinned,
+# ~7.5 h each at 2.5x B's speed). Built by `replace` on B itself so
 # the twin-ness is structural (pinned by test_thp_d256_twins_of_arm_b).
-# FROZEN BANDS (ESS currency per user, EMA eval, seed 42, raw alongside):
+# FROZEN BANDS (ESS currency, EMA eval, seed 42, raw alongside):
 #   STRONG iff EMA ESS/N > 0.430 (beats D = the 16x16 record);
 #   PASS   iff EMA ESS/N in (0.381, 0.430] (beats its parent B);
 #   NULL   iff EMA ESS/N <= 0.381.
@@ -3439,8 +3439,8 @@ CONFIGS.update({
 #   any arm separated BELOW its archived reference beyond that is HELD from
 #        print and investigated before the table fills.
 # Venues: d16 on Modal batch_seeds --detach (launch-bound); d64 queued on
-# DoC (a30 class, ~0.7-6.8 h per run by arm) — submitted jointly with the
-# user against the 3-GPU per-user cap.
+# DoC (a30 class, ~0.7-6.8 h per run by arm) — submitted jointly against
+# the 3-GPU per-user cap.
 _WAVE2_ARM_KNOBS: dict[str, dict] = {
     "mo": {"head_kind": "mask_one"},
     "ma": {"head_kind": "masked_attention"},
@@ -3448,7 +3448,7 @@ _WAVE2_ARM_KNOBS: dict[str, dict] = {
         "head_kind": "factorised", "exact_field_channel": True,
         "interior_band": "prefix", "site_orderings": ("row", "col"),
     },
-    # Fifth arm by board extension (s68, user-approved): ef on the GLOBAL
+    # Fifth arm by board extension (s68, approved): ef on the GLOBAL
     # interior chassis — the archived fmo2 (two orderings, no interior_band)
     # plus the exact-field channel. ef was NEVER run on this chassis at any
     # size (fimo2ef's evidence is the prefix-band chassis), so this arm has
@@ -3561,7 +3561,7 @@ CONFIGS.update({
     ),
 })
 
-# HOLD round 2 (s70, 2026-08-26, user GO). Round 1 localised the depression
+# HOLD round 2 (s70, 2026-08-26, GO). Round 1 localised the depression
 # to the recipe x exact-sigma_c x ef corner (interaction -0.132; both-on
 # 0.637-0.831 vs both-off 0.874-0.944) but left two attributions open, one
 # twin each:
@@ -3591,7 +3591,7 @@ CONFIGS.update({
 })
 
 
-# Decision (c) cells (s70, 2026-08-26, user): factorised arms at exact
+# Decision (c) cells (s70, 2026-08-26): factorised arms at exact
 # sigma_c train EAGER. The hold investigation (both rounds + the forward
 # residue probe, docs are session-local; numbers here are the record)
 # localised a ~40% catastrophic-seed rate to factorised x compile_head x
@@ -3612,7 +3612,7 @@ CONFIGS.update({
 # caveat (calls within ~0.02 are not calls); fmo2ef = parity vs sibling.
 # Any seed below 0.70 at d16 reopens the investigation (the eager cell
 # should not produce catastrophic seeds).
-# DISPOSITION (user, 2026-08-26): fmo2ef seed 44 = 0.531 tripped the
+# DISPOSITION (decision 2026-08-26): fmo2ef seed 44 = 0.531 tripped the
 # reopen while eager; closed without further investigation — both 4x4
 # cells print honest numbers + dagger, the global-interior chassis
 # (fmo2ef) is retired from forward waves, fimo2ef carries the factorised
@@ -3728,7 +3728,7 @@ CONFIGS.update({
 #
 # compile_head, and the ONE declared per-arm deviation. `optimised_recipe`
 # turns it on (2.21x inner updates, 4.9x rollout, -60% eval peak memory).
-# Decision (c) (s70, user) scopes ONE exception: factorised arms at exact
+# Decision (c) (s70) scopes ONE exception: factorised arms at exact
 # sigma_c train EAGER, because factorised x compile x SIGMA_C is the
 # catastrophic-seed cell named above. That scope is exact-sigma_c ONLY --
 # the compiled factorised cells at the 0.10 floor were healthy (9/9 >=

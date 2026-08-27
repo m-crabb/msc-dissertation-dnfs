@@ -1,5 +1,5 @@
 """Build the Wolff reference pools that replace the Gibbs pools as the
-baseline chapter's sample-level ground truth (user decision, s58 2026-08-24).
+baseline chapter's sample-level ground truth (decision, s58 2026-08-24).
 
 Why the swap: the s58 cross-check (07_reference_crosscheck.py) certified the
 two pools AGREE, so this is not a correction — it is choosing the instrument

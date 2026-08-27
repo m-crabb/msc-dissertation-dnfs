@@ -1,6 +1,6 @@
 """tab:amort-4x4 fill: conditioned vs specialist per composition, one currency.
 
-The s64 refactor of the amortisation table (user decision): every requested
+The s64 refactor of the amortisation table (decision): every requested
 composition gets a SPECIALIST comparator row (the c=0.30/0.70/0.80 twins of
 the c=0.50 specialist, byte-identical recipe, Modal tag 20260825-amort-spec),
 and both hardware-paired timing columns are replaced by the house FLOP/es

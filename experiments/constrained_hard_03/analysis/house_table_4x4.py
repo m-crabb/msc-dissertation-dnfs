@@ -69,12 +69,12 @@ ARMS = {
 }
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
-# Hold RESOLVED (user decision 2026-08-26): the two ef-on-factorised
+# Hold RESOLVED (decision 2026-08-26): the two ef-on-factorised
 # sigma_c cells print from their decision-(c) EAGER retrains (tag
 # 20260826-hard-w2e, `_w2e` configs = the w2 cells with compile_head=False
 # the one declared deviation, daggered in the table caption). The w2e
-# judging verdict was REOPEN (fmo2ef seed 44 = 0.531 < 0.70), disposed by
-# the user as: print the honest numbers, retire the global-interior
+# judging verdict was REOPEN (fmo2ef seed 44 = 0.531 < 0.70), disposed as:
+# print the honest numbers, retire the global-interior
 # chassis from forward waves, no further investigation this stage.
 HELD = set()
 EAGER_REFILL = {("fimo2ef", "s220"), ("fmo2ef", "s220")}

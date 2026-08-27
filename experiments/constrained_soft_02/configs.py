@@ -1930,7 +1930,7 @@ CONFIGS: dict[str, StageCfg] = {
 # Mechanism read alongside: `rollout_resample_events` (fire profile). The
 # in-training `ess` column stays plain-IS by construction (test-pinned),
 # so comparability with the archived cell holds.
-# F(c) campaign RETRAIN at ne128 (2026-08-23, s55, user decision on the
+# F(c) campaign RETRAIN at ne128 (2026-08-23, s55, decision on the
 # F(c) grid question): the printed curve is drawn on the ne64 evaluation
 # grid, which is NOT converged -- redrawing the same checkpoints at ne128 and
 # ne256 moved F/site by -0.0081 at c=0.50 and -0.0316 at c=0.60 with a
@@ -1963,7 +1963,7 @@ for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
         ),
     )
 
-# 4x4 specialist twins for tab:amort-4x4 (s64, user): the conditioned rows
+# 4x4 specialist twins for tab:amort-4x4 (s64): the conditioned rows
 # at c = 0.30/0.70/0.80 had no specialist comparator, which left the
 # amortisation-vs-specialist read hanging on the single c=0.50 pair. Recipe
 # is BYTE-IDENTICAL to the c=0.50 specialist (target_composition is the only
@@ -1979,7 +1979,7 @@ for _c, _c_tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
         ising=replace(_AMORT_SPECIALIST_BASE.ising, target_composition=_c),
     )
 
-# Uniform-from-start ablation of the widening curriculum (s64, user): the
+# Uniform-from-start ablation of the widening curriculum (s64): the
 # widening was adopted by analogy with the sigma/lambda curricula (easy end
 # = c near 0.5 where the uniform base overlaps; off-centre rollouts give
 # degenerate IS weights early) but never ablated. This twin draws c from
