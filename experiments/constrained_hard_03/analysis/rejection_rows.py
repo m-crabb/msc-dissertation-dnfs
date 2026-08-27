@@ -24,6 +24,33 @@ i.e. filtering the soft sampler targets the HARD chapter's distribution with
 no penalty residue at all. That is why the kept draws score an ESS fraction in
 the nineties rather than paying for the penalty.
 
+WHICH TARGET THE ESS REFERS TO -- an examiner will ask, and the answer is
+"both, and they are the same number". The stored log-weights are
+log pi~(x) - log q(x) for the sampler's ORIGINAL target pi~. Targeting the
+constrained pi_C = pi~ 1[x in C] / Z_C with the rejection-filtered proposal
+q_C = q 1[x in C] / q(C) needs
+
+    w_C(x) = pi_C(x) / q_C(x) = [pi~(x)/Z_C] [q(C)/q(x)] = (q(C)/Z_C) w(x),
+
+i.e. the ORIGINAL weights times a constant. Self-normalised ESS is invariant
+under w -> c w, so no reweighting is required and the printed number is the
+ESS with respect to the constrained target. Verified 2026-08-27 on the soft
+c=0.5 cell: 0.973194 from the stored weights, 0.973194 rebuilt against the
+hard chapter's own log_prob, 0.973194 after adding an arbitrary +7.3 offset.
+Two identities make the constant exactly constant rather than nearly so, both
+measured on the kept draws: the soft penalty's contribution is 0.00e+00 on
+the manifold, and log pi_Ising - log pi_hard has spread 0.00e+00 there (the
+fixed-composition base differs by a pure constant).
+
+BUT THE ESS PRICES THE SURVIVORS, NOT THE REJECTION -- never quote it alone
+for these rows. At 8x8 sigma_c it reads 0.936 on the 16 draws per seed that
+lived and is silent on the 4,984 that did not; all of that cost sits in
+FLOP/es through the 1/acceptance factor. Read alone the column suggests the
+unconstrained route is competitive at criticality, where the paired
+FLOP/es says 4.2e12 against the two-hole patch head's 3.2e9. An ESS
+estimated from 16 weights is also noisy: 0.936 +- 0.038 means "consistent
+with exact", not a measurement.
+
 WHAT SEPARATES THE ROUTES IS WASTE, NOT BIAS, and the measurement is stark.
 Acceptance on the shipped evals:
 
