@@ -467,6 +467,79 @@ def resolution_sweep_remote(argv: str = ""):
     sweep_main()
 
 
+@app.function(
+    # A100-80GB spelled out for the same reason as resolution_sweep_remote: a
+    # bare gpu="A100" is the 40 GB variant, and this holds a (T, B, d)
+    # trajectory alongside the head's per-pair activations at d=256.
+    gpu="A100-80GB",
+    volumes={"/results": volume},
+    timeout=4 * 60 * 60,
+)
+def zero_shot_transfer_remote(argv: str = ""):
+    """Zero-shot coupling/composition transfer probe against a checkpoint
+    already staged on the volume. Sampling only -- no optimiser, no gradients,
+    no new weights -- so it is cheap enough to run before committing to any
+    amortised training design. `argv` is the space-separated CLI string; see
+    `probe_zero_shot_transfer` for the two derivations and the grid rationale."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.probe_zero_shot_transfer import (
+        main as probe_main,
+    )
+
+    sys.argv = ["probe_zero_shot_transfer", *argv.split()]
+    probe_main()
+    volume.commit()
+
+
+@app.local_entrypoint()
+def zero_shot_transfer(
+    seeds: str = "42,43,44",
+    run_template: str = (
+        "H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3_seed{seed}"
+        "_20260826-d256-sc"
+    ),
+    checkpoint: str = "final_ema.pt",
+    compositions: str = "0.5,0.46875,0.4375,0.375,0.3125,0.25,0.625",
+    # Exact Euler grid points k/127 for k = 16, 32, 58, 76, 95, 111, 127, so no
+    # stop time snaps and every row's coupling is exact. k=58 is the closest the
+    # production grid comes to the certified sigma=0.1 reference (it gives
+    # 0.100629, a 0.6% offset -- fine for ESS, which needs no reference, but a
+    # correlation comparison there wants a reference regenerated at 0.100629).
+    stop_times: str = (
+        "0.125984252,0.251968504,0.456692913,0.598425197,"
+        "0.748031496,0.874015748,1.0"
+    ),
+    n_samples: int = 5000,
+    n_euler_steps: int = 128,
+    sample_chunk: int = 500,
+):
+    """Local CLI entry: one spawned container per seed, so the three run
+    concurrently rather than serialised behind one cold start.
+
+    Spawned (not blocking): the seeds are independent and nothing downstream
+    needs them in order. `checkpoint` defaults to final_ema.pt because the
+    published 16x16 table cell is the EMA eval -- the three seeds' EMA readings
+    are 0.805/0.838/0.836, mean 0.826, which is the printed number. Probing
+    final.pt instead would show a ~2.5-point deficit at the t*=1, c=0.5 anchor
+    that is checkpoint choice, not failed transfer."""
+    handles = []
+    for seed in seeds.split(","):
+        run_dir = "/results/" + run_template.format(seed=seed.strip())
+        argv = (
+            f"--run-dir {run_dir} --checkpoint {checkpoint} "
+            f"--compositions {compositions} --stop-times {stop_times} "
+            f"--n-samples {n_samples} --n-euler-steps {n_euler_steps} "
+            f"--sample-chunk {sample_chunk} "
+            f"--out {run_dir}/zero_shot_transfer.json"
+        )
+        handles.append(zero_shot_transfer_remote.spawn(argv=argv))
+        print(f"[zero_shot_transfer] spawned seed {seed.strip()} -> {run_dir}")
+    for handle in handles:
+        handle.get()
+
+
 @app.local_entrypoint()
 def resolution_sweep(argv: str = ""):
     """Local CLI entry: blocking so the sweep table streams back."""
