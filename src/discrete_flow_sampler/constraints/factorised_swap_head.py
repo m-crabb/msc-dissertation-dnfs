@@ -31,9 +31,20 @@ per-pair work drops from O(d) to a d-free constant:
   removes the ONLY terms that touch the holes, so blindness is exact in
   real arithmetic (fp leaves an ~ulp cancellation residue, exactly as the
   interval head's prefix-sum band; suite bar 1e-5). This is the term that
-  covers the interval interior. Its depth cap is structural: psi must stay
-  per-site because any cross-site mixing BEFORE the subtraction
-  re-introduces the leak; depth AFTER aggregation (rho) is safe. The
+  covers the interval interior. Its depth cap is structural, but the cap is
+  narrower than "per-site" (corrected 2026-08-27): what is forced is that
+  the subtraction remove EVERY term touching a hole, which needs each
+  term's support to be a bounded set known from the indices. Per-site is
+  the cheapest such family, at two gathers (psi_i, psi_j). A fixed-offset
+  bond family u^delta_k = phi(e_k, e_{k+delta}) qualifies equally, at four
+  -- k in {i-delta, i, j-delta, j}, deduplicated when j - i == delta and
+  dropped where the index leaves the strip -- and would make c an
+  energy-like summary rather than a magnetisation-like one, which for an
+  Ising target is the quantity the Boltzmann weight is built from. That
+  variant is NOT built here; psi below is per-site only. What no
+  subtraction reaches is a term downstream of an unmasked layer, whose
+  support is the whole lattice: that is the leak, and it is what confines
+  depth to AFTER aggregation (rho). The
   LayerNorm before rho is load-bearing for scale: |c| grows linearly in d,
   and without the norm rho saturates at exactly the lattice sizes this head
   exists to reach.
