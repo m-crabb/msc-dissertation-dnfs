@@ -116,65 +116,21 @@ def kept_draws(run_dir, n_plus):
     return samples[on_manifold], log_w[on_manifold], int(samples.shape[0])
 
 
-def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
-                   reference_weights, energy_of, lattice_edge, floor_draws,
-                   n_replicates=64, seed=0):
-    """One (paradigm, rung, coupling) cell, pooled over seeds.
+def _seed_errors(samples, weights, reference, reference_weights,
+                 reference_energy, energy_of, lattice_edge, floor_draws,
+                 n_replicates, generator):
+    """The three error columns for ONE seed, scored at `floor_draws`.
 
-    Pooled rather than mean +- SD over seeds: at the acceptance rates measured
-    here a single seed can keep fewer than twenty draws, and a per-seed spread
-    would report the shrunken N rather than the sampler.
+    Subsampled without replacement and averaged over replicates so the number
+    sits at the rung's own draw count rather than at whatever rejection left
+    (see the module docstring).
     """
-    from experiments.dnfs_baseline_01.run import (_build_model,
-                                                  _rebuild_from_run_dir)
-
-    xs, ws, n_drawn, run_dir = [], [], 0, None
-    for seed in SEEDS:
-        matches = sorted(Path(results_root).glob(glob.format(seed=seed)))
-        if not matches:
-            continue
-        run_dir = matches[0]
-        x, log_w, drawn = kept_draws(run_dir, n_sites // 2)
-        xs.append(x); ws.append(log_w); n_drawn += drawn
-    if run_dir is None:
-        return None
-
-    samples = torch.cat(xs)
-    log_w = torch.cat(ws)
-    n_kept = samples.shape[0]
-    acceptance = n_kept / n_drawn
-    weights = torch.softmax(log_w, dim=0)
-    ess = float(1.0 / (weights.pow(2).sum() * n_kept))
-
-    # FLOP/es charges for the REJECTED draws: the raw per-sample bill is paid
-    # on every draw, and only `acceptance` of them survive to be weighted.
-    cfg, target, _device = _rebuild_from_run_dir(run_dir)
-    model = _build_model(cfg, target)
-    per_forward = measured_forward_flops(
-        model, (samples[:1], torch.full((1,), 0.5)))
-    raw = neural_sampling_flops_per_sample(per_forward, cfg.ctmc.n_euler_steps,
-                                           n_sites)
-    flops = per_effective_sample(raw / acceptance, ess)
-
-    cell = {"ESS": ess, "FLOP/es": flops, "acceptance": acceptance,
-            "n_kept": n_kept, "n_drawn": n_drawn,
-            "per_forward_flops": per_forward}
-    if n_kept < floor_draws:
-        # Cannot be equalised downward; a larger eval is the only fix.
-        cell["draws_needed"] = int(np.ceil(floor_draws / acceptance))
-        return cell
-
-    # The 4x4 reference is the exact CONDITIONAL pmf, not a uniform draw over
-    # the enumerated slice; scoring against uniform would measure the Boltzmann
-    # weighting rather than the sampler. At 8x8 the reference is a pooled
-    # chain, whose snapshots do carry uniform weight.
     w_ref = reference_weights if reference_weights is not None else \
         torch.full((reference.shape[0],), 1.0 / reference.shape[0])
     energies = energy_of(samples)
-    generator = torch.Generator().manual_seed(seed)
     replicates = []
     for _ in range(n_replicates):
-        idx = torch.randperm(n_kept, generator=generator)[:floor_draws]
+        idx = torch.randperm(samples.shape[0], generator=generator)[:floor_draws]
         sub_w = weights[idx] / weights[idx].sum()
         replicates.append({
             "dMag": magnetisation_profile_error(
@@ -187,9 +143,70 @@ def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
                 energies[idx], sub_w, reference_energy,
                 reference_weights=w_ref),
         })
-    cell |= {k: float(np.mean([r[k] for r in replicates]))
-             for k in replicates[0]}
-    cell["scored_at_draws"] = floor_draws
+    return {k: float(np.mean([r[k] for r in replicates])) for k in replicates[0]}
+
+
+def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
+                   reference_weights, energy_of, lattice_edge, floor_draws,
+                   n_replicates=64, seed=0):
+    """One (paradigm, rung, coupling) cell as mean +- SD over seeds.
+
+    PER SEED, not pooled, so the row reports the same statistic as every
+    neural row above it. Pooling was checked and is safe here -- the raw
+    log-weight medians agree across seeds to 0.02-0.15 nats, so no run
+    dominates a pooled softmax, and the pooled ESS matches the per-seed mean
+    to about 0.001 -- but it discards the seed spread, which is exactly what
+    tells a reader that the 8x8 critical cell rests on 15-18 draws per seed.
+    """
+    from experiments.dnfs_baseline_01.run import (_build_model,
+                                                  _rebuild_from_run_dir)
+
+    generator = torch.Generator().manual_seed(seed)
+    rows, n_kept_total, n_drawn_total, run_dir = [], 0, 0, None
+    for seed_value in SEEDS:
+        matches = sorted(Path(results_root).glob(glob.format(seed=seed_value)))
+        if not matches:
+            continue
+        run_dir = matches[0]
+        samples, log_w, drawn = kept_draws(run_dir, n_sites // 2)
+        n_kept = samples.shape[0]
+        n_kept_total += n_kept
+        n_drawn_total += drawn
+        weights = torch.softmax(log_w, dim=0)
+        row = {"ESS": float(1.0 / (weights.pow(2).sum() * n_kept)),
+               "acceptance": n_kept / drawn, "n_kept": n_kept}
+        if n_kept >= floor_draws:
+            row |= _seed_errors(samples, weights, reference, reference_weights,
+                                reference_energy, energy_of, lattice_edge,
+                                floor_draws, n_replicates, generator)
+        rows.append(row)
+    if run_dir is None:
+        return None
+
+    # FLOP/es charges for the REJECTED draws: the raw per-sample bill is paid
+    # on every draw, and only `acceptance` of them survive to be weighted.
+    cfg, target, _device = _rebuild_from_run_dir(run_dir)
+    model = _build_model(cfg, target)
+    per_forward = measured_forward_flops(
+        model, (reference[:1], torch.full((1,), 0.5)))
+    raw = neural_sampling_flops_per_sample(per_forward, cfg.ctmc.n_euler_steps,
+                                           n_sites)
+    for row in rows:
+        row["FLOP/es"] = per_effective_sample(raw / row["acceptance"],
+                                              row["ESS"])
+
+    cell = {key: (float(np.mean([r[key] for r in rows])),
+                  float(np.std([r[key] for r in rows])))
+            for key in rows[0] if key not in ("n_kept",)}
+    cell["n_kept"] = n_kept_total
+    cell["n_kept_per_seed"] = [r["n_kept"] for r in rows]
+    cell["n_drawn"] = n_drawn_total
+    cell["per_forward_flops"] = per_forward
+    if "dMag" in rows[0]:
+        cell["scored_at_draws"] = floor_draws
+    else:
+        cell["draws_needed"] = int(np.ceil(
+            floor_draws / (n_kept_total / n_drawn_total)))
     return cell
 
 
@@ -230,13 +247,29 @@ LATEX_LABEL = {
 ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 
 
-def latex_rows(table, rung):
-    """The two rejection rows for one rung, blanks where no run exists.
+def latex_rows(table, rung, print_errors=False):
+    """The two rejection rows for one rung: ESS and FLOP/es only.
+
+    THE ERROR COLUMNS ARE DELIBERATELY NOT PRINTED, even for the two cells
+    where the kept count supports them. Three reasons, and the third is the
+    decisive one:
+
+      * they do not discriminate. Equalised to the rung's own N every route
+        sits at the floor -- unconstrained + reject reads 5.8/12.2/6.5 and
+        reject off soft 7.4/11.8/6.9 against a floor of 7.2/10.9/6.5 -- so
+        the cells restate the floor row rather than separating anything;
+      * these rows exist for the COST argument, which ESS and FLOP/es carry
+        in full: both routes are exact, and what separates them is acceptance
+        (11.24% / 1.24% / 0.33% against the swap CTMC's 100%);
+      * printing them at only ONE coupling, which is all the draw counts
+        allow, leaves a half-filled block whose asymmetry a reader must chase
+        into the caption. A uniformly blank error block says one thing.
+
+    The numbers are still computed and land in the JSON; `print_errors=True`
+    emits them if the disposition is ever revisited.
 
     Nothing here is bolded: these rows are the null the neural rows are
-    measured against, not competitors for a best-in-column mark, and a cell
-    that wins a column only because rejection left it more surviving draws
-    than the neural rows were given would be a misleading bold.
+    measured against, not competitors for a best-in-column mark.
     """
     lines = []
     for paradigm in ("unconstrained", "soft"):
@@ -246,11 +279,13 @@ def latex_rows(table, rung):
             if cell is None:
                 cells += ["--"] * 5
                 continue
-            cells.append(f"${cell['ESS']:.3f}$")
-            cells += [f"${cell[c] * 100:.1f}$" if c in cell else "--"
+            cells.append(f"${cell['ESS'][0]:.3f} \\pm {cell['ESS'][1]:.3f}$")
+            cells += [f"${cell[c][0] * 100:.1f} \\pm {cell[c][1] * 100:.1f}$"
+                      if print_errors and c in cell else "--"
                       for c in ERROR_COLUMNS]
-            exponent = int(np.floor(np.log10(cell["FLOP/es"])))
-            cells.append(f"${cell['FLOP/es'] / 10 ** exponent:.1f}"
+            mean, sd = cell["FLOP/es"]
+            exponent = int(np.floor(np.log10(mean)))
+            cells.append(f"${mean / 10 ** exponent:.1f}"
                          f"\\times10^{{{exponent}}}$")
         lines.append(f"        {LATEX_LABEL[paradigm]} & "
                      + " & ".join(cells) + r" \\")
@@ -264,6 +299,9 @@ def main(argv=None):
                         default=REPO_ROOT / "results" / "03_hard" / "rejection_rows.json")
     parser.add_argument("--latex", type=int, choices=(16, 64),
                         help="emit this rung's two rejection rows and exit")
+    parser.add_argument("--print-errors", action="store_true",
+                        help="also print the equalised error columns "
+                             "(off in print; see latex_rows)")
     args = parser.parse_args(argv)
 
     hard_dir = args.results_root / "03_hard"
@@ -289,15 +327,18 @@ def main(argv=None):
     args.out.write_text(json.dumps(table, indent=2))
 
     if args.latex:
-        print(latex_rows(table, args.latex))
+        print(latex_rows(table, args.latex, args.print_errors))
         return
 
-    print(f"{'cell':30} {'accept':>8} {'kept':>8} {'ESS':>7} {'FLOP/es':>10}  errors")
+    print(f"{'cell':28} {'accept':>8} {'kept/seed':>18} {'ESS':>16} "
+          f"{'FLOP/es':>10}  errors")
     for key, c in table.items():
         errs = ("filled" if "dMag" in c
-                else f"-- (kept < {FLOOR_DRAWS[int(key.split('_')[1])]})")
-        print(f"{key:30} {c['acceptance']*100:7.2f}% {c['n_kept']:8d} "
-              f"{c['ESS']:7.3f} {c['FLOP/es']:10.2e}  {errs}")
+                else f"-- (needs {c['draws_needed']:,} raw draws)")
+        ess = f"{c['ESS'][0]:.3f} +- {c['ESS'][1]:.3f}"
+        print(f"{key:28} {c['acceptance'][0]*100:7.2f}% "
+              f"{str(c['n_kept_per_seed']):>18} {ess:>16} "
+              f"{c['FLOP/es'][0]:10.2e}  {errs}")
     for key, spec in CELLS.items():
         if spec is None:
             print(f"{key[0]}_{key[1]}_{key[2]:6} NO RUN -- blank in print")
