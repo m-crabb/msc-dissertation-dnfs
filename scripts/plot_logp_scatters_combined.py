@@ -66,17 +66,33 @@ def main(argv=None):
                          "legend.fontsize": 7})
     fig, axes = plt.subplots(3, 2, figsize=(6.3, 6.15))
 
-    for row, (row_name, module_path) in enumerate(ROWS):
-        panels = importlib.import_module(module_path).panel_series()
+    rows = [(name, importlib.import_module(path).panel_series())
+            for name, path in ROWS]
+
+    # ONE pair of limits for all six panels, so a unit of log-density is the
+    # same distance in every panel and a wider cloud is visibly a wider cloud.
+    # Per-panel limits (what the standalone scripts use) make the rows
+    # incomparable, which is the one thing this figure exists to do.
+    #
+    # Taken from the PLOTTED points, not from each panel's own `lims`: the
+    # hard panels set theirs from the full enumerated support, whose
+    # low-probability tail is never drawn, and that alone stretched the
+    # sigma_c panel to -25 against a cloud ending near -15.
+    finite = [t for _, panels in rows for panel in panels
+              for _l, _c, x, y in panel["series"] for t in (x, y)]
+    lo = min(float(t.min()) for t in finite) - 0.3
+    hi = max(float(t.max()) for t in finite) + 0.3
+    shared_lims = (lo, hi)
+
+    for row, (row_name, panels) in enumerate(rows):
         for col, panel in enumerate(panels):
             ax = axes[row, col]
             for label, colour, x, y in panel["series"]:
                 ax.scatter(x, y, s=3, alpha=0.25, lw=0, color=colour,
                            label=label, rasterized=True)
-            ax.plot(panel["lims"], panel["lims"], color="black", lw=0.8,
-                    zorder=0)
-            ax.set_xlim(panel["lims"])
-            ax.set_ylim(panel["lims"])
+            ax.plot(shared_lims, shared_lims, color="black", lw=0.8, zorder=0)
+            ax.set_xlim(shared_lims)
+            ax.set_ylim(shared_lims)
             ax.set_title(panel["title"], fontsize=9, pad=3)
             ax.set_xlabel(panel["xlabel"], labelpad=1)
         # Row identity on the left panel; the shared quantity goes once, in

@@ -1,0 +1,307 @@
+"""Rejection rows for the hard house tables: sample off-manifold, then filter.
+
+Two routes reach the fixed-composition target WITHOUT a composition-preserving
+sampler, and both belong in the hard tables as the null the swap CTMC is
+measured against:
+
+  * UNCONSTRAINED + REJECT -- draw from the plain Ising sampler of Chapter 3
+    and keep only the draws that happen to land on c = 1/2.
+  * REJECT OFF SOFT -- draw from the penalised sampler of Chapter 4 and do
+    the same.
+
+BOTH ARE EXACT, which is the point worth stating before any cost claim. For
+importance-weighted draws {(x, w)} targeting pi, restricting to the event
+{x in C} and keeping the same weights is importance sampling for the
+conditional pi(. | C): the restriction changes the normaliser, and the
+normaliser cancels in the self-normalised estimator. For the SOFT sampler the
+argument needs one extra step and gives a stronger conclusion: on the manifold
+the penalty term lambda*d*(c_+(x) - c_target)^2 is IDENTICALLY ZERO because
+c_+(x) = c_target exactly, so
+
+    pi_soft(x) restricted to C  ==  pi_Ising(x) restricted to C  ==  pi_C(x),
+
+i.e. filtering the soft sampler targets the HARD chapter's distribution with
+no penalty residue at all. That is why the kept draws score an ESS fraction in
+the nineties rather than paying for the penalty.
+
+WHAT SEPARATES THE ROUTES IS WASTE, NOT BIAS, and the measurement is stark.
+Acceptance on the shipped evals:
+
+    unconstrained + reject   11.2% (4x4 sigma=0.1)   1.24% (4x4 sigma_c)
+                                                     0.33% (8x8 sigma_c)
+    reject off soft          91.0% (4x4 sigma=0.1)
+    swap CTMC                100% by construction, every size and coupling
+
+The collapse at criticality is the Ising model concentrating on ORDERED
+configurations, which are exactly the ones far from balanced: a uniform
+sampler would land on the 4x4 manifold 19.6% of the time
+(C(16,8)/2^16), and the critical target manages 1.24%. FLOP/es therefore
+carries the whole argument -- it is the raw per-sample bill divided by BOTH
+the acceptance rate and the ESS fraction, so a rejected draw is charged for.
+
+WHY SOME CELLS ARE BLANK, and what would fill them. Three runs do not exist:
+a soft 4x4 cell at sigma_c (the soft 4x4 family is sigma = 0.1 only, all 19
+registry entries), an unconstrained 8x8 cell at sigma = 0.1, and a soft 8x8
+specialist at c = 0.5 (the soft chapter's non-enumerable size is 10x10). Each
+is cheap; none has been run. The blanks are left in the printed tables
+deliberately, as the reminder of which three.
+
+THE ERROR COLUMNS ARE SCORED AT THE RUNG'S OWN DRAW COUNT, NOT AT WHATEVER
+REJECTION HAPPENED TO LEAVE. Rejection changes N by the acceptance rate --
+2,247 and 18,207 kept at the 4x4 floor coupling against the neural rows' 512,
+249 and 66 at criticality -- and profile errors scale with N, so scoring a
+rejection cell at its own kept count would let a route look accurate purely
+for having survived more draws (or inaccurate purely for having survived
+fewer). Every filled cell is therefore SUBSAMPLED WITHOUT REPLACEMENT to the
+rung's own draw count and averaged over replicates, exactly as the floor row
+resamples, so the numbers sit on one scale across every row of the table.
+
+Where the kept count falls BELOW the rung's draw count the cell cannot be
+equalised downward and prints "--": subsampling up is not a thing, and the fix
+is a larger eval. `draws_needed` records how large -- about 41,000 raw draws
+to reach 512 kept at 4x4 sigma_c (8x the current eval) and about 1.5 million
+to reach 5,000 at 8x8 sigma_c (300x). Both are re-evals of trained
+checkpoints, not retrains.
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
+
+from discrete_flow_sampler.diagnostics.flops import (
+    measured_forward_flops, neural_sampling_flops_per_sample,
+    per_effective_sample)
+from discrete_flow_sampler.diagnostics.metrics import (
+    correlation_profile_error, energy_wasserstein2,
+    magnetisation_profile_error)
+
+# (paradigm, rung, coupling) -> run-dir glob, or None where no run exists.
+# Rungs are named by SITE COUNT to match the hard chapter (d16 = 4x4,
+# d64 = 8x8); the baseline and soft chapters name their cells by lattice
+# EDGE (d4, d8), which is why the globs read d4/d8 for the same lattices.
+CELLS = {
+    ("unconstrained", 16, "s010"): ("01_baseline", "stage_4_d4_seed{seed}_20260609-*"),
+    ("unconstrained", 16, "s220"): ("01_baseline", "stage_4_d4_critical_sc_seed{seed}_20260824-wave1-sc"),
+    ("unconstrained", 64, "s010"): None,
+    ("unconstrained", 64, "s220"): ("01_baseline", "stage_4_d8_critical_paper_curriculum_sc_seed{seed}_20260824-wave1-sc"),
+    ("soft", 16, "s010"): ("02_constrained_soft", "S2_d4_c05_50k_l50_letf_anneal_offset_clip50_seed{seed}_*"),
+    ("soft", 16, "s220"): None,
+    ("soft", 64, "s010"): None,
+    ("soft", 64, "s220"): None,
+}
+SEEDS = (42, 43, 44, 45)
+# The draw count each rung's neural rows are evaluated at; a rejection cell
+# whose KEPT count falls below this cannot support the error columns.
+FLOOR_DRAWS = {16: 512, 64: 5000}
+
+
+def kept_draws(run_dir, n_plus):
+    """Draws on the manifold, with their original log-weights.
+
+    The weights are NOT recomputed: restricting an importance sample to an
+    event and keeping its weights is importance sampling for the conditional
+    (see the module docstring), so the stored weights are already the right
+    ones and any renormalisation cancels in the self-normalised estimator.
+    """
+    samples = torch.load(run_dir / "eval" / "samples.pt",
+                         weights_only=True).float()
+    log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
+    on_manifold = (samples > 0).sum(dim=-1) == n_plus
+    return samples[on_manifold], log_w[on_manifold], int(samples.shape[0])
+
+
+def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
+                   reference_weights, energy_of, lattice_edge, floor_draws,
+                   n_replicates=64, seed=0):
+    """One (paradigm, rung, coupling) cell, pooled over seeds.
+
+    Pooled rather than mean +- SD over seeds: at the acceptance rates measured
+    here a single seed can keep fewer than twenty draws, and a per-seed spread
+    would report the shrunken N rather than the sampler.
+    """
+    from experiments.dnfs_baseline_01.run import (_build_model,
+                                                  _rebuild_from_run_dir)
+
+    xs, ws, n_drawn, run_dir = [], [], 0, None
+    for seed in SEEDS:
+        matches = sorted(Path(results_root).glob(glob.format(seed=seed)))
+        if not matches:
+            continue
+        run_dir = matches[0]
+        x, log_w, drawn = kept_draws(run_dir, n_sites // 2)
+        xs.append(x); ws.append(log_w); n_drawn += drawn
+    if run_dir is None:
+        return None
+
+    samples = torch.cat(xs)
+    log_w = torch.cat(ws)
+    n_kept = samples.shape[0]
+    acceptance = n_kept / n_drawn
+    weights = torch.softmax(log_w, dim=0)
+    ess = float(1.0 / (weights.pow(2).sum() * n_kept))
+
+    # FLOP/es charges for the REJECTED draws: the raw per-sample bill is paid
+    # on every draw, and only `acceptance` of them survive to be weighted.
+    cfg, target, _device = _rebuild_from_run_dir(run_dir)
+    model = _build_model(cfg, target)
+    per_forward = measured_forward_flops(
+        model, (samples[:1], torch.full((1,), 0.5)))
+    raw = neural_sampling_flops_per_sample(per_forward, cfg.ctmc.n_euler_steps,
+                                           n_sites)
+    flops = per_effective_sample(raw / acceptance, ess)
+
+    cell = {"ESS": ess, "FLOP/es": flops, "acceptance": acceptance,
+            "n_kept": n_kept, "n_drawn": n_drawn,
+            "per_forward_flops": per_forward}
+    if n_kept < floor_draws:
+        # Cannot be equalised downward; a larger eval is the only fix.
+        cell["draws_needed"] = int(np.ceil(floor_draws / acceptance))
+        return cell
+
+    # The 4x4 reference is the exact CONDITIONAL pmf, not a uniform draw over
+    # the enumerated slice; scoring against uniform would measure the Boltzmann
+    # weighting rather than the sampler. At 8x8 the reference is a pooled
+    # chain, whose snapshots do carry uniform weight.
+    w_ref = reference_weights if reference_weights is not None else \
+        torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    energies = energy_of(samples)
+    generator = torch.Generator().manual_seed(seed)
+    replicates = []
+    for _ in range(n_replicates):
+        idx = torch.randperm(n_kept, generator=generator)[:floor_draws]
+        sub_w = weights[idx] / weights[idx].sum()
+        replicates.append({
+            "dMag": magnetisation_profile_error(
+                samples[idx], sub_w, reference, lattice_edge,
+                reference_weights=w_ref),
+            "dCorr": correlation_profile_error(
+                samples[idx], sub_w, reference, lattice_edge,
+                reference_weights=w_ref),
+            "EW2": energy_wasserstein2(
+                energies[idx], sub_w, reference_energy,
+                reference_weights=w_ref),
+        })
+    cell |= {k: float(np.mean([r[k] for r in replicates]))
+             for k in replicates[0]}
+    cell["scored_at_draws"] = floor_draws
+    return cell
+
+
+def references_for(rung, sigma_label, results_dir):
+    """(reference states, their per-site energies, energy_of) for a rung.
+
+    Reuses each rung's own house-table machinery so the rejection rows are
+    scored against exactly what the neural rows are scored against: the
+    enumerated conditional at 4x4, the certified chain pool at 8x8.
+    """
+    if rung == 16:
+        from experiments.constrained_hard_03.analysis import house_table_4x4 as h4
+        from experiments.constrained_hard_03.configs import CONFIGS
+
+        cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_mo_10k_w2"]
+        target, _head, states, probs = h4.exact_reference(cfg)
+        energy_of = lambda x: h4.energy_per_site(target, x)
+        return states, energy_of(states), energy_of, probs
+
+    from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
+    from experiments.constrained_hard_03.run import build_target_and_head
+
+    probe = (results_dir /
+             f"{h8.CELL_NAME[sigma_label].format(arm='mo')}_seed42_{h8.TAG}")
+    target, _ = build_target_and_head(h8.registry_config_for(probe), "cpu")
+    chains = h8.load_reference_chains(
+        REPO_ROOT / "results" / "03_hard" / "kawasaki_w2", h8.L,
+        h8.KAWASAKI_TAG[sigma_label], 0.2)
+    reference = torch.cat(chains)
+    energy_of = lambda x: h8.energy_per_site(target, x)
+    return reference, energy_of(reference), energy_of, None
+
+
+LATEX_LABEL = {
+    "unconstrained": r"unconstrained \gls{dnfs} $+$ reject",
+    "soft": r"reject off soft \gls{dnfs}",
+}
+ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
+
+
+def latex_rows(table, rung):
+    """The two rejection rows for one rung, blanks where no run exists.
+
+    Nothing here is bolded: these rows are the null the neural rows are
+    measured against, not competitors for a best-in-column mark, and a cell
+    that wins a column only because rejection left it more surviving draws
+    than the neural rows were given would be a misleading bold.
+    """
+    lines = []
+    for paradigm in ("unconstrained", "soft"):
+        cells = []
+        for sigma_label in ("s010", "s220"):
+            cell = table.get(f"{paradigm}_{rung}_{sigma_label}")
+            if cell is None:
+                cells += ["--"] * 5
+                continue
+            cells.append(f"${cell['ESS']:.3f}$")
+            cells += [f"${cell[c] * 100:.1f}$" if c in cell else "--"
+                      for c in ERROR_COLUMNS]
+            exponent = int(np.floor(np.log10(cell["FLOP/es"])))
+            cells.append(f"${cell['FLOP/es'] / 10 ** exponent:.1f}"
+                         f"\\times10^{{{exponent}}}$")
+        lines.append(f"        {LATEX_LABEL[paradigm]} & "
+                     + " & ".join(cells) + r" \\")
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--results-root", type=Path, default=REPO_ROOT / "results")
+    parser.add_argument("--out", type=Path,
+                        default=REPO_ROOT / "results" / "03_hard" / "rejection_rows.json")
+    parser.add_argument("--latex", type=int, choices=(16, 64),
+                        help="emit this rung's two rejection rows and exit")
+    args = parser.parse_args(argv)
+
+    hard_dir = args.results_root / "03_hard"
+    table = {}
+    for rung in (16, 64):
+        for sigma_label in ("s010", "s220"):
+            wanted = [k for k in CELLS
+                      if k[1] == rung and k[2] == sigma_label and CELLS[k]]
+            if not wanted:
+                continue
+            reference, reference_energy, energy_of, ref_probs = references_for(
+                rung, sigma_label, hard_dir)
+            for key in wanted:
+                subdir, glob = CELLS[key]
+                cell = rejection_cell(
+                    args.results_root / subdir, glob, rung, reference,
+                    reference_energy, ref_probs, energy_of, int(rung ** 0.5),
+                    FLOOR_DRAWS[rung])
+                if cell:
+                    table[f"{key[0]}_{rung}_{sigma_label}"] = cell
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(table, indent=2))
+
+    if args.latex:
+        print(latex_rows(table, args.latex))
+        return
+
+    print(f"{'cell':30} {'accept':>8} {'kept':>8} {'ESS':>7} {'FLOP/es':>10}  errors")
+    for key, c in table.items():
+        errs = ("filled" if "dMag" in c
+                else f"-- (kept < {FLOOR_DRAWS[int(key.split('_')[1])]})")
+        print(f"{key:30} {c['acceptance']*100:7.2f}% {c['n_kept']:8d} "
+              f"{c['ESS']:7.3f} {c['FLOP/es']:10.2e}  {errs}")
+    for key, spec in CELLS.items():
+        if spec is None:
+            print(f"{key[0]}_{key[1]}_{key[2]:6} NO RUN -- blank in print")
+
+
+if __name__ == "__main__":
+    main()
