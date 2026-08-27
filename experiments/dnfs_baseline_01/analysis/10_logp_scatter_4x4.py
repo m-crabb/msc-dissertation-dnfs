@@ -72,31 +72,24 @@ def state_keys(states):
     return bits @ powers
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results-dir", type=Path,
-                        default=REPO_ROOT / "results" / "01_baseline")
-    parser.add_argument("--out", type=Path, required=True,
-                        help="output PNG path (the Overleaf assets file)")
-    args = parser.parse_args(argv)
+def panel_series(results_dir=None):
+    """Plot-ready panels, shared by main() and the combined app:logp-scatters
+    figure so the two can never disagree about what is being plotted.
 
-    # Style annex: in-figure labels 9pt, annotations 8pt; \textwidth two-panel.
-    plt.rcParams.update({"font.size": 9, "axes.labelsize": 9,
-                         "xtick.labelsize": 8, "ytick.labelsize": 8,
-                         "legend.fontsize": 8})
-    fig, axes = plt.subplots(1, 2, figsize=(6.3, 3.1))
-
+    One entry per panel, each carrying a single series (this chapter overlays
+    no arms) with the per-panel median offset already removed.
+    """
+    results_dir = Path(results_dir or REPO_ROOT / "results" / "01_baseline")
     all_states = enumerate_states(D_SITES)
-    summary = {}
-    for ax, (pattern, sigma, panel_title) in zip(axes, PANELS):
+    panels = []
+    for pattern, sigma, panel_title in PANELS:
         target = IsingTarget(D=L, sigma=sigma, bias=0.0)
         log_pi = exact_log_probs(target, all_states)
         key_to_logp = dict(zip(state_keys(all_states).tolist(),
                                log_pi.tolist()))
-
         xs, ys = [], []
         for seed in SEEDS:
-            matches = sorted(args.results_dir.glob(pattern.format(seed=seed)))
+            matches = sorted(results_dir.glob(pattern.format(seed=seed)))
             if not matches:
                 raise FileNotFoundError(
                     f"no run dir for seed {seed} matching {pattern}")
@@ -105,31 +98,47 @@ def main(argv=None):
                                  weights_only=True).float()
             log_w = torch.load(run_dir / "eval" / "log_weights.pt",
                                weights_only=True)
-            log_q = target.log_prob(samples) - log_w
             xs.append(torch.tensor([key_to_logp[k]
                                     for k in state_keys(samples).tolist()]))
-            ys.append(log_q)
-
+            ys.append(target.log_prob(samples) - log_w)
         x, y = torch.cat(xs), torch.cat(ys)
         offset = (y - x).median()
-        residual_sd = (y - x - offset).std()
-        summary[panel_title] = (float(offset), float(residual_sd), len(x))
         print(f"[scatter] sigma={sigma:.6f}: {len(x)} points, median offset "
               f"{offset:.3f} nats, residual sd after removal "
-              f"{residual_sd:.3f} nats")
-
+              f"{(y - x - offset).std():.3f} nats")
         # Limits from the enumerated support actually visited, padded, so the
         # diagonal spans the plotted cloud rather than the full 2^16 tail.
         lims = (min(x.min().item(), (y - offset).min().item()) - 0.3,
                 max(x.max().item(), (y - offset).max().item()) + 0.3)
-        ax.scatter(x, y - offset, s=4, alpha=0.25, lw=0, color=COLOUR,
-                   rasterized=True)
-        ax.plot(lims, lims, color="black", lw=0.8, zorder=0)
-        ax.set_xlim(lims)
-        ax.set_ylim(lims)
-        ax.set_title(panel_title, fontsize=9)
-        ax.set_xlabel(r"exact $\log \pi(x)$")
-    axes[0].set_ylabel(r"estimated $\log \hat q(x)$ (offset removed)")
+        panels.append({"title": panel_title, "lims": lims,
+                       "xlabel": r"exact $\log \pi(x)$",
+                       "series": [("unconstrained", COLOUR, x, y - offset)]})
+    return panels
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--results-dir", type=Path,
+                        default=REPO_ROOT / "results" / "01_baseline")
+    parser.add_argument("--out", type=Path, required=True,
+                        help="output PNG path (the Overleaf assets file)")
+    args = parser.parse_args(argv)
+
+    # Style annex: in-figure labels 9pt, annotations 8pt.
+    plt.rcParams.update({"font.size": 9, "axes.labelsize": 9,
+                         "xtick.labelsize": 8, "ytick.labelsize": 8,
+                         "legend.fontsize": 8})
+    fig, axes = plt.subplots(1, 2, figsize=(4.54, 2.5))
+
+    for ax, panel in zip(axes, panel_series(args.results_dir)):
+        for _label, colour, x, y in panel["series"]:
+            ax.scatter(x, y, s=4, alpha=0.25, lw=0, color=colour,
+                       rasterized=True)
+        ax.plot(panel["lims"], panel["lims"], color="black", lw=0.8, zorder=0)
+        ax.set_xlim(panel["lims"])
+        ax.set_ylim(panel["lims"])
+        ax.set_title(panel["title"], fontsize=9)
+        ax.set_xlabel(panel["xlabel"])
 
     fig.tight_layout()
     args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -70,6 +70,49 @@ def state_keys(states):
     return bits @ powers
 
 
+def panel_series(results_dir=None):
+    """Plot-ready panels, shared by main() and the combined app:logp-scatters
+    figure so the two can never disagree about what is being plotted.
+
+    One entry per panel: the exact-reference limits, the axis label, and one
+    (label, colour, x, y) series per printed arm with the per-arm median
+    offset already removed.
+    """
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    results_dir = Path(results_dir or REPO_ROOT / "results" / "03_hard")
+    panels = []
+    for sigma_label, panel_title in SIGMA_PANELS:
+        cfg_any = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_mo_10k_w2"]
+        target, slice_states, log_p_cond = exact_reference(cfg_any)
+        key_to_logp = dict(zip(state_keys(slice_states).tolist(),
+                               log_p_cond.tolist()))
+        lims = (log_p_cond.min().item() - 0.5, log_p_cond.max().item() + 0.5)
+
+        series = []
+        for arm, (arm_label, colour) in ARM_STYLE.items():
+            cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_w2"]
+            xs, ys = [], []
+            for seed in SEEDS:
+                run_dir = results_dir / f"{cfg.name}_seed{seed}_{TAG}"
+                samples = torch.load(run_dir / "eval" / "samples.pt",
+                                     weights_only=True).float()
+                log_w = torch.load(run_dir / "eval" / "log_weights.pt",
+                                   weights_only=True)
+                xs.append(torch.tensor([key_to_logp[k] for k in
+                                        state_keys(samples).tolist()]))
+                ys.append(target.log_prob(samples) - log_w)
+            x, y = torch.cat(xs), torch.cat(ys)
+            offset = (y - x).median()
+            print(f"[scatter] {sigma_label} {arm}: median offset "
+                  f"{offset:.3f}, residual sd after removal "
+                  f"{(y - x - offset).std():.3f}")
+            series.append((arm_label, colour, x, y - offset))
+        panels.append({"title": panel_title, "lims": lims, "series": series,
+                       "xlabel": r"exact $\log \pi_{\mathrm{cond}}(x)$"})
+    return panels
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", type=Path,
@@ -78,50 +121,21 @@ def main(argv=None):
                         help="output PNG path (the Overleaf assets file)")
     args = parser.parse_args(argv)
 
-    from experiments.constrained_hard_03.configs import CONFIGS
-
-    # Style annex: in-figure labels 9pt, annotations 8pt; \textwidth two-panel.
+    # Style annex: in-figure labels 9pt, annotations 8pt.
     plt.rcParams.update({"font.size": 9, "axes.labelsize": 9,
                          "xtick.labelsize": 8, "ytick.labelsize": 8,
                          "legend.fontsize": 8})
-    fig, axes = plt.subplots(1, 2, figsize=(6.3, 3.1), sharey=False)
+    fig, axes = plt.subplots(1, 2, figsize=(4.54, 2.5), sharey=False)
 
-    for ax, (sigma_label, panel_title) in zip(axes, SIGMA_PANELS):
-        cfg_any = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_mo_10k_w2"]
-        target, slice_states, log_p_cond = exact_reference(cfg_any)
-        key_to_logp = dict(zip(state_keys(slice_states).tolist(),
-                               log_p_cond.tolist()))
-        lims = (log_p_cond.min().item() - 0.5, log_p_cond.max().item() + 0.5)
-
-        for arm, (arm_label, colour) in ARM_STYLE.items():
-            cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_w2"]
-            xs, ys = [], []
-            for seed in SEEDS:
-                run_dir = args.results_dir / f"{cfg.name}_seed{seed}_{TAG}"
-                samples = torch.load(run_dir / "eval" / "samples.pt",
-                                     weights_only=True).float()
-                log_w = torch.load(run_dir / "eval" / "log_weights.pt",
-                                   weights_only=True)
-                log_pi_tilde = target.log_prob(samples)
-                log_q = log_pi_tilde - log_w
-                x = torch.tensor([key_to_logp[k] for k in
-                                  state_keys(samples).tolist()])
-                xs.append(x)
-                ys.append(log_q)
-            x = torch.cat(xs)
-            y = torch.cat(ys)
-            offset = (y - x).median()
-            print(f"[scatter] {sigma_label} {arm}: median offset "
-                  f"{offset:.3f}, residual sd after removal "
-                  f"{(y - x - offset).std():.3f}")
-            ax.scatter(x, y - offset, s=4, alpha=0.25, lw=0, color=colour,
-                       label=arm_label, rasterized=True)
-
-        ax.plot(lims, lims, color="black", lw=0.8, zorder=0)
-        ax.set_xlim(lims)
-        ax.set_ylim(lims)
-        ax.set_title(panel_title, fontsize=9)
-        ax.set_xlabel(r"exact $\log \pi_{\mathrm{cond}}(x)$")
+    for ax, panel in zip(axes, panel_series(args.results_dir)):
+        for label, colour, x, y in panel["series"]:
+            ax.scatter(x, y, s=4, alpha=0.25, lw=0, color=colour,
+                       label=label, rasterized=True)
+        ax.plot(panel["lims"], panel["lims"], color="black", lw=0.8, zorder=0)
+        ax.set_xlim(panel["lims"])
+        ax.set_ylim(panel["lims"])
+        ax.set_title(panel["title"], fontsize=9)
+        ax.set_xlabel(panel["xlabel"])
     axes[0].set_ylabel(r"estimated $\log \hat q(x)$ (offset removed)")
     axes[0].legend(loc="upper left", frameon=False, handletextpad=0.1)
 
