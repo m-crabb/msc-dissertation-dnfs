@@ -55,7 +55,8 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
     compute_xi_t_swap,
     sample_swap_ctmc,
 )
-from discrete_flow_sampler.samplers.swap_kolmogorov import loss_swap
+from discrete_flow_sampler.samplers.swap_kolmogorov import (
+    loss_swap, loss_swap_backward_microbatched)
 from discrete_flow_sampler.targets.ising import (
     SIGMA_C, FixedCompositionIsingTarget)
 
@@ -187,7 +188,21 @@ def _runners(args, head, target, device: torch.device) -> dict:
             loss.backward()
             optimiser.step()
 
-        return {"train_step": run_train_step}
+        def run_train_step_microbatched():
+            # The production path when loss_microbatch_size is set: the same
+            # gradient, accumulated over row slices instead of materialising
+            # one graph over all of them.
+            optimiser.zero_grad()
+            loss_swap_backward_microbatched(
+                x, t, c_t, head, target,
+                microbatch_size=args.loss_microbatch,
+            )
+            optimiser.step()
+
+        if args.loss_microbatch is None:
+            return {"train_step": run_train_step}
+        return {f"train_step_mb{args.loss_microbatch}":
+                run_train_step_microbatched}
 
     if args.mode == "eval":
         autocast_kwargs = dict(
@@ -291,6 +306,21 @@ def main(argv=None):
     parser.add_argument("--eval-autocast-bf16", action="store_true")
     parser.add_argument("--sdpa", action="store_true")
     parser.add_argument("--compile", action="store_true")
+    parser.add_argument(
+        "--loss-microbatch", type=int, default=None,
+        help="train_step only: slice the backward over this many rows "
+             "at a time (the production `loss_microbatch_size`). This is "
+             "gradient accumulation and it is gradient-EXACT, so it "
+             "trades wall clock for peak memory and moves no number. "
+             "None = the single-shot backward.",
+    )
+    parser.add_argument(
+        "--tf32", action="store_true",
+        help="run fp32 matmuls in TF32 (10-bit mantissa inputs, fp32 "
+             "accumulate). Reports the exactness of the TARGET's x @ A "
+             "alongside, because that matmul carries the closed-form "
+             "swap log-ratio and therefore the importance weights.",
+    )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--device", default=None)
@@ -308,6 +338,30 @@ def main(argv=None):
         patch_radius=args.patch_radius,
         gather_triu_pairs=args.gather_triu_pairs,
     )
+    if args.tf32:
+        # THE CORRECTNESS GATE, reported rather than assumed. TF32 is a
+        # GLOBAL matmul setting, so it reaches the target's `h = x @ A` --
+        # the closed-form Kawasaki field sum behind the swap log-ratio, and
+        # so behind every importance weight. The argument that this is safe
+        # is that both operands are tiny exactly-representable integers (x
+        # is +-1, A is the 0/1 torus adjacency counted twice per edge) and
+        # A100 TF32 accumulates in fp32, so the rounding TF32 applies to its
+        # inputs has nothing to round. That is a claim about one operator,
+        # and a claim is worth what its check is worth, so print the
+        # residual. A nonzero value here means TF32 moves the weights and
+        # the flag is an ESTIMATOR change, not a speed lever.
+        probe = target.sample_base(min(args.batch, 64), device=device).float()
+        adjacency = target.A.float()
+        torch.set_float32_matmul_precision("high")
+        tf32_field = probe @ adjacency
+        torch.set_float32_matmul_precision("highest")
+        exact_field = probe @ adjacency
+        residual = (tf32_field - exact_field).abs().max().item()
+        verdict = "EXACT" if residual == 0.0 else "INEXACT -- weights move"
+        print(f"tf32 target x@A max |residual| vs fp32: {residual:.3e} ({verdict})")
+        # Leave TF32 on for the timing that follows.
+        torch.set_float32_matmul_precision("high")
+
     if args.compile:
         head.compile()
     print(
@@ -318,7 +372,9 @@ def main(argv=None):
         f"gather_triu_pairs={args.gather_triu_pairs} "
         f"multi_event={args.multi_event} "
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
-        f"compile={args.compile} device={device} torch={torch.__version__}"
+        f"compile={args.compile} tf32={args.tf32} "
+        f"loss_microbatch={args.loss_microbatch} "
+        f"device={device} torch={torch.__version__}"
     )
 
     grad_free = args.mode != "train_step"
