@@ -143,7 +143,8 @@ def test_blindness_probe_has_teeth():
 
 
 @torch.no_grad()
-@pytest.mark.parametrize("lattice_side,patch_radius", [(4, 1), (8, 1), (8, 2)])
+@pytest.mark.parametrize("lattice_side,patch_radius",
+                         [(4, 1), (8, 1), (8, 2), (8, 3)])
 def test_vectorised_context_matches_per_pair_reference(lattice_side, patch_radius):
     """The scatter/gather assembly must equal a slow reference that builds
     each pair's context by hand: zero the partner inside the other hole's
@@ -160,9 +161,10 @@ def test_vectorised_context_matches_per_pair_reference(lattice_side, patch_radiu
 
 
 @torch.no_grad()
-@pytest.mark.parametrize("lattice_side", [4, 8])
-def test_antisymmetric_at_init(lattice_side):
-    head = _head(lattice_side=lattice_side)
+@pytest.mark.parametrize("lattice_side,patch_radius",
+                         [(4, 1), (8, 1), (8, 2), (8, 3)])
+def test_antisymmetric_at_init(lattice_side, patch_radius):
+    head = _head(lattice_side=lattice_side, patch_radius=patch_radius)
     d = lattice_side * lattice_side
     x = _state(d)
     t = torch.rand(1)
@@ -187,15 +189,16 @@ def test_trivial_swap_vanishes_and_index_antisymmetry_exact():
 
 
 @torch.no_grad()
-@pytest.mark.parametrize("lattice_side", [4, 8])
-def test_pair_output_translation_equivariant_on_torus(lattice_side):
+@pytest.mark.parametrize("lattice_side,patch_radius",
+                         [(4, 1), (8, 1), (8, 2), (8, 3)])
+def test_pair_output_translation_equivariant_on_torus(lattice_side, patch_radius):
     """The PHYSICAL rate of the unordered pair, G[min, max], must satisfy
     G(roll x)(roll i, roll j) == G(x)(i, j) for every lattice shift: nothing
     in the head may know an absolute position, and a shift that moves the
     lower index to the other hole must not change the rate. The stored
     matrix is index-antisymmetric by convention, so compare G * sign(j - i),
     the label-symmetric physical matrix."""
-    head = _head(lattice_side=lattice_side)
+    head = _head(lattice_side=lattice_side, patch_radius=patch_radius)
     D = lattice_side
     d = D * D
     x = _state(d)

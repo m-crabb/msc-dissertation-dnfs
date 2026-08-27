@@ -1929,3 +1929,120 @@ def test_d256_house_cells_never_carry_the_cold_cv_tripwire():
             f"{cell.name} carries a cold-CV tripwire; production house cells "
             f"must run to their full n_steps={cell.train.n_steps}"
         )
+
+
+def test_d400_radius_cells_are_declared_transforms_of_arm_b():
+    """20x20 radius probe (2026-08-27): the two `_w4` cells must be _ARM_B --
+    the same d256 lineage chassis the 16x16 rung is built on -- transformed
+    by exactly the fields their registry block declares, and nothing else.
+
+    WHY THIS TEST AND NOT A FRESH BUILDER. The rung changes one physical
+    thing, the lattice, and one architectural thing, the patch radius. If
+    any other field drifts, a d400-vs-d256 read stops being chargeable to
+    the size and an R=3-vs-R=2 read stops being chargeable to the radius --
+    which is the entire question the six jobs are being spent on. Declared,
+    per cell: `ising.D = 20` and the flat 0.10 coupling with NO curriculum
+    (the floor convention -- a ladder at the easy target would measure the
+    curriculum); the head knobs; 50k steps; the s60 optimised recipe; the
+    cold-CV tripwire cleared as on every production cell; and
+    loss_microbatch_size OFF, which is a MEASUREMENT not a guess -- profiled
+    2026-08-27 on a Modal A100-80GB (the same card class as the DoC a100
+    partition) at 58.25 GB peak for R=2 and 63.41 GB for R=3 over 512 rows,
+    against a d256 R=2 control that reproduced its recorded 24.93 GB
+    exactly.
+
+    NETWORK SIZE IS HELD FIXED ON PURPOSE. `model` must be byte-identical to
+    the d256 parent: the probe asks what the lattice and the radius do, so
+    width and depth are not allowed to move underneath them."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    arm_b = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
+    declared = {
+        "thp2": {"head_kind": "two_hole_patch", "patch_radius": 2},
+        "thp3": {"head_kind": "two_hole_patch", "patch_radius": 3},
+    }
+    reset = {
+        "head_kind": arm_b.head_kind, "patch_radius": None,
+        "exact_field_channel": False, "interior_band": None,
+        "gather_triu_pairs": False,
+    }
+
+    for arm, knobs in declared.items():
+        name = f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4"
+        cell = CONFIGS[name]
+        for field, value in knobs.items():
+            assert getattr(cell, field) == value, (name, field)
+        assert cell.ising.D == 20, name
+        assert cell.ising.sigma == 0.10, name
+        assert cell.curriculum is None, name
+        assert cell.train.n_steps == 50_000, name
+        assert cell.train.c_t_from_rollout, name
+        assert cell.compile_head, name
+        assert cell.train.halt_on_cv_inversion_after is None, name
+        # Both radii fit an 80 GB card single-shot; see the docstring.
+        assert cell.train.loss_microbatch_size is None, name
+        # The network is the control variable, not a knob.
+        assert cell.model == arm_b.model, name
+        rebuilt = replace(
+            cell,
+            name=arm_b.name,
+            compile_head=False,
+            ising=replace(cell.ising, D=arm_b.ising.D, sigma=arm_b.ising.sigma),
+            curriculum=arm_b.curriculum,
+            train=replace(
+                cell.train, n_steps=arm_b.train.n_steps,
+                loss_microbatch_size=arm_b.train.loss_microbatch_size,
+                c_t_from_rollout=False,
+                halt_on_cv_inversion_after=(
+                    arm_b.train.halt_on_cv_inversion_after
+                ),
+            ),
+            **reset,
+        )
+        assert rebuilt == arm_b, name
+
+
+def test_d400_radius_cells_isolate_the_radius():
+    """The twin relationship the probe is read through: the two `_w4` cells
+    differ in `patch_radius` and in NOTHING else, so an R=3-vs-R=2 gap at
+    20x20 is chargeable to the head's one architectural knob -- the same
+    reading the 16x16 rung gets from its thp/thp2 pair."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    r2 = CONFIGS["H2_d400_c50_s010_letf_thp2_50k_b512_ne128_cv2_w4"]
+    r3 = CONFIGS["H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4"]
+    assert (r2.patch_radius, r3.patch_radius) == (2, 3)
+    assert replace(r3, name=r2.name, patch_radius=2) == r2
+
+
+def test_d400_radius_cells_build_their_heads():
+    """Construction check at the real lattice: build_swap_head must
+    instantiate both radii at d=400, so an illegal window (the head requires
+    2R+1 <= D, which is 7 <= 20 here) or a knob typo fails in two seconds
+    rather than after an a100 queue wait. Also pins the pooled-level count:
+    the patch head derives its radii as powers of two whose box fits the
+    torus, so D=20 earns a fourth level (1, 2, 4, 8) that D=16 does not --
+    free extra context that comes with the rung and is NOT a declared knob.
+    """
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
+    cells = [name for name in CONFIGS if name.endswith("_w4")]
+    assert len(cells) == 2
+    for name in cells:
+        cfg = CONFIGS[name]
+        backbone = LeTFRateMatrix(
+            d=cfg.ising.D ** 2, vocab_size=2, hidden_dim=16, n_layers=2,
+            n_heads=2,
+        )
+        target = FixedCompositionIsingTarget(
+            D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
+        )
+        head = build_swap_head(cfg, backbone, target=target)
+        assert head is not None, name
+        assert head.pooling_radii == (1, 2, 4, 8), (name, head.pooling_radii)

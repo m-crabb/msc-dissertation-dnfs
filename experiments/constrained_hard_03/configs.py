@@ -3881,3 +3881,84 @@ CONFIGS.update({
         *(_d256_house_floor_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
     )
 })
+
+
+# --- 20x20 radius probe (w4, 2026-08-27) ---------------------------------
+#
+# THE QUESTION. Two things at once, deliberately: does the two-hole patch
+# head hold up one rung above 16x16, and does its one architectural knob
+# keep paying there? At d256 the radius bought more than any other lever in
+# the campaign -- R=1 -> R=2 took the exact-sigma_c EMA eval ESS fraction
+# from 0.638 +- 0.029 to 0.826 +- 0.015 for +4% step time -- so whether that
+# continues is the cheapest question worth asking at a new size.
+#
+# WHY THE 0.10 FLOOR AND NOT sigma_c. The floor cell is the diagnostic that
+# separates the two ways this rung can fail. The matching step's own
+# certificates have room at the easy coupling and not much at the hard one
+# (measured at d256: events/site/step 0.0005 vs 0.0019, one-event clip
+# fraction 0.0000 vs 2-4%), so if d400 breaks for a RATE-LOAD reason the
+# floor still reads clean and sigma_c does not; if it breaks statistically,
+# the floor breaks too. Running the floor first buys that discrimination
+# before three sigma_c seeds are spent. It is also the row with an
+# unambiguous pass mark: every head at the 16x16 floor sits ON the sampling
+# floor (ESS 0.993-1.000), so anything materially below that at d400 is the
+# size biting rather than a judgement call.
+#
+# EVERYTHING ELSE IS HELD. Same chassis (_ARM_B), same backbone (hidden 32,
+# 2 layers -- the network is the control, and capacity was measured as a
+# REGRESSION at d256, Var/site 0.0229 against the 0.0168 anchor, CI-disjoint),
+# same batch 512, same n_euler 128, same estimator, same 50k floor horizon.
+# n_euler stays 128 on measurement, not inertia: it beat ne512 at d256
+# CI-disjoint under Bonferroni and the gridprobe confirmed that as a
+# TRAINING effect, and the matching step's fidelity does not read Lambda*dt
+# anyway -- its certificates are the per-pair firing probability (~3e-4 at
+# d256, four orders under its clamp) and events/site/step (0.0005 at the
+# floor against a 0.1 cap).
+#
+# LOSS MICROBATCHING OFF, ON MEASUREMENT. Profiled 2026-08-27 on a Modal
+# A100-80GB -- the same card class as the DoC a100 partition, which is what
+# makes the number transferable -- one train step over 512 rows, compiled:
+# R=2 peaks 58.25 GB at 0.375 s, R=3 peaks 63.41 GB at 0.400 s, against a
+# d256 R=2 control that reproduced its recorded 24.93 GB / 0.156 s exactly.
+# Both fit an 80 GB card single-shot (27% and 21% headroom), and the rollout
+# is not the binding phase at either radius (22.1 and 23.4 GB). So the thp
+# arms keep the single-shot backward they use at d256, where slicing was
+# measured 40% slower.
+#
+# WHAT GROWS WITH THE RUNG AND IS NOT A KNOB. The head derives its pooled
+# levels as powers of two whose box fits the torus, so D=20 earns a fourth
+# level (1, 2, 4, 8) where D=16 stops at three -- extra context that arrives
+# with the lattice. The relative-position embedding is nn.Embedding(d, f),
+# so it grows with d by construction. Neither is a declared deviation;
+# both are what "the same head at a bigger lattice" means.
+_D400_RADIUS_ARM_KNOBS: dict[str, dict] = {
+    "thp2": {"head_kind": "two_hole_patch", "patch_radius": 2},
+    "thp3": {"head_kind": "two_hole_patch", "patch_radius": 3},
+}
+
+
+def _d400_radius_cell(arm: str) -> HardStageCfg:
+    """One 20x20 floor cell: _ARM_B with the lattice, the flat 0.10 coupling
+    and the arm's radius, and nothing else. The tripwire is cleared for the
+    same reason it is on every d256 house cell -- it is _ARM_B's screening
+    verdict and a silent truncation on a production run."""
+    cell = replace(
+        _ARM_B,
+        name=f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4",
+        ising=replace(_ARM_B.ising, D=20, sigma=0.10),
+        curriculum=None,
+        train=replace(
+            _ARM_B.train,
+            n_steps=50_000,
+            loss_microbatch_size=None,
+            halt_on_cv_inversion_after=None,
+        ),
+        **_D400_RADIUS_ARM_KNOBS[arm],
+    )
+    return optimised_recipe(cell)
+
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (_d400_radius_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS)
+})
