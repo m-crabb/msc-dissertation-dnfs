@@ -182,8 +182,14 @@ def _runners(args, head, target, device: torch.device) -> dict:
         optimiser = torch.optim.AdamW(head.parameters(), lr=1e-3)
         c_t = torch.zeros(batch, device=device)
 
+        train_autocast_kwargs = dict(
+            device_type=device.type, dtype=torch.bfloat16,
+            enabled=args.train_autocast_bf16,
+        )
+
         def run_train_step():
-            loss = loss_swap(x, t, c_t, head, target)
+            with torch.autocast(**train_autocast_kwargs):
+                loss = loss_swap(x, t, c_t, head, target)
             optimiser.zero_grad()
             loss.backward()
             optimiser.step()
@@ -193,10 +199,11 @@ def _runners(args, head, target, device: torch.device) -> dict:
             # gradient, accumulated over row slices instead of materialising
             # one graph over all of them.
             optimiser.zero_grad()
-            loss_swap_backward_microbatched(
-                x, t, c_t, head, target,
-                microbatch_size=args.loss_microbatch,
-            )
+            with torch.autocast(**train_autocast_kwargs):
+                loss_swap_backward_microbatched(
+                    x, t, c_t, head, target,
+                    microbatch_size=args.loss_microbatch,
+                )
             optimiser.step()
 
         if args.loss_microbatch is None:
@@ -307,6 +314,14 @@ def main(argv=None):
     parser.add_argument("--sdpa", action="store_true")
     parser.add_argument("--compile", action="store_true")
     parser.add_argument(
+        "--train-autocast-bf16", action="store_true",
+        help="train_step only: run the loss forward/backward under a "
+             "bf16 autocast. Unlike --tf32 this halves the BYTES of the "
+             "(B, d, d, f) pair slab, which is what a bandwidth-bound "
+             "step is actually waiting on. Exploratory: the production "
+             "trainer autocasts the EVAL only.",
+    )
+    parser.add_argument(
         "--loss-microbatch", type=int, default=None,
         help="train_step only: slice the backward over this many rows "
              "at a time (the production `loss_microbatch_size`). This is "
@@ -374,6 +389,7 @@ def main(argv=None):
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
         f"compile={args.compile} tf32={args.tf32} "
         f"loss_microbatch={args.loss_microbatch} "
+        f"train_bf16={args.train_autocast_bf16} "
         f"device={device} torch={torch.__version__}"
     )
 
