@@ -66,7 +66,15 @@ ARMS = {
     "fimo2ef": "factorised + prefix band + exact-field",
     "fmo2ef": "factorised (global) + exact-field",
     "thp": "two-hole patch head",
+    "mal": "masked-attention head, whole-lattice window",
 }
+# Arms whose cells carry their OWN recipe suffix and campaign tag rather than
+# the wave-2 defaults. `mal` is the window probe (2026-08-28): the
+# masked-attention head with `attention_window="lattice"` its single declared
+# change, so its row reads against the `ma` row as the window and nothing
+# else. It ran under its own tag because it is not part of the wave-2 house
+# campaign.
+ARM_PROVENANCE = {"mal": ("win", "20260828-win-gate")}
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
 # Hold RESOLVED (decision 2026-08-26): the two ef-on-factorised
@@ -223,8 +231,11 @@ def main(argv=None):
 
         for arm in ARMS:
             eager_refill = (arm, sigma_label) in EAGER_REFILL
-            recipe_suffix = "w2e" if eager_refill else "w2"
-            tag = EAGER_TAG if eager_refill else TAG
+            if arm in ARM_PROVENANCE:
+                recipe_suffix, tag = ARM_PROVENANCE[arm]
+            else:
+                recipe_suffix = "w2e" if eager_refill else "w2"
+                tag = EAGER_TAG if eager_refill else TAG
             cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_{recipe_suffix}"]
             _, head, _, _ = exact_reference(cfg)
             example_x = ref_states[:1]
