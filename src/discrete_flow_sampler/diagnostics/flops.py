@@ -30,6 +30,8 @@ the thesis states this once where the column is defined, and the column
 supports order-of-magnitude cross-family reads.
 """
 
+import math
+
 from torch.utils.flop_counter import FlopCounterMode
 
 # One Ising target log-prob evaluation, per site: the neighbour sum is two
@@ -168,3 +170,166 @@ def chain_per_effective_sample(total_flops: float, n_records: int,
     divisor is the honest effective count N / tau_int.
     """
     return total_flops / (n_records / tau_int)
+
+
+# --- Training-run accounting --------------------------------------------------
+#
+# The column above prices SAMPLING. Training cost is the other half of the
+# amortisation argument -- "one training run serves N targets" cannot be stated
+# without it -- and gets two independent instruments, because each covers the
+# other's assumption:
+#
+#   derived   `training_run_flops`: a measured per-forward count times the
+#             forward count the loop structure implies. Assumes backward is a
+#             fixed multiple of forward, and that nothing does forwards the
+#             recipe does not mention.
+#   measured  run the real loop at several horizons under FlopCounterMode and
+#             fit a line with `fit_flop_scaling`. Assumes linearity, and cannot
+#             be run to the full horizon.
+#
+# They are COMPARED, not reconciled: a gap is a finding about the loop (an
+# unaccounted forward, a backward that is not 2x) rather than a number to split
+# the difference on.
+
+
+def training_forward_counts(
+    n_steps: int,
+    inner_steps_per_outer: int,
+    n_euler_steps: int,
+    *,
+    c_t_from_rollout: bool = True,
+) -> dict:
+    """Head-forward counts for one training run, from the loop structure.
+
+    Per outer cycle `train_swap` does ONE rollout of `n_euler_steps` head
+    forwards at `outer_batch`, then `inner_steps_per_outer` loss updates at
+    `batch_size`. `n_outer = n_steps / inner_steps_per_outer`.
+
+    `c_t_from_rollout` is the lever worth naming rather than burying: in
+    control-variate mode with it on -- the mode the d256 cells run -- the
+    rollout hands back its own per-slot xi_t and the c_t grid pass is skipped
+    entirely. Charging that pass anyway would add a second full rollout's worth
+    of forwards per cycle, i.e. double the rollout term.
+
+    Whole cycles only, mirroring train_swap's own validator: a partial cycle
+    would price a rollout that never ran.
+    """
+    if n_steps % inner_steps_per_outer != 0:
+        raise ValueError(
+            f"n_steps={n_steps} is not whole outer cycles at "
+            f"inner_steps_per_outer={inner_steps_per_outer}"
+        )
+    n_outer = n_steps // inner_steps_per_outer
+    return {
+        "n_outer": n_outer,
+        "rollout_forwards": n_outer * n_euler_steps,
+        "update_forwards": n_steps,
+        "c_t_grid_forwards": 0 if c_t_from_rollout else n_outer * n_euler_steps,
+    }
+
+
+def training_run_flops(
+    rollout_forward_flops: int,
+    update_forward_flops: int,
+    *,
+    n_steps: int,
+    inner_steps_per_outer: int,
+    n_euler_steps: int,
+    backward_multiplier: float = 2.0,
+    c_t_from_rollout: bool = True,
+) -> float:
+    """Derived training cost: forward counts times measured per-forward FLOPs.
+
+    Two per-forward numbers because the two loops run at different batch sizes
+    (`outer_batch` for the rollout, `batch_size` for the update), and the
+    counter's reading is not linear in batch -- fixed per-call work does not
+    scale.
+
+    `backward_multiplier` is this figure's one soft assumption and is therefore
+    a named parameter, defaulting to the usual 2x. The measured leg exists to
+    test it: FlopCounterMode counts the backward's actual matmuls.
+
+    Rollouts are under no_grad (the paper's stop-gradient R_t^{theta_sg}), so
+    only the update term carries a backward.
+    """
+    counts = training_forward_counts(
+        n_steps, inner_steps_per_outer, n_euler_steps,
+        c_t_from_rollout=c_t_from_rollout,
+    )
+    rollout = counts["rollout_forwards"] + counts["c_t_grid_forwards"]
+    return (
+        rollout * rollout_forward_flops
+        + counts["update_forwards"] * update_forward_flops
+        * (1.0 + backward_multiplier)
+    )
+
+
+def valid_measurement_horizons(
+    inner_steps_per_outer: int, eval_every: int | None, n_horizons: int
+) -> list[int]:
+    """Step counts a multi-horizon FLOP measurement may legitimately use.
+
+    Total FLOPs are a STEP function of n_steps, not a smooth one: they jump once
+    per outer cycle (a rollout lands) and again whenever the periodic
+    in-training eval fires. A horizon that cuts a cycle in half, or that
+    straddles an eval, sits off the line for reasons that have nothing to do
+    with the per-cycle cost -- and a line fitted through such points is a
+    plausible-looking wrong answer.
+
+    So horizons are multiples of lcm(inner_steps_per_outer, eval_every). The lcm
+    and not the larger of the two: a multiple of eval_every alone can still cut
+    a cycle, and a multiple of inner_steps_per_outer alone can still straddle an
+    eval.
+    """
+    period = (
+        inner_steps_per_outer
+        if eval_every is None
+        else math.lcm(inner_steps_per_outer, eval_every)
+    )
+    return [period * (i + 1) for i in range(n_horizons)]
+
+
+def fit_flop_scaling(outer_cycles, total_flops) -> dict:
+    """Least-squares fit of total FLOPs against OUTER CYCLES (not steps).
+
+    Returns `fixed_flops` (the intercept: process startup, the replay buffer's
+    first fill, any one-off allocation), `flops_per_outer_cycle` (the slope, the
+    quantity that extrapolates), `max_relative_residual`, and an `extrapolate`
+    callable.
+
+    Fitting rather than measuring-once-and-dividing is the point: differencing
+    across horizons cancels the fixed prefix exactly, which matters because the
+    first `replay_buffer_cycles` cycles run with a partly-filled buffer and are
+    not representative of the steady state being extrapolated.
+
+    Three horizons minimum. Two points fit any line exactly, so a residual from
+    two points is identically zero and certifies nothing; the third is what
+    makes the linearity claim falsifiable. The residual is per-point relative,
+    so one badly-placed horizon cannot hide behind a large total.
+    """
+    if len(outer_cycles) < 3:
+        raise ValueError(
+            f"need at least three horizons to test linearity, got "
+            f"{len(outer_cycles)}"
+        )
+    n = len(outer_cycles)
+    mean_x = sum(outer_cycles) / n
+    mean_y = sum(total_flops) / n
+    covariance = sum(
+        (x - mean_x) * (y - mean_y) for x, y in zip(outer_cycles, total_flops)
+    )
+    variance = sum((x - mean_x) ** 2 for x in outer_cycles)
+    if variance == 0:
+        raise ValueError("horizons must differ; a single horizon has no slope")
+    slope = covariance / variance
+    intercept = mean_y - slope * mean_x
+    residual = max(
+        abs(y - (intercept + slope * x)) / abs(y) if y else 0.0
+        for x, y in zip(outer_cycles, total_flops)
+    )
+    return {
+        "fixed_flops": intercept,
+        "flops_per_outer_cycle": slope,
+        "max_relative_residual": residual,
+        "extrapolate": lambda n_outer: intercept + slope * n_outer,
+    }
