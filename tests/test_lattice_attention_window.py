@@ -151,14 +151,14 @@ def test_mal_gate_cells_are_their_ma_twins_plus_the_window():
 
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    for sigma_token in ("s010", "s220"):
-        ma = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_ma_10k_w2"]
-        mal = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_mal_10k_win"]
-        assert ma.attention_window == "interval", sigma_token
-        assert mal.attention_window == "lattice", sigma_token
-        assert replace(
-            mal, name=ma.name, attention_window="interval"
-        ) == ma, sigma_token
+    from experiments.constrained_hard_03.configs import _MAL_TWINS
+
+    assert len(_MAL_TWINS) == 4, "gate + 8x8 rung, both couplings"
+    for parent, name in _MAL_TWINS.items():
+        ma, mal = CONFIGS[parent], CONFIGS[name]
+        assert ma.attention_window == "interval", name
+        assert mal.attention_window == "lattice", name
+        assert replace(mal, name=ma.name, attention_window="interval") == ma, name
 
 
 def test_mal_gate_cells_build_their_heads():
@@ -168,12 +168,14 @@ def test_mal_gate_cells_build_their_heads():
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
-    for sigma_token in ("s010", "s220"):
-        cfg = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_mal_10k_win"]
+    from experiments.constrained_hard_03.configs import _MAL_TWINS
+
+    for name in _MAL_TWINS.values():
+        cfg = CONFIGS[name]
         backbone = LeTFRateMatrix(d=cfg.ising.D ** 2, vocab_size=2,
                                   hidden_dim=16, n_layers=2, n_heads=2)
         target = FixedCompositionIsingTarget(
             D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
         )
         head = build_swap_head(cfg, backbone, target=target)
-        assert head.attention_window == "lattice", sigma_token
+        assert head.attention_window == "lattice", name

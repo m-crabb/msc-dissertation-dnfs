@@ -2064,7 +2064,10 @@ def test_every_new_probe_cell_rides_the_optimised_recipe():
     from experiments.constrained_hard_03.configs import CONFIGS
 
     probes = [n for n in CONFIGS if n.endswith("_win") or "_w4" in n]
-    assert len(probes) == 6, sorted(probes)
+    # 4 `mal` window twins (4x4 and 8x8, both couplings) + 4 d400 radius x
+    # precision arms. Update deliberately when a probe is added, so a cell
+    # cannot join the set without someone reading this rule.
+    assert len(probes) == 8, sorted(probes)
     for name in probes:
         cell = CONFIGS[name]
         assert cell.head_kind != "factorised", name

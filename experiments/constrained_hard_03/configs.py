@@ -4043,15 +4043,28 @@ def _d400_bf16_cell(arm: str) -> HardStageCfg:
 # The 4x4 gate is the venue for the same reason the rest of the interior
 # grid ran there: the target is enumerable, so a head that is merely
 # expressive-but-untrained cannot hide.
+#
+# THE RUNGS. The 4x4 gate is enumerable, so a head that is merely expressive
+# but untrained cannot hide there; the 8x8 rung is where this chapter's heads
+# have historically SEPARATED (at 4x4 they are statistically
+# indistinguishable, and the 8x8 twin study is what resolved the one-pass
+# ladder). Each `mal` cell is its `ma` sibling at the same size, coupling and
+# budget with `attention_window` its only declared change, so the pair reads
+# as the window and nothing else. The 8x8 parents carry the EMA instrument
+# (ema_decay 0.9999), so those rungs report raw AND EMA where the gate cells
+# report raw only.
+_MAL_TWINS: dict[str, str] = {
+    "H2_d16_c50_s010_letf_ma_10k_w2":      "H2_d16_c50_s010_letf_mal_10k_win",
+    "H2_d16_c50_s220_letf_ma_10k_w2":      "H2_d16_c50_s220_letf_mal_10k_win",
+    "H2_d64_c50_s010_letf_ma_50k_w2":      "H2_d64_c50_s010_letf_mal_50k_win",
+    "H2_d64_c50_s220_letf_ma_50k_curr_w2": "H2_d64_c50_s220_letf_mal_50k_curr_win",
+}
+
 CONFIGS.update({
     cell.name: cell
     for cell in (
-        replace(
-            CONFIGS[f"H2_d16_c50_{sigma_token}_letf_ma_10k_w2"],
-            name=f"H2_d16_c50_{sigma_token}_letf_mal_10k_win",
-            attention_window="lattice",
-        )
-        for sigma_token in ("s010", "s220")
+        replace(CONFIGS[parent], name=name, attention_window="lattice")
+        for parent, name in _MAL_TWINS.items()
     )
 })
 
