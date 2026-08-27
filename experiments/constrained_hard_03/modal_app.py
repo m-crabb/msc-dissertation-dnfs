@@ -507,6 +507,11 @@ def zero_shot_transfer(
     # production grid comes to the certified sigma=0.1 reference (it gives
     # 0.100629, a 0.6% offset -- fine for ESS, which needs no reference, but a
     # correlation comparison there wants a reference regenerated at 0.100629).
+    # Composition 0.625 is the Z2 mirror of 0.375: the target family is exactly
+    # symmetric under the global flip, and thp is not equivariant by
+    # construction, so the pair measures the trained head's Z2 symmetry rather
+    # than the probe's correctness. Measured 2026-08-27: symmetric within seed
+    # noise.
     stop_times: str = (
         "0.125984252,0.251968504,0.456692913,0.598425197,"
         "0.748031496,0.874015748,1.0"

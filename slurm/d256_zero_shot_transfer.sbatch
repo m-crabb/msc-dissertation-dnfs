@@ -40,9 +40,14 @@
 #     reference; comparing correlations there needs a reference regenerated at
 #     0.100629, not the 0.1 one, which is a 0.6% coupling offset.
 #   Compositions are k/256 so n_plus is integral: 128 (trained), 120, 112, 96,
-#     80, 64 -- plus 160, which is the exact Z2 mirror of 96 and therefore a
-#     free control: the target family satisfies delivered(c) = 1 - delivered(1-c),
-#     so those two rows must agree or the probe has a bug.
+#     80, 64 -- plus 160, the exact Z2 mirror of 96. The TARGET family is exactly
+#     symmetric under the global spin flip (x^T A x is), so a Z2-equivariant
+#     model would give matching rows. thp is NOT equivariant by construction --
+#     the two token embeddings are independent learned vectors and a global flip
+#     merely swaps them -- so a mismatch is a finding about the MODEL, not a
+#     probe bug. Measured 2026-08-27: they match to 0.005 in ESS fraction on the
+#     3-seed mean at sigma_c (0.276 vs 0.281), against a per-seed spread of
+#     0.208-0.325, so the trained head is Z2-symmetric within seed noise.
 #   final_ema.pt, because the EMA eval is what the published table reports.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
