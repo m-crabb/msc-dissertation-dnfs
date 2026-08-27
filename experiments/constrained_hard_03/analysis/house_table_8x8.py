@@ -376,13 +376,13 @@ def _sci(value):
 
 
 def latex_table(table, n_draws=5000):
-    """Emit the table body. Bolds ESS and FLOP/es only.
+    """Emit the table body, bolding the best neural cell in every column.
 
-    The error columns are deliberately NOT bolded: every neural cell sits
-    within the floor plus the reference's own standard error, so a bold
-    there would read as a separation the measurement cannot support. The
-    4x4 table bolds all five because its reference is exact and its error
-    cells therefore resolve; that difference is stated in the caption.
+    Uniform with tab:eval-hard-4x4 (decided 2026-08-27). Note what the
+    bold does and does not claim in the error columns: at sigma_c the
+    reference's own standard error (2.7) is comparable to the whole spread
+    across heads (5.1-6.6), so a bolded error cell marks the smallest number
+    measured, NOT a separation from the others. The caption says so.
     """
     def cell(key, column, sci=False):
         entry = table.get(key)
@@ -412,8 +412,9 @@ def latex_table(table, n_draws=5000):
             continue
         best[(sigma_label, "ESS")] = max(
             arms, key=lambda a: table[key_for(a, sigma_label)]["ESS"][0])
-        best[(sigma_label, "FLOP/es")] = min(
-            arms, key=lambda a: table[key_for(a, sigma_label)]["FLOP/es"][0])
+        for column in ERROR_COLUMNS + ("FLOP/es",):
+            best[(sigma_label, column)] = min(
+                arms, key=lambda a: table[key_for(a, sigma_label)][column][0])
 
     lines = []
     for row in LATEX_ROWS:
@@ -435,7 +436,13 @@ def latex_table(table, n_draws=5000):
                 ess = f"$\\mathbf{{{ess.strip('$')}}}$"
             if best.get((sigma_label, "FLOP/es")) == arm:
                 flops = f"$\\mathbf{{{flops.strip('$')}}}$"
-            cells += [ess] + [cell(key, c) for c in ERROR_COLUMNS] + [flops]
+            errors = []
+            for column in ERROR_COLUMNS:
+                value = cell(key, column)
+                if best.get((sigma_label, column)) == arm:
+                    value = f"$\\mathbf{{{value.strip('$')}}}$"
+                errors.append(value)
+            cells += [ess] + errors + [flops]
         lines.append(f"        {label} & " + " & ".join(cells) + r" \\")
     return "\n".join(lines)
 
