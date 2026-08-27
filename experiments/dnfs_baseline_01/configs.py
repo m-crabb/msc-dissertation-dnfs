@@ -74,6 +74,29 @@ class TrainCfg:
     # Reference: J-zin/DNFS main.py Ising config uses M=256, N=128,
     # steps_per_epoch=100, and a four-outer-batch replay buffer via
     # DataBuffer(max_size=1024 // N) (consulted 2026-05-09).
+    # Run the LOSS UPDATE under bf16 autocast (opt-in; default fp32, so every
+    # archived cell is byte-identical). Scoped to the inner gradient step: the
+    # end-of-run eval stays fp32, which is the chapter's standing precision
+    # discipline, so a bf16-TRAINED cell is still JUDGED in fp32.
+    #
+    # It is a BYTE lever, which is the kind that works here. The d400 swap
+    # step is bandwidth-bound -- 36% GEMM, and those GEMMs at 8.0 FLOP/byte
+    # against the A100's fp32 ridge point of 10.1 -- so halving the width of
+    # the (B, d, d, f) pair slabs buys what halving the arithmetic does not.
+    # Measured d=400 R=3, batch 512, compiled, A100-80GB: fp32 0.400 s /
+    # 63.41 GB, TF32 0.359 / 63.41, bf16 0.271 / 41.63, bf16+TF32 0.271 /
+    # 41.60 -- TF32 adds nothing on top of bf16, which is the mechanism
+    # confirmed rather than the outcome observed.
+    #
+    # The importance weights do NOT move: the closed-form swap log-ratio runs
+    # through h = x @ A, a sum over four torus neighbours, so h is in
+    # {-4,-2,0,2,4} at every lattice size and bf16 holds those exactly
+    # (measured drift 0.000e+00 at D=16 and D=20, pinned in
+    # tests/test_train_autocast_bf16.py). What DOES move is the head's G,
+    # i.e. the proposal -- and self-normalised importance sampling is exact
+    # for whatever proposal actually ran, so this is a variance question and
+    # never a bias one.
+    train_autocast_bf16: bool = False
     inner_steps_per_outer: int = 100
     outer_batch_size: int | None = None  # None -> falls back to batch_size
     replay_buffer_cycles: int = 1        # number of retained outer batches

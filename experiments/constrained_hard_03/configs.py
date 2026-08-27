@@ -3958,7 +3958,41 @@ def _d400_radius_cell(arm: str) -> HardStageCfg:
     return optimised_recipe(cell)
 
 
+def _d400_bf16_cell(arm: str) -> HardStageCfg:
+    """The bf16 twin of a 20x20 floor cell: its fp32 sibling with
+    `train_autocast_bf16` and NOTHING else, so a bf16-vs-fp32 gap is
+    chargeable to the precision.
+
+    WHY THIS ARM IS WORTH TWO SEEDS. The step is bandwidth-bound, so the
+    lever that pays is the one that halves BYTES, not the one that halves
+    arithmetic: measured at d=400 R=3, batch 512, compiled, TF32 buys -10%
+    time and no memory while bf16 buys -32% time and -34% memory, and TF32
+    stacked on bf16 buys nothing further. What that measurement cannot
+    settle is whether training in bf16 costs QUALITY, and a single seed
+    could not settle it either -- this lineage has recorded the same config
+    and seed reading ESS 0.423 and 0.899 under floating-point
+    non-determinism alone. Two seeds per precision is the minimum that
+    makes the comparison a comparison.
+
+    The estimator is not at risk, which is why the arm is cheap to justify:
+    the head keeps G in fp32 through its own autocast-disabled readout, the
+    target's closed-form swap log-ratio is bit-identical under bf16 (its
+    field sum is small-integer valued at every lattice size), and the frozen
+    end-of-run eval stays fp32. bf16 changes the PROPOSAL, and
+    self-normalised importance sampling is exact for whatever proposal ran.
+    """
+    cell = _d400_radius_cell(arm)
+    return replace(
+        cell,
+        name=cell.name + "bf16",
+        train=replace(cell.train, train_autocast_bf16=True),
+    )
+
+
 CONFIGS.update({
     cell.name: cell
-    for cell in (_d400_radius_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS)
+    for cell in (
+        *(_d400_radius_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+        *(_d400_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+    )
 })

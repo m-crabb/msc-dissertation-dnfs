@@ -321,6 +321,7 @@ def train_swap(
     n_dims = target.d
     device = target.device
     inner_batch = train_cfg.batch_size
+    train_autocast_bf16 = getattr(train_cfg, "train_autocast_bf16", False)
     outer_batch = train_cfg.outer_batch_size or train_cfg.batch_size
     n_grid = ctmc_cfg.n_euler_steps
     # Trajectory step for every simulation in this loop (buffer rebuild and
@@ -852,11 +853,23 @@ def train_swap(
                 slice_grad_sqnorms: list | None = (
                     [] if loss_microbatch_size is not None else None
                 )
-                loss_value, residual_sample = loss_swap_backward_microbatched(
-                    x_sample, t_sample, c_t_sample, head, target,
-                    microbatch_size=loss_microbatch_size,
-                    slice_grad_sqnorms_out=slice_grad_sqnorms,
-                )
+                # bf16 on the loss update only (see TrainCfg's comment):
+                # the head keeps G fp32 through its own autocast-disabled
+                # readout block, and the target's swap log-ratio is bit-
+                # identical here because its field sum is small-integer
+                # valued. The eval below is untouched and stays fp32.
+                with torch.autocast(
+                    device_type=device.type,
+                    dtype=torch.bfloat16,
+                    enabled=train_autocast_bf16,
+                ):
+                    loss_value, residual_sample = (
+                        loss_swap_backward_microbatched(
+                            x_sample, t_sample, c_t_sample, head, target,
+                            microbatch_size=loss_microbatch_size,
+                            slice_grad_sqnorms_out=slice_grad_sqnorms,
+                        )
+                    )
                 # Mean over FULL slices only: a ragged tail is a different
                 # batch size b and would bias E|g_b|^2.
                 full_slice_sqnorms = [

@@ -355,7 +355,26 @@ class TwoHolePatchSwapHead(nn.Module):
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         """Pair-score matrix G, (B, d, d): <H_ij, omega_i - omega_j>, upper
-        triangle mirrored so index antisymmetry is an identity."""
+        triangle mirrored so index antisymmetry is an identity.
+
+        DO NOT HAND-FUSE THIS READOUT (measured dead end, 2026-08-27). In
+        source terms it materialises three (B, d, d, f) tensors -- H, the
+        omega difference, and their product -- which at d=400, batch 512,
+        f=32 reads as 10.5 GB each against a (B, d, d) output of 328 MB.
+        There is an identity that removes all three: with
+        S_ij = <P_ij, D_ij> and D_ji = -D_ij, the score matrix is S + S^T,
+        and S splits into two contractions against the per-site omega.
+        Implemented and measured at d=400 R=3 on an A100-80GB, it is a real
+        win EAGER (0.2998 s / 20.58 GB against 0.3124 / 23.11 at batch 128)
+        and a real LOSS COMPILED (0.1175 / 18.13 against 0.1044 / 15.92),
+        which is the configuration every cell trains under. Inductor already
+        fuses the broadcast-difference-times-difference-summed-over-f
+        pattern and never materialises those tensors -- the compiled
+        baseline is 31% under the eager one on exactly that account -- while
+        the hand-fused einsum needs omega indexed by the second spatial axis
+        and forces a permuted contiguous copy it cannot fuse through. The
+        slabs are a property of the source, not of the executed kernel.
+        """
         H = self.compute_pair_context(x, t)
         omega = self.backbone.omega(((x + 1) / 2).long())
         with torch.autocast(device_type=x.device.type, enabled=False):
