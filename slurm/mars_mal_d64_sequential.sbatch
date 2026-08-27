@@ -34,6 +34,21 @@
 export WANDB_MODE=offline
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PIXI_CACHE_DIR=$HOME/.pixi-cache
+# BLACKWELL COMPILE FIX (2026-08-28, job 2344 died on this at step 0 of every
+# cell). Triton resolves a SEPARATE assembler for sm_100 -- `knobs.nvidia.
+# ptxas_blackwell` at triton/knobs.py:492, i.e. `ptxas-blackwell`, chosen
+# whenever arch >= 100 -- and the locked env ships only plain `ptxas`, so
+# `torch.compile` raises `InductorError: Cannot find ptxas-blackwell` and the
+# run dies inside the step-0 rate diagnostic. The env var is derived from the
+# binary name (knobs.py:194-201), and mars carries a CUDA 13.1 ptxas that
+# does support sm_100. Verified on a B200 before relaunch: capability (10, 0),
+# a compiled kernel built and returned the right value.
+#
+# NOTE what the earlier "sm_100 verified" record does and does not cover: it
+# established that the locked torch carries native Blackwell kernels and that
+# a matmul fires EAGER. It did not exercise Inductor, which is why this only
+# surfaced once the optimised recipe (compile_head=True) reached this node.
+export TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda-13.1/bin/ptxas
 
 REPO=$HOME/msc-dissertation-dnfs
 PIXI=$HOME/.pixi/bin/pixi
