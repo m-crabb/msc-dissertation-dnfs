@@ -164,6 +164,29 @@ class HardStageCfg(StageCfg):
     # every other cell stays byte-identical, and False = every archived
     # cell: the flag adds no parameter, no buffer and no RNG draw, and the
     # two paths differ only in GEMM shape (~1e-7 on fp32 CPU).
+    # Which terms the masked-attention band may pool over (2026-08-27).
+    # "interval" = the open interval (i, j), every archived cell. "lattice" =
+    # the whole lattice bar any term whose support TOUCHES a hole -- the
+    # unbuilt whole-lattice x learned cell of the head construction's
+    # 2 x 2 x 2 (feature family x window x weights).
+    #
+    # Nearly free by construction: the head already scores every band-feature
+    # family for every pair and masks before the softmax, so only the
+    # visibility predicate moves. No parameter, no buffer, no RNG draw, and
+    # "interval" is byte-identical to every archived cell.
+    #
+    # Blindness holds under both, and for the same reason -- exclusion
+    # removes every term whose support touches a hole, decided from the
+    # INDICES alone. What it does NOT require is per-site or depth-0
+    # features; that was a rule stated on the depth axis when the live
+    # constraint is bounded support (corrected 2026-08-27).
+    #
+    # It is NOT simply the more general head, which is why it is measured
+    # rather than assumed: the softmax then normalises over ~d terms instead
+    # of ~|j - i|, diluting whatever mass the interval deserves, and a
+    # learned soft mask approximates the hard interval indicator without
+    # containing it.
+    attention_window: str = "interval"
     gather_triu_pairs: bool = False
     # Exterior combiner for the interval / masked-attention heads
     # (2026-08-23): "bilinear" moves [P_i, S_j] out of the per-pair MLP into
@@ -276,6 +299,7 @@ def build_swap_head(
             exterior_combiner=cfg.exterior_combiner,
             bilinear_rank=cfg.bilinear_rank or 8,
             gather_triu_pairs=cfg.gather_triu_pairs,
+            attention_window=cfg.attention_window,
         )
     elif cfg.head_kind == "factorised":
         head = FactorisedSwapHead(
@@ -3987,6 +4011,49 @@ def _d400_bf16_cell(arm: str) -> HardStageCfg:
         name=cell.name + "bf16",
         train=replace(cell.train, train_autocast_bf16=True),
     )
+
+
+# --- Arm A: the whole-lattice attention window (2026-08-27) --------------
+#
+# THE UNBUILT CELL. The head construction is a 2 x 2 x 2 -- feature family
+# {unary, bond} x window {band, global} x weights {uniform, learned} -- and
+# three of the four window-by-weights cells are built and reported: the
+# interval head (band x uniform), the masked-attention head (band x
+# learned), and the factorised global term (global x uniform, and unary
+# ONLY). `mal` is the fourth: global x learned, carrying the SAME unary and
+# bond families the band already uses.
+#
+# WHAT IT ISOLATES. Against `ma` at the same coupling and budget it moves
+# ONE thing, the window, at fixed feature family and fixed weights. That is
+# the single-variable test the chapter's exposition wants and does not have:
+# "can the pooling see the whole lattice instead of the open interval?"
+#
+# WHY IT IS ALMOST FREE. The head already scores every family for every pair
+# and masks BEFORE the softmax, so only the visibility predicate moves --
+# from "support strictly inside (i, j)" to "support touches neither hole".
+# No parameter, no buffer, no RNG draw, no extra FLOPs.
+#
+# WHY IT CAN LOSE, and so is worth running rather than arguing. The softmax
+# now normalises over ~d terms instead of ~|j - i|, which dilutes whatever
+# mass the interval deserves; and a learned soft mask APPROXIMATES the hard
+# interval indicator without containing it. So the lattice window is not
+# simply the more general head, and a null here is a real result about the
+# value of the locality prior rather than a failed implementation.
+#
+# The 4x4 gate is the venue for the same reason the rest of the interior
+# grid ran there: the target is enumerable, so a head that is merely
+# expressive-but-untrained cannot hide.
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            CONFIGS[f"H2_d16_c50_{sigma_token}_letf_ma_10k_w2"],
+            name=f"H2_d16_c50_{sigma_token}_letf_mal_10k_w2",
+            attention_window="lattice",
+        )
+        for sigma_token in ("s010", "s220")
+    )
+})
 
 
 CONFIGS.update({

@@ -115,6 +115,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         exterior_combiner: str = "mlp",
         bilinear_rank: int = 8,
         gather_triu_pairs: bool = False,
+        attention_window: str = "interval",
     ):
         super().__init__(
             backbone, pair_offsets, band_feature_dim, position_dim,
@@ -122,6 +123,12 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             exterior_combiner=exterior_combiner, bilinear_rank=bilinear_rank,
             gather_triu_pairs=gather_triu_pairs,
         )
+        if attention_window not in ("interval", "lattice"):
+            raise ValueError(
+                f"attention_window must be 'interval' or 'lattice', "
+                f"got {attention_window!r}"
+            )
+        self.attention_window = attention_window
         self.use_stencil = use_stencil
         hidden = backbone.hidden_dim
         # The stencil is one extra band-feature family, so it gets its own
@@ -201,6 +208,47 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         )
         return torch.where(visible.any(dim=-1, keepdim=True), pooled, 0.0)
 
+    def _family_visibility(self, slot, site_i, site_j, offsets):
+        """Which terms of one band family the pair (i, j) may read.
+
+        A term at slot k has support {k + o : o in `offsets`} -- {0} for the
+        unary family, {0, delta} for the offset-delta bond family,
+        {-side, -1, 0, 1, side} for the stencil. Two windows:
+
+            interval  k + min(O) > i  and  k + max(O) < j    (strictly inside)
+            lattice   k + o != i and k + o != j for every o  (touches neither)
+
+        Blindness holds under BOTH, and for the same reason: what it
+        requires is that exclusion remove every term whose support touches a
+        hole, decided from the INDICES alone so the mask is
+        value-independent. It does NOT require per-site or depth-0 features
+        -- that was a rule stated on the depth axis when the live constraint
+        is bounded support (corrected 2026-08-27). Exclusion is applied
+        BEFORE the softmax either way, so an excluded term carries pooling
+        weight exactly zero rather than a small one.
+
+        The interval branch is written as min/max rather than as a per-offset
+        conjunction because that is the archived semantics: for the stencil
+        it is deliberately conservative, leaving an uncovered collar around
+        each hole that the narrower families fill in.
+
+        `lattice` is NOT simply the more general window. Its softmax
+        normalises over ~d terms instead of ~|j - i|, which dilutes whatever
+        mass the interval deserves, and a learned soft mask approximates the
+        hard interval indicator without containing it -- so it can lose, and
+        the arm exists to measure which.
+        """
+        if self.attention_window == "interval":
+            return (
+                (slot + min(offsets) > site_i) & (slot + max(offsets) < site_j)
+            )
+        visible = None
+        for offset in offsets:
+            support = slot + offset
+            untouched = (support != site_i) & (support != site_j)
+            visible = untouched if visible is None else visible & untouched
+        return visible
+
     def band_summaries(
         self, x: Tensor, t: Tensor, pairs: tuple[Tensor, Tensor] | None = None
     ) -> Tensor:
@@ -254,7 +302,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 pair_query_input,
                 self.band_unary_features(emb),
                 position.unsqueeze(0),
-                (slot > site_i) & (slot < site_j),
+                self._family_visibility(slot, site_i, site_j, (0,)),
             )
         ]
         for family, (delta, feature_mlp) in enumerate(
@@ -265,7 +313,9 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
             )
             term_slot = site[:n_terms].view(term_shape)
-            visible = (term_slot > site_i) & (term_slot + delta < site_j)
+            visible = self._family_visibility(
+                term_slot, site_i, site_j, (0, delta)
+            )
             families.append(
                 self._attend_band_family(
                     family,
@@ -303,7 +353,9 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 )
             )  # (B, n_centres, F); n_centres = 0 (empty) when d <= 2*side
             centre_slot = centres.view(term_shape)
-            visible = (centre_slot - side > site_i) & (centre_slot + side < site_j)
+            visible = self._family_visibility(
+                centre_slot, site_i, site_j, (-side, -1, 0, 1, side)
+            )
             families.append(
                 self._attend_band_family(
                     len(families),  # stencil is the last family
