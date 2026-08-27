@@ -130,6 +130,16 @@ ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 # `_w3_` marker excludes anything older at the same coupling.
 CELL_GLOB = "H2_d{d}_c50_{sigma}_letf_{arm}_*_w3_seed*"
 
+# Seeds excluded as DEGENERATE, and daggered in the table where excluded.
+# Distinct from the tripwire drops below, which are an infrastructure
+# artefact: this run trained its full 50k steps and still collapsed its
+# weights. Across all 50 landed cells at both rungs its single largest
+# self-normalised weight is 0.1839 -- one draw of 5000 carrying 18% of the
+# mass -- where every other cell sits at or below 0.0053; its ESS fraction
+# is 0.0032 against its siblings' 0.805 and 0.918. Averaging it into the
+# row would report a number describing no seed that exists.
+DEGENERATE_SEEDS = {("ma", "s010", 43)}
+
 
 # --- the reference --------------------------------------------------------
 
@@ -222,8 +232,18 @@ def find_cells(results_dir, sigma_key, arm):
             print(f"dropped (cv-inversion tripwire halt): {run_dir.name}",
                   file=sys.stderr)
             continue
+        seed = int(run_dir.name.split("_seed")[1][:2])
+        if (arm, sigma_key, seed) in DEGENERATE_SEEDS:
+            print(f"dropped (degenerate seed): {run_dir.name}",
+                  file=sys.stderr)
+            continue
         found.append(run_dir)
     return found
+
+
+def has_excluded_seed(arm, sigma_key):
+    """Whether this cell lost a seed to degeneracy, so the row is daggered."""
+    return any(a == arm and s == sigma_key for a, s, _ in DEGENERATE_SEEDS)
 
 
 def energy_per_site(target, states, chunk=4096):
@@ -306,6 +326,8 @@ def latex_table(table, n_draws=5000):
             lines.append("        \\midrule")
             continue
         arm, label = row
+        if any(has_excluded_seed(arm, s) for s in SIGMA_LABELS):
+            label += "$^{\\dagger}$"
         cells = []
         for sigma_label in SIGMA_LABELS:
             key = key_for(arm, sigma_label)
