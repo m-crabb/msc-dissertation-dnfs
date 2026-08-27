@@ -2046,3 +2046,27 @@ def test_d400_radius_cells_build_their_heads():
         head = build_swap_head(cfg, backbone, target=target)
         assert head is not None, name
         assert head.pooling_radii == (1, 2, 4, 8), (name, head.pooling_radii)
+
+
+def test_every_new_probe_cell_rides_the_optimised_recipe():
+    """Standing rule: every NEW cell goes out on the s60 optimised recipe --
+    `compile_head=True` and `train.c_t_from_rollout=True`. Archived cells and
+    their eager twins are never retro-flipped, and the ONE exception is
+    decision (c), factorised arms at the EXACT critical coupling, which train
+    eager because factorised x compile x sigma_c produced catastrophic seeds
+    at ~40% (5/12 against 0/21 elsewhere, Fisher p=0.0033).
+
+    None of these cells is factorised -- `mal` is masked attention, `thp2`
+    and `thp3` are patch heads -- so the exception does not reach them and
+    every one must be compiled. This is a cheap pin on a rule that is easy to
+    lose when a cell is built by `replace`-ing a parent rather than by
+    calling `optimised_recipe` directly."""
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    probes = [n for n in CONFIGS if n.endswith("_win") or "_w4" in n]
+    assert len(probes) == 6, sorted(probes)
+    for name in probes:
+        cell = CONFIGS[name]
+        assert cell.head_kind != "factorised", name
+        assert cell.compile_head, name
+        assert cell.train.c_t_from_rollout, name

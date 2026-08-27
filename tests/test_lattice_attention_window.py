@@ -153,7 +153,7 @@ def test_mal_gate_cells_are_their_ma_twins_plus_the_window():
 
     for sigma_token in ("s010", "s220"):
         ma = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_ma_10k_w2"]
-        mal = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_mal_10k_w2"]
+        mal = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_mal_10k_win"]
         assert ma.attention_window == "interval", sigma_token
         assert mal.attention_window == "lattice", sigma_token
         assert replace(
@@ -169,7 +169,7 @@ def test_mal_gate_cells_build_their_heads():
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     for sigma_token in ("s010", "s220"):
-        cfg = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_mal_10k_w2"]
+        cfg = CONFIGS[f"H2_d16_c50_{sigma_token}_letf_mal_10k_win"]
         backbone = LeTFRateMatrix(d=cfg.ising.D ** 2, vocab_size=2,
                                   hidden_dim=16, n_layers=2, n_heads=2)
         target = FixedCompositionIsingTarget(

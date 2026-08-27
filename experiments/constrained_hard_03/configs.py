@@ -4048,7 +4048,7 @@ CONFIGS.update({
     for cell in (
         replace(
             CONFIGS[f"H2_d16_c50_{sigma_token}_letf_ma_10k_w2"],
-            name=f"H2_d16_c50_{sigma_token}_letf_mal_10k_w2",
+            name=f"H2_d16_c50_{sigma_token}_letf_mal_10k_win",
             attention_window="lattice",
         )
         for sigma_token in ("s010", "s220")
