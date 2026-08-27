@@ -3760,6 +3760,25 @@ CONFIGS.update({
 # collapse of the kind the 4x4 investigation saw -- REOPENS decision (c)
 # at d256. Eager was chosen there on 4x4 and 8x8 evidence, and a d256
 # catastrophic seed would mean compile_head was never the whole mechanism.
+# DISPOSITION 2026-08-27, clause DISCHARGED: all three seeds landed
+# healthy -- EMA eval ESS fraction 0.515 (42), 0.577 (43), 0.503 (44), max
+# self-normalised weight 0.0034/0.0018/0.0051 of 5000 draws. No
+# catastrophic seed, so the clause does not fire and decision (c) stands
+# at d256. Seed 42 needed a relaunch to finish: at 0.92 steps/s a 100k run
+# exceeds Modal's 24-hour function ceiling, so it stopped at step 80.5k
+# and was resumed under the same tag (its siblings ran 1.71 steps/s and
+# fit in one container).
+# ma at sigma_c FAILS, and the failure is the head rather than the
+# infrastructure: all three seeds ran the full 100k with no CV-tripwire
+# halt and read EMA ESS fractions 0.0035/0.0422/0.0002, i.e. 17, 211 and 1
+# effective draws of 5000. Looking at the runs as the clause above
+# requires: seeds 42/43 PLATEAU -- loss falls monotonically to 6.0/6.4
+# with gradient norms settling at 180/296, clean optimisation onto a bad
+# optimum, against thp2's loss 1.32 at the same budget -- while seed 44
+# DIVERGES (loss 171 -> 1735, gradient norm 23k -> 443k). All three are
+# printed in tab:eval-hard-16x16; seed 44 is not excluded as degenerate
+# because, unlike the sigma = 0.1 exclusion, it is not an outlier among
+# healthy siblings.
 # s010 arms: the easy-target floor row of the house table. Same columns,
 # same tripwires, no namesake at this size and coupling either -- the row
 # exists to bound the table's easy end and to price the four heads against
