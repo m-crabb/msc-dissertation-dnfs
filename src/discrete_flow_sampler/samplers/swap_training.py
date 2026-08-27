@@ -66,6 +66,43 @@ from discrete_flow_sampler.samplers.training import (
 from discrete_flow_sampler.seeding import seed_everything
 
 
+# torch.quantile refuses inputs above 2**24 elements. The pair-rate slab is
+# (outer_batch, d(d-1)/2), which at d=256 and the production outer batch of
+# 512 is 16,711,680 -- 99.6% of the cap, a margin of 65,536 elements. The
+# 16x16 rung has therefore been running just under a cliff, and d=400 is the
+# first size over it (40,857,600, 2.4x), where the step-0 init diagnostic
+# raised "quantile() input tensor is too large" before the first optimiser
+# step of the 20x20 probe (2026-08-27).
+_QUANTILE_MAX_ELEMENTS = 2 ** 24
+
+
+def _p99(values: torch.Tensor) -> float:
+    """p99 of a flat tensor, on torch.quantile's own 'linear' convention.
+
+    WHY NOT JUST ALWAYS SORT. Every d256 number in print was logged through
+    `torch.quantile`, so the small-input path must stay bit-identical rather
+    than merely equivalent: below the cap this calls torch.quantile
+    unchanged and no archived cell moves. Above the cap it sorts and
+    interpolates by hand on the convention torch documents -- position
+    q*(n-1), linear between the two neighbouring order statistics -- so the
+    column means the same thing on both sides of the boundary and a d400
+    row stays comparable with a d256 one.
+
+    The sort is O(n log n) on ~4e7 elements once per logged step, against a
+    step that is already a compiled 512-row forward and backward over the
+    same slab; it is not on the critical path.
+    """
+    n = values.numel()
+    if n <= _QUANTILE_MAX_ELEMENTS:
+        return torch.quantile(values, 0.99).item()
+    ordered = values.sort().values
+    position = 0.99 * (n - 1)
+    lower = int(math.floor(position))
+    upper = min(lower + 1, n - 1)
+    weight = position - lower
+    return (ordered[lower] * (1.0 - weight) + ordered[upper] * weight).item()
+
+
 def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, float]:
     """Eval-time diagnostics for the swap-CTMC rate scale (AMENDMENT).
 
@@ -104,9 +141,7 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
         "rate_pair_mean": forward_rates.mean().item(),
         # .float(): quantile is fp32/64-only; heads may emit reduced
         # precision under the eval autocast block.
-        "rate_pair_p99": torch.quantile(
-            forward_rates.reshape(-1).float(), 0.99
-        ).item(),
+        "rate_pair_p99": _p99(forward_rates.reshape(-1).float()),
         "lambda_dt_clipped_frac": (lambda_dt > 1.0).float().mean().item(),
         # p99 of the per-state total-rate load: the one-event budget rule
         # (n_euler from the tail of Lambda) needs the tail directly — the
