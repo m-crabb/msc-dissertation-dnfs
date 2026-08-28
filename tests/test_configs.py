@@ -2191,3 +2191,51 @@ def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
     # for, and the one that stays valid whatever card they run on.
     assert replace(b2, name=b3.name, global_bond_features=False) == b3
     assert b2.site_orderings == b3.site_orderings == ("row",)
+
+
+def test_raster_ladder_roster_covers_both_rungs():
+    """The sweep-ladder arms exist at every rung, and each is its `ma` sibling
+    with ONLY the declared knobs moved.
+
+    Two things this pins. First, the chain is only readable one field at a
+    time if every ladder cell differs from its parent in exactly the roster's
+    knobs and nothing else -- an extra field silently inherited from a
+    different parent would make `ma -> mamo2` price two changes and the
+    printed anchors invalid. Second, the 8x8 critical cells are ALREADY RUN
+    (tag 20260828-rasterord-d64, seeds 42/43/44, printed in
+    tab:eval-hard-8x8), so the roster restructure that added the 4x4 rung must
+    leave their configs untouched; deriving both rungs from one roster is what
+    makes that checkable rather than hoped for.
+
+    The heads are built, not just constructed as configs, because the `ef`
+    arms need the target for the exact-field channel's adjacency -- a knob
+    typo there fails here and not after a GPU launch.
+    """
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS, _RASTER_LADDER_ARMS, _RASTER_LADDER_PARENTS, build_swap_head,
+    )
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
+    assert set(_RASTER_LADDER_ARMS) == {
+        "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"}
+    assert len(_RASTER_LADDER_PARENTS) == 3
+
+    for arm, knobs in _RASTER_LADDER_ARMS.items():
+        for pattern, parent_name in _RASTER_LADDER_PARENTS.items():
+            name = pattern.format(arm=arm)
+            cfg = CONFIGS[name]
+            parent = CONFIGS[parent_name]
+            # Only the roster's knobs may differ from the `ma` parent.
+            assert cfg == replace(parent, name=name, **knobs), name
+
+            d = cfg.ising.D ** 2
+            backbone = LeTFRateMatrix(
+                d=d, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
+            )
+            target = FixedCompositionIsingTarget(
+                D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
+            )
+            assert build_swap_head(cfg, backbone, target=target) is not None, name

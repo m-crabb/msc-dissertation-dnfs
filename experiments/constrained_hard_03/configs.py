@@ -4538,30 +4538,46 @@ CONFIGS.update({
 # only 2*hidden more inputs to the pair readout. Anchors on this rung, same
 # venue and seeds: `ma` reads 0.7593 / 0.7955 / 0.7893 raw and
 # 0.8213 / 0.8635 / 0.8527 EMA.
-_RASTER_ORDERINGS_D64_ARMS = {
-    "mamo2_50k_curr_w2": {"site_orderings": ("row", "col")},
-    "mamo2ef_50k_curr_w2": {
+# THE LADDER ROSTER, keyed by bare arm so ONE definition of what each arm IS
+# serves every rung (2026-08-28; was d64-only and keyed by full name suffix).
+# Each cell is its `ma` sibling at the same size and coupling with only these
+# knobs replaced, so every step of the chain moves exactly one field and the
+# 8x8 anchors stay valid. The 8x8 critical names are unchanged by the
+# restructure -- they are the cells already run under 20260828-rasterord-d64,
+# and test_raster_ladder_roster_covers_both_rungs pins them.
+_RASTER_LADDER_ARMS = {
+    "mamo2": {"site_orderings": ("row", "col")},
+    "mamo2ef": {
         "site_orderings": ("row", "col"), "exact_field_channel": True,
     },
-    "iv_50k_curr_w2": {"head_kind": "interval"},
-    "ivmo2_50k_curr_w2": {
+    "iv": {"head_kind": "interval"},
+    "ivmo2": {
         "head_kind": "interval", "site_orderings": ("row", "col"),
     },
-    "ivmo2ef_50k_curr_w2": {
+    "ivmo2ef": {
         "head_kind": "interval", "site_orderings": ("row", "col"),
         "exact_field_channel": True,
     },
 }
 
+# The 4x4 rung (2026-08-28). It is a GATE, not a ranking: the bare `ma` head
+# already reads 0.997 at sigma=0.10 and 0.975 at sigma_c there, so the 0.150
+# ESS the ladder spans at 8x8 cannot fit in the 0.003 and 0.025 of headroom
+# left. What these cells buy is that the target is enumerable, so a head that
+# is expressive-but-untrained cannot hide, and the table can say the heads are
+# equivalent where the problem is easy and separate where it is hard. They
+# inherit the wave-2 gate chassis, which carries no EMA instrument.
+_RASTER_LADDER_PARENTS = {
+    "H2_d64_c50_s220_letf_{arm}_50k_curr_w2": "H2_d64_c50_s220_letf_ma_50k_curr_w2",
+    "H2_d16_c50_s010_letf_{arm}_10k_w2": "H2_d16_c50_s010_letf_ma_10k_w2",
+    "H2_d16_c50_s220_letf_{arm}_10k_w2": "H2_d16_c50_s220_letf_ma_10k_w2",
+}
+
 CONFIGS.update({
     cell.name: cell
-    for cell in (
-        replace(
-            CONFIGS["H2_d64_c50_s220_letf_ma_50k_curr_w2"],
-            name=f"H2_d64_c50_s220_letf_{arm}", **knobs,
-        )
-        for arm, knobs in _RASTER_ORDERINGS_D64_ARMS.items()
-    )
+    for arm, knobs in _RASTER_LADDER_ARMS.items()
+    for pattern, parent in _RASTER_LADDER_PARENTS.items()
+    for cell in (replace(CONFIGS[parent], name=pattern.format(arm=arm), **knobs),)
 })
 
 
