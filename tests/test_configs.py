@@ -1754,7 +1754,16 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
             "interior_band": "prefix", "site_orderings": ("row", "col"),
             "gather_triu_pairs": True,
         },
-        "ma": {"head_kind": "masked_attention", "gather_triu_pairs": True},
+        # site_orderings PINNED to ('row',) 2026-08-28. The cell inherits
+        # ('row','col') from the fmo2 parent, and it rode INERTLY while the
+        # raster heads ignored the field. They no longer do, so the pin is
+        # what keeps these two ARCHIVED cells the single-ordering heads they
+        # were trained as. thp/thp2 need no pin: the patch head still does
+        # not read the field.
+        "ma": {
+            "head_kind": "masked_attention", "gather_triu_pairs": True,
+            "site_orderings": ("row",),
+        },
     }
     microbatch = {"thp": None, "thp2": None, "fimo2ef": 128, "ma": 128}
     eval_chunk = {"ma": 128}
@@ -1762,7 +1771,7 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
     reset = {
         "head_kind": arm_b.head_kind, "patch_radius": None,
         "exact_field_channel": False, "interior_band": None,
-        "gather_triu_pairs": False,
+        "gather_triu_pairs": False, "site_orderings": arm_b.site_orderings,
     }
 
     cells = [

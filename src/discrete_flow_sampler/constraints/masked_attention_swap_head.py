@@ -155,12 +155,14 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         attention_window: str = "interval",
         pair_position_mode: str = "absolute",
         separable_band_scores: bool = False,
+        site_orderings: tuple[str, ...] = ("row",),
     ):
         super().__init__(
             backbone, pair_offsets, band_feature_dim, position_dim,
             readout_score_scale=readout_score_scale,
             exterior_combiner=exterior_combiner, bilinear_rank=bilinear_rank,
             gather_triu_pairs=gather_triu_pairs,
+            site_orderings=site_orderings, lattice_side=lattice_side,
         )
         if attention_window not in ("interval", "lattice"):
             raise ValueError(

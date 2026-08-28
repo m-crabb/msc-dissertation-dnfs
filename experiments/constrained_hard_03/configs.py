@@ -352,6 +352,7 @@ def build_swap_head(
             attention_window=cfg.attention_window,
             pair_position_mode=cfg.pair_position_mode,
             separable_band_scores=cfg.separable_band_scores,
+            site_orderings=cfg.site_orderings,
         )
     elif cfg.head_kind == "factorised":
         head = FactorisedSwapHead(
@@ -3868,7 +3869,17 @@ _D256_HOUSE_ARM_KNOBS: dict[str, dict] = {
         "interior_band": "prefix", "site_orderings": ("row", "col"),
         "gather_triu_pairs": True,
     },
-    "ma": {"head_kind": "masked_attention", "gather_triu_pairs": True},
+    # site_orderings PINNED, and declared rather than applied silently
+    # (2026-08-28). This cell inherits ('row','col') from an fmo2 parent
+    # through `replace`, and it rode INERTLY while the raster heads ignored
+    # the field. They no longer do, so without the pin these two ARCHIVED
+    # cells -- the `ma` row of the 16x16 house table -- would rebuild as
+    # two-ordering heads they were never trained as. Declaring it keeps the
+    # cells transforms-of-arm-B that the census test can still verify.
+    "ma": {
+        "head_kind": "masked_attention", "gather_triu_pairs": True,
+        "site_orderings": ("row",),
+    },
 }
 
 # Backward slicing per arm (rationale in the block above): off on the thp

@@ -199,6 +199,8 @@ class IntervalSwapHead(nn.Module):
         exterior_combiner: str = "mlp",
         bilinear_rank: int = 8,
         gather_triu_pairs: bool = False,
+        site_orderings: tuple[str, ...] = ("row",),
+        lattice_side: int | None = None,
     ):
         """exterior_combiner (2026-08-23): "mlp" is the archived head, the
         per-pair readout over [prefix, suffix, band, positions]. "bilinear"
@@ -227,6 +229,7 @@ class IntervalSwapHead(nn.Module):
         # no RNG draw -- so a flag-off head is byte-identical to the archived
         # one and the two paths differ only in GEMM shape.
         self.gather_triu_pairs = gather_triu_pairs
+        self.site_orderings = tuple(site_orderings)
         self.position_dim = position_dim
         self.readout_score_scale = readout_score_scale
         self.backbone = backbone
@@ -247,6 +250,12 @@ class IntervalSwapHead(nn.Module):
         )
         self.pair_position_embedding = nn.Embedding(self.d, position_dim)
 
+        # Extra orderings register BEFORE the readout is drawn only because
+        # `_build_pair_readout` reads `site_orderings` for its width; they add
+        # no parameters and no RNG draw, so ('row',) stays byte-identical to
+        # every archived raster cell.
+        self._register_site_orderings(lattice_side)
+
         band_dim = band_feature_dim * (1 + len(self.pair_offsets))
         self.pair_readout = self._build_pair_readout(band_dim)
         # Mirrors the letf readout's closing "output_norm(H) + time" line.
@@ -263,12 +272,84 @@ class IntervalSwapHead(nn.Module):
         """Per-pair MLP; its input carries the exterior summaries only under
         the "mlp" combiner. Shared with the masked-attention stencil rebuild."""
         hidden = self.backbone.hidden_dim
-        exterior_dim = 2 * hidden if self.exterior_combiner == "mlp" else 0
+        # One (prefix, suffix) pair PER ORDERING under the "mlp" combiner: an
+        # extra ordering owns no modules of its own -- it reuses the
+        # backbone's causal stacks on a permuted sequence -- so this widening
+        # is the arm's ENTIRE parameter cost, which is what keeps a lift from
+        # being confounded with capacity.
+        exterior_dim = (
+            2 * hidden * len(self.site_orderings)
+            if self.exterior_combiner == "mlp" else 0
+        )
         return nn.Sequential(
             nn.Linear(exterior_dim + band_dim + 2 * self.position_dim, 2 * hidden),
             nn.GELU(),
             nn.Linear(2 * hidden, hidden),
         )
+
+    def _register_site_orderings(self, lattice_side: int | None) -> None:
+        """Permutations and per-pair (min, max) o-position grids, as buffers.
+
+        For ordering o with `order` mapping o-position -> site and `inv` the
+        inverse, the pair {i, j} sits at o-positions inv[i], inv[j]. The head
+        reads the prefix stream at min(inv[i], inv[j]) and the suffix stream
+        at max: the prefix has then seen only sites earlier in o than BOTH
+        holes, and the suffix only sites later than both, so each is blind to
+        x_i and x_j by exactly the causality argument the row ordering uses.
+        min and max of an UNORDERED pair are symmetric, so label symmetry
+        H_ji = H_ij comes for free rather than needing a mirror.
+
+        Index arithmetic reproducible from the constructor args, so these ride
+        as NON-persistent buffers and never enter a checkpoint -- the
+        convention the factorised head already follows. "row" is the identity
+        and registers nothing, which is what keeps the archived path clean.
+        """
+        from discrete_flow_sampler.constraints.factorised_swap_head import (
+            lattice_site_ordering,
+        )
+
+        if self.site_orderings[:1] != ("row",):
+            raise ValueError(
+                f"site_orderings must start with 'row' (the flattening "
+                f"itself); got {self.site_orderings!r}"
+            )
+        side = lattice_side if lattice_side is not None else round(self.d ** 0.5)
+        for name in self.site_orderings[1:]:
+            if side * side != self.d:
+                raise ValueError(
+                    f"extra site_orderings need a square lattice: side {side} "
+                    f"does not tile d={self.d}; pass lattice_side explicitly"
+                )
+            order = lattice_site_ordering(name, self.d, side)
+            inverse = order.argsort()
+            self.register_buffer(f"_order_{name}", order, persistent=False)
+            rows, cols = inverse.view(-1, 1), inverse.view(1, -1)
+            self.register_buffer(
+                f"_order_lo_{name}", torch.minimum(rows, cols), persistent=False
+            )
+            self.register_buffer(
+                f"_order_hi_{name}", torch.maximum(rows, cols), persistent=False
+            )
+
+    def _ordering_exterior_rows(
+        self, x: Tensor, t: Tensor, pairs: tuple[Tensor, Tensor] | None
+    ) -> list[Tensor]:
+        """(prefix, suffix) grids for each EXTRA ordering, in site space.
+
+        Returns 2 tensors per extra ordering, shaped (B, d, d, h) densely or
+        (B, P, h) under the triu gather -- ready to concatenate into the pair
+        readout's input alongside the row ordering's own pair.
+        """
+        rows_out: list[Tensor] = []
+        for name in self.site_orderings[1:]:
+            order = getattr(self, f"_order_{name}")
+            prefix, suffix = causal_stream_summaries(self.backbone, x[:, order], t)
+            lo, hi = getattr(self, f"_order_lo_{name}"), getattr(self, f"_order_hi_{name}")
+            if pairs is not None:
+                pair_rows, pair_cols = pairs
+                lo, hi = lo[pair_rows, pair_cols], hi[pair_rows, pair_cols]
+            rows_out += [prefix[:, lo], suffix[:, hi]]
+        return rows_out
 
     def _bilinear_exterior(self, prefix_summary: Tensor, suffix_summary: Tensor) -> Tensor:
         """sum_r a_r(prefix_i, i) * b_r(suffix_j, j), (B, d, d, h)."""
@@ -534,6 +615,7 @@ class IntervalSwapHead(nn.Module):
                 prefix_summary.unsqueeze(2).expand(batch, d, d, hidden),
                 suffix_summary.unsqueeze(1).expand(batch, d, d, hidden),
             ]
+            + self._ordering_exterior_rows(x, t, None)
             if self.exterior_combiner == "mlp" else []
         )
         H = self.pair_readout(
@@ -580,6 +662,7 @@ class IntervalSwapHead(nn.Module):
         rows, cols = triu_pair_indices(d, x.device)
         exterior_rows = (
             [prefix_summary[:, rows], suffix_summary[:, cols]]
+            + self._ordering_exterior_rows(x, t, (rows, cols))
             if self.exterior_combiner == "mlp" else []
         )
         H = self.pair_readout(
