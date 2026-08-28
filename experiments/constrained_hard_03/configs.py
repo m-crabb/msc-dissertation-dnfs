@@ -4444,6 +4444,55 @@ CONFIGS.update({
 })
 
 
+# ARM C TRAJECTORY CHECK (2026-08-28). `separable_band_scores` computes the
+# masked-attention band's EXACT function -- forward agreement 1.5e-7 at
+# production shape, gradients matched parameter by parameter -- so quality
+# CANNOT move in exact arithmetic. This is not a quality arm and must never be
+# read as one.
+#
+# WHAT IT DOES ASK: whether the TRAJECTORY it induces lands in the same
+# distribution of outcomes. 50k steps of a chaotic optimisation at the exact
+# critical coupling amplify a step-0 perturbation, and this campaign has the
+# receipt -- turning on `compile_head`, a ~1e-5-class numerics change and
+# nothing more, made factorised cells at exact sigma_c produce catastrophic
+# seeds at ~40% (5/12 against 0/21, Fisher p = 0.0033). Arm C is the same
+# CATEGORY of change (contraction order, and no softmax shift) about 100x
+# smaller.
+#
+# WHY IT IS WORTH THE GPU: arm C exists to make a WIDER MA at d256 affordable,
+# and that experiment has not run. Without this check, a failure there cannot
+# be attributed -- width or numerics. This removes a confound from an
+# experiment not yet done, which is a better reason than flipping a default.
+#
+# DESIGN. One variable against the archived dense twin
+# `H2_d64_c50_s220_letf_ma_50k_curr_w2` (tag 20260825-hard-w2-d64), which
+# reads raw 0.7593 / 0.7955 / 0.7893 and EMA 0.8213 / 0.8635 / 0.8527 on seeds
+# 42/43/44. The twin is compile_head=True, so this runs COMPILED -- recipe
+# parity, and it is also the right stress, since compile is the numerics
+# change that caused the catastrophes in the first place.
+#
+# SEEDS 42-47, and the extra three are not padding. Three seeds cannot rule
+# out a decision-(c)-style rate: P(0 of 3 clean | p = 0.4) = 0.6^3 = 22%, so a
+# clean trio has a one-in-five chance of missing it; 0.6^6 = 5%. Seeds 42-44
+# carry the like-for-like level read against the twin, 45-47 buy the power. A
+# catastrophic seed is self-evident (ESS collapses), so those three need no
+# twin of their own.
+_ARM_C_SEED_CHECK_ARMS = {
+    "masep_50k_curr_w2": {"separable_band_scores": True},
+}
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            CONFIGS["H2_d64_c50_s220_letf_ma_50k_curr_w2"],
+            name=f"H2_d64_c50_s220_letf_{arm}", **knobs,
+        )
+        for arm, knobs in _ARM_C_SEED_CHECK_ARMS.items()
+    )
+})
+
+
 CONFIGS.update({
     cell.name: cell
     for cell in (
