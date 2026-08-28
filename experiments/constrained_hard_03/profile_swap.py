@@ -70,6 +70,7 @@ def build_head_and_target(
     patch_radius: int = 1,
     rope_patch_size: int | None = None,
     gather_triu_pairs: bool = False,
+    separable_band_scores: bool = False,
 ):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
 
@@ -106,11 +107,13 @@ def build_head_and_target(
         head = MaskedAttentionSwapHead(
             backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
             gather_triu_pairs=gather_triu_pairs,
+            separable_band_scores=separable_band_scores,
         ).to(device)
     elif head_kind == "stencil":
         head = MaskedAttentionSwapHead(
             backbone, pair_offsets=(1, side), use_stencil=True, lattice_side=side,
             gather_triu_pairs=gather_triu_pairs,
+            separable_band_scores=separable_band_scores,
         ).to(device)
     elif head_kind == "factorised":
         head = FactorisedSwapHead(
@@ -320,6 +323,14 @@ def main(argv=None):
              "every archived row. A drop-in LeTFRateMatrix subclass, so the "
              "position code is the only variable and any head composes.",
     )
+    parser.add_argument(
+        "--separable-band-scores", action="store_true",
+        help=(
+            "compute the masked-attention band without its (B, d^2, n) score "
+            "tensor -- an EXACT rewrite of the same function, so this prices "
+            "memory and time only; quality is equivalence-tested, not benched"
+        ),
+    )
     parser.add_argument("--compile", action="store_true")
     parser.add_argument(
         "--train-autocast-bf16", action="store_true",
@@ -361,6 +372,7 @@ def main(argv=None):
         patch_radius=args.patch_radius,
         rope_patch_size=args.rope_patch_size,
         gather_triu_pairs=args.gather_triu_pairs,
+        separable_band_scores=args.separable_band_scores,
     )
     if args.tf32:
         # THE CORRECTNESS GATE, reported rather than assumed. TF32 is a

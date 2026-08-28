@@ -80,6 +80,43 @@ from discrete_flow_sampler.models.letf import LeTFRateMatrix
 # finite so fully-masked rows softmax to a discarded uniform, never NaN.
 EXCLUDED_SCORE_FILL = -1e9
 
+# Floor on the separable path's softmax normaliser. Only empty bands reach it
+# (they normalise to exactly 0), and their pooled value is discarded -- but it
+# must be discarded WITHOUT a division by zero, because `torch.where` carries
+# NaN back through the branch it did not select. Well above fp32's 1.18e-38
+# smallest normal, so it never perturbs a live band.
+EMPTY_BAND_FLOOR = 1e-30
+
+
+def _masked_exponential(scores: Tensor, mask: Tensor) -> Tensor:
+    """`u * exp(scores)`: one half of a separable masked softmax, UNSHIFTED.
+
+    NO STABILISING SHIFT, AND THAT IS THE POINT. A softmax normally subtracts
+    a per-row maximum before exponentiating, and the separable form would have
+    to subtract `max_k A_ik + max_k B_jk` -- an upper bound on the
+    non-separable `max_k(A_ik + B_jk)`. Analytically a common shift cancels in
+    the normalisation, so that costs nothing. Bit-for-bit it does not:
+    `exp(s - c)` rounds differently for different `c`, and the row maximum is
+    taken over `u_i`, a set that CONTAINS the partner hole k = j. Moving the
+    token at j then moves the shift, and the pooled result changes in the last
+    bits -- measured 2.98e-8, a residue exactly like the one this head was
+    chosen over the interval head to avoid (module docstring).
+
+    Blindness is worth more than the shift, because the shift is replaceable
+    and blindness is not. Its only job is keeping `exp` inside the float's
+    exponent budget, and that budget is measurable: fp32 overflows near +88
+    and a product of two halves underflows near -87, against a trained 4x4
+    checkpoint's measured score range of [-6.65, 10.69]. `band_score_range`
+    reports the live figure so the margin is monitored rather than assumed.
+
+    Exclusion is MULTIPLICATIVE, where the dense path fills scores with
+    `EXCLUDED_SCORE_FILL` and leans on `exp(-1e9 - max)` underflowing. Both
+    give an excluded term weight zero; only this one does so with no
+    floating-point argument at all, which makes blindness here STRICTER than
+    on the path it replaces.
+    """
+    return torch.exp(scores) * mask
+
 
 class MaskedAttentionSwapHead(IntervalSwapHead):
     """Doubly-hollow swap head with an exclusion-mask attention band.
@@ -117,6 +154,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         gather_triu_pairs: bool = False,
         attention_window: str = "interval",
         pair_position_mode: str = "absolute",
+        separable_band_scores: bool = False,
     ):
         super().__init__(
             backbone, pair_offsets, band_feature_dim, position_dim,
@@ -136,6 +174,13 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 f"got {pair_position_mode!r}"
             )
         self.pair_position_mode = pair_position_mode
+        if separable_band_scores and pair_position_mode != "absolute":
+            raise ValueError(
+                "separable_band_scores needs pair_position_mode='absolute': a "
+                "relative code emits ONE query vector per pair, so the score "
+                f"is not an outer sum A_ik + B_jk (got {pair_position_mode!r})"
+            )
+        self.separable_band_scores = separable_band_scores
         self.use_stencil = use_stencil
         hidden = backbone.hidden_dim
         # The stencil is one extra band-feature family, so it gets its own
@@ -220,6 +265,155 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         )
         return torch.where(visible.any(dim=-1, keepdim=True), pooled, 0.0)
 
+    def _band_family_halves(
+        self,
+        family: int,
+        position: Tensor,
+        term_features: Tensor,
+        term_positions: Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """The band scores as an outer SUM: (B, d, n) row part, (B, d, n) col.
+
+        `s_ijk = A_ik + B_jk`. The query is one `nn.Linear` on the
+        CONCATENATION `[rho_i || rho_j]`, so its weight splits column-wise
+        into `[W_row | W_col]` and the pair axes never meet. The bias rides
+        with the row half arbitrarily -- it is common to i and j, so it
+        cancels in the softmax normalisation whichever half carries it.
+        """
+        query = self.band_query_projections[family]
+        position_dim = position.shape[-1]
+        batch, n_terms, _ = term_features.shape
+        keys = self.band_key_projections[family](
+            torch.cat(
+                [term_features, term_positions.expand(batch, n_terms, -1)], dim=-1
+            )
+        )  # (B, n, A)
+        row_query = position @ query.weight[:, :position_dim].T + query.bias
+        col_query = position @ query.weight[:, position_dim:].T
+        return (
+            torch.einsum("ia,bka->bik", row_query, keys) * self.attention_scale,
+            torch.einsum("ja,bka->bjk", col_query, keys) * self.attention_scale,
+        )
+
+    def _attend_band_family_separable(
+        self,
+        family: int,
+        position: Tensor,
+        term_features: Tensor,
+        term_positions: Tensor,
+        visible_row: Tensor,
+        visible_col: Tensor,
+        pairs: tuple[Tensor, Tensor] | None,
+    ) -> Tensor:
+        """`_attend_band_family` without the (B, d^2, n) score tensor.
+
+        Computes the SAME masked softmax pool -- this is an algebraic
+        identity, not an approximation, and it must not be confused with the
+        factorised swap head, which changes the function and pays a measured
+        variance price for it. Both halves of the softmax become matrix
+        products once `s_ijk = A_ik + B_jk` and `visible = u_ik w_jk`:
+
+            Z_ij    = sum_k alpha_ik beta_jk
+            out_ijf = (1/Z_ij) sum_k alpha_ik beta_jk feat_kf
+
+        with `alpha = u e^{A}` and `beta = w e^{B}`, unshifted for the reason
+        in (1) below. Peak memory falls to the (B, d, d, F) context every all-pairs head
+        returns anyway; the 5.00 GB slab at B=32, d=256 never exists.
+
+        THREE THINGS THIS GUARDS AGAINST.
+
+        1. THE SOFTMAX SHIFT IS GONE, DELIBERATELY. The separable form would
+           have to stabilise with `max_k A_ik + max_k B_jk`, and that row
+           maximum ranges over `u_i`, a set containing the partner hole k = j
+           -- so a hole's token value reaches the answer in the last bits
+           (measured 2.98e-8) and bit-exact blindness, the property this head
+           was chosen for, is quietly lost. Unshifted, exclusion is a
+           multiplication by zero and blindness is STRICTER here than on the
+           dense path. The price is that the exponent budget is monitored
+           rather than guaranteed: see `_masked_exponential` and
+           `band_score_range`.
+
+        2. AN EMPTY BAND IS A 0/0, NOT A UNIFORM ROW. The dense path fills
+           masked scores with a finite -1e9 so a fully-masked row softmaxes
+           to a discarded uniform; here `Z_ij` is exactly zero. The clamp
+           before the division is load-bearing in BACKWARD, not forward:
+           `torch.where` propagates NaN from the unselected branch.
+
+        3. EMPTINESS IS DECIDED FROM THE MASK, NOT FROM `Z > 0`. The two
+           agree only while nothing underflows, and underflow is exactly the
+           failure mode (1) leaves live -- so the indicator is a boolean
+           count over `u & w`, exact and batch-free, rather than a test on
+           the normaliser it is meant to protect.
+
+        Under `gather_triu_pairs` the pair axes collapse to a list, so the
+        halves are GATHERED (`alpha[rows] * beta[cols]`) instead of outer-
+        multiplied. That path keeps a (B, P, n) product, so it does NOT
+        compose well with this lever: the gather removes half of a slab this
+        removes entirely. Correct, but not the recommended pairing.
+        """
+        row_scores, col_scores = self._band_family_halves(
+            family, position, term_features, term_positions
+        )
+        alpha = _masked_exponential(row_scores, visible_row)
+        beta = _masked_exponential(col_scores, visible_col)
+
+        if pairs is None:
+            normaliser = torch.einsum("bik,bjk->bij", alpha, beta)
+            # Weight by the column half FIRST. A single three-operand einsum
+            # is free to contract alpha with beta first, which rebuilds the
+            # (B, d, d, n) tensor this method exists to avoid.
+            weighted = beta.unsqueeze(-1) * term_features.unsqueeze(1)
+            numerator = torch.einsum("bik,bjkf->bijf", alpha, weighted)
+            non_empty = (
+                visible_row.float() @ visible_col.float().T > 0
+            ).unsqueeze(-1)
+        else:
+            rows, cols = pairs
+            joint = alpha[:, rows] * beta[:, cols]  # (B, P, n)
+            normaliser = joint.sum(dim=-1)
+            numerator = torch.einsum("bpk,bkf->bpf", joint, term_features)
+            non_empty = (
+                visible_row[rows] & visible_col[cols]
+            ).any(dim=-1, keepdim=True)
+
+        pooled = numerator / normaliser.clamp_min(EMPTY_BAND_FLOOR).unsqueeze(-1)
+        return torch.where(non_empty, pooled, 0.0)
+
+    def band_score_range(self, x: Tensor) -> float:
+        """Worst-case exponent the unshifted separable pool can reach, in nats.
+
+        `max|A| + max|B|`, maximised over pairs and families -- a conservative
+        two-sided bound, since it dominates each half on its own as well as
+        their sum. Compare against ~87: fp32 overflows above +88 and a product
+        of the two halves underflows below -87, so this is the headroom the
+        decision to drop the softmax shift is spending (see
+        `_masked_exponential` for why the shift had to go). A trained 4x4
+        checkpoint measures a score range of [-6.65, 10.69], i.e. ~17 against
+        a budget of 87.
+
+        Blind by construction, and cheap: it reads the same (B, d, n) halves
+        the pool already builds, never the (B, d^2, n) tensor the lever
+        exists to avoid.
+        """
+        emb = self.backbone.token_embedder(((x + 1) / 2).long())
+        position = self.pair_position_embedding(
+            torch.arange(self.d, device=x.device)
+        )
+        widest = 0.0
+        for family, (_, term_features, term_slot) in enumerate(
+            self._band_families(emb)
+        ):
+            if term_features.shape[1] == 0:      # stencil is empty at d = 2*side
+                continue
+            row_scores, col_scores = self._band_family_halves(
+                family, position, term_features, position[term_slot].unsqueeze(0)
+            )
+            widest = max(
+                widest,
+                row_scores.abs().max().item() + col_scores.abs().max().item(),
+            )
+        return widest
+
     def _init_relative_pair_positions(self, position_dim: int, side: int) -> None:
         """Signed torus displacement of j from i, and one embedding row per
         displacement -- the pair position code the TWO-HOLE PATCH head uses
@@ -299,6 +493,91 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             visible = untouched if visible is None else visible & untouched
         return visible
 
+    def _family_visibility_halves(
+        self, term_slot: Tensor, offsets: tuple[int, ...]
+    ) -> tuple[Tensor, Tensor]:
+        """The same predicate, split as visible(i, j, k) = u(i, k) & w(j, k).
+
+        Both windows separate, for different reasons: `interval` is a pair of
+        one-sided inequalities, one per hole; `lattice` is a product of
+        disequalities that is already per-hole term by term. Returns two
+        (d, n_terms) tables over the FULL site range -- not the pair layout --
+        because the separable path indexes them by row and column site, which
+        under the triu gather is a list of pairs rather than a grid.
+
+        Separability of the MASK is half of why the band factorises (the
+        other half is that the query is linear on a concatenation): a
+        separable mask multiplies into alpha and beta, where the dense path
+        must fill scores with `EXCLUDED_SCORE_FILL` and rely on the softmax
+        underflowing them. Multiplying makes exclusion exactly zero rather
+        than zero-up-to-underflow, so blindness stops needing a numerical
+        argument at all.
+        """
+        site = torch.arange(self.d, device=term_slot.device).view(-1, 1)
+        slot = term_slot.view(1, -1)
+        if self.attention_window == "interval":
+            return slot + min(offsets) > site, slot + max(offsets) < site
+        untouched = None
+        for offset in offsets:
+            touches = (slot + offset) != site
+            untouched = touches if untouched is None else untouched & touches
+        return untouched, untouched.clone()
+
+    def _band_families(self, emb: Tensor):
+        """Yield `(offsets, term_features, term_slot)` for every band family.
+
+        The three families are built the same way whichever aggregator
+        consumes them, so enumerating them once keeps the dense and separable
+        paths honest: they differ only in the pool, never in what is pooled.
+        `term_slot` is the term's index into the site axis, which is also its
+        row of the position table -- the unary and offset families start at
+        site 0, the stencil starts at `side`.
+        """
+        yield (0,), self.band_unary_features(emb), torch.arange(
+            self.d, device=emb.device
+        )
+        for delta, feature_mlp in zip(self.pair_offsets, self.band_pair_features):
+            n_terms = self.d - delta
+            yield (
+                (0, delta),
+                feature_mlp(
+                    torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
+                ),
+                torch.arange(n_terms, device=emb.device),
+            )
+        if self.use_stencil:
+            # 5-point lattice-stencil family (2026-07-08). Per-term feature
+            # s_k = MLP(emb(x_k) ++ emb(x_{k±1}) ++ emb(x_{k±side})) -- a 2D
+            # neighbourhood statistic, richer than the unary/offset terms that
+            # capped the one-pass family at ~0.78 (H-shared).
+            #
+            # Centres exist only for side <= k < d - side (raster-boundary
+            # sites lack a k±side neighbour); the range is empty when
+            # d = 2*side. Straddle exclusion: centre k touches
+            # {k-side .. k+side}, all strictly interior iff k - side > i AND
+            # k + side < j -- index arithmetic, so blindness is
+            # value-independent, like every other family. The ±side reach
+            # leaves an uncovered collar round each hole; the narrow families
+            # above cover it, forming a locality ladder.
+            side = self.stencil_side
+            centres = torch.arange(side, self.d - side, device=emb.device)
+            yield (
+                (-side, -1, 0, 1, side),
+                self.band_stencil_features(
+                    torch.cat(
+                        [
+                            emb[:, centres],
+                            emb[:, centres - 1],
+                            emb[:, centres + 1],
+                            emb[:, centres - side],
+                            emb[:, centres + side],
+                        ],
+                        dim=-1,
+                    )
+                ),  # (B, n_centres, F); n_centres = 0 when d <= 2*side
+                centres,
+            )
+
     def band_summaries(
         self, x: Tensor, t: Tensor, pairs: tuple[Tensor, Tensor] | None = None
     ) -> Tensor:
@@ -313,12 +592,18 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         triangle's visibility set is empty, so it holds zeros here.
 
         When use_stencil is set, a final 5-point lattice-stencil family is
-        appended (trailing F channels); see the inline note below.
+        appended (trailing F channels); see `_band_families`.
 
         `pairs` = (rows, cols) selects a LIST of pairs (the triu-pair gather)
         and returns (B, P, F). Visibility is index arithmetic in both forms,
         so exclusion -- and with it bit-exact blindness -- is unchanged; the
         hole terms are simply never scored for pairs nobody asked about.
+
+        Under `separable_band_scores` the pool is an exact rewrite that never
+        builds the (B, d^2, n) score tensor; see
+        `_attend_band_family_separable`. The two branches share `_band_families`
+        precisely so the choice of aggregator cannot drift into a choice of
+        features.
         """
         del t
         x_idx = ((x + 1) / 2).long()
@@ -326,99 +611,55 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         d = self.d
         site = torch.arange(d, device=x.device)
         position = self.pair_position_embedding(site)  # (d, P)
-        if pairs is None:
-            site_i = site.view(d, 1, 1)
-            site_j = site.view(1, d, 1)
-            term_shape = (1, 1, -1)
-            pair_query_input = (
-                self.relative_pair_embedding(self.pair_displacement)
-                if self.pair_position_mode == "relative" else
-                torch.cat(
-                    [
-                        position.view(d, 1, -1).expand(d, d, -1),
-                        position.view(1, d, -1).expand(d, d, -1),
-                    ],
-                    dim=-1,
-                )
-            )  # (d, d, 2P)
-        else:
-            rows, cols = pairs
-            site_i, site_j = rows.view(-1, 1), cols.view(-1, 1)
-            term_shape = (1, -1)
-            pair_query_input = (
-                self.relative_pair_embedding(self.pair_displacement[rows, cols])
-                if self.pair_position_mode == "relative" else
-                torch.cat([position[rows], position[cols]], dim=-1)
-            )  # (P, 2P)
+        if not self.separable_band_scores:
+            if pairs is None:
+                site_i = site.view(d, 1, 1)
+                site_j = site.view(1, d, 1)
+                term_shape = (1, 1, -1)
+                pair_query_input = (
+                    self.relative_pair_embedding(self.pair_displacement)
+                    if self.pair_position_mode == "relative" else
+                    torch.cat(
+                        [
+                            position.view(d, 1, -1).expand(d, d, -1),
+                            position.view(1, d, -1).expand(d, d, -1),
+                        ],
+                        dim=-1,
+                    )
+                )  # (d, d, 2P)
+            else:
+                rows, cols = pairs
+                site_i, site_j = rows.view(-1, 1), cols.view(-1, 1)
+                term_shape = (1, -1)
+                pair_query_input = (
+                    self.relative_pair_embedding(self.pair_displacement[rows, cols])
+                    if self.pair_position_mode == "relative" else
+                    torch.cat([position[rows], position[cols]], dim=-1)
+                )  # (P, 2P)
 
-        slot = site.view(term_shape)
-        families = [
-            self._attend_band_family(
-                0,
-                pair_query_input,
-                self.band_unary_features(emb),
-                position.unsqueeze(0),
-                self._family_visibility(slot, site_i, site_j, (0,)),
-            )
-        ]
-        for family, (delta, feature_mlp) in enumerate(
-            zip(self.pair_offsets, self.band_pair_features), start=1
+        families = []
+        for family, (offsets, term_features, term_slot) in enumerate(
+            self._band_families(emb)
         ):
-            n_terms = d - delta
-            term_features = feature_mlp(
-                torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
-            )
-            term_slot = site[:n_terms].view(term_shape)
-            visible = self._family_visibility(
-                term_slot, site_i, site_j, (0, delta)
-            )
-            families.append(
-                self._attend_band_family(
-                    family,
-                    pair_query_input,
-                    term_features,
-                    position[:n_terms].unsqueeze(0),
-                    visible,
+            term_positions = position[term_slot].unsqueeze(0)
+            if self.separable_band_scores:
+                visible_row, visible_col = self._family_visibility_halves(
+                    term_slot, offsets
                 )
-            )
-        if self.use_stencil:
-            # 5-point lattice-stencil family (2026-07-08). Per-term
-            # feature s_k = MLP(emb(x_k) ++ emb(x_{k±1}) ++ emb(x_{k±side})) --
-            # a 2D neighbourhood statistic, richer than the unary/offset terms
-            # that capped the one-pass family at ~0.78 (H-shared).
-            #
-            # Centres exist only for side <= k < d - side (raster-boundary
-            # sites lack a k±side neighbour); the range is empty when d = 2*side.
-            # Straddle exclusion: centre k touches {k-side .. k+side}, all strictly
-            # interior iff k - side > i AND k + side < j -- index arithmetic, so
-            # blindness is value-independent, like every other family. The ±side
-            # reach leaves an uncovered collar round each hole; the narrow
-            # families above cover it, forming a locality ladder.
-            side = self.stencil_side
-            centres = torch.arange(side, d - side, device=x.device)
-            stencil_features = self.band_stencil_features(
-                torch.cat(
-                    [
-                        emb[:, centres],
-                        emb[:, centres - 1],
-                        emb[:, centres + 1],
-                        emb[:, centres - side],
-                        emb[:, centres + side],
-                    ],
-                    dim=-1,
+                families.append(
+                    self._attend_band_family_separable(
+                        family, position, term_features, term_positions,
+                        visible_row, visible_col, pairs,
+                    )
                 )
-            )  # (B, n_centres, F); n_centres = 0 (empty) when d <= 2*side
-            centre_slot = centres.view(term_shape)
-            visible = self._family_visibility(
-                centre_slot, site_i, site_j, (-side, -1, 0, 1, side)
-            )
-            families.append(
-                self._attend_band_family(
-                    len(families),  # stencil is the last family
-                    pair_query_input,
-                    stencil_features,
-                    position[centres].unsqueeze(0),
-                    visible,
+            else:
+                visible = self._family_visibility(
+                    term_slot.view(term_shape), site_i, site_j, offsets
                 )
-            )
+                families.append(
+                    self._attend_band_family(
+                        family, pair_query_input, term_features,
+                        term_positions, visible,
+                    )
+                )
         return torch.cat(families, dim=-1)  # (B, d, d, F)

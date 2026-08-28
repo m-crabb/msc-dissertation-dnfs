@@ -203,6 +203,21 @@ class HardStageCfg(StageCfg):
     # null on quality, consistent with having fixed the layer that matters
     # least.
     pair_position_mode: str = "absolute"
+    # Arm C (2026-08-28): compute the masked-attention band WITHOUT ever
+    # building its (B, d^2, n) score tensor -- this head's largest object,
+    # 5.00 GB at B=32 / d=256, and the "d = 256 wants pair chunking" price.
+    #
+    # An EXACT identity, not a modelling arm, and not to be confused with the
+    # factorised swap head: that one changes the function and pays a measured
+    # variance price for it (3.1x per-site log-weight variance at d=16, 2.6x
+    # at d=64 against the masked-attention twin). This computes the same
+    # function to fp round-off, so it is validated by EQUIVALENCE and a memory
+    # benchmark, never by seeds, and no quality change is expected.
+    #
+    # Requires pair_position_mode="absolute": the identity is that a query
+    # linear on the CONCATENATION [rho_i || rho_j] makes the score an outer
+    # sum A_ik + B_jk, which a per-pair relative code does not.
+    separable_band_scores: bool = False
     gather_triu_pairs: bool = False
     # Exterior combiner for the interval / masked-attention heads
     # (2026-08-23): "bilinear" moves [P_i, S_j] out of the per-pair MLP into
@@ -336,6 +351,7 @@ def build_swap_head(
             gather_triu_pairs=cfg.gather_triu_pairs,
             attention_window=cfg.attention_window,
             pair_position_mode=cfg.pair_position_mode,
+            separable_band_scores=cfg.separable_band_scores,
         )
     elif cfg.head_kind == "factorised":
         head = FactorisedSwapHead(
