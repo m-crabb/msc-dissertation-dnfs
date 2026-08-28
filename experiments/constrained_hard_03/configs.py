@@ -334,6 +334,8 @@ def build_swap_head(
             exterior_combiner=cfg.exterior_combiner,
             bilinear_rank=cfg.bilinear_rank or 8,
             gather_triu_pairs=cfg.gather_triu_pairs,
+            site_orderings=cfg.site_orderings,
+            lattice_side=cfg.ising.D,
         )
     elif cfg.head_kind == "masked_attention":
         # Same offsets rationale as "interval"; only the band aggregator
@@ -4500,6 +4502,65 @@ CONFIGS.update({
             name=f"H2_d64_c50_s220_letf_{arm}", **knobs,
         )
         for arm, knobs in _ARM_C_SEED_CHECK_ARMS.items()
+    )
+})
+
+
+# UNFACTORISED ORDERINGS, 8x8 at exact sigma_c (2026-08-28).
+#
+# THE NARRATIVE THIS SERVES: build the strongest head with the MLP combiner,
+# THEN treat factorisation as an optimisation applied to it -- rather than as
+# a fork in the design, which is how the chapter reads today.
+#
+# WHY IT IS NOT RULED OUT. The recorded reason orderings were factorised-only
+# was a COVERAGE argument: they shrink the region no bilinear term sees to the
+# intersection of the per-ordering intervals, and the raster heads already
+# tile the lattice (prefix, band and suffix partition everything but the two
+# holes). Arm B refutes it -- `fimo2ef` carries a prefix band, tiles the
+# lattice too, and STILL loses 0.144 raw, DISJOINT, without its second
+# ordering. Coverage cannot be the mechanism.
+#
+# WHAT SURVIVES IS DEPTH. Blindness forces band content to be shallow (deep
+# band content leaks a hole through the two-hop path); causal streams carry no
+# such constraint, because causality does the work. A second ordering buys a
+# DEEP read of a region the band can only read SHALLOWLY -- as true of the
+# attention band as of the prefix sum.
+#
+# THE CHAIN, one field per step, both bands:
+#   ma      -> mamo2    orderings on the attention band
+#   mamo2   -> mamo2ef  the exact field channel, GIVEN orderings
+#   iv      -> ivmo2    orderings on the prefix band
+#   ivmo2   -> ivmo2ef  the exact field channel, GIVEN orderings
+# `iv` is included because no interval cell exists on this chassis -- the
+# 0.646 d64 figure comes from a different wave and is not a valid anchor.
+#
+# COST: an extra ordering is a full extra backbone pass and adds NO modules,
+# only 2*hidden more inputs to the pair readout. Anchors on this rung, same
+# venue and seeds: `ma` reads 0.7593 / 0.7955 / 0.7893 raw and
+# 0.8213 / 0.8635 / 0.8527 EMA.
+_RASTER_ORDERINGS_D64_ARMS = {
+    "mamo2_50k_curr_w2": {"site_orderings": ("row", "col")},
+    "mamo2ef_50k_curr_w2": {
+        "site_orderings": ("row", "col"), "exact_field_channel": True,
+    },
+    "iv_50k_curr_w2": {"head_kind": "interval"},
+    "ivmo2_50k_curr_w2": {
+        "head_kind": "interval", "site_orderings": ("row", "col"),
+    },
+    "ivmo2ef_50k_curr_w2": {
+        "head_kind": "interval", "site_orderings": ("row", "col"),
+        "exact_field_channel": True,
+    },
+}
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            CONFIGS["H2_d64_c50_s220_letf_ma_50k_curr_w2"],
+            name=f"H2_d64_c50_s220_letf_{arm}", **knobs,
+        )
+        for arm, knobs in _RASTER_ORDERINGS_D64_ARMS.items()
     )
 })
 
