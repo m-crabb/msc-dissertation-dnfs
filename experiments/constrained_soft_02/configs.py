@@ -1809,28 +1809,6 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # ---------------------------------------------------------------
-    # Walk-back-to-8x8 twins (2026-08-12). The three experiment chapters
-    # shared no non-enumerable lattice size — baseline and soft ran 10x10
-    # while the hard chapter ran 8x8 and 16x16 — so 8x8 (d = 64 sites, the
-    # lattice the hard cells name d64) becomes the shared cross-chapter
-    # comparison size. Each cell below is a D=8 twin of a load-bearing d10
-    # specialist: SAME recipe, SAME sigma, SAME lambda, launched on the same
-    # seeds — only the lattice side changes, so any number difference
-    # against the archived d10 family is attributable to size alone.
-    # n_euler stays at the source cell's value (ne64 / ne128): it is part of
-    # the recipe the twin exists to hold fixed, and the hard chapter's own
-    # practice holds ne128 fixed from d64 to d256 rather than scaling it
-    # with site count.
-    #
-    # The c03 twin mirrors the RELAUNCH recipe (warmup 2000) recorded by the
-    # current d10 entry above; the superseded first c03 batch ran warmup 500
-    # and differs in nothing else. One caveat only c03 carries: c = 0.3 is
-    # exactly representable at d = 100 (30 up-sites) but not at d = 64
-    # (nearest reachable composition 19/64 ≈ 0.297), so cross-size obedience
-    # comparisons at this cell inherit a ~0.003 composition floor that is a
-    # property of the lattice, not of the sampler.
-    # ---------------------------------------------------------------
     "S2_d8_c05_l10_letf_ne64": StageCfg(
         name="S2_d8_c05_l10_letf_ne64",
         ising=IsingCfg(
@@ -1908,41 +1886,7 @@ CONFIGS: dict[str, StageCfg] = {
     ),
 }
 
-# --- SMC-in-training characterisation arms (2026-08-20) --------------------
-# The gain-case twin of the baseline d8 smc arms (see that block in
-# `dnfs_baseline_01.configs` for the battery design; the mechanism argument
-# lives on the TrainCfg field). Base cell chosen because it is the softest
-# healthy cell we own with real weight degradation: c = 0.80 is the
-# off-centre stress window, its A100 redraw control reads ESS/N 0.419, and
-# the matched-base arm moved the SAME cell to 0.937 by shortening the
-# transport — measured headroom for an intervention that corrects the
-# rollout law during training instead of moving the base. One variable per
-# arm via `replace`; judged against a FRESH same-venue control (base cell,
-# Modal A100, seed 45 = the studied lineage) launched alongside.
-# Bands FROZEN BEFORE LAUNCH, read on the final 5000-draw eval ESS/N of arm
-# vs fresh control with bootstrap 95% CIs (expectation: control near 0.419;
-# composition_mean sanity 0.79-0.80 on every cell):
-#   PASS   CI-disjoint above control. Scale reference, NOT a bar: matched
-#          base bought 0.419 -> 0.937; any CI-disjoint fraction of that
-#          from the training side alone is the headline case.
-#   NULL   CIs overlap.
-#   DAMAGE CI-disjoint below control.
-# Mechanism read alongside: `rollout_resample_events` (fire profile). The
-# in-training `ess` column stays plain-IS by construction (test-pinned),
-# so comparability with the archived cell holds.
-# F(c) campaign RETRAIN at ne128 (2026-08-23, s55, decision on the
-# F(c) grid question): the printed curve is drawn on the ne64 evaluation
-# grid, which is NOT converged -- redrawing the same checkpoints at ne128 and
-# ne256 moved F/site by -0.0081 at c=0.50 and -0.0316 at c=0.60 with a
-# first-order ratio (0.44 / 0.48), so the printed F(0.60)-F(0.50) step of
-# +0.0537 extrapolates to +0.0303. Retraining at ne128 halves the
-# training-grid component; the evaluation-grid component is then removed by
-# the cheap ne256/ne512 redraw + Richardson. The c=0.50 and c=0.80 windows
-# already have ne128 families (this cell and the N11 family); these four
-# complete the curve at one recipe. ONE VARIABLE versus the c=0.50 ne128
-# cell: target_composition (pinned by test). Four seeds each; the thin
-# c=0.30 tail is topped up only if it again carries fewer than three
-# seeds over the 0.30 ESS floor. Venue: DoC a30, ~12 h per run on A100.
+
 _FC_NE128_BASE = CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
 for _c, _c_tag in ((0.30, "c030"), (0.55, "c055"), (0.60, "c060"), (0.65, "c065")):
     _window_name = f"S2_d10_{_c_tag}_l50_letf_ne128_anneal"
@@ -1963,14 +1907,6 @@ for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
         ),
     )
 
-# 4x4 specialist twins for tab:amort-4x4 (s64): the conditioned rows
-# at c = 0.30/0.70/0.80 had no specialist comparator, which left the
-# amortisation-vs-specialist read hanging on the single c=0.50 pair. Recipe
-# is BYTE-IDENTICAL to the c=0.50 specialist (target_composition is the only
-# change; twin pinned in test_configs). optimised_recipe deliberately NOT
-# applied: every row these compare against is eager, and one recipe per
-# table governs over the standing cost rule (decision on record, s64).
-# Venue: Modal batch_seeds (a30 queue held by Wave 1), tag 20260825-amort-spec.
 _AMORT_SPECIALIST_BASE = CONFIGS["S2_d4_c05_50k_l50_letf_anneal_offset_clip50"]
 for _c, _c_tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
     _twin_name = f"S2_d4_{_c_tag}_50k_l50_letf_anneal_offset_clip50"
@@ -1979,25 +1915,6 @@ for _c, _c_tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
         ising=replace(_AMORT_SPECIALIST_BASE.ising, target_composition=_c),
     )
 
-# Uniform-from-start ablation of the widening curriculum (s64): the
-# widening was adopted by analogy with the sigma/lambda curricula (easy end
-# = c near 0.5 where the uniform base overlaps; off-centre rollouts give
-# degenerate IS weights early) but never ablated. This twin draws c from
-# the full final window [0.20, 0.80] from step 0; everything else is
-# byte-identical to the printed conditioned cell (test-pinned). FROZEN
-# judgement: compare against the printed conditioned rows (tab:amort-4x4:
-# centre ESS 0.75-0.77, edge 0.55 +- 0.35, obedience slope mean 0.995) --
-# MATCHES (>=3/4 seeds healthy, sweep in-band) -> the widening is
-# unnecessary at 4x4 and the prose simplifies; WORSE -> the widening earns
-# its place by ablation, cite this cell. NOTE at D=4 the stage-1 half-width
-# 0.05 is below the composition quantum 1/16, so "matches" is the expected
-# outcome; the run exists to close the todo either way.
-# JUDGED s68: WORSE, decisively -- the "matches is expected" note was wrong
-# because it priced only the stage-1 discretisation, not the early-step IS
-# degeneracy the curriculum guards. 0/4 seeds healthy: obedience slope mean
-# -0.19 (printed 0.995), sweep ESS <= 0.15 at every requested c (printed
-# 0.75-0.77 centre), final loss 1e1-1e4 vs 0.2-0.3. Widening earns its place.
-# Venue: Modal batch_seeds --detach, tag 20260825-amort-flatw30.
 _FLAT_WINDOW_BASE = CONFIGS["S2_d4_camort_50k_l50_letf_anneal_offset_clip50"]
 _flat_window_name = f"{_FLAT_WINDOW_BASE.name}_flatw30"
 CONFIGS[_flat_window_name] = replace(

@@ -30,7 +30,6 @@ from discrete_flow_sampler.diagnostics.figure_style import (
 )
 
 
-# ---------------------------------------------------------------- soft panel
 def _neighbour_field(spins, side):
     """Sum of the four torus neighbours, (chains, d)."""
     grid = spins.reshape(-1, side, side)
