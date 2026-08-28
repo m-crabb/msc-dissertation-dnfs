@@ -89,10 +89,27 @@ D_SITES = L * L
 TAG = "20260825-hard-w2-d64"
 ARMS = {
     "mo": "mask-one head",
-    "ma": "masked-attention head",
+    "ma": "masked-attention band, one sweep",
+    "mamo2": "masked-attention band, two sweeps",
+    "mamo2ef": "masked-attention band, two sweeps + exact field",
+    "iv": "prefix-sum band, one sweep",
+    "ivmo2": "prefix-sum band, two sweeps",
+    "ivmo2ef": "prefix-sum band, two sweeps + exact field",
     "fimo2ef": "factorised head, prefix band + exact field",
     "fmo2ef": "factorised head, global interior + exact field",
     "thp": "two-hole patch head",
+}
+# Arms whose runs carry their OWN campaign tag rather than the wave-2
+# default. The five ladder arms were built by replacing the wave-2 `ma`
+# critical cell's knobs, so they share its name and recipe exactly and
+# differ only in provenance -- but a table row must say which run backs it,
+# because a config name alone is ambiguous once a cell has been run twice
+# (`fimo2ef` at this rung has both a wave-2 and an arm-B set, 0.828 and
+# 0.837, agreeing but not identical). Same idiom as house_table_4x4's
+# ARM_PROVENANCE.
+ARM_PROVENANCE = {
+    arm: "20260828-rasterord-d64"
+    for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
 }
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
@@ -359,11 +376,20 @@ LATEX_ROWS = (
     ("reference", "Kawasaki (mchammer), certified reference"),
     ("floor", "sampling floor at $N=5000$"),
     None,
+    # No doubly-masked oracle row at this rung: 7,036 ms per forward at d=64
+    # against the masked-attention head's 6.0 ms (tab:head-ladder), so the
+    # cell will not be run. It stays in the 4x4 table, where it reads 417 ms.
     ("mo", "mask-one head"),
-    ("ma", "masked-attention head"),
-    ("fimo2ef", "factorised head, prefix band $+$ exact field"),
-    ("fmo2ef", "factorised head, global interior $+$ exact field"),
+    None,
+    ("ma", "masked-attention band, one sweep"),
+    ("mamo2", "masked-attention band, two sweeps"),
+    ("mamo2ef", "masked-attention band, two sweeps $+$ exact field"),
+    ("iv", "prefix-sum band, one sweep"),
+    ("ivmo2", "prefix-sum band, two sweeps"),
+    ("ivmo2ef", "prefix-sum band, two sweeps $+$ exact field"),
+    None,
     ("thp", "two-hole patch head"),
+    ("fimo2ef", "factorised head, prefix band $+$ exact field"),
     None,
     ("reject_off_soft", "reject off soft \\gls{dnfs}"),
 )
@@ -503,8 +529,17 @@ def main(argv=None):
         for arm in ARMS:
             suffix = "e" if (arm, sigma_label) in EAGER_TWIN else ""
             name = CELL_NAME[sigma_label].format(arm=arm) + suffix
-            run_dirs = [args.results_dir / f"{name}_seed{seed}_{TAG}"
+            tag = ARM_PROVENANCE.get(arm, TAG)
+            run_dirs = [args.results_dir / f"{name}_seed{seed}_{tag}"
                         for seed in SEEDS]
+            # An arm enrolled from a later campaign may not exist at every
+            # coupling yet. Print "--" for the missing condition instead of
+            # failing the fill, so the table can be reviewed before its
+            # remaining cells are run; latex_table already renders a missing
+            # key as "--" throughout the row.
+            if not all((d / "eval" / "metrics.json").is_file()
+                       for d in run_dirs):
+                continue
             cfg = registry_config_for(run_dirs[0])
             _, head = build_target_and_head(cfg, device="cpu")
             per_forward = measured_forward_flops(
