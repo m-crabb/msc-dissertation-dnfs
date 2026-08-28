@@ -4388,6 +4388,31 @@ _ARM_B_D64_ARMS: dict[str, dict] = {
     },
     # B3: the control that isolates it -- second ordering retired, NO bonds.
     "fief_50k_curr_1o": {"site_orderings": ("row",)},
+    # ARM C2 (2026-08-28): the interior cell that was UNBUILDABLE until today.
+    # The interior is a 2x2 -- what the pooling may SEE (open interval, or the
+    # whole lattice bar the holes) crossed with how it WEIGHTS (uniformly, or
+    # by a learned softmax) -- and a band could not run without a global term
+    # because it had no readout of its own. So every band-carrying head also
+    # carried a global term, and the only interior mechanism ever measured in
+    # ISOLATION at 16x16 is the learned one.
+    #
+    # WHAT IT ASKS. `fbil` -- bilinear exterior, NO global -- was seed-unstable
+    # at the 4x4 gate, and the reading on record is "the global term
+    # stabilises". That was measured with NO interior mechanism at all. If the
+    # prefix band alone stabilises the bilinear exterior just as well, the
+    # global term is not special: it is one of two interchangeable interior
+    # suppliers. NOT a cost question -- both are O(1) per pair (one cumsum plus
+    # two gathers against one lattice sum plus four gathers).
+    #
+    # Same chassis, seeds and venue as the four cells above, so it drops
+    # straight into their comparison; the baseline reads 0.8373 +- 0.0236 raw
+    # / 0.8848 +- 0.0055 EMA on this rung.
+    "fimo2e_50k_curr_noglobal": {"use_global": False},
+    # And the one-ordering twin, so the ordering axis is crossed with it
+    # exactly as B3 crosses it with the baseline.
+    "fie_50k_curr_noglobal1o": {
+        "use_global": False, "site_orderings": ("row",),
+    },
 }
 # NOT run in this wave, deliberately SEQUENCED rather than skipped: the
 # matched-parameter controls. The bond family adds 576 parameters (0.4%), and

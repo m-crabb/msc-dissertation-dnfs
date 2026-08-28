@@ -232,7 +232,7 @@ class FactorisedSwapHead(nn.Module):
         global_bond_features: bool = False,
     ):
         super().__init__()
-        if not (use_bilinear or use_global):
+        if not (use_bilinear or use_global or interior_band):
             raise ValueError(
                 "FactorisedSwapHead needs at least one of use_bilinear / "
                 "use_global: with both off, pair scores depend only on time "
@@ -261,8 +261,7 @@ class FactorisedSwapHead(nn.Module):
                 )
         if interior_band not in (None, "prefix", "attention"):
             raise ValueError(f"interior_band must be None, 'prefix' or 'attention'; got {interior_band!r}")
-        if interior_band is not None and not use_global:
-            raise ValueError("interior_band rides the global term's per-pair path; needs use_global=True")
+
         if global_bond_features and interior_band is None:
             raise ValueError(
                 "global_bond_features SHARES the band provider's "
@@ -320,9 +319,22 @@ class FactorisedSwapHead(nn.Module):
                 nn.GELU(),
                 nn.Linear(global_feature_dim, global_feature_dim),
             )
-            self.global_context_norm = nn.LayerNorm(global_feature_dim + band_dim)
+        # The per-pair readout is shared by the global term and the band, and
+        # exists whenever EITHER does (2026-08-28). It used to be built only
+        # under `use_global`, which is why a band could not run alone: it had
+        # no readout of its own and rode the global term's. That constraint
+        # was an implementation detail shaping the experiment -- it made
+        # "uniform interior, no global" unbuildable, so at 16x16 the only
+        # interior mechanism ever measured in isolation was the learned one.
+        #
+        # THE MODULE NAMES DO NOT MOVE even when no global term exists: they
+        # are state_dict keys in 101 archived factorised cells. The private
+        # method that uses them is renamed instead.
+        if use_global or interior_band is not None:
+            context_dim = (global_feature_dim if use_global else 0) + band_dim
+            self.global_context_norm = nn.LayerNorm(context_dim)
             self.global_context_readout = nn.Sequential(
-                nn.Linear(global_feature_dim + band_dim, global_feature_dim),
+                nn.Linear(context_dim, global_feature_dim),
                 nn.GELU(),
                 nn.Linear(global_feature_dim, factor_dim),
             )
@@ -446,8 +458,20 @@ class FactorisedSwapHead(nn.Module):
         shape = (x.shape[0], self.d, self.bilinear_rank, self.factor_dim)
         return a.view(shape), b.view(shape)
 
-    def _global_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
-        """rho(LN(c - psi_i - psi_j)) for every pair, (B, d, d, f).
+    def _interior_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
+        """The per-pair interior term, (B, d, d, f).
+
+        Assembled from whichever ingredients the head carries: the
+        hole-subtracted global sum rho(LN(c - psi_i - psi_j)), the interior
+        band, and the whole-lattice bond totals. Either of the first two can
+        stand alone -- the band used to require the global term because it
+        had no readout of its own, which made 'uniform interior, no global'
+        unbuildable and left the interior 2x2 half-populated at every rung.
+
+        The modules are still spelled `global_context_norm` /
+        `global_context_readout` because those are state_dict keys in 101
+        archived factorised cells; only this method's name follows the
+        meaning.
 
         The subtraction removes the only terms of c that touch the holes,
         so entry [:, i, j] is blind to x_i and x_j exactly (up to the fp
@@ -466,23 +490,28 @@ class FactorisedSwapHead(nn.Module):
         on i < j, and the dense path's `torch.where` mirror exists only to
         make the whole block symmetric before the grid-shaped readout.
         """
-        x_idx = ((x + 1) / 2).long()
-        token_embedding = self.backbone.token_embedder(x_idx)   # (B, d, h)
-        psi = self.global_site_features(
-            torch.cat([token_embedding, self._site_positions(x)], dim=-1)
-        )                                                       # (B, d, Fg)
-        total = psi.sum(dim=1)                                  # (B, Fg)
+        if self.use_global:
+            x_idx = ((x + 1) / 2).long()
+            token_embedding = self.backbone.token_embedder(x_idx)   # (B, d, h)
+            psi = self.global_site_features(
+                torch.cat([token_embedding, self._site_positions(x)], dim=-1)
+            )                                                       # (B, d, Fg)
+            total = psi.sum(dim=1)                                  # (B, Fg)
         if self.gather_triu_pairs:
             rows, cols = triu_pair_indices(self.d, x.device)
-            hole_subtracted = (
-                total.unsqueeze(1) - psi[:, rows] - psi[:, cols]
-            )                                                   # (B, P, Fg)
+            if self.use_global:
+                hole_subtracted = (
+                    total.unsqueeze(1) - psi[:, rows] - psi[:, cols]
+                )                                                   # (B, P, Fg)
             if self.interior_band is not None:
                 band = self.interior_band_provider.band_summaries(
                     x, t, (rows, cols)
                 )
-                hole_subtracted = torch.cat(
-                    [hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1
+                hole_subtracted = (
+                    torch.cat(
+                        [hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1
+                    )
+                    if self.use_global else band
                 )
             if self.global_bond_features:
                 # Symmetric in (i, j) already, so -- unlike the band -- it
@@ -499,11 +528,12 @@ class FactorisedSwapHead(nn.Module):
                 ),
                 self.d,
             )
-        hole_subtracted = (
-            total.view(x.shape[0], 1, 1, -1)
-            - psi.unsqueeze(2)                                  # remove psi_i
-            - psi.unsqueeze(1)                                  # remove psi_j
-        )
+        if self.use_global:
+            hole_subtracted = (
+                total.view(x.shape[0], 1, 1, -1)
+                - psi.unsqueeze(2)                              # remove psi_i
+                - psi.unsqueeze(1)                              # remove psi_j
+            )
         if self.interior_band is not None:
             # Band summaries are defined on i < j; mirror to the label-
             # symmetry convention so the whole global block stays symmetric.
@@ -512,7 +542,12 @@ class FactorisedSwapHead(nn.Module):
                 torch.ones(self.d, self.d, dtype=torch.bool, device=x.device)
             ).view(1, self.d, self.d, 1)
             band = torch.where(upper, band, band.transpose(1, 2))
-            hole_subtracted = torch.cat([hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1)
+            hole_subtracted = (
+                torch.cat(
+                    [hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1
+                )
+                if self.use_global else band
+            )
         if self.global_bond_features:
             bonds = self.interior_band_provider.hole_free_bond_totals(x)
             hole_subtracted = torch.cat(
@@ -541,7 +576,10 @@ class FactorisedSwapHead(nn.Module):
                 (self._extra_factor_tensors(name, x, t), name)
                 for name in self.site_orderings[1:]
             ]
-        global_context = self._global_pair_context(x, t) if self.use_global else None
+        interior_context = (
+            self._interior_pair_context(x, t)
+            if self.use_global or self.interior_band is not None else None
+        )
         tau = self.time_projection(self.backbone.time_embedder(t))
         upper = torch.triu(
             torch.ones(d, d, dtype=torch.bool, device=x.device)
@@ -550,8 +588,8 @@ class FactorisedSwapHead(nn.Module):
             H = tau.float().view(batch, 1, 1, self.factor_dim).expand(
                 batch, d, d, self.factor_dim
             )
-            if global_context is not None:
-                H = H + global_context.float()
+            if interior_context is not None:
+                H = H + interior_context.float()
             for (factor_a, factor_b), name in bilinear_factors:
                 term = torch.einsum(
                     "birf,bjrf->bijf", factor_a.float(), factor_b.float()
