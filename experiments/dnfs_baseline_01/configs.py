@@ -513,17 +513,16 @@ class StageCfg:
 
 
 def optimised_recipe(cell: StageCfg) -> StageCfg:
-    """s60 optimisation bundle (decided 2026-08-24) as a recipe transform
-    for the flip route — the mirror of the hard route's `optimised_recipe`.
+    """Optimisation bundle as a recipe transform  for the flip route 
+    — the mirror of the hard route's `optimised_recipe`.
 
     Two declared changes, nothing else: model.compile_model=True (measured
     1.58x updates / 2.01x rollout on stage_4_d10 leTF, same-container
     Modal A100; GPU-stack gate passed) and train.c_t_from_rollout=True
-    (bit-identical c_t grid from the rollout's own forwards). STANDING
-    RULE: every NEW cell — Wave-1 retrains included — goes through this
-    transform; archived cells and eager twins of eager parents keep both
-    flags off, because compiled runs are 1e-5-class vs eager, never
-    bit-parity.
+    (bit-identical c_t grid from the rollout's own forwards). Every NEW cell
+    — Wave-1 retrains included — goes through this transform; archived cells
+    and eager twins of eager parents keep both flags off, because compiled
+    runs are 1e-5-class vs eager, never bit-parity.
     """
     return replace(
         cell,
@@ -533,7 +532,7 @@ def optimised_recipe(cell: StageCfg) -> StageCfg:
 
 
 def sigma_c_twin(parent: StageCfg) -> StageCfg:
-    """Wave-1 sigma_c retrain twin (s58 migration decision, launched s63).
+    """Wave-1 sigma_c retrain twin.
 
     The archived cell with the coupling — and ONLY the coupling — moved
     0.22305 -> the exact SIGMA_C = ln(1+sqrt(2))/4, in `ising.sigma` and the
@@ -995,21 +994,6 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
     ),
-    # Walk-back-to-8x8 comparison cell (2026-08-12). The three experiment
-    # chapters shared no non-enumerable lattice size — baseline and soft ran
-    # 10x10 while the hard chapter ran 8x8 and 16x16 — so beyond the
-    # enumerable 4x4 correctness gate no cross-chapter cost/quality
-    # comparison was possible. 8x8 (d = 64 sites; the same lattice the hard
-    # cells name d64, which counts sites where this experiment's names count
-    # the lattice side) is now the shared comparison size; 10x10 keeps its
-    # paper-replication role. This is a D=8 twin of
-    # `stage_4_d10_critical_paper_curriculum`: every knob except the lattice
-    # side is copied — same sigma ladder and LR drops, same 200k budget,
-    # same batch/replay/clip/warmup, same ne64 — so any difference against
-    # the archived d10 four-seed record is attributable to lattice size
-    # alone. n_euler is deliberately NOT rescaled with site count: the hard
-    # chapter holds ne128 fixed from d64 to d256, and rescaling here would
-    # break the twin.
     "stage_4_d8_critical_paper_curriculum": StageCfg(
         name="stage_4_d8_critical_paper_curriculum",
         ising=IsingCfg(D=8, sigma=0.22305, bias=0.0),
@@ -1041,36 +1025,6 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
     ),
-    # Unconstrained 16x16 control (2026-08-18, GO): does the d=256
-    # sigma_c wall appear WITHOUT the constraint machinery? The hard
-    # chapter's proven 50k ladder frame (sigma stages every 5k, lr
-    # 1e-3 -> 3e-4 on reaching 0.205, final 40% of budget at sigma_c)
-    # applied to THIS experiment's engine with its own constants
-    # untouched (leT h128 L3, batch 128 / outer 256 / replay 4, clip
-    # 500, ne64, control-variate estimator) — at d=256 this is the
-    # cross-family twin of the constrained 16x16 anchors: same lattice,
-    # same schedule shape, same budget, machinery the only change. The
-    # 200k paper budget is measured overkill: the archived d8 walkback
-    # reached sigma_c at step 85k already converged (train-ESS
-    # 4733 -> 4835 over its final 115k steps). Evals keep the twin's
-    # full 5000-draw protocol — the single-site route reads only
-    # n_eval_samples — which sizes the CARD: the dense readout's
-    # (B, 4, 256, 512) score buffer is ~9.8 GiB at B=5000, measured to
-    # OOM a 22 GiB L4 at the first probe (2026-08-18); runs on the
-    # A100-40GB the modal app defaults to.
-    # Bands FROZEN BEFORE LAUNCH, seed 42, read on the final 5000-draw
-    # eval ESS/N against the d8 anchors (0.970/0.943, Var[log w]/site
-    # 0.00052-0.0010): WALL-ABSENT >= 0.5 (the constraint machinery is
-    # implicated at d256); INTERMEDIATE 0.05-0.5 (shared graceful
-    # scaling — report Var/site against the d8 anchor and the
-    # constrained families' measured 10x/47x per-site growth);
-    # WALL-PRESENT <= 0.05 (the wall generalises to the unconstrained
-    # engine: a property of the method at 256 sites, not of the
-    # constraint). CV contingency, pre-registered: sustained
-    # var_estimator_integrand >= var_dt_log_p_tilde with clip
-    # saturation, or divergence, means the d256 cold-CV inversion
-    # generalises beyond the swap loss (record it as a finding);
-    # fallback is ONE naive-estimator relaunch, nothing else changed.
     "stage_4_d16_critical_50k_ladder": StageCfg(
         name="stage_4_d16_critical_50k_ladder",
         ising=IsingCfg(D=16, sigma=0.22305, bias=0.0),
@@ -1103,28 +1057,6 @@ CONFIGS: dict[str, StageCfg] = {
     ),
 }
 
-# --- SMC-in-training characterisation arms (2026-08-20) --------------------
-# First runs of `rollout_resample_ess_fraction` on the flip route: does
-# ESS-triggered resampling inside the buffer-rebuild rollout (LEAPS Alg. 1
-# lines 11-14; the full c_t argument lives on the TrainCfg field) change
-# what the trained sampler converges to? One variable per arm: `replace`
-# copies the d8 anchor cell and moves ONLY the trigger threshold, so the
-# cell diff IS the lever. Judged against a FRESH same-venue control (the
-# base cell itself, Modal A100, seed 42) because the archived walkback
-# controls predate two months of code drift.
-# Bands FROZEN BEFORE LAUNCH, read on the final 5000-draw eval ESS/N of arm
-# vs fresh control with bootstrap 95% CIs (expectation: control lands near
-# the archived d8 anchors 0.970/0.943; below 0.90 flags drift and the arms
-# are judged against the fresh control only):
-#   PASS   CI-disjoint above control (unexpected here: the d8 endpoint is
-#          near-saturated; this side is the battery's no-harm control,
-#          the soft c=0.80 twin carries the gain case).
-#   NULL   CIs overlap.
-#   DAMAGE CI-disjoint below control.
-# Mechanism read alongside: the `rollout_resample_events` column. Expected
-# early-fire/late-silent as training health improves; zero events beyond
-# the first sigma stage at BOTH taus = VACUOUS-AT-TAU, a trigger-
-# calibration finding (quality verdict NULL by construction, not PASS).
 _SMC_FLIP_BASELINE_BASE = CONFIGS["stage_4_d8_critical_paper_curriculum"]
 for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
     _arm_name = f"{_SMC_FLIP_BASELINE_BASE.name}_{_tau_tag}"
@@ -1137,27 +1069,6 @@ for _tau, _tau_tag in ((0.3, "smc03"), (0.6, "smc06")):
         ),
     )
 
-# --- Wave-1 sigma_c retrain twins (s63, 2026-08-24) -------------------------
-# The s58 migration decision: one critical coupling project-wide, the exact
-# SIGMA_C = ln(1+sqrt(2))/4 = 0.220343; the archived 0.22305 cells are
-# records and stay untouched. These twins replace the printed sigma_c
-# results of the baseline chapter (tab:baseline-stage4 measured rows,
-# tab:eval-unconstrained-10x10 sigma_c half vs the 0.220343 Wolff pool,
-# fig:unconstrained-clean) and the d8 walk-back comparison the hard chapter
-# reads. Coupling is the only physics change (see `sigma_c_twin`); the s60
-# optimised recipe rides along per its standing rule.
-# Bands FROZEN BEFORE LAUNCH (final fp32 5000-draw eval/ess_fraction,
-# seeds 42-45, family passes on >= 3 of 4 seeds over its floor; SIGMA_C is
-# a marginally weaker coupling than legacy 0.22305, so at-or-above the
-# legacy family is the expectation and the floors sit ~0.05 below the
-# legacy means to catch a c030-class regression, not seed noise):
-#   stage_4_d10_critical_paper_curriculum_sc  floor 0.86  (legacy 0.911 +/- 0.014)
-#   stage_4_d8_critical_paper_curriculum_sc   floor 0.89  (legacy anchors 0.943/0.970)
-#   stage_4_d4_critical_sc                    floor 0.93  (legacy 0.980 +/- 0.010)
-# PASS -> the family's numbers/figures replace the legacy sigma_c print
-# sites and the migration todos there are discharged. FAIL -> regression
-# investigation first (c030 precedent: the retrain itself can regress);
-# legacy numbers STAY IN PRINT until a passing family exists.
 for _wave1_parent_name in (
     "stage_4_d4_critical",
     "stage_4_d10_critical_paper_curriculum",
