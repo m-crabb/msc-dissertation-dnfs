@@ -62,6 +62,20 @@ forward is measured, so a cell trained before a lever landed can never be
 billed at today's architecture. Audited 2026-08-27 across all 36 d64 cells
 and all 36 printed 4x4 cells: zero drift.
 
+ONE FIELD IS DELIBERATELY EXEMPT FROM THAT RULE, and only one:
+`separable_band_scores` (see `flop_billing_config`). Every masked-attention
+cell is billed separable whatever it trained under, because the flag is an
+EXACT rewrite of the band -- 1.5e-7 forward agreement, gradients matched
+parameter by parameter -- so the model is identical and only the
+contraction order differs. The archived MA cells trained dense purely
+because the identity was derived on 2026-08-28, after they ran. FLOP/es is
+an intensive property of an architecture and is already measured on today's
+code, so the honest bill is the cheapest exact evaluation of the same
+function; billing dense prices a tensor nobody needs to build. Measured
+1.44x at d=64 and 1.98x at d=256. WALL CLOCK IS NOT RE-BILLABLE the same
+way -- the chapter's "1.3 hours, a 5.3x speed-up" is what those dense jobs
+took, and stays as measured.
+
 Per-site energy follows the chapter's convention E/d = -log p~(x) /
 (2 sigma d). Neural cells aggregate mean +- SD over the three seeds.
 """
@@ -276,6 +290,42 @@ def config_drift(saved, live, fields=FLOP_BEARING_FIELDS):
         if key.split(".")[-1] in fields
         and flat_saved.get(key) != flat_live.get(key)
     }
+
+
+def flop_billing_config(cfg):
+    """The config the FLOP forward is measured at, which for a
+    masked-attention head is NOT the one it trained under.
+
+    WHY THE BILL MAY LEGITIMATELY DIFFER FROM THE RUN, here and nowhere
+    else. FLOP/es is an INTENSIVE per-sample property of an architecture --
+    "what does this head cost to sample from" -- and it is already measured
+    on today's code by rebuilding the model from the saved config, never
+    read back from the training job. `separable_band_scores` computes the
+    band's EXACT function: forward agreement 1.5e-7 at production shape,
+    gradients matched parameter by parameter, no approximation and no
+    variance price. The MODEL is therefore identical and only the
+    contraction order changes, so the honest bill for any masked-attention
+    head is the cheapest exact way to evaluate it. Every archived MA cell
+    trained dense purely because the identity was derived on 2026-08-28,
+    after they ran; billing them dense prices a tensor nobody needs to
+    build. Measured saving on the head forward: 1.44x at d=64, 1.98x at
+    d=256, the ratio growing with d because the term removed is the
+    d^2 n A score einsum.
+
+    WHAT THIS IS NOT, and the line matters. It is NOT the general
+    permission to bill an archived row at today's registry -- that would
+    misattribute, which is why `registry_config_for` refuses on any
+    FLOP_BEARING_FIELDS drift and this function runs after it. Those fields
+    change the FUNCTION the head computes; this one does not. It is also
+    NOT re-billable to WALL CLOCK: the chapter's "1.3 hours, a 5.3x
+    speed-up" is what those dense jobs actually took and stays as measured.
+
+    The prefix-sum arms are returned untouched -- they have no score tensor
+    to factorise, and `IntervalSwapHead` is never handed the flag.
+    """
+    if cfg.head_kind != "masked_attention" or cfg.separable_band_scores:
+        return cfg
+    return replace(cfg, separable_band_scores=True)
 
 
 def registry_config_for(run_dir):
@@ -541,7 +591,11 @@ def main(argv=None):
                        for d in run_dirs):
                 continue
             cfg = registry_config_for(run_dirs[0])
-            _, head = build_target_and_head(cfg, device="cpu")
+            # Billed separable for a masked-attention head, whatever it
+            # trained under -- same function, cheaper contraction. See
+            # flop_billing_config.
+            _, head = build_target_and_head(
+                flop_billing_config(cfg), device="cpu")
             per_forward = measured_forward_flops(
                 head, (reference[:1], torch.full((1,), 0.5)))
             n_draws = cfg.eval.n_eval_samples

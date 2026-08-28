@@ -90,7 +90,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
 # The lattice-generic half of the 8x8 fill, imported rather than restated.
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
     _sci, aggregate, config_drift, fmt, is_composition_exact,
-    reference_standard_error, registry_config_for, run_dir_config,
+    flop_billing_config, reference_standard_error, registry_config_for, run_dir_config,
     sampling_floor_from_reference)
 
 L = 16
@@ -410,7 +410,10 @@ def main(argv=None):
                 print(f"no cells for {arm} at {sigma_label}", file=sys.stderr)
                 continue
             cfg = registry_config_for(run_dirs[0])
-            _, head = build_target_and_head(cfg, device="cpu")
+            # Billed separable for a masked-attention head; see
+            # house_table_8x8.flop_billing_config.
+            _, head = build_target_and_head(
+                flop_billing_config(cfg), device="cpu")
             per_forward = measured_forward_flops(
                 head, (reference[:1], torch.full((1,), 0.5)))
             n_draws = cfg.eval.n_eval_samples

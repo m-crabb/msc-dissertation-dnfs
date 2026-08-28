@@ -52,6 +52,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from discrete_flow_sampler.diagnostics.flops import (
     chain_per_effective_sample, kawasaki_run_flops, measured_forward_flops,
     neural_sampling_flops_per_sample, per_effective_sample)
+from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+    flop_billing_config)
 from discrete_flow_sampler.diagnostics.metrics import (
     conditional_pmf_at_composition, correlation_profile_error,
     energy_wasserstein2, enumerate_states, exact_log_probs, integrated_autocorr,
@@ -237,7 +239,12 @@ def main(argv=None):
                 recipe_suffix = "w2e" if eager_refill else "w2"
                 tag = EAGER_TAG if eager_refill else TAG
             cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_{recipe_suffix}"]
-            _, head, _, _ = exact_reference(cfg)
+            # The head carries the FLOP forward, so it is built at the
+            # BILLING config -- separable for a masked-attention head,
+            # whatever it trained under. Same function, cheaper contraction;
+            # see house_table_8x8.flop_billing_config. The reference itself
+            # is unaffected: it comes from the target, not the head.
+            _, head, _, _ = exact_reference(flop_billing_config(cfg))
             example_x = ref_states[:1]
             example_t = torch.full((1,), 0.5)
             per_forward = measured_forward_flops(head, (example_x, example_t))

@@ -238,3 +238,97 @@ def test_real_reference_certifies(sigma_label, npz_tag):
                                       burn_in_fraction=0.2)
     assert len(chains) == 15
     assert h8.is_composition_exact(torch.cat(chains), n_plus=D_SITES // 2)
+
+
+# --- Separable billing (2026-08-28) ---------------------------------------
+#
+# The band identity is EXACT, so a masked-attention head's honest per-sample
+# bill is the cheapest exact way to evaluate it -- not whichever contraction
+# order happened to exist on the day it trained. Every archived MA cell ran
+# dense only because the derivation landed after them. These pin the swap:
+# that it happens, that it moves nothing but the bill, and that it stays off
+# the families it does not apply to.
+
+@pytest.mark.parametrize("name,expected", [
+    ("H2_d64_c50_s220_letf_ma_50k_curr_w2", True),
+    ("H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2", True),
+    ("H2_d64_c50_s220_letf_iv_50k_curr_w2", False),
+    ("H2_d64_c50_s220_letf_ivmo2ef_50k_curr_w2", False),
+    ("H2_d64_c50_s220_letf_thp_50k_curr_w2", False),
+    ("H2_d64_c50_s220_letf_mo_50k_curr_w2", False),
+    ("H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2", False),
+])
+def test_billing_config_is_separable_for_attention_bands_only(name, expected):
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        flop_billing_config)
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    billed = flop_billing_config(CONFIGS[name])
+    assert billed.separable_band_scores is expected, name
+
+
+def test_billing_config_moves_exactly_one_field():
+    """A billing config that drifted on anything else would be exactly the
+    misattribution `registry_config_for` exists to refuse. The swap is
+    licensed by the band identity and by nothing else, so it must not carry
+    a second change in with it."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        flop_billing_config)
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    trained = CONFIGS["H2_d64_c50_s220_letf_ma_50k_curr_w2"]
+    billed = flop_billing_config(trained)
+    assert billed == replace(trained, separable_band_scores=True)
+
+
+def test_billed_head_computes_the_trained_head_s_function():
+    """The claim the re-bill rests on: same weights, same outputs. If this
+    ever failed, the table would be pricing a different model from the one
+    whose ESS it prints -- the one error an exactness argument cannot
+    survive."""
+    import torch
+
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        flop_billing_config)
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from experiments.constrained_hard_03.run import build_target_and_head
+
+    cfg = CONFIGS["H2_d16_c50_s220_letf_ma_10k_w2"]
+    torch.manual_seed(0)
+    _, trained = build_target_and_head(cfg, device="cpu")
+    torch.manual_seed(0)
+    _, billed = build_target_and_head(flop_billing_config(cfg), device="cpu")
+
+    d = cfg.ising.D ** 2
+    half = torch.cat([torch.ones(d // 2), -torch.ones(d - d // 2)])
+    x = torch.stack([half[torch.randperm(d)] for _ in range(2)])
+    t = torch.full((2,), 0.5)
+    with torch.no_grad():
+        drift = (billed(x, t) - trained(x, t)).abs().max().item()
+    assert drift < 1e-5, f"billed head moved G by {drift:.2e}"
+
+
+def test_separable_billing_actually_lowers_the_attention_bill():
+    """The point of the exercise. A no-op here would mean the flag never
+    reached the head and the table quietly kept the dense price."""
+    import torch
+
+    from discrete_flow_sampler.diagnostics.flops import measured_forward_flops
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        flop_billing_config)
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from experiments.constrained_hard_03.run import build_target_and_head
+
+    cfg = CONFIGS["H2_d16_c50_s220_letf_ma_10k_w2"]
+    d = cfg.ising.D ** 2
+    half = torch.cat([torch.ones(d // 2), -torch.ones(d - d // 2)])
+    example = (torch.stack([half[torch.randperm(d)]]), torch.full((1,), 0.5))
+
+    def bill(c):
+        torch.manual_seed(0)
+        _, head = build_target_and_head(c, device="cpu")
+        return measured_forward_flops(head, example)
+
+    assert bill(flop_billing_config(cfg)) < bill(cfg)
