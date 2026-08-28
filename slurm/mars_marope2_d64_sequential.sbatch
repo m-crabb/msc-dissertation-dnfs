@@ -20,15 +20,33 @@
 # single variable against p = 1, and the pair separates the code from the
 # pooling.
 #
-# WHY IT EARNS A SLOT -- COST, NOT A SECOND QUALITY READ. Keys per query are
+# WHY IT EARNED A SLOT -- COST, NOT A SECOND QUALITY READ. Keys per query are
 # 1 + pL + d/p^2, which at d = 64 (L = 8) reads 65 / 33 / 37 for p = 1/2/4:
 # the optimum is INTERIOR, p = 4 is worse than p = 2 on cost and coarser in
-# the far field too, so p = 2 is the only larger p worth running at this
-# rung. The lever matters at scale rather than here -- at d = 256 (L = 16)
-# the same formula reads 257 / 97 / 81 -- and the masked-attention head's
-# footprint is exactly what blocks it at that size. "RoPE is quality-neutral
-# AND p = 2 cuts attention cost" is a materially different result from "RoPE
-# is quality-neutral", which is the whole reason to spend the seeds.
+# the far field too, so p = 2 is the only larger p worth running at this rung.
+#
+# ***CORRECTED AFTER THE RUN (2026-08-28). The reasoning above was WRONG on
+# both halves, and the claim that once stood here -- "the lever matters at
+# scale rather than here" -- is FALSE.***
+#
+# 1. NO SPEED. Measured on this node: 8.402 ms/step against p=1's 8.263, and
+#    17m07s against 16m33s end to end per seed. p = 2 is marginally SLOWER.
+#    Pooling shrinks the BACKBONE's causal attention, but the masked-attention
+#    head's (B, d^2, n) band-score tensor is what dominates -- 5.00 GB at
+#    B=32, d=256, back-solving to n ~ 3d. So the head is O(d^3) and the
+#    backbone O(d^2), and at d=256 the head's element count is ~150x the
+#    backbone's. Halving under 1% of the work is invisible.
+# 2. AND THE ASYMPTOTICS RUN THE WRONG WAY. Because the head grows as d^3 and
+#    the backbone as d^2, the backbone's SHARE SHRINKS with d -- so p = 2 is
+#    LESS useful at 16x16 than here, not more.
+# 3. WORSE, IT COSTS QUALITY. Seeds 42/43 read 0.648/0.697 raw and
+#    0.709/0.750 EMA against `ma`'s 0.7814 +- 0.0193 / 0.8458 +- 0.0219 --
+#    disjoint BELOW, and below `mar` too. The far field at patch resolution
+#    loses information the band needs.
+#
+# VERDICT: p = 2 is dead on both axes. p = 1 is the keeper (level quality at
+# -8.2% parameters). The lever that actually reaches the head's cost is the
+# BAND FACTORISATION, which attacks the (B, d^2, n) tensor itself.
 #
 # WHAT IT COSTS IN EXACTNESS. Pooling aliases shifts that are not multiples
 # of p, so the bidirectional stack's exact torus equivariance holds on pZ^2
