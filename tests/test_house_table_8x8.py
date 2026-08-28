@@ -332,3 +332,35 @@ def test_separable_billing_actually_lowers_the_attention_bill():
         return measured_forward_flops(head, example)
 
     assert bill(flop_billing_config(cfg)) < bill(cfg)
+
+
+def test_ladder_provenance_is_keyed_by_coupling_not_by_arm():
+    """The ladder's two columns ran in separate campaigns under separate
+    tags, so provenance must be per (arm, coupling).
+
+    The failure this guards is SILENT: an arm-keyed map sends the floor
+    lookup to the sigma_c tag, the run dirs are absent, and the fill's
+    missing-condition branch prints `--` -- indistinguishable from "not yet
+    run". The column would stay blank with the runs sitting on disk.
+    """
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        ARM_PROVENANCE)
+
+    assert all(isinstance(k, tuple) and len(k) == 2 for k in ARM_PROVENANCE)
+    for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"):
+        assert ARM_PROVENANCE[(arm, "s220")] == "20260828-rasterord-d64"
+        assert ARM_PROVENANCE[(arm, "s010")] == "20260828-rasterfloor-d64"
+    assert ARM_PROVENANCE[("masep", "s010")] == "20260828-rasterfloor-d64"
+    assert ("masep", "s220") not in ARM_PROVENANCE
+
+
+def test_every_provenanced_cell_names_a_real_config():
+    """A tag typo or a renamed arm would otherwise surface as a permanently
+    blank row rather than an error."""
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        ARM_PROVENANCE, CELL_NAME)
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    for (arm, sigma_label) in ARM_PROVENANCE:
+        name = CELL_NAME[sigma_label].format(arm=arm)
+        assert name in CONFIGS, name

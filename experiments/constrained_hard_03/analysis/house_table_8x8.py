@@ -104,6 +104,12 @@ TAG = "20260825-hard-w2-d64"
 ARMS = {
     "mo": "mask-one head",
     "ma": "masked-attention band, one sweep",
+    # The floor rung's anchor: the SAME MODEL as `ma`, run with the band's
+    # exact separable contraction so the floor chain `-> mamo2` moves the
+    # orderings alone. WHETHER IT REPLACES THE `ma` FLOOR CELL OR PRINTS
+    # BESIDE IT IS AN OPEN EDITORIAL DECISION -- the dense `ma` floor run
+    # (0.9845) remains valid, and the two differ only by trajectory noise.
+    "masep": "masked-attention band, one sweep (separable twin)",
     "mamo2": "masked-attention band, two sweeps",
     "mamo2ef": "masked-attention band, two sweeps + exact field",
     "iv": "prefix-sum band, one sweep",
@@ -121,9 +127,18 @@ ARMS = {
 # (`fimo2ef` at this rung has both a wave-2 and an arm-B set, 0.828 and
 # 0.837, agreeing but not identical). Same idiom as house_table_4x4's
 # ARM_PROVENANCE.
+#
+# KEYED BY (arm, coupling), NOT BY ARM. The ladder's two columns were run in
+# separate campaigns under separate tags -- sigma_c under
+# 20260828-rasterord-d64 (s83) and the floor under
+# 20260828-rasterfloor-d64 (s84) -- so an arm-keyed map would look for the
+# floor cells under the sigma_c tag, find nothing, and print `--`
+# indefinitely with no error to say why.
 ARM_PROVENANCE = {
-    arm: "20260828-rasterord-d64"
-    for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
+    **{(arm, "s220"): "20260828-rasterord-d64"
+       for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")},
+    **{(arm, "s010"): "20260828-rasterfloor-d64"
+       for arm in ("masep", "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")},
 }
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
@@ -579,7 +594,7 @@ def main(argv=None):
         for arm in ARMS:
             suffix = "e" if (arm, sigma_label) in EAGER_TWIN else ""
             name = CELL_NAME[sigma_label].format(arm=arm) + suffix
-            tag = ARM_PROVENANCE.get(arm, TAG)
+            tag = ARM_PROVENANCE.get((arm, sigma_label), TAG)
             run_dirs = [args.results_dir / f"{name}_seed{seed}_{tag}"
                         for seed in SEEDS]
             # An arm enrolled from a later campaign may not exist at every
