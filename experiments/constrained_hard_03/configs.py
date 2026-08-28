@@ -4320,6 +4320,61 @@ CONFIGS.update({
 })
 
 
+# --- Arm B at the 8x8 rung: the DISCRIMINATING scale (2026-08-28) --------
+#
+# The 4x4 gate put B2 (bonds + a single causal ordering) at 0.9107 +- 0.0481
+# against the baseline's 0.8511 +- 0.0423, with the matched-parameter control
+# B0 WORST at 0.7781 +- 0.1210 -- so the lift is not width. But at 4x4 the
+# seed spread is +-0.04 and the arms overlap; at 8x8 the same baseline reads
+# 0.8427 +- 0.0089 raw / 0.8825 +- 0.0069 EMA, a spread FIVE TIMES tighter.
+# That is the whole reason this rung exists: 4x4 filters, 8x8 discriminates.
+# (`mal` separated on disjoint seeds at 4x4 and REVERSED here.)
+#
+# THE CONTROL THE GATE LACKED, and why it is not optional. B2 changes TWO
+# things against the baseline -- it adds bonds AND drops the second causal
+# ordering -- so a B2 win at 4x4 cannot say which did the work. B3 walks back
+# exactly one of them:
+#
+#     baseline (2 orderings, no bonds)
+#         |  what does dropping the second ordering COST?
+#     B3  (1 ordering,  no bonds)
+#         |  do bonds RECOVER it?
+#     B2  (1 ordering,  + bonds)
+#
+# and baseline -> B2 asks whether bonds EXCEED it at lower cost. The cost
+# story is the point: an ordering is a full extra backbone pass, where the
+# bond family is an O(1)-per-pair gather sharing the band's own modules.
+#
+# B2 vs B3 is also the comparison that survives a venue change, which the
+# archived baseline does not: those three seeds ran on a DoC A30. Run all
+# three arms on ONE card and every comparison is within-venue.
+#
+# RECIPE: compiled, unlike the 4x4 cells. Decision (c) is d16-SPECIFIC --
+# at d64 compiled reads marginally HIGHER than eager with zero catastrophic
+# seeds in six sigma_c factorised cells, and eager costs ~50% more per step.
+# The parent is the compiled `_w2` cell for that reason.
+#
+# SIGMA_C ONLY: the floor saturates at every rung (all four 4x4 arms sat in
+# 0.9976-0.9986) and cannot discriminate.
+_ARM_B_D64_PARENT = "H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2"
+_ARM_B_D64_ARMS: dict[str, dict] = {
+    # B2: the arm the gate flagged -- bonds, second ordering retired.
+    "fiefb_50k_curr_bond1o": {
+        "global_bond_features": True, "site_orderings": ("row",),
+    },
+    # B3: the control that isolates it -- second ordering retired, NO bonds.
+    "fief_50k_curr_1o": {"site_orderings": ("row",)},
+}
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(CONFIGS[_ARM_B_D64_PARENT], name=f"H2_d64_c50_s220_letf_{arm}", **knobs)
+        for arm, knobs in _ARM_B_D64_ARMS.items()
+    )
+})
+
+
 CONFIGS.update({
     cell.name: cell
     for cell in (

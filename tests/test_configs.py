@@ -2141,3 +2141,39 @@ def test_arm_b_cells_are_single_variable_and_the_control_is_matched():
         # B2 drops an ordering, so it must be strictly CHEAPER than B1 --
         # that is the cost story the cell exists to tell.
         assert counts[(sigma_label, "fiefb_10k_bond1o")] < bonds
+
+
+def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
+    """The 8x8 rung (2026-08-28): three arms that differ by ONE field each
+    along the chain baseline -> B3 -> B2, so a lift can be attributed.
+
+    baseline (2 orderings, no bonds) -> B3 (1 ordering, no bonds) prices the
+    second causal ordering; B3 -> B2 (1 ordering, + bonds) prices the bond
+    family against it. B2 alone against the baseline cannot separate them,
+    which is exactly the gap the 4x4 gate left.
+
+    Also pins the recipe: decision (c) is d16-SPECIFIC, so unlike the 4x4
+    cells these train COMPILED (at d64 compiled is marginally higher with
+    zero catastrophic seeds, and eager costs ~50% more per step)."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS, _ARM_B_D64_ARMS, _ARM_B_D64_PARENT,
+    )
+
+    parent = CONFIGS[_ARM_B_D64_PARENT]
+    assert parent.site_orderings == ("row", "col") and not parent.global_bond_features
+    assert parent.compile_head, "decision (c) does not reach d64"
+
+    b2 = CONFIGS["H2_d64_c50_s220_letf_fiefb_50k_curr_bond1o"]
+    b3 = CONFIGS["H2_d64_c50_s220_letf_fief_50k_curr_1o"]
+    assert len(_ARM_B_D64_ARMS) == 2, "B2 and its control; baseline is an existing cfg"
+    for cell, knobs in ((b2, _ARM_B_D64_ARMS["fiefb_50k_curr_bond1o"]),
+                        (b3, _ARM_B_D64_ARMS["fief_50k_curr_1o"])):
+        undone = {field: getattr(parent, field) for field in knobs}
+        assert replace(cell, name=parent.name, **undone) == parent, cell.name
+        assert cell.compile_head and cell.train.c_t_from_rollout, cell.name
+    # B2 and B3 differ in the BOND FLAG ALONE -- the comparison the rung exists
+    # for, and the one that stays valid whatever card they run on.
+    assert replace(b2, name=b3.name, global_bond_features=False) == b3
+    assert b2.site_orderings == b3.site_orderings == ("row",)
