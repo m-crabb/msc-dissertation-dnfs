@@ -2214,22 +2214,28 @@ def test_raster_ladder_roster_covers_both_rungs():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, _RASTER_LADDER_ARMS, _RASTER_LADDER_PARENTS, build_swap_head,
+        CONFIGS, _RASTER_LADDER_ARMS, _RASTER_LADDER_PARENTS,
+        _RASTER_LADDER_RUNG_KNOBS, build_swap_head,
     )
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
     assert set(_RASTER_LADDER_ARMS) == {
         "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"}
-    assert len(_RASTER_LADDER_PARENTS) == 3
+    assert len(_RASTER_LADDER_PARENTS) == 4
 
     for arm, knobs in _RASTER_LADDER_ARMS.items():
         for pattern, parent_name in _RASTER_LADDER_PARENTS.items():
             name = pattern.format(arm=arm)
             cfg = CONFIGS[name]
             parent = CONFIGS[parent_name]
+            # Rung knobs ride on top of the arm's, and only where the band
+            # can read them -- the prefix-sum arms must NOT pick them up.
+            rung = _RASTER_LADDER_RUNG_KNOBS.get(pattern, {})
+            if knobs.get("head_kind", parent.head_kind) != "masked_attention":
+                rung = {}
             # Only the roster's knobs may differ from the `ma` parent.
-            assert cfg == replace(parent, name=name, **knobs), name
+            assert cfg == replace(parent, name=name, **knobs, **rung), name
 
             d = cfg.ising.D ** 2
             backbone = LeTFRateMatrix(

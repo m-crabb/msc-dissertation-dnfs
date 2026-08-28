@@ -134,6 +134,14 @@ HEAD_CASES = {
     "interval_gathered": {"gather_triu_pairs": True},
     "lattice_gathered": {"attention_window": "lattice", "gather_triu_pairs": True},
     "interval_bilinear": {"exterior_combiner": "bilinear"},
+    # Two sweeps. The orderings live on the EXTERIOR (causal streams and the
+    # pair-readout width), so the band is untouched in principle -- but the
+    # 8x8 floor rung runs the two together for the first time, and "in
+    # principle orthogonal" is what a test is for. A separable band feeding a
+    # wider readout is the shape that ships.
+    "interval_two_sweeps": {"site_orderings": ("row", "col")},
+    "lattice_two_sweeps": {"attention_window": "lattice",
+                           "site_orderings": ("row", "col")},
 }
 
 
@@ -370,6 +378,92 @@ def test_separable_refuses_the_relative_pair_position_code():
     function is the one outcome an exactness claim cannot survive."""
     with pytest.raises(ValueError, match="separable"):
         _head(True, pair_position_mode="relative")
+
+
+@torch.no_grad()
+@pytest.mark.parametrize("arm", ["mamo2", "mamo2ef"])
+def test_floor_rung_cells_compute_the_dense_function(arm):
+    """The numeric gate for the 8x8 floor launch, at D = 4 rather than on a
+    GPU: the cells about to be trained separable must compute what their
+    dense twins would.
+
+    Built through `build_swap_head` from the shipped config rather than from
+    head kwargs, because that is the path the launch takes -- it picks up the
+    two sweeps AND, for `mamo2ef`, the `ExactFieldSwapHead` wrapper, which
+    reads the target's adjacency downstream of the band. A knob that failed
+    to reach the head, or a wrapper that consumed the band differently, would
+    show here and not after 15 GPU-hours.
+    """
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
+    cfg = CONFIGS[f"H2_d64_c50_s010_letf_{arm}_50k_w2"]
+    assert cfg.separable_band_scores is True, "the floor rung ships separable"
+    cfg = replace(cfg, ising=replace(cfg.ising, D=LATTICE_SIDE))
+    target = FixedCompositionIsingTarget(
+        D=LATTICE_SIDE, sigma=cfg.ising.sigma, target_composition=0.5
+    )
+
+    def built(separable):
+        torch.manual_seed(0)
+        return build_swap_head(
+            replace(cfg, separable_band_scores=separable), _backbone(),
+            target=target,
+        ).eval()
+
+    x, t = _state(), torch.rand(2)
+    drift = _drift(built(True)(x, t), built(False)(x, t))
+    assert drift < SEPARABLE_ATOL, f"{arm}: G moved by {drift:.2e}"
+
+
+def test_prefix_band_arms_never_carry_the_separable_flag():
+    """`IntervalSwapHead` is never handed `separable_band_scores` -- it has no
+    score tensor to factorise -- so a rung knob that leaked onto the `iv*`
+    arms would record a field the head cannot read, and a reader comparing
+    the two families would price a lever that never ran."""
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    for arm in ("iv", "ivmo2", "ivmo2ef"):
+        cfg = CONFIGS[f"H2_d64_c50_s010_letf_{arm}_50k_w2"]
+        assert cfg.head_kind == "interval"
+        assert cfg.separable_band_scores is False, arm
+
+
+def test_already_run_ladder_cells_stay_dense():
+    """The sigma_c and 4x4 ladder cells are ALREADY RUN dense (tag
+    20260828-rasterord-d64, printed in tab:eval-hard-8x8). Making the flag a
+    RUNG knob rather than an arm knob is what keeps them so; this pins that,
+    because the failure is silent -- the configs would still build, and the
+    printed rows would quietly stop matching the runs behind them."""
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    printed = [
+        f"H2_d64_c50_s220_letf_{arm}_50k_curr_w2"
+        for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
+    ] + [
+        f"H2_d16_c50_{sigma}_letf_{arm}_10k_w2"
+        for sigma in ("s010", "s220")
+        for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
+    ]
+    for name in printed:
+        assert CONFIGS[name].separable_band_scores is False, name
+
+
+def test_floor_anchor_is_the_floor_ma_cell_plus_one_field():
+    """The floor `ma` anchor must move to separable with the arms it anchors,
+    or `ma -> mamo2` at that rung prices the orderings and the contraction
+    order at once -- and the MA family's FLOP/es would FALL as sweeps are
+    added, since the flag roughly halves the bill."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    anchor = CONFIGS["H2_d64_c50_s010_letf_masep_50k_w2"]
+    dense = CONFIGS["H2_d64_c50_s010_letf_ma_50k_w2"]
+    assert anchor == replace(
+        dense, name=anchor.name, separable_band_scores=True)
 
 
 def test_config_flag_reaches_the_head():

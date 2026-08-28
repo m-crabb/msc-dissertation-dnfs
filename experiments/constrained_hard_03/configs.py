@@ -4567,17 +4567,86 @@ _RASTER_LADDER_ARMS = {
 # is expressive-but-untrained cannot hide, and the table can say the heads are
 # equivalent where the problem is easy and separate where it is hard. They
 # inherit the wave-2 gate chassis, which carries no EMA instrument.
+#
+# THE 8x8 FLOOR RUNG (2026-08-28) completes the sigma=0.10 column that
+# tab:eval-hard-8x8 currently prints as `--` and its caption declares
+# "queued rather than failed". The floor parent trains FLAT -- no `_curr`
+# infix, no sigma ladder -- so these cells are the flat-coupling `ma` cell
+# plus the roster knobs, exactly as the critical cells are the curriculum
+# one plus the same knobs.
+#
+# WHAT THE COLUMN IS FOR, given every head there already sits between
+# 0.984 (`ma`) and 0.999 (`thp`). It is not a ranking: 0.015 of headroom
+# cannot hold the 0.150 the ladder spans at sigma_c. It is the CONTROL that
+# licenses the sigma_c reading -- a head that were simply better trained,
+# rather than better matched to critical structure, would separate at both
+# couplings. Every other arm in the table carries both columns, so the
+# ladder's blank halves are the one place that argument cannot be made.
 _RASTER_LADDER_PARENTS = {
     "H2_d64_c50_s220_letf_{arm}_50k_curr_w2": "H2_d64_c50_s220_letf_ma_50k_curr_w2",
+    "H2_d64_c50_s010_letf_{arm}_50k_w2": "H2_d64_c50_s010_letf_ma_50k_w2",
     "H2_d16_c50_s010_letf_{arm}_10k_w2": "H2_d16_c50_s010_letf_ma_10k_w2",
     "H2_d16_c50_s220_letf_{arm}_10k_w2": "H2_d16_c50_s220_letf_ma_10k_w2",
 }
 
+# THE FLOOR RUNG RUNS SEPARABLE (2026-08-28), and every new
+# masked-attention cell does from here. `separable_band_scores` computes the
+# band's EXACT function -- forward agreement 1.5e-7 at production shape,
+# gradients matched parameter by parameter -- for 3.11x the training step
+# speed on 2.90x less memory at d256, and its trajectory seed-check read 0/6
+# catastrophic seeds against the dense twin.
+#
+# IT IS A RUNG KNOB, NOT AN ARM KNOB, and that distinction is load-bearing.
+# The sigma_c and 4x4 patterns above are ALREADY RUN dense under
+# 20260828-rasterord-d64; putting the flag in _RASTER_LADDER_ARMS would
+# silently redefine configs whose numbers are already printed in
+# tab:eval-hard-8x8, and the byte-identity those runs were verified against
+# would go with it.
+#
+# IT REACHES THE ATTENTION ARMS ONLY. The prefix-sum band has no score
+# tensor to factorise and `IntervalSwapHead` is never handed the flag, so
+# setting it on `iv*` would record a field the head cannot read.
+#
+# THE FLOOR `ma` ANCHOR MOVES WITH THEM -- see the `masep` floor cell below.
+# Leaving it dense would make `ma -> mamo2` at this rung price the orderings
+# AND the contraction order at once, and would print an MA family whose
+# FLOP/es FALLS as sweeps are added (the flag roughly halves the bill).
+_RASTER_LADDER_RUNG_KNOBS = {
+    "H2_d64_c50_s010_letf_{arm}_50k_w2": {"separable_band_scores": True},
+}
+
+
+def _raster_ladder_cell(arm: str, arm_knobs: dict, pattern: str):
+    """One ladder cell: its `ma` sibling at this rung with the arm's knobs
+    moved, plus any rung knobs the arm's band can actually read."""
+    parent = CONFIGS[_RASTER_LADDER_PARENTS[pattern]]
+    head_kind = arm_knobs.get("head_kind", parent.head_kind)
+    rung_knobs = (
+        _RASTER_LADDER_RUNG_KNOBS.get(pattern, {})
+        if head_kind == "masked_attention" else {}
+    )
+    return replace(parent, name=pattern.format(arm=arm), **arm_knobs, **rung_knobs)
+
+
 CONFIGS.update({
     cell.name: cell
-    for arm, knobs in _RASTER_LADDER_ARMS.items()
-    for pattern, parent in _RASTER_LADDER_PARENTS.items()
-    for cell in (replace(CONFIGS[parent], name=pattern.format(arm=arm), **knobs),)
+    for arm, arm_knobs in _RASTER_LADDER_ARMS.items()
+    for pattern in _RASTER_LADDER_PARENTS
+    for cell in (_raster_ladder_cell(arm, arm_knobs, pattern),)
+})
+
+# The floor rung's separable `ma` anchor, so the chain there reads one field
+# per step within one contraction order. Same one-variable idiom as the
+# sigma_c `masep` seed-check cell above, against the flat-coupling parent.
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            CONFIGS["H2_d64_c50_s010_letf_ma_50k_w2"],
+            name="H2_d64_c50_s010_letf_masep_50k_w2",
+            separable_band_scores=True,
+        ),
+    )
 })
 
 
