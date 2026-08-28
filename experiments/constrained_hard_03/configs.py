@@ -4358,6 +4358,14 @@ CONFIGS.update({
 # 0.9976-0.9986) and cannot discriminate.
 _ARM_B_D64_PARENT = "H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2"
 _ARM_B_D64_ARMS: dict[str, dict] = {
+    # B1: the arm's ACTUAL hypothesis -- does the exterior bond sum help, on
+    # the standard two-ordering chassis? It read a null at the 4x4 gate
+    # (0.8546 +- 0.0640 against 0.8511 +- 0.0423) and is carried here anyway,
+    # because that gate cannot discriminate in EITHER direction: `mal`
+    # reversed positive-to-negative between these rungs, and nothing stops a
+    # null reversing the other way. Pruning on gate evidence would be the same
+    # error that "a gate positive is not a result" guards against.
+    "fimo2efb_50k_curr_bond": {"global_bond_features": True},
     # B2: the arm the gate flagged -- bonds, second ordering retired.
     "fiefb_50k_curr_bond1o": {
         "global_bond_features": True, "site_orderings": ("row",),
@@ -4365,6 +4373,14 @@ _ARM_B_D64_ARMS: dict[str, dict] = {
     # B3: the control that isolates it -- second ordering retired, NO bonds.
     "fief_50k_curr_1o": {"site_orderings": ("row",)},
 }
+# NOT run in this wave, deliberately SEQUENCED rather than skipped: the
+# matched-parameter controls. The bond family adds 576 parameters (0.4%), and
+# a control is chassis-specific -- the two-ordering baseline widened for B1,
+# B3 widened for B2. The 4x4 B0 cell does NOT settle it: its seeds were
+# 0.6418/0.8196/0.8728, so dropping the outlier leaves ~0.846, sitting on the
+# baseline, and one low seed carried the whole mean. Capacity is UNTESTED,
+# not disfavoured. Run the control for whichever arm lifts here, before
+# anyone believes the lift.
 
 CONFIGS.update({
     cell.name: cell

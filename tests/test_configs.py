@@ -2167,8 +2167,13 @@ def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
 
     b2 = CONFIGS["H2_d64_c50_s220_letf_fiefb_50k_curr_bond1o"]
     b3 = CONFIGS["H2_d64_c50_s220_letf_fief_50k_curr_1o"]
-    assert len(_ARM_B_D64_ARMS) == 2, "B2 and its control; baseline is an existing cfg"
-    for cell, knobs in ((b2, _ARM_B_D64_ARMS["fiefb_50k_curr_bond1o"]),
+    b1 = CONFIGS["H2_d64_c50_s220_letf_fimo2efb_50k_curr_bond"]
+    assert len(_ARM_B_D64_ARMS) == 3, "B1, B2, B3; baseline is an existing cfg"
+    # B1 keeps the parent's two orderings and adds bonds -- the uncontaminated
+    # "do bonds help" question the B2/B3 pair cannot ask.
+    assert b1.site_orderings == parent.site_orderings and b1.global_bond_features
+    for cell, knobs in ((b1, _ARM_B_D64_ARMS["fimo2efb_50k_curr_bond"]),
+                        (b2, _ARM_B_D64_ARMS["fiefb_50k_curr_bond1o"]),
                         (b3, _ARM_B_D64_ARMS["fief_50k_curr_1o"])):
         undone = {field: getattr(parent, field) for field in knobs}
         assert replace(cell, name=parent.name, **undone) == parent, cell.name
