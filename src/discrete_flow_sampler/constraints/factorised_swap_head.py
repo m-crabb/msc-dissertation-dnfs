@@ -229,6 +229,7 @@ class FactorisedSwapHead(nn.Module):
         site_orderings: tuple[str, ...] = ("row",),
         lattice_side: int | None = None,
         gather_triu_pairs: bool = False,
+        global_bond_features: bool = False,
     ):
         super().__init__()
         if not (use_bilinear or use_global):
@@ -262,6 +263,13 @@ class FactorisedSwapHead(nn.Module):
             raise ValueError(f"interior_band must be None, 'prefix' or 'attention'; got {interior_band!r}")
         if interior_band is not None and not use_global:
             raise ValueError("interior_band rides the global term's per-pair path; needs use_global=True")
+        if global_bond_features and interior_band is None:
+            raise ValueError(
+                "global_bond_features SHARES the band provider's "
+                "band_pair_features rather than owning a copy, so it "
+                "needs interior_band set; that sharing is what makes "
+                "global - band the exterior bond sum in one basis"
+            )
         self.backbone = backbone
         self.d = backbone.d
         self.bilinear_rank = bilinear_rank
@@ -297,6 +305,15 @@ class FactorisedSwapHead(nn.Module):
         if interior_band is not None:
             pair_offsets = pair_offsets or (1, lattice_side or round(self.d**0.5))
         band_dim = 0 if interior_band is None else band_feature_dim * (1 + len(pair_offsets))
+        # Arm B (2026-08-28): the whole-lattice bond sums ride the SAME
+        # per-pair path at one extra family per offset. No feature
+        # parameters -- they are the band provider's own modules -- so the
+        # arm costs only this widening (576 of the head's 145,778 at the
+        # production width, +0.4%), which is what keeps a positive from
+        # being confounded with capacity.
+        self.global_bond_features = global_bond_features
+        if global_bond_features:
+            band_dim += band_feature_dim * len(pair_offsets)
         if use_global:
             self.global_site_features = nn.Sequential(
                 nn.Linear(hidden + position_dim, global_feature_dim),
@@ -467,6 +484,15 @@ class FactorisedSwapHead(nn.Module):
                 hole_subtracted = torch.cat(
                     [hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1
                 )
+            if self.global_bond_features:
+                # Symmetric in (i, j) already, so -- unlike the band -- it
+                # needs no mirror on either path.
+                bonds = self.interior_band_provider.hole_free_bond_totals(
+                    x, (rows, cols)
+                )
+                hole_subtracted = torch.cat(
+                    [hole_subtracted, bonds.to(hole_subtracted.dtype)], dim=-1
+                )
             return scatter_symmetric_pairs(
                 self.global_context_readout(
                     self.global_context_norm(hole_subtracted)
@@ -487,6 +513,11 @@ class FactorisedSwapHead(nn.Module):
             ).view(1, self.d, self.d, 1)
             band = torch.where(upper, band, band.transpose(1, 2))
             hole_subtracted = torch.cat([hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1)
+        if self.global_bond_features:
+            bonds = self.interior_band_provider.hole_free_bond_totals(x)
+            hole_subtracted = torch.cat(
+                [hole_subtracted, bonds.to(hole_subtracted.dtype)], dim=-1
+            )
         return self.global_context_readout(
             self.global_context_norm(hole_subtracted)
         )

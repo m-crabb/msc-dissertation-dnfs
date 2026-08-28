@@ -209,6 +209,25 @@ class HardStageCfg(StageCfg):
     # a rank-`bilinear_rank` product, nothing else changes -- the literal
     # single-variable test of the factorisation. "mlp" = archived heads.
     exterior_combiner: str = "mlp"
+    # Arm B (2026-08-28): add WHOLE-LATTICE bond sums to the factorised
+    # global term, hole-touching bonds removed. The global term is a sum of
+    # strictly per-site features, so the head carries a lattice-wide UNARY
+    # statistic and -- through the band -- a LOCAL bond statistic over the
+    # interval, and no bond statistic anywhere else. The band gives the sum
+    # over (i, j), the global gives the sum over the lattice minus
+    # hole-touching terms, and neither recovers the other because a part is
+    # not a total: having both buys their DIFFERENCE, the exterior bond sum.
+    # That is already the situation on the unary side; this restores the
+    # missing basis vector on the bond side, and asks whether exterior
+    # domain-wall density matters at criticality.
+    #
+    # The family SHARES the band provider's `band_pair_features` rather than
+    # owning a copy, so the difference above is exact in ONE basis and the
+    # arm adds no feature parameters -- 576 of the head's 145,778 at the
+    # production width, +0.4%, which is what keeps a positive from being
+    # confounded with capacity. It therefore requires interior_band; read
+    # only by the factorised head, so every other cell stays byte-identical.
+    global_bond_features: bool = False
     # Exact-field channel (2026-08-23, s54): add gain(t) * sigma * Delta_ij --
     # the closed-form Kawasaki energy change, the equilibrium swap log-ratio
     # at t=1 -- to ANY head's score matrix, gain = a + b t learned from zero
@@ -333,6 +352,7 @@ def build_swap_head(
             site_orderings=cfg.site_orderings,
             lattice_side=cfg.ising.D,
             gather_triu_pairs=cfg.gather_triu_pairs,
+            global_bond_features=cfg.global_bond_features,
         )
     elif cfg.head_kind == "two_hole_patch":
         head = TwoHolePatchSwapHead(
@@ -4217,6 +4237,85 @@ CONFIGS.update({
             ),
         )
         for name, patch_size in _MAROPE_TWINS.items()
+    )
+})
+
+
+# --- Arm B: bonds in the global term (4x4 gate, 2026-08-28) --------------
+#
+# `fimo2ef` = bilinear exterior (two causal orderings) + global term (UNARY
+# only) + prefix band (unary AND bond, but LOCAL to the interval). So bonds
+# exist only between the holes. The band gives sum over (i, j); the global
+# gives sum over the lattice minus hole-touching terms; neither recovers the
+# other, so having both buys their DIFFERENCE -- the EXTERIOR bond sum, which
+# neither gives alone. That is already true on the unary side. The arm asks:
+# does the sampler need bond structure OUTSIDE the interval between the
+# holes, i.e. does exterior domain-wall density matter at criticality, where
+# the 16x16 results cell already localises the failure to domain-wall
+# density?
+#
+# THREE CELLS, one question each.
+#   B1  bonds added                     -- does the exterior bond sum help?
+#   B2  bonds added, ROW ORDERING ONLY  -- can bonds RETIRE the second causal
+#       ordering? That is the cost cell: orderings are a full extra backbone
+#       pass, where the global term and the band are O(1)-per-pair gathers.
+#   B0  no bonds, global term WIDENED   -- matched-parameter control.
+#
+# WHY B0 IS NOT OPTIONAL EVEN AT 576 PARAMETERS. This campaign has been bitten
+# by attributing a capacity effect to form: `fab16` at DOUBLE the bilinear
+# rank came in WORSE (0.5615), which is how the factorised price was read as
+# structural, and `fmp40` was the control that settled it. The bond family
+# adds 576 of the head's 138,482 at this size (+0.4%, because it SHARES the
+# band's feature modules rather than owning a copy), and global_feature_dim
+# 19 reproduces that to within 33 parameters -- so B0 is cheap and the
+# confound is closed rather than argued away.
+#
+# WHAT A NULL WOULD AND WOULD NOT SETTLE, stated before the run. The interval
+# head -- one FLAT uniform sum over a pair-defined region -- reads 0.646 at
+# d64 against MA's 0.781 after being at parity at 4x4, and the chapter's
+# diagnosis is that a fixed sum "smears them into a total". A whole-lattice
+# bond SUM is that same shape over a larger region, so a NULL here stays
+# ambiguous between "bonds do not help" and "one flat sum smears". A POSITIVE
+# is unambiguous either way. Accepted deliberately: this is the cheap route
+# on the head where the modules already exist, and the structured
+# alternative (bond features on the patch head's cumulative levels, giving a
+# radial profile) is deferred rather than dropped.
+#
+# THE GATE IS A FILTER, NOT A SIGNAL. `mal` separated on DISJOINT seeds at
+# 4x4 and REVERSED one rung up. So the pre-commitment is: a positive here
+# buys the d64 rung, never a row in print on its own.
+# The sigma_c parent is the EAGER twin, not the compiled one. Decision (c)
+# is d16-SPECIFIC and this gate is d16 at exact sigma_c: compiled training of
+# the factorised chassis at criticality produced catastrophic seeds at ~40%
+# there (5/12 against 0/21 elsewhere, Fisher p=0.0033), which at three seeds
+# per arm would read as a null rather than as a broken run. At d64 the same
+# comparison is clean (compiled 0.843/0.840 against eager 0.828/0.835, zero
+# catastrophic seeds in six cells), so the d64 rung this gate buys would take
+# the compiled recipe. The floor keeps the full recipe -- the exception is
+# scoped to exact criticality, and floors measured clean at 9/9 >= 0.968.
+_ARM_B_PARENTS = {
+    "s010": "H2_d16_c50_s010_letf_fimo2ef_10k_w2",
+    "s220": "H2_d16_c50_s220_letf_fimo2ef_10k_w2e",
+}
+# global_feature_dim matching B1's +576 to within 33 parameters (138,482 ->
+# 139,058 with bonds, 139,091 widened) at the 4x4 gate's width.
+_ARM_B_MATCHED_GLOBAL_DIM = 19
+_ARM_B_ARMS: dict[str, dict] = {
+    "fimo2efb_10k_bond": {"global_bond_features": True},
+    "fiefb_10k_bond1o": {"global_bond_features": True, "site_orderings": ("row",)},
+    "fimo2efw_10k_wide": {"global_feature_dim": _ARM_B_MATCHED_GLOBAL_DIM},
+}
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            CONFIGS[parent],
+            name=f"H2_d16_c50_{sigma_label}_letf_{arm}",
+            **knobs,
+        )
+        for sigma_label, parent in _ARM_B_PARENTS.items()
+        for arm, knobs in _ARM_B_ARMS.items()
     )
 })
 

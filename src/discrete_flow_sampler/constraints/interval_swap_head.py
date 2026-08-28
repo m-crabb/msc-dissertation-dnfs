@@ -392,6 +392,109 @@ class IntervalSwapHead(nn.Module):
             )
         return torch.cat(families, dim=-1)      # (B, d, d, F) or (B, P, F)
 
+    def hole_free_bond_totals(
+        self, x: Tensor, pairs: tuple[Tensor, Tensor] | None = None
+    ) -> Tensor:
+        """WHOLE-LATTICE bond sums with every hole-touching bond removed,
+        (B, d, d, F) or (B, P, F), F = band_feature_dim * len(pair_offsets).
+
+        Entry [:, i, j] is
+
+            sum over k in [0, d - delta)  of  u^delta_k,
+            restricted to  k not in {i, j}  and  k + delta not in {i, j},   (*)
+
+        for each offset delta, concatenated. `band_summaries` gives the same
+        features summed over the OPEN INTERVAL (i, j); this gives them summed
+        over the whole lattice. Neither recovers the other -- a part is not a
+        total -- so a head carrying both can express their difference, the
+        EXTERIOR bond sum, which neither gives alone. That is already the
+        situation on the unary side, where the global term's per-site sum and
+        the band's unary sum coexist; this restores the missing basis vector
+        on the bond side (arm B, 2026-08-28).
+
+        Blindness. Exclusion in (*) is decided by INDEX arithmetic alone, so
+        the result cannot depend on the values excluded -- the same argument
+        as `band_summaries`, and the reason this is safe to feed the global
+        term's per-pair path.
+
+        THE FAILURE MODE THIS GUARDS AGAINST. u^delta_k touches sites k and
+        k + delta, so (*) drops k in {i, i-delta, j, j-delta} -- four gathers,
+        not the global term's two. That set COLLIDES when |i - j| = delta, and
+        with pair_offsets (1, D) those are exactly the nearest-neighbour pairs
+        the Ising energy is built from. Subtracting all four blindly removes
+        one term TWICE, which leaves -u^delta in the residual; u^delta depends
+        on the hole spins, so BLINDNESS FAILS, on the pairs that matter most.
+        Hence the inclusion-exclusion add-back below. The two boundary cases
+        (k = i - delta < 0, and i >= d - delta so u^delta_i does not exist)
+        are handled by the same clamp-and-mask idiom `band_summaries` uses for
+        its empty ranges.
+
+        Symmetric in (i, j) by construction -- the four gathers treat the two
+        holes identically -- which the global term requires, so unlike the
+        band this needs no mirror on either path.
+
+        VALID FOR i != j; the diagonal is unspecified, as `band_summaries`
+        leaves its lower triangle unspecified. At i == j the four gathers
+        reduce to two distinct indices, each subtracted twice, and the
+        add-back below does not fire (j - i = 0 is not an offset). Correcting
+        it would put two more masked adds on the per-pair path for entries
+        that cannot reach a result: the readout multiplies H by
+        omega_{x_i} - omega_{x_j}, which is identically zero on the diagonal,
+        and the head's exact antisymmetry pins G_ii = 0 for every input.
+        """
+        x_idx = ((x + 1) / 2).long()
+        emb = self.backbone.token_embedder(x_idx)             # (B, d, h)
+        d = self.d
+        if pairs is None:
+            hole_i = torch.arange(d, device=x.device).view(d, 1)
+            hole_j = torch.arange(d, device=x.device).view(1, d)
+            mask_shape = (1, d, d, 1)
+        else:
+            hole_i, hole_j = pairs                            # (P,), (P,)
+            mask_shape = (1, -1, 1)
+
+        families = []
+        for delta, feature_mlp in zip(self.pair_offsets, self.band_pair_features):
+            n_terms = d - delta
+            terms = feature_mlp(
+                torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
+            )                                                 # (B, n_terms, F)
+
+            def term_at(index: Tensor) -> Tensor:
+                """u^delta_index, or exact zero where no such bond exists.
+
+                The validity mask is shaped from the INDEX, not from the pair
+                grid: a single hole's index is (d, 1) / (1, d) on the dense
+                path and (P,) on the gathered one, so it broadcasts against
+                the pair shape rather than filling it. `mask_shape` below is
+                for the adjacency test, which is a function of BOTH holes and
+                so is pair-shaped already.
+                """
+                inside = ((index >= 0) & (index < n_terms)).unsqueeze(0).unsqueeze(-1)
+                return torch.where(
+                    inside, terms[:, index.clamp(0, n_terms - 1)], 0.0
+                )
+
+            total = terms.sum(dim=1)
+            total = total.view(x.shape[0], *([1] * (len(mask_shape) - 2)), -1)
+            hole_free = (
+                total
+                - term_at(hole_i) - term_at(hole_i - delta)
+                - term_at(hole_j) - term_at(hole_j - delta)
+            )
+            # Inclusion-exclusion: when the pair IS a delta-bond, one term was
+            # reached by two of the four gathers above. Both signs, so the
+            # result stays symmetric in (i, j).
+            adjacent_forward = (hole_j - hole_i == delta).view(mask_shape)
+            adjacent_backward = (hole_i - hole_j == delta).view(mask_shape)
+            hole_free = (
+                hole_free
+                + torch.where(adjacent_forward, term_at(hole_i), 0.0)
+                + torch.where(adjacent_backward, term_at(hole_j), 0.0)
+            )
+            families.append(hole_free)
+        return torch.cat(families, dim=-1)
+
     def compute_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
         """Assemble H, (B, d, d, h): the doubly-blind context for every pair.
 

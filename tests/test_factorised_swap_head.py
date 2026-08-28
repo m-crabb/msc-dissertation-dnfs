@@ -31,6 +31,7 @@ import torch
 from discrete_flow_sampler.constraints.factorised_swap_head import (
     FactorisedSwapHead,
 )
+from discrete_flow_sampler.constraints.interval_swap_head import triu_pair_indices
 from discrete_flow_sampler.constraints.swap_readout import _masked_body, swap2
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
@@ -612,3 +613,223 @@ def test_interior_band_provider_has_no_duplicate_backbone_and_gets_grad(interior
     head(x, t).sum().backward()
     band_params = [p for n, p in head.named_parameters() if n.startswith("interior_band_provider")]
     assert band_params and all(p.grad is not None for p in band_params)
+
+
+# ------------------------------------------------------ global bond features
+# Arm B (2026-08-28). The global term is a sum of STRICTLY PER-SITE features,
+# so the head carries a whole-lattice UNARY statistic and -- via the band --
+# a LOCAL bond statistic over the interval, but no bond statistic anywhere
+# else. The band gives sum over (i, j); the global gives sum over the lattice
+# minus hole-touching terms; neither recovers the other, because a part is
+# not a total. Having both buys their DIFFERENCE, the exterior bond sum,
+# which neither gives alone -- exactly the situation that already holds on
+# the unary side. The arm asks whether exterior domain-wall density matters
+# at criticality.
+#
+# The family SHARES `band_pair_features` with the band provider, so the two
+# functionals read the same chi and the difference above is exact in one
+# basis rather than approximate across two. Adds no feature parameters.
+#
+# WHAT THESE TESTS PIN, and why the reference exists. The hole subtraction is
+# no longer two gathers: chi^delta_k touches sites (k, k+delta), so a pair
+# (i, j) must drop every k in {i, i-delta, j, j-delta}. That set COLLIDES
+# when |i - j| = delta -- and with pair_offsets (1, D) those are precisely
+# the nearest-neighbour pairs the Ising energy is built from. A naive
+# four-gather subtraction removes one term TWICE, leaving -chi in the
+# residual, which depends on the hole spins: blindness fails, on the pairs
+# that matter most. `_reference_hole_free_bond_totals` is an explicit loop
+# over k with the membership test written out, so the vectorised index
+# arithmetic (clamp-and-mask at both boundaries, plus the collision add-back)
+# is checked against the definition rather than against itself.
+
+
+def _bond_head(site_orderings=("row",), gather_triu_pairs=False, **kw):
+    """`_band_head`'s twin with the bond family on. Bonds ride the band
+    provider's modules, so `interior_band` must be present."""
+    return _band_head(
+        "prefix", site_orderings=site_orderings,
+        gather_triu_pairs=gather_triu_pairs, global_bond_features=True, **kw,
+    )
+
+
+def _reference_hole_free_bond_totals(head, x):
+    """(B, d, d, F): for every pair, the sum of chi^delta_k over every bond
+    that touches NEITHER hole. Written as the definition -- an explicit loop
+    with the membership test spelled out -- so it shares no index arithmetic
+    with the implementation under test."""
+    provider = head.interior_band_provider
+    d = head.d
+    emb = head.backbone.token_embedder(((x + 1) / 2).long())
+    families = []
+    for delta, mlp in zip(provider.pair_offsets, provider.band_pair_features):
+        n_terms = d - delta
+        chi = mlp(torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1))
+        out = chi.new_zeros(x.shape[0], d, d, chi.shape[-1])
+        for i in range(d):
+            for j in range(d):
+                for k in range(n_terms):
+                    if k not in (i, j) and k + delta not in (i, j):
+                        out[:, i, j] += chi[:, k]
+        families.append(out)
+    return torch.cat(families, dim=-1)
+
+
+@torch.no_grad()
+def test_global_bond_totals_match_the_looped_definition():
+    """The whole point of the arm's index arithmetic, checked against a
+    membership test. Catches the |i - j| = delta double-subtraction and both
+    boundary cases (k = i - delta < 0, and i >= d - delta so chi_i does not
+    exist) in one shot."""
+    head = _bond_head()
+    x = _state()
+    got = head.interior_band_provider.hole_free_bond_totals(x)
+    want = _reference_hole_free_bond_totals(head, x)
+    # Off-diagonal only: at i == j the four gathers reduce to two distinct
+    # indices and the vectorised form subtracts each twice. That entry cannot
+    # reach a result -- the readout's omega difference is identically zero on
+    # the diagonal, pinned by the exact antisymmetry -- so the function
+    # declares itself valid for i != j rather than paying for it per pair.
+    off_diagonal = ~torch.eye(head.d, dtype=torch.bool).view(1, head.d, head.d, 1)
+    assert _drift(got * off_diagonal, want * off_diagonal) < ATOL
+
+
+@torch.no_grad()
+def test_global_bond_totals_match_the_definition_on_the_gathered_pair_list():
+    """Same claim on the (P,) index form the triu path consumes: the masks
+    are written once to broadcast over both shapes, so this pins that they
+    actually do."""
+    head = _bond_head()
+    x = _state()
+    rows, cols = triu_pair_indices(head.d, x.device)
+    got = head.interior_band_provider.hole_free_bond_totals(x, (rows, cols))
+    want = _reference_hole_free_bond_totals(head, x)[:, rows, cols]
+    assert _drift(got, want) < ATOL
+
+
+@torch.no_grad()
+def test_global_bond_totals_drop_the_adjacent_bond_exactly_once():
+    """The collision case, named. For a pair with j - i = delta the bond
+    (i, j) is itself hole-touching and is reached by BOTH the k = i and the
+    k = j - delta gather. Pinning it separately from the reference test so a
+    future reader sees the failure mode rather than inferring it."""
+    head = _bond_head()
+    x = _state()
+    provider = head.interior_band_provider
+    delta = provider.pair_offsets[0]
+    i = 2
+    j = i + delta
+    got = provider.hole_free_bond_totals(x)[:, i, j]
+    want = _reference_hole_free_bond_totals(head, x)[:, i, j]
+    assert _drift(got, want) < ATOL
+    # ... and it is genuinely a collision: the naive four-gather form differs.
+    emb = head.backbone.token_embedder(((x + 1) / 2).long())
+    n_terms = head.d - delta
+    chi = provider.band_pair_features[0](
+        torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
+    )
+    naive = chi.sum(1) - chi[:, i] - chi[:, j] - chi[:, j - delta]
+    if i - delta >= 0:
+        naive = naive - chi[:, i - delta]
+    assert _drift(naive, want[..., : chi.shape[-1]]) > ATOL, (
+        "if the naive form already agrees, this test has no teeth"
+    )
+
+
+@torch.no_grad()
+@pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
+@pytest.mark.parametrize("site_orderings", [("row",), ("row", "col")])
+def test_global_bond_context_blind_to_both_holes(site_orderings, gather_triu_pairs):
+    """The property the whole head exists to hold. Every pair, both holes and
+    both together -- including the adjacent pairs where the collision bites."""
+    head = _bond_head(site_orderings, gather_triu_pairs)
+    x, t = _state(), torch.rand(1)
+    H = head.compute_pair_context(x, t)
+    for i, j in upper_tri_pairs(9, x.device).tolist():
+        for flips in ((i,), (j,), (i, j)):
+            assert _drift(
+                head.compute_pair_context(_flip(x, *flips), t)[:, i, j], H[:, i, j]
+            ) < ATOL, (site_orderings, gather_triu_pairs, i, j, flips)
+
+
+@torch.no_grad()
+def test_global_bonds_see_exterior_structure_the_unary_sum_cannot():
+    """Sensitivity with teeth: flip a site OUTSIDE the interval and outside
+    both holes, and the bond head must respond differently from its bond-free
+    twin. A flip changes the unary sum too, so this cannot isolate the bond
+    channel by itself -- what it pins is that the family is wired in and
+    reaches the exterior, which is the region the band structurally cannot
+    see."""
+    with_bonds = _bond_head(use_bilinear=False)
+    without = _band_head("prefix", use_bilinear=False)
+    x, t = _state(), torch.rand(1)
+    i, j, exterior_site = 3, 5, 8
+    def response(head):
+        return head.compute_pair_context(_flip(x, exterior_site), t)[:, i, j] \
+            - head.compute_pair_context(x, t)[:, i, j]
+    assert response(with_bonds).abs().max() > ATOL
+    assert not torch.allclose(response(with_bonds), response(without))
+
+
+@torch.no_grad()
+def test_global_bond_forward_matches_context_readout_and_antisymmetry():
+    head = _bond_head()
+    x, t = _state(), torch.rand(1)
+    omega_f = head.omega_projection(head.backbone.omega(((x + 1) / 2).long()))
+    token_difference = omega_f.unsqueeze(2) - omega_f.unsqueeze(1)
+    G = head(x, t)
+    assert _drift(G, (token_difference * head.compute_pair_context(x, t)).sum(-1)) < ATOL
+    assert (G + G.transpose(1, 2)).abs().max() == 0.0
+
+
+def test_global_bond_features_reuse_the_band_modules_and_add_no_feature_params():
+    """The design decision, pinned: the family SHARES `band_pair_features`
+    with the band rather than owning a copy, so `global - band` is the
+    exterior bond sum in ONE basis, and the arm costs only the widened
+    readout. If a future edit gives the global term its own modules this
+    fails, which is the point -- that is a different experiment."""
+    plain = _band_head("prefix")
+    bonds = _bond_head()
+    added = sum(p.numel() for p in bonds.parameters()) \
+        - sum(p.numel() for p in plain.parameters())
+    provider = bonds.interior_band_provider
+    band_pair_ids = {id(p) for m in provider.band_pair_features for p in m.parameters()}
+    assert band_pair_ids, "no bond modules to share"
+    # every bond-feature parameter is the band's own object, not a copy
+    assert band_pair_ids <= {id(p) for p in bonds.parameters()}
+    feature_params = sum(
+        p.numel() for m in provider.band_pair_features for p in m.parameters()
+    )
+    assert added < feature_params, (added, feature_params)
+
+
+def test_global_bond_features_off_is_byte_identical_to_the_archived_head():
+    """Default OFF, and the flag adds no module, no buffer and no RNG draw
+    when off -- so all 103 archived factorised cells stay loadable and
+    evaluate unchanged."""
+    torch.manual_seed(0)
+    archived = _band_head("prefix")
+    torch.manual_seed(0)
+    explicit = _band_head("prefix", global_bond_features=False)
+    assert archived.state_dict().keys() == explicit.state_dict().keys()
+    x, t = _state(), torch.rand(1)
+    assert torch.equal(archived(x, t), explicit(x, t))
+
+
+def test_global_bond_features_require_a_band_to_share():
+    """The family has no modules of its own, so it cannot be asked for
+    without a band provider -- fail at construction, not at the first
+    forward on a GPU."""
+    with pytest.raises(ValueError):
+        _band_head(None, global_bond_features=True)
+
+
+def test_global_bond_parameters_receive_grad():
+    """Objective is sum(G**2), NOT sum(G): G is exactly antisymmetric, so
+    sum(G) is identically zero as a FUNCTION of the parameters and its
+    gradient vanishes for every module -- a test that would pass a dead
+    parameter. Squaring makes the (i, j) and (j, i) contributions add."""
+    head = _bond_head()
+    x, t = _state(), torch.rand(1)
+    head(x, t).pow(2).sum().backward()
+    for name, p in head.interior_band_provider.band_pair_features.named_parameters():
+        assert p.grad is not None and p.grad.abs().sum() > 0, name

@@ -2092,3 +2092,52 @@ def test_every_new_probe_cell_rides_the_optimised_recipe():
         assert cell.head_kind != "factorised", name
         assert cell.compile_head, name
         assert cell.train.c_t_from_rollout, name
+
+
+def test_arm_b_cells_are_single_variable_and_the_control_is_matched():
+    """Arm B (2026-08-28), pinned before any GPU spend.
+
+    Each cell must be its `fimo2ef` parent transformed by EXACTLY the fields
+    its registry block declares -- bonds, bonds-minus-the-second-ordering, or
+    a widened global term -- and B0 must actually match B1's parameter count.
+    The matched control exists because this campaign has attributed a
+    capacity effect to form before (`fab16` at double the rank came in worse
+    at 0.5615), and a control that does not match is not a control.
+
+    Also pins decision (c), which is easy to lose when a cell is built by
+    `replace`-ing a parent: the exception is d16-SPECIFIC and this gate is
+    d16, so the sigma_c arms must train EAGER (compile x factorised x sigma_c
+    gave catastrophic seeds at ~40% there, 5/12 against 0/21) while the floor
+    arms keep the full optimised recipe. Getting this wrong would not crash
+    -- it would spend nine runs and read as a null."""
+    from dataclasses import replace
+
+    import torch
+
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS, _ARM_B_ARMS, _ARM_B_PARENTS,
+    )
+    from experiments.constrained_hard_03.run import build_target_and_head
+
+    assert len(_ARM_B_ARMS) == 3, "B1, B2 and the matched control"
+    counts = {}
+    for sigma_label, parent_name in _ARM_B_PARENTS.items():
+        parent = CONFIGS[parent_name]
+        assert parent.interior_band is not None, "bonds share the band's modules"
+        assert not parent.global_bond_features, parent_name
+        # decision (c): eager at exact criticality, full recipe at the floor
+        assert parent.compile_head == (sigma_label != "s220"), parent_name
+        assert parent.train.c_t_from_rollout, "c_t reuse was exonerated"
+        for arm, knobs in _ARM_B_ARMS.items():
+            cell = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}"]
+            # single variable: undo the declared knobs and the parent returns
+            undone = {field: getattr(parent, field) for field in knobs}
+            assert replace(cell, name=parent.name, **undone) == parent, arm
+            _, head = build_target_and_head(cell, torch.device("cpu"))
+            counts[(sigma_label, arm)] = sum(p.numel() for p in head.parameters())
+        bonds = counts[(sigma_label, "fimo2efb_10k_bond")]
+        widened = counts[(sigma_label, "fimo2efw_10k_wide")]
+        assert abs(bonds - widened) / bonds < 0.001, (bonds, widened)
+        # B2 drops an ordering, so it must be strictly CHEAPER than B1 --
+        # that is the cost story the cell exists to tell.
+        assert counts[(sigma_label, "fiefb_10k_bond1o")] < bonds
