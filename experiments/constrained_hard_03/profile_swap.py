@@ -406,6 +406,7 @@ def main(argv=None):
         f"site_orderings={args.site_orderings} d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
         f"gather_triu_pairs={args.gather_triu_pairs} "
+        f"separable_band_scores={args.separable_band_scores} "
         f"multi_event={args.multi_event} "
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
         f"compile={args.compile} tf32={args.tf32} "
