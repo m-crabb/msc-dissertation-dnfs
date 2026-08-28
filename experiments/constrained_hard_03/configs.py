@@ -187,6 +187,22 @@ class HardStageCfg(StageCfg):
     # learned soft mask approximates the hard interval indicator without
     # containing it.
     attention_window: str = "interval"
+    # How the masked-attention band's QUERY encodes position (2026-08-28).
+    # "absolute" = every archived cell: `nn.Embedding(d, .)` indexed by site,
+    # so W_q(rho_i, rho_j) must LEARN that sites 0 and d-1 are torus
+    # neighbours. "relative" = one embedding row per signed torus
+    # displacement of j from i -- the code the two-hole patch head uses, and
+    # the one structural difference left between it and the raster heads once
+    # the window question came back null at 8x8.
+    #
+    # NOT what the RoPE experiment tested: that swapped the BACKBONE's
+    # position code, which reaches only the causal-stream summaries P_i and
+    # S_j, and never touched this embedding -- which is what the band's query
+    # and the pair readout actually consume. RoPE benched FREE on an A100
+    # (24.0 ms against leTF's 24.8 at d=256, identical 1.93 GB) and read a
+    # null on quality, consistent with having fixed the layer that matters
+    # least.
+    pair_position_mode: str = "absolute"
     gather_triu_pairs: bool = False
     # Exterior combiner for the interval / masked-attention heads
     # (2026-08-23): "bilinear" moves [P_i, S_j] out of the per-pair MLP into
@@ -300,6 +316,7 @@ def build_swap_head(
             bilinear_rank=cfg.bilinear_rank or 8,
             gather_triu_pairs=cfg.gather_triu_pairs,
             attention_window=cfg.attention_window,
+            pair_position_mode=cfg.pair_position_mode,
         )
     elif cfg.head_kind == "factorised":
         head = FactorisedSwapHead(
@@ -4065,6 +4082,43 @@ CONFIGS.update({
     for cell in (
         replace(CONFIGS[parent], name=name, attention_window="lattice")
         for parent, name in _MAL_TWINS.items()
+    )
+})
+
+
+# --- Relative pair position code (`mar`, 2026-08-28) ---------------------
+#
+# WHY THIS ARM AND NOT ANOTHER WINDOW ONE. The whole-lattice window (`mal`)
+# won at the 4x4 gate on disjoint seeds and came back NULL at 8x8 -- 0.831
+# +- 0.030 EMA against `ma`'s 0.846 +- 0.022 at sigma_c, overlapping and on
+# the wrong side, with Var[log w] worse (0.187 vs 0.164). At 8x8 the interval
+# already covers most of the lattice, so widening it adds little and dilutes
+# the softmax, exactly as the parked note warned. The window is not the
+# lever.
+#
+# What is left is the position code. `ma` indexes `pair_position_embedding`
+# by ABSOLUTE site; `thp` -- which wins at every rung where both ran --
+# indexes by the SIGNED TORUS DISPLACEMENT of j from i, so
+# translation-equivalent pairs share a code by construction instead of having
+# to learn the wrap. That is the one structural difference left between the
+# families, and it has never been tested on a raster head.
+#
+# It is also NOT what RoPE tested: that changed the backbone's code, which
+# feeds only P_i and S_j. RoPE is free on an A100 (24.0 vs 24.8 ms at d=256,
+# identical memory) and was a quality null -- the layer it fixed is not the
+# one the pair context reads.
+_MAR_TWINS: dict[str, str] = {
+    "H2_d16_c50_s010_letf_ma_10k_w2":      "H2_d16_c50_s010_letf_mar_10k_rel",
+    "H2_d16_c50_s220_letf_ma_10k_w2":      "H2_d16_c50_s220_letf_mar_10k_rel",
+    "H2_d64_c50_s010_letf_ma_50k_w2":      "H2_d64_c50_s010_letf_mar_50k_rel",
+    "H2_d64_c50_s220_letf_ma_50k_curr_w2": "H2_d64_c50_s220_letf_mar_50k_curr_rel",
+}
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(CONFIGS[parent], name=name, pair_position_mode="relative")
+        for parent, name in _MAR_TWINS.items()
     )
 })
 

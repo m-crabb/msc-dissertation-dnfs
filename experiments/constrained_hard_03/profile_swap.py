@@ -68,6 +68,7 @@ def build_head_and_target(
     exterior_combiner: str = "mlp",
     interior_band: str | None = None,
     patch_radius: int = 1,
+    rope_patch_size: int | None = None,
     gather_triu_pairs: bool = False,
 ):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
@@ -312,6 +313,13 @@ def main(argv=None):
     parser.add_argument("--multi-event", action="store_true")
     parser.add_argument("--eval-autocast-bf16", action="store_true")
     parser.add_argument("--sdpa", action="store_true")
+    parser.add_argument(
+        "--rope-patch-size", type=int, default=None,
+        help="swap the leTF backbone for the periodic-RoPE / patch-key one at "
+             "this patch size (1 or 2 = the rope1/rope2 cells). None = leTF, "
+             "every archived row. A drop-in LeTFRateMatrix subclass, so the "
+             "position code is the only variable and any head composes.",
+    )
     parser.add_argument("--compile", action="store_true")
     parser.add_argument(
         "--train-autocast-bf16", action="store_true",
@@ -351,6 +359,7 @@ def main(argv=None):
         exterior_combiner=args.exterior_combiner,
         interior_band=args.interior_band,
         patch_radius=args.patch_radius,
+        rope_patch_size=args.rope_patch_size,
         gather_triu_pairs=args.gather_triu_pairs,
     )
     if args.tf32:
@@ -388,6 +397,7 @@ def main(argv=None):
         f"multi_event={args.multi_event} "
         f"eval_autocast_bf16={args.eval_autocast_bf16} sdpa={args.sdpa} "
         f"compile={args.compile} tf32={args.tf32} "
+        f"rope_patch_size={args.rope_patch_size} "
         f"loss_microbatch={args.loss_microbatch} "
         f"train_bf16={args.train_autocast_bf16} "
         f"device={device} torch={torch.__version__}"

@@ -116,6 +116,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         bilinear_rank: int = 8,
         gather_triu_pairs: bool = False,
         attention_window: str = "interval",
+        pair_position_mode: str = "absolute",
     ):
         super().__init__(
             backbone, pair_offsets, band_feature_dim, position_dim,
@@ -129,12 +130,23 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 f"got {attention_window!r}"
             )
         self.attention_window = attention_window
+        if pair_position_mode not in ("absolute", "relative"):
+            raise ValueError(
+                f"pair_position_mode must be 'absolute' or 'relative', "
+                f"got {pair_position_mode!r}"
+            )
+        self.pair_position_mode = pair_position_mode
         self.use_stencil = use_stencil
         hidden = backbone.hidden_dim
         # The stencil is one extra band-feature family, so it gets its own
         # attention query/key projection alongside the unary + offset ones.
         n_families = 1 + len(self.pair_offsets) + (1 if use_stencil else 0)
         self.attention_scale = attention_dim**-0.5
+        if self.pair_position_mode == "relative":
+            self._init_relative_pair_positions(
+                position_dim,
+                lattice_side if lattice_side is not None else round(self.d ** 0.5),
+            )
         self.band_query_projections = nn.ModuleList(
             nn.Linear(2 * position_dim, attention_dim) for _ in range(n_families)
         )
@@ -208,6 +220,44 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         )
         return torch.where(visible.any(dim=-1, keepdim=True), pooled, 0.0)
 
+    def _init_relative_pair_positions(self, position_dim: int, side: int) -> None:
+        """Signed torus displacement of j from i, and one embedding row per
+        displacement -- the pair position code the TWO-HOLE PATCH head uses
+        and the raster heads do not.
+
+        THE DEFECT THIS ADDRESSES. `pair_position_embedding` is
+        `nn.Embedding(d, .)` indexed by ABSOLUTE site, so the query
+        W_q(rho_i, rho_j) has no way to know that sites 0 and d-1 are torus
+        neighbours; the wrap has to be learned from data. The patch head --
+        the one that wins at every rung where both ran -- instead indexes
+        `relative_position_embedding` by the signed displacement, so
+        translation-equivalent pairs share a code by construction.
+
+        WHY THIS IS NOT WHAT ROPE TESTED. The RoPE experiment swapped the
+        BACKBONE's position code, which reaches only the causal-stream
+        summaries P_i and S_j; it never touched this embedding, which is what
+        the band's query and the pair readout actually consume. RoPE measured
+        free on an A100 (24.0 ms against leTF's 24.8 at d=256) and read a
+        null on quality -- consistent with having fixed the layer that
+        matters least.
+
+        The output width is 2 * position_dim so the query projection's shape
+        is untouched and the two modes differ in nothing but the code.
+
+        NOTE FOR THE BAND FACTORISATION: the absolute mode's query is linear
+        on a CONCATENATION, which is what makes the score tensor an outer sum
+        A_ik + B_jk. A relative code is one vector per pair, so that identity
+        does NOT hold here and the two levers do not compose as written.
+        """
+        site = torch.arange(self.d)
+        rows, cols = site // side, site % side
+        displacement = (
+            ((rows[None, :] - rows[:, None]) % side) * side
+            + (cols[None, :] - cols[:, None]) % side
+        )
+        self.register_buffer("pair_displacement", displacement, persistent=False)
+        self.relative_pair_embedding = nn.Embedding(self.d, 2 * position_dim)
+
     def _family_visibility(self, slot, site_i, site_j, offsets):
         """Which terms of one band family the pair (i, j) may read.
 
@@ -280,19 +330,25 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             site_i = site.view(d, 1, 1)
             site_j = site.view(1, d, 1)
             term_shape = (1, 1, -1)
-            pair_query_input = torch.cat(
-                [
-                    position.view(d, 1, -1).expand(d, d, -1),
-                    position.view(1, d, -1).expand(d, d, -1),
-                ],
-                dim=-1,
+            pair_query_input = (
+                self.relative_pair_embedding(self.pair_displacement)
+                if self.pair_position_mode == "relative" else
+                torch.cat(
+                    [
+                        position.view(d, 1, -1).expand(d, d, -1),
+                        position.view(1, d, -1).expand(d, d, -1),
+                    ],
+                    dim=-1,
+                )
             )  # (d, d, 2P)
         else:
             rows, cols = pairs
             site_i, site_j = rows.view(-1, 1), cols.view(-1, 1)
             term_shape = (1, -1)
-            pair_query_input = torch.cat(
-                [position[rows], position[cols]], dim=-1
+            pair_query_input = (
+                self.relative_pair_embedding(self.pair_displacement[rows, cols])
+                if self.pair_position_mode == "relative" else
+                torch.cat([position[rows], position[cols]], dim=-1)
             )  # (P, 2P)
 
         slot = site.view(term_shape)

@@ -179,3 +179,70 @@ def test_mal_gate_cells_build_their_heads():
         )
         head = build_swap_head(cfg, backbone, target=target)
         assert head.attention_window == "lattice", name
+
+
+def test_relative_pair_position_defaults_off_and_is_byte_identical():
+    """`pair_position_mode` must default to the archived absolute code, and
+    the absolute path must be untouched by the flag's existence."""
+    import torch
+
+    torch.manual_seed(1)
+    x, t = _state(16, batch=2), torch.rand(2)
+    a = _head(pair_position_mode="absolute", lattice_side=4)
+    b = _head(lattice_side=4)
+    assert a.pair_position_mode == "absolute"
+    assert torch.equal(a(x, t), b(x, t))
+
+
+@pytest.mark.parametrize("window", ["interval", "lattice"])
+def test_relative_pair_position_keeps_every_guarantee(window):
+    """The relative code changes only WHICH position vector the query reads,
+    so blindness, index antisymmetry and swap antisymmetry must all survive
+    exactly -- under both windows, since the two flags compose."""
+    d = 16
+    head = _head(d=d, window=window, pair_offsets=(1, 4), lattice_side=4,
+                 pair_position_mode="relative")
+    x, t = _state(d, batch=1), torch.rand(1)
+    base = head.compute_pair_context(x, t)
+    for i, j in ((0, 1), (0, 15), (3, 9), (2, 6)):
+        for hole in (i, j):
+            flipped = x.clone()
+            flipped[0, hole] = -flipped[0, hole]
+            moved = (head.compute_pair_context(flipped, t)[:, i, j]
+                     - base[:, i, j]).abs().max().item()
+            assert moved < ATOL, (window, i, j, hole, moved)
+    G = head(x, t)
+    assert (G + G.transpose(1, 2)).abs().max().item() == 0.0
+    pairs = [(i, j) for i in range(d) for j in range(i + 1, d)
+             if x[0, i] != x[0, j]]
+    worst = max((G[0, i, j] + head(swap2(x, i, j), t)[0, i, j]).abs().item()
+                for i, j in pairs)
+    assert worst < ATOL, (window, worst)
+
+
+def test_relative_code_is_shared_by_translation_equivalent_pairs():
+    """THE POINT of the arm: pairs related by a torus shift must index the
+    SAME embedding row, which is what the absolute code cannot express and
+    the patch head gets by construction."""
+    head = _head(d=16, lattice_side=4, pair_position_mode="relative")
+    disp = head.pair_displacement
+    # (0,1) and (4,5) differ by one row shift on a 4x4 torus; same displacement.
+    assert disp[0, 1].item() == disp[4, 5].item() == disp[8, 9].item()
+    # the wrap: (3,0) is a +1 column step, same as (0,1)
+    assert disp[3, 0].item() == disp[0, 1].item()
+
+
+def test_mar_cells_are_their_ma_twins_plus_the_position_code():
+    """Single-variable pin: each `mar` cell differs from its `ma` sibling in
+    `pair_position_mode` and nothing else."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS, _MAR_TWINS
+
+    assert len(_MAR_TWINS) == 4, "4x4 gate + 8x8 rung, both couplings"
+    for parent, name in _MAR_TWINS.items():
+        ma, mar = CONFIGS[parent], CONFIGS[name]
+        assert ma.pair_position_mode == "absolute", name
+        assert mar.pair_position_mode == "relative", name
+        assert replace(mar, name=ma.name,
+                       pair_position_mode="absolute") == ma, name
