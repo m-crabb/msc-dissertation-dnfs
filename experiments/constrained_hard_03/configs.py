@@ -4123,6 +4123,84 @@ CONFIGS.update({
 })
 
 
+# --- Periodic-RoPE backbone under the masked-attention head (2026-08-28) ---
+#
+# The last untested layer of the raster head's position code. Three arms have
+# now come back null or negative on this head -- the whole-lattice window
+# (`mal`: 0.831 +- 0.030 EMA against `ma`'s 0.846 +- 0.022 at 8x8 sigma_c),
+# the band query's relative pair code (`mar`: 0.788 +- 0.025 EMA, disjoint
+# BELOW `ma` on raw and EMA both, Var[log w] 46% worse), and the RoPE
+# backbone itself -- but that last one was measured on the FACTORISED head
+# (rope1/rope2 fimo2 twins, 0.861-0.933 and 0.884-0.915 at sigma_c against
+# the parent's 0.903-0.925), never on this one.
+#
+# WHY THE COMBINATION IS NOT A FOURTH REPEAT. The two mechanisms sit at
+# different layers and reach disjoint tensors.
+#   `mar` changed the BAND QUERY's own position embedding -- the pair-level
+#   code, nn.Embedding(d) indexed by site, consumed by W_q(rho_i, rho_j).
+#   RoPE changes the BACKBONE's site-level code, replacing d free absolute
+#   position vectors with rotary phases theta_s = 2 pi m (row_s, col_s) / L,
+#   so every backbone attention logit becomes a function of the signed torus
+#   offset alone:
+#       q_s . k_s' -> q_s . R(theta_s' - theta_s) k_s'.
+#   That reaches the causal-stream summaries P_i and S_j, and through them
+#   the band's KEYS and VALUES -- the site features the softmax pools over --
+#   which `mar` never touched.
+# So the `mar` null says the pair code is not the lever; it says nothing
+# about whether the terms being pooled were built on position vectors the
+# model had to learn wrap-around for. The masked-attention head is the one
+# that reads d free position vectors through a softmax, so if the backbone
+# code ever pays, it pays here rather than on the factorised head where it
+# was measured.
+#
+# PRIOR IS STILL A NULL, and the chapter's own variance decomposition says
+# so: a change that is positional rather than local should not move the
+# estimator. A null is therefore cheap information (it closes the position
+# code as a family, on the head where it was most likely to matter); a lift
+# would be the first non-null on this head and would reopen the backbone.
+#
+# p = 1, NOT p = 2. At p = 1 the causal stacks are dense attention in two
+# pieces, so the ONLY change against the `ma` parent is the position code.
+# p = 2 additionally pools far keys into 2x2 patches (keys per query
+# 1 + 16 + 16 instead of 65), which is a second variable -- a d-scaling cost
+# lever, and it aliases shifts that are not multiples of p, so equivariance
+# then holds on 2Z^2 only. Both were run on the factorised head and landed in
+# the same place; p = 1 is the one that isolates the question being asked.
+#
+# WHAT IS AND IS NOT EQUIVARIANT, so no claim overreaches. The rotation makes
+# a BIDIRECTIONAL stack exactly torus-translation-equivariant, but these
+# heads take their blindness from the raster CAUSAL sweep and the prefix set
+# {x_<k} is not shift-covariant, so the causal streams handed to the head are
+# NOT equivariant. What the head gains is a relative, periodic code in place
+# of d free vectors; the sweep's raster asymmetry is untouched.
+#
+# The cell is its `ma` sibling at the same size, coupling, budget and recipe
+# with `model.kind` (and nothing else) changed, so the pair reads as the
+# backbone position code alone. sigma_c only: the sigma = 0.10 floor
+# saturates at every rung (`mar` read 0.9863 against `ma`'s 0.9845 there) and
+# cannot discriminate.
+#
+# FAILURE MODE THIS GUARDS AGAINST: the parent carries compile_head=True, and
+# compiling the head compiles the backbone forward with it. RoPEViTRateMatrix
+# has never been compiled anywhere. Smoke the cell on the target device
+# (`--smoke`) before spending the full budget, and on Blackwell that needs
+# TRITON_PTXAS_BLACKWELL_PATH set or every compiled cell dies at step 0.
+_MAROPE_TWINS: dict[str, str] = {
+    "H2_d64_c50_s220_letf_ma_50k_curr_w2": "H2_d64_c50_s220_rope1_ma_50k_curr_w2",
+}
+
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            CONFIGS[parent], name=name,
+            model=replace(CONFIGS[parent].model, kind="rope_vit", patch_size=1),
+        )
+        for parent, name in _MAROPE_TWINS.items()
+    )
+})
+
+
 CONFIGS.update({
     cell.name: cell
     for cell in (
