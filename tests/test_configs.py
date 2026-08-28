@@ -1681,15 +1681,32 @@ def test_decision_c_cells_are_compile_only_walks_of_the_w2_cells():
 
 
 def test_wave2_house_cells_build_their_heads():
-    """Construction check for the 16 wave-2 cells: build_swap_head must
+    """Construction check for the wave-2 house cells: build_swap_head must
     instantiate every arm (the ef cells need the target for the field
-    channel's adjacency), so a knob typo fails here and not on the GPU."""
-    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+    channel's adjacency), so a knob typo fails here and not on the GPU.
+
+    The census is DERIVED from `_WAVE2_ARM_KNOBS` (each arm contributes four
+    cells: the d16 gate at both couplings, the d64 sigma_c rung and the d64
+    floor) rather than matched on the `_w2` suffix. A suffix match silently
+    swept in the RoPE-backbone probes, which share the wave-2 parent and its
+    name but are not house cells -- and would in any case be built here on
+    the wrong backbone, since this harness hands every cell a plain leTF."""
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS, _WAVE2_ARM_KNOBS, build_swap_head,
+    )
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
-    wave2 = [name for name in CONFIGS if name.endswith("_w2")]
-    assert len(wave2) == 20
+    wave2 = [
+        name for arm in _WAVE2_ARM_KNOBS for name in (
+            f"H2_d16_c50_s010_letf_{arm}_10k_w2",
+            f"H2_d16_c50_s220_letf_{arm}_10k_w2",
+            f"H2_d64_c50_s220_letf_{arm}_50k_curr_w2",
+            f"H2_d64_c50_s010_letf_{arm}_50k_w2",
+        )
+    ]
+    assert len(wave2) == 4 * len(_WAVE2_ARM_KNOBS) == 20
+    assert all(cfg.model.kind == "letf" for cfg in map(CONFIGS.get, wave2))
     for name in wave2:
         cfg = CONFIGS[name]
         d = cfg.ising.D ** 2

@@ -400,32 +400,36 @@ def test_rope_cells_mirror_fimo2_rung_except_backbone(patch_size):
     assert head.backbone.patch_size == patch_size
 
 
-def test_rope_ma_cell_is_its_ma_twin_plus_the_backbone_position_code():
-    """Single-variable pin for the 8x8 sigma_c arm (2026-08-28): the RoPE
-    masked-attention cell must differ from its `ma` sibling in `model` and
-    NOTHING else, and the head it builds must sit on a RoPE backbone at
-    p = 1 (dense causal attention in two pieces, so the only change is the
-    position code -- p = 2 would additionally pool far keys, a second
-    variable).
+def test_rope_ma_cells_are_their_ma_twin_plus_the_backbone_position_code():
+    """Single-variable pin for the 8x8 sigma_c arms (2026-08-28): each RoPE
+    masked-attention cell must differ from the `ma` sibling in `model` and
+    NOTHING else, and must build a head sitting on a RoPE backbone at its own
+    patch size. Both p run: p = 1 is dense causal attention in two pieces, so
+    it isolates the position code, and p = 2 adds far-key pooling, so the
+    chain ma -> rope1 -> rope2 separates the code from the pooling.
 
-    Also pins the optimised recipe: the cell is built by `replace`-ing a
+    Also pins the optimised recipe: these cells are built by `replace`-ing a
     parent rather than by calling `optimised_recipe`, which is exactly how a
-    cell silently loses `compile_head`. It is masked attention, not
+    cell silently loses `compile_head`. They are masked attention, not
     factorised, so decision (c) -- factorised arms at exact sigma_c train
     eager, after compile produced catastrophic seeds there at ~40% -- does
-    not reach it and it must be compiled."""
+    not reach them and both must be compiled."""
     from dataclasses import replace
 
-    from experiments.constrained_hard_03.configs import CONFIGS, _MAROPE_TWINS
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS, _MAROPE_PARENT, _MAROPE_TWINS,
+    )
     from experiments.constrained_hard_03.run import build_target_and_head
 
-    assert len(_MAROPE_TWINS) == 1, "sigma_c only; the 0.10 floor saturates"
-    for parent, name in _MAROPE_TWINS.items():
-        ma, rope = CONFIGS[parent], CONFIGS[name]
-        assert ma.model.kind == "letf", parent
-        assert rope.model.kind == "rope_vit" and rope.model.patch_size == 1, name
+    assert sorted(_MAROPE_TWINS.values()) == [1, 2], "p = 4 costs more than p = 2 here"
+    ma = CONFIGS[_MAROPE_PARENT]
+    assert ma.model.kind == "letf"
+    for name, patch_size in _MAROPE_TWINS.items():
+        rope = CONFIGS[name]
+        assert rope.model.kind == "rope_vit", name
+        assert rope.model.patch_size == patch_size, name
         assert replace(rope, name=ma.name, model=ma.model) == ma, name
         assert rope.head_kind == "masked_attention" and rope.compile_head, name
         _, head = build_target_and_head(rope, torch.device("cpu"))
         assert isinstance(head.backbone, RoPEViTRateMatrix), name
-        assert head.backbone.patch_size == 1, name
+        assert head.backbone.patch_size == patch_size, name

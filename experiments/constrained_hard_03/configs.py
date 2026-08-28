@@ -4159,13 +4159,29 @@ CONFIGS.update({
 # code as a family, on the head where it was most likely to matter); a lift
 # would be the first non-null on this head and would reopen the backbone.
 #
-# p = 1, NOT p = 2. At p = 1 the causal stacks are dense attention in two
-# pieces, so the ONLY change against the `ma` parent is the position code.
-# p = 2 additionally pools far keys into 2x2 patches (keys per query
-# 1 + 16 + 16 instead of 65), which is a second variable -- a d-scaling cost
-# lever, and it aliases shifts that are not multiples of p, so equivariance
-# then holds on 2Z^2 only. Both were run on the factorised head and landed in
-# the same place; p = 1 is the one that isolates the question being asked.
+# BOTH p = 1 AND p = 2, read as a triple. At p = 1 the causal stacks are
+# dense attention in two pieces, so the ONLY change against the `ma` parent
+# is the position code -- that cell answers the question above on its own.
+# p = 2 additionally pools far keys into 2x2 patches, so it is NOT single
+# variable against `ma`; it is single variable against p = 1, and the chain
+# `ma` -> rope1 -> rope2 separates the code from the pooling. This is how the
+# factorised twins were run, and they landed in the same place.
+#
+# p = 2 earns its slot on COST, not on a second quality read. Keys per query
+# are 1 + pL + d/p^2, which at d = 64 (L = 8) reads 65 / 33 / 37 for
+# p = 1 / 2 / 4 -- so the optimum is interior, p = 4 is worse than p = 2 on
+# cost AND coarser in the far field, and p = 2 is the only larger p worth
+# running at this rung. The lever matters at scale rather than here: at
+# d = 256 (L = 16) the same formula reads 257 / 97 / 81, and the masked-
+# attention head's footprint is what currently blocks it at that size. So
+# "RoPE is quality-neutral AND p = 2 cuts attention cost" is a materially
+# different result from "RoPE is quality-neutral".
+#
+# The price is the ViT price: pooling aliases shifts that are not multiples
+# of p, so exact equivariance holds on pZ^2 only, and the far field is seen
+# at patch resolution. Pooled patch key = MEAN over members of the ROTATED
+# site keys, so the patch logit is the mean of the member logits and the
+# periodicity argument still holds term by term.
 #
 # WHAT IS AND IS NOT EQUIVARIANT, so no claim overreaches. The rotation makes
 # a BIDIRECTIONAL stack exactly torus-translation-equivariant, but these
@@ -4185,18 +4201,22 @@ CONFIGS.update({
 # has never been compiled anywhere. Smoke the cell on the target device
 # (`--smoke`) before spending the full budget, and on Blackwell that needs
 # TRITON_PTXAS_BLACKWELL_PATH set or every compiled cell dies at step 0.
-_MAROPE_TWINS: dict[str, str] = {
-    "H2_d64_c50_s220_letf_ma_50k_curr_w2": "H2_d64_c50_s220_rope1_ma_50k_curr_w2",
+_MAROPE_PARENT = "H2_d64_c50_s220_letf_ma_50k_curr_w2"
+_MAROPE_TWINS: dict[str, int] = {
+    f"H2_d64_c50_s220_rope{patch_size}_ma_50k_curr_w2": patch_size
+    for patch_size in (1, 2)
 }
 
 CONFIGS.update({
     cell.name: cell
     for cell in (
         replace(
-            CONFIGS[parent], name=name,
-            model=replace(CONFIGS[parent].model, kind="rope_vit", patch_size=1),
+            CONFIGS[_MAROPE_PARENT], name=name,
+            model=replace(
+                CONFIGS[_MAROPE_PARENT].model, kind="rope_vit", patch_size=patch_size,
+            ),
         )
-        for parent, name in _MAROPE_TWINS.items()
+        for name, patch_size in _MAROPE_TWINS.items()
     )
 })
 
