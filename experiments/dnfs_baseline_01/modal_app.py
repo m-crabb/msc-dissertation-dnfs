@@ -148,7 +148,7 @@ def train_remote(cfg_name: str, seed: int = 42):
 
 
 @app.function(
-    # L4 variant (2026-08-18): the cheap card for SMALL-footprint cells.
+    # L4 variant: the cheap card for SMALL-footprint cells.
     # Sizing lesson from the d16 control's failed first launch: the eval
     # protocol sets peak memory, not training — an unchunked 5000-draw
     # eval through the dense readout is a (5000, 4, d, 2d) score tensor,
@@ -175,9 +175,9 @@ def train_remote_l4(cfg_name: str, seed: int = 42):
 @app.function(
     # A100 deliberately, matching train_remote: the archived evals were drawn
     # on the training card, so a re-eval on the SAME device isolates whatever
-    # the re-eval changed (e.g. the corrected base draw for the 2026-06-17
-    # matched-base runs) as the single moved variable. A CPU re-run would
-    # move device and draw at once and the read becomes unattributable.
+    # the re-eval changed (e.g. the corrected base draw for the matched
+    # base runs) as the single moved variable. A CPU re-run would move
+    # device and draw at once and the read becomes unattributable.
     gpu="A100",
     volumes={"/results": volume},
     # Eval-only: one 5000-draw batch, minutes at D=10; 2h is generous.

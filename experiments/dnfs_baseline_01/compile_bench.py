@@ -1,12 +1,11 @@
 """Same-container eager-vs-compiled bench of the flip-route trainer
-(optimisation board section C, decided s60 2026-08-24).
 
 Measures what the board asks for before Wave 1 is scheduled: the leTF
 trunk is the GEMM/attention case (expect ~1.7x updates from compile, more
 where runs are launch-bound), and Wave 1 is 60-70 GPU-h, so even 1.5x
 returns ~25 h of cluster time.
 
-Method — the s59 discipline in code:
+Method:
   * BOTH arms run in ONE process/container, so the ratio is same-device
     by construction (the s59 "thp slower at d256" reading was a
     cross-venue artefact; the device name is printed because Modal's
