@@ -157,34 +157,55 @@ def main() -> None:
 
 
 def _plot(curve, has_exact, n_euler, out: Path) -> None:
-    import matplotlib.pyplot as plt
+    """Working plot of the assembled curve (house palette and geometry).
 
+    The seed spread is drawn as a shaded band rather than capped bars: this
+    panel joins its points into a curve in c, so the uncertainty is an
+    envelope along that curve. (The thesis's F(c) figure, analysis/08, keeps
+    capped bars because it draws its windows as discrete marks -- see the
+    uncertainty grammar in figure_style.)
+    """
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from discrete_flow_sampler.diagnostics.figure_style import (
+        FIGSIZE_FULL_1X2, HARD_DELTA_HUE, MUTED, REFERENCE_INK, SAMPLER_HUE,
+        SAVEFIG_DPI, SINGLE_PANEL_WIDTH_IN, style_axes, uncertainty_band,
+        use_house_style)
+
+    use_house_style()
     cs = [c for c, *_ in curve]
-    F = [f for _, f, *_ in curve]
-    sd = [s for _, _, s, *_ in curve]
+    F = np.array([f for _, f, *_ in curve])
+    sd = np.array([s for _, _, s, *_ in curve])
     ncol = 2 if has_exact else 1
-    fig, axes = plt.subplots(1, ncol, figsize=(6 * ncol, 4.2), squeeze=False)
+    figsize = FIGSIZE_FULL_1X2 if has_exact else (SINGLE_PANEL_WIDTH_IN, 2.9)
+    fig, axes = plt.subplots(1, ncol, figsize=figsize, squeeze=False)
     ax = axes[0][0]
-    ax.errorbar(cs, F, yerr=sd, marker="o", capsize=3, label="DNFS soft (IS est.)")
+    uncertainty_band(ax, cs, F - sd, F + sd, SAMPLER_HUE)
+    ax.plot(cs, F, marker="o", ms=4, color=SAMPLER_HUE, lw=1.4, zorder=3,
+            label="DNFS soft (IS est., band = seed sd)")
     if has_exact:
         Fe = [fe for *_, _, fe, _ in curve]
         if all(v is not None for v in Fe):
-            ax.plot(cs, Fe, "k--", marker="s", label="exact enumeration")
+            ax.plot(cs, Fe, "--", marker="s", ms=4, color=REFERENCE_INK, lw=1.4,
+                    zorder=4, label="exact enumeration")
     ax.set_xlabel("composition $c$")
     ax.set_ylabel("$F/d$")
     ax.set_title(f"F(c), n_euler={n_euler}")
-    ax.legend()
+    ax.legend(frameon=False)
+    style_axes(ax)
     if has_exact:
         axb = axes[0][1]
         bias = [b for *_, b in curve]
         if all(v is not None for v in bias):
-            axb.axhline(0, color="grey", lw=0.8)
-            axb.plot(cs, bias, marker="o", color="tab:red")
+            axb.axhline(0, color=MUTED, lw=0.8)
+            axb.plot(cs, bias, marker="o", ms=4, color=HARD_DELTA_HUE, lw=1.4)
         axb.set_xlabel("composition $c$")
-        axb.set_ylabel("$F/d$ bias (est. - exact)")
+        axb.set_ylabel("$F/d$ bias (est. $-$ exact)")
         axb.set_title("integrator bias vs composition")
+        style_axes(axb)
     fig.tight_layout()
-    fig.savefig(out, dpi=150)
+    fig.savefig(out, dpi=SAVEFIG_DPI)
     print(f"\nwrote {out}")
 
 

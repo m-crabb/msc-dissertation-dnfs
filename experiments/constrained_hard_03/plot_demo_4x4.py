@@ -108,6 +108,9 @@ def plot_neff_per_compute(table, out_path):
                 label = head_kind if currency == "backbone_rows" else "kawasaki"
                 ax.bar(positions, values, width * 0.92, color=hue, zorder=2,
                        label=label)
+                # Bars on bars: x here is the categorical observable list,
+                # not a continuous axis, so there is nothing for a shaded
+                # band to be shaded along.
                 ax.errorbar(positions, values, yerr=errors, fmt="none",
                             ecolor=INK, elinewidth=0.9, capsize=2, zorder=3)
             ax.set_xticks(range(len(observables)))

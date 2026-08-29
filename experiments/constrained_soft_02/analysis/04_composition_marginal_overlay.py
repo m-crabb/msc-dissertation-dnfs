@@ -57,8 +57,9 @@ import matplotlib.pyplot as plt
 import torch
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    FONT_SIZE_ANNOTATION, HARD_DELTA_HUE, MUTED, REFERENCE_FILL, REFERENCE_INK,
-    SAMPLER_HUE, parameter_ramp, style_axes, use_house_style)
+    FIGSIZE_FULL_WIDE_SINGLE, FONT_SIZE_ANNOTATION, HARD_DELTA_HUE, MUTED,
+    REFERENCE_FILL, REFERENCE_INK, SAMPLER_HUE, parameter_ramp, style_axes,
+    uncertainty_band, use_house_style)
 from discrete_flow_sampler.diagnostics.metrics import (
     enumerate_states,
     ess_from_log_weights,
@@ -329,8 +330,7 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
     dnfs_w = torch.stack([dnfs_composition_pmf(d, n_sites) for d in args.weak_run_dirs])
     dnfs_s = torch.stack([dnfs_composition_pmf(d, n_sites) for d in args.strong_run_dirs])
     w_mean = dnfs_w.mean(dim=0)
-    w_err = torch.stack([w_mean - dnfs_w.min(dim=0).values,
-                         dnfs_w.max(dim=0).values - w_mean])
+    w_lo, w_hi = dnfs_w.min(dim=0).values, dnfs_w.max(dim=0).values
     s_mean = dnfs_s.mean(dim=0)
 
     # Envelope sanity at d=4, where the exact marginal is enumerable. The
@@ -377,22 +377,29 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
     # rather than measured.
     use_house_style()
     reference_weak_hue, reference_strong_hue = parameter_ramp(REFERENCE_INK, 2)
-    fig, ax = plt.subplots(figsize=(7.5, 4.4))
+    fig, ax = plt.subplots(figsize=FIGSIZE_FULL_WIDE_SINGLE)
 
     ks = torch.arange(target_idx - args.window_sites, target_idx + args.window_sites + 1)
     xs = ks.float() / n_sites
     hard_marker = ax.axvline(c_target, color=HARD_DELTA_HUE, lw=1.6, zorder=4,
                              label="hard constraint")
     reference_weak, = ax.plot(xs, gibbs_w[ks], "-", color=reference_weak_hue, lw=1.6, zorder=3,
-                              label=f"soft target, $\\lambda={lam_w:g}$ (Gibbs reference)")
+                              label=f"soft target, $\\lambda={lam_w:g}$ (Gibbs)")
     reference_strong, = ax.plot(xs, gibbs_s[ks], "-", color=reference_strong_hue, lw=1.6, zorder=3,
-                                label=f"soft target, $\\lambda={lam_s:g}$ (Gibbs reference)")
+                                label=f"soft target, $\\lambda={lam_s:g}$ (Gibbs)")
+    # The envelope's formula lives in the caption, not the legend entry: spelled
+    # out here it set the legend's width, and the legend sits under a 6.3 in
+    # panel where width is the binding constraint.
     envelope, = ax.plot(xs, env_w[ks], ":", color=reference_weak_hue, lw=1.1, zorder=2,
-                        label=r"analytic envelope $\propto e^{-\lambda d (c - c_\mathrm{target})^2}$")
+                        label="analytic envelope")
     ax.plot(xs, env_s[ks], ":", color=reference_strong_hue, lw=1.1, zorder=2)
-    dnfs_weak = ax.errorbar(xs, w_mean[ks], yerr=w_err[:, ks].numpy(), fmt="o", ms=4.5,
-                            color=SAMPLER_HUE, mfc="white", elinewidth=1.0, capsize=2.0,
-                            label=f"DNFS, $\\lambda={lam_w:g}$ (seed mean, min-max)", zorder=5)
+    # Seed spread as a shaded min-max band rather than capped bars: the
+    # sampler's marginal is a curve over the composition support, so the
+    # spread is an envelope along x, not four independent point estimates.
+    uncertainty_band(ax, xs, w_lo[ks], w_hi[ks], SAMPLER_HUE, zorder=4)
+    dnfs_weak, = ax.plot(xs, w_mean[ks], marker="o", ms=4.5, color=SAMPLER_HUE,
+                         mfc="white", ls="none", zorder=5,
+                         label=f"DNFS, $\\lambda={lam_w:g}$ (mean, min-max band)")
     strong_label = (f"DNFS, $\\lambda={lam_s:g}$ (healthy seed)"
                     if len(args.strong_run_dirs) == 1
                     else f"DNFS, $\\lambda={lam_s:g}$ (healthy seeds)")
@@ -400,16 +407,23 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
                            mfc="white", ls="none", label=strong_label, zorder=5)
     ax.set_xlabel(r"composition $c_+$")
     ax.set_ylabel("probability mass")
-    ax.set_title(f"composition marginal, ${cfg_w['D']}\\times{cfg_w['D']}$")
+    # No panel title: the caption already names the lattice, and on a single
+    # panel the title was 0.25 in of the figure's height for no information.
     style_axes(ax)
     # Explicit handle order: matplotlib sorts error-bar containers after plain
     # lines, which would otherwise list the sampler at lam=50 above the one at
     # lam=10 while the reference curves above them run the other way.
-    ax.legend(handles=[hard_marker, reference_weak, reference_strong, envelope,
-                       dnfs_weak, dnfs_strong],
-              framealpha=0.9, loc="upper right")
+    # Legend BELOW the figure in three columns. Inside the panel it covered the
+    # peak (the one feature the figure exists to show) once the figure came
+    # down to house width; column-major fill keeps the two references adjacent
+    # and the two DNFS series adjacent. Anchored to the FIGURE, not the axes,
+    # so the three columns get the full 6.3 in rather than the axes' ~5.5 in.
+    fig.legend(handles=[hard_marker, reference_weak, reference_strong, envelope,
+                        dnfs_weak, dnfs_strong],
+               frameon=False, ncol=3, loc="lower center", handlelength=1.5,
+               columnspacing=1.2)
 
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.17, 1, 1))
     fig.savefig(args.out)
     print(f"\nsaved figure to {args.out}")
 

@@ -24,7 +24,17 @@ keeps it, and the ramp survives greyscale print by construction.
 Uncertainty grammar (one convention per data shape):
 - curves with seed spread   -> ``seed_band``: mean line + shaded min-max
   band, band labelled with n in the legend entry.
+- any other shaded interval -> ``uncertainty_band``: the same alpha and
+  edge treatment as ``seed_band``, for series that already have their own
+  centre marks (markers, an existing line) and only need the ribbon. A
+  band is the default for uncertainty ALONG A CONTINUOUS x; it implies
+  interpolation between the plotted abscissae, which is why it is wrong
+  for the two cases below.
 - point estimates           -> ``point_errorbars``: discrete capped bars.
+  Kept for x that is categorical, or where each abscissa is a separate
+  experiment (one trained window, one reference chain) rather than a
+  sample of one underlying curve -- a ribbon there claims a continuum the
+  data does not measure.
 - seed-by-seed structure    -> ``per_seed_traces``: thin per-seed lines,
   ONLY when the seed split itself is the figure's point (e.g. the
   penalty-variance traces, where one escaping seed is the story).
@@ -72,7 +82,24 @@ SPIN_CMAP = ListedColormap([SPIN_DOWN_COLOUR, SPIN_UP_COLOUR])
 FULL_WIDTH_IN = 6.3
 SINGLE_PANEL_WIDTH_IN = 4.54
 FIGSIZE_FULL_1X2 = (FULL_WIDTH_IN, 2.9)
+FIGSIZE_FULL_1X2_SHORT = (FULL_WIDTH_IN, 2.4)   # 1x2 whose panels carry a few
+                                                # marks, not a dense curve: at
+                                                # 2.9 in they print 7.4 cm tall
+                                                # for two nearly-empty boxes.
+FIGSIZE_FULL_1X4 = (FULL_WIDTH_IN, 2.5)         # four panels in a row. The old
+                                                # 2x2 printed 14.1 cm, half a
+                                                # page; this prints 6.4 cm. An
+                                                # earlier 1x4 attempt set 18 in
+                                                # wide and let LaTeX shrink it,
+                                                # which printed ~3 pt type --
+                                                # the width stays 6.3 in and the
+                                                # panels get narrow instead.
 FIGSIZE_FULL_2X2 = (FULL_WIDTH_IN, 5.6)
+FIGSIZE_FULL_WIDE_SINGLE = (FULL_WIDTH_IN, 2.6)  # one panel at full width, legend
+                                                 # OUTSIDE the axes (below): a
+                                                 # six-entry legend inside a 6.3 in
+                                                 # panel covers the peak it is
+                                                 # meant to explain.
 FIGSIZE_SINGLE = (SINGLE_PANEL_WIDTH_IN, 3.2)
 
 FONT_SIZE_TITLE = 9
@@ -135,6 +162,28 @@ def parameter_ramp(hue, n_levels, lightest=0.55):
             for fraction in blend_fractions]
 
 
+BAND_ALPHA = 0.18   # one alpha for every shaded interval in the thesis: two
+                    # bands of different roles may overlap, and at 0.18 the
+                    # overlap (0.33 effective) still reads as a third shade
+                    # rather than as an opaque block hiding the curve under it.
+
+
+def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None):
+    """The house shaded interval: series hue, BAND_ALPHA, NO edge line.
+
+    The edge is suppressed deliberately -- a stroked band boundary reads as
+    a data curve, and a min-max envelope over 4 seeds is not one. Drawn at
+    zorder 2 so it sits above the grid (zorder 0) and below the centre line
+    or markers (zorder 3+) that name the series.
+
+    Use for uncertainty along a continuous x. For point estimates at
+    categorical or one-experiment-per-abscissa positions use
+    ``point_errorbars`` instead; see the module docstring.
+    """
+    return ax.fill_between(x, lower, upper, color=hue, alpha=BAND_ALPHA,
+                           linewidth=0, zorder=zorder, label=label)
+
+
 def seed_band(ax, x, per_seed_values, hue, label):
     """Mean line + min-max shaded band for a family of seed curves; the
     legend entry carries n so the band's meaning is on the figure, not in
@@ -143,8 +192,8 @@ def seed_band(ax, x, per_seed_values, hue, label):
     per_seed_values = np.asarray(per_seed_values)
     n_seeds = per_seed_values.shape[0]
     mean = per_seed_values.mean(axis=0)
-    ax.fill_between(x, per_seed_values.min(axis=0), per_seed_values.max(axis=0),
-                    color=hue, alpha=0.18, linewidth=0, zorder=2)
+    uncertainty_band(ax, x, per_seed_values.min(axis=0),
+                     per_seed_values.max(axis=0), hue)
     ax.plot(x, mean, color=hue, linewidth=1.6, zorder=3,
             label=f"{label} (mean, band = min-max over {n_seeds} seeds)")
 

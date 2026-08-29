@@ -295,20 +295,32 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
 
 
 def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
-    """House-standard 2x2 (approved s62; the 1x4 at 18 in printed ~3 pt).
+    """House-standard 1x4 row (was a 2x2; relayout 2026-08-29).
+
+    The 2x2 printed 14.1 cm tall at \\textwidth, about half a page, for four
+    panels that each carry eleven marks. The same four panels in a row print
+    6.4 cm. An earlier 1x4 attempt failed because it was drawn 18 in wide and
+    left to LaTeX to shrink, which put the type at ~3 pt; here the figure
+    stays at the house 6.3 in and the PANELS get narrow instead, so 9 pt on
+    the page is still 9 pt. Panel order (a)-(d) is unchanged.
 
     Roles: VC-SGC chains = CLASSICAL_HUE (the classical comparator, not the
     ink truth -- these are matched chains, not TI); our sampler =
-    SAMPLER_HUE; analytic guides dashed ANALYTIC_GUIDE. Shared series are
-    named once in panel (a); panels with their own guide name only the
-    guide. Compositions in `flag_c` (plus Z2 mirrors) get the provisional
-    ring on the sampler series, explained in the caption.
+    SAMPLER_HUE; analytic guides dashed ANALYTIC_GUIDE. At 1.6 in per panel
+    an in-axes legend covers the data, so the two series are named once in a
+    figure-level legend under the row and each analytic guide is labelled in
+    place beside its own line. Compositions in `flag_c` (plus Z2 mirrors) get
+    the provisional ring on the sampler series, explained in the caption.
+
+    Error bars, not bands: each abscissa is a separately trained window laid
+    against its own reference chain, so a ribbon would draw a continuum in c
+    that neither sampler measures (figure_style's uncertainty grammar).
     """
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        ANALYTIC_GUIDE, CLASSICAL_HUE, FIGSIZE_FULL_2X2, MUTED, SAMPLER_HUE,
-        SAVEFIG_DPI, style_axes, use_house_style)
+        ANALYTIC_GUIDE, CLASSICAL_HUE, FIGSIZE_FULL_1X4, FONT_SIZE_ANNOTATION,
+        MUTED, SAMPLER_HUE, SAVEFIG_DPI, style_axes, use_house_style)
 
     use_house_style()
     have = [r for r in curve if r["dnfs"] is not None]
@@ -317,7 +329,7 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
               ("e_site", r"$E/d$"),
               ("sro", r"$\langle x_i x_j\rangle_{NN}$")]
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
-    fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_FULL_2X2)
+    fig, axes = plt.subplots(1, 4, figsize=FIGSIZE_FULL_1X4)
     for i, (ax, (key, ylab)) in enumerate(zip(axes.ravel(), panels)):
         # sampled + Z_2-reflected points merged into one uniformly-drawn series,
         # sorted by composition (the reflection is stated in the body text)
@@ -331,33 +343,54 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         # both series as discrete markers (no connecting line): the comparison is
         # per-composition agreement at matched windows, not a trend, so a
         # joining line would imply interpolation neither sampler measures.
-        ax.errorbar(pc, vc, yerr=vce, fmt="o", color=CLASSICAL_HUE, capsize=2,
-                    lw=1.0, label="vcSGC (mchammer)" if i == 0 else None)
-        ax.errorbar(pc, dn, yerr=dne, fmt="s", color=SAMPLER_HUE, capsize=2,
-                    lw=1.0, label="DNFS soft (IS)" if i == 0 else None)
+        # ms 3.5, not the default 6: at 1.6 in per panel a default marker is
+        # wider than the gap between neighbouring windows, and the DNFS square
+        # then hides the vcSGC circle it is supposed to be compared with.
+        ax.errorbar(pc, vc, yerr=vce, fmt="o", ms=3.5, color=CLASSICAL_HUE,
+                    capsize=1.5, lw=0.8,
+                    label="vcSGC (mchammer)" if i == 0 else None)
+        ax.errorbar(pc, dn, yerr=dne, fmt="s", ms=3.5, color=SAMPLER_HUE,
+                    capsize=1.5, lw=0.8,
+                    label="DNFS soft (IS)" if i == 0 else None)
         ring = [(c, y) for c, y in zip(pc, dn) if round(c, 4) in flagged]
         if ring:
-            ax.scatter([c for c, _ in ring], [y for _, y in ring], s=140,
-                       facecolors="none", edgecolors=MUTED, linewidths=1.1,
+            ax.scatter([c for c, _ in ring], [y for _, y in ring], s=50,
+                       facecolors="none", edgecolors=MUTED, linewidths=1.0,
                        zorder=4)
+        # Guides are labelled in place: at 1.6 in wide a legend box would sit
+        # on top of the eleven marks it is explaining.
         if key == "c_mean":
-            ax.plot(pc, pc, ls="--", color=ANALYTIC_GUIDE, lw=0.8,
-                    label="$c=c_t$")
+            ax.plot(pc, pc, ls="--", color=ANALYTIC_GUIDE, lw=0.8)
+            ax.text(0.96, 0.06, "$c=c_t$", transform=ax.transAxes, ha="right",
+                    color=ANALYTIC_GUIDE, fontsize=FONT_SIZE_ANNOTATION)
+        # Three x ticks and at most four y ticks: the axis spans 0.2-0.8 in
+        # every panel and a narrow panel cannot carry the default five labels
+        # without overprinting.
+        ax.set_xticks([0.2, 0.5, 0.8])
+        ax.yaxis.set_major_locator(plt.MaxNLocator(4))
         if key == "c_std":
-            ax.axhline(analytic_cstd, ls="--", color=ANALYTIC_GUIDE, lw=0.8,
-                       label=r"$1/\sqrt{2\lambda d}$")
+            ax.axhline(analytic_cstd, ls="--", color=ANALYTIC_GUIDE, lw=0.8)
             # std(c) is near-constant ~0.010, so autoscale zooms into the noise;
             # pin a +/-0.001 window around the analytic value so the tiny (and
-            # expected) IS-vs-chain differences don't dominate the panel.
+            # expected) IS-vs-chain differences don't dominate the panel. Three
+            # explicit ticks (set AFTER the locator, which would otherwise
+            # replace them): 0.0090/0.0100/0.0110 are the widest labels in the
+            # figure and five of them will not fit a 1.6 in panel.
             ax.set_ylim(analytic_cstd - 0.001, analytic_cstd + 0.001)
+            ax.set_yticks([analytic_cstd - 0.001, analytic_cstd,
+                           analytic_cstd + 0.001])
+            ax.text(0.04, 0.90, r"$1/\sqrt{2\lambda d}$", transform=ax.transAxes,
+                    color=ANALYTIC_GUIDE, fontsize=FONT_SIZE_ANNOTATION)
         ax.set_xlabel("composition $c$")
         ax.set_ylabel(ylab)
-        if ax.get_legend_handles_labels()[1]:
-            ax.legend(frameon=False, loc="best")
         style_axes(ax)
-        ax.text(0.02, 1.02, f"({chr(97 + i)})", transform=ax.transAxes,
+        ax.text(0.02, 1.03, f"({chr(97 + i)})", transform=ax.transAxes,
                 fontweight="bold", va="bottom")
-    fig.tight_layout()
+    # One figure-level legend for the two series, which are shared by all four
+    # panels; naming them once was already the 2x2's convention.
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=2, loc="lower center")
+    fig.tight_layout(rect=(0, 0.06, 1, 1), w_pad=0.6)
     fig.savefig(out, dpi=SAVEFIG_DPI, bbox_inches="tight")
     print(f"wrote {out}")
 

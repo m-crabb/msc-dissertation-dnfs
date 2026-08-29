@@ -13,6 +13,29 @@ so the gap the flow must close is visible on one axis.
   is drawn as a guide so the penalty's role is visible: it, not the
   physics, moves the target.
 
+Two features of the soft-target (ink) curve are REAL, not plotting
+artefacts; both were checked 2026-08-29 against the pmf this script builds.
+
+  1. Its peak sits LEFT of the c_t = 0.80 guide line. The soft marginal is
+     p(c) ~ Z_can(c) * exp(-lambda*d*(c - c_t)^2), and the combinatorial
+     factor in Z_can(c) falls steeply on the c > 1/2 side: d/dc of
+     log C(d, dc) = d*log((1-c)/c) = -138.6 per unit c at c = 0.8, against
+     the penalty curvature 2*lambda*d = 1e4. Balancing the two displaces
+     the mode by 138.6/1e4 = 0.0139, i.e. 1.4 lattice sites, and the
+     continuum root of log((1-c)/c) = 2*lambda*(c - c_t) is c = 0.7869.
+     Measured: mode at N = 79 (c = 0.79, p = 0.3572, against p = 0.3547 at
+     c = 0.80), mean c = 0.7949, and the marginal is skewed the same way
+     (p(0.78) = 0.1289 > p(0.81) = 0.1251). Entropy pulls the alloy back
+     toward half-filling; the penalty alone would centre it on 0.80. It is
+     NOT an axis offset: the compositions are the exact support N/d, and
+     the matched-base binomial on the same axis peaks exactly on 0.80.
+  2. Its top is FLAT rather than rounded. The support spacing is 1/d = 0.01
+     and the target's own width is 1/sqrt(2*lambda*d) = 0.01 -- exactly one
+     step -- so the peak is carried by two points of nearly equal height
+     (0.3572 and 0.3547, 0.7% apart) and the piecewise-linear curve through
+     them is flat by construction. Nothing is clipped: the y limit is
+     1.6 * peak = 0.57 against a peak of 0.357.
+
 Output: assets/soft_base_composition.png under --out-dir.
 """
 import argparse
@@ -115,10 +138,14 @@ def main():
     fig.savefig(out / "soft_base_composition.png")
     plt.close(fig)
 
-    # Numbers for the captions: where each law sits.
+    # Numbers for the captions: where each law sits. The mode is printed
+    # alongside the mean because for the soft target the two disagree, and
+    # that disagreement is the entropic pull documented at the top of this
+    # file -- the ink curve peaking left of c_t is the physics, not a bug.
     c = np.arange(101) / 100
     for name, p in soft.items():
-        print(f"soft {name:8s} mean c {np.sum(c * p):.3f}")
+        print(f"soft {name:8s} mean c {np.sum(c * p):.3f}  "
+              f"mode c {c[p.argmax()]:.2f} (p {p.max():.4f})")
 
 
 if __name__ == "__main__":

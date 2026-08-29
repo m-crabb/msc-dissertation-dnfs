@@ -374,7 +374,7 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        FIGSIZE_FULL_1X2, MUTED, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI,
+        FIGSIZE_FULL_1X2_SHORT, MUTED, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI,
         parameter_ramp, style_axes, use_house_style)
 
     use_house_style()
@@ -392,9 +392,16 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
     raw_hue = parameter_ramp(SAMPLER_HUE, 2)[0]
 
-    fig, (ax, axr) = plt.subplots(1, 2, figsize=FIGSIZE_FULL_1X2)
+    # The short 1x2: both panels hold about a dozen marks and a smooth curve,
+    # so the 2.9 in box printed 7.4 cm of mostly empty axes.
+    fig, (ax, axr) = plt.subplots(1, 2, figsize=FIGSIZE_FULL_1X2_SHORT)
     ax.plot(ref_c, ref_F_persite, color=REFERENCE_INK, lw=1.4,
             label="canonical truth (TI)")
+    # Capped bars, not a shaded band. Each abscissa here is a SEPARATELY
+    # TRAINED window (eleven of them, six trained plus their Z2 reflections),
+    # so there is no curve in c for a ribbon to be the envelope of: the marks
+    # are deliberately unjoined for the same reason. Bands are the house
+    # default only for uncertainty along a continuous x (figure_style).
     ax.errorbar(cs, raw, yerr=raw_e, fmt="o", color=raw_hue, mfc="none",
                 capsize=2, lw=1.0, label="soft, raw")
     ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color=SAMPLER_HUE,
