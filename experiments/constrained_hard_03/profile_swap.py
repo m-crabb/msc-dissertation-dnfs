@@ -24,6 +24,7 @@ On the Modal L4 (see modal_app.bench):
         --argv "--mode eval --d 64 --batch 256 --n-euler-steps 128"
 """
 import argparse
+import logging
 import statistics
 import time
 
@@ -147,9 +148,28 @@ def _timed(fn, repeats: int, device: torch.device) -> list[float]:
     return times
 
 
-def _report(name: str, times: list[float], device: torch.device) -> None:
+def _report(name: str, times: list[float], device: torch.device,
+            baseline_bytes: int = 0) -> None:
+    """`baseline_bytes` is what was already resident when the peak counter was
+    reset, and is subtracted so the column reports this configuration's own
+    transient cost.
+
+    `reset_peak_memory_stats()` resets the peak, not the allocator: a later
+    `max_memory_allocated()` still counts every tensor alive at reset time.
+    That is a real hazard whenever `main` is called more than once in a
+    process, and the subtraction also removes this configuration's own
+    parameters, which is the right call at ~100k of them (0.4 MB) -- what the
+    column is for is the transient cost of a forward, not the checkpoint size.
+
+    It is NOT, however, what inflated the multi-configuration bench: measured
+    2026-08-29, subtracting the baseline moved the interval d=256 reading from
+    2.97 GB to 2.96 GB against 1.76 GB for the same configuration benched
+    first. Predecessors were being freed. The 1.2 GB was torch.compile giving
+    up and falling back to eager -- see _CompileGaveUp.
+    """
     peak_gb = (
-        torch.cuda.max_memory_allocated() / 1e9 if device.type == "cuda" else 0.0
+        (torch.cuda.max_memory_allocated() - baseline_bytes) / 1e9
+        if device.type == "cuda" else 0.0
     )
     print(
         f"{name:24s} median {statistics.median(times):9.4f}s  "
@@ -272,6 +292,56 @@ def _runners(args, head, target, device: torch.device) -> dict:
         "euler_one_event": lambda: _euler_step_swap(head, x, t, step_dt),
         "euler_matching": run_matching_step,
     }
+
+
+class _CompileGaveUp(logging.Handler):
+    """Tell whether torch.compile silently abandoned this configuration.
+
+    `nn.Module.compile()` caches per FORWARD CODE OBJECT, never per module
+    instance, and `MaskedAttentionSwapHead` subclasses `IntervalSwapHead`
+    without overriding `forward` -- so interval, masked_attention and stencil
+    share ONE dynamo budget of `torch._dynamo.config.recompile_limit` (8 by
+    default). Each freshly built head spends TWO entries of it, because
+    `LeTFRateMatrix._cached_causal_mask` sets `_causal_mask` lazily: the first
+    trace guards the attribute ABSENT, the call after it appears fails that
+    guard and retraces. Four configurations of that family therefore exhaust
+    the budget, after which dynamo marks the code object skipped for the rest
+    of the PROCESS and every later configuration runs eager -- while still
+    printing `compile=True`, which is what makes the corruption invisible.
+
+    Measured on an A100 2026-08-29, `--mode head --batch 32 --sdpa --d 256
+    --head-kind interval`: 10.1 ms / 1.76 GB as the first configuration of a
+    process, 26.4 ms / 2.96 GB as the sixth, with nothing but roster position
+    changed. Raising the limit to 256 restored 10.1 ms / 1.74 GB in the same
+    six-configuration process, which is the measurement that isolates it.
+    The compiled figure is the true one: production cells set
+    `compile_head=True` and build exactly one head per process.
+
+    `torch._dynamo.reset()` before each `head.compile()` is the fix; this
+    handler is the alarm that says the fix stopped working, because a wrong
+    number here is otherwise perfectly plausible.
+    """
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.gave_up = False
+
+    def emit(self, record):
+        if "recompile_limit" in record.getMessage():
+            self.gave_up = True
+
+    def arm(self) -> "_CompileGaveUp":
+        """Watch the next configuration. Installed once and re-armed rather
+        than re-added: `main` is called in a loop by `modal_app.bench_remote`,
+        and a handler per call would pile up on the logger."""
+        self.gave_up = False
+        logger = logging.getLogger("torch._dynamo")
+        if self not in logger.handlers:
+            logger.addHandler(self)
+        return self
+
+
+_COMPILE_WATCH = _CompileGaveUp()
 
 
 def main(argv=None):
@@ -402,7 +472,13 @@ def main(argv=None):
         # Leave TF32 on for the timing that follows.
         torch.set_float32_matmul_precision("high")
 
+    compile_watch = None
     if args.compile:
+        # Fresh dynamo state per configuration -- see _CompileGaveUp. The
+        # caches are keyed by forward CODE OBJECT, so a roster benched in one
+        # process spends one shared budget; this hands each row its own.
+        torch._dynamo.reset()
+        compile_watch = _COMPILE_WATCH.arm()
         head.compile()
     print(
         f"mode={args.mode} head_kind={args.head_kind} "
@@ -426,9 +502,17 @@ def main(argv=None):
         runners = _runners(args, head, target, device)
         quality_fn = runners.pop("_quality", None)
         for name, fn in runners.items():
+            baseline = 0
             if device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats()
-            _report(name, _timed(fn, args.repeats, device), device)
+                baseline = torch.cuda.memory_allocated()
+            _report(name, _timed(fn, args.repeats, device), device, baseline)
+        if compile_watch is not None and compile_watch.gave_up:
+            print(
+                "  *** COMPILE ABANDONED: dynamo hit its recompile limit, so "
+                "the numbers above are EAGER, not compiled. Bench this "
+                "configuration in a fresh process. ***"
+            )
         if quality_fn is not None:
             quality_fn()  # once, seeded -- not a timing target
         if args.profile:

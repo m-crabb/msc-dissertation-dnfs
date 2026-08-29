@@ -410,12 +410,26 @@ def mdns_gate(argv: str = ""):
 
 
 @app.function(gpu="A100-80GB", timeout=2 * 60 * 60)
-def bench_remote(argv: str = ""):
+def bench_remote(argv: str = "", isolate: bool = True):
     """Run the profile/benchmark harness on the production GPU. `argv` is
     the space-separated profile_swap CLI string, e.g.
     "--mode eval --d 64 --batch 256 --n-euler-steps 128". Several
     configurations separated by ";" run back to back in the one container,
     so a whole head ladder pays the cold start once.
+
+    `isolate` (the default) gives each configuration a FRESH SUBPROCESS
+    inside that one container, because a benched row must not depend on what
+    was benched before it and several kinds of torch state are per-process,
+    not per-module. The one that was actually corrupting the table is the
+    dynamo recompile budget (see profile_swap._CompileGaveUp): it is spent
+    per forward CODE OBJECT, so interval / masked_attention / stencil share
+    it, four configurations exhaust it, and every later one silently runs
+    EAGER -- measured on an A100 2026-08-29 as 26.4 ms / 2.96 GB against
+    10.1 ms / 1.76 GB for the identical interval d=256 B=32 row benched
+    first. `--tf32` leaks the same way: it leaves
+    set_float32_matmul_precision("high") on for every following row.
+    A subprocess costs one torch import (~15 s) and removes the whole class.
+    Pass isolate=False only to reproduce an in-process roster on purpose.
 
     A100-80GB is spelled out deliberately: Modal's bare "A100" is the 40 GB
     variant, which OOMs the large-batch arms this harness exists to measure
@@ -423,21 +437,35 @@ def bench_remote(argv: str = ""):
     ~80 GB). It also matches the DoC cluster's a100 partition, so benched
     costs stay comparable to the recorded run wall-clocks — which is the
     whole point of benching on production hardware."""
+    import os
+    import subprocess
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.profile_swap import main as bench_main
+    configs = [one.split() for one in argv.split(";")]
+    if not isolate:
+        from experiments.constrained_hard_03.profile_swap import main as bench_main
 
-    for one in argv.split(";"):
-        bench_main(one.split())
+        for one in configs:
+            bench_main(one)
+            print(flush=True)
+        return
+
+    env = {**os.environ, "PYTHONPATH": PROJECT_DIR}
+    for one in configs:
+        subprocess.run(
+            [sys.executable, "-m", "experiments.constrained_hard_03.profile_swap",
+             *one],
+            cwd=PROJECT_DIR, env=env, check=True,
+        )
         print(flush=True)
 
 
 @app.local_entrypoint()
-def bench(argv: str = ""):
+def bench(argv: str = "", isolate: bool = True):
     """Local CLI entry for the profiling harness: blocking so the timing
     tables stream back to the local terminal (dev box is CPU-only)."""
-    bench_remote.remote(argv=argv)
+    bench_remote.remote(argv=argv, isolate=isolate)
 
 
 @app.function(
