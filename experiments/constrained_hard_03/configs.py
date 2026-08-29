@@ -3626,8 +3626,24 @@ CONFIGS.update({
 # (see HardStageCfg.head_kind), so the fidelity columns are expected to
 # reproduce the mask-one row within seed noise and the FLOP/es column is what
 # the row is actually for: the O(d^2) architecture-agnostic gate's price.
+# EAGER, and not by preference -- a compiled oracle cell cannot be run at all.
+# Measured 2026-08-29 (DoC 280196, cancelled): `doubly_hollow` x
+# `compile_head=True` spent 26 minutes without reaching step 1 on a 4x4 cell,
+# the process pinned at ~95% of ONE core (utime 129,661 jiffies against a
+# 26:09 runtime) with 373 MiB on the GPU -- the signature of inductor still
+# compiling, not of training. The head unrolls to d^2 = 256 masked pair
+# forwards, so its graph is enormous in node count however small its tensors
+# are, and the sbatch runs six separate python invocations that would each pay
+# the cost again. `compile_head=False` is therefore the ONE further deviation,
+# the same knob and the same convention as the decision-(c) `_w2e` cells
+# above, and `c_t_from_rollout` is kept for the same reason they keep it.
+# CONSEQUENCE FOR THE ROW: it now differs from the mask-one row in TWO fields,
+# `head_kind` and `compile_head`, so it is "the same recipe through a
+# different head, run the only way that head can be run" rather than a
+# single-variable twin. Compiled and eager forwards agree to ~1e-5 relative,
+# well inside the seed spread the fidelity columns carry.
 CONFIGS.update({
-    cell.name: cell
+    cell.name: replace(cell, compile_head=False)
     for arm in _D16_ONLY_ARM_KNOBS
     for cell in (
         _wave2_d16_cell(arm, "s010", 0.10),

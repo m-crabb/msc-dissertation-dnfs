@@ -94,13 +94,22 @@ def test_oracle_exists_at_4x4_and_never_at_8x8():
     assert not [n for n in CONFIGS if "d64" in n and "_dh" in n]
 
 
-def test_oracle_row_deviates_from_the_mask_one_row_in_head_alone():
-    """The oracle prices the O(d^2) gate, so every other knob must match.
+def test_oracle_deviates_from_the_mask_one_row_in_head_and_compile_only():
+    """The oracle prices the O(d^2) gate, so only FORCED knobs may differ.
 
-    The row is only readable as "the same recipe through a different head"
-    if it is one. The legacy `H2_d16_c50_s223_letf_dh` cells fail this twice
-    over -- pre-migration sigma 0.223 rather than SIGMA_C, and the pre-s60
-    recipe -- which is why they are not the cells the table fills from.
+    Two deviations, and the second is not a preference. `compile_head=False`
+    is there because a COMPILED oracle cell cannot be run at all: measured
+    2026-08-29 (DoC 280196, cancelled), `doubly_hollow` x `compile_head=True`
+    spent 26 minutes without reaching step 1 on a 4x4 cell, pinned at ~95% of
+    one core with 373 MiB on the GPU -- inductor still compiling a graph that
+    unrolls to d^2 = 256 masked pair forwards. `c_t_from_rollout` is KEPT, the
+    same knob-for-knob convention as the decision-(c) `_w2e` cells.
+
+    The test exists to stop a THIRD deviation drifting in unnoticed, which
+    would quietly make the row unreadable against the mask-one row. The legacy
+    `H2_d16_c50_s223_letf_dh` cells fail this twice over -- pre-migration
+    sigma 0.223 rather than SIGMA_C, and the pre-s60 recipe -- which is why
+    they are not the cells the table fills from.
     """
     from dataclasses import asdict
 
@@ -110,4 +119,7 @@ def test_oracle_row_deviates_from_the_mask_one_row_in_head_alone():
         oracle = asdict(CONFIGS[f"H2_d16_c50_{sigma_label}_letf_dh_10k_w2"])
         mask_one = asdict(CONFIGS[f"H2_d16_c50_{sigma_label}_letf_mo_10k_w2"])
         deviated = {k for k in oracle if oracle[k] != mask_one[k]}
-        assert deviated == {"name", "head_kind"}, deviated
+        assert deviated == {"name", "head_kind", "compile_head"}, deviated
+        assert oracle["compile_head"] is False
+        # c_t_from_rollout is exonerated and stays on, as in the _w2e cells.
+        assert oracle["train"]["c_t_from_rollout"] is True
