@@ -221,6 +221,26 @@ class IntervalSwapHead(nn.Module):
         super().__init__()
         if exterior_combiner not in ("mlp", "bilinear"):
             raise ValueError(f"exterior_combiner must be 'mlp' or 'bilinear'; got {exterior_combiner!r}")
+        # The bilinear exterior reads the ROW ordering's prefix/suffix only:
+        # `_ordering_exterior_rows` is called on the "mlp" branch alone, and
+        # `_bilinear_exterior` takes the row summaries. So an extra ordering
+        # under this combiner is not merely dead weight, it is INVISIBLE --
+        # ("row",) and ("row", "col") build the same parameters and return a
+        # bit-identical forward. Measured at d=16: mlp gains 256 parameters
+        # and moves the forward by 1.2e-2, bilinear gains 0 and moves it by 0.
+        # Without this raise, `ivmo2ef` + bilinear reads as a single-variable
+        # test of the factorisation while silently also deleting the second
+        # ordering, worth +0.154 raw and disjoint -- the largest lever on this
+        # axis. FactorisedSwapHead carries the mirror check because it builds
+        # per-ordering factor maps (`extra_ordering_modules`); this head does
+        # not, so the combination is refused rather than approximated.
+        if exterior_combiner == "bilinear" and tuple(site_orderings)[1:]:
+            raise ValueError(
+                "exterior_combiner='bilinear' reads the row ordering only, so "
+                f"the extra orderings in {tuple(site_orderings)!r} would be "
+                "invisible; use exterior_combiner='mlp', or the factorised "
+                "head, which builds per-ordering factor maps"
+            )
         self.exterior_combiner = exterior_combiner
         self.bilinear_rank = bilinear_rank
         # Memory lever, opt-in (2026-08-26): run the per-pair band and readout

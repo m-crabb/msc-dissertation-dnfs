@@ -258,3 +258,31 @@ def test_config_flag_reaches_the_raster_heads():
     )
     head = build_swap_head(cfg, _backbone())
     assert head.site_orderings == ("row", "col")
+
+
+@pytest.mark.parametrize("head_kind", list(BUILDERS))
+def test_bilinear_exterior_refuses_extra_orderings(head_kind):
+    """The bilinear combiner cannot carry a second ordering, so asking for
+    both must raise rather than quietly return the one-ordering head.
+
+    `_ordering_exterior_rows` runs on the "mlp" branch alone and
+    `_bilinear_exterior` reads the row summaries, so under "bilinear" the
+    extra ordering is INVISIBLE, not merely inert: measured at d=16, mlp
+    gains 256 parameters and moves G by 1.2e-2 when "col" is added, while
+    bilinear gains 0 and returns a bit-identical G. Left unguarded, the
+    `ivmo2ef` + bilinear cell would read as the single-variable test of the
+    factorisation while also deleting the second ordering -- worth +0.154
+    raw and disjoint, the largest lever on this axis -- and the regression
+    would be attributed to the wrong knob.
+    """
+    with pytest.raises(ValueError, match="row ordering only"):
+        BUILDERS[head_kind](("row", "col"), exterior_combiner="bilinear")
+
+
+@pytest.mark.parametrize("head_kind", list(BUILDERS))
+def test_bilinear_exterior_still_builds_at_one_ordering(head_kind):
+    """The guard is about the COMBINATION; the archived `mab` / `ivb` cells
+    ran at ("row",) and must keep building unchanged."""
+    head = BUILDERS[head_kind](("row",), exterior_combiner="bilinear")
+    assert head.exterior_combiner == "bilinear"
+    assert head(_state(), torch.rand(2)).isfinite().all()
