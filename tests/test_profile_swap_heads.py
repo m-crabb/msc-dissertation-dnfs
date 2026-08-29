@@ -66,3 +66,36 @@ def test_naive_bench_head_is_the_doubly_hollow_oracle():
     )
     assert type(head) is DoublyHollowSwapHead
     assert head.backbone.d == 64
+
+
+@pytest.mark.parametrize("head_kind", ["interval", "masked_attention"])
+def test_site_orderings_reach_the_raster_bench_heads(head_kind):
+    """The sweep axis of the cost table must actually reach the head.
+
+    Until 2026-08-29 `site_orderings` was forwarded to the factorised branch
+    alone, so `--head-kind interval --site-orderings row,col` built a
+    ONE-sweep head, exited 0, and printed `site_orderings=row,col` in the
+    run banner. A cost table filled from that would have priced `ivmo2` /
+    `mamo2` at their one-sweep parents' cost and made the second backbone
+    pass look free. Mirrors test_raster_head_orderings'
+    `test_config_flag_reaches_the_raster_heads` for the config path.
+    """
+    head, _ = build_head_and_target(
+        d=64, device=torch.device("cpu"), anchor_chunk=None,
+        head_kind=head_kind, site_orderings=("row", "col"),
+    )
+    assert head.site_orderings == ("row", "col")
+    # The permutation buffer is what an extra sweep actually costs; a head
+    # that recorded the tuple but registered nothing would still be a null.
+    assert hasattr(head, "_order_col")
+
+
+@pytest.mark.parametrize("head_kind", ["interval", "masked_attention"])
+def test_one_sweep_stays_the_default_on_the_bench(head_kind):
+    """Every archived bench row was taken at one sweep; the fix must not
+    silently re-price them."""
+    head, _ = build_head_and_target(
+        d=64, device=torch.device("cpu"), anchor_chunk=None, head_kind=head_kind,
+    )
+    assert head.site_orderings == ("row",)
+    assert not hasattr(head, "_order_col")

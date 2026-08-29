@@ -102,12 +102,14 @@ def build_head_and_target(
         head = IntervalSwapHead(
             backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
             gather_triu_pairs=gather_triu_pairs,
+            site_orderings=site_orderings, lattice_side=side,
         ).to(device)
     elif head_kind == "masked_attention":
         head = MaskedAttentionSwapHead(
             backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
             gather_triu_pairs=gather_triu_pairs,
             separable_band_scores=separable_band_scores,
+            site_orderings=site_orderings, lattice_side=side,
         ).to(device)
     elif head_kind == "stencil":
         head = MaskedAttentionSwapHead(
@@ -290,10 +292,12 @@ def main(argv=None):
     )
     parser.add_argument(
         "--site-orderings", default="row",
-        help="comma-separated causal stream orderings for the factorised "
-             "head; 'row' is the fab8 arm, 'row,col' is the fmo2 multi-order "
-             "arm, whose two streams roughly double the forward cost. Ignored "
-             "by every other head kind.",
+        help="comma-separated causal stream orderings. Each extra ordering "
+             "is a full extra backbone pass and adds no modules, so this is "
+             "the sweep axis of the ladder: 'row' is the one-sweep arm and "
+             "'row,col' the two-sweep one (`ivmo2` / `mamo2`). Honoured by "
+             "the interval, masked_attention and factorised heads; ignored by "
+             "mask_one, naive and two_hole_patch, which have no causal streams.",
     )
     parser.add_argument(
         "--exterior-combiner", default="mlp", choices=("mlp", "bilinear"),
@@ -403,7 +407,8 @@ def main(argv=None):
     print(
         f"mode={args.mode} head_kind={args.head_kind} "
         f"exterior_combiner={args.exterior_combiner} interior_band={args.interior_band} "
-        f"site_orderings={args.site_orderings} d={args.d} batch={args.batch} "
+        f"site_orderings={args.site_orderings} patch_radius={args.patch_radius} "
+        f"d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "
         f"gather_triu_pairs={args.gather_triu_pairs} "
         f"separable_band_scores={args.separable_band_scores} "
