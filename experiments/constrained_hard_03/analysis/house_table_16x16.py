@@ -101,7 +101,6 @@ SIGMA = {"s010": 0.1, "s220": 0.22034339675488573}
 
 ARMS = {
     "ma": "masked-attention head",
-    "fimo2ef": "factorised head, prefix band $+$ exact field",
     "thp": "two-hole patch head",
     "thp2": "two-hole patch head, $R=2$",
 }
@@ -114,7 +113,6 @@ LATEX_ROWS = (
     ("floor", "sampling floor at $N=5000$"),
     None,
     ("ma", "masked-attention head"),
-    ("fimo2ef", "factorised head, prefix band $+$ exact field"),
     ("thp", "two-hole patch head"),
     ("thp2", "\\quad $R=2$"),
 )

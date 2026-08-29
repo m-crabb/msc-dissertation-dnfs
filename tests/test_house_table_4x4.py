@@ -62,18 +62,17 @@ def test_every_registered_arm_names_a_real_config():
     per-coupling CELL_NAME template there) and both rules can drift.
     """
     from experiments.constrained_hard_03.analysis.house_table_4x4 import (
-        ARMS, ARM_PROVENANCE, EAGER_REFILL, EAGER_TAG, SIGMA_LABELS)
+        ARMS, ARM_PROVENANCE, SIGMA_LABELS)
     from experiments.constrained_hard_03.configs import CONFIGS
 
+    # The eager-refill branch left with the factorised arms (2026-08-29): the
+    # `_w2e` twins existed only for them, so every surviving arm resolves to
+    # the plain wave-2 suffix or to its own ARM_PROVENANCE entry.
     for arm in ARMS:
         for sigma_label in SIGMA_LABELS:
-            if arm in ARM_PROVENANCE:
-                suffix, _ = ARM_PROVENANCE[arm]
-            else:
-                suffix = "w2e" if (arm, sigma_label) in EAGER_REFILL else "w2"
+            suffix = ARM_PROVENANCE[arm][0] if arm in ARM_PROVENANCE else "w2"
             name = f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_{suffix}"
             assert name in CONFIGS, name
-    assert EAGER_TAG
 
 
 def test_oracle_exists_at_4x4_and_never_at_8x8():

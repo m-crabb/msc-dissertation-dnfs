@@ -74,8 +74,6 @@ ARMS = {
     "iv": "prefix-sum band, one sweep",
     "ivmo2": "prefix-sum band, two sweeps",
     "ivmo2ef": "prefix-sum band, two sweeps + exact field",
-    "fimo2ef": "factorised + prefix band + exact-field",
-    "fmo2ef": "factorised (global) + exact-field",
     "thp": "two-hole patch head",
     "mal": "masked-attention head, whole-lattice window",
 }
@@ -99,16 +97,7 @@ ARM_PROVENANCE = {
 }
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
-# Hold RESOLVED (decision 2026-08-26): the two ef-on-factorised
-# sigma_c cells print from their decision-(c) EAGER retrains (tag
-# 20260826-hard-w2e, `_w2e` configs = the w2 cells with compile_head=False
-# the one declared deviation, daggered in the table caption). The w2e
-# judging verdict was REOPEN (fmo2ef seed 44 = 0.531 < 0.70), disposed as:
-# print the honest numbers, retire the global-interior
-# chassis from forward waves, no further investigation this stage.
 HELD = set()
-EAGER_REFILL = {("fimo2ef", "s220"), ("fmo2ef", "s220")}
-EAGER_TAG = "20260826-hard-w2e"
 
 
 def exact_reference(cfg):
@@ -252,12 +241,10 @@ def main(argv=None):
         table[f"floor{n_draws}_{sigma_label}"] = floor
 
         for arm in ARMS:
-            eager_refill = (arm, sigma_label) in EAGER_REFILL
             if arm in ARM_PROVENANCE:
                 recipe_suffix, tag = ARM_PROVENANCE[arm]
             else:
-                recipe_suffix = "w2e" if eager_refill else "w2"
-                tag = EAGER_TAG if eager_refill else TAG
+                recipe_suffix, tag = "w2", TAG
             cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_{recipe_suffix}"]
             # The head carries the FLOP forward, so it is built at the
             # BILLING config -- separable for a masked-attention head,

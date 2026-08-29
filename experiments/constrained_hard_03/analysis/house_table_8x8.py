@@ -1,8 +1,7 @@
 """Fill pass for tab:eval-hard-8x8 (the house evaluation table, 8x8 rung).
 
 Reads the Wave-2 d64 matrix (tag 20260825-hard-w2-d64: five arms x two
-sigma x seeds 42/43/44, plus the `_w2e` eager twins of the two factorised
-arms at sigma_c) and prints the house columns of
+sigma x seeds 42/43/44) and prints the house columns of
 tab:eval-unconstrained-10x10 for each cell, exactly as house_table_4x4.py
 does one rung down.
 
@@ -115,18 +114,14 @@ ARMS = {
     "iv": "prefix-sum band, one sweep",
     "ivmo2": "prefix-sum band, two sweeps",
     "ivmo2ef": "prefix-sum band, two sweeps + exact field",
-    "fimo2ef": "factorised head, prefix band + exact field",
-    "fmo2ef": "factorised head, global interior + exact field",
     "thp": "two-hole patch head",
 }
 # Arms whose runs carry their OWN campaign tag rather than the wave-2
 # default. The five ladder arms were built by replacing the wave-2 `ma`
 # critical cell's knobs, so they share its name and recipe exactly and
 # differ only in provenance -- but a table row must say which run backs it,
-# because a config name alone is ambiguous once a cell has been run twice
-# (`fimo2ef` at this rung has both a wave-2 and an arm-B set, 0.828 and
-# 0.837, agreeing but not identical). Same idiom as house_table_4x4's
-# ARM_PROVENANCE.
+# because a config name alone is ambiguous once a cell has been run under
+# more than one campaign. Same idiom as house_table_4x4's ARM_PROVENANCE.
 #
 # KEYED BY (arm, coupling), NOT BY ARM. The ladder's two columns were run in
 # separate campaigns under separate tags -- sigma_c under
@@ -154,14 +149,6 @@ CELL_NAME = {
     "s010": "H2_d64_c50_s010_letf_{arm}_50k_w2",
     "s220": "H2_d64_c50_s220_letf_{arm}_50k_curr_w2",
 }
-# The two factorised arms at sigma_c print from their EAGER twins, the
-# decision-(c) convention inherited from the 4x4 table. At d64 the compiled
-# and eager twins agree to within the declared ~0.02 FP caveat (compiled
-# 0.843/0.840 against eager 0.828/0.835), so this is convention-matching
-# across rungs rather than a repair -- recorded because a reader comparing
-# the two tables will ask whether the dagger means the same thing at both.
-EAGER_TWIN = {("fimo2ef", "s220"), ("fmo2ef", "s220")}
-
 FLOP_BEARING_FIELDS = ("head_kind", "gather_triu_pairs", "compile_head",
                        "compile_model", "use_sdpa_readout")
 
@@ -454,7 +441,6 @@ LATEX_ROWS = (
     ("ivmo2ef", "prefix-sum band, two sweeps $+$ exact field"),
     None,
     ("thp", "two-hole patch head"),
-    ("fimo2ef", "factorised head, prefix band $+$ exact field"),
     None,
     ("reject_off_soft", "reject off soft \\gls{dnfs}"),
 )
@@ -528,8 +514,6 @@ def latex_table(table, n_draws=5000):
             lines.append("        \\midrule")
             continue
         arm, label = row
-        if arm in EAGER_TWIN_ARMS:
-            label += "$^{\\dagger}$"
         cells = []
         for sigma_label in SIGMA_LABELS:
             key = key_for(arm, sigma_label)
@@ -551,11 +535,6 @@ def latex_table(table, n_draws=5000):
             cells += [ess] + errors + [flops]
         lines.append(f"        {label} & " + " & ".join(cells) + r" \\")
     return "\n".join(lines)
-
-
-# Arms whose sigma_c cells print from their eager twins (dagger in the
-# caption). Derived from EAGER_TWIN so the two can never disagree.
-EAGER_TWIN_ARMS = {arm for arm, _ in EAGER_TWIN}
 
 
 def main(argv=None):
@@ -607,8 +586,7 @@ def main(argv=None):
         }
 
         for arm in ARMS:
-            suffix = "e" if (arm, sigma_label) in EAGER_TWIN else ""
-            name = CELL_NAME[sigma_label].format(arm=arm) + suffix
+            name = CELL_NAME[sigma_label].format(arm=arm)
             tag = ARM_PROVENANCE.get((arm, sigma_label), TAG)
             run_dirs = [args.results_dir / f"{name}_seed{seed}_{tag}"
                         for seed in SEEDS]
@@ -637,7 +615,6 @@ def main(argv=None):
                         for d in run_dirs]
                 cell = aggregate(rows)
                 cell["per_forward_flops"] = per_forward
-                cell["eager_twin"] = suffix == "e"
                 key = f"{arm}_{sigma_label}" + ("_ema" if subdir == "eval_ema" else "")
                 table[key] = cell
 

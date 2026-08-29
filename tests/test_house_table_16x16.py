@@ -173,13 +173,16 @@ def test_reference_must_be_composition_exact(tmp_path):
 
 # --- (4) the arm set -----------------------------------------------------
 
-def test_arm_set_is_the_four_heads_that_ran():
-    """Exactly ma, thp, thp2 and fimo2ef. The plain-`fimo2` row the
-    skeleton declared has no run at either coupling and was deleted s78."""
+def test_arm_set_is_the_three_heads_that_ran():
+    """Exactly ma, thp and thp2. The plain-`fimo2` row the skeleton declared
+    has no run at either coupling and was deleted s78; `fimo2ef` left with
+    the factorised head (2026-08-29), which is demoted to an exterior-combiner
+    note and prints no results row at any rung. Its cells and config still
+    exist -- this is an editorial removal, not a deletion of the work."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
-    assert set(h16.ARMS) == {"ma", "thp", "thp2", "fimo2ef"}
-    assert "fimo2" not in h16.ARMS
+    assert set(h16.ARMS) == {"ma", "thp", "thp2"}
+    assert not {"fimo2", "fimo2ef", "fmo2ef"} & set(h16.ARMS)
 
 
 def test_no_rejection_row_is_emitted():
