@@ -65,6 +65,15 @@ TAG = "20260825-hard-w2"
 ARMS = {
     "mo": "mask-one head",
     "ma": "masked-attention head",
+    # The sweep ladder, one rung below its 8x8 column. Labels are kept
+    # word-for-word identical to house_table_8x8.ARMS so a reader holding
+    # the two tables side by side is comparing rows, not decoding two
+    # naming schemes for the same architecture.
+    "mamo2": "masked-attention band, two sweeps",
+    "mamo2ef": "masked-attention band, two sweeps + exact field",
+    "iv": "prefix-sum band, one sweep",
+    "ivmo2": "prefix-sum band, two sweeps",
+    "ivmo2ef": "prefix-sum band, two sweeps + exact field",
     "fimo2ef": "factorised + prefix band + exact-field",
     "fmo2ef": "factorised (global) + exact-field",
     "thp": "two-hole patch head",
@@ -76,7 +85,18 @@ ARMS = {
 # change, so its row reads against the `ma` row as the window and nothing
 # else. It ran under its own tag because it is not part of the wave-2 house
 # campaign.
-ARM_PROVENANCE = {"mal": ("win", "20260828-win-gate")}
+# The five ladder arms ran as one 30-run gate campaign (2026-08-28) whose
+# single tag spans BOTH couplings, so an arm key names their runs without
+# ambiguity. This is deliberately NOT the (arm, coupling) keying that
+# house_table_8x8.ARM_PROVENANCE carries: there the ladder's two columns
+# were two campaigns under two tags (20260828-rasterord-d64 at sigma_c,
+# 20260828-rasterfloor-d64 at the floor) and an arm key could not name
+# both. Here that distinction does not exist in the data.
+ARM_PROVENANCE = {
+    "mal": ("win", "20260828-win-gate"),
+    **{arm: ("w2", "20260828-rasterord-d16")
+       for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")},
+}
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
 # Hold RESOLVED (decision 2026-08-26): the two ef-on-factorised
