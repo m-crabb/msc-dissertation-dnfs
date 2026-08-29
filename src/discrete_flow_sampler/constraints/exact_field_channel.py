@@ -83,3 +83,91 @@ class ExactFieldSwapHead(nn.Module):
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
         gain = self.gain_constant + self.gain_slope * t         # (B,)
         return self.head(x, t) + gain[:, None, None] * self.exact_field(x)
+
+
+class ExactFieldFlipModel(nn.Module):
+    """The same channel for the soft chapter's FLIP process (s90, 2026-08-29).
+
+        G(i | x) <- G_model(i | x) + gain(t) * Delta_i(x),
+        Delta_i  = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ],
+        h = x A,  c_null_i = c(x) - (x_i + 1)/(2d),  gain(t) = g0 + g1 t.
+
+    Delta_i is the exact soft flip log-ratio at t=1 (pinned against brute
+    force in tests/test_soft_field_regression.py): written against the
+    HOLE-EXCLUDED composition c_null it is exactly odd in x_i, so it lives
+    in the leTF's representable set G = -x_i S_i(x). The s90 regression put
+    the two closed-form columns at ~95% of every trained lambda=50
+    specialist's variance — dominated by the PENALTY column, i.e. by
+    exactly the term whose lambda^2 Var[delta_P] noise makes soft training
+    fragile — so the channel hands the model the response it currently has
+    to learn while being shelled by that variance.
+
+    Same three conventions as the swap channel above, same reasons: the
+    feature is the t=1 source direction with a learned time gain, NOT the
+    log-ratio t*Delta (transport must be nonzero at t=0); the gain starts
+    at ZERO so a channel-on model is bit-identical to its parent at init
+    and the lambda-sweep twins carry one declared change; sigma, lambda and
+    c* are read LIVE from the target so every curriculum propagates.
+
+    Binary flips only: for S > 2 each destination token has its own
+    log-ratio and a single per-site channel is wrong, so the constructor
+    refuses rather than silently mis-scoring Potts.
+    """
+
+    def __init__(self, model: nn.Module, target):
+        super().__init__()
+        if getattr(model, "vocab_size", 2) != 2:
+            raise ValueError(
+                "ExactFieldFlipModel is derived for binary flips; "
+                f"got vocab_size={model.vocab_size}"
+            )
+        self.model = model
+        self._target = [target]  # list, not attribute: the target is not a Module
+        self.gain_constant = nn.Parameter(torch.zeros(()))
+        self.gain_slope = nn.Parameter(torch.zeros(()))
+
+    @property
+    def target(self):
+        return self._target[0]
+
+    @property
+    def is_locally_equivariant(self):
+        # The trainers dispatch scores-vs-rates on this flag; the channel
+        # adds a score, so it must ride the wrapped model's answer.
+        return self.model.is_locally_equivariant
+
+    # The trainers read these off the model object (rate diagnostics, the
+    # amortised eval path); the wrapper must be transparent to them.
+    @property
+    def vocab_size(self):
+        return self.model.vocab_size
+
+    @property
+    def condition_on_composition(self):
+        return self.model.condition_on_composition
+
+    def compile(self):
+        self.model.compile()
+
+    def exact_field(self, x: Tensor) -> Tensor:
+        """Delta_i(x), shape (B, d) — the closed form above, live params."""
+        target = self.target
+        d = x.shape[-1]
+        h = x @ target.A
+        c_hollow = ((x + 1.0) * 0.5).mean(-1, keepdim=True) - (x + 1.0) / (2.0 * d)
+        lam = target.composition_penalty_strength
+        return x * (
+            -4.0 * target.sigma * h
+            + 2.0 * lam * (c_hollow - target.target_composition)
+            + lam / d
+        )
+
+    def forward(self, x: Tensor, t: Tensor, c: Tensor | None = None) -> Tensor:
+        G = self.model(x, t) if c is None else self.model(x, t, c)
+        gain = self.gain_constant + self.gain_slope * t          # (B,)
+        contribution = gain.unsqueeze(1) * self.exact_field(x)   # (B, d)
+        # Only the flip slot moves; the current token's slot stays exactly
+        # zero (the convention G.sum(-1) == flip score relies on).
+        flip_slot = (1 - ((x + 1) / 2)).long().unsqueeze(-1)
+        return G.scatter_add(
+            -1, flip_slot, contribution.unsqueeze(-1).to(G.dtype))

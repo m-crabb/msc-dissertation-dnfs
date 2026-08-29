@@ -1923,3 +1923,27 @@ CONFIGS[_flat_window_name] = replace(
         _FLAT_WINDOW_BASE.composition, half_width=0.30, curriculum=None,
     ),
 )
+
+
+# The lambda-sweep exact-field-channel twins (s90, 2026-08-29): rerun
+# tab:soft-lambda-sweep with the closed-form flip channel wired in
+# (ModelCfg.exact_field_channel; the flip twin of the hard chapter's swap
+# channel, gain zero-init so each twin is bit-identical to its parent at
+# step 0). One declared change per twin, pinned by
+# tests/test_exact_flip_channel.py. Built by replace() from the parents so
+# recipe parity is by construction, not by copy-paste discipline. The s90
+# regression motivating this measured the closed form at ~95% of every
+# trained lambda=50 specialist, with the PENALTY column carrying it — the
+# prediction under test is that the channel rescues the all-or-nothing
+# 10x10 seeds (0.02/0.06/0.78/0.05 at lambda=50 in print).
+LAMBDA_SWEEP_PARENTS = tuple(
+    f"S2_d{side}_c05_l{lam}_letf{suffix}"
+    for side, suffix in ((4, ""), (10, "_ne64"))
+    for lam in (5, 10, 50, 100)
+)
+for _parent_name in LAMBDA_SWEEP_PARENTS:
+    _parent = CONFIGS[_parent_name]
+    CONFIGS[f"{_parent_name}_efc"] = replace(
+        _parent, name=f"{_parent_name}_efc",
+        model=replace(_parent.model, exact_field_channel=True),
+    )

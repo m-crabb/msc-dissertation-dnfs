@@ -79,6 +79,13 @@ SWEEP_COMPOSITIONS = tuple(
 
 def _build_model(cfg, target):
     model = _construct_model(cfg, target)
+    if getattr(cfg.model, "exact_field_channel", False):
+        from discrete_flow_sampler.constraints.exact_field_channel import (
+            ExactFieldFlipModel)
+        # Wrapped BEFORE compile so `.compile()` reaches the inner model
+        # (the channel's own arithmetic is three elementwise lines and
+        # stays eager, mirroring the hard route's wrapper).
+        model = ExactFieldFlipModel(model, target)
     if getattr(cfg.model, "compile_model", False):
         # In-place nn.Module.compile: state_dict keys stay unprefixed
         # (torch.compile(module) wrapping would add `_orig_mod.`), so

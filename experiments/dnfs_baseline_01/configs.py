@@ -317,6 +317,14 @@ class ModelCfg:
     # construction identical to an unconditioned model, so archived
     # checkpoints stay loadable.
     condition_on_composition: bool = False
+    # Soft route only (s90, 2026-08-29): wrap the rate model with the exact
+    # flip log-ratio as a fixed additive score under a zero-init learned gain
+    # (constraints/exact_field_channel.ExactFieldFlipModel, the flip twin of
+    # the hard chapter's swap channel). The s90 4x4 regression put the closed
+    # form at ~95% of every trained lambda=50 specialist, so the channel
+    # supplies what training currently learns under lambda^2 penalty-variance
+    # fire. OFF = every archived cell byte-identical.
+    exact_field_channel: bool = False
     # rope_vit only (hard route, 2026-08-23): side of the p x p patches whose
     # pooled keys carry the far field in the causal stacks. 1 = dense causal
     # attention with periodic rotary positions; the leTF cells never read it.
