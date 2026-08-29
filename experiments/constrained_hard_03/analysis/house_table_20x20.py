@@ -1,0 +1,341 @@
+"""Fill pass for the 20x20 rung of the house evaluation table.
+
+A THIN table by design: the d400 wave (tag 20260827-d400-s010) is four cells
+-- two patch radii x two eval precisions -- at TWO seeds and ONE coupling. It
+is a scaling probe, not a head survey, and the table should read as one.
+
+WHAT IS DIFFERENT FROM EVERY RUNG BELOW, and why each difference is real
+rather than an omission:
+
+  * ONE COLUMN, NOT TWO. The wave ran at sigma = 0.1 only. Rendering an empty
+    sigma_c half would read as "not yet landed" when the truth is "never run",
+    so `SIGMA_LABELS` is a 1-tuple and the emitted table is single-coupling.
+    A sigma_c rung here would need its own certified reference, and at sigma_c
+    that reference is the expensive one (see below).
+  * TWO SEEDS, NOT THREE. 42 and 43. Spreads over two seeds are reported as
+    the half-range, and no claim in this table should rest on a spread that
+    thin.
+  * THE ARMS ARE A RADIUS x TRAINING-PRECISION GRID, not different heads.
+    Every cell is the two-hole patch head. `w4` vs `w4bf16` is
+    `train.train_autocast_bf16` and NOTHING ELSE -- verified against the
+    registry, it is the single field that differs. It is a TRAINING lever, not
+    an evaluation one: `eval.eval_autocast_bf16` is True on ALL FOUR cells, so
+    every row here is evaluated identically and the arms differ only in the
+    precision the 50k training steps ran at. Labelling the pair "bf16
+    evaluation" would imply the w4 rows evaluate in fp32, which they do not.
+    That the FLOP/es column is unmoved between the two is a consistency check
+    rather than a finding: the bill is derived from the architecture, and
+    training precision changes no architecture.
+
+THE REFERENCE, and why it cost 30 seconds rather than hours. Generated
+2026-08-29 by `generate_kawasaki_reference_d256.py --lattice-side 20
+--sigma 0.10` into `results/kawasaki_ref_d400_s010/`: 8 chains, 100k burn-in
+plus 102,400 sampling sweeps, thinned at 2x the worst chain's tau, 136,536
+stored draws, Gelman-Rubin 0.999985 (split-half 0.999974), every draw on the
+c = 0.5 slice at exactly 200 up-spins, energy convention matching the target
+class to 1.1e-5.
+
+The measured tau is **2.10 sweeps at D = 20 against 2.11 at D = 16** -- no
+size penalty worth the name. That is not luck: the tau ~ D^1.5 growth in
+fig:kawasaki-slowing is a CRITICAL phenomenon, and at the sigma = 0.1
+operating point the non-local swap chain decorrelates in a couple of sweeps at
+any of these sizes. It is why "no certified reference exists at d400" was
+never an expensive blocker, only an undone one -- and why the same sentence at
+sigma_c would be a genuine one.
+
+NO EXTERNAL ANCHOR, and the certification says so. The mchammer nn anchor is a
+property of sigma_c at d256; off sigma_c `external_nn_anchor` returns None by
+construction and the record states that no external cross-check exists. The
+certification therefore rests on the internal checks -- Gelman-Rubin,
+start-condition agreement, the energy-convention gap and the exact-composition
+assertion.
+
+FLOP/es. The reference's algorithmic bill is derived from THIS rung's lattice
+(`reference_trial_counts`), never from the d256 default that
+`house_table_16x16.chain_trial_counts` carries -- taking that default would
+under-bill by (16/20)^2 = 0.64. Neural cells are billed from their own saved
+config rebuilt on today's code, masked-attention heads at the separable band,
+exactly as the rungs below.
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import torch
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT))
+
+from discrete_flow_sampler.diagnostics.flops import (
+    measured_forward_flops, neural_sampling_flops_per_sample,
+    per_effective_sample)
+from discrete_flow_sampler.diagnostics.metrics import (
+    correlation_profile_error, energy_wasserstein2,
+    magnetisation_profile_error)
+# The lattice-generic half, imported rather than restated -- same idiom as
+# house_table_16x16 importing from house_table_8x8.
+from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+    _sci, aggregate, flop_billing_config, fmt, is_composition_exact,
+    reference_standard_error, registry_config_for,
+    sampling_floor_from_reference)
+from experiments.constrained_hard_03.analysis.house_table_16x16 import (
+    reference_row, split_pooled_into_chains)
+
+L = 20
+D_SITES = L * L
+SEEDS = (42, 43)
+SIGMA_LABELS = ("s010",)
+SIGMA = {"s010": 0.1}
+TAG = "20260827-d400-s010"
+DEFAULT_REFERENCE = REPO_ROOT / "results" / "kawasaki_ref_d400_s010"
+
+# Keyed by the FULL config name. At the rungs below an arm is a short head
+# token and the run dir is rebuilt from a template; here the four cells differ
+# in two dimensions at once (radius and eval precision) and share every other
+# infix, so a short token would need a second key to disambiguate. The config
+# name already is that key, and it cannot drift from the registry.
+ARMS = {
+    "H2_d400_c50_s010_letf_thp2_50k_b512_ne128_cv2_w4":
+        "two-hole patch head, $R=2$",
+    "H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4":
+        "two-hole patch head, $R=3$",
+    "H2_d400_c50_s010_letf_thp2_50k_b512_ne128_cv2_w4bf16":
+        "\\quad $R=2$, bf16 training",
+    "H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4bf16":
+        "\\quad $R=3$, bf16 training",
+}
+
+LATEX_ROWS = (
+    ("reference", "Kawasaki (mchammer), certified reference"),
+    ("floor", "sampling floor at $N=5000$"),
+    None,
+    *((arm, label) for arm, label in ARMS.items()),
+)
+ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
+
+
+def reference_trial_counts(provenance):
+    """Swap PROPOSALS per chain at THIS rung's lattice, burn-in included.
+
+    Deliberately not `house_table_16x16.chain_trial_counts(provenance)`: that
+    function's `lattice_edge` defaults to 16, and taking the default here
+    would under-bill the reference chain by (16/20)^2 = 0.64 with nothing in
+    the output to show it. Pinned by test_house_table_20x20.
+    """
+    per_chain = ((provenance["burn_in_sweeps"]
+                  + provenance["sampling_sweeps_per_chain"]) * D_SITES)
+    return [per_chain] * provenance["n_chains"]
+
+
+def load_reference(directory, sigma_key):
+    """Certified chains for the one coupling, one tensor per chain.
+
+    Asserts the pool's recorded LATTICE as well as its sigma: a reference is
+    a reference only for the lattice it was drawn at, and at this rung a
+    d256 pool would load, split and score without complaint while measuring
+    a different system.
+    """
+    directory = Path(directory)
+    provenance = json.loads((directory / "provenance.json").read_text())
+    assert provenance["lattice_side"] == L, (
+        f"{directory.name} records D={provenance['lattice_side']}, not {L}")
+    assert abs(provenance["sigma"] - SIGMA[sigma_key]) < 1e-9, (
+        f"{directory.name} records sigma={provenance['sigma']}, not "
+        f"{SIGMA[sigma_key]}: couplings must never be mixed in one column")
+    pooled = torch.load(directory / "samples.pt", weights_only=True).float()
+    assert is_composition_exact(pooled, D_SITES // 2), \
+        f"{directory.name}: reference left the c=0.5 slice"
+    return split_pooled_into_chains(pooled, provenance["n_chains"]), provenance
+
+
+def energy_per_site(target, states, chunk=4096):
+    """Chunked: the pool is 1.4e5 states at d=400."""
+    parts = [-target.log_prob(states[i:i + chunk]) / (2 * target.sigma * D_SITES)
+             for i in range(0, states.shape[0], chunk)]
+    return torch.cat(parts)
+
+
+def find_cells(results_dir, arm):
+    """Run dirs for one cell, seed order; empty rather than raising.
+
+    The arm IS the config name, so the glob needs no head-token anchoring of
+    the kind the rungs below need to stop `thp` matching `thp2`.
+    """
+    found = []
+    for run_dir in sorted(Path(results_dir).glob(f"{arm}_seed*_{TAG}")):
+        if (run_dir / "cv_inversion_halt.json").exists():
+            print(f"dropped (cv-inversion tripwire halt): {run_dir.name}",
+                  file=sys.stderr)
+            continue
+        found.append(run_dir)
+    return found
+
+
+def neural_cell(run_dir, target, reference, reference_energy, per_forward,
+                n_euler, eval_subdir="eval"):
+    run_dir = Path(run_dir)
+    metrics = json.loads((run_dir / eval_subdir / "metrics.json").read_text())
+    samples = torch.load(run_dir / eval_subdir / "samples.pt",
+                         weights_only=True).float()
+    log_w = torch.load(run_dir / eval_subdir / "log_weights.pt",
+                       weights_only=True)
+    weights = torch.softmax(log_w, dim=0)
+    ess = metrics["ess_fraction"]
+    w_ref = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    flops_raw = neural_sampling_flops_per_sample(per_forward, n_euler, D_SITES)
+    return {
+        "ESS": ess,
+        "dMag": magnetisation_profile_error(
+            samples, weights, reference, L, reference_weights=w_ref),
+        "dCorr": correlation_profile_error(
+            samples, weights, reference, L, reference_weights=w_ref),
+        "EW2": energy_wasserstein2(
+            energy_per_site(target, samples), weights, reference_energy,
+            reference_weights=w_ref),
+        "FLOP/es": per_effective_sample(flops_raw, ess),
+    }
+
+
+def latex_table(table, n_draws=5000):
+    """Single-coupling body: five columns, not ten."""
+    def cell(key, column, sci=False):
+        entry = table.get(key)
+        if entry is None or column not in entry:
+            return "--"
+        mean, sd = entry[column]
+        if sci:
+            return _sci(mean)
+        if key.startswith("reference"):
+            return f"($ {mean * 100:.1f} $)".replace(" ", "")
+        if key.startswith("floor"):
+            return f"${mean * 100:.1f}$"
+        return f"${mean * 100:.1f} \\pm {sd * 100:.1f}$"
+
+    def key_for(arm):
+        if arm == "reference":
+            return "reference_s010"
+        if arm == "floor":
+            return f"floor{n_draws}_s010"
+        return f"{arm}_s010"
+
+    arms = [a for a, _ in (r for r in LATEX_ROWS if r)
+            if a in ARMS and key_for(a) in table]
+    best = {}
+    if arms:
+        best["ESS"] = max(arms, key=lambda a: table[key_for(a)]["ESS"][0])
+        for column in ERROR_COLUMNS + ("FLOP/es",):
+            best[column] = min(arms, key=lambda a: table[key_for(a)][column][0])
+
+    lines = []
+    for row in LATEX_ROWS:
+        if row is None:
+            lines.append("        \\midrule")
+            continue
+        arm, label = row
+        key = key_for(arm)
+        entry = table.get(key)
+        ess = "/" if arm in ("reference", "floor") else (
+            f"${entry['ESS'][0]:.3f} \\pm {entry['ESS'][1]:.3f}$"
+            if entry else "--")
+        flops = "--" if arm == "floor" else cell(key, "FLOP/es", sci=True)
+        if best.get("ESS") == arm:
+            ess = f"$\\mathbf{{{ess.strip('$')}}}$"
+        if best.get("FLOP/es") == arm:
+            flops = f"$\\mathbf{{{flops.strip('$')}}}$"
+        cells = [ess]
+        for column in ERROR_COLUMNS:
+            value = cell(key, column)
+            if best.get(column) == arm:
+                value = f"$\\mathbf{{{value.strip('$')}}}$"
+            cells.append(value)
+        cells.append(flops)
+        lines.append(f"        {label} & " + " & ".join(cells) + r" \\")
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--results-dir", type=Path,
+                        default=REPO_ROOT / "results" / "03_hard")
+    parser.add_argument("--reference-dir", type=Path, default=DEFAULT_REFERENCE)
+    parser.add_argument("--eval-subdir", default="eval_ema",
+                        help="eval_ema (default, the frozen convention at the "
+                             "rungs above) or eval")
+    parser.add_argument("--n-splits", type=int, default=64)
+    parser.add_argument("--n-floor-replicates", type=int, default=200)
+    parser.add_argument("--out", type=Path,
+                        default=REPO_ROOT / "results" / "03_hard" / "w2_20x20_house")
+    parser.add_argument("--latex", action="store_true")
+    args = parser.parse_args(argv)
+
+    from experiments.constrained_hard_03.run import build_target_and_head
+
+    chains, provenance = load_reference(args.reference_dir, "s010")
+    reference = torch.cat(chains)
+
+    probe = next(iter(ARMS))
+    probe_dirs = find_cells(args.results_dir, probe)
+    if not probe_dirs:
+        print(f"no run dirs under {args.results_dir} for {probe}", file=sys.stderr)
+        return
+    target, _ = build_target_and_head(registry_config_for(probe_dirs[0]),
+                                      device="cpu")
+
+    chain_energies = [energy_per_site(target, c) for c in chains]
+    reference_energy = torch.cat(chain_energies)
+
+    table = {
+        "reference_s010": {
+            **reference_row(chains, chain_energies,
+                            reference_trial_counts(provenance)),
+            **{k: (v, 0.0) for k, v in reference_standard_error(
+                chains, L, args.n_splits, seed=0,
+                chain_energies=chain_energies).items()},
+        }
+    }
+
+    for arm in ARMS:
+        run_dirs = find_cells(args.results_dir, arm)
+        if not run_dirs:
+            continue
+        cfg = registry_config_for(run_dirs[0])
+        _, head = build_target_and_head(flop_billing_config(cfg), device="cpu")
+        per_forward = measured_forward_flops(
+            head, (reference[:1], torch.full((1,), 0.5)))
+        n_draws = cfg.eval.n_eval_samples
+        rows = [neural_cell(d, target, reference, reference_energy,
+                            per_forward, cfg.ctmc.n_euler_steps,
+                            eval_subdir=args.eval_subdir)
+                for d in run_dirs]
+        cell = aggregate(rows)
+        cell["per_forward_flops"] = per_forward
+        cell["n_seeds"] = len(run_dirs)
+        table[f"{arm}_s010"] = cell
+
+        floor_key = f"floor{n_draws}_s010"
+        if floor_key not in table:
+            table[floor_key] = {
+                k: (v, 0.0) for k, v in sampling_floor_from_reference(
+                    reference, L, n_draws, args.n_floor_replicates,
+                    seed=0, reference_energy=reference_energy).items()}
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    (args.out / "house_table_20x20.json").write_text(json.dumps(table, indent=2))
+
+    if args.latex:
+        print(latex_table(table))
+        return
+
+    print(f"{'row':56} {'ESS':>14} {'dMag':>16} {'dCorr':>16} "
+          f"{'EW2':>16} {'FLOP/es':>14}")
+    for key, cell in table.items():
+        ess = fmt(*cell["ESS"]) if "ESS" in cell else "/"
+        flops = fmt(*cell["FLOP/es"], sci=True) if "FLOP/es" in cell else "--"
+        print(f"{key:56} {ess:>14} {fmt(*cell['dMag']):>16} "
+              f"{fmt(*cell['dCorr']):>16} {fmt(*cell['EW2']):>16} {flops:>14}")
+
+
+if __name__ == "__main__":
+    main()
