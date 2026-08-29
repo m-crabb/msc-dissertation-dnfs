@@ -75,6 +75,11 @@ from discrete_flow_sampler.mcmc.kawasaki import (
 from discrete_flow_sampler.targets.ising import (
     SIGMA_C, FixedCompositionIsingTarget)
 
+# DEFAULTS, not fixed sizes. `main` rebinds both from --lattice-side before
+# anything reads them, which is safe only because this module is a CLI entry
+# point: nothing imports its internals (the two analysis modules and two tests
+# that name it do so in comments). If that ever stops being true, thread the
+# size through build_initial_spins / run_one_chain / main instead.
 LATTICE_SIDE = 16
 N_SITES = LATTICE_SIDE * LATTICE_SIDE          # 256
 DEFAULT_SIGMA = SIGMA_C    # exact sigma_c since the s58 migration; the archived
@@ -187,6 +192,16 @@ def parse_args():
               f"(default: {DEFAULT_SIGMA}, the project's sigma_c)"),
     )
     parser.add_argument(
+        "--lattice-side", type=int, default=LATTICE_SIDE,
+        help=("Edge D of the DxD torus; the reference is generated at d = D^2 "
+              "sites and half-filling. A reference is a reference only for the "
+              "LATTICE it was generated at as well as the sigma -- the "
+              "nn-correlation and energy per site both depend on D -- so this "
+              "must match the runs under judgement. The external nn anchor is "
+              "sigma_c- AND d256-specific and is skipped automatically off "
+              f"sigma_c. (default: {LATTICE_SIDE})"),
+    )
+    parser.add_argument(
         "--out-dir", type=Path, default=DEFAULT_OUT_DIR,
         help=("Directory for samples.pt, provenance.json and certification.json. "
               "Give each sigma its own directory: overwriting an existing "
@@ -214,11 +229,17 @@ def external_nn_anchor(sigma):
 def main():
     args = parse_args()
     sigma, out_dir = args.sigma, args.out_dir
+    # Rebound HERE, before the target, the chains or any statistic touch them.
+    # Every downstream use reads the module constant, so this is the single
+    # point at which the run's lattice is fixed.
+    global LATTICE_SIDE, N_SITES
+    LATTICE_SIDE = args.lattice_side
+    N_SITES = LATTICE_SIDE * LATTICE_SIDE
     nn_anchor, nn_tolerance = external_nn_anchor(sigma)
 
     wall_start = time.perf_counter()
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"sigma = {sigma!r} -> {out_dir}/")
+    print(f"D = {LATTICE_SIDE} (d = {N_SITES}), sigma = {sigma!r} -> {out_dir}/")
 
     target = FixedCompositionIsingTarget(
         LATTICE_SIDE, sigma, TARGET_COMPOSITION
