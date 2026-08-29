@@ -63,6 +63,11 @@ L = 4
 D_SITES = L * L
 TAG = "20260825-hard-w2"
 ARMS = {
+    # The O(d^2) architecture-agnostic gate: one fully-masked pair forward
+    # per candidate swap. mask_one is documented as agreeing with it
+    # NUMERICALLY, so its fidelity cells are expected to reproduce the
+    # mask-one row within seed noise and the information is in FLOP/es.
+    "dh": "doubly-hollow oracle",
     "mo": "mask-one head",
     "ma": "masked-attention head",
     # The sweep ladder, one rung below its 8x8 column. Labels are kept
@@ -91,6 +96,9 @@ ARMS = {
 # 20260828-rasterfloor-d64 at the floor) and an arm key could not name
 # both. Here that distinction does not exist in the data.
 ARM_PROVENANCE = {
+    # The oracle's six runs went out as single-run DoC jobs under their own
+    # tag (2026-08-29); the CONFIG is a wave-2 cell, so the suffix stays w2.
+    "dh": ("w2", "20260829-dh-oracle-d16"),
     "mal": ("win", "20260828-win-gate"),
     **{arm: ("w2", "20260828-rasterord-d16")
        for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")},
@@ -264,7 +272,11 @@ def main(argv=None):
                     cfg.ctmc.n_euler_steps))
             cell = aggregate(rows)
             cell["held"] = (arm, sigma_label) in HELD
-            cell["eager_refill"] = eager_refill
+            # Derived from the config rather than a hand-kept set (the
+            # EAGER_REFILL set left with the factorised rows): the oracle is
+            # the one cell whose recipe forces compile off, and its caption
+            # dagger should survive any future arm that shares the constraint.
+            cell["eager"] = not cfg.compile_head
             cell["per_forward_flops"] = per_forward
             table[f"{arm}_{sigma_label}"] = cell
 

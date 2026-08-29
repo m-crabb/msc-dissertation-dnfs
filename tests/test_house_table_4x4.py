@@ -75,6 +75,24 @@ def test_every_registered_arm_names_a_real_config():
             assert name in CONFIGS, name
 
 
+def test_oracle_is_enrolled_with_its_own_campaign_tag():
+    """The oracle row fills from the 2026-08-29 relaunch, not the wave-2 tag.
+
+    Its six runs went out as single-run DoC jobs under their own tag (the
+    first launch died compiling, the second was shaped to blow the 12 h
+    wall), so the arm needs an ARM_PROVENANCE entry: resolving it through
+    the wave-2 default tag would look up directories that never existed
+    and print a permanently blank row -- the silent failure mode this
+    file's docstring describes. The recipe suffix stays `w2` because the
+    CONFIG is a wave-2 cell; only the campaign tag is its own.
+    """
+    from experiments.constrained_hard_03.analysis.house_table_4x4 import (
+        ARMS, ARM_PROVENANCE)
+
+    assert "dh" in ARMS
+    assert ARM_PROVENANCE["dh"] == ("w2", "20260829-dh-oracle-d16")
+
+
 def test_oracle_exists_at_4x4_and_never_at_8x8():
     """The doubly-hollow oracle is a 4x4-only cell, and that is structural.
 
