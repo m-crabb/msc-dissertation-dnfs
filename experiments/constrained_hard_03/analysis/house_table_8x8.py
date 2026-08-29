@@ -462,8 +462,23 @@ ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 
 
 def _sci(value):
+    """One-decimal scientific notation, renormalised after rounding.
+
+    The carry matters: 9.95e10 floors to exponent 10 and its mantissa then
+    ROUNDS UP to 10.0, printing "10.0 x 10^10" beside a sibling cell reading
+    "1.2 x 10^11". Both are correct and the pair is unreadable. Bumping the
+    exponent when the rounded mantissa reaches 10 keeps every cell in a
+    column on the same power. Only values at or above 9.95e{k} are affected,
+    so no cell already in print moves.
+    """
     exponent = int(np.floor(np.log10(value)))
-    return f"${value / 10 ** exponent:.1f}\\times10^{{{exponent}}}$"
+    mantissa = value / 10 ** exponent
+    # Tested on the FORMATTED string, not on round(mantissa, 1): the two can
+    # disagree at the boundary because 9.95 is not exactly representable, and
+    # it is the printed text that has to be right.
+    if f"{mantissa:.1f}" == "10.0":
+        mantissa, exponent = mantissa / 10.0, exponent + 1
+    return f"${mantissa:.1f}\\times10^{{{exponent}}}$"
 
 
 def latex_table(table, n_draws=5000):
