@@ -4125,6 +4125,109 @@ def _d400_bf16_cell(arm: str) -> HardStageCfg:
     )
 
 
+# --- 20x20 at the critical coupling (2026-08-29) --------------------------
+#
+# THE QUESTION THE FLOOR RUNG COULD NOT ANSWER. The sigma = 0.10 wave came
+# back with every cell ON the sampling floor -- raw ESS 0.988-0.9995 across
+# all eight cells, and error columns inside the N=5000 sampling floor's own
+# width (floor 6.0 / 10.0 / 0.4 against cells 6.0-6.3 / 9.9-10.2 / 0.4-0.5).
+# That is a clean feasibility result and a USELESS discriminator: two of the
+# things the wave was spent on cannot be read off it. Does the recipe hold at
+# 20x20 in the sense the thesis argues -- a proposal competitive with a chain
+# that is ACTUALLY slow? Does training in bf16 cost quality? Both came back
+# "no difference" from an instrument pinned at its ceiling, which is not the
+# same finding as no difference.
+#
+# sigma_c IS WHERE THE INSTRUMENT HAS RANGE. The eval ESS column that spans
+# 0.015 across six heads at the d64 floor spans 0.735-0.953 at sigma_c, and
+# thp2 at d256 reads 0.826 critical against 0.998 at its own floor. So this
+# is not the floor rung repeated at a harder setting -- it is the first d400
+# measurement whose columns can separate anything at all.
+#
+# IT IS ALSO WHAT TURNS THE ROW INTO A CLAIM. At sigma = 0.10 the Kawasaki
+# chain decorrelates in tau = 2.10 sweeps and bills 1.1e5 FLOP/es against the
+# neural cells' ~1e11 -- a millionfold -- so the floor table is a
+# SCALING-FEASIBILITY demonstration and its caption says exactly that.
+# Critical slowing down is what makes the chain expensive, so the competitive
+# comparison the chapter wants only exists at sigma_c.
+#
+# THE FLOOR RUNG WAS THE PRE-REGISTERED GATE FOR THIS, AND IT OPENED. Its own
+# registry block above `_d400_radius_cell` says the floor cell "separates the
+# two ways this rung can fail": a RATE-LOAD failure leaves the floor clean and
+# sigma_c broken, a statistical failure breaks both. The floor read clean at
+# BOTH radii, so the matching step carries d = 400 and the remaining risk is
+# statistical -- which is the risk these cells are spent on.
+#
+# THREE DEVIATIONS FROM THE FLOOR CELL, ALL OF THEM THE d256 CRITICAL
+# CONVENTION: the exact SIGMA_C, the sigma ladder, and 100k steps. The ladder
+# is REUSED, NOT RESCALED -- its start_steps are absolute
+# (0/5k/10k/15k/20k/25k/30k) and it varies only sigma and lr, so it carries no
+# lattice dependence and the extra 50k lands entirely on the final sigma_c
+# plateau rather than stretching the schedule. Everything else -- lattice,
+# head knobs, batch 512, n_euler 128, backbone, single-shot backward, cleared
+# tripwire -- rides the floor cell unchanged, so a critical-vs-floor read at
+# d400 is chargeable to the coupling and nothing else.
+#
+# THREE SEEDS, NOT TWO. The floor wave's bf16 null rests on two seeds, and
+# this lineage has read eval ESS 0.423 and 0.899 from the SAME config and
+# seed under floating-point non-determinism alone. Two seeds cannot carry a
+# null; three is the minimum that makes the precision arm a comparison.
+#
+# THE ERROR COLUMNS ARE NOT FILLABLE YET, AND THAT IS NOT A BLOCKER. The
+# d400 sigma = 0.10 Kawasaki reference certified in 30 seconds because tau is
+# 2.10 sweeps there; the tau ~ D^1.5 growth is a CRITICAL phenomenon, so the
+# sigma_c sibling is a real cost plus a fresh mchammer anchor at 20x20. ESS
+# fraction and the FLOP columns are self-contained and answer both questions
+# above without it.
+def _d400_critical_cell(arm: str) -> HardStageCfg:
+    """One 20x20 sigma_c cell: its sigma = 0.10 sibling moved to the exact
+    critical coupling, on the reused sigma ladder, for 100k steps.
+
+    Decision (c) -- factorised arms train EAGER at exact sigma_c, because
+    factorised x compile x sigma_c produced catastrophic seeds at ~40% -- does
+    NOT reach here. Both arms are patch heads, so they keep the optimised
+    recipe's compiled step; pinned by
+    test_every_new_probe_cell_rides_the_optimised_recipe.
+    """
+    cell = _d400_radius_cell(arm)
+    return replace(
+        cell,
+        name=f"H2_d400_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w4",
+        ising=replace(cell.ising, sigma=SIGMA_C),
+        curriculum=_D64_SIGMA_LADDER_SC,
+        train=replace(cell.train, n_steps=100_000),
+    )
+
+
+def _d400_critical_bf16_cell(arm: str) -> HardStageCfg:
+    """The bf16 twin of a 20x20 sigma_c cell: its fp32 sibling plus
+    `train_autocast_bf16` and nothing else, so a gap is chargeable to the
+    precision the 100k training steps ran at.
+
+    WHY THE PRECISION ARM IS RE-RUN AT sigma_c RATHER THAN INHERITED FROM THE
+    FLOOR. The floor wave settled the COST half conclusively -- 4/4 matched
+    seeds, -21% to -27% END-TO-END, ~2 h off a 9 h run -- and that half is not
+    worth repeating. What it could not settle is the QUALITY half, because
+    both precisions sat on the sampling floor where nothing can separate.
+
+    The asymmetry that makes this cheap to justify: bf16 CANNOT bias the
+    estimator. The target's closed-form swap log-ratio is bit-identical under
+    autocast (pinned by test_swap_log_ratio_is_bit_identical_under_bf16_
+    autocast) because the Kawasaki field h = x @ A sums four torus
+    neighbours and lands in {-4, -2, 0, 2, 4} at every lattice size. What
+    bf16 moves is the head's G -- the PROPOSAL -- and self-normalised
+    importance sampling is exact for whatever proposal ran. So the only
+    reachable cost is proposal quality, which surfaces as weight variance,
+    which is precisely what the floor cannot resolve and sigma_c can.
+    """
+    cell = _d400_critical_cell(arm)
+    return replace(
+        cell,
+        name=cell.name + "bf16",
+        train=replace(cell.train, train_autocast_bf16=True),
+    )
+
+
 # --- Arm A: the whole-lattice attention window (2026-08-27) --------------
 #
 # THE UNBUILT CELL. The head construction is a 2 x 2 x 2 -- feature family
@@ -4701,5 +4804,7 @@ CONFIGS.update({
     for cell in (
         *(_d400_radius_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
         *(_d400_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+        *(_d400_critical_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+        *(_d400_critical_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
     )
 })

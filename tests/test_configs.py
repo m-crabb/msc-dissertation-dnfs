@@ -2045,6 +2045,113 @@ def test_d400_radius_cells_isolate_the_radius():
     assert replace(r3, name=r2.name, patch_radius=2) == r2
 
 
+def test_d400_critical_cells_are_their_floor_siblings_at_sigma_c():
+    """20x20 sigma_c rung (2026-08-29): each critical cell must be its OWN
+    sigma = 0.10 sibling transformed by exactly three declared fields --
+    the coupling, the ladder and the horizon -- and nothing else.
+
+    WHY THIS IS THE RIGHT PARENT. The floor cell already carries every d400
+    decision that was argued and measured: the lattice, the head knobs, the
+    held-fixed backbone, batch 512, n_euler 128, the single-shot backward
+    (58.25 / 63.41 GB peak, profiled) and the cleared cold-CV tripwire.
+    Rebuilding from _ARM_B instead would re-open all of them. Chaining off
+    the floor cell means a critical-vs-floor read at d400 is chargeable to
+    the COUPLING, which is the entire question the rung is being spent on.
+
+    THE THREE DEVIATIONS ARE THE d256 CRITICAL CONVENTION, not new choices:
+    exact SIGMA_C, `_D64_SIGMA_LADDER_SC`, and 100k steps -- the same triple
+    `_d256_house_critical_cell` applies one rung down."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS, SIGMA_C, _D64_SIGMA_LADDER_SC,
+    )
+
+    for arm in ("thp2", "thp3"):
+        floor = CONFIGS[f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4"]
+        crit = CONFIGS[
+            f"H2_d400_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w4"
+        ]
+        assert crit.ising.sigma == SIGMA_C, arm
+        assert crit.curriculum is _D64_SIGMA_LADDER_SC, arm
+        assert crit.train.n_steps == 100_000, arm
+        # Everything the floor cell settled must ride unchanged.
+        assert crit.ising.D == 20, arm
+        assert crit.patch_radius == floor.patch_radius, arm
+        assert crit.model == floor.model, arm
+        assert crit.train.loss_microbatch_size is None, arm
+        assert crit.train.halt_on_cv_inversion_after is None, arm
+        assert crit.compile_head, arm
+        assert crit.train.c_t_from_rollout, arm
+        rebuilt = replace(
+            crit,
+            name=floor.name,
+            ising=replace(crit.ising, sigma=floor.ising.sigma),
+            curriculum=floor.curriculum,
+            train=replace(crit.train, n_steps=floor.train.n_steps),
+        )
+        assert rebuilt == floor, arm
+
+
+def test_d400_critical_ladder_is_reused_not_rescaled():
+    """The ladder must be the SHARED d64 object with its endpoint at
+    SIGMA_C, not a d400 copy.
+
+    WHY IT MATTERS THAT IT IS NOT RESCALED. `start_step` is ABSOLUTE, so
+    lengthening the cell from 50k to 100k does not stretch the schedule: the
+    boundaries stay at 0/5k/10k/15k/20k/25k/30k and the extra 50k lands
+    entirely on the final sigma_c plateau. lr is the stage value times a
+    fixed-step warmup ramp and is never normalised by n_steps, so the first
+    50k steps of a 100k cell are schedule-identical to a 50k cell's.
+
+    WHY IT IS LATTICE-INDEPENDENT AND MAY CROSS RUNGS AT ALL. The ladder
+    varies only `sigma` and `lr`; no stage field mentions D or d. That is
+    what licenses a d64-authored curriculum on a 20x20 cell, and it is
+    asserted rather than assumed because a lattice-dependent stage appearing
+    later would silently make the d256 and d400 critical cells
+    incomparable."""
+    from experiments.constrained_hard_03.configs import (
+        CONFIGS, SIGMA_C, _D64_SIGMA_LADDER, _D64_SIGMA_LADDER_SC,
+    )
+
+    stages = _D64_SIGMA_LADDER_SC.stages
+    assert [s.start_step for s in stages] == [
+        s.start_step for s in _D64_SIGMA_LADDER.stages
+    ]
+    assert [s.start_step for s in stages] == [
+        0, 5_000, 10_000, 15_000, 20_000, 25_000, 30_000
+    ]
+    assert stages[-1].sigma == SIGMA_C
+    # No stage carries a lattice-dependent field.
+    for stage in stages:
+        assert not any(
+            f in vars(stage) for f in ("D", "d", "lattice_side")
+        ), stage
+
+    # The d256 and d400 critical cells share the object, so the schedule
+    # cannot drift between the two rungs.
+    d256 = CONFIGS["H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3"]
+    d400 = CONFIGS["H2_d400_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w4"]
+    assert d256.curriculum is d400.curriculum
+
+
+def test_d400_critical_cells_isolate_the_radius():
+    """The R=3-vs-R=2 read at sigma_c, mirroring the floor rung's own twin
+    test. The radius was a NULL at the floor -- tied on ESS, at floor on
+    every error column, +16% FLOP/es for nothing -- but that null was
+    measured where every cell sat on the sampling ceiling, so it licenses
+    nothing about sigma_c. Same lesson as the saturated 4x4 gate and the
+    `mal` window arm, whose 4x4 separation reversed one rung up."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    r2 = CONFIGS["H2_d400_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w4"]
+    r3 = CONFIGS["H2_d400_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w4"]
+    assert (r2.patch_radius, r3.patch_radius) == (2, 3)
+    assert replace(r3, name=r2.name, patch_radius=2) == r2
+
+
 def test_d400_radius_cells_build_their_heads():
     """Construction check at the real lattice: build_swap_head must
     instantiate both radii at d=400, so an illegal window (the head requires
@@ -2059,7 +2166,8 @@ def test_d400_radius_cells_build_their_heads():
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     cells = [name for name in CONFIGS if name.endswith("_w4")]
-    assert len(cells) == 2
+    # 2 floor arms + 2 sigma_c arms (2026-08-29).
+    assert len(cells) == 4
     for name in cells:
         cfg = CONFIGS[name]
         backbone = LeTFRateMatrix(
@@ -2092,10 +2200,10 @@ def test_every_new_probe_cell_rides_the_optimised_recipe():
     probes = [n for n in CONFIGS
               if n.endswith("_win") or n.endswith("_rel") or "_w4" in n]
     # 4 `mal` window twins + 4 `mar` relative-position twins (4x4 and 8x8,
-    # both couplings each) + 4 d400 radius x precision arms. Update
-    # deliberately when a probe is added, so a cell cannot join the set
-    # without someone reading this rule.
-    assert len(probes) == 12, sorted(probes)
+    # both couplings each) + 8 d400 radius x precision arms (4 at the 0.10
+    # floor, 4 at sigma_c). Update deliberately when a probe is added, so a
+    # cell cannot join the set without someone reading this rule.
+    assert len(probes) == 16, sorted(probes)
     for name in probes:
         cell = CONFIGS[name]
         assert cell.head_kind != "factorised", name

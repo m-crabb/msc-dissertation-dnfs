@@ -42,6 +42,25 @@ def _target(D):
     )
 
 
+# The fp32 cells the `bf16` twins are read against, one template per rung.
+# Both couplings are covered on purpose: the floor pair settled the COST half
+# of the precision question (4/4 matched seeds, -21% to -27% end-to-end) and
+# the sigma_c pair (2026-08-29) exists to settle the QUALITY half, which the
+# floor could not because every cell sat on the sampling ceiling.
+_D400_FP32_TEMPLATES = (
+    "H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4",
+    "H2_d400_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w4",
+)
+
+
+def _d400_precision_pairs(CONFIGS):
+    """Yield (label, fp32_cell, bf16_cell) for every d400 precision twin."""
+    for template in _D400_FP32_TEMPLATES:
+        for arm in ("thp2", "thp3"):
+            name = template.format(arm=arm)
+            yield name, CONFIGS[name], CONFIGS[name + "bf16"]
+
+
 def test_swap_log_ratio_is_bit_identical_under_bf16_autocast():
     """The estimator gate. If this ever fails, the flag stops being a speed
     lever and becomes a change to the importance weights."""
@@ -83,21 +102,25 @@ def test_train_autocast_bf16_defaults_off_everywhere():
 def test_bf16_probe_cells_are_their_fp32_twins_plus_the_flag():
     """The twin relationship the precision arm is read through: a `_w4bf16`
     cell must differ from its `_w4` sibling in `train_autocast_bf16` and in
-    NOTHING else, so a bf16-vs-fp32 gap is chargeable to the precision."""
+    NOTHING else, so a bf16-vs-fp32 gap is chargeable to the precision.
+
+    Covers BOTH couplings. At the floor the pair reads as a cost lever; at
+    sigma_c it is the quality question, and the twin-ness has to hold at the
+    coupling where the columns can actually separate."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    for arm in ("thp2", "thp3"):
-        fp32 = CONFIGS[f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4"]
-        bf16 = CONFIGS[f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4bf16"]
-        assert bf16.train.train_autocast_bf16 is True, arm
-        assert fp32.train.train_autocast_bf16 is False, arm
+    pairs = list(_d400_precision_pairs(CONFIGS))
+    assert len(pairs) == 4, [p[0] for p in pairs]
+    for label, fp32, bf16 in pairs:
+        assert bf16.train.train_autocast_bf16 is True, label
+        assert fp32.train.train_autocast_bf16 is False, label
         rebuilt = replace(
             bf16, name=fp32.name,
             train=replace(bf16.train, train_autocast_bf16=False),
         )
-        assert rebuilt == fp32, arm
+        assert rebuilt == fp32, label
 
 
 def test_frozen_eval_stays_fp32_on_a_bf16_trained_cell():
@@ -106,10 +129,8 @@ def test_frozen_eval_stays_fp32_on_a_bf16_trained_cell():
     its fp32 twin's. A cell trained in bf16 is still judged in fp32."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    for arm in ("thp2", "thp3"):
-        fp32 = CONFIGS[f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4"]
-        bf16 = CONFIGS[f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4bf16"]
-        assert bf16.eval == fp32.eval, arm
+    for label, fp32, bf16 in _d400_precision_pairs(CONFIGS):
+        assert bf16.eval == fp32.eval, label
 
 
 def test_training_autocast_is_wired_into_the_swap_trainer():
