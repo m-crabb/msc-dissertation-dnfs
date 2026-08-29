@@ -3557,8 +3557,21 @@ _D64_SIGMA_LADDER_SC = CurriculumCfg(
 )
 
 
+# Arms that exist at the 4x4 rung ONLY, kept out of _WAVE2_ARM_KNOBS on
+# purpose: that dict feeds _wave2_d64_critical_cell and _wave2_d64_floor_cell
+# as well, so an arm added there acquires an 8x8 cell automatically. The
+# doubly-hollow oracle must never acquire one -- it benches at 7,036 ms per
+# forward at d=64 against the masked-attention head's 6.0 ms, ~1,170x, which
+# is why tab:eval-hard-8x8 carries no oracle row at all. At d=16 the same
+# bench reads 417 ms and the slice is enumerable, so the cell is affordable
+# exactly here and nowhere above.
+_D16_ONLY_ARM_KNOBS: dict[str, dict] = {
+    "dh": {"head_kind": "doubly_hollow"},
+}
+
+
 def _wave2_d16_cell(arm: str, sigma_label: str, sigma: float) -> HardStageCfg:
-    knobs = dict(_WAVE2_ARM_KNOBS[arm])
+    knobs = dict({**_WAVE2_ARM_KNOBS, **_D16_ONLY_ARM_KNOBS}[arm])
     name = f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_w2"
     cell = _hard_cell(
         name, sigma=sigma, head_kind=knobs.pop("head_kind"), n_steps=10_000,
@@ -3603,6 +3616,23 @@ CONFIGS.update({
             _wave2_d64_floor_cell(arm),
         )
     },
+})
+
+# The oracle row of tab:eval-hard-4x4, registered on the SAME w2 recipe and
+# the same exact SIGMA_C as every other row of that table so the row is
+# comparable. The legacy `H2_d16_c50_s223_letf_dh` cells are not: they sit at
+# the pre-migration sigma 0.223 rather than SIGMA_C = 0.220343 and predate the
+# s60 optimised recipe. The oracle agrees with the mask_one head numerically
+# (see HardStageCfg.head_kind), so the fidelity columns are expected to
+# reproduce the mask-one row within seed noise and the FLOP/es column is what
+# the row is actually for: the O(d^2) architecture-agnostic gate's price.
+CONFIGS.update({
+    cell.name: cell
+    for arm in _D16_ONLY_ARM_KNOBS
+    for cell in (
+        _wave2_d16_cell(arm, "s010", 0.10),
+        _wave2_d16_cell(arm, "s220", SIGMA_C),
+    )
 })
 
 # HOLD-investigation twins (s70, 2026-08-26). The w2 fimo2ef sigma_c cells
