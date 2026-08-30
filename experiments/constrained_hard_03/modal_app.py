@@ -128,6 +128,37 @@ def _resolve_head_kind(head_kind: str) -> str | None:
 
 
 @app.function(
+    # L4 deliberately (2026-08-30): the GFN 4x4 cells are tiny (d=16, hidden
+    # 128, 10k steps) and latency-bound on the sequential 16-step sampler,
+    # where the A100's bandwidth buys nothing. Minutes-scale per cell.
+    gpu="L4",
+    volumes={"/results": volume},
+    secrets=[wandb_secret],
+    timeout=2 * 60 * 60,
+)
+def train_gfn_remote(cfg_name: str, seed: int = 42, tag: str = ""):
+    """Run a single GFN comparator cell on Modal.
+
+    Same stable-tag preemption contract as train_remote: the tag is minted
+    once at spawn time, a retry lands in the same run dir and resumes from
+    checkpoints/resume.pt; volume.commit rides the checkpoint hook."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+    from experiments.constrained_hard_03.run_gfn import train_gfn
+
+    train_gfn(
+        GFN_CONFIGS[cfg_name],
+        seed=seed,
+        output_dir="/results",
+        tag=tag or None,
+        on_checkpoint=volume.commit,
+    )
+    volume.commit()
+
+
+@app.function(
     # A100 for seed runs (decision 2026-07-06): the perf profile showed the
     # workload bandwidth-bound (layernorm/copies), where the L4 is weakest;
     # the win concentrates in the eval slices. (bench_remote moved to A100
@@ -761,3 +792,22 @@ def ladder(seeds: str = "42,43,44", head_kind: str = ""):
             )
             spawned.append((cfg_name, seed))
     print(f"spawned {len(spawned)} jobs across {LADDER_CFGS}: seeds={seed_list}")
+
+
+@app.local_entrypoint()
+def gfn_d16(seeds: str = "42,43,44", tag: str = ""):
+    """Spawn the four 4x4 GFN comparator cells (tb/fldb x s010/s220) across
+    the given seeds -- 12 jobs at the defaults. Pass an explicit tag so the
+    launch tag quoted in the writeup markers is the one on the run dirs."""
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+
+    seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    tag = tag or time.strftime("%Y%m%d-%H%M%S")
+    spawned = []
+    for cfg_name in sorted(GFN_CONFIGS):
+        for seed in seed_list:
+            handle = train_gfn_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
+            spawned.append((cfg_name, seed, handle.object_id))
+    for cfg_name, seed, object_id in spawned:
+        print(f"spawned {cfg_name} seed={seed} -> {object_id}")
+    print(f"tag={tag}; {len(spawned)} jobs total")

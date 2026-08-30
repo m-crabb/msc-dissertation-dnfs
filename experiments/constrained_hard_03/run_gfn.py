@@ -144,12 +144,15 @@ def train_gfn(
     output_dir: str | Path = "results/03_hard",
     use_wandb: bool = True,
     tag: str | None = None,
+    on_checkpoint=None,
 ):
     """Train one GFN cell and write the house artefact set.
 
     Preemption contract as in run.py: a caller-supplied tag lands retries in
     the SAME run dir, checkpoints/resume.pt continues training in place, and
     an existing eval/metrics.json short-circuits the whole call.
+    `on_checkpoint` (Modal passes volume.commit) runs after each resume.pt
+    save so resume state survives a preemption that skips the death-flush.
     """
     tag = tag or time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path(output_dir) / f"{cfg.name}_seed{seed}_{tag}"
@@ -242,6 +245,8 @@ def train_gfn(
                  "optimiser": optimiser.state_dict()},
                 resume_path,
             )
+            if on_checkpoint is not None:
+                on_checkpoint()
 
     log_file.close()
     target.set_sigma(cfg.sigma)  # eval always at the cell's own coupling
