@@ -1,0 +1,274 @@
+"""Fill pass for tab:eval-soft-8x8 (the s95 revamped soft house table).
+
+Same conventions as the 10x10 fill (19_house_table_soft.py), rebuilt for
+the revamp (plan 2026-08-30-soft-chapter-revamp-efc):
+
+  lattice   -- 8x8 (d=64), the hard chapter's record size, so the
+               cross-route comparison is matched-size at both couplings.
+  couplings -- sigma=0.1 AND SIGMA_C, the table's two halves. A missing
+               reference or empty cell prints and skips rather than
+               failing the fill: the table must be reviewable while cells
+               are still landing (hard's house-fill behaviour).
+  families  -- the house specialists (S2_d8_*_l50_letf_ne128_house{_sc})
+               and, at the critical centre only, the nochan control (house
+               recipe minus the channel: the one measured channel-off/on
+               comparison at sigma_c, pinned one-lever by
+               tests/test_soft_house_configs.py).
+  dual eval -- every family is scored from eval/ AND eval_ema/ (hard's
+               house convention: a second `_ema` entry per family). The
+               raw entry keeps the un-averaged model on record; EMA is
+               the instrument that rescued hard's marginal seeds.
+  reference -- mchammer VC-SGC chains at kappa=lambda, phi=-2c*, under
+               the 3-decimal composition naming (0.375 has no faithful
+               2dp tag). potential.npy must equal the Ising energy
+               recomputed from spins.npy under the coupling's own target
+               -- the assert pins atom order, do not bypass it.
+  floor     -- block bootstrap as the 10x10 fill, except the block length
+               scales with the chains' own measured tau_int (>= 8x tau,
+               min 10 frames): at sigma_c the 100-trial write interval no
+               longer guarantees near-uncorrelated frames, and the fixed
+               BLOCK=10 of the sigma=0.1 fill would understate the floor.
+  energy    -- EW2 on the *Ising* energy per site, penalty excluded, as
+               in the 10x10 fill: the penalty is the constraint, not the
+               physics, and both sides draw from the same penalised law.
+
+FLOP/es cells follow the 10x10 fill exactly: measured eager forward at
+the run's own architecture (batch 1, batch-linear) x n_euler forwards /
+frozen ESS fraction for the neural rows; analytic VC-SGC per-trial
+constant x total trials (burn-in included) / (pooled frames / tau_int)
+for the reference row.
+"""
+import json
+import math
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+import torch
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+# Run by path (numeric filenames can't be modules), so the `experiments`
+# package imports below need the repo root.
+sys.path.insert(0, str(REPO_ROOT))
+
+from discrete_flow_sampler.diagnostics.flops import (  # noqa: E402
+    chain_per_effective_sample, measured_forward_flops,
+    neural_sampling_flops_per_sample, per_effective_sample, vcsgc_run_flops)
+from discrete_flow_sampler.diagnostics.metrics import (  # noqa: E402
+    correlation_profile_error, energy_wasserstein2,
+    magnetisation_profile_error)
+from discrete_flow_sampler.targets.ising import (  # noqa: E402
+    SIGMA_C, IsingTarget)
+from experiments.constrained_soft_02.configs import (  # noqa: E402
+    SOFT_HOUSE_WINDOWS)
+
+SOFT_RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
+VCSGC_RESULTS = REPO_ROOT / "results" / "mchammer_vcsgc"
+L = 8
+LAM = 50.0
+COUPLINGS = (("s010", 0.1), ("sc", SIGMA_C))
+ESS_FLOOR = 0.30
+N_BOOTSTRAP, N_EVAL = 200, 5000
+
+
+def energy_per_site(x, target, sigma):
+    return -target.base_log_prob(x) / (2 * sigma * target.d)
+
+
+def observable_errors(x, weights, reference, target, sigma):
+    return {
+        "dMag": magnetisation_profile_error(x, weights, reference, L),
+        "dCorr": correlation_profile_error(x, weights, reference, L),
+        "EW2": energy_wasserstein2(
+            energy_per_site(x, target, sigma), weights,
+            energy_per_site(reference, target, sigma)),
+    }
+
+
+def load_vcsgc_reference(target, sigma, c_target):
+    """Pooled post-burn-in spin frames over the reference seeds, order-checked.
+
+    Returns the pooled frames, the chains' cost record for the FLOP/es cell
+    (total trials including burn-in; mchammer's own slowest per-observable
+    tau_int in frame units), and that tau for the floor's block length.
+    """
+    frames, wall_seconds, chains = [], 0.0, 0
+    total_trials, tau_ints = 0, []
+    pattern = f"D{L}_s{sigma:g}_l{LAM:.1f}_c{c_target:.3f}_seed*"
+    for run_dir in sorted(VCSGC_RESULTS.glob(pattern)):
+        spins = torch.from_numpy(np.load(run_dir / "spins.npy")).float()
+        potential = torch.from_numpy(
+            np.load(run_dir / "potential.npy")).float()
+        # mchammer's CE energy is -log p~(x) on the validated embedding; a
+        # scrambled atom order would break this equality and every profile.
+        assert torch.allclose(
+            -target.base_log_prob(spins), potential, atol=1e-3), run_dir
+        frames.append(spins)
+        summary = json.loads((run_dir / "summary.json").read_text())
+        wall_seconds += summary["wall_seconds_run"]
+        total_trials += summary["n_steps"]
+        tau_ints.append(max(obs["tau_int_frames"]
+                            for obs in summary["observables"].values()))
+        chains += 1
+    if not frames:
+        raise FileNotFoundError(f"no VC-SGC reference matches {pattern}")
+    pooled = torch.cat(frames)
+    tau_int = max(sum(tau_ints) / len(tau_ints), 1.0)
+    flops_per_es = chain_per_effective_sample(
+        vcsgc_run_flops(total_trials), pooled.shape[0], tau_int)
+    return pooled, chains, wall_seconds, flops_per_es, tau_int
+
+
+def specialist_flops_per_forward(run_dir: Path, target) -> int:
+    """Measured FLOPs of one rate-matrix forward at this run's architecture.
+
+    Eager build from the run's own config at batch 1 (compile stripped: a
+    compiled wrapper can hide ops from the dispatch-level counter). The
+    exact-field channel rides along -- its closed form is part of every
+    forward the sampler pays for, so it belongs in the bill.
+    """
+    from experiments.dnfs_baseline_01.configs import ModelCfg
+    from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
+
+    cfg_dict = json.loads((run_dir / "config.json").read_text())
+    model_cfg = _sub_config(
+        ModelCfg, {**cfg_dict["model"], "compile_model": False})
+    model = _construct_model(SimpleNamespace(model=model_cfg), target)
+    example = (target.sample_base(1, device="cpu"), torch.zeros(1))
+    return measured_forward_flops(model, example)
+
+
+def reference_floor(reference, target, sigma, tau_int, seed=0):
+    """Block bootstrap: N_EVAL-frame replicates scored against all frames.
+
+    Block length >= 8 x the chains' measured tau_int (min 10 frames), so a
+    critically slowed chain's correlations stay inside blocks rather than
+    inflating the apparent independence of a replicate.
+    """
+    block = max(10, math.ceil(8 * tau_int))
+    generator = torch.Generator().manual_seed(seed)
+    n_blocks = reference.shape[0] // block
+    by_block = reference[: n_blocks * block].view(n_blocks, block, -1)
+    replicates = []
+    for _ in range(N_BOOTSTRAP):
+        blocks = torch.randint(
+            0, n_blocks, (max(N_EVAL // block, 1),), generator=generator)
+        replicate = by_block[blocks].reshape(-1, reference.shape[1])
+        uniform = torch.full((replicate.shape[0],), 1.0 / replicate.shape[0])
+        replicates.append(
+            observable_errors(replicate, uniform, reference, target, sigma))
+    return {k: sum(r[k] for r in replicates) / N_BOOTSTRAP
+            for k in replicates[0]}, block
+
+
+def score_runs(run_glob, reference, target, sigma, eval_subdir,
+               per_forward_cache):
+    per_seed = {}
+    for run_dir in sorted(SOFT_RESULTS.glob(run_glob)):
+        eval_dir = run_dir / eval_subdir
+        if not (eval_dir / "samples.pt").exists():
+            continue
+        x = torch.load(eval_dir / "samples.pt", weights_only=True).float()
+        weights = torch.softmax(
+            torch.load(eval_dir / "log_weights.pt", weights_only=True), 0)
+        metrics = json.loads((eval_dir / "metrics.json").read_text())
+        if run_glob not in per_forward_cache:  # one architecture per cell
+            per_forward_cache[run_glob] = specialist_flops_per_forward(
+                run_dir, target)
+        n_euler = json.loads(
+            (run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
+        per_seed[run_dir.name] = {
+            "ESS": metrics["ess_fraction"],
+            **observable_errors(x, weights, reference, target, sigma),
+            "FLOPes": per_effective_sample(
+                neural_sampling_flops_per_sample(
+                    per_forward_cache[run_glob], n_euler, target.d),
+                metrics["ess_fraction"]),
+        }
+    return per_seed
+
+
+def mean_sd(values):
+    t = torch.tensor(values)
+    return t.mean().item(), (t.std().item() if len(t) > 1 else float("nan"))
+
+
+def summarise(per_seed):
+    keys = next(iter(per_seed.values())).keys()
+    passing = {n: s for n, s in per_seed.items() if s["ESS"] >= ESS_FLOOR}
+    return {
+        "all": {k: mean_sd([s[k] for s in per_seed.values()]) for k in keys},
+        "floor": ({k: mean_sd([s[k] for s in passing.values()])
+                   for k in keys} if passing else None),
+        "n_pass": len(passing), "n_total": len(per_seed),
+    }
+
+
+def main():
+    table = {}
+    for sigma_label, sigma in COUPLINGS:
+        target = IsingTarget(D=L, sigma=sigma, bias=0.0)
+        sigma_suffix = "_sc" if sigma_label == "sc" else ""
+        for c_target, c_tag in SOFT_HOUSE_WINDOWS:
+            try:
+                reference, n_chains, wall_seconds, ref_flops_per_es, tau = \
+                    load_vcsgc_reference(target, sigma, c_target)
+            except FileNotFoundError as missing:
+                print(f"\n== {sigma_label} c={c_target}: SKIPPED ({missing})")
+                continue
+            floor, block = reference_floor(reference, target, sigma, tau)
+            cell = {"reference_floor": floor, "reference_chains": n_chains,
+                    "reference_frames": reference.shape[0],
+                    "reference_tau_int_frames": tau,
+                    "reference_floor_block": block,
+                    "reference_wall_seconds": wall_seconds,
+                    "reference_flops_per_es": ref_flops_per_es}
+            families = {
+                "specialist":
+                    f"S2_d8_{c_tag}_l50_letf_ne128_house{sigma_suffix}"
+                    f"_seed4*",
+            }
+            if sigma_label == "sc" and c_target == 0.50:
+                families["nochan"] = (
+                    "S2_d8_c0500_l50_letf_ne128_house_sc_nochan_seed4*")
+            print(f"\n== {sigma_label} c={c_target} ({n_chains} chains, "
+                  f"{reference.shape[0]} frames, tau {tau:.2f}, "
+                  f"block {block})")
+            print("  reference floor:",
+                  {k: f"{v:.2e}" for k, v in floor.items()},
+                  f" reference FLOP/es: {ref_flops_per_es:.2g}")
+            per_forward_cache = {}
+            for family, glob in families.items():
+                for eval_subdir in ("eval", "eval_ema"):
+                    per_seed = score_runs(
+                        glob, reference, target, sigma, eval_subdir,
+                        per_forward_cache)
+                    if not per_seed:
+                        print(f"  [{family}/{eval_subdir}] no runs match "
+                              f"{glob}")
+                        continue
+                    key = family + (
+                        "_ema" if eval_subdir == "eval_ema" else "")
+                    summary = summarise(per_seed)
+                    cell[key] = {"per_seed": per_seed, **summary}
+                    for name, s in per_seed.items():
+                        print(f"  [{key}] {name}: " + " ".join(
+                            f"{k}={v:.4g}" for k, v in s.items()))
+                    for rule in ("all", "floor"):
+                        if summary[rule]:
+                            print(
+                                f"  [{key}] {rule:5s} mean +- SD "
+                                f"({summary['n_pass']}/{summary['n_total']} "
+                                f"clear {ESS_FLOOR}):",
+                                {k: f"{m:.4g} +- {sd:.2g}"
+                                 for k, (m, sd) in summary[rule].items()})
+            table[f"{sigma_label}_c{c_target:.3f}"] = cell
+
+    out = SOFT_RESULTS / "house_table_soft_8x8.json"
+    out.write_text(json.dumps(table, indent=2))
+    print(f"\nwrote {out}")
+
+
+if __name__ == "__main__":
+    main()
