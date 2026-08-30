@@ -30,8 +30,8 @@ import pytest
 import torch
 
 from discrete_flow_sampler.diagnostics.metrics import enumerate_states
-from discrete_flow_sampler.models.raster_gfn import RasterGFNPolicy
-from discrete_flow_sampler.samplers.gfn_raster import (
+from discrete_flow_sampler.models.raster_gfn_policy import RasterGFNPolicy
+from discrete_flow_sampler.samplers.gfn_objectives import (
     forward_looking_db_loss,
     raster_prefix_log_reward_increments,
     trajectory_balance_loss,
