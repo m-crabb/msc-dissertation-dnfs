@@ -84,3 +84,20 @@ def test_eager_gate_twin_gives_back_compile_only():
     assert _diff(gate, eager) == {"name", "model"}
     assert _diff(gate["model"], eager["model"]) == {"compile_model"}
     assert eager["model"]["compile_model"] is False
+
+
+def test_amortised_house_cell_is_parent_plus_recipe_only():
+    """Wave 3 (plan): the camort family re-run fixed-lambda + channel, with
+    the anneal_offset_clip machinery retired. The cell must be the archived
+    fixed-lambda 50k amortised parent plus the four recipe levers and
+    NOTHING else — in particular no lambda_curriculum and no offset/clip
+    fields, since the wave's claim is that the plain recipe replaces that
+    whole confound family."""
+    parent = asdict(CONFIGS["S2_d4_camort_50k_l50_letf"])
+    cell = asdict(CONFIGS["S2_d4_camort_50k_l50_letf_house"])
+    assert _diff(parent, cell) == {"name", "model", "train", "ema_decay"}
+    assert _diff(parent["model"], cell["model"]) == RECIPE_MODEL_DIFF
+    assert _diff(parent["train"], cell["train"]) == RECIPE_TRAIN_DIFF
+    assert cell["ema_decay"] == 0.9999
+    assert cell["lambda_curriculum"] is None
+    assert cell["model"]["condition_on_composition"] is True

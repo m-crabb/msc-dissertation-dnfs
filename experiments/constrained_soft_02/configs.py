@@ -2027,3 +2027,16 @@ CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"] = replace(
     _D4_GATE, name="S2_d4_c05_l50_letf_house_gate_eager",
     model=replace(_D4_GATE.model, compile_model=False),
 )
+
+# Wave 3: the amortised 4x4 family on the house recipe. The archived
+# fixed-lambda 50k parent plus the four recipe levers, nothing else — no
+# lambda anneal, no offset, no clip. Those cells existed to service
+# anneal-boundary shocks (the lambda steps that took the annealed twin's
+# ESS 4900 -> 11 at each shared boundary); the channel has no boundaries,
+# so if this cell trains 4/4 the whole offset/clip confound family
+# collapses out of the chapter (plan wave 3). The channel reads each
+# row's own conditioned composition via the per-row c* path (s95,
+# `4f94595`), so the amortised widening window keeps its meaning.
+CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
+    CONFIGS["S2_d4_camort_50k_l50_letf"],
+    name="S2_d4_camort_50k_l50_letf_house"))
