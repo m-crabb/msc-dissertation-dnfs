@@ -64,14 +64,19 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 # the analytical solution is the right call.
 ENUMERATION_MAX_SPINS = 20
 
-# The compositions an amortised model is measured at. The first group has a
-# per-composition specialist on disk under results/02_constrained_soft, so
-# those rows are a direct amortised-vs-specialist comparison at matched
-# compute. The second group was never trained by anything: it sits between the
-# specialists' values, so it separates a model that interpolates across the
-# composition axis from one that memorised the atoms it was trained on.
-SPECIALIST_COMPOSITIONS = (0.30, 0.50, 0.55, 0.60, 0.65, 0.80)
-HELD_OUT_COMPOSITIONS = (0.35, 0.45, 0.575, 0.70)
+# The compositions an amortised model is measured at, on the revamp request
+# grid (2026-08-30): every value is an integer site count at d=16 (multiples
+# of 1/16), unlike the retired {0.30 ... 0.80} grid. The first group has a
+# per-composition specialist on disk under results/02_constrained_soft —
+# directly for c <= 0.5, via the Z2 mirror identity
+# delivered(c) = 1 - delivered(1-c) for 0.625/0.75, whose specialists are
+# the trained 0.375/0.25 cells — so those rows are a direct
+# amortised-vs-specialist comparison at matched compute. The second group
+# was never trained by anything: it sits between the specialists' values,
+# so it separates a model that interpolates across the composition axis
+# from one that memorised the atoms it was trained on.
+SPECIALIST_COMPOSITIONS = (0.25, 0.375, 0.50, 0.625, 0.75)
+HELD_OUT_COMPOSITIONS = (0.3125, 0.4375, 0.5625, 0.6875)
 SWEEP_COMPOSITIONS = tuple(
     sorted(SPECIALIST_COMPOSITIONS + HELD_OUT_COMPOSITIONS)
 )

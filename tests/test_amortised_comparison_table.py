@@ -132,10 +132,10 @@ def test_anneal_requirement_follows_the_comparator(results_dir):
 
 def test_amortised_rows_join_onto_specialists_and_keep_held_out(results_dir):
     sweep = [
-        {"composition": 0.30, "held_out": False, "ess_fraction": 0.5,
-         "composition_mean": 0.31},
-        {"composition": 0.45, "held_out": True, "ess_fraction": 0.6,
-         "composition_mean": 0.46},
+        {"composition": 0.25, "held_out": False, "ess_fraction": 0.5,
+         "composition_mean": 0.26},
+        {"composition": 0.4375, "held_out": True, "ess_fraction": 0.6,
+         "composition_mean": 0.44},
         {"composition": 0.50, "held_out": False, "ess_fraction": 0.7,
          "composition_mean": 0.50},
     ]
@@ -149,10 +149,10 @@ def test_amortised_rows_join_onto_specialists_and_keep_held_out(results_dir):
     )
 
     assert len(amortised) == 3
-    # c=0.50 has a specialist to sit beside; c=0.45 is held out and has none,
-    # and must survive the join rather than being dropped.
+    # c=0.50 has a specialist to sit beside; c=0.4375 is held out and has
+    # none, and must survive the join rather than being dropped.
     joined = built.set_index("composition")
     assert joined.loc[0.50, "ess_fraction_specialist"] == pytest.approx(0.85)
     assert joined.loc[0.50, "ess_fraction_amortised"] == pytest.approx(0.7)
-    assert bool(joined.loc[0.45, "held_out"])
-    assert pd.isna(joined.loc[0.45, "ess_fraction_specialist"])
+    assert bool(joined.loc[0.4375, "held_out"])
+    assert pd.isna(joined.loc[0.4375, "ess_fraction_specialist"])

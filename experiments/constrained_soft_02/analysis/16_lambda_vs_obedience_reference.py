@@ -48,9 +48,19 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 
 PENALTY_STRENGTHS = (10.0, 25.0, 50.0)
 # The ten swept compositions inside the claim band, as used by every model
-# composition_sweep.json, and the regular five-point grid.
+# composition_sweep.json, and the regular five-point grid. Archived slopes
+# (0.976 at lambda=50) were fit on these and stay quotable only against
+# them.
 SWEEP_BAND_GRID = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.575, 0.60, 0.65, 0.70)
 REGULAR_GRID = (0.30, 0.40, 0.50, 0.60, 0.70)
+# The revamp request grid (2026-08-30): specialists {0.25, 0.375, 0.50}
+# plus Z2 mirrors {0.625, 0.75} and the held-outs, every value a multiple
+# of 1/16 (integer site counts at d=16). The fit depends mildly on the
+# grid, so wave-3 model slopes are scored against THIS grid's reference,
+# never the archived 0.976.
+REVAMP_GRID = (
+    0.25, 0.3125, 0.375, 0.4375, 0.50, 0.5625, 0.625, 0.6875, 0.75,
+)
 
 
 def exact_delivered(D: int, sigma: float, strength: float, c_req: float) -> float:
@@ -98,46 +108,70 @@ def main() -> None:
         type=Path,
         default=Path("results/02_constrained_soft/lambda_vs_obedience_reference"),
     )
+    parser.add_argument(
+        "--exact-only",
+        action="store_true",
+        help=(
+            "Skip the VC-SGC chains and emit only the enumeration column. "
+            "The mchammer column licenses the yardstick at big sizes and "
+            "was established on the archived grid; a grid re-derivation "
+            "only needs enumeration."
+        ),
+    )
     args = parser.parse_args()
+
+    grids = (
+        ("sweep_band", SWEEP_BAND_GRID),
+        ("regular", REGULAR_GRID),
+        ("revamp", REVAMP_GRID),
+    )
+    all_compositions = tuple(sorted({c for _, grid in grids for c in grid}))
 
     rows = []
     for strength in PENALTY_STRENGTHS:
         exact_by_c = {
             c: exact_delivered(args.D, args.sigma, strength, c)
-            for c in SWEEP_BAND_GRID
+            for c in all_compositions
         }
-        mchammer_by_c = {
-            c: mchammer_delivered(
-                args.D, args.sigma, strength, c, args.n_steps, tuple(args.seeds)
-            )
-            for c in SWEEP_BAND_GRID
-        }
-        for grid_name, grid in (
-            ("sweep_band", SWEEP_BAND_GRID),
-            ("regular", REGULAR_GRID),
-        ):
+        mchammer_by_c = None
+        if not args.exact_only:
+            mchammer_by_c = {
+                c: mchammer_delivered(
+                    args.D, args.sigma, strength, c,
+                    args.n_steps, tuple(args.seeds),
+                )
+                for c in all_compositions
+            }
+        for grid_name, grid in grids:
             rows.append({
                 "lambda": strength,
                 "grid": grid_name,
                 "exact_slope": round(
                     fitted_slope(list(grid), [exact_by_c[c] for c in grid]), 4
                 ),
-                "mchammer_slope": round(
+                "mchammer_slope": None if mchammer_by_c is None else round(
                     fitted_slope(list(grid), [mchammer_by_c[c] for c in grid]), 4
                 ),
             })
         print(
             f"lambda={strength:5.1f}  "
             + "  ".join(
-                f"{r['grid']}: exact {r['exact_slope']:.4f} "
-                f"mchammer {r['mchammer_slope']:.4f}"
-                for r in rows[-2:]
+                f"{r['grid']}: exact {r['exact_slope']:.4f}"
+                + (
+                    f" mchammer {r['mchammer_slope']:.4f}"
+                    if r["mchammer_slope"] is not None else ""
+                )
+                for r in rows[-len(grids):]
             )
         )
-        rows[-2]["delivered_exact"] = {str(c): round(exact_by_c[c], 5) for c in SWEEP_BAND_GRID}
-        rows[-2]["delivered_mchammer"] = {
-            str(c): round(mchammer_by_c[c], 5) for c in SWEEP_BAND_GRID
+        first_row_this_lambda = rows[-len(grids)]
+        first_row_this_lambda["delivered_exact"] = {
+            str(c): round(exact_by_c[c], 5) for c in all_compositions
         }
+        if mchammer_by_c is not None:
+            first_row_this_lambda["delivered_mchammer"] = {
+                str(c): round(mchammer_by_c[c], 5) for c in all_compositions
+            }
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.with_suffix(".json").write_text(json.dumps({
