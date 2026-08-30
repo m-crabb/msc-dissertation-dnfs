@@ -107,6 +107,24 @@ SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
 HELD = set()
 
+# GFlowNet comparator rows (s93): the `_par` judging wave — parameter parity
+# with the ma head (101,378 vs 100,960 params), split lr_Z on the TB arm.
+# These rows do NOT run through CONFIGS/build_target_and_head: the policy IS
+# the sampler (no Euler grid, no swap head), so the bill is the measured
+# FLOPs of `policy.sample` itself — the naive prefix re-encode actually
+# implemented, d sequential forwards — plus one target eval per sample for
+# the IS weight. Draw parity: the GFN eval stored 5000 draws against the
+# swap cells' 512, so its rows are computed on the FIRST 512 draws and
+# their weights (the equalise-draws rule), with ESS recomputed on that
+# window rather than re-read from the frozen 5000-draw metrics — declared
+# here because everywhere else in this file ESS is frozen-not-recomputed.
+GFN_ARMS = {
+    "gfn_tb": "GFlowNet, trajectory balance",
+    "gfn_fldb": "GFlowNet, forward-looking DB",
+}
+GFN_TAG = "20260830-gfn-d16-par"
+GFN_DRAWS = 512
+
 
 def exact_reference(cfg):
     """Enumerated slice states + exact conditional probabilities, and the
@@ -144,6 +162,27 @@ def neural_cell(run_dir, target, ref_states, ref_probs, per_forward, n_euler):
             energy_per_site(target, samples), weights,
             energy_per_site(target, ref_states), reference_weights=ref_probs),
         "FLOP/es": per_effective_sample(flops_raw, ess),
+    }
+
+
+def gfn_cell(run_dir, target, ref_states, ref_probs, flops_per_raw_sample):
+    """One GFN seed on the first GFN_DRAWS draws of its stored eval."""
+    samples = torch.load(run_dir / "eval" / "samples.pt",
+                         weights_only=True).float()[:GFN_DRAWS]
+    log_w = torch.load(run_dir / "eval" / "log_weights.pt",
+                       weights_only=True)[:GFN_DRAWS]
+    weights = torch.softmax(log_w, dim=0)
+    ess = (1.0 / (weights**2).sum() / GFN_DRAWS).item()
+    return {
+        "ESS": ess,
+        "dMag": magnetisation_profile_error(
+            samples, weights, ref_states, L, reference_weights=ref_probs),
+        "dCorr": correlation_profile_error(
+            samples, weights, ref_states, L, reference_weights=ref_probs),
+        "EW2": energy_wasserstein2(
+            energy_per_site(target, samples), weights,
+            energy_per_site(target, ref_states), reference_weights=ref_probs),
+        "FLOP/es": per_effective_sample(flops_per_raw_sample, ess),
     }
 
 
@@ -279,6 +318,33 @@ def main(argv=None):
             cell["eager"] = not cfg.compile_head
             cell["per_forward_flops"] = per_forward
             table[f"{arm}_{sigma_label}"] = cell
+
+        for gfn_arm, _label in GFN_ARMS.items():
+            from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+            from experiments.constrained_hard_03.run_gfn import (
+                build_target_and_policy)
+            from discrete_flow_sampler.diagnostics.flops import (
+                ising_energy_eval_flops)
+
+            objective = gfn_arm.removeprefix("gfn_")
+            gfn_cfg = GFN_CONFIGS[
+                f"GFN_d16_c50_{sigma_label}_{objective}_10k_par"]
+            _, policy = build_target_and_policy(gfn_cfg, "cpu")
+            # Bill the sampler as implemented: FlopCounterMode around one
+            # draw of policy.sample (d sequential prefix re-encodes), plus
+            # the IS-weight target eval.
+            flops_per_raw = (measured_forward_flops(policy.sample, (1,))
+                             + ising_energy_eval_flops(D_SITES))
+            rows = []
+            for seed in SEEDS:
+                run_dir = (args.results_dir /
+                           f"{gfn_cfg.name}_seed{seed}_{GFN_TAG}")
+                rows.append(gfn_cell(run_dir, target, ref_states, ref_probs,
+                                     flops_per_raw))
+            cell = aggregate(rows)
+            cell["per_sample_flops"] = flops_per_raw
+            cell["n_draws"] = GFN_DRAWS
+            table[f"{gfn_arm}_{sigma_label}"] = cell
 
         if args.kawasaki_dir.exists():
             chain_rows = kawasaki_cell(

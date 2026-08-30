@@ -48,6 +48,17 @@ ARM_STYLE = {
     "ma": ("masked-attention", "tab:blue"),
     "thp": ("two-hole patch", "tab:orange"),
 }
+# GFlowNet comparator arms (s93, `_par` judging wave). Their y-axis is
+# EXACT: the AR policy is normalised by construction, so log q = log pi~ -
+# log w with no additive shift — the printed median offset is a sanity
+# check expected ~0, removed anyway for uniform treatment. Draw parity
+# with the swap arms' 512-draw evals: first 512 of the stored 5000.
+GFN_ARM_STYLE = {
+    "gfn_tb": ("GFN, trajectory balance", "tab:red"),
+    "gfn_fldb": ("GFN, forward-looking DB", "tab:purple"),
+}
+GFN_TAG = "20260830-gfn-d16-par"
+GFN_DRAWS = 512
 SIGMA_PANELS = (("s010", r"$\sigma = 0.1$"), ("s220", r"$\sigma = \sigma_c$"))
 
 
@@ -107,6 +118,26 @@ def panel_series(results_dir=None):
             print(f"[scatter] {sigma_label} {arm}: median offset "
                   f"{offset:.3f}, residual sd after removal "
                   f"{(y - x - offset).std():.3f}")
+            series.append((arm_label, colour, x, y - offset))
+        for arm, (arm_label, colour) in GFN_ARM_STYLE.items():
+            objective = arm.removeprefix("gfn_")
+            xs, ys = [], []
+            for seed in SEEDS:
+                run_dir = (results_dir /
+                           f"GFN_d16_c50_{sigma_label}_{objective}_10k_par"
+                           f"_seed{seed}_{GFN_TAG}")
+                samples = torch.load(run_dir / "eval" / "samples.pt",
+                                     weights_only=True).float()[:GFN_DRAWS]
+                log_w = torch.load(run_dir / "eval" / "log_weights.pt",
+                                   weights_only=True)[:GFN_DRAWS]
+                xs.append(torch.tensor([key_to_logp[k] for k in
+                                        state_keys(samples).tolist()]))
+                ys.append(target.log_prob(samples) - log_w)
+            x, y = torch.cat(xs), torch.cat(ys)
+            offset = (y - x).median()
+            print(f"[scatter] {sigma_label} {arm}: median offset "
+                  f"{offset:.3f} (expected ~0: normalised policy), "
+                  f"residual sd {(y - x - offset).std():.3f}")
             series.append((arm_label, colour, x, y - offset))
         panels.append({"title": panel_title, "lims": lims, "series": series,
                        "xlabel": r"exact $\log \pi_{\mathrm{cond}}(x)$"})
