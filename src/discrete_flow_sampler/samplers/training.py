@@ -36,6 +36,7 @@ import torch.nn.functional as F
 
 from discrete_flow_sampler.composition import draw_composition
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
+from discrete_flow_sampler.ema import ExponentialMovingAverage
 from discrete_flow_sampler.models.composition_conditioned import (
     CompositionConditioned,
 )
@@ -232,6 +233,7 @@ def train(
     composition_values=None,
     composition_curriculum=None,
     on_checkpoint=None,
+    ema_decay: float = 0.0,
 ):
     """Run paper Algorithm 1 for `train_cfg.n_steps` total inner steps.
 
@@ -345,6 +347,25 @@ def train(
         model.load_state_dict(resume_state["model"])
         optimiser.load_state_dict(resume_state["optimiser"])
     start_step = int(resume_state["step"]) if resume_state is not None else 0
+
+    # EMA dual-eval instrument (ported from the swap trainer for the
+    # soft-chapter revamp, s95): a warmup-corrected parameter shadow over
+    # the TOP-LEVEL module, so a channel-wrapped model contributes its gain
+    # parameters too (tests/test_flip_trainer_ema.py pins the coverage).
+    # Passive observer: updated after each optimiser step, never read by
+    # training, so runs differing only in ema_decay train bit-identically.
+    # Built after the resume restore above — the shadow's own state then
+    # overwrites the fresh clone, carrying counter AND shadow across
+    # preemption (re-initialising either re-creates the init-contamination
+    # failure the warmup schedule exists to kill; see ema.py).
+    ema = (
+        ExponentialMovingAverage(model.parameters(), ema_decay, warmup=True)
+        if ema_decay > 0 else None
+    )
+    if ema is not None and resume_state is not None:
+        saved_ema = resume_state.get("ema")
+        if saved_ema is not None:
+            ema.load_state_dict(saved_ema)
 
     if use_wandb:
         import wandb
@@ -860,6 +881,8 @@ def train(
                     getattr(train_cfg, "grad_clip_max_norm", 500.0),
                 )
                 optimiser.step()
+                if ema is not None:
+                    ema.update()
 
                 wall_clock_step_s = time.time() - step_start
 
@@ -983,6 +1006,7 @@ def train(
                         ],
                         "replay_sigma": replay_sigma,
                         "replay_lambda": replay_lambda,
+                        "ema": ema.state_dict() if ema is not None else None,
                         **capture_rng_state(),
                     },
                 )
@@ -990,3 +1014,7 @@ def train(
                     on_checkpoint()
 
     torch.save(model.state_dict(), ckpt_dir / "final.pt")
+    if ema is not None:
+        ema.swap_in()
+        torch.save(model.state_dict(), ckpt_dir / "final_ema.pt")
+        ema.swap_out()

@@ -149,23 +149,38 @@ class ExactFieldFlipModel(nn.Module):
     def compile(self):
         self.model.compile()
 
-    def exact_field(self, x: Tensor) -> Tensor:
-        """Delta_i(x), shape (B, d) — the closed form above, live params."""
+    def exact_field(self, x: Tensor, composition: Tensor | None = None) -> Tensor:
+        """Delta_i(x), shape (B, d) — the closed form above, live params.
+
+        composition: per-row target composition (B,), the amortised route.
+        None (the specialist route) falls back to the target's scalar c*.
+        The two must never disagree with what the loss scores: in an
+        amortised batch the penalty is bound per-row via
+        target.composition_batch, so a channel left on the scalar would
+        inject a field aimed at the wrong composition for every row whose
+        c differs from it — silent misdirection, worst at the off-centre
+        windows amortisation exists to serve (pinned by
+        test_per_row_composition_matches_brute_force).
+        """
         target = self.target
         d = x.shape[-1]
         h = x @ target.A
         c_hollow = ((x + 1.0) * 0.5).mean(-1, keepdim=True) - (x + 1.0) / (2.0 * d)
         lam = target.composition_penalty_strength
+        c_star = (
+            target.target_composition if composition is None
+            else composition.unsqueeze(-1)                      # (B, 1)
+        )
         return x * (
             -4.0 * target.sigma * h
-            + 2.0 * lam * (c_hollow - target.target_composition)
+            + 2.0 * lam * (c_hollow - c_star)
             + lam / d
         )
 
     def forward(self, x: Tensor, t: Tensor, c: Tensor | None = None) -> Tensor:
         G = self.model(x, t) if c is None else self.model(x, t, c)
         gain = self.gain_constant + self.gain_slope * t          # (B,)
-        contribution = gain.unsqueeze(1) * self.exact_field(x)   # (B, d)
+        contribution = gain.unsqueeze(1) * self.exact_field(x, composition=c)
         # Only the flip slot moves; the current token's slot stays exactly
         # zero (the convention G.sum(-1) == flip score relies on).
         flip_slot = (1 - ((x + 1) / 2)).long().unsqueeze(-1)

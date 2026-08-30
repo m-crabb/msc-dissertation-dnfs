@@ -424,6 +424,15 @@ class StageCfg:
     lambda_curriculum: LambdaCurriculumCfg | None = None
     composition: CompositionCfg | None = None
     wandb_project: str = "dnfs-baseline"
+    # EMA dual-eval (ported from the hard chassis for the soft-chapter
+    # revamp, s95): > 0 arms a warmup-corrected parameter shadow updated
+    # after every optimiser step (discrete_flow_sampler.ema), saved as
+    # checkpoints/final_ema.pt and evaluated alongside the raw weights
+    # (eval/ + eval_ema/). The shadow is a passive observer — never read
+    # by training — so runs differing only in this field train
+    # bit-identically, and 0.0 leaves every archived cell's artefact
+    # inventory unchanged.
+    ema_decay: float = 0.0
 
 
 def optimised_recipe(cell: StageCfg) -> StageCfg:

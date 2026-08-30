@@ -125,6 +125,76 @@ def test_wrapper_is_transparent_to_the_dispatchers(target):
     assert wrapped.is_locally_equivariant is True
 
 
+def build_conditioned_pair(target, seed=0):
+    """(base, wrapped) AMORTISED leTF models, identical construction RNG."""
+    def fresh():
+        torch.manual_seed(seed)
+        return LeTFRateMatrix(
+            d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2,
+            condition_on_composition=True)
+    return fresh(), ExactFieldFlipModel(fresh(), target)
+
+
+def test_zero_init_bit_identity_holds_amortised(target):
+    """Contract 1 extended to the amortised route: passing c must not
+    perturb the identity — the channel term is zero however c* is sourced."""
+    base, wrapped = build_conditioned_pair(target)
+    x = random_states(target.d)
+    t = torch.rand(x.shape[0])
+    c = torch.rand(x.shape[0])
+    assert torch.equal(base(x, t, c), wrapped(x, t, c))
+
+
+def test_per_row_composition_matches_brute_force(target):
+    """The channel must aim at each ROW's composition, not the target scalar.
+
+    Failure mode guarded: in an amortised batch the LOSS scores every row
+    against its own c (bound via target.composition_batch), while a channel
+    reading target.target_composition would inject a field aimed at one
+    scalar c* for all rows — a silent disagreement between the transport the
+    channel supplies and the target the loss trains toward, worst exactly at
+    the off-centre windows amortisation exists to serve."""
+    _, wrapped = build_conditioned_pair(target)
+    with torch.no_grad():
+        wrapped.gain_constant.fill_(1.0)
+    x = random_states(target.d, n=8)
+    t = torch.zeros(x.shape[0])  # gain(t)=1 exactly; isolates the feature
+    c = torch.tensor([0.25, 0.375, 0.5, 0.625, 0.75, 0.3, 0.4, 0.6])
+    added = wrapped(x, t, c) - wrapped.model(x, t, c)
+    with target.composition_batch(c):
+        base_lp = target.log_prob(x)
+        for i in range(target.d):
+            flipped = x.clone()
+            flipped[:, i] = -flipped[:, i]
+            brute = target.log_prob(flipped) - base_lp
+            flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
+            assert torch.allclose(
+                added[torch.arange(x.shape[0]), i, flip_slot], brute,
+                atol=1e-4)
+
+
+def test_amortised_adapter_stack_end_to_end(target):
+    """The full amortised stack — CompositionConditioned(channel(leTF)) —
+    must run under the samplers' plain (x, t) call convention, expand the
+    per-block composition b-major, and mirror the dispatch attributes.
+    Guards the integration gap the specialist twins never exercised."""
+    from discrete_flow_sampler.composition import expand_b_major
+    from discrete_flow_sampler.models.composition_conditioned import (
+        CompositionConditioned)
+
+    _, wrapped = build_conditioned_pair(target)
+    with torch.no_grad():
+        wrapped.gain_constant.fill_(1.0)
+        wrapped.gain_slope.fill_(0.2)
+    c_blocks = torch.tensor([0.25, 0.75])
+    bound = CompositionConditioned(wrapped, c_blocks)
+    assert bound.is_locally_equivariant is True
+    x = random_states(target.d, n=4)  # two b-major blocks of two rows
+    t = torch.rand(4)
+    expected = wrapped(x, t, expand_b_major(c_blocks, 4))
+    assert torch.equal(bound(x, t), expected)
+
+
 def test_efc_twins_differ_from_parents_in_flag_and_name_only():
     from experiments.constrained_soft_02.configs import (
         CONFIGS, LAMBDA_SWEEP_PARENTS)

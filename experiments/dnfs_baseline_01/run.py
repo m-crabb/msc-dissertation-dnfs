@@ -398,7 +398,15 @@ def train(
     # (re)written so a resubmitted finished job leaves the record untouched.
     # With the default timestamp suffix the dir is always fresh and this
     # never triggers, keeping every archived run's semantics unchanged.
-    if (run_dir / "eval" / "metrics.json").exists():
+    # An EMA-armed cell completes only when BOTH eval dirs exist: a
+    # fixed-tag relaunch that finds eval/ without eval_ema/ must fill the
+    # gap, not skip (the GFN wave's short-circuit trap, same fix).
+    eval_complete = (run_dir / "eval" / "metrics.json").exists()
+    ema_complete = (
+        getattr(cfg, "ema_decay", 0.0) <= 0
+        or (run_dir / "eval_ema" / "metrics.json").exists()
+    )
+    if eval_complete and ema_complete:
         print(f"[train] {run_dir.name} already complete; nothing to do")
         return run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -512,6 +520,7 @@ def train(
             cfg.composition.curriculum if cfg.composition is not None else None
         ),
         on_checkpoint=on_checkpoint,
+        ema_decay=cfg.ema_decay,
     )
 
     # End-of-run eval: a final batch of (samples, IS log-weights) over the
@@ -526,16 +535,52 @@ def train(
     eval_composition = (
         None if cfg.composition is None else float(cfg.composition.centre)
     )
-    eval_samples, eval_log_weights, eval_metrics = _eval_at_composition(
-        model, target, cfg, eval_composition, device
-    )
     eval_dir = run_dir / "eval"
-    eval_dir.mkdir(exist_ok=True)
-    torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
-    torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
+    # Per-dir idempotence: a fixed-tag rerun that arrives with eval/ already
+    # written (e.g. only eval_ema/ was missing) must not redraw it — the
+    # frozen eval is a judged artefact and a redraw would silently replace
+    # it under the same path.
+    if (eval_dir / "metrics.json").exists():
+        eval_metrics = json.loads((eval_dir / "metrics.json").read_text())
+    else:
+        eval_samples, eval_log_weights, eval_metrics = _eval_at_composition(
+            model, target, cfg, eval_composition, device
+        )
+        eval_dir.mkdir(exist_ok=True)
+        torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
+        torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
 
-    eval_metrics.update(_trailing_ess_metrics(run_dir))
-    (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
+        eval_metrics.update(_trailing_ess_metrics(run_dir))
+        (eval_dir / "metrics.json").write_text(
+            json.dumps(eval_metrics, indent=2))
+
+    # EMA dual eval (s95): the same draw through the shadow weights
+    # (checkpoints/final_ema.pt), landing in eval_ema/ with the identical
+    # metric schema so the house-table ingestion reads either dir. The raw
+    # weights are restored afterwards so nothing downstream sees the swap.
+    ema_metrics = None
+    if cfg.ema_decay > 0 and not (
+        run_dir / "eval_ema" / "metrics.json"
+    ).exists():
+        raw_state = {
+            key: value.detach().clone()
+            for key, value in model.state_dict().items()
+        }
+        model.load_state_dict(torch.load(
+            run_dir / "checkpoints" / "final_ema.pt",
+            map_location=device, weights_only=True,
+        ))
+        ema_samples, ema_log_weights, ema_metrics = _eval_at_composition(
+            model, target, cfg, eval_composition, device
+        )
+        model.load_state_dict(raw_state)
+        ema_dir = run_dir / "eval_ema"
+        ema_dir.mkdir(exist_ok=True)
+        torch.save(ema_samples.cpu(), ema_dir / "samples.pt")
+        torch.save(ema_log_weights.cpu(), ema_dir / "log_weights.pt")
+        ema_metrics.update(_trailing_ess_metrics(run_dir))
+        (ema_dir / "metrics.json").write_text(
+            json.dumps(ema_metrics, indent=2))
 
     if use_wandb:
         artifact = wandb.Artifact(
@@ -553,6 +598,14 @@ def train(
                 if isinstance(value, (int, float))
             }
         )
+        if ema_metrics is not None:
+            wandb.log(
+                {
+                    f"eval_ema/{key}": value
+                    for key, value in ema_metrics.items()
+                    if isinstance(value, (int, float))
+                }
+            )
         wandb.finish()
 
     return run_dir
