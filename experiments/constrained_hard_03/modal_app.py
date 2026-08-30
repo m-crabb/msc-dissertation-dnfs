@@ -795,16 +795,18 @@ def ladder(seeds: str = "42,43,44", head_kind: str = ""):
 
 
 @app.local_entrypoint()
-def gfn_d16(seeds: str = "42,43,44", tag: str = ""):
-    """Spawn the four 4x4 GFN comparator cells (tb/fldb x s010/s220) across
-    the given seeds -- 12 jobs at the defaults. Pass an explicit tag so the
-    launch tag quoted in the writeup markers is the one on the run dirs."""
+def gfn_d16(seeds: str = "42,43,44", tag: str = "", suffix: str = ""):
+    """Spawn the 4x4 GFN comparator cells (tb/fldb x s010/s220) across the
+    given seeds. Pass an explicit tag so the launch tag quoted in the
+    writeup markers is the one on the run dirs. `suffix` restricts to cells
+    whose name ends with it (e.g. `_par` = the s93 parity wave only);
+    empty spawns the whole registry."""
     from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
     tag = tag or time.strftime("%Y%m%d-%H%M%S")
     spawned = []
-    for cfg_name in sorted(GFN_CONFIGS):
+    for cfg_name in sorted(n for n in GFN_CONFIGS if n.endswith(suffix)):
         for seed in seed_list:
             handle = train_gfn_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
             spawned.append((cfg_name, seed, handle.object_id))

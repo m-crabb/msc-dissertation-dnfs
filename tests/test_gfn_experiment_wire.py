@@ -25,8 +25,62 @@ def test_registry_keys_match_cell_names_and_objectives():
     for name, cell in GFN_CONFIGS.items():
         assert name == cell.name
         assert cell.objective in GFN_OBJECTIVES
-    # Both arms present at both house couplings on the 4x4 rung.
-    assert len(GFN_CONFIGS) == 4
+    # Both arms at both house couplings, twice: the s92 correctness wave
+    # (hidden 128/3, flat lr) and the s93 parity wave (`_par`).
+    assert len(GFN_CONFIGS) == 8
+
+
+def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
+    # The s93 judging wave: the s92 cells carried a ~6x parameter advantage
+    # over the wave-2 d16 heads (597.6k vs 79.5k-101k). Parity is measured
+    # in PARAMETERS, not copied hyperparameters — hidden 64 / 2 layers puts
+    # the policy at 101,378 params, within 0.4% of the masked-attention
+    # head's 100,960 — plus the house batch 128. TB additionally splits
+    # log_z into its own ~100x lr group: at a flat Adam lr of 1e-3 a scalar
+    # moves at most ~lr/step, so log Z (init 0, exact slice value 10.81 at
+    # sigma_c) arithmetically could not converge inside 10k steps —
+    # measured tail slope +7e-4/step.
+    parity = {n: c for n, c in GFN_CONFIGS.items() if n.endswith("_par")}
+    assert len(parity) == 4
+    for name, cell in parity.items():
+        assert cell.hidden_dim == 64
+        assert cell.n_layers == 2
+        assert cell.n_heads == 4
+        assert cell.batch_size == 128
+        if cell.objective == "tb":
+            assert cell.log_z_learning_rate == 0.1
+        else:
+            # log_z takes no gradient under FL-DB; the lever stays unset
+            # where it cannot act.
+            assert cell.log_z_learning_rate is None
+    # The correctness wave is untouched (archived cells never retro-flip).
+    for name, cell in GFN_CONFIGS.items():
+        if not name.endswith("_par"):
+            assert cell.hidden_dim == 128
+            assert cell.log_z_learning_rate is None
+
+
+def test_build_optimiser_splits_log_z_group():
+    from experiments.constrained_hard_03.run_gfn import (
+        build_optimiser, build_target_and_policy)
+
+    cfg = _tiny_cell("tb")
+    _, policy = build_target_and_policy(cfg, "cpu")
+
+    flat = build_optimiser(replace(cfg, log_z_learning_rate=None), policy)
+    assert len(flat.param_groups) == 1
+    assert flat.param_groups[0]["lr"] == cfg.learning_rate
+
+    split = build_optimiser(replace(cfg, log_z_learning_rate=0.1), policy)
+    assert len(split.param_groups) == 2
+    lrs = sorted(g["lr"] for g in split.param_groups)
+    assert lrs == sorted([cfg.learning_rate, 0.1])
+    log_z_group = next(g for g in split.param_groups if g["lr"] == 0.1)
+    assert len(log_z_group["params"]) == 1
+    assert log_z_group["params"][0] is policy.log_z
+    # Every parameter is in exactly one group.
+    n_split = sum(len(g["params"]) for g in split.param_groups)
+    assert n_split == len(list(policy.parameters()))
 
 
 def test_sigma_c_cells_use_exact_critical_coupling():

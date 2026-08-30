@@ -62,6 +62,26 @@ def build_target_and_policy(cfg: GFNCellCfg, device):
     return target, policy
 
 
+def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
+    """AdamW over the policy, optionally with log_z in its own lr group.
+
+    See GFNCellCfg.log_z_learning_rate for the why (Adam's ~lr/step speed
+    limit on a scalar left the s92 TB wave's log Z 2.4 nats short of the
+    exact slice value at 10k steps). Splitting the group changes NOTHING
+    for cells with the field unset: the s92 wave's flat construction is
+    reproduced exactly, so archived cells stay comparable.
+    """
+    if cfg.log_z_learning_rate is None:
+        return torch.optim.AdamW(policy.parameters(), lr=cfg.learning_rate)
+    network_params = [p for p in policy.parameters() if p is not policy.log_z]
+    return torch.optim.AdamW(
+        [
+            {"params": network_params, "lr": cfg.learning_rate},
+            {"params": [policy.log_z], "lr": cfg.log_z_learning_rate},
+        ]
+    )
+
+
 def _stage_sigma(cfg: GFNCellCfg, step: int) -> float:
     """Annealing ladder: equal step shares per stage, last stage = cfg.sigma.
 
@@ -188,7 +208,7 @@ def train_gfn(
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     target, policy = build_target_and_policy(cfg, device)
-    optimiser = torch.optim.AdamW(policy.parameters(), lr=cfg.learning_rate)
+    optimiser = build_optimiser(cfg, policy)
 
     checkpoint_dir = run_dir / "checkpoints"
     checkpoint_dir.mkdir(exist_ok=True)
