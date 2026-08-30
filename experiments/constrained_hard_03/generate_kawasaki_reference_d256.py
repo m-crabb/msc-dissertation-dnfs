@@ -212,16 +212,20 @@ def parse_args():
     return parser.parse_args()
 
 
-def external_nn_anchor(sigma):
-    """The mchammer-measured 0.578756 +- 0.004 external anchor, or None off sigma_c.
+def external_nn_anchor(sigma, lattice_side):
+    """The mchammer-measured 0.578756 +- 0.004 external anchor, or None off
+    (sigma_c AND d256).
 
     The anchor is the independently measured equilibrium nn-correlation AT
-    sigma_c; it is a property of that one coupling, so holding a set drawn at
-    another sigma to it would fail spuriously. Off sigma_c the certification
-    rests on the internal checks alone (Gelman-Rubin, start-condition
-    agreement) and records that no external anchor exists for the coupling.
+    sigma_c ON the 16x16 lattice; it is a property of that one (coupling,
+    size) pair. Off sigma_c it would fail spuriously through d<nn>/dsigma;
+    at another lattice it would mis-certify through finite-size effects,
+    which PEAK at criticality — the d400 sigma_c reference (2026-08-30) is
+    the case that forced the second gate. Without the anchor the
+    certification rests on the internal checks alone (Gelman-Rubin,
+    start-condition agreement) and records that no external anchor exists.
     """
-    if sigma == SIGMA_C:
+    if sigma == SIGMA_C and lattice_side == 16:
         return CERTIFICATION_NN_TARGET, CERTIFICATION_NN_TOLERANCE
     return None, None
 
@@ -235,7 +239,7 @@ def main():
     global LATTICE_SIDE, N_SITES
     LATTICE_SIDE = args.lattice_side
     N_SITES = LATTICE_SIDE * LATTICE_SIDE
-    nn_anchor, nn_tolerance = external_nn_anchor(sigma)
+    nn_anchor, nn_tolerance = external_nn_anchor(sigma, LATTICE_SIDE)
 
     wall_start = time.perf_counter()
     out_dir.mkdir(parents=True, exist_ok=True)
