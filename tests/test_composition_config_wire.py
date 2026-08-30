@@ -76,6 +76,10 @@ AMORTISED_CELLS = (
     ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
     *D10_SATURATION_CELLS, D10_STAIRCASE_CELL, D10_STADAMW_CELL,
     FINAL_RECIPE_NULL_CELL, FLAT_WINDOW_CELL,
+    # Wave-3 house pair (s96): the conditioned cell and its zero-width null
+    # on the house recipe (fixed lambda + channel; tests/
+    # test_soft_house_configs.py pins their declared-diff sets).
+    "S2_d4_camort_50k_l50_letf_house", "S2_d4_cnull_50k_l50_letf_house",
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the
@@ -101,7 +105,11 @@ def test_amortised_cell_builds_a_conditioned_model(cell_name):
     )
     model = _build_model(cfg, target)
     assert model.condition_on_composition is True
-    assert hasattr(model, "comp_embedder")
+    # The house cells come back wrapped in ExactFieldFlipModel, which
+    # proxies condition_on_composition but not the embedder attribute —
+    # the embedder lives on the wrapped leTF, so look through the wrapper.
+    inner_model = getattr(model, "model", model)
+    assert hasattr(inner_model, "comp_embedder")
 
 
 def test_validation_cell_differs_from_its_comparator_only_by_amortisation():

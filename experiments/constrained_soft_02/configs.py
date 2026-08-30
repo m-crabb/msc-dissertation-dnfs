@@ -2040,3 +2040,38 @@ CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"] = replace(
 CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
     CONFIGS["S2_d4_camort_50k_l50_letf"],
     name="S2_d4_camort_50k_l50_letf_house"))
+
+# The tab:amort-4x4 comparator rows, SAME recipe (s96): pricing the
+# conditioning machinery against comparators on the retiring clip50
+# recipe would rebuild the recipe confound the archived cnull pair was
+# built to remove — so specialists and null re-run on the house recipe
+# at the amortised 50k budget. Windows follow the revamp set
+# {0.25, 0.375, 0.50} (+ mirrors free): every c* is an integer site
+# count at d=16 (4/6/8 sites), unlike the retired {0.30, 0.65, 0.80}
+# grid (4.8/10.4/12.8). The scatter panels (app:logp-scatters, soft row)
+# read the c0500 and mirror-edge cells of exactly this family. The
+# obedience reference slope 0.976 was measured on the OLD request grid
+# and must be re-derived by enumeration before any new slope is quoted
+# against it.
+_D4_SPECIALIST_HOUSE_BASE = soft_house_recipe(replace(
+    CONFIGS["S2_d4_c05_l50_letf"],
+    name="S2_d4_c0500_50k_l50_letf_house",
+    train=replace(CONFIGS["S2_d4_c05_l50_letf"].train, n_steps=50_000),
+))
+CONFIGS["S2_d4_c0500_50k_l50_letf_house"] = _D4_SPECIALIST_HOUSE_BASE
+for _c_target, _c_tag in ((0.25, "c0250"), (0.375, "c0375")):
+    _twin_name = f"S2_d4_{_c_tag}_50k_l50_letf_house"
+    CONFIGS[_twin_name] = replace(
+        _D4_SPECIALIST_HOUSE_BASE, name=_twin_name,
+        ising=replace(
+            _D4_SPECIALIST_HOUSE_BASE.ising, target_composition=_c_target),
+    )
+
+# Null control on the house recipe: conditioning path ON, window width
+# ZERO, so vs the c0500 specialist above the only differences are the
+# machinery itself (model flag + the zero-width composition config).
+CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(replace(
+    CONFIGS["S2_d4_cnull_l50_letf"],
+    name="S2_d4_cnull_50k_l50_letf_house",
+    train=replace(CONFIGS["S2_d4_cnull_l50_letf"].train, n_steps=50_000),
+))

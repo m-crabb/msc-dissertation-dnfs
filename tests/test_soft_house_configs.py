@@ -101,3 +101,49 @@ def test_amortised_house_cell_is_parent_plus_recipe_only():
     assert cell["ema_decay"] == 0.9999
     assert cell["lambda_curriculum"] is None
     assert cell["model"]["condition_on_composition"] is True
+
+
+def test_amort_specialist_house_family_matched_recipe_and_windows():
+    """The tab:amort-4x4 comparator rows re-run on the SAME recipe as the
+    conditioned cell (the cnull block's own confound argument, applied
+    forward), at the revamp's window set {0.25, 0.375, 0.50} — every one an
+    integer site count at d=16, unlike the retired {0.30, 0.65, 0.80}. The
+    c05 cell is the plain 10k specialist at the amortised 50k budget plus
+    the recipe; the off-centre twins give back composition only."""
+    parent = asdict(CONFIGS["S2_d4_c05_l50_letf"])
+    base = asdict(CONFIGS["S2_d4_c0500_50k_l50_letf_house"])
+    assert _diff(parent, base) == {"name", "model", "train", "ema_decay"}
+    assert _diff(parent["model"], base["model"]) == RECIPE_MODEL_DIFF
+    assert _diff(parent["train"], base["train"]) == (
+        RECIPE_TRAIN_DIFF | {"n_steps"})
+    assert base["train"]["n_steps"] == 50_000
+    assert base["ema_decay"] == 0.9999
+    for c_target, c_tag in ((0.25, "c0250"), (0.375, "c0375")):
+        twin = asdict(CONFIGS[f"S2_d4_{c_tag}_50k_l50_letf_house"])
+        assert _diff(base, twin) == {"name", "ising"}
+        assert _diff(base["ising"], twin["ising"]) == {"target_composition"}
+        assert twin["ising"]["target_composition"] == c_target
+        assert (c_target * 16) == int(c_target * 16)
+
+
+def test_amort_null_house_isolates_conditioning_machinery():
+    """The null control prices the conditioning path against its matched
+    specialist; both must share the house recipe or the price is the
+    recipe gap instead. vs the c05 house specialist the null differs in
+    the conditioning machinery alone: the model flag and the zero-width
+    composition config that feeds it."""
+    parent = asdict(CONFIGS["S2_d4_cnull_l50_letf"])
+    null = asdict(CONFIGS["S2_d4_cnull_50k_l50_letf_house"])
+    assert _diff(parent, null) == {"name", "model", "train", "ema_decay"}
+    assert _diff(parent["model"], null["model"]) == RECIPE_MODEL_DIFF
+    assert _diff(parent["train"], null["train"]) == (
+        RECIPE_TRAIN_DIFF | {"n_steps"})
+    assert null["train"]["n_steps"] == 50_000
+
+    specialist = asdict(CONFIGS["S2_d4_c0500_50k_l50_letf_house"])
+    machinery = _diff(specialist, null)
+    assert machinery == {"name", "model", "composition"}, machinery
+    assert _diff(specialist["model"], null["model"]) == {
+        "condition_on_composition"}
+    assert null["model"]["condition_on_composition"] is True
+    assert null["composition"]["half_width"] == 0.0
