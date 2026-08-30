@@ -3,11 +3,14 @@
 This rung differs from every other house table in two ways, and both are
 places a fill can go wrong silently rather than loudly.
 
-ONE COUPLING, NOT TWO. The d400 wave ran at sigma = 0.1 only. Every other
-house table carries a sigma = 0.1 / sigma_c pair, so the copied-from shape is
-two columns, and a two-column d400 table would render an empty sigma_c half
-that reads as "those runs have not landed yet" rather than "that experiment
-was never run". The table must be single-coupling by construction.
+TWO COUPLINGS SINCE 2026-08-30. The rung was single-coupling by construction
+while only the sigma = 0.1 wave existed (an empty sigma_c half would have
+read as "not yet landed" rather than "never run"). The sigma_c wave (tag
+20260829-d400-sc, 12 cells, 100k steps) landed 2026-08-30 with its own
+certified reference (kawasaki_ref_d400_sc, tau 18.9 sweeps), so the table
+now carries the same s010/s220 pair as every rung below. The two waves have
+DIFFERENT config names (50k flat vs 100k_curr) and DIFFERENT tags, so cells
+are pinned per (row, coupling) rather than globbed from one template.
 
 THE REFERENCE FLOP BILL IS SIZE-DERIVED. `chain_trial_counts` converts sweeps
 to swap proposals through `lattice_edge**2` and DEFAULTS TO 16, because it was
@@ -25,19 +28,26 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_DIR = REPO_ROOT / "results" / "kawasaki_ref_d400_s010"
+REFERENCE_DIR_SC = REPO_ROOT / "results" / "kawasaki_ref_d400_sc"
 
 L = 20
 D_SITES = L * L
 
 
-def test_rung_is_single_coupling():
-    """sigma = 0.1 only: the d400 wave has no sigma_c cells and never had."""
-    from experiments.constrained_hard_03.analysis.house_table_20x20 import (
-        SIGMA, SIGMA_LABELS)
+def test_rung_is_two_coupling_at_exact_sigma_c():
+    """Both house couplings, and s220 is exact SIGMA_C, never legacy 0.223.
 
-    assert SIGMA_LABELS == ("s010",)
+    Each coupling names its own reference directory: scoring sigma_c cells
+    against the sigma = 0.1 pool would carry a d<nn>/dsigma systematic that
+    no amount of sampling averages away."""
+    from experiments.constrained_hard_03.analysis.house_table_20x20 import (
+        REFERENCE_DIRS, SIGMA, SIGMA_LABELS)
+    from discrete_flow_sampler.targets.ising import SIGMA_C
+
+    assert SIGMA_LABELS == ("s010", "s220")
     assert SIGMA["s010"] == 0.1
-    assert "s220" not in SIGMA
+    assert SIGMA["s220"] == SIGMA_C
+    assert REFERENCE_DIRS["s010"] != REFERENCE_DIRS["s220"]
 
 
 def test_reference_bill_uses_this_rung_s_lattice_not_the_d256_default():
@@ -78,8 +88,47 @@ def test_reference_is_certified_at_this_lattice_and_coupling():
     assert provenance["n_sites"] == D_SITES
     assert abs(provenance["sigma"] - 0.1) < 1e-9
     assert certification["certified"] is True
+
+
+@pytest.mark.skipif(not REFERENCE_DIR_SC.is_dir(),
+                    reason="d400 sigma_c reference not generated")
+def test_sigma_c_reference_is_certified_at_exact_sigma_c():
+    """The sigma_c pool must record EXACT SIGMA_C -- the d256 sc pool's
+    0.22305 mislabel is the precedent this assertion exists to catch."""
+    from discrete_flow_sampler.targets.ising import SIGMA_C
+
+    provenance = json.loads(
+        (REFERENCE_DIR_SC / "provenance.json").read_text())
+    certification = json.loads(
+        (REFERENCE_DIR_SC / "certification.json").read_text())
+
+    assert provenance["lattice_side"] == L
+    assert abs(provenance["sigma"] - SIGMA_C) < 1e-12
+    assert certification["certified"] is True
+    # Off d256 the mchammer anchor must be recorded absent (see the gate
+    # test below), so certification rests on the internal checks.
+    anchor = certification.get("external_nn_anchor")
+    assert anchor is None or anchor.get("target") is None
     assert certification["hard_constraint"]["n_up_spins_exact"] == D_SITES // 2
     assert certification["hard_constraint"]["all_samples_on_manifold"] is True
+
+
+def test_external_anchor_gates_on_lattice_side_as_well_as_sigma():
+    """The mchammer nn anchor (0.578756) was measured at sigma_c AND d256.
+
+    The nn-correlation at criticality is D-dependent (finite-size effects
+    peak at sigma_c), so a d400 chain at exact SIGMA_C must NOT be held to
+    the d256 anchor: it could fail certification spuriously, or pass
+    narrowly and record an external cross-check that was never valid.
+    Before 2026-08-30 the gate checked sigma alone."""
+    from experiments.constrained_hard_03.generate_kawasaki_reference_d256 import (
+        CERTIFICATION_NN_TARGET, external_nn_anchor)
+    from discrete_flow_sampler.targets.ising import SIGMA_C
+
+    assert external_nn_anchor(SIGMA_C, 16)[0] == CERTIFICATION_NN_TARGET
+    assert external_nn_anchor(SIGMA_C, 20) == (None, None)
+    assert external_nn_anchor(0.1, 16) == (None, None)
+    assert external_nn_anchor(0.1, 20) == (None, None)
 
 
 @pytest.mark.skipif(not REFERENCE_DIR.is_dir(),
@@ -99,10 +148,15 @@ def test_reference_has_no_external_anchor_and_says_so():
         "gelman_rubin_nn_correlation"] < 1.01
 
 
-def test_every_arm_names_a_real_config():
-    """A renamed arm would otherwise surface as a permanently blank row."""
-    from experiments.constrained_hard_03.analysis.house_table_20x20 import ARMS
+def test_every_arm_names_a_real_config_at_both_couplings():
+    """A renamed arm would otherwise surface as a permanently blank cell."""
+    from experiments.constrained_hard_03.analysis.house_table_20x20 import (
+        ARM_CONFIGS, ARMS, SIGMA_LABELS)
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    for arm in ARMS:
-        assert arm in CONFIGS, arm
+    assert set(ARM_CONFIGS) == set(ARMS)
+    for row, per_sigma in ARM_CONFIGS.items():
+        assert set(per_sigma) == set(SIGMA_LABELS), row
+        for sigma_label, config_name in per_sigma.items():
+            assert config_name in CONFIGS, config_name
+            assert f"_{sigma_label}_" in config_name, config_name

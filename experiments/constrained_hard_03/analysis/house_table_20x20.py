@@ -7,14 +7,17 @@ is a scaling probe, not a head survey, and the table should read as one.
 WHAT IS DIFFERENT FROM EVERY RUNG BELOW, and why each difference is real
 rather than an omission:
 
-  * ONE COLUMN, NOT TWO. The wave ran at sigma = 0.1 only. Rendering an empty
-    sigma_c half would read as "not yet landed" when the truth is "never run",
-    so `SIGMA_LABELS` is a 1-tuple and the emitted table is single-coupling.
-    A sigma_c rung here would need its own certified reference, and at sigma_c
-    that reference is the expensive one (see below).
-  * TWO SEEDS, NOT THREE. 42 and 43. Spreads over two seeds are reported as
-    the half-range, and no claim in this table should rest on a spread that
-    thin.
+  * TWO COUPLINGS SINCE 2026-08-30 (single-coupling before that: an empty
+    sigma_c half would have read as "not yet landed" rather than "never
+    run"). The sigma_c wave (tag 20260829-d400-sc, 12 cells, 100k steps,
+    curriculum ending at exact SIGMA_C from step 30k) landed with its own
+    certified reference. The two waves carry DIFFERENT config names (50k
+    flat vs 100k_curr) and DIFFERENT tags, so cells are pinned per
+    (row, coupling) in ARM_CONFIGS rather than globbed from one template.
+  * SEED COUNTS ARE MIXED and recorded per cell (`n_seeds`): s010 thp2 rows
+    carry three seeds since 2026-08-30 (DoC 280229/280230), s010 thp3 rows
+    two, every sigma_c cell three. No claim should rest on a two-seed
+    spread.
   * THE ARMS ARE A RADIUS x TRAINING-PRECISION GRID, not different heads.
     Every cell is the two-hole patch head. `w4` vs `w4bf16` is
     `train.train_autocast_bf16` and NOTHING ELSE -- verified against the
@@ -27,28 +30,26 @@ rather than an omission:
     rather than a finding: the bill is derived from the architecture, and
     training precision changes no architecture.
 
-THE REFERENCE, and why it cost 30 seconds rather than hours. Generated
-2026-08-29 by `generate_kawasaki_reference_d256.py --lattice-side 20
---sigma 0.10` into `results/kawasaki_ref_d400_s010/`: 8 chains, 100k burn-in
-plus 102,400 sampling sweeps, thinned at 2x the worst chain's tau, 136,536
-stored draws, Gelman-Rubin 0.999985 (split-half 0.999974), every draw on the
-c = 0.5 slice at exactly 200 up-spins, energy convention matching the target
-class to 1.1e-5.
+THE REFERENCES, one per coupling, same generator and sweep budget (8 chains,
+100k burn-in + 102,400 sampling sweeps, thinned at 2x the worst chain's tau,
+every draw at exactly 200 up-spins):
 
-The measured tau is **2.10 sweeps at D = 20 against 2.11 at D = 16** -- no
-size penalty worth the name. That is not luck: the tau ~ D^1.5 growth in
-fig:kawasaki-slowing is a CRITICAL phenomenon, and at the sigma = 0.1
-operating point the non-local swap chain decorrelates in a couple of sweeps at
-any of these sizes. It is why "no certified reference exists at d400" was
-never an expensive blocker, only an undone one -- and why the same sentence at
-sigma_c would be a genuine one.
+  * `kawasaki_ref_d400_s010` (2026-08-29, 30.4 s): tau 2.10 sweeps at D = 20
+    against 2.11 at D = 16 -- no size penalty, because the tau ~ D^1.5
+    growth in fig:kawasaki-slowing is a CRITICAL phenomenon and sigma = 0.1
+    is far from it. 136,536 stored draws, Gelman-Rubin 0.999985.
+  * `kawasaki_ref_d400_sc` (2026-08-30, ~5 min): tau 18.9 sweeps -- right on
+    the D^1.5 prediction from the d256 sc pool's 13.8 -- still swallowed
+    whole by the fixed 100k burn-in. 21,560 stored draws (the tau enters
+    through thinning, not wall clock), Gelman-Rubin 0.99993, sigma recorded
+    at EXACT SIGMA_C (the d256 sc pool is on record mislabelled at 0.22305).
 
-NO EXTERNAL ANCHOR, and the certification says so. The mchammer nn anchor is a
-property of sigma_c at d256; off sigma_c `external_nn_anchor` returns None by
-construction and the record states that no external cross-check exists. The
-certification therefore rests on the internal checks -- Gelman-Rubin,
-start-condition agreement, the energy-convention gap and the exact-composition
-assertion.
+NO EXTERNAL ANCHOR AT EITHER COUPLING, and both certifications say so. The
+mchammer nn anchor is a property of (sigma_c, d256) jointly --
+`external_nn_anchor` gates on both since 2026-08-30 -- so the s010 pool sits
+off the anchor's coupling and the sc pool off its lattice. Certification
+therefore rests on the internal checks -- Gelman-Rubin, start-condition
+agreement, the energy-convention gap and the exact-composition assertion.
 
 FLOP/es. The reference's algorithmic bill is derived from THIS rung's lattice
 (`reference_trial_counts`), never from the d256 default that
@@ -83,28 +84,37 @@ from experiments.constrained_hard_03.analysis.house_table_8x8 import (
 from experiments.constrained_hard_03.analysis.house_table_16x16 import (
     reference_row, split_pooled_into_chains)
 
+from discrete_flow_sampler.targets.ising import SIGMA_C
+
 L = 20
 D_SITES = L * L
-SEEDS = (42, 43)
-SIGMA_LABELS = ("s010",)
-SIGMA = {"s010": 0.1}
-TAG = "20260827-d400-s010"
-DEFAULT_REFERENCE = REPO_ROOT / "results" / "kawasaki_ref_d400_s010"
+SIGMA_LABELS = ("s010", "s220")
+SIGMA = {"s010": 0.1, "s220": SIGMA_C}
+TAGS = {"s010": "20260827-d400-s010", "s220": "20260829-d400-sc"}
+REFERENCE_DIRS = {
+    "s010": REPO_ROOT / "results" / "kawasaki_ref_d400_s010",
+    "s220": REPO_ROOT / "results" / "kawasaki_ref_d400_sc",
+}
 
-# Keyed by the FULL config name. At the rungs below an arm is a short head
-# token and the run dir is rebuilt from a template; here the four cells differ
-# in two dimensions at once (radius and eval precision) and share every other
-# infix, so a short token would need a second key to disambiguate. The config
-# name already is that key, and it cannot drift from the registry.
+# Row token -> label; ARM_CONFIGS maps each row to its FULL config name per
+# coupling. At the rungs below an arm is one short token and the run dir is
+# rebuilt from a template; here the two couplings are two campaigns whose
+# names differ structurally (50k flat vs 100k_curr), so each cell is pinned
+# to its registry name and cannot drift.
 ARMS = {
-    "H2_d400_c50_s010_letf_thp2_50k_b512_ne128_cv2_w4":
-        "two-hole patch head, $R=2$",
-    "H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4":
-        "two-hole patch head, $R=3$",
-    "H2_d400_c50_s010_letf_thp2_50k_b512_ne128_cv2_w4bf16":
-        "\\quad $R=2$, bf16 training",
-    "H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4bf16":
-        "\\quad $R=3$, bf16 training",
+    "thp2_w4": "two-hole patch head, $R=2$",
+    "thp3_w4": "two-hole patch head, $R=3$",
+    "thp2_w4bf16": "\\quad $R=2$, bf16 training",
+    "thp3_w4bf16": "\\quad $R=3$, bf16 training",
+}
+ARM_CONFIGS = {
+    f"{radius}_{precision}": {
+        "s010": f"H2_d400_c50_s010_letf_{radius}_50k_b512_ne128_cv2_{precision}",
+        "s220": (f"H2_d400_c50_s220_letf_{radius}_100k_curr_b512_ne128_cv2_"
+                 f"{precision}"),
+    }
+    for radius in ("thp2", "thp3")
+    for precision in ("w4", "w4bf16")
 }
 
 LATEX_ROWS = (
@@ -157,14 +167,14 @@ def energy_per_site(target, states, chunk=4096):
     return torch.cat(parts)
 
 
-def find_cells(results_dir, arm):
-    """Run dirs for one cell, seed order; empty rather than raising.
-
-    The arm IS the config name, so the glob needs no head-token anchoring of
-    the kind the rungs below need to stop `thp` matching `thp2`.
+def find_cells(results_dir, config_name, tag):
+    """Run dirs for one (cell, coupling), seed order; empty rather than
+    raising. The config name pins the cell, the tag pins the campaign, so
+    the glob needs no head-token anchoring of the kind the rungs below need
+    to stop `thp` matching `thp2`.
     """
     found = []
-    for run_dir in sorted(Path(results_dir).glob(f"{arm}_seed*_{TAG}")):
+    for run_dir in sorted(Path(results_dir).glob(f"{config_name}_seed*_{tag}")):
         if (run_dir / "cv_inversion_halt.json").exists():
             print(f"dropped (cv-inversion tripwire halt): {run_dir.name}",
                   file=sys.stderr)
@@ -199,7 +209,17 @@ def neural_cell(run_dir, target, reference, reference_energy, per_forward,
 
 
 def latex_table(table, n_draws=5000):
-    """Single-coupling body: five columns, not ten."""
+    """Two-coupling body, same conventions as tab:eval-hard-16x16. What the
+    bold does NOT claim: where the error columns sit at the sampling floor
+    (the whole s010 half) a bolded cell marks the smallest number measured,
+    not a separation. The caption says so."""
+    def key_for(arm, sigma_label):
+        if arm == "reference":
+            return f"reference_{sigma_label}"
+        if arm == "floor":
+            return f"floor{n_draws}_{sigma_label}"
+        return f"{arm}_{sigma_label}"
+
     def cell(key, column, sci=False):
         entry = table.get(key)
         if entry is None or column not in entry:
@@ -213,20 +233,17 @@ def latex_table(table, n_draws=5000):
             return f"${mean * 100:.1f}$"
         return f"${mean * 100:.1f} \\pm {sd * 100:.1f}$"
 
-    def key_for(arm):
-        if arm == "reference":
-            return "reference_s010"
-        if arm == "floor":
-            return f"floor{n_draws}_s010"
-        return f"{arm}_s010"
-
-    arms = [a for a, _ in (r for r in LATEX_ROWS if r)
-            if a in ARMS and key_for(a) in table]
     best = {}
-    if arms:
-        best["ESS"] = max(arms, key=lambda a: table[key_for(a)]["ESS"][0])
+    for sigma_label in SIGMA_LABELS:
+        arms = [a for a, _ in (r for r in LATEX_ROWS if r)
+                if a in ARMS and key_for(a, sigma_label) in table]
+        if not arms:
+            continue
+        best[(sigma_label, "ESS")] = max(
+            arms, key=lambda a: table[key_for(a, sigma_label)]["ESS"][0])
         for column in ERROR_COLUMNS + ("FLOP/es",):
-            best[column] = min(arms, key=lambda a: table[key_for(a)][column][0])
+            best[(sigma_label, column)] = min(
+                arms, key=lambda a: table[key_for(a, sigma_label)][column][0])
 
     lines = []
     for row in LATEX_ROWS:
@@ -234,23 +251,25 @@ def latex_table(table, n_draws=5000):
             lines.append("        \\midrule")
             continue
         arm, label = row
-        key = key_for(arm)
-        entry = table.get(key)
-        ess = "/" if arm in ("reference", "floor") else (
-            f"${entry['ESS'][0]:.3f} \\pm {entry['ESS'][1]:.3f}$"
-            if entry else "--")
-        flops = "--" if arm == "floor" else cell(key, "FLOP/es", sci=True)
-        if best.get("ESS") == arm:
-            ess = f"$\\mathbf{{{ess.strip('$')}}}$"
-        if best.get("FLOP/es") == arm:
-            flops = f"$\\mathbf{{{flops.strip('$')}}}$"
-        cells = [ess]
-        for column in ERROR_COLUMNS:
-            value = cell(key, column)
-            if best.get(column) == arm:
-                value = f"$\\mathbf{{{value.strip('$')}}}$"
-            cells.append(value)
-        cells.append(flops)
+        cells = []
+        for sigma_label in SIGMA_LABELS:
+            key = key_for(arm, sigma_label)
+            entry = table.get(key)
+            ess = "/" if arm in ("reference", "floor") else (
+                f"${entry['ESS'][0]:.3f} \\pm {entry['ESS'][1]:.3f}$"
+                if entry else "--")
+            flops = "--" if arm == "floor" else cell(key, "FLOP/es", sci=True)
+            if best.get((sigma_label, "ESS")) == arm:
+                ess = f"$\\mathbf{{{ess.strip('$')}}}$"
+            if best.get((sigma_label, "FLOP/es")) == arm:
+                flops = f"$\\mathbf{{{flops.strip('$')}}}$"
+            cells.append(ess)
+            for column in ERROR_COLUMNS:
+                value = cell(key, column)
+                if best.get((sigma_label, column)) == arm and value != "--":
+                    value = f"$\\mathbf{{{value.strip('$')}}}$"
+                cells.append(value)
+            cells.append(flops)
         lines.append(f"        {label} & " + " & ".join(cells) + r" \\")
     return "\n".join(lines)
 
@@ -259,7 +278,6 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", type=Path,
                         default=REPO_ROOT / "results" / "03_hard")
-    parser.add_argument("--reference-dir", type=Path, default=DEFAULT_REFERENCE)
     parser.add_argument("--eval-subdir", default="eval_ema",
                         help="eval_ema (default, the frozen convention at the "
                              "rungs above) or eval")
@@ -272,54 +290,59 @@ def main(argv=None):
 
     from experiments.constrained_hard_03.run import build_target_and_head
 
-    chains, provenance = load_reference(args.reference_dir, "s010")
-    reference = torch.cat(chains)
+    table = {}
+    for sigma_label in SIGMA_LABELS:
+        chains, provenance = load_reference(
+            REFERENCE_DIRS[sigma_label], sigma_label)
+        reference = torch.cat(chains)
 
-    probe = next(iter(ARMS))
-    probe_dirs = find_cells(args.results_dir, probe)
-    if not probe_dirs:
-        print(f"no run dirs under {args.results_dir} for {probe}", file=sys.stderr)
-        return
-    target, _ = build_target_and_head(registry_config_for(probe_dirs[0]),
-                                      device="cpu")
+        probe = ARM_CONFIGS[next(iter(ARMS))][sigma_label]
+        probe_dirs = find_cells(args.results_dir, probe, TAGS[sigma_label])
+        if not probe_dirs:
+            print(f"no run dirs under {args.results_dir} for {probe}",
+                  file=sys.stderr)
+            continue
+        target, _ = build_target_and_head(registry_config_for(probe_dirs[0]),
+                                          device="cpu")
 
-    chain_energies = [energy_per_site(target, c) for c in chains]
-    reference_energy = torch.cat(chain_energies)
+        chain_energies = [energy_per_site(target, c) for c in chains]
+        reference_energy = torch.cat(chain_energies)
 
-    table = {
-        "reference_s010": {
+        table[f"reference_{sigma_label}"] = {
             **reference_row(chains, chain_energies,
                             reference_trial_counts(provenance)),
             **{k: (v, 0.0) for k, v in reference_standard_error(
                 chains, L, args.n_splits, seed=0,
                 chain_energies=chain_energies).items()},
         }
-    }
 
-    for arm in ARMS:
-        run_dirs = find_cells(args.results_dir, arm)
-        if not run_dirs:
-            continue
-        cfg = registry_config_for(run_dirs[0])
-        _, head = build_target_and_head(flop_billing_config(cfg), device="cpu")
-        per_forward = measured_forward_flops(
-            head, (reference[:1], torch.full((1,), 0.5)))
-        n_draws = cfg.eval.n_eval_samples
-        rows = [neural_cell(d, target, reference, reference_energy,
-                            per_forward, cfg.ctmc.n_euler_steps,
-                            eval_subdir=args.eval_subdir)
-                for d in run_dirs]
-        cell = aggregate(rows)
-        cell["per_forward_flops"] = per_forward
-        cell["n_seeds"] = len(run_dirs)
-        table[f"{arm}_s010"] = cell
+        for arm in ARMS:
+            run_dirs = find_cells(args.results_dir,
+                                  ARM_CONFIGS[arm][sigma_label],
+                                  TAGS[sigma_label])
+            if not run_dirs:
+                continue
+            cfg = registry_config_for(run_dirs[0])
+            _, head = build_target_and_head(flop_billing_config(cfg),
+                                            device="cpu")
+            per_forward = measured_forward_flops(
+                head, (reference[:1], torch.full((1,), 0.5)))
+            n_draws = cfg.eval.n_eval_samples
+            rows = [neural_cell(d, target, reference, reference_energy,
+                                per_forward, cfg.ctmc.n_euler_steps,
+                                eval_subdir=args.eval_subdir)
+                    for d in run_dirs]
+            cell = aggregate(rows)
+            cell["per_forward_flops"] = per_forward
+            cell["n_seeds"] = len(run_dirs)
+            table[f"{arm}_{sigma_label}"] = cell
 
-        floor_key = f"floor{n_draws}_s010"
-        if floor_key not in table:
-            table[floor_key] = {
-                k: (v, 0.0) for k, v in sampling_floor_from_reference(
-                    reference, L, n_draws, args.n_floor_replicates,
-                    seed=0, reference_energy=reference_energy).items()}
+            floor_key = f"floor{n_draws}_{sigma_label}"
+            if floor_key not in table:
+                table[floor_key] = {
+                    k: (v, 0.0) for k, v in sampling_floor_from_reference(
+                        reference, L, n_draws, args.n_floor_replicates,
+                        seed=0, reference_energy=reference_energy).items()}
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "house_table_20x20.json").write_text(json.dumps(table, indent=2))
