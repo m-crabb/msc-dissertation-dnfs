@@ -4779,21 +4779,22 @@ _RASTER_LADDER_PARENTS = {
 # FLOP/es FALLS as sweeps are added (the flag roughly halves the bill).
 _RASTER_LADDER_RUNG_KNOBS = {
     "H2_d64_c50_s010_letf_{arm}_50k_w2": {"separable_band_scores": True},
-    # The d256 rungs run separable with the triu gather OFF, overriding the
-    # gather=True the parent `ma` cell carries. The gather verdict moved
-    # three times and settled at production batch (B=128, d=256, masked
-    # attention): separable alone 52.1 ms / 6.99 GB, separable+gather
-    # 82.3 ms / 8.95 GB, gather alone 97.0 / 17.22 -- the gather saves in
-    # the PAIR dimension while the peak is the (B, d, d, h) context, which
-    # scales with batch, so at B=128 it costs on both currencies. The
-    # gather is live for BOTH bands (the interval head assembles the same
-    # symmetric pair slab), so unlike `separable_band_scores` it is not
-    # filtered to the attention arms.
+    # The d256 rungs run separable, and the triu gather RIDES TRUE from the
+    # parent. Gather-off was tried first (2026-08-30) on the B=128 verdict
+    # (separable alone 52.1 ms / 6.99 GB vs 82.3 / 8.95 with the gather)
+    # and OOM'd a 183 GB B200 at step 0: that verdict prices the TRAINING
+    # STEP at the microbatch slice, while the ROLLOUT runs the head at the
+    # full batch 512 unsliced, where the ungathered pair slab is
+    # (512, 256, 256, 144) fp32 = 18 GiB per forward and the client peaks
+    # ~36 GB. The gather halves that grid to d(d-1)/2 pairs and is what let
+    # the archived d256 cells run inside 40 GB cards -- at this size it is
+    # load-bearing for the rollout even though it costs on both currencies
+    # at the sliced training step.
     "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3": {
-        "separable_band_scores": True, "gather_triu_pairs": False,
+        "separable_band_scores": True,
     },
     "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": {
-        "separable_band_scores": True, "gather_triu_pairs": False,
+        "separable_band_scores": True,
     },
 }
 
@@ -4846,7 +4847,6 @@ CONFIGS.update({
             CONFIGS["H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"],
             name="H2_d256_c50_s010_letf_masep_50k_b512_ne128_cv2_w3",
             separable_band_scores=True,
-            gather_triu_pairs=False,
         ),
     )
 })

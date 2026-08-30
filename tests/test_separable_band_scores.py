@@ -466,11 +466,9 @@ def test_floor_anchor_is_the_floor_ma_cell_plus_one_field():
         dense, name=anchor.name, separable_band_scores=True)
 
 
-def test_d256_floor_anchor_is_the_archived_ma_cell_minus_gather():
+def test_d256_floor_anchor_is_the_archived_ma_cell_plus_one_field():
     """The 16x16 floor `masep` anchor is the archived house `ma` cell under
-    the d256 rung's two knobs and NOTHING else: separable on (exact rewrite)
-    and the triu gather off (costs on both currencies at production batch --
-    52.1 ms / 6.99 GB separable alone vs 82.3 / 8.95 with the gather). Its
+    the ONE rung knob (separable, an exact rewrite) and nothing else. Its
     sigma_c sibling deliberately does NOT exist: the printed three-seed
     failure there is the same function, so it anchors that chain unretrained.
     """
@@ -481,16 +479,23 @@ def test_d256_floor_anchor_is_the_archived_ma_cell_minus_gather():
     anchor = CONFIGS["H2_d256_c50_s010_letf_masep_50k_b512_ne128_cv2_w3"]
     dense = CONFIGS["H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"]
     assert anchor == replace(
-        dense, name=anchor.name,
-        separable_band_scores=True, gather_triu_pairs=False)
+        dense, name=anchor.name, separable_band_scores=True)
     assert "H2_d256_c50_s220_letf_masep_100k_curr_b512_ne128_cv2_w3" \
         not in CONFIGS
 
 
-def test_d256_ladder_rung_runs_separable_without_the_gather():
-    """Every new 16x16 ladder cell drops the gather the archived `ma` parent
-    carries, and the attention arms run separable; the prefix arms must not
-    record the separable flag their head cannot read."""
+def test_d256_ladder_rung_keeps_the_parents_gather():
+    """Every 16x16 ladder cell KEEPS the archived parent's
+    gather_triu_pairs=True, and the attention arms run separable (the prefix
+    arms must not record the flag their head cannot read).
+
+    The gather is load-bearing at this size for the ROLLOUT, not the
+    training step: gather-off was launched on the B=128 step verdict
+    (2026-08-30) and OOM'd a 183 GB B200 at step 0 -- the rollout runs the
+    head at the full batch 512, where the ungathered pair slab is
+    (512, 256, 256, 144) fp32 = 18 GiB per forward and a client peaks
+    ~36 GB against the gathered path's ~half. A future no-gather rerun must
+    re-derive the rollout peak, not the sliced step cost."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
     for pattern in (
@@ -499,7 +504,7 @@ def test_d256_ladder_rung_runs_separable_without_the_gather():
     ):
         for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"):
             cfg = CONFIGS[pattern.format(arm=arm)]
-            assert cfg.gather_triu_pairs is False, cfg.name
+            assert cfg.gather_triu_pairs is True, cfg.name
             is_attention = cfg.head_kind == "masked_attention"
             assert cfg.separable_band_scores is is_attention, cfg.name
 

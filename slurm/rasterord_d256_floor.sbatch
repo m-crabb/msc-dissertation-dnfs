@@ -25,12 +25,14 @@
 # two-seed mean with a degenerate seed excluded -- the `masep` cell here
 # repairs that anchor), thp/thp2 0.998-1.000.
 #
-# THE MASKED-ATTENTION ARMS RUN SEPARABLE WITH THE GATHER OFF; the interval
-# arms drop the gather too (their head reads it) and cannot read the
-# separable flag. Both knobs are function-preserving (separable: forward
-# agreement 1.5e-7, gradients matched parameter by parameter; gather:
-# bit-class equivalent GEMM shape), so quality cannot move and the chain
-# still prices one field per step against the archived anchors.
+# THE MASKED-ATTENTION ARMS RUN SEPARABLE; the gather RIDES TRUE from the
+# archived parent on every arm -- at d256 it is load-bearing for the
+# full-batch rollout (the ungathered pair slab is 18 GiB per forward at
+# b512; a gather-off launch OOM'd a 183 GB B200 at step 0, 2026-08-30).
+# Both knobs are function-preserving (separable: forward agreement 1.5e-7,
+# gradients matched parameter by parameter; gather: bit-class equivalent
+# GEMM shape), so quality cannot move and the chain still prices one field
+# per step against the archived anchors.
 #
 # Fixed --tag so a resubmission resumes: run.py skips a seed whose
 # eval/metrics.json exists and continues a partial one from resume.pt.
