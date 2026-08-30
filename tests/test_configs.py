@@ -1908,17 +1908,18 @@ def test_d256_fimo2ef_head_matches_the_smaller_fimo2ef_cells():
 
 
 def test_d256_house_cells_build_their_heads():
-    """Construction check for the eight 16x16 house cells: build_swap_head
-    must instantiate every arm at d=256 (the ef arm needs the target for the
-    field channel's adjacency, and gather_triu_pairs must survive the
-    factorised and masked-attention constructors), so a knob typo fails here
-    and not eighteen hours into an A100 run."""
+    """Construction check for the nineteen 16x16 house cells -- the eight
+    original arms plus the ten raster-ladder cells and the floor `masep`
+    anchor (2026-08-30): build_swap_head must instantiate every arm at d=256
+    (the ef arms need the target for the field channel's adjacency, and the
+    gather and separable flags must survive the constructors), so a knob typo
+    fails here and not eighteen hours into a GPU run."""
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     house = [name for name in CONFIGS if name.endswith("_w3")]
-    assert len(house) == 8
+    assert len(house) == 19
     for name in house:
         cfg = CONFIGS[name]
         assert cfg.ising.D == 16, name
@@ -2330,7 +2331,7 @@ def test_raster_ladder_roster_covers_both_rungs():
 
     assert set(_RASTER_LADDER_ARMS) == {
         "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"}
-    assert len(_RASTER_LADDER_PARENTS) == 4
+    assert len(_RASTER_LADDER_PARENTS) == 6
 
     for arm, knobs in _RASTER_LADDER_ARMS.items():
         for pattern, parent_name in _RASTER_LADDER_PARENTS.items():
@@ -2338,10 +2339,14 @@ def test_raster_ladder_roster_covers_both_rungs():
             cfg = CONFIGS[name]
             parent = CONFIGS[parent_name]
             # Rung knobs ride on top of the arm's, and only where the band
-            # can read them -- the prefix-sum arms must NOT pick them up.
+            # can read them: `separable_band_scores` is attention-only (the
+            # prefix-sum arms have no score tensor and must NOT pick it up),
+            # while `gather_triu_pairs` reaches both bands -- the interval
+            # head assembles the same symmetric pair slab.
             rung = _RASTER_LADDER_RUNG_KNOBS.get(pattern, {})
             if knobs.get("head_kind", parent.head_kind) != "masked_attention":
-                rung = {}
+                rung = {k: v for k, v in rung.items()
+                        if k != "separable_band_scores"}
             # Only the roster's knobs may differ from the `ma` parent.
             assert cfg == replace(parent, name=name, **knobs, **rung), name
 

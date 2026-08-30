@@ -190,6 +190,23 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3": 128,
         "H2_d256_c50_s010_letf_fimo2ef_50k_b512_ne128_cv2_w3": 128,
         "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3": 128,
+        # 16x16 raster-ladder rung + floor masep anchor (2026-08-30). All
+        # eleven inherit the `ma` house parent wholesale -- that inheritance
+        # IS the roster's one-field-per-step guarantee -- and every one is a
+        # pair-slab arm: the attention arms carry the score/context slabs
+        # (separable, but a two-ordering readout doubles the pair input
+        # width) and the interval arms assemble the same symmetric
+        # d(d-1)/2 pair readout. The floor cells additionally run on 24 GB
+        # a30 cards, where an unsliced b512 slab is precisely the unmeasured
+        # OOM this schedule exists to bound.
+        **{
+            f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3": 128
+            for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
+        },
+        **{
+            f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": 128
+            for arm in ("masep", "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
+        },
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name

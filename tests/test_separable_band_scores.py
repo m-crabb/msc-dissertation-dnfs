@@ -466,6 +466,44 @@ def test_floor_anchor_is_the_floor_ma_cell_plus_one_field():
         dense, name=anchor.name, separable_band_scores=True)
 
 
+def test_d256_floor_anchor_is_the_archived_ma_cell_minus_gather():
+    """The 16x16 floor `masep` anchor is the archived house `ma` cell under
+    the d256 rung's two knobs and NOTHING else: separable on (exact rewrite)
+    and the triu gather off (costs on both currencies at production batch --
+    52.1 ms / 6.99 GB separable alone vs 82.3 / 8.95 with the gather). Its
+    sigma_c sibling deliberately does NOT exist: the printed three-seed
+    failure there is the same function, so it anchors that chain unretrained.
+    """
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    anchor = CONFIGS["H2_d256_c50_s010_letf_masep_50k_b512_ne128_cv2_w3"]
+    dense = CONFIGS["H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"]
+    assert anchor == replace(
+        dense, name=anchor.name,
+        separable_band_scores=True, gather_triu_pairs=False)
+    assert "H2_d256_c50_s220_letf_masep_100k_curr_b512_ne128_cv2_w3" \
+        not in CONFIGS
+
+
+def test_d256_ladder_rung_runs_separable_without_the_gather():
+    """Every new 16x16 ladder cell drops the gather the archived `ma` parent
+    carries, and the attention arms run separable; the prefix arms must not
+    record the separable flag their head cannot read."""
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    for pattern in (
+        "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3",
+        "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3",
+    ):
+        for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"):
+            cfg = CONFIGS[pattern.format(arm=arm)]
+            assert cfg.gather_triu_pairs is False, cfg.name
+            is_attention = cfg.head_kind == "masked_attention"
+            assert cfg.separable_band_scores is is_attention, cfg.name
+
+
 def test_config_flag_reaches_the_head():
     """`cfg.separable_band_scores` must arrive at the head it is set for."""
     from dataclasses import replace

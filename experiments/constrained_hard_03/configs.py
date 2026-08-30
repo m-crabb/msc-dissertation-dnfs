@@ -4736,6 +4736,23 @@ _RASTER_LADDER_PARENTS = {
     "H2_d64_c50_s010_letf_{arm}_50k_w2": "H2_d64_c50_s010_letf_ma_50k_w2",
     "H2_d16_c50_s010_letf_{arm}_10k_w2": "H2_d16_c50_s010_letf_ma_10k_w2",
     "H2_d16_c50_s220_letf_{arm}_10k_w2": "H2_d16_c50_s220_letf_ma_10k_w2",
+    # THE 16x16 RUNG (2026-08-30). The question is whether the ladder
+    # rescues the rung where the bare head FAILS: the archived d256 `ma`
+    # sigma_c row is a three-seed failure (EMA ESS 0.0035/0.0422/0.0002,
+    # two seeds converge cleanly to an unusable optimum, one diverges),
+    # while at 8x8 the orderings were the largest measured lever (+0.127
+    # raw on the attention band, +0.154 on the prefix band, disjoint) and
+    # `ivmo2ef` passed the mask-one reference (0.931 vs 0.903). The chain
+    # anchors on the ARCHIVED dense `ma` cells: `separable_band_scores` is
+    # an exact rewrite and the triu gather is bit-class equivalent, so the
+    # printed anchor is the same function and no sigma_c `masep` retrain is
+    # spent reproducing a known failure. The floor `ma` anchor is retrained
+    # (`masep` cell below): its archived row is a two-seed mean with a
+    # degenerate seed excluded, so it is repaired rather than reused.
+    "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3":
+        "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3",
+    "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3":
+        "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3",
 }
 
 # THE FLOOR RUNG RUNS SEPARABLE (2026-08-28), and every new
@@ -4762,7 +4779,28 @@ _RASTER_LADDER_PARENTS = {
 # FLOP/es FALLS as sweeps are added (the flag roughly halves the bill).
 _RASTER_LADDER_RUNG_KNOBS = {
     "H2_d64_c50_s010_letf_{arm}_50k_w2": {"separable_band_scores": True},
+    # The d256 rungs run separable with the triu gather OFF, overriding the
+    # gather=True the parent `ma` cell carries. The gather verdict moved
+    # three times and settled at production batch (B=128, d=256, masked
+    # attention): separable alone 52.1 ms / 6.99 GB, separable+gather
+    # 82.3 ms / 8.95 GB, gather alone 97.0 / 17.22 -- the gather saves in
+    # the PAIR dimension while the peak is the (B, d, d, h) context, which
+    # scales with batch, so at B=128 it costs on both currencies. The
+    # gather is live for BOTH bands (the interval head assembles the same
+    # symmetric pair slab), so unlike `separable_band_scores` it is not
+    # filtered to the attention arms.
+    "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3": {
+        "separable_band_scores": True, "gather_triu_pairs": False,
+    },
+    "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": {
+        "separable_band_scores": True, "gather_triu_pairs": False,
+    },
 }
+
+# Rung knobs only an attention-band head can read: `IntervalSwapHead` has no
+# score tensor to factorise and is never handed the flag, so setting it on
+# an `iv*` cell would record a field the head cannot honour.
+_ATTENTION_ONLY_RUNG_KNOBS = frozenset({"separable_band_scores"})
 
 
 def _raster_ladder_cell(arm: str, arm_knobs: dict, pattern: str):
@@ -4770,10 +4808,12 @@ def _raster_ladder_cell(arm: str, arm_knobs: dict, pattern: str):
     moved, plus any rung knobs the arm's band can actually read."""
     parent = CONFIGS[_RASTER_LADDER_PARENTS[pattern]]
     head_kind = arm_knobs.get("head_kind", parent.head_kind)
-    rung_knobs = (
-        _RASTER_LADDER_RUNG_KNOBS.get(pattern, {})
-        if head_kind == "masked_attention" else {}
-    )
+    rung_knobs = {
+        knob: value
+        for knob, value in _RASTER_LADDER_RUNG_KNOBS.get(pattern, {}).items()
+        if head_kind == "masked_attention"
+        or knob not in _ATTENTION_ONLY_RUNG_KNOBS
+    }
     return replace(parent, name=pattern.format(arm=arm), **arm_knobs, **rung_knobs)
 
 
@@ -4787,6 +4827,13 @@ CONFIGS.update({
 # The floor rung's separable `ma` anchor, so the chain there reads one field
 # per step within one contraction order. Same one-variable idiom as the
 # sigma_c `masep` seed-check cell above, against the flat-coupling parent.
+#
+# The d256 floor `masep` additionally REPLACES a compromised anchor rather
+# than merely re-contracting a healthy one: the archived d256 floor `ma` row
+# is a two-seed mean (0.862 +- 0.057) with a degenerate third seed excluded,
+# and it trained dense with the gather on. Its sigma_c sibling is NOT
+# retrained -- the printed three-seed failure is the same function under an
+# exact rewrite, so it anchors the sigma_c chain as it stands.
 CONFIGS.update({
     cell.name: cell
     for cell in (
@@ -4794,6 +4841,12 @@ CONFIGS.update({
             CONFIGS["H2_d64_c50_s010_letf_ma_50k_w2"],
             name="H2_d64_c50_s010_letf_masep_50k_w2",
             separable_band_scores=True,
+        ),
+        replace(
+            CONFIGS["H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"],
+            name="H2_d256_c50_s010_letf_masep_50k_b512_ne128_cv2_w3",
+            separable_band_scores=True,
+            gather_triu_pairs=False,
         ),
     )
 })
