@@ -117,6 +117,40 @@ def test_sample_log_prob_matches_parallel_scoring():
     assert torch.allclose(log_q_sequential, log_q_scored, atol=1e-5)
 
 
+def test_kv_cache_step_features_match_full_encode():
+    # The cached sampler is an EXACT REWRITE of the naive prefix re-encode
+    # (the separable-band precedent: same function, cheaper evaluation), so
+    # the per-step cached feature must equal the full causal pass's feature
+    # at that position — this pins the manual attention (in_proj/out_proj on
+    # nn.MultiheadAttention's own weights) to the module it rewrites.
+    target = _target(D=4, c=0.5)
+    policy = _policy(target, n_heads=2)
+    spins, _ = policy.sample(8, kv_cache=False)
+    token_ids = policy._shifted_token_ids(spins)
+    full_features = policy._encode(token_ids)
+
+    caches = policy._new_kv_caches(8)
+    for site in range(policy.d):
+        step_feature = policy._encode_step(token_ids[:, site], site, caches)
+        assert torch.allclose(
+            step_feature, full_features[:, site], atol=1e-5
+        ), f"cached feature diverged from full encode at site {site}"
+
+
+def test_sample_with_and_without_kv_cache_agree():
+    # Same generator seed -> identical spins and matching log q on both
+    # paths. Deterministic (fixed seed), so a numerical threshold flip
+    # would fail here and now rather than flakily later.
+    target = _target(D=4, c=0.5)
+    policy = _policy(target)
+    gen_a = torch.Generator().manual_seed(7)
+    gen_b = torch.Generator().manual_seed(7)
+    spins_naive, log_q_naive = policy.sample(64, kv_cache=False, generator=gen_a)
+    spins_cached, log_q_cached = policy.sample(64, kv_cache=True, generator=gen_b)
+    assert torch.equal(spins_naive, spins_cached)
+    assert torch.allclose(log_q_naive, log_q_cached, atol=1e-5)
+
+
 def test_slice_probabilities_normalise_exactly():
     # A masked AR factorisation is a proper distribution ON THE SLICE for any
     # logits: sum over the enumerated slice must be exactly 1, untrained.

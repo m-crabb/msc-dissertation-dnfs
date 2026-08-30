@@ -84,6 +84,14 @@ def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
             parent.learning_rate, parent.epsilon)
 
 
+def test_compile_policy_defaults_false_on_every_registered_cell():
+    # Archived cells never retro-flip: compile_policy exists as the GFN
+    # analogue of optimised_recipe's compile_head but flips only for new
+    # 8x8+ cells after the GPU numerical-parity gate at the launch bench.
+    for cell in GFN_CONFIGS.values():
+        assert cell.compile_policy is False
+
+
 def test_build_optimiser_splits_log_z_group():
     from experiments.constrained_hard_03.run_gfn import (
         build_optimiser, build_target_and_policy)

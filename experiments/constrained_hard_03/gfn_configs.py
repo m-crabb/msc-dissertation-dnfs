@@ -49,6 +49,15 @@ class GFNCellCfg:
     # ~100x on log_z alone is the Malkin et al. / torchgfn convention.
     log_z_learning_rate: float | None = None
     epsilon: float = 0.05  # uniform behaviour mix; off-policy, TB-tolerated
+    # torch.compile the SCORING path (site_log_probs and the FL-DB variant)
+    # — the GFN analogue of optimised_recipe's compile_head. Default False:
+    # archived cells never retro-flip, and the flag flips for new 8x8+ cells
+    # only after a GPU numerical-parity gate at the 8x8 launch bench (the
+    # house compile certification pattern). The SAMPLER stays eager either
+    # way: its per-step shapes vary with the KV-cache length, which is
+    # recompile territory, and the cache already took the rollout from
+    # O(d^3) to O(d^2) attention.
+    compile_policy: bool = False
     sigma_stages: tuple[float, ...] = ()  # annealing ladder; () = train flat
     # Eval (house protocol: 5000 draws, chunked).
     n_eval_samples: int = 5000

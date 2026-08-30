@@ -60,6 +60,45 @@ class _CausalBlock(nn.Module):
         h = h + attended
         return h + self.mlp(self.mlp_norm(h))
 
+    def forward_step(self, h_step: torch.Tensor, cache: dict) -> torch.Tensor:
+        """One-token forward against cached keys/values (KV-cache path).
+
+        EXACT REWRITE of `forward` restricted to the newest position: the
+        projections run on `self.attention`'s own in_proj/out_proj weights,
+        so there is one set of parameters and two evaluation orders — the
+        separable-band precedent. Causality is automatic (the cache holds
+        only positions <= the current one), so no mask is materialised.
+        Cost per step is O(L) attention against the cache instead of the
+        naive path's O(L^2) full re-encode; over a d-step rollout that is
+        O(d^2) attention in place of O(d^3).
+        """
+        attention = self.attention
+        batch, _, hidden_dim = h_step.shape
+        n_heads = attention.num_heads
+        head_dim = hidden_dim // n_heads
+
+        normed = self.attention_norm(h_step)
+        query, key, value = F.linear(
+            normed, attention.in_proj_weight, attention.in_proj_bias
+        ).chunk(3, dim=-1)
+
+        def split_heads(t):
+            return t.view(batch, 1, n_heads, head_dim).transpose(1, 2)
+
+        length = cache["length"]
+        cache["k"][:, :, length] = split_heads(key).squeeze(2)
+        cache["v"][:, :, length] = split_heads(value).squeeze(2)
+        cache["length"] = length + 1
+
+        attended = F.scaled_dot_product_attention(
+            split_heads(query),
+            cache["k"][:, :, : length + 1],
+            cache["v"][:, :, : length + 1],
+        )
+        attended = attended.transpose(1, 2).reshape(batch, 1, hidden_dim)
+        h_step = h_step + attention.out_proj(attended)
+        return h_step + self.mlp(self.mlp_norm(h_step))
+
 
 class RasterGFNPolicy(nn.Module):
     """Count-masked AR policy over the fixed-composition slice.
@@ -117,6 +156,35 @@ class RasterGFNPolicy(nn.Module):
         for block in self.blocks:
             h = block(h, mask)
         return self.final_norm(h)
+
+    def _new_kv_caches(self, batch: int) -> list[dict]:
+        """Preallocated per-block KV caches for a d-step cached rollout."""
+        hidden_dim = self.position_embedding.shape[1]
+        n_heads = self.blocks[0].attention.num_heads
+        head_dim = hidden_dim // n_heads
+        device = self.position_embedding.device
+        return [
+            {
+                "k": torch.zeros(batch, n_heads, self.d, head_dim, device=device),
+                "v": torch.zeros(batch, n_heads, self.d, head_dim, device=device),
+                "length": 0,
+            }
+            for _ in self.blocks
+        ]
+
+    def _encode_step(
+        self, token_ids_step: torch.Tensor, site: int, caches: list[dict]
+    ) -> torch.Tensor:
+        """(B,) token ids at position `site` -> (B, hidden) causal feature,
+        advancing the per-block caches. Must equal `_encode(...)[:, site]`
+        (pinned by test_kv_cache_step_features_match_full_encode)."""
+        h = (
+            self.token_embedding(token_ids_step)
+            + self.position_embedding[site]
+        ).unsqueeze(1)
+        for block, cache in zip(self.blocks, caches):
+            h = block.forward_step(h, cache)
+        return self.final_norm(h).squeeze(1)
 
     def _shifted_token_ids(self, spins: torch.Tensor) -> torch.Tensor:
         """[BOS, x_0, ..., x_{d-2}]: the AR shift, so feature i predicts x_i."""
@@ -190,6 +258,7 @@ class RasterGFNPolicy(nn.Module):
         n: int,
         epsilon: float = 0.0,
         generator: torch.Generator | None = None,
+        kv_cache: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Draw n slice configurations; returns (spins, log q_theta(spins)).
 
@@ -200,18 +269,31 @@ class RasterGFNPolicy(nn.Module):
         (the one distinctly-GFN property this comparator keeps).
 
         The mask binds the behaviour policy too, so exploration cannot leave
-        the slice. Cost is one prefix re-encode per site (O(d^3) attention
-        overall); acceptable at 4x4/8x8, and the KV-cache optimisation slot
-        if 16x16 rollout benching demands it.
+        the slice. The default path caches per-block keys/values, so a
+        rollout costs O(d^2) attention; `kv_cache=False` keeps the naive
+        one-prefix-re-encode-per-site path (O(d^3)) whose only remaining
+        job is pinning the cache as an exact rewrite
+        (test_sample_with_and_without_kv_cache_agree).
         """
         device = self.position_embedding.device
         spins = torch.zeros(n, self.d, device=device)
         log_q = torch.zeros(n, device=device)
         n_up = torch.zeros(n, device=device)
+        caches = self._new_kv_caches(n) if kv_cache else None
 
         for site in range(self.d):
-            token_ids = self._shifted_token_ids(spins[:, : site + 1])
-            logit = self.policy_head(self._encode(token_ids)[:, -1]).squeeze(-1)
+            if kv_cache:
+                if site == 0:
+                    token_ids_step = torch.full(
+                        (n,), _BOS_TOKEN_ID, dtype=torch.long, device=device
+                    )
+                else:
+                    token_ids_step = (spins[:, site - 1] > 0).long()
+                feature = self._encode_step(token_ids_step, site, caches)
+            else:
+                token_ids = self._shifted_token_ids(spins[:, : site + 1])
+                feature = self._encode(token_ids)[:, -1]
+            logit = self.policy_head(feature).squeeze(-1)
             force_up, force_down = self._forced_moves(n_up, site)
 
             probability_up = torch.sigmoid(logit)

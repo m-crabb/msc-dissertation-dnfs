@@ -208,6 +208,14 @@ def train_gfn(
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     target, policy = build_target_and_policy(cfg, device)
+    if cfg.compile_policy:
+        # Scoped to the scoring methods (the loss forward+backward); the
+        # sampler stays eager — see GFNCellCfg.compile_policy for the why.
+        policy.site_log_probs = torch.compile(policy.site_log_probs)
+        if cfg.with_flow_head:
+            policy.site_log_probs_and_flow_residuals = torch.compile(
+                policy.site_log_probs_and_flow_residuals
+            )
     optimiser = build_optimiser(cfg, policy)
 
     checkpoint_dir = run_dir / "checkpoints"
