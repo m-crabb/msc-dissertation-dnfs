@@ -25,9 +25,11 @@ def test_registry_keys_match_cell_names_and_objectives():
     for name, cell in GFN_CONFIGS.items():
         assert name == cell.name
         assert cell.objective in GFN_OBJECTIVES
-    # Both arms at both house couplings, twice: the s92 correctness wave
-    # (hidden 128/3, flat lr) and the s93 parity wave (`_par`).
-    assert len(GFN_CONFIGS) == 8
+    # Both arms at both house couplings, twice (s92 correctness wave at
+    # hidden 128/3 flat lr; s93 parity wave `_par`), plus the s93
+    # fair-tuning grid: 3x3 lr x epsilon minus the centre (= the `_par`
+    # cell itself) x both arms at sigma_c only = 16 `_swp` cells.
+    assert len(GFN_CONFIGS) == 24
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
@@ -55,9 +57,31 @@ def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
             assert cell.log_z_learning_rate is None
     # The correctness wave is untouched (archived cells never retro-flip).
     for name, cell in GFN_CONFIGS.items():
-        if not name.endswith("_par"):
+        if name.endswith("_10k"):
             assert cell.hidden_dim == 128
             assert cell.log_z_learning_rate is None
+
+
+def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
+    # Fair-tuning grid: each `_swp` cell must be its sigma_c `_par` arm
+    # with ONLY name, learning_rate and epsilon changed — same sizing,
+    # same lr_Z (the sweep axes are the NETWORK lr and the behaviour mix;
+    # lr_Z stays at the frozen 0.1), same sigma, same budget. A drifted
+    # field here would make the whole grid unreadable as a sweep.
+    from dataclasses import fields
+
+    sweep = {n: c for n, c in GFN_CONFIGS.items() if n.endswith("_swp")}
+    assert len(sweep) == 16
+    for name, cell in sweep.items():
+        parent = GFN_CONFIGS[f"GFN_d16_c50_s220_{cell.objective}_10k_par"]
+        for field in fields(cell):
+            if field.name in ("name", "learning_rate", "epsilon"):
+                continue
+            assert getattr(cell, field.name) == getattr(parent, field.name), (
+                f"{name}.{field.name} drifted from its _par parent"
+            )
+        assert (cell.learning_rate, cell.epsilon) != (
+            parent.learning_rate, parent.epsilon)
 
 
 def test_build_optimiser_splits_log_z_group():

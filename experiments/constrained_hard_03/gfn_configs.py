@@ -104,6 +104,30 @@ def _gfn_d16_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNC
     return cell
 
 
+# Fair-tuning grid around the `_par` recipe (s93): lr x epsilon, sigma_c
+# only (the discriminating coupling), centre EXCLUDED because the centre IS
+# the `_par` cell. The 4x4 gate is a FILTER, not a signal (the window-arm
+# lesson: a disjoint 4x4 separation reversed at 8x8), so this grid exists
+# to show the house recipe sits in no hole and to exclude configs that
+# break cheaply — the discriminating sweep belongs at 8x8. Warmup and grad
+# clip are deliberately NOT folded in: all 24 GFN cells to date converged
+# without them, so there is nothing for them to rescue, and changing the
+# centre would orphan the judged `_par` wave.
+_SWEEP_LR_GRID = {"l3e4": 3e-4, "l1e3": 1e-3, "l3e3": 3e-3}
+_SWEEP_EPSILON_GRID = {"e000": 0.0, "e005": 0.05, "e010": 0.1}
+_SWEEP_CENTRE = ("l1e3", "e005")
+
+
+def _gfn_d16_sweep_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCellCfg:
+    base = _gfn_d16_parity_cell(objective, "s220", SIGMA_C)
+    return replace(
+        base,
+        name=base.name.replace("_par", f"_{lr_key}_{epsilon_key}_swp"),
+        learning_rate=_SWEEP_LR_GRID[lr_key],
+        epsilon=_SWEEP_EPSILON_GRID[epsilon_key],
+    )
+
+
 GFN_CONFIGS = {
     cell.name: cell
     for objective in GFN_OBJECTIVES
@@ -112,5 +136,11 @@ GFN_CONFIGS = {
         _gfn_d16_cell(objective, "s220", SIGMA_C),
         _gfn_d16_parity_cell(objective, "s010", 0.10),
         _gfn_d16_parity_cell(objective, "s220", SIGMA_C),
+        *(
+            _gfn_d16_sweep_cell(objective, lr_key, epsilon_key)
+            for lr_key in _SWEEP_LR_GRID
+            for epsilon_key in _SWEEP_EPSILON_GRID
+            if (lr_key, epsilon_key) != _SWEEP_CENTRE
+        ),
     )
 }
