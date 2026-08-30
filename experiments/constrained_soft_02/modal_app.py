@@ -16,6 +16,13 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     pixi run -e dev modal run --detach -m \\
         experiments.constrained_soft_02.modal_app::batch_seeds \\
         --cfg-name S2_d4_c05_l50_letf --seeds "42,43,44,45"
+
+    # Multi-seed PACKED onto one card (s96 cost decision; wall-clock from
+    # packed runs is contention-contaminated, see train_pack_remote):
+    pixi run -e dev modal run --detach -m \\
+        experiments.constrained_soft_02.modal_app::batch_seeds_packed \\
+        --cfg-name S2_d8_c0250_l50_letf_ne128_house --seeds "42,43,44,45" \\
+        --tag 20260831-softhouse-d64
 """
 import time
 
@@ -138,6 +145,59 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
 
 
 @app.function(
+    # Same SKU pin as train_remote, same reason: the determinism channel is
+    # device CLASS, and packing seeds onto one card does not vary it.
+    gpu="A100-80GB",
+    volumes={"/results": volume},
+    secrets=[wandb_secret],
+    timeout=24 * 60 * 60,
+)
+def train_pack_remote(cfg_name: str, seeds: str, tag: str = ""):
+    """Run several seeds of one config CONCURRENTLY on the one rented card.
+
+    Modal cannot cohabit containers on a GPU, so co-residency happens
+    INSIDE the container: one subprocess per seed sharing the A100 this
+    function rents — the mars MPS-pack move (s96, user decision). At d64
+    the leTF cells are small and launch-bound, so four co-resident runs
+    overlap well and the pack cuts the per-wave bill ~4x while keeping
+    the SKU pin.
+
+    Two accepted costs. (1) Wall-clock columns from packed runs are
+    contention-contaminated — never quote them; ESS, fidelity and the
+    analytic FLOP/es are untouched, and the house table's cost column is
+    FLOP/es. (2) A preemption interrupts every co-resident seed at once;
+    the fixed tag plus the commit loop below make the retry resume each
+    seed from its last outer-cycle boundary rather than step 0.
+    """
+    import subprocess
+    import sys
+    import time as time_module
+
+    seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    procs = {}
+    for seed in seed_list:
+        procs[seed] = subprocess.Popen(
+            [sys.executable, "-m", "experiments.constrained_soft_02.run",
+             "--cfg", cfg_name, "--seed", str(seed),
+             "--output-dir", "/results",
+             *(["--tag", tag] if tag else [])],
+            cwd=PROJECT_DIR,
+        )
+    # The subprocess CLI cannot pass on_checkpoint=volume.commit, so the
+    # parent commits on a timer instead: resume.pt lands on the volume
+    # within a minute of being written, close enough to the single-run
+    # per-checkpoint granularity for preemption recovery.
+    while any(p.poll() is None for p in procs.values()):
+        time_module.sleep(60)
+        volume.commit()
+    volume.commit()
+    failed = {seed: p.returncode
+              for seed, p in procs.items() if p.returncode != 0}
+    if failed:
+        raise RuntimeError(f"packed seeds failed (seed: exit): {failed}")
+
+
+@app.function(
     # Same SKU pin as train_remote: the Richardson pair combines two
     # independent draws, so venue is not a within-pair confound, but one SKU
     # keeps every drawn number in the campaign on one device class.
@@ -213,3 +273,12 @@ def batch_seeds(cfg_name: str, seeds: str = "42", tag: str = ""):
     for seed in seed_list:
         train_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
     print(f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list} tag={tag or '<timestamp>'}")
+
+
+@app.local_entrypoint()
+def batch_seeds_packed(cfg_name: str, seeds: str = "42", tag: str = ""):
+    """One container, all seeds co-resident (see train_pack_remote)."""
+    _validate_cfg_name(cfg_name)
+    train_pack_remote.spawn(cfg_name=cfg_name, seeds=seeds, tag=tag)
+    print(f"spawned packed container for {cfg_name}: "
+          f"seeds={seeds} tag={tag or '<timestamp>'}")
