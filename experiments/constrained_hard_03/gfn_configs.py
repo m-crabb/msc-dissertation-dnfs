@@ -59,6 +59,36 @@ class GFNCellCfg:
     # O(d^3) to O(d^2) attention.
     compile_policy: bool = False
     sigma_stages: tuple[float, ...] = ()  # annealing ladder; () = train flat
+    # House-recipe training levers, added for the d64 rung (s94). Every
+    # default is ARCHIVED-INERT: 0 / None / False reproduces the d16 waves
+    # byte-identically, so archived cells never retro-flip and the sweep
+    # twin test's field-by-field comparison needs no exemptions.
+    # Linear lr ramp over the first `warmup_steps` updates (house d64 value
+    # 500), applied to the NETWORK group only: the TB log_z group exists
+    # because Adam starves a scalar at the shared lr (see
+    # log_z_learning_rate above), and re-throttling it for the ramp would
+    # re-create a mild version of that failure at the start of every run.
+    warmup_steps: int = 0
+    # clip_grad_norm_ max-norm (house d64 value 500.0); None = no clipping.
+    # The pre-clip total norm is logged as `grad_norm` either way — whether
+    # the rail engaged is readable from the training log.
+    grad_clip_max_norm: float | None = None
+    # Eval-side EMA shadow (house ema_decay 0.9999, warmup-corrected);
+    # 0.0 = off. When on, the final eval runs TWICE — raw weights into
+    # eval/, shadow weights into eval_ema/ — mirroring run.py's dual-eval
+    # instrument so the table scripts ingest GFN rows unchanged.
+    ema_decay: float = 0.0
+    # bf16 autocast around eval sampling+scoring (house d64 evals carry
+    # eval_autocast_bf16=true); False = fp32 end to end (the d16 waves).
+    eval_autocast_bf16: bool = False
+    # In-training frozen-ESS diagnostic every `eval_every` steps (house
+    # eval_every=200): n_eval_samples_training draws at epsilon=0, raw
+    # weights, CURRENT stage sigma. 0 = off. This is the telltale the
+    # behaviour-batch ESS cannot be — on-policy draws score their own
+    # policy healthily even when it has mode-collapsed (reverse-KL
+    # blindness; Malkin et al. 2023 Prop. 1).
+    eval_every: int = 0
+    n_eval_samples_training: int = 512
     # Eval (house protocol: 5000 draws, chunked).
     n_eval_samples: int = 5000
     eval_sample_chunk: int = 512
@@ -137,6 +167,75 @@ def _gfn_d16_sweep_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCel
     )
 
 
+# The 8x8 rung (s94). The sigma_c stage ladder mirrors the house
+# _D64_SIGMA_LADDER exactly, INCLUDING its 20k final plateau: _stage_sigma
+# gives every entry an equal n_steps/len share, so ten 5k-step stages with
+# the final sigma repeated four times reproduce the house start-steps
+# 0/5k/10k/15k/20k/25k/30k with 20k on the cell's own coupling. (The house
+# ladder also drops lr 1e-3 -> 3e-4 at step 20k; the GFN trains flat-lr —
+# a declared deviation the star's flat 3e-4 arm brackets.)
+_D64_GFN_SIGMA_STAGES = (
+    0.100, 0.140, 0.170, 0.190, 0.205, 0.215,
+    SIGMA_C, SIGMA_C, SIGMA_C, SIGMA_C,
+)
+
+# Trimmed star around the d64 centre, sigma_c only (the discriminating
+# coupling — d64 house ESS spans 0.735-0.953 there, against the saturated
+# 4x4 gate). Arms from the s94 4x4 grid verdict: the lr axis first (epsilon
+# was flat at 4x4 across both objectives), 3e-4 because "under-trained at
+# 10k" no longer excuses it at 50k, 3e-3 because the FLDB triplet sat
+# disjoint above its centre.
+_D64_STAR_ARMS = (
+    ("l3e4", "e005"), ("l3e3", "e005"), ("l1e3", "e000"), ("l1e3", "e010"),
+)
+
+
+def _gfn_d64_parity_cell(
+    objective: str, sigma_label: str, sigma: float
+) -> GFNCellCfg:
+    """8x8 centre: the validated 4x4 parity recipe at the house d64 budget.
+
+    Parity is measured params again: the SAME hidden 64 / 2 layers / 4
+    heads policy lands at 104,450 params at D=8, within 3.5% (under) of
+    the wave-2 d64 masked-attention head's 108,256. Budget levers match
+    the wave-2 recipe field by field (50k steps, batch 128, warmup 500,
+    grad clip 500, EMA 0.9999 dual eval, bf16 eval autocast, in-training
+    frozen eval every 200 steps on 512 draws); compile_policy ships ON,
+    gated by the GPU numerical-parity check at the launch bench.
+    Declared deviations from the house recipe: flat lr (no 20k-step drop
+    to 3e-4 — the star's flat 3e-4 arm brackets it) and no lr ramp on the
+    TB log_z group (see warmup_steps above).
+    """
+    cell = replace(
+        _gfn_d16_parity_cell(objective, sigma_label, sigma),
+        D=8,
+        n_steps=50_000,
+        warmup_steps=500,
+        grad_clip_max_norm=500.0,
+        ema_decay=0.9999,
+        eval_autocast_bf16=True,
+        eval_every=200,
+        compile_policy=True,
+        checkpoint_every=5000,
+        sigma_stages=(
+            _D64_GFN_SIGMA_STAGES if sigma_label == "s220" else ()
+        ),
+    )
+    return replace(
+        cell, name=f"GFN_d64_c50_{sigma_label}_{objective}_50k_par"
+    )
+
+
+def _gfn_d64_star_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCellCfg:
+    base = _gfn_d64_parity_cell(objective, "s220", SIGMA_C)
+    return replace(
+        base,
+        name=base.name.replace("_par", f"_{lr_key}_{epsilon_key}_swp"),
+        learning_rate=_SWEEP_LR_GRID[lr_key],
+        epsilon=_SWEEP_EPSILON_GRID[epsilon_key],
+    )
+
+
 GFN_CONFIGS = {
     cell.name: cell
     for objective in GFN_OBJECTIVES
@@ -150,6 +249,12 @@ GFN_CONFIGS = {
             for lr_key in _SWEEP_LR_GRID
             for epsilon_key in _SWEEP_EPSILON_GRID
             if (lr_key, epsilon_key) != _SWEEP_CENTRE
+        ),
+        _gfn_d64_parity_cell(objective, "s010", 0.10),
+        _gfn_d64_parity_cell(objective, "s220", SIGMA_C),
+        *(
+            _gfn_d64_star_cell(objective, lr_key, epsilon_key)
+            for lr_key, epsilon_key in _D64_STAR_ARMS
         ),
     )
 }

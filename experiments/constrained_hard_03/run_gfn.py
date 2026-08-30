@@ -35,6 +35,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
     composition_observables,
     ess_from_log_weights,
 )
+from discrete_flow_sampler.ema import ExponentialMovingAverage
 from discrete_flow_sampler.models.raster_gfn_policy import RasterGFNPolicy
 from discrete_flow_sampler.samplers.gfn_objectives import (
     forward_looking_db_loss,
@@ -70,16 +71,39 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
     exact slice value at 10k steps). Splitting the group changes NOTHING
     for cells with the field unset: the s92 wave's flat construction is
     reproduced exactly, so archived cells stay comparable.
+
+    Groups carry a "name" key so the warmup ramp can target the network
+    group alone (see apply_lr_warmup).
     """
     if cfg.log_z_learning_rate is None:
-        return torch.optim.AdamW(policy.parameters(), lr=cfg.learning_rate)
+        return torch.optim.AdamW(
+            [{"params": list(policy.parameters()),
+              "lr": cfg.learning_rate, "name": "network"}]
+        )
     network_params = [p for p in policy.parameters() if p is not policy.log_z]
     return torch.optim.AdamW(
         [
-            {"params": network_params, "lr": cfg.learning_rate},
-            {"params": [policy.log_z], "lr": cfg.log_z_learning_rate},
+            {"params": network_params, "lr": cfg.learning_rate,
+             "name": "network"},
+            {"params": [policy.log_z], "lr": cfg.log_z_learning_rate,
+             "name": "log_z"},
         ]
     )
+
+
+def apply_lr_warmup(optimiser, cfg: GFNCellCfg, step: int) -> None:
+    """House-mirror linear lr ramp (training.py): (step+1)/warmup_steps over
+    the first warmup_steps updates, then the full lr. Applied to the
+    NETWORK group only — the TB log_z group exists because Adam starves a
+    scalar at the shared lr, and re-throttling it for the ramp would
+    re-create a mild version of that failure at the start of every run.
+    A no-op when warmup_steps is 0 (every archived d16 cell)."""
+    if cfg.warmup_steps <= 0 or step > cfg.warmup_steps:
+        return
+    scale = min(1.0, (step + 1) / cfg.warmup_steps)
+    for group in optimiser.param_groups:
+        if group["name"] == "network":
+            group["lr"] = cfg.learning_rate * scale
 
 
 def _stage_sigma(cfg: GFNCellCfg, step: int) -> float:
@@ -112,27 +136,42 @@ def _loss_and_train_diagnostics(cfg, policy, target, spins):
     return loss, site_log_probs.detach().sum(dim=-1)
 
 
-def final_eval_gfn(policy, target, cfg: GFNCellCfg, run_dir: Path) -> dict:
+def _eval_autocast(cfg: GFNCellCfg, device_type: str):
+    """bf16 autocast around eval sampling+scoring, mirroring the house
+    eval block (swap_training.py); disabled = fp32 end to end (d16 waves)."""
+    return torch.autocast(
+        device_type, dtype=torch.bfloat16, enabled=cfg.eval_autocast_bf16
+    )
+
+
+def final_eval_gfn(
+    policy, target, cfg: GFNCellCfg, run_dir: Path, eval_dir_suffix: str = ""
+) -> dict:
     """End-of-run eval, chunked like run.py's; epsilon=0 (the policy itself).
 
     assert_on_manifold runs on every draw — the comparator's headline claim
     is feasibility by construction, so a violated eval must crash, not
-    average away.
+    average away. Called twice when the EMA is armed: raw weights into
+    eval/, shadow weights into eval_ema/ (run.py's dual-eval instrument).
     """
     policy.eval()
+    device_type = next(policy.parameters()).device.type
     sample_chunks, log_weight_chunks = [], []
     remaining = cfg.n_eval_samples
-    while remaining > 0:
-        chunk = min(cfg.eval_sample_chunk, remaining)
-        spins, log_q = policy.sample(chunk)
-        target.assert_on_manifold(spins)
-        sample_chunks.append(spins.cpu())
-        log_weight_chunks.append((target.log_prob(spins) - log_q).cpu())
-        remaining -= chunk
+    with torch.no_grad(), _eval_autocast(cfg, device_type):
+        while remaining > 0:
+            chunk = min(cfg.eval_sample_chunk, remaining)
+            spins, log_q = policy.sample(chunk)
+            target.assert_on_manifold(spins)
+            sample_chunks.append(spins.cpu())
+            log_weight_chunks.append(
+                (target.log_prob(spins) - log_q).float().cpu()
+            )
+            remaining -= chunk
     eval_samples = torch.cat(sample_chunks)
     eval_log_weights = torch.cat(log_weight_chunks)
 
-    eval_dir = run_dir / "eval"
+    eval_dir = run_dir / f"eval{eval_dir_suffix}"
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples, eval_dir / "samples.pt")
     torch.save(eval_log_weights, eval_dir / "log_weights.pt")
@@ -176,7 +215,13 @@ def train_gfn(
     """
     tag = tag or time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path(output_dir) / f"{cfg.name}_seed{seed}_{tag}"
-    if (run_dir / "eval" / "metrics.json").exists():
+    # Complete = every armed eval landed: a preemption between the raw and
+    # EMA evals must re-enter, not short-circuit half-done.
+    complete = (run_dir / "eval" / "metrics.json").exists() and (
+        cfg.ema_decay <= 0
+        or (run_dir / "eval_ema" / "metrics.json").exists()
+    )
+    if complete:
         print(f"[train_gfn] {run_dir.name} already complete; nothing to do")
         return run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -217,6 +262,11 @@ def train_gfn(
                 policy.site_log_probs_and_flow_residuals
             )
     optimiser = build_optimiser(cfg, policy)
+    ema = (
+        ExponentialMovingAverage(policy.parameters(), cfg.ema_decay,
+                                 warmup=True)
+        if cfg.ema_decay > 0 else None
+    )
 
     checkpoint_dir = run_dir / "checkpoints"
     checkpoint_dir.mkdir(exist_ok=True)
@@ -226,27 +276,52 @@ def train_gfn(
         saved = torch.load(resume_path, map_location=device, weights_only=True)
         policy.load_state_dict(saved["policy"])
         optimiser.load_state_dict(saved["optimiser"])
+        if ema is not None and saved.get("ema") is not None:
+            # Shadow + update counter must both persist: a re-seeded shadow
+            # re-creates the init-contamination failure, a reset counter
+            # restarts the warmup schedule mid-run (see ema.py).
+            ema.load_state_dict(saved["ema"])
         start_step = saved["step"]
         print(f"[train_gfn] resuming {run_dir.name} from step {start_step}")
 
     log_path = run_dir / "training_log.csv"
     log_file = open(log_path, "a", newline="")
     log_writer = csv.writer(log_file)
+    log_columns = [
+        "step", "loss", "log_z", "ess_fraction_train", "sigma",
+        # d64 failure-triage columns (s94). grad_norm is the PRE-clip total
+        # norm (clip_grad_norm_'s return value), so whether the rail engaged
+        # is readable as grad_norm > grad_clip_max_norm. mean_log_q is the
+        # entropy proxy: RISING mean log q with healthy batch ESS is the
+        # mode-collapse signature the on-policy ESS cannot see (reverse-KL
+        # blindness). log_z_is_batch is the live IS estimate of the slice
+        # log Z — at d64 there is no enumeration to arbitrate the TB
+        # learned value, so learned-vs-IS gap + tail slope replace the 4x4
+        # exact arbitration. ess_frozen is the eval_every diagnostic
+        # (epsilon=0, n_eval_samples_training draws, current stage sigma).
+        "grad_norm", "mean_log_q", "log_z_is_batch", "ess_frozen",
+    ]
     if start_step == 0 and log_path.stat().st_size == 0:
-        log_writer.writerow(
-            ["step", "loss", "log_z", "ess_fraction_train", "sigma"]
-        )
+        log_writer.writerow(log_columns)
 
     policy.train()
     for step in range(start_step, cfg.n_steps):
         target.set_sigma(_stage_sigma(cfg, step))
+        apply_lr_warmup(optimiser, cfg, step)
         spins, _ = policy.sample(cfg.batch_size, epsilon=cfg.epsilon)
         loss, model_log_prob = _loss_and_train_diagnostics(
             cfg, policy, target, spins
         )
         optimiser.zero_grad()
         loss.backward()
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            policy.parameters(),
+            cfg.grad_clip_max_norm if cfg.grad_clip_max_norm is not None
+            else float("inf"),
+        )
         optimiser.step()
+        if ema is not None:
+            ema.update()
 
         if step % cfg.log_every == 0 or step == cfg.n_steps - 1:
             # In-training ESS on the behaviour batch: a convergence telltale,
@@ -255,22 +330,41 @@ def train_gfn(
             batch_ess_fraction = float(
                 ess_from_log_weights(batch_log_weights).item()
             ) / cfg.batch_size
+            ess_frozen = float("nan")
+            if cfg.eval_every > 0 and step % cfg.eval_every == 0:
+                with torch.no_grad(), _eval_autocast(cfg, device):
+                    frozen_weight_chunks = []
+                    remaining = cfg.n_eval_samples_training
+                    while remaining > 0:
+                        chunk = min(cfg.eval_sample_chunk, remaining)
+                        frozen_spins, frozen_log_q = policy.sample(chunk)
+                        frozen_weight_chunks.append(
+                            (target.log_prob(frozen_spins)
+                             - frozen_log_q).float()
+                        )
+                        remaining -= chunk
+                    frozen_log_weights = torch.cat(frozen_weight_chunks)
+                    ess_frozen = float(
+                        ess_from_log_weights(frozen_log_weights).item()
+                    ) / cfg.n_eval_samples_training
             row = [step, float(loss.item()), float(policy.log_z.item()),
-                   batch_ess_fraction, target.sigma]
+                   batch_ess_fraction, target.sigma,
+                   float(grad_norm.item()),
+                   float(model_log_prob.mean().item()),
+                   float(log_mean_exp(batch_log_weights).item()),
+                   ess_frozen]
             log_writer.writerow(row)
             log_file.flush()
             if use_wandb:
                 import wandb
 
-                wandb.log(dict(zip(
-                    ["step", "loss", "log_z", "ess_fraction_train", "sigma"],
-                    row,
-                )), step=step)
+                wandb.log(dict(zip(log_columns, row)), step=step)
 
         if (step + 1) % cfg.checkpoint_every == 0:
             torch.save(
                 {"step": step + 1, "policy": policy.state_dict(),
-                 "optimiser": optimiser.state_dict()},
+                 "optimiser": optimiser.state_dict(),
+                 "ema": ema.state_dict() if ema is not None else None},
                 resume_path,
             )
             if on_checkpoint is not None:
@@ -281,11 +375,27 @@ def train_gfn(
     torch.save(policy.state_dict(), checkpoint_dir / "final.pt")
     eval_metrics = final_eval_gfn(policy, target, cfg, run_dir)
     print(f"[train_gfn] {run_dir.name}: {json.dumps(eval_metrics, indent=2)}")
+    ema_metrics = None
+    if ema is not None:
+        # Dual eval, mirroring run.py: shadow weights swapped in for a
+        # second full eval into eval_ema/, saved as final_ema.pt so the
+        # reading is reproducible from the checkpoint alone.
+        ema.swap_in()
+        torch.save(policy.state_dict(), checkpoint_dir / "final_ema.pt")
+        ema_metrics = final_eval_gfn(
+            policy, target, cfg, run_dir, eval_dir_suffix="_ema"
+        )
+        ema.swap_out()
+        print(f"[train_gfn] {run_dir.name} (ema): "
+              f"{json.dumps(ema_metrics, indent=2)}")
     if use_wandb:
         import wandb
 
         wandb.log({f"eval/{k}": v for k, v in eval_metrics.items()
                    if isinstance(v, (int, float))})
+        if ema_metrics is not None:
+            wandb.log({f"eval_ema/{k}": v for k, v in ema_metrics.items()
+                       if isinstance(v, (int, float))})
         wandb.finish()
     return run_dir
 
