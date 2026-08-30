@@ -12,6 +12,7 @@ Cell-name format: `S<alphabet>_d<dim>_c<c_target_x100>_l<lambda>`.
 
 from dataclasses import replace
 
+from discrete_flow_sampler.targets.ising import SIGMA_C
 from experiments.dnfs_baseline_01.configs import (
     CompositionCfg,
     CompositionCurriculumStageCfg,
@@ -1947,3 +1948,82 @@ for _parent_name in LAMBDA_SWEEP_PARENTS:
         _parent, name=f"{_parent_name}_efc",
         model=replace(_parent.model, exact_field_channel=True),
     )
+
+
+# ---------------------------------------------------------------------------
+# s95 soft-chapter revamp (2026-08-30): the 8x8 house family. Production
+# moves to d=64 (the hard chapter's record size, so the cross-route
+# comparison is matched-size at BOTH couplings once the _sc half lands);
+# one specialist family serves the F(c) curve and the house table.
+
+
+def soft_house_recipe(cell: StageCfg) -> StageCfg:
+    """s95 house recipe for NEW soft cells, as a recipe transform.
+
+    Four declared instrument changes on top of an archived parent, nothing
+    else: exact_field_channel=True (the closed-form penalty response — s95
+    sweep verdict: full 10x10 lambda=50 rescue, 0.95/0.93/0.94/0.96 against
+    the parent's 0.02/0.06/0.78/0.05), compile_model=True (hard's measured
+    2.2x inner updates; certified by a d4+d64 loss-gap gate before any
+    fan-out, since compile has priors on this codebase), ema_decay=0.9999
+    (dual eval — hard's marginal-seed rescue, 0.750 -> 0.830 class), and
+    train.c_t_from_rollout=True (bit-identical CV grid from the rollout's
+    own forwards). Optimiser-side values (lr, warmup 2000, clip 500,
+    batch/buffer, 50k steps) stay PARENT-matched so the before/after
+    channel comparison carries no second change; evals stay fp32 end to
+    end (bf16/SDPA are hard-chapter-only by standing decision).
+    """
+    return replace(
+        cell,
+        model=replace(
+            cell.model, exact_field_channel=True, compile_model=True),
+        train=replace(cell.train, c_t_from_rollout=True),
+        ema_decay=0.9999,
+    )
+
+
+# The trained compositions: every c* is lattice-representable at d=64
+# (16/24/32 sites). 0.625 and 0.75 are NOT trained — F(c) = F(1-c) under a
+# global spin flip, so the printed curve mirrors them for free and a
+# trained 0.75 would duplicate 0.25. Composition tag = c_target x 1000
+# (the older x100 convention cannot write 0.375); 0.25 is the stress
+# window, further from half-filling than the retired 0.30.
+SOFT_HOUSE_WINDOWS = ((0.25, "c0250"), (0.375, "c0375"), (0.50, "c0500"))
+_D8_HOUSE_PARENT = CONFIGS["S2_d8_c03_l50_letf_ne128"]
+
+for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
+    for _sigma, _sigma_suffix in ((0.1, ""), (SIGMA_C, "_sc")):
+        _house_name = f"S2_d8_{_c_tag}_l50_letf_ne128_house{_sigma_suffix}"
+        CONFIGS[_house_name] = soft_house_recipe(replace(
+            _D8_HOUSE_PARENT,
+            name=_house_name,
+            ising=replace(
+                _D8_HOUSE_PARENT.ising,
+                sigma=_sigma, target_composition=_c_target),
+        ))
+
+# The wave-2 control: house recipe MINUS the channel, critical coupling,
+# centre composition only. If this fails where _house_sc trains, the
+# failure->rescue story gets a measured second act at matched size; if
+# both train, the channel's sigma_c claim rests on the efficiency columns
+# instead. Channel flag is the ONLY lever this cell gives back.
+_HOUSE_SC_CENTRE = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"]
+CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"] = replace(
+    _HOUSE_SC_CENTRE,
+    name="S2_d8_c0500_l50_letf_ne128_house_sc_nochan",
+    model=replace(_HOUSE_SC_CENTRE.model, exact_field_channel=False),
+)
+
+# D=4 gates for the compile-parity check (validate-at-D=4 rule): the full
+# house recipe and its eager twin. The gate passes when their loss traces
+# agree to compile tolerance (1e-5-class, never bit-parity) — the GFN
+# wave's gate pattern, rerun here because compile x leTF x sigma_c is
+# untested and the factorised chassis's compile history says gate first.
+_D4_GATE_PARENT = CONFIGS["S2_d4_c05_l50_letf"]
+CONFIGS["S2_d4_c05_l50_letf_house_gate"] = soft_house_recipe(replace(
+    _D4_GATE_PARENT, name="S2_d4_c05_l50_letf_house_gate"))
+_D4_GATE = CONFIGS["S2_d4_c05_l50_letf_house_gate"]
+CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"] = replace(
+    _D4_GATE, name="S2_d4_c05_l50_letf_house_gate_eager",
+    model=replace(_D4_GATE.model, compile_model=False),
+)
