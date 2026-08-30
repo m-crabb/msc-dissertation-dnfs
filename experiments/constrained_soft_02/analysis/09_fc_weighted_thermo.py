@@ -37,17 +37,16 @@ F(c) curve) and bootstrap error bars; the vcSGC reference is a native
 `VCSGCEnsemble` chain (kT = 1) averaged after burn-in, with the seed-to-seed spread
 as its bar. Local CPU, no Modal, no new training.
 
-Example:
+Example (the s95 8x8 house family; --eval_dir eval_ema reads the dual
+eval's shadow-weight draw, archived pre-EMA d10 cells keep the default):
     python -m experiments.constrained_soft_02.analysis.09_fc_weighted_thermo \
         --results_dir results/02_constrained_soft \
-        --configs S2_d10_c030_l50_letf_ne64_anneal \
-                  S2_d10_c05_l50_letf_ne64_anneal \
-                  S2_d10_c055_l50_letf_ne64_anneal \
-                  S2_d10_c060_l50_letf_ne64_anneal \
-                  S2_d10_c065_l50_letf_ne64_anneal \
-        --seeds 42 43 44 45 --ess_floor 0.30 \
+        --configs S2_d8_c0250_l50_letf_ne128_house \
+                  S2_d8_c0375_l50_letf_ne128_house \
+                  S2_d8_c0500_l50_letf_ne128_house \
+        --seeds 42 43 44 45 --ess_floor 0.30 --eval_dir eval_ema \
         --vcsgc_seeds 0 1 2 --vcsgc_steps 300000 \
-        --plot results/02_constrained_soft/fc_weighted_thermo_ne64_anneal.png
+        --plot results/02_constrained_soft/fc_weighted_thermo_d8_house.png
 """
 import argparse
 import json
@@ -60,10 +59,10 @@ from discrete_flow_sampler.mcmc.mchammer_ising import run_vcsgc
 from experiments.constrained_soft_02.analysis._common import latest_run_dir, seed_of
 
 
-def _load_meta(run_dir: Path) -> dict:
+def _load_meta(run_dir: Path, eval_dir: str = "eval") -> dict:
     cfg = json.loads((run_dir / "config.json").read_text())
     ising = cfg["ising"]
-    metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
+    metrics = json.loads((run_dir / eval_dir / "metrics.json").read_text())
     D = ising["D"]
     return dict(name=run_dir.name, run_dir=run_dir, D=D, d=D * D,
                 sigma=ising["sigma"], lam=ising["composition_penalty_strength"],
@@ -96,12 +95,13 @@ def _wstd(vals: np.ndarray, w: np.ndarray, mean: float) -> float:
     return float(np.sqrt((w * (vals - mean) ** 2).sum()))
 
 
-def dnfs_observables(run_dir: Path, D: int, sigma: float, n_boot: int, rng):
+def dnfs_observables(run_dir: Path, D: int, sigma: float, n_boot: int, rng,
+                     eval_dir: str = "eval"):
     """Self-normalised IS estimates + bootstrap of (c_mean, c_std, E/site, SRO)."""
     d = D * D
-    spins = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float().numpy()
+    spins = torch.load(run_dir / eval_dir / "samples.pt", weights_only=True).float().numpy()
     spins = spins.reshape(spins.shape[0], -1)
-    logw = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True).double().numpy().ravel()
+    logw = torch.load(run_dir / eval_dir / "log_weights.pt", weights_only=True).double().numpy().ravel()
     n = spins.shape[0]
 
     c = ((spins + 1.0) * 0.5).mean(axis=1)            # fraction of +1 spins
@@ -171,6 +171,9 @@ def main() -> None:
                    help="compositions drawn with a provisional ring (their Z2 "
                         "mirrors inherit it); used while a window awaits retrain "
                         "or prints from a different training grid")
+    p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
+                   help="which frozen eval to score: raw weights or the s95 "
+                        "dual eval's EMA shadow draw")
     args = p.parse_args()
     rng = np.random.default_rng(0)
 
@@ -178,9 +181,10 @@ def main() -> None:
     metas, missing = [], []
     for config in args.configs:
         for seed in args.seeds:
-            rd = latest_run_dir(args.results_dir, config, seed)
+            rd = latest_run_dir(args.results_dir, config, seed, args.eval_dir)
             (metas if rd is not None else missing).append(
-                _load_meta(rd) if rd is not None else f"{config} seed{seed}")
+                _load_meta(rd, args.eval_dir) if rd is not None
+                else f"{config} seed{seed}")
     if missing:
         print(f"[warn] no eval found for: {', '.join(missing)}")
     if not metas:
@@ -235,7 +239,8 @@ def main() -> None:
         pts = {k: [] for k in ("c_mean", "c_std", "e_site", "sro")}
         within = {k: [] for k in pts}
         for m in gated:
-            pt, er = dnfs_observables(m["run_dir"], D, sigma, args.n_boot, rng)
+            pt, er = dnfs_observables(m["run_dir"], D, sigma, args.n_boot, rng,
+                                      args.eval_dir)
             for k in pts:
                 pts[k].append(pt[k])
                 within[k].append(er[k])

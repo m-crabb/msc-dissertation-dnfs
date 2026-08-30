@@ -48,17 +48,17 @@ lambda=50 the penalty width 1/sqrt(2*lambda*d) is about one composition step at
 D=10 (and narrower than a step at D=4), so the continuum offset is an
 approximation; the exact discrete deconvolution is a later refinement.
 
-Example:
+Example (the s95 8x8 house family against the D=8 TI reference;
+--eval_dir eval_ema reads the dual eval's shadow-weight draw, archived
+pre-EMA d10 cells keep the default):
     python -m experiments.constrained_soft_02.analysis.08_fc_compare \
         --results_dir results/02_constrained_soft \
-        --reference results/02_constrained_soft/fc_ref_d10.npz \
-        --configs S2_d10_c030_l50_letf_ne64_anneal \
-                  S2_d10_c05_l50_letf_ne64_anneal \
-                  S2_d10_c055_l50_letf_ne64_anneal \
-                  S2_d10_c060_l50_letf_ne64_anneal \
-                  S2_d10_c065_l50_letf_ne64_anneal \
-        --seeds 42 43 44 45 --ess_floor 0.30 \
-        --plot results/02_constrained_soft/fc_compare_ne64_anneal.png
+        --reference results/02_constrained_soft/fc_ref_d8.npz \
+        --configs S2_d8_c0250_l50_letf_ne128_house \
+                  S2_d8_c0375_l50_letf_ne128_house \
+                  S2_d8_c0500_l50_letf_ne128_house \
+        --seeds 42 43 44 45 --ess_floor 0.30 --eval_dir eval_ema \
+        --plot results/02_constrained_soft/fc_compare_d8_house.png
 """
 import argparse
 import json
@@ -69,10 +69,10 @@ import torch
 from experiments.constrained_soft_02.analysis._common import latest_run_dir, seed_of
 
 
-def _load_record(run_dir: Path) -> dict:
+def _load_record(run_dir: Path, eval_dir: str = "eval") -> dict:
     cfg = json.loads((run_dir / "config.json").read_text())
     ising = cfg["ising"]
-    metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
+    metrics = json.loads((run_dir / eval_dir / "metrics.json").read_text())
     D = ising["D"]
     return {
         "name": run_dir.name,
@@ -108,21 +108,26 @@ def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng,
     return point, boot
 
 
-def _grids_available(run_dir: Path, native_ne: int) -> list[tuple[int, str]]:
+def _grids_available(run_dir: Path, native_ne: int,
+                     eval_dir: str = "eval") -> list[tuple[int, str]]:
     """Euler grids this checkpoint has been drawn on, coarsest first.
 
-    The frozen `eval/` is the run's native grid; `eval_ne<k>/` side dirs are
-    the redraws written by `run.eval_only(n_euler_override=k)`.
+    The frozen `{eval_dir}/` is the run's native grid; `{eval_dir}_ne<k>/`
+    side dirs are the redraws written by `run.eval_only(n_euler_override=k)`
+    (EMA-side redraws would land as `eval_ema_ne<k>/`; none exist yet, so an
+    eval_ema pass falls back to the native draw with the caller's warning).
     """
-    grids = [(native_ne, "eval")]
-    for side in run_dir.glob("eval_ne*"):
+    grids = [(native_ne, eval_dir)]
+    for side in run_dir.glob(f"{eval_dir}_ne*"):
         if (side / "log_weights.pt").exists():
-            grids.append((int(side.name.removeprefix("eval_ne")), side.name))
+            grids.append(
+                (int(side.name.removeprefix(f"{eval_dir}_ne")), side.name))
     return sorted(grids)
 
 
 def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
-                  rng) -> tuple[float, np.ndarray, tuple[int, int] | None]:
+                  rng, eval_dir: str = "eval",
+                  ) -> tuple[float, np.ndarray, tuple[int, int] | None]:
     """First-order Richardson extrapolation of F/site to the continuum grid.
 
     The Euler-grid error is first order (pre-registered 2026-08-21: step
@@ -139,9 +144,9 @@ def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
     checkpoint has no side-grid redraws -- the caller warns, so a partially
     redrawn family cannot silently mix extrapolated and raw points.
     """
-    grids = _grids_available(run_dir, native_ne)
+    grids = _grids_available(run_dir, native_ne, eval_dir)
     if len(grids) < 2:
-        point, boot = _bootstrap_F(run_dir, d, n_boot, rng)
+        point, boot = _bootstrap_F(run_dir, d, n_boot, rng, eval_dir)
         return point, boot, None
     (g1, dir1), (g2, dir2) = grids[-2], grids[-1]
     p1, b1 = _bootstrap_F(run_dir, d, n_boot, rng, dir1)
@@ -184,6 +189,9 @@ def main() -> None:
                    help="compositions drawn with a provisional ring (their Z2 "
                         "mirrors inherit it); used while a window awaits retrain "
                         "or prints from a different training grid")
+    p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
+                   help="which frozen eval to score: raw weights or the s95 "
+                        "dual eval's EMA shadow draw")
     args = p.parse_args()
     rng = np.random.default_rng(0)
 
@@ -191,11 +199,11 @@ def main() -> None:
     records, missing = [], []
     for config in args.configs:
         for seed in args.seeds:
-            rd = latest_run_dir(args.results_dir, config, seed)
+            rd = latest_run_dir(args.results_dir, config, seed, args.eval_dir)
             if rd is None:
                 missing.append(f"{config} seed{seed}")
                 continue
-            records.append(_load_record(rd))
+            records.append(_load_record(rd, args.eval_dir))
     if missing:
         print(f"[warn] no eval found for: {', '.join(missing)}")
     if not records:
@@ -276,13 +284,15 @@ def main() -> None:
         for r in gated:
             if args.richardson:
                 pt, boot, pair = _richardson_F(
-                    r["run_dir"], r["n_euler"], d, args.n_boot, rng)
+                    r["run_dir"], r["n_euler"], d, args.n_boot, rng,
+                    args.eval_dir)
                 if pair is None:
                     print(f"[warn] {r['name']}: no side-grid redraw, "
                           f"point stays on the native ne{r['n_euler']} draw")
                 grid_pairs.append(pair)
             else:
-                pt, boot = _bootstrap_F(r["run_dir"], d, args.n_boot, rng)
+                pt, boot = _bootstrap_F(
+                    r["run_dir"], d, args.n_boot, rng, args.eval_dir)
             seed_pts.append(pt)
             seed_boots.append(boot)
         if args.richardson and any(gp is not None for gp in grid_pairs):

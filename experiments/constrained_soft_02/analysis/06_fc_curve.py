@@ -28,11 +28,14 @@ computes in the paper convention rather than recomputing them, so the numbers
 match the per-run eval exactly. Weighted thermodynamics with bootstrap error
 bars and the vcSGC-TI reference at D=10 are a later pass.
 
-Example:
+Example (the s95 8x8 house family; --eval_dir eval_ema reads the dual
+eval's shadow-weight draw, archived pre-EMA cells keep the default):
     python -m experiments.constrained_soft_02.analysis.06_fc_curve \
         --results_dir results/02_constrained_soft \
-        --configs S2_d4_c03_l50_letf S2_d4_c05_l50_letf \
-        --seeds 42 43 44 45 --ess_floor 0.30
+        --configs S2_d8_c0250_l50_letf_ne128_house \
+                  S2_d8_c0375_l50_letf_ne128_house \
+                  S2_d8_c0500_l50_letf_ne128_house \
+        --seeds 42 43 44 45 --ess_floor 0.30 --eval_dir eval_ema
 """
 import argparse
 import json
@@ -42,10 +45,10 @@ import numpy as np
 from experiments.constrained_soft_02.analysis._common import latest_run_dir
 
 
-def _load_record(run_dir: Path) -> dict:
+def _load_record(run_dir: Path, eval_dir: str = "eval") -> dict:
     cfg = json.loads((run_dir / "config.json").read_text())
     ising = cfg["ising"]
-    metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
+    metrics = json.loads((run_dir / eval_dir / "metrics.json").read_text())
     D = ising["D"]
     return {
         "name": run_dir.name,
@@ -75,6 +78,9 @@ def main() -> None:
                    help="per-seed ESS-fraction floor for entering the F(c) average")
     p.add_argument("--plot", type=Path, default=None,
                    help="optional output path for the F(c) + bias figure")
+    p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
+                   help="which frozen eval to score: raw weights or the s95 "
+                        "dual eval's EMA shadow draw")
     args = p.parse_args()
 
     # --- collect every available run ------------------------------------
@@ -82,11 +88,11 @@ def main() -> None:
     missing = []
     for config in args.configs:
         for seed in args.seeds:
-            rd = latest_run_dir(args.results_dir, config, seed)
+            rd = latest_run_dir(args.results_dir, config, seed, args.eval_dir)
             if rd is None:
                 missing.append(f"{config} seed{seed}")
                 continue
-            records.append(_load_record(rd))
+            records.append(_load_record(rd, args.eval_dir))
     if missing:
         print(f"[warn] no eval found for: {', '.join(missing)}")
     if not records:

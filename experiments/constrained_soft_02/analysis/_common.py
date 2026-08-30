@@ -9,19 +9,26 @@ they scored.
 from pathlib import Path
 
 
-def latest_run_dir(results_dir: Path, config: str, seed: int) -> Path | None:
-    """Newest run dir for (config, seed) carrying an eval/metrics.json.
+def latest_run_dir(results_dir: Path, config: str, seed: int,
+                   eval_dir: str = "eval") -> Path | None:
+    """Newest run dir for (config, seed) carrying an {eval_dir}/metrics.json.
 
     Matches both the timestamped `{config}_seed{seed}_<timestamp>` form that
     `batch_seeds` writes and the bare `{config}_seed{seed}` form of older
     one-off runs. Lexicographic max is chronological max because the
     timestamp suffix is zero-padded `YYYYMMDD-HHMMSS`.
+
+    `eval_dir` selects which frozen eval qualifies a run as complete:
+    "eval" (raw weights, every run) or "eval_ema" (the s95 dual eval's
+    shadow-weight draw, present only on ema_decay > 0 cells) — so an
+    EMA-selected analysis can never silently score a raw draw.
     """
     matches = set(results_dir.glob(f"{config}_seed{seed}_*"))
     bare = results_dir / f"{config}_seed{seed}"
     if bare.exists():
         matches.add(bare)
-    matches = sorted(m for m in matches if (m / "eval" / "metrics.json").exists())
+    matches = sorted(
+        m for m in matches if (m / eval_dir / "metrics.json").exists())
     return matches[-1] if matches else None
 
 
