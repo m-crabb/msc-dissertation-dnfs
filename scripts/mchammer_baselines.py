@@ -71,9 +71,15 @@ def main():
                     data_write_interval=args.write_interval,
                     record_spins=args.record_spins,
                 )
+                # Composition at 3 decimals: the s95 8x8 windows include
+                # 0.375, which the old 2-decimal name would round to c0.38
+                # — a lossy dir name the analysis globs would then have to
+                # guess back. Sigma via %g so a sigma_c chain does not get
+                # a 17-digit dir name. Archived D10 dirs (2-decimal) are
+                # never regenerated, so no collision.
                 run_name = (
-                    f"D{args.D}_s{args.sigma}_l{args.lam}"
-                    f"_c{composition:.2f}_seed{seed}"
+                    f"D{args.D}_s{args.sigma:g}_l{args.lam}"
+                    f"_c{composition:.3f}_seed{seed}"
                 )
             elif args.ensemble == "sgc":
                 summary = run_sgc(
