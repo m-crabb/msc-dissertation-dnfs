@@ -230,6 +230,33 @@ def redraw_remote(run_dir_name: str, n_euler: int):
     volume.commit()
 
 
+@app.function(
+    # Smallest card Modal serves: D=4 GATE RUNS ONLY. The A100-80GB pin
+    # above exists because cross-device FP non-determinism sits inside
+    # seed-replicate comparisons; a gate is a single-seed pass/fail
+    # against a coarse bar (~0.99 vs collapse), so SKU homogeneity is not
+    # part of the measurement. Never route a cell that will be compared
+    # seed-to-seed against A100 runs through here.
+    gpu="T4",
+    volumes={"/results": volume},
+    secrets=[wandb_secret],
+    timeout=6 * 60 * 60,
+)
+def train_gate_remote(cfg_name: str, seed: int = 42, tag: str = ""):
+    """train_remote's body on a small card — see the gpu comment for scope."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.dnfs_baseline_01.run import train
+    from experiments.constrained_soft_02.configs import CONFIGS
+
+    train(
+        CONFIGS[cfg_name], seed=seed, output_dir="/results", tag=tag or None,
+        on_checkpoint=volume.commit,
+    )
+    volume.commit()
+
+
 @app.local_entrypoint()
 def redraw_batch(run_dirs: str, grids: str):
     """Fan out redraw_remote over run_dirs x grids, one container per eval.
