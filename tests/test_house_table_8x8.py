@@ -364,3 +364,106 @@ def test_every_provenanced_cell_names_a_real_config():
     for (arm, sigma_label) in ARM_PROVENANCE:
         name = CELL_NAME[sigma_label].format(arm=arm)
         assert name in CONFIGS, name
+
+
+# --- GFlowNet comparator rows ---------------------------------------------
+
+def test_gfn_cells_name_real_configs():
+    """Both GFN arms at both couplings must resolve to registered d64
+    configs; a tag or name typo would otherwise print as a permanently
+    blank row (same failure mode the provenance test above guards)."""
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        GFN_ARMS, GFN_CELL_NAME, SIGMA_LABELS)
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+
+    for gfn_arm in GFN_ARMS:
+        for sigma_label in SIGMA_LABELS:
+            name = GFN_CELL_NAME.format(
+                sigma_label=sigma_label,
+                objective=gfn_arm.removeprefix("gfn_"))
+            assert name in GFN_CONFIGS, name
+
+
+def test_gfn_registry_audit_catches_architecture_drift(tmp_path):
+    """The GFN rows carry the same Tier-4.8 promise as the swap rows: the
+    bill is measured on a policy rebuilt from the registry, so the fill must
+    refuse if the run's own saved config disagrees on an architecture field.
+    A policy trained at hidden 32 billed at the registry's hidden 64 would
+    silently overstate the row's FLOP/es."""
+    from dataclasses import asdict
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        gfn_registry_config_for)
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+
+    name = "GFN_d64_c50_s010_tb_50k_par"
+    saved = asdict(GFN_CONFIGS[name])
+
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    (clean / "config.json").write_text(json.dumps(saved))
+    assert gfn_registry_config_for(clean).name == name
+
+    drifted_cfg = dict(saved, hidden_dim=32)
+    drifted = tmp_path / "drifted"
+    drifted.mkdir()
+    (drifted / "config.json").write_text(json.dumps(drifted_cfg))
+    with pytest.raises(ValueError, match="hidden_dim"):
+        gfn_registry_config_for(drifted)
+
+
+def test_gfn_row_reads_frozen_ess_and_bills_without_euler_factor(tmp_path):
+    """At this rung both sides store 5000 draws, so the GFN row reads its
+    frozen ess_fraction exactly like every house row (the 4x4 fill's
+    truncate-and-recompute deviation does not apply). And the bill handed in
+    is used per RAW SAMPLE as-is: an autoregressive rollout has no Euler
+    grid, so a bill that picked up the house n_euler multiplier would
+    overstate FLOP/es by two orders."""
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        neural_cell)
+
+    run_dir = tmp_path / "gfn_run"
+    (run_dir / "eval").mkdir(parents=True)
+    n = 64
+    samples = _balanced_spins(n, seed=1)
+    torch.save(samples, run_dir / "eval" / "samples.pt")
+    torch.save(torch.zeros(n), run_dir / "eval" / "log_weights.pt")
+    frozen_ess = 0.625  # deliberately NOT the value uniform weights imply
+    (run_dir / "eval" / "metrics.json").write_text(
+        json.dumps({"ess_fraction": frozen_ess}))
+
+    class UniformTarget:
+        sigma = 0.1
+
+        def log_prob(self, states):
+            return torch.zeros(states.shape[0])
+
+    reference = _balanced_spins(128, seed=2)
+    flops_per_raw = 1.0e6
+    row = neural_cell(run_dir, UniformTarget(), reference,
+                      torch.zeros(128), flops_per_raw)
+    assert row["ESS"] == frozen_ess
+    assert row["FLOP/es"] == pytest.approx(flops_per_raw / frozen_ess)
+
+
+def test_gfn_rows_stay_outside_the_bold_comparison():
+    """The GFN rows are a different sampling paradigm (decided at 4x4,
+    hard.tex caption): even when a GFN cell holds the best number in a
+    column, the bold must land on the best SWAP cell. A refactor that
+    computed `best` over every key in the table would silently move it."""
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
+        latex_table)
+
+    def entry(ess, flops):
+        return {"ESS": (ess, 0.001), "dMag": (0.05, 0.01),
+                "dCorr": (0.05, 0.01), "EW2": (0.05, 0.01),
+                "FLOP/es": (flops, 0.0)}
+
+    table = {
+        "mo_s010": entry(0.90, 1.0e9),
+        "gfn_tb_s010": entry(0.99, 1.0e6),  # best ESS and best FLOP/es
+    }
+    body = latex_table(table)
+    gfn_line = next(l for l in body.splitlines() if "trajectory balance" in l)
+    mo_line = next(l for l in body.splitlines() if "mask-one" in l)
+    assert "mathbf" not in gfn_line
+    assert "mathbf" in mo_line

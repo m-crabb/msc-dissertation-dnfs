@@ -152,6 +152,50 @@ CELL_NAME = {
 FLOP_BEARING_FIELDS = ("head_kind", "gather_triu_pairs", "compile_head",
                        "compile_model", "use_sdpa_readout")
 
+# GFlowNet comparator rows (s100): the d64 `_par` centres, 4x4 parity recipe
+# at the wave-2 d64 budget (policy 104,450 params vs ma's 108,256, -3.5%).
+# Two departures from the 4x4 fill's GFN block, both simplifications:
+#   * DRAW PARITY HOLDS AT THIS RUNG -- both sides store 5000 draws -- so the
+#     row reads its frozen ess_fraction like every house row, and the 4x4's
+#     declared truncate-and-recompute deviation does not apply here.
+#   * DUAL EVAL: the d64 GFN cells carry eval/ AND eval_ema/ (house EMA
+#     0.9999, matched at launch), read through the same subdir loop as the
+#     swap arms.
+# The bill is the KV-cached autoregressive rollout -- the cheapest exact
+# evaluation of the sequential sampler, the separable-band precedent -- plus
+# one target eval for the IS weight; no Euler grid exists to multiply by.
+GFN_ARMS = {
+    "gfn_tb": "GFlowNet, trajectory balance",
+    "gfn_fldb": "GFlowNet, forward-looking DB",
+}
+GFN_TAG = "20260830-gfn-d64"
+GFN_CELL_NAME = "GFN_d64_c50_{sigma_label}_{objective}_50k_par"
+# Architecture fields of GFNCellCfg that move the measured bill. Optimiser
+# and schedule fields are deliberately absent: they change training, not
+# what a sample costs.
+GFN_FLOP_BEARING_FIELDS = ("hidden_dim", "n_layers", "n_heads",
+                           "with_flow_head")
+
+
+def gfn_registry_config_for(run_dir):
+    """The registered GFN config for a run, asserted against the run's own
+    saved config on every architecture field -- the same Tier-4.8 promise
+    `registry_config_for` makes for the swap rows: a policy trained at one
+    width can never be billed at another's."""
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+
+    saved = json.loads((Path(run_dir) / "config.json").read_text())
+    cfg = GFN_CONFIGS[saved["name"]]
+    drift = {field: (saved.get(field), getattr(cfg, field))
+             for field in GFN_FLOP_BEARING_FIELDS
+             if saved.get(field) != getattr(cfg, field)}
+    if drift:
+        raise ValueError(
+            f"{Path(run_dir).name}: saved config disagrees with the registry "
+            f"on architecture fields {drift}"
+        )
+    return cfg
+
 
 # --- reference ------------------------------------------------------------
 
@@ -361,8 +405,19 @@ def energy_per_site(target, states, chunk=4096):
     return torch.cat(parts)
 
 
-def neural_cell(run_dir, target, reference, reference_energy, per_forward,
-                n_euler, eval_subdir="eval"):
+def neural_cell(run_dir, target, reference, reference_energy, flops_per_raw,
+                eval_subdir="eval"):
+    """One seed's row: frozen ESS, weighted errors vs the chain reference,
+    and FLOP/es from the PER-RAW-SAMPLE bill handed in by the caller.
+
+    The bill is a parameter rather than computed here because the two
+    paradigms in this table price a raw sample differently: a swap cell
+    pays per_forward x n_euler Euler forwards plus the rate bookkeeping
+    (neural_sampling_flops_per_sample), while a GFN cell pays one KV-cached
+    autoregressive rollout plus the IS-weight target eval and has no Euler
+    grid at all. Everything downstream of the bill is identical, so the
+    scoring lives in one function and the bill lives at the call site.
+    """
     run_dir = Path(run_dir)
     metrics = json.loads((run_dir / eval_subdir / "metrics.json").read_text())
     samples = torch.load(run_dir / eval_subdir / "samples.pt",
@@ -372,7 +427,6 @@ def neural_cell(run_dir, target, reference, reference_energy, per_forward,
     weights = torch.softmax(log_w, dim=0)
     ess = metrics["ess_fraction"]
     w_ref = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
-    flops_raw = neural_sampling_flops_per_sample(per_forward, n_euler, D_SITES)
     return {
         "ESS": ess,
         "dMag": magnetisation_profile_error(
@@ -382,7 +436,7 @@ def neural_cell(run_dir, target, reference, reference_energy, per_forward,
         "EW2": energy_wasserstein2(
             energy_per_site(target, samples), weights, reference_energy,
             reference_weights=w_ref),
-        "FLOP/es": per_effective_sample(flops_raw, ess),
+        "FLOP/es": per_effective_sample(flops_per_raw, ess),
     }
 
 
@@ -441,6 +495,12 @@ LATEX_ROWS = (
     ("ivmo2ef", "prefix-sum band, two sweeps $+$ exact field"),
     None,
     ("thp", "two-hole patch head"),
+    None,
+    # Different sampling paradigm: outside the bold comparison, which falls
+    # out structurally -- `best` is computed over ARMS and the GFN arms are
+    # not in it (pinned by test_gfn_rows_stay_outside_the_bold_comparison).
+    ("gfn_tb", "GFlowNet, trajectory balance"),
+    ("gfn_fldb", "GFlowNet, forward-looking DB"),
     None,
     ("reject_off_soft", "reject off soft \\gls{dnfs}"),
 )
@@ -606,12 +666,13 @@ def main(argv=None):
                 flop_billing_config(cfg), device="cpu")
             per_forward = measured_forward_flops(
                 head, (reference[:1], torch.full((1,), 0.5)))
+            flops_per_raw = neural_sampling_flops_per_sample(
+                per_forward, cfg.ctmc.n_euler_steps, D_SITES)
             n_draws = cfg.eval.n_eval_samples
 
             for subdir in ("eval", "eval_ema"):
                 rows = [neural_cell(d, target, reference, reference_energy,
-                                    per_forward, cfg.ctmc.n_euler_steps,
-                                    eval_subdir=subdir)
+                                    flops_per_raw, eval_subdir=subdir)
                         for d in run_dirs]
                 cell = aggregate(rows)
                 cell["per_forward_flops"] = per_forward
@@ -624,6 +685,37 @@ def main(argv=None):
                     k: (v, 0.0) for k, v in sampling_floor_from_reference(
                         reference, L, n_draws, args.n_floor_replicates,
                         seed=0, reference_energy=reference_energy).items()}
+
+        for gfn_arm in GFN_ARMS:
+            from experiments.constrained_hard_03.run_gfn import (
+                build_target_and_policy)
+            from discrete_flow_sampler.diagnostics.flops import (
+                ising_energy_eval_flops)
+
+            objective = gfn_arm.removeprefix("gfn_")
+            name = GFN_CELL_NAME.format(sigma_label=sigma_label,
+                                        objective=objective)
+            run_dirs = [args.results_dir / f"{name}_seed{seed}_{GFN_TAG}"
+                        for seed in SEEDS]
+            if not all((d / "eval" / "metrics.json").is_file()
+                       for d in run_dirs):
+                continue
+            gfn_cfg = gfn_registry_config_for(run_dirs[0])
+            _, policy = build_target_and_policy(gfn_cfg, "cpu")
+            # Bill the sampler at its cheapest exact evaluation: one draw of
+            # the KV-cached rollout (d one-token steps), plus the IS-weight
+            # target eval. See the GFN_ARMS block comment.
+            flops_per_raw = (measured_forward_flops(policy.sample, (1,))
+                             + ising_energy_eval_flops(D_SITES))
+            for subdir in ("eval", "eval_ema"):
+                rows = [neural_cell(d, target, reference, reference_energy,
+                                    flops_per_raw, eval_subdir=subdir)
+                        for d in run_dirs]
+                cell = aggregate(rows)
+                cell["per_sample_flops"] = flops_per_raw
+                key = (f"{gfn_arm}_{sigma_label}"
+                       + ("_ema" if subdir == "eval_ema" else ""))
+                table[key] = cell
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "house_table_8x8.json").write_text(json.dumps(table, indent=2))
