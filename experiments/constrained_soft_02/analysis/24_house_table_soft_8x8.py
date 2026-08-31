@@ -13,7 +13,13 @@ the revamp (plan 2026-08-30-soft-chapter-revamp-efc):
                and, at the critical centre only, the nochan control (house
                recipe minus the channel: the one measured channel-off/on
                comparison at sigma_c, pinned one-lever by
-               tests/test_soft_house_configs.py).
+               tests/test_soft_house_configs.py). Two s99/s100 arms join
+               when their runs are on disk: the matched-base twins (`mb`,
+               base_composition = c* at the off-centre windows; decides
+               base-reachability vs target-itself where the uniform-base
+               family is marginal or dead) and the lambda-curriculum arm
+               (`anneal`, nochan + the 10/25/50 schedule at sigma_c
+               centre; the third fate of the nochan/anneal/channel trio).
   dual eval -- every family is scored from eval/ AND eval_ema/ (hard's
                house convention: a second `_ema` entry per family). The
                raw entry keeps the un-averaged model on record; EMA is
@@ -229,9 +235,17 @@ def main():
                     f"S2_d8_{c_tag}_l50_letf_ne128_house{sigma_suffix}"
                     f"_seed4*",
             }
+            if c_target != 0.50:
+                # At c* = 0.5 the house Bernoulli(0.5) base is already
+                # matched, so mb twins exist only off-centre.
+                families["mb"] = (
+                    f"S2_d8_{c_tag}_l50_letf_ne128_house_mb{sigma_suffix}"
+                    f"_seed4*")
             if sigma_label == "sc" and c_target == 0.50:
                 families["nochan"] = (
                     "S2_d8_c0500_l50_letf_ne128_house_sc_nochan_seed4*")
+                families["anneal"] = (
+                    "S2_d8_c0500_l50_letf_ne128_house_sc_anneal_seed4*")
             print(f"\n== {sigma_label} c={c_target} ({n_chains} chains, "
                   f"{reference.shape[0]} frames, tau {tau:.2f}, "
                   f"block {block})")
