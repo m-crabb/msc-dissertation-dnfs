@@ -729,6 +729,11 @@ def main(argv=None):
                 rows = [neural_cell(d, target, reference, reference_energy,
                                     flops_per_raw, eval_subdir=subdir)
                         for d in run_dirs]
+                if gfn_arm in wallclock:
+                    for row in rows:
+                        row["Wall/es"] = (
+                            wallclock[gfn_arm]["seconds_per_raw_sample"]
+                            / row["ESS"])
                 cell = aggregate(rows)
                 cell["per_sample_flops"] = flops_per_raw
                 key = (f"{gfn_arm}_{sigma_label}"
