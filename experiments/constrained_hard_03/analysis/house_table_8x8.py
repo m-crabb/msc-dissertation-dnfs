@@ -608,12 +608,25 @@ def main(argv=None):
     parser.add_argument("--n-floor-replicates", type=int, default=200)
     parser.add_argument("--out", type=Path,
                         default=REPO_ROOT / "results" / "03_hard" / "w2_8x8_house")
+    # The latency counterpoint's data (s93): per-raw-sample eval-chunk
+    # seconds measured on one GPU by bench_eval_wallclock_d64.py. Optional
+    # because the bench runs on the venue; without the file the Wall/es
+    # entries are simply absent.
+    parser.add_argument("--wallclock-json", type=Path,
+                        default=REPO_ROOT / "results" / "03_hard"
+                        / "eval_wallclock_bench_d64" / "wallclock.json")
     parser.add_argument("--latex", action="store_true",
                         help="emit the tab:eval-hard-8x8 body instead of the "
                              "console summary")
     args = parser.parse_args(argv)
 
     from experiments.constrained_hard_03.run import build_target_and_head
+
+    # Wall/es = bench seconds-per-raw-sample / each seed's frozen ESS: the
+    # same shape as FLOP/es (intensive per-architecture cost over archived
+    # ESS), priced in seconds on the bench's named GPU instead of FLOPs.
+    wallclock = (json.loads(args.wallclock_json.read_text())["arms"]
+                 if args.wallclock_json.is_file() else {})
 
     table = {}
     for sigma_label in SIGMA_LABELS:
@@ -674,6 +687,11 @@ def main(argv=None):
                 rows = [neural_cell(d, target, reference, reference_energy,
                                     flops_per_raw, eval_subdir=subdir)
                         for d in run_dirs]
+                if arm in wallclock:
+                    for row in rows:
+                        row["Wall/es"] = (
+                            wallclock[arm]["seconds_per_raw_sample"]
+                            / row["ESS"])
                 cell = aggregate(rows)
                 cell["per_forward_flops"] = per_forward
                 key = f"{arm}_{sigma_label}" + ("_ema" if subdir == "eval_ema" else "")
