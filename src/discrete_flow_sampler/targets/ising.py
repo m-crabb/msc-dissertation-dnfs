@@ -473,3 +473,106 @@ class FixedCompositionIsingTarget(IsingTarget):
             2.0 * diff * (h[:, site_i] - h[:, site_j]) - 2.0 * diff * diff * adjacent
         )
         return t[:, None] * self.sigma * delta_quadratic
+
+
+class MixtureCompositionIsingTarget(FixedCompositionIsingTarget):
+    """Ising target on a MIXTURE of fixed-composition slices, for the
+    composition-amortisation campaign (one head trained across slices).
+
+    THE ALGEBRA THIS CLASS RESTS ON. Swap moves conserve n_plus row-wise,
+    so a trajectory never leaves the slice its base draw started on: the
+    mixture lives entirely in `sample_base`, and each batch element's
+    annealing path, rates and IS weights are exact against ITS OWN slice
+    conditional. Three consequences, one per override:
+
+      * `sample_base` draws a slice per element uniformly from the grid,
+        then a uniform configuration on that slice — that is the whole
+        amortisation;
+      * `base_log_eta` is computed FROM x as -log C(d, n_plus(x)) instead
+        of a stored constant, which is exactly what makes the per-slice
+        geometric path log p~_t = (1-t)*base_log_eta(x) + t*log_prob(x)
+        correct for every row simultaneously;
+      * `assert_on_manifold` checks membership of the registered slice
+        SET, not one count.
+
+    `swap_log_ratio` is inherited untouched: the swapped and unswapped
+    states always share a slice, so the base constant cancels pairwise
+    exactly as in the single-slice closed form.
+
+    NO conditioning channel is added to any head: composition is conserved
+    and visible in x (the spin count), so the head amortises implicitly
+    through its input. An explicit c-input was rejected — it duplicates
+    information the head already has and breaks checkpoint compatibility
+    with every archived head.
+
+    `compositions[0]` is the ANCHOR slice: the inherited scalar attributes
+    (`n_plus_target`, `_log_slice_size`, `target_composition`) refer to it,
+    which keeps single-slice diagnostics meaningful. Put the trained
+    chapter composition (0.5) first.
+    """
+
+    def __init__(self, D, sigma, compositions, bias=0.0, device="cpu"):
+        if not compositions:
+            raise ValueError("compositions must name at least one slice")
+        super().__init__(
+            D, sigma, target_composition=compositions[0], bias=bias,
+            device=device,
+        )
+        n_plus_values = []
+        for c in compositions:
+            n_plus_float = c * self.d
+            n_plus = round(n_plus_float)
+            if abs(n_plus_float - n_plus) > 1e-9:
+                raise ValueError(
+                    f"composition {c} * d={self.d} = {n_plus_float} is not "
+                    "integral; no exact fixed-N slice exists."
+                )
+            n_plus_values.append(n_plus)
+        self.compositions = tuple(compositions)
+        self.n_plus_values = tuple(n_plus_values)
+        # log C(d, n) for every n in 0..d, so base_log_eta is a lookup on
+        # the per-row count. d+1 floats; float64 because at d=256 the
+        # binomial coefficients differ across the grid by ~40 nats and the
+        # table is the one place slice constants must stay exact.
+        counts = torch.arange(self.d + 1, dtype=torch.float64)
+        self._log_binomial_table = (
+            math.lgamma(self.d + 1)
+            - torch.lgamma(counts + 1)
+            - torch.lgamma(self.d - counts + 1)
+        )
+
+    def sample_base(self, n, device):
+        """Uniform slice choice per element, then uniform on that slice:
+        the first n_plus[i] columns of a per-row random permutation are a
+        uniform random subset of that size."""
+        slice_index = torch.randint(
+            len(self.n_plus_values), (n,), device=device)
+        counts = torch.tensor(
+            self.n_plus_values, device=device)[slice_index]     # (n,)
+        permuted_sites = torch.rand(n, self.d, device=device).argsort(dim=1)
+        rank = torch.arange(self.d, device=device).expand(n, -1)
+        values = torch.where(rank < counts[:, None], 1.0, -1.0)
+        x = torch.empty(n, self.d, device=device)
+        x.scatter_(1, permuted_sites, values)
+        return x
+
+    def base_log_eta(self, x):
+        """-log C(d, n_plus(x)) per row, shape (B,): each row's own slice
+        constant, read off the state."""
+        n_plus = ((x + 1.0) * 0.5).sum(dim=-1).long()
+        table = self._log_binomial_table.to(x.device)
+        return (-table[n_plus]).to(x.dtype)
+
+    def assert_on_manifold(self, x):
+        """Raise AssertionError if any row's n_plus is outside the
+        registered slice set."""
+        n_plus = ((x + 1) * 0.5).sum(dim=-1)
+        allowed = torch.tensor(
+            self.n_plus_values, device=x.device, dtype=n_plus.dtype)
+        on_a_slice = (n_plus[:, None] == allowed[None, :]).any(dim=1)
+        if not on_a_slice.all():
+            bad = n_plus[~on_a_slice]
+            raise AssertionError(
+                f"off-manifold states: expected n_plus in "
+                f"{self.n_plus_values}, got e.g. {bad[:5].tolist()}"
+            )

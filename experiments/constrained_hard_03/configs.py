@@ -279,6 +279,14 @@ class HardStageCfg(StageCfg):
     # would otherwise fail as an index error inside nn.Embedding). Read only
     # when target_kind is "potts", mirroring n_groups / "grouped_anchor".
     potts_composition: tuple[float, ...] | None = None
+    # Composition-amortisation knob (s100): when set, the target becomes
+    # MixtureCompositionIsingTarget over these slices — sample_base draws a
+    # slice per element, swaps conserve it, and the head amortises
+    # implicitly through x (no conditioning channel; see that class's
+    # docstring for the rejected alternative). First entry = anchor slice.
+    # None (default, every archived cell) = the single-slice route,
+    # byte-identical.
+    composition_mixture: tuple[float, ...] | None = None
 
 
 class NonAntisymSwapHead(nn.Module):
@@ -3616,6 +3624,25 @@ CONFIGS.update({
             _wave2_d64_floor_cell(arm),
         )
     },
+})
+
+# Composition-amortisation cell (s100, docs-tracked campaign): the judged
+# thp sigma_c cell with the mixture grid as the ONLY moved field (pinned by
+# test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob). Grid =
+# the d256 zero-shot probe's composition FRACTIONS realised at d64
+# (n+ = 32/30/28/24/20), anchor slice 0.5 first, so the trained arm and the
+# zero-shot null read side by side. Judged per-slice via
+# probe_zero_shot_transfer on the trained checkpoints, never on the
+# in-training mixture eval (which mixes slices and is diagnostic only).
+CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            _wave2_d64_critical_cell("thp"),
+            name="H2_d64_camort_s220_letf_thp_50k_curr",
+            composition_mixture=(0.5, 0.46875, 0.4375, 0.375, 0.3125),
+        ),
+    )
 })
 
 # The oracle row of tab:eval-hard-4x4, registered on the SAME w2 recipe and

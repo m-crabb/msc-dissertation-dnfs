@@ -41,6 +41,7 @@ from discrete_flow_sampler.seeding import seed_everything
 from discrete_flow_sampler.targets.ising import (
     FixedCompositionIsingTarget,
     IsingTarget,
+    MixtureCompositionIsingTarget,
 )
 from discrete_flow_sampler.targets.potts import FixedCompositionPottsTarget
 
@@ -85,6 +86,11 @@ def build_target_and_head(
     nothing downstream in `train_swap` or `sample_swap_ctmc` knows which it
     got. `cfg.ising` carries the lattice for both routes; only the
     *composition* differs (scalar n_plus vs S-vector of species counts)."""
+    if cfg.composition_mixture is not None and cfg.target_kind == "potts":
+        raise ValueError(
+            "composition_mixture and the potts route both claim the target "
+            "constructor; the mixture is Ising-only"
+        )
     if cfg.target_kind == "potts":
         if cfg.potts_composition is None:
             raise ValueError(
@@ -95,6 +101,17 @@ def build_target_and_head(
             D=cfg.ising.D,
             sigma=cfg.ising.sigma,
             composition=tuple(cfg.potts_composition),
+            device=device,
+        )
+    elif cfg.composition_mixture is not None:
+        # Amortisation route: mixture of slices in the base, everything
+        # downstream per-slice exact (swaps conserve composition row-wise;
+        # see MixtureCompositionIsingTarget's docstring).
+        target = MixtureCompositionIsingTarget(
+            D=cfg.ising.D,
+            sigma=cfg.ising.sigma,
+            compositions=tuple(cfg.composition_mixture),
+            bias=cfg.ising.bias,
             device=device,
         )
     else:

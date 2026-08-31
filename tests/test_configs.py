@@ -2358,3 +2358,67 @@ def test_raster_ladder_roster_covers_both_rungs():
                 D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
             )
             assert build_swap_head(cfg, backbone, target=target) is not None, name
+
+
+# --- composition-amortised cell (hard camort campaign, s100) ---------------
+
+def test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob():
+    """The amortised cell exists to test ONE question (does mixture
+    training buy back the cross-slice transfer zero-shot loses at
+    sigma_c), so it must be the judged thp sigma_c cell with the mixture
+    grid as the only moved field. The grid mirrors the d256 zero-shot
+    probe's composition FRACTIONS (n+/64 = 32/30/28/24/20) so the two
+    tables read side by side, anchor slice 0.5 first."""
+    from dataclasses import asdict
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    centre = CONFIGS["H2_d64_c50_s220_letf_thp_50k_curr_w2"]
+    cell = CONFIGS["H2_d64_camort_s220_letf_thp_50k_curr"]
+    assert cell.composition_mixture == (0.5, 0.46875, 0.4375, 0.375, 0.3125)
+    assert all((c * 64) == round(c * 64) for c in cell.composition_mixture)
+    diff = {
+        field: (a, b)
+        for field, (a, b) in (
+            (f, (asdict(centre)[f], asdict(cell)[f])) for f in asdict(centre)
+        )
+        if a != b
+    }
+    assert set(diff) == {"name", "composition_mixture"}, diff
+
+
+def test_composition_mixture_builds_the_mixture_target():
+    """The knob must reach the target constructor: the built target carries
+    the registered slice set, and the anchor slice is the inherited scalar
+    (so single-slice diagnostics keep meaning)."""
+    from dataclasses import replace
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from experiments.constrained_hard_03.run import build_target_and_head
+    from discrete_flow_sampler.targets.ising import (
+        MixtureCompositionIsingTarget)
+
+    cfg = replace(
+        CONFIGS["H2_d16_c50_s010_letf_dh"],
+        composition_mixture=(0.5, 0.375, 0.25),
+    )
+    target, _ = build_target_and_head(cfg, device="cpu")
+    assert isinstance(target, MixtureCompositionIsingTarget)
+    assert target.n_plus_values == (8, 6, 4)
+    assert target.n_plus_target == 8  # anchor = first entry
+
+
+def test_composition_mixture_conflicts_with_potts_route():
+    """Both knobs claim the target constructor; asking for both must raise
+    at build time, not silently pick one."""
+    import pytest
+    from dataclasses import replace
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from experiments.constrained_hard_03.run import build_target_and_head
+
+    cfg = replace(
+        CONFIGS["H2_d16_c50_s010_letf_dh"],
+        target_kind="potts",
+        potts_composition=(0.5, 0.5),
+        composition_mixture=(0.5, 0.375),
+    )
+    with pytest.raises(ValueError, match="mixture"):
+        build_target_and_head(cfg, device="cpu")
