@@ -2014,6 +2014,33 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"] = replace(
     model=replace(_HOUSE_SC_CENTRE.model, exact_field_channel=False),
 )
 
+# Matched-base twins (s99): base_composition = c* at the OFF-CENTRE
+# windows, both couplings — at c* = 0.5 the house cells' Bernoulli(0.5)
+# base is already matched, so the centre rows anchor both columns
+# unchanged. What the pair measures: the s010 c=0.25 window is uniformly
+# marginal (raw ESS 0.15-0.29) and its floor-free F(c) reads +0.024
+# nats/site off truth against a bootstrap claiming +-0.001 (weight
+# collapse lies to the bootstrap); at sigma_c c=0.25 the family is
+# degenerate outright with training alive (in-loop ESS 47-75/batch, zero
+# clamp), i.e. the eval collapse is distributional. If the matched base
+# rescues a window the failure was base reachability; if not, it is the
+# target itself. One declared lever vs the run house twin (test-pinned);
+# the base enters only the x0 draw and the log w0 term, both on the
+# corrected post-de9db7c path — the exact-field channel is pure target
+# physics and does not see it.
+for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
+    if _c_target == 0.50:
+        continue
+    for _sigma_suffix in ("", "_sc"):
+        _house_twin = CONFIGS[
+            f"S2_d8_{_c_tag}_l50_letf_ne128_house{_sigma_suffix}"]
+        _mb_name = f"S2_d8_{_c_tag}_l50_letf_ne128_house_mb{_sigma_suffix}"
+        CONFIGS[_mb_name] = replace(
+            _house_twin,
+            name=_mb_name,
+            ising=replace(_house_twin.ising, base_composition=_c_target),
+        )
+
 # D=4 gates for the compile-parity check (validate-at-D=4 rule): the full
 # house recipe and its eager twin. The gate passes when their loss traces
 # agree to compile tolerance (1e-5-class, never bit-parity) — the GFN

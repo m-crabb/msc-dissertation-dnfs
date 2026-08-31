@@ -70,6 +70,27 @@ def test_sc_cells_carry_exact_sigma_c():
         assert cell.ising.sigma == SIGMA_C
 
 
+def test_matched_base_twins_give_back_base_composition_only():
+    """The s99 matched-base wave: base_composition = c* at the off-centre
+    windows, one declared lever against the run house twin — any second
+    difference would put the uplift claim under two changes. No centre
+    twin exists: Bernoulli(0.5) is already the matched base at c* = 0.5,
+    so the centre rows anchor both columns unchanged."""
+    for c_target, c_tag in SOFT_HOUSE_WINDOWS:
+        for sigma_suffix in ("", "_sc"):
+            mb_name = f"S2_d8_{c_tag}_l50_letf_ne128_house_mb{sigma_suffix}"
+            if c_target == 0.50:
+                assert mb_name not in CONFIGS, mb_name
+                continue
+            house = asdict(
+                CONFIGS[f"S2_d8_{c_tag}_l50_letf_ne128_house{sigma_suffix}"])
+            twin = asdict(CONFIGS[mb_name])
+            assert _diff(house, twin) == {"name", "ising"}, mb_name
+            assert _diff(house["ising"], twin["ising"]) == {
+                "base_composition"}, mb_name
+            assert twin["ising"]["base_composition"] == c_target
+
+
 def test_nochan_control_gives_back_channel_flag_only():
     house = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"])
     control = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"])
