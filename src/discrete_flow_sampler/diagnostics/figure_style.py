@@ -101,6 +101,14 @@ FIGSIZE_FULL_WIDE_SINGLE = (FULL_WIDTH_IN, 2.6)  # one panel at full width, lege
                                                  # panel covers the peak it is
                                                  # meant to explain.
 FIGSIZE_SINGLE = (SINGLE_PANEL_WIDTH_IN, 3.2)
+FIGSIZE_SINGLE_2X2 = (SINGLE_PANEL_WIDTH_IN, 3.8)  # four panels as a 2x2 at
+                                                   # 0.72\textwidth: the 1x4 at
+                                                   # full width left ~0.63 in of
+                                                   # data axis per panel (60% of
+                                                   # the canvas went to labels);
+                                                   # this trades +3.3 cm of print
+                                                   # height for ~2.6x the data
+                                                   # area at unchanged type size.
 
 FONT_SIZE_TITLE = 9
 FONT_SIZE_LABEL = 9

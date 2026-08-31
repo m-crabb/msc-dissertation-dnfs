@@ -342,7 +342,16 @@ def main() -> None:
                   f"|gap|={abs(cmap[lo] - cmap[hi]):.4f}")
 
     if args.plot is not None:
-        _plot(curve, ref_c, ref_F_persite, args.flag_c, args.plot)
+        # The soft-ensemble truth: the canonical curve mapped INTO the
+        # penalised ensemble (truth minus the same Laplace offset the
+        # correction adds). The raw markers should sit ON this line; drawn
+        # so the raw-vs-canonical gap reads as the ensemble mapping, not
+        # as sampler error (the question every reader otherwise asks).
+        soft_offsets = np.array([
+            _laplace_offset(lam, d, fp, fpp) / d
+            for fp, fpp in zip(ref_Fp, ref_Fpp)])
+        _plot(curve, ref_c, ref_F_persite, ref_F_persite - soft_offsets,
+              args.flag_c, args.plot)
 
 
 def _mirror_rows(rows: list[dict]) -> list[dict]:
@@ -370,21 +379,30 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
     return mirrored
 
 
-def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
-    """House-standard overlay + residual pair (approved s62).
+def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
+          out: Path) -> None:
+    """House-standard overlay + residual pair (approved s62; relaid out s101).
 
     Roles: TI truth = REFERENCE_INK line; our sampler = SAMPLER_HUE, with the
     corrected estimate as the filled square (the deliverable) and the raw
     soft-ensemble read as the open, lightened circle (the same object before
     the ensemble mapping -- one role, two intensities, never a second hue).
-    Compositions in `flag_c` (plus their Z2 mirrors) get a muted provisional
-    ring: the point prints from a different training grid or awaits retrain,
-    and the caption says which.
+    The soft-ensemble truth (canonical minus the analytic offset) is the
+    raw markers' own reference line, in the raw hue, dashed. Compositions
+    in `flag_c` (plus their Z2 mirrors) get a muted provisional ring: the
+    point prints from a different training grid or awaits retrain, and the
+    caption says which.
+
+    Legend is FIGURE-level, below the panels (s101): no in-axes placement
+    is shape-robust across couplings -- the "empty top-centre" that held
+    the legend on the U-shaped subcritical curve is exactly the peak of
+    the inverted critical one, where it occluded the truth line and its
+    sample glyphs printed at data height beside real markers.
     """
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        FIGSIZE_FULL_1X2_SHORT, MUTED, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI,
+        FULL_WIDTH_IN, MUTED, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI,
         parameter_ramp, style_axes, use_house_style)
 
     use_house_style()
@@ -402,39 +420,33 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
     raw_hue = parameter_ramp(SAMPLER_HUE, 2)[0]
 
-    # The short 1x2: both panels hold about a dozen marks and a smooth curve,
-    # so the 2.9 in box printed 7.4 cm of mostly empty axes.
-    fig, (ax, axr) = plt.subplots(1, 2, figsize=FIGSIZE_FULL_1X2_SHORT)
+    # 2.7 in: the SHORT 2.4 in box plus the strip the below-panel figure
+    # legend needs (prints 6.9 cm vs 6.1 cm, +0.8 cm).
+    fig, (ax, axr) = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.7))
     ax.plot(ref_c, ref_F_persite, color=REFERENCE_INK, lw=1.4,
-            label="canonical truth (TI)")
+            label="TI truth")
+    ax.plot(ref_c, ref_F_soft_persite, color=raw_hue, lw=1.0,
+            linestyle="--", label="soft truth (TI $-$ offset)")
     # Capped bars, not a shaded band. Each abscissa here is a SEPARATELY
     # TRAINED window (eleven of them, six trained plus their Z2 reflections),
     # so there is no curve in c for a ribbon to be the envelope of: the marks
     # are deliberately unjoined for the same reason. Bands are the house
     # default only for uncertainty along a continuous x (figure_style).
     ax.errorbar(cs, raw, yerr=raw_e, fmt="o", color=raw_hue, mfc="none",
-                capsize=2, lw=1.0, label="soft, raw")
+                capsize=2, lw=1.0, label="raw")
     ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color=SAMPLER_HUE,
-                capsize=2, lw=1.0, label="soft, Laplace-corrected")
+                capsize=2, lw=1.0, label="Laplace-corrected")
     ax.set_xlabel("composition $c$")
     ax.set_ylabel("$F/d$ (nats per site)")
-    # Both panels are U-shaped with occupied top corners (the flagged tail
-    # points), so the one empty region is top-centre.
-    ax.legend(frameon=False, loc="upper center")
 
     if all(t is not None for t in truth):
         axr.axhline(0, color=MUTED, lw=0.8)
         araw_res = [r - t for r, t in zip(raw, truth)]
         acorr_res = [c - t for c, t in zip(corr, truth)]
-        axr.plot(cs, araw_res, "o-", color=raw_hue, mfc="none", lw=1.0,
-                 label="raw $-$ truth")
-        axr.plot(cs, acorr_res, "s-", color=SAMPLER_HUE, lw=1.0,
-                 label="corrected $-$ truth")
+        axr.plot(cs, araw_res, "o-", color=raw_hue, mfc="none", lw=1.0)
+        axr.plot(cs, acorr_res, "s-", color=SAMPLER_HUE, lw=1.0)
         axr.set_xlabel("composition $c$")
         axr.set_ylabel("$F/d$ residual (nats per site)")
-        # Extrapolated residuals hug the top of the panel and the raw offset
-        # the bottom; the empty band is the middle.
-        axr.legend(frameon=False, loc="center")
 
     for axis, ys in ((ax, corr), (axr, acorr_res if all(t is not None for t in truth) else None)):
         if ys is None:
@@ -452,7 +464,11 @@ def _plot(curve, ref_c, ref_F_persite, flag_c, out: Path) -> None:
         style_axes(axis)
         axis.text(0.02, 1.02, f"({chr(97 + i)})", transform=axis.transAxes,
                   fontweight="bold", va="bottom")
-    fig.tight_layout()
+    # Panel (b) reuses (a)'s marker/hue identities, so one four-entry row
+    # names everything for both panels.
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=4, loc="lower center")
+    fig.tight_layout(rect=(0, 0.10, 1, 1))
     fig.savefig(out, dpi=SAVEFIG_DPI)
     print(f"\nwrote {out}")
 

@@ -300,14 +300,19 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
 
 
 def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
-    """House-standard 1x4 row (was a 2x2; relayout 2026-08-29).
+    """House-standard 2x2 at 0.72\\textwidth (s101; was a 1x4 row, before
+    that a full-width 2x2).
 
-    The 2x2 printed 14.1 cm tall at \\textwidth, about half a page, for four
-    panels that each carry eleven marks. The same four panels in a row print
-    6.4 cm. An earlier 1x4 attempt failed because it was drawn 18 in wide and
-    left to LaTeX to shrink, which put the type at ~3 pt; here the figure
-    stays at the house 6.3 in and the PANELS get narrow instead, so 9 pt on
-    the page is still 9 pt. Panel order (a)-(d) is unchanged.
+    The full-width 2x2 printed 14.1 cm tall; the 1x4 fixed that at 6.4 cm
+    but left ~0.63 in of data axis per panel -- 60% of the canvas went to
+    labels and gaps, and eleven abscissae in 1.6 cm overprinted the two
+    series. This 2x2 draws at SINGLE_PANEL_WIDTH_IN (4.54 in) and prints
+    at 0.72\\textwidth (soft.tex must match, or the 1:1 type contract
+    breaks): ~2.6x the data area per panel, 9 pt stays 9 pt, prints
+    ~9.7 cm -- still 4.4 cm under the rejected full-width 2x2. The two
+    series are x-dodged by +/-0.004 in c (stated in the caption) so the
+    comparator circle is never fully under the sampler square. Panel
+    order (a)-(d) unchanged.
 
     Roles: VC-SGC chains = CLASSICAL_HUE (the classical comparator, not the
     ink truth -- these are matched chains, not TI); our sampler =
@@ -324,8 +329,9 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        ANALYTIC_GUIDE, CLASSICAL_HUE, FIGSIZE_FULL_1X4, FONT_SIZE_ANNOTATION,
-        MUTED, SAMPLER_HUE, SAVEFIG_DPI, style_axes, use_house_style)
+        ANALYTIC_GUIDE, CLASSICAL_HUE, FIGSIZE_SINGLE_2X2,
+        FONT_SIZE_ANNOTATION, MUTED, SAMPLER_HUE, SAVEFIG_DPI, style_axes,
+        use_house_style)
 
     use_house_style()
     have = [r for r in curve if r["dnfs"] is not None]
@@ -334,7 +340,7 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
               ("e_site", r"$E/d$"),
               ("sro", r"$\langle x_i x_j\rangle_{NN}$")]
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
-    fig, axes = plt.subplots(1, 4, figsize=FIGSIZE_FULL_1X4)
+    fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_SINGLE_2X2)
     for i, (ax, (key, ylab)) in enumerate(zip(axes.ravel(), panels)):
         # sampled + Z_2-reflected points merged into one uniformly-drawn series,
         # sorted by composition (the reflection is stated in the body text)
@@ -348,14 +354,17 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         # both series as discrete markers (no connecting line): the comparison is
         # per-composition agreement at matched windows, not a trend, so a
         # joining line would imply interpolation neither sampler measures.
-        # ms 3.5, not the default 6: at 1.6 in per panel a default marker is
-        # wider than the gap between neighbouring windows, and the DNFS square
-        # then hides the vcSGC circle it is supposed to be compared with.
-        ax.errorbar(pc, vc, yerr=vce, fmt="o", ms=3.5, color=CLASSICAL_HUE,
-                    capsize=1.5, lw=0.8,
+        # +/-0.004 x-dodge: at matched windows the two series agree to a few
+        # 1e-4, so drawn at the same abscissa the sampler square (drawn
+        # second) fully hides the comparator circle -- the one mark the
+        # figure exists to show. The dodge is visual only, stated in the
+        # caption.
+        dodge = 0.004
+        ax.errorbar([c - dodge for c in pc], vc, yerr=vce, fmt="o", ms=3.5,
+                    color=CLASSICAL_HUE, capsize=1.5, lw=0.8,
                     label="vcSGC (mchammer)" if i == 0 else None)
-        ax.errorbar(pc, dn, yerr=dne, fmt="s", ms=3.5, color=SAMPLER_HUE,
-                    capsize=1.5, lw=0.8,
+        ax.errorbar([c + dodge for c in pc], dn, yerr=dne, fmt="s", ms=3.5,
+                    color=SAMPLER_HUE, capsize=1.5, lw=0.8,
                     label="DNFS soft (IS)" if i == 0 else None)
         ring = [(c, y) for c, y in zip(pc, dn) if round(c, 4) in flagged]
         if ring:
@@ -393,9 +402,9 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
                 fontweight="bold", va="bottom")
     # One figure-level legend for the two series, which are shared by all four
     # panels; naming them once was already the 2x2's convention.
-    handles, labels = axes[0].get_legend_handles_labels()
+    handles, labels = axes.ravel()[0].get_legend_handles_labels()
     fig.legend(handles, labels, frameon=False, ncol=2, loc="lower center")
-    fig.tight_layout(rect=(0, 0.06, 1, 1), w_pad=0.6)
+    fig.tight_layout(rect=(0, 0.07, 1, 1), w_pad=0.6)
     fig.savefig(out, dpi=SAVEFIG_DPI, bbox_inches="tight")
     print(f"wrote {out}")
 

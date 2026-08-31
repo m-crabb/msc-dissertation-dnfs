@@ -38,8 +38,8 @@ import numpy as np
 import torch
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    FONT_SIZE_ANNOTATION, MUTED, REFERENCE_FILL, REFERENCE_INK, SAMPLER_HUE,
-    style_axes, use_house_style)
+    FONT_SIZE_ANNOTATION, FULL_WIDTH_IN, MUTED, REFERENCE_FILL,
+    REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI, style_axes, use_house_style)
 from discrete_flow_sampler.diagnostics.metrics import (
     composition_fraction_up as composition)
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
@@ -108,8 +108,12 @@ def main() -> None:
     sigma = COUPLINGS[args.coupling]
     config_suffix = "_sc" if args.coupling == "sc" else ""
     use_house_style()
+    # FULL_WIDTH_IN, not 10.5: the figure prints at \textwidth, and a
+    # 10.5 in canvas let LaTeX scale by 0.60 -- 9 pt type printing at
+    # 5.4 pt, the exact shrink trap figure_style documents.
     fig, axes = plt.subplots(
-        1, len(TRAINED_COMPOSITIONS), figsize=(10.5, 3.2), sharey=True)
+        1, len(TRAINED_COMPOSITIONS), figsize=(FULL_WIDTH_IN, 2.2),
+        sharey=True)
 
     cs = torch.arange(N_SITES + 1).float() / N_SITES
     for ax, c_target in zip(axes, TRAINED_COMPOSITIONS):
@@ -143,9 +147,13 @@ def main() -> None:
             ax.fill_between(cs, stack.min(0).values, stack.max(0).values,
                             color=SAMPLER_HUE, alpha=0.25, linewidth=0)
         if excluded:
-            ax.annotate(f"below ESS floor: {', '.join(excluded)}",
+            # Count only, upper-left: the distributions are centred, so
+            # both upper corners are empty; low placements strike the
+            # bars. The caption lists the per-seed ESS values.
+            ax.annotate(f"{len(excluded)}/4 seeds below ESS floor",
                         xy=(0.03, 0.95), xycoords="axes fraction",
-                        va="top", fontsize=FONT_SIZE_ANNOTATION, color=MUTED)
+                        va="top", fontsize=FONT_SIZE_ANNOTATION,
+                        color=MUTED)
 
         width = 1.0 / np.sqrt(2 * LAM * N_SITES)
         ax.set_xlim(c_target - 5 * width, c_target + 5 * width)
@@ -154,17 +162,23 @@ def main() -> None:
         style_axes(ax)
 
     axes[0].set_ylabel("probability mass")
-    # Legend on the last panel: the first panel's corner holds the
-    # below-floor annotation whenever the stress window fails.
-    axes[-1].legend(fontsize=FONT_SIZE_ANNOTATION, loc="upper right")
-    fig.suptitle(
-        rf"$8\times 8$, $\sigma = {sigma:g}$, $\lambda = {LAM:g}$", y=1.02)
-    fig.tight_layout()
+    # Headroom above the tallest bar (pmf peaks ~0.5): the below-floor
+    # annotation needs a clear strip, and the distributions otherwise
+    # fill the panel to the frame.
+    axes[0].set_ylim(0, 0.62)
+    # Figure-level legend below the row (house pattern): an in-axes box
+    # bled across the neighbouring panel at print width.
+    handles, labels = axes[-1].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=3, loc="lower center",
+               fontsize=FONT_SIZE_ANNOTATION)
+    # No suptitle: it duplicated the caption (and printed sigma to six
+    # decimals); dropping it buys back height at the print size.
+    fig.tight_layout(rect=(0, 0.10, 1, 1))
 
     out = args.out or (
         RESULTS
         / f"composition_marginal_8x8_{args.coupling}_{args.eval_dir}.png")
-    fig.savefig(out, dpi=200, bbox_inches="tight")
+    fig.savefig(out, dpi=SAVEFIG_DPI, bbox_inches="tight")
     print(f"wrote {out}")
 
 
