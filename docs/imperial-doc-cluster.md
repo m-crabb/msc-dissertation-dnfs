@@ -7,8 +7,7 @@ unless marked otherwise. Official guide:
 <https://www.imperial.ac.uk/computing/people/csg/guides/hpcomputing/gpucluster/>.
 
 **Why we're here:** Modal on-demand A100s were too expensive for eval-only
-passes; the DoC cluster is already paid for. mars-node (also Slurm) may join
-later — keep job scripts portable (paths in variables at the top).
+passes; the DoC cluster is already paid for.
 
 ---
 
@@ -215,47 +214,3 @@ for the mchammer baselines).
   `/vol/gpudata/mc625-dnfs`; cold training start dropped to ~3 min. wandb auth
   gotcha diagnosed (§5a). Full training path proven via a `WANDB_MODE=offline`
   smoke; online wandb pending a one-time `wandb login` after key rotation.
-
-## 8. mars-node (verified 2026-08-12)
-
-Shared single-node Slurm box, borrowed capacity — **spillover only, never the
-primary queue**. Owner-priority etiquette is mandatory: submit only when a GPU
-is genuinely idle (check `nvidia-smi` — "0 % util" is NOT idle if memory is
-parked by a serving job), one GPU max (`--gres=gpu:1`), clearly-named `dnfs-*`
-jobs, short walltimes, and the other user's jobs always outrank ours.
-
-- Access: `ssh mars-node` (alias in `~/.ssh/config`, user `mcrabb`, host cig1).
-- Hardware: 8× NVIDIA B200 183 GB, 220 cores, 2.5 TB RAM, one `gpu` partition.
-- Repo: `~/msc-dissertation-dnfs` (chmod 700 — shared box), synced by rsync
-  from the Mac with the standard excludes **plus `--exclude 'results'`**.
-- Env: locked pixi `cuda` env installed 2026-08-12 (`~/.pixi/bin/pixi`,
-  cache `~/.pixi-cache`) — same solve as DoC/Modal, torch 2.10.0 cuda-built
-  verified. First real job should sanity-check a CUDA kernel actually fires
-  on the B200s (sm_100); import-level checks pass.
-- Typical occupancy (2026-08-12): four GPUs parked by a long-lived inference
-  server at 0 % util, four at 100 % training, plus a dependency chain of
-  pending jobs — i.e. "idle-looking" is usually held. Freed slots flow to the
-  owner's dependency chain first.
-- **Idle check made operational (2026-08-18):** cross-check `nvidia-smi`
-  memory (physically empty) against `scontrol show job` TRES (Slurm-free) —
-  both must agree before a GPU counts as genuinely idle. Also read the
-  owner's PENDING jobs' gres: if they request more GPUs than our job would
-  leave free, taking one delays them; if they need the whole node (as on
-  2026-08-18: two 8-GPU jobs blocked behind their own 4-GPU server), a
-  1-GPU job delays nothing.
-- **sm_100 verified 2026-08-18** (job 2148): the locked torch 2.10.0+cu129
-  carries native Blackwell kernels (`sm_100` in `get_arch_list()`, matmul
-  fired on capability (10, 0)). Single-seed d256 recipe step time measured
-  ~0.66–0.84 s overall on a B200 (~9–12 h at 50k steps) vs ~18 h on an
-  A100-80GB.
-- **MPS co-run pattern verified 2026-08-18** (job 2150,
-  `slurm/mars_d256_recipe_mps.sbatch`): two training seeds share ONE
-  allocated B200 via user-level MPS — private `CUDA_MPS_PIPE_DIRECTORY`/
-  `CUDA_MPS_LOG_DIRECTORY` under the job, `nvidia-cuda-mps-control -d`,
-  an EXIT trap for teardown, both seeds backgrounded + `wait`. Without MPS
-  two CUDA contexts only time-slice (~serial); with it kernels co-schedule
-  (two 18 GB clients observed under the one server). Caveat: any
-  `wall_clock_step_s` from a co-run is contention-contaminated — never
-  quote timings from co-run jobs. Results written on mars must be pulled
-  back explicitly (`results/` is excluded from the sync in both
-  directions).
