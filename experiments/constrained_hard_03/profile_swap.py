@@ -373,10 +373,29 @@ def _run_gfn_bench(args, device: torch.device) -> None:
     side = int(round(args.d ** 0.5))
     if side * side != args.d:
         raise ValueError(f"--d must be a square lattice site count, got {args.d}")
-    cfg = dataclass_replace(
-        GFN_CONFIGS[f"GFN_d64_c50_s220_{args.gfn_objective}_50k_par"],
-        D=side, batch_size=args.batch,
-    )
+    # Prefer a SIZE-NATIVE registered parity cell: parity is measured
+    # params PER RUNG, so if a 16x16 GFN arm is ever registered at its own
+    # capacity, this bench re-points to it automatically and the
+    # cost-ladder row re-benches at the architecture that actually runs.
+    # Until then, sizes without a cell price the d64 `_par` recipe
+    # re-realised at that lattice — the same convention the head rows use
+    # for sizes no cell was trained at — and say so in the output line.
+    native = [
+        name for name in GFN_CONFIGS
+        if name.startswith(f"GFN_d{args.d}_c50_s220_{args.gfn_objective}_")
+        and name.endswith("_par")
+    ]
+    if native:
+        cfg = dataclass_replace(GFN_CONFIGS[native[0]], batch_size=args.batch)
+    else:
+        cfg = dataclass_replace(
+            GFN_CONFIGS[f"GFN_d64_c50_s220_{args.gfn_objective}_50k_par"],
+            D=side, batch_size=args.batch,
+        )
+        if args.d != 64:
+            print(f"no registered GFN d{args.d} parity cell: pricing the "
+                  f"d64 `_par` recipe re-realised at D={side} — re-bench if "
+                  f"a size-native cell lands at different capacity")
     torch.manual_seed(42)
     target, policy = build_target_and_policy(cfg, str(device))
 
