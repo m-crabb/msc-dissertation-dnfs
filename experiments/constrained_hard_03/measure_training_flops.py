@@ -60,6 +60,7 @@ import torch
 from torch.utils.flop_counter import FlopCounterMode
 
 from discrete_flow_sampler.diagnostics.flops import (
+    diagnostic_eval_flops,
     fit_flop_scaling,
     measured_forward_flops,
     training_forward_counts,
@@ -211,6 +212,25 @@ def main(argv: list[str] | None = None):
     # sides in different directions.
     one_eval_draw_set = derived["sampling_flops_per_eval_draw_set"]
 
+    # Three-way split (decided 2026-08-31, after the d64 certification
+    # reconciled the measured-vs-derived gap to the instrument within
+    # 0.8%): training-proper is the ALGORITHM's bill and the printed
+    # appendix number; the periodic in-training eval is severable
+    # instrumentation priced beside it, never folded in; and the
+    # certification ratio compares the measurement against the SUM, since
+    # the counter necessarily measured both.
+    training_proper = derived["total_flops"]
+    diagnostic = diagnostic_eval_flops(
+        derived["update_forward_flops"],
+        update_batch_size=cfg.train.batch_size,
+        n_euler_steps=cfg.ctmc.n_euler_steps,
+        n_steps=cfg.train.n_steps,
+        eval_every=getattr(cfg.eval, "eval_every", None),
+        n_eval_draws=(
+            getattr(cfg.eval, "n_eval_samples_training", None)
+            or cfg.eval.n_eval_samples
+        ),
+    )
     payload = {
         "cfg": args.cfg,
         "horizons": horizons,
@@ -219,19 +239,22 @@ def main(argv: list[str] | None = None):
         "flops_per_outer_cycle": fit["flops_per_outer_cycle"],
         "max_relative_residual": fit["max_relative_residual"],
         "extrapolated_training_flops": extrapolated,
-        "derived_training_flops": derived["total_flops"],
-        "measured_over_derived": extrapolated / derived["total_flops"],
+        "training_proper_flops": training_proper,
+        "diagnostic_eval_flops": diagnostic,
+        "as_instrumented_flops": training_proper + diagnostic,
+        "measured_over_accounted": extrapolated / (training_proper + diagnostic),
         "derived_detail": derived,
         "one_eval_draw_set_flops": one_eval_draw_set,
-        "training_in_eval_draw_sets": extrapolated / one_eval_draw_set,
+        "training_proper_in_eval_draw_sets": training_proper / one_eval_draw_set,
     }
     print(json.dumps({k: v for k, v in payload.items() if k != "derived_detail"},
                      indent=2, default=str))
     print(
         f"[flops] residual {fit['max_relative_residual']:.2%} "
-        f"| measured/derived {payload['measured_over_derived']:.3f} "
-        f"| training = {payload['training_in_eval_draw_sets']:.0f} "
-        f"x ({cfg.eval.n_eval_samples}-draw eval)"
+        f"| measured/accounted {payload['measured_over_accounted']:.3f} "
+        f"| training-proper = {payload['training_proper_in_eval_draw_sets']:.0f} "
+        f"x ({cfg.eval.n_eval_samples}-draw eval) "
+        f"| instrument +{diagnostic / training_proper:.0%}"
     )
     if args.out:
         args.out.write_text(json.dumps(payload, indent=2, default=str))

@@ -264,6 +264,43 @@ def training_run_flops(
     )
 
 
+def diagnostic_eval_flops(
+    update_forward_flops: int,
+    *,
+    update_batch_size: int,
+    n_euler_steps: int,
+    n_steps: int,
+    eval_every: int | None,
+    n_eval_draws: int,
+) -> float:
+    """Cost of the periodic in-training frozen-ESS eval, as its OWN term.
+
+    This is instrumentation, not the algorithm: the draws run on frozen
+    weights with no gradients, exist only to feed the frozen-ESS telltale
+    (the on-policy batch cannot be one — reverse-KL blindness), and are
+    severable by setting eval_every off. Training-proper therefore never
+    includes this figure; the appendix prints it beside the algorithmic
+    bill instead of silently folding it in. The d64 thp certification is
+    the calibration: the measured-vs-derived gap reconciled to this term
+    within 0.8% (2026-08-31), which is also what confirmed backward = 2x
+    forward on the training-proper leg.
+
+    No backward is charged, and the eval's draw count scales the
+    update-batch forward linearly — the same per-draw-scaling assumption
+    the eval-draw-set currency makes, stated once there and reused here.
+    The count uses n_steps // eval_every: whether the trainer also fires
+    at step 0 is a fixed-prefix effect the measurement's fit absorbs, not
+    part of the per-cycle rate.
+    """
+    if not eval_every:
+        return 0.0
+    n_evals = n_steps // eval_every
+    per_eval = n_euler_steps * update_forward_flops * (
+        n_eval_draws / update_batch_size
+    )
+    return n_evals * per_eval
+
+
 def valid_measurement_horizons(
     inner_steps_per_outer: int, eval_every: int | None, n_horizons: int
 ) -> list[int]:

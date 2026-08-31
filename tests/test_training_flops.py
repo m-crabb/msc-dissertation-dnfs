@@ -192,3 +192,34 @@ def test_measurement_curriculum_is_truncated_to_the_horizon():
     assert curriculum_within(None, horizon=500) is None
     full = curriculum_within(cfg.curriculum, horizon=cfg.train.n_steps)
     assert full == tuple(cfg.curriculum.stages)
+
+
+def test_diagnostic_eval_flops_price_the_severable_instrument():
+    """The in-training frozen-ESS eval is instrumentation, not the
+    algorithm: frozen weights, no gradients, severable by turning
+    eval_every off. It is therefore priced as its OWN term, never folded
+    into training-proper — the d64 thp certification measured it at 37%
+    of the as-instrumented bill (gap reconciled to 0.8%), so silently
+    including or dropping it moves the appendix number by more than any
+    other single decision. No backward is charged (the draws are
+    no-grad), and draws scale the update-batch forward linearly (the
+    same assumption the eval-draw-set currency documents)."""
+    from discrete_flow_sampler.diagnostics.flops import diagnostic_eval_flops
+
+    # 50k steps, eval every 200 -> 250 evals; each draws 512 samples
+    # through 128 CTMC steps, priced off a batch-128 forward of 1e9:
+    # 250 * 128 * 1e9 * (512/128) = 1.28e14.
+    total = diagnostic_eval_flops(
+        update_forward_flops=1e9,
+        update_batch_size=128,
+        n_euler_steps=128,
+        n_steps=50_000,
+        eval_every=200,
+        n_eval_draws=512,
+    )
+    assert total == 250 * 128 * 1e9 * 4.0
+    # Instrument off -> nothing charged.
+    assert diagnostic_eval_flops(
+        update_forward_flops=1e9, update_batch_size=128, n_euler_steps=128,
+        n_steps=50_000, eval_every=None, n_eval_draws=512,
+    ) == 0.0
