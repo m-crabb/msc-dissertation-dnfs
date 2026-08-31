@@ -211,7 +211,11 @@ def test_d64_cells_carry_the_house_recipe_levers():
     assert len(d64) == 15
     for name, cell in d64.items():
         assert cell.hidden_dim == 64 and cell.n_layers == 2
-        assert cell.n_steps == 50_000 and cell.batch_size == 128
+        # The one exception to the matched 50k budget is the DECLARED
+        # budget-doubled diagnostic (its whole point is the moved budget;
+        # its own twin test pins that nothing else moved).
+        expected_steps = 100_000 if "_100k_" in name else 50_000
+        assert cell.n_steps == expected_steps and cell.batch_size == 128
         assert cell.warmup_steps == 500
         assert cell.grad_clip_max_norm == 500.0
         assert cell.ema_decay == 0.9999
