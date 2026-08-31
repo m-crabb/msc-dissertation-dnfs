@@ -48,6 +48,18 @@ class GFNCellCfg:
     # slice value 10.81 at 10k steps — it arithmetically could not arrive.
     # ~100x on log_z alone is the Malkin et al. / torchgfn convention.
     log_z_learning_rate: float | None = None
+    # The FL-DB analogue of the split above (s100). The flow head is the
+    # FL-DB arm's normaliser: its output must reach the tens-of-nats
+    # completion-entropy scale (log C(64,32) ~ 43 nats enters the prefix
+    # flows), and Adam moves a final-layer bias at ~lr/step, so at the
+    # shared 1e-3 the d64 sigma_c centres were STILL CLIMBING at 50k
+    # (frozen ESS 0.45 -> 0.75 over the last 25k while TB converged by
+    # 35k, DB residual loss already ~1e-3 — near-satisfied objective,
+    # starved normaliser). A GLOBAL lr raise is ruled out by the star
+    # (3e-3 destabilised the policy: one seed spent 10k steps near ESS
+    # 0.04). None = share learning_rate; every archived cell reproduced
+    # exactly.
+    flow_head_learning_rate: float | None = None
     epsilon: float = 0.05  # uniform behaviour mix; off-policy, TB-tolerated
     # torch.compile the SCORING path (site_log_probs and the FL-DB variant)
     # — the GFN analogue of optimised_recipe's compile_head. Default False:
@@ -236,6 +248,25 @@ def _gfn_d64_star_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCell
     )
 
 
+# Flow-head split-lr arms, FL-DB at sigma_c only (s100): the fairness fix
+# the training logs point at — see flow_head_learning_rate on the cfg. Two
+# values bracket the unknown: 1e-1 is the log_z precedent (~100x), 1e-2 a
+# conservative 10x. ONE LEVER off the judged fldb centre (pinned by
+# test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever); everything else
+# would confound the diagnosis. sigma_c only because the s010 fldb centre
+# already sits at 0.97.
+_FLOW_LR_GRID = {"flr1e1": 1e-1, "flr1e2": 1e-2}
+
+
+def _gfn_d64_flow_lr_cell(flr_key: str) -> GFNCellCfg:
+    base = _gfn_d64_parity_cell("fldb", "s220", SIGMA_C)
+    return replace(
+        base,
+        name=base.name.replace("_par", f"_{flr_key}"),
+        flow_head_learning_rate=_FLOW_LR_GRID[flr_key],
+    )
+
+
 GFN_CONFIGS = {
     cell.name: cell
     for objective in GFN_OBJECTIVES
@@ -258,3 +289,7 @@ GFN_CONFIGS = {
         ),
     )
 }
+# fldb-only arms live outside the per-objective comprehension.
+GFN_CONFIGS.update(
+    {cell.name: cell for cell in map(_gfn_d64_flow_lr_cell, _FLOW_LR_GRID)}
+)

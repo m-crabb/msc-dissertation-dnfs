@@ -30,8 +30,9 @@ def test_registry_keys_match_cell_names_and_objectives():
     # fair-tuning grid: 3x3 lr x epsilon minus the centre (= the `_par`
     # cell itself) x both arms at sigma_c only = 16 `_swp` cells; plus the
     # s94 8x8 rung: d64 `_par` centres at both couplings + the 4-arm
-    # sigma_c star per objective = 12 d64 cells.
-    assert len(GFN_CONFIGS) == 36
+    # sigma_c star per objective = 12 d64 cells; plus the s100 flow-lr
+    # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2.
+    assert len(GFN_CONFIGS) == 38
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
@@ -205,7 +206,7 @@ def test_d64_cells_carry_the_house_recipe_levers():
     # house levers (warmup/clip/EMA/bf16 eval/in-training eval) are
     # matched field by field to H2_d64_*_w2's train/eval blocks.
     d64 = {n: c for n, c in GFN_CONFIGS.items() if c.D == 8}
-    assert len(d64) == 12
+    assert len(d64) == 14  # 12 s94 wave cells + the 2 s100 flr arms
     for name, cell in d64.items():
         assert cell.hidden_dim == 64 and cell.n_layers == 2
         assert cell.n_steps == 50_000 and cell.batch_size == 128
@@ -327,3 +328,73 @@ def test_completed_run_short_circuits(tmp_path):
     )
     assert rerun_dir == run_dir
     assert (run_dir / "eval" / "metrics.json").read_text() == metrics_before
+
+
+def test_build_optimiser_splits_flow_head_group():
+    """The FL-DB analogue of the log_z split (s100): the flow head's output
+    must reach the tens-of-nats completion-entropy scale and Adam moves it
+    ~lr per step, so at the shared lr the d64 centres were still climbing
+    at 50k. The split must move EXACTLY the flow head's parameters, and
+    asking for it on a policy without a flow head is a misconfiguration
+    that must raise, not silently train nothing at the fast lr."""
+    import pytest
+    from experiments.constrained_hard_03.run_gfn import (
+        build_optimiser, build_target_and_policy)
+
+    cfg = replace(_tiny_cell("fldb"), flow_head_learning_rate=1e-2)
+    _, policy = build_target_and_policy(cfg, "cpu")
+    optimiser = build_optimiser(cfg, policy)
+    groups = {g["name"]: g for g in optimiser.param_groups}
+    assert set(groups) == {"network", "flow_head"}
+    assert groups["flow_head"]["lr"] == 1e-2
+    flow_params = {id(p) for p in policy.flow_head.parameters()}
+    assert {id(p) for p in groups["flow_head"]["params"]} == flow_params
+    network_params = {id(p) for p in groups["network"]["params"]}
+    assert not (network_params & flow_params)
+    # Every parameter is in exactly one group.
+    assert (len(groups["network"]["params"]) + len(flow_params)
+            == len(list(policy.parameters())))
+
+    tb_cfg = replace(_tiny_cell("tb"), flow_head_learning_rate=1e-2)
+    _, tb_policy = build_target_and_policy(tb_cfg, "cpu")
+    with pytest.raises(ValueError, match="flow"):
+        build_optimiser(tb_cfg, tb_policy)
+
+
+def test_warmup_never_touches_the_flow_head_group():
+    """Same exemption rationale as log_z: the split lr exists to unstarve
+    the normaliser, and re-throttling it for the ramp would re-create a
+    mild version of the failure at the start of every run."""
+    from experiments.constrained_hard_03.run_gfn import (
+        apply_lr_warmup, build_optimiser, build_target_and_policy)
+
+    cfg = replace(_tiny_cell("fldb"), flow_head_learning_rate=1e-2,
+                  warmup_steps=100)
+    _, policy = build_target_and_policy(cfg, "cpu")
+    optimiser = build_optimiser(cfg, policy)
+    apply_lr_warmup(optimiser, cfg, step=0)
+    lrs = {g["name"]: g["lr"] for g in optimiser.param_groups}
+    assert lrs["network"] == cfg.learning_rate / 100
+    assert lrs["flow_head"] == 1e-2
+
+
+def test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever():
+    """The flr arms exist to test ONE diagnosis (the flow head is
+    lr-starved), so they must be the fldb sigma_c parity centre with the
+    flow-head lr as the only moved field -- any second difference would
+    confound the reading."""
+    from dataclasses import asdict
+
+    centre = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_par"]
+    for flr_key, flow_lr in (("flr1e1", 1e-1), ("flr1e2", 1e-2)):
+        cell = GFN_CONFIGS[f"GFN_d64_c50_s220_fldb_50k_{flr_key}"]
+        assert cell.flow_head_learning_rate == flow_lr
+        diff = {
+            field: (a, b)
+            for field, (a, b) in (
+                (f, (asdict(centre)[f], asdict(cell)[f]))
+                for f in asdict(centre)
+            )
+            if a != b
+        }
+        assert set(diff) == {"name", "flow_head_learning_rate"}, diff

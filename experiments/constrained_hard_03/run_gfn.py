@@ -64,39 +64,56 @@ def build_target_and_policy(cfg: GFNCellCfg, device):
 
 
 def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
-    """AdamW over the policy, optionally with log_z in its own lr group.
+    """AdamW over the policy, with each arm's NORMALISER optionally in its
+    own faster lr group: log_z for TB, the flow head for FL-DB.
 
-    See GFNCellCfg.log_z_learning_rate for the why (Adam's ~lr/step speed
-    limit on a scalar left the s92 TB wave's log Z 2.4 nats short of the
-    exact slice value at 10k steps). Splitting the group changes NOTHING
-    for cells with the field unset: the s92 wave's flat construction is
-    reproduced exactly, so archived cells stay comparable.
+    See GFNCellCfg.log_z_learning_rate and .flow_head_learning_rate for
+    the two whys — the same failure at two scales (Adam's ~lr/step speed
+    limit left TB's log Z 2.4 nats short at d16, and the FL-DB flow head
+    still climbing toward the ~43-nat completion-entropy scale at d64's
+    full 50k budget). Splitting changes NOTHING for cells with the fields
+    unset: the archived flat construction is reproduced exactly, so every
+    judged cell stays comparable.
+
+    Requesting a flow-head group on a policy built without one (a TB cell)
+    raises rather than silently training nothing at the fast lr.
 
     Groups carry a "name" key so the warmup ramp can target the network
     group alone (see apply_lr_warmup).
     """
-    if cfg.log_z_learning_rate is None:
-        return torch.optim.AdamW(
-            [{"params": list(policy.parameters()),
-              "lr": cfg.learning_rate, "name": "network"}]
-        )
-    network_params = [p for p in policy.parameters() if p is not policy.log_z]
+    groups = []
+    split_out = set()
+    if cfg.log_z_learning_rate is not None:
+        groups.append({"params": [policy.log_z],
+                       "lr": cfg.log_z_learning_rate, "name": "log_z"})
+        split_out.add(id(policy.log_z))
+    if cfg.flow_head_learning_rate is not None:
+        if policy.flow_head is None:
+            raise ValueError(
+                f"{cfg.name}: flow_head_learning_rate is set but the policy "
+                "has no flow head (with_flow_head=False; the field is the "
+                "FL-DB arm's lever)"
+            )
+        flow_params = list(policy.flow_head.parameters())
+        groups.append({"params": flow_params,
+                       "lr": cfg.flow_head_learning_rate,
+                       "name": "flow_head"})
+        split_out |= {id(p) for p in flow_params}
+    network_params = [p for p in policy.parameters()
+                      if id(p) not in split_out]
     return torch.optim.AdamW(
-        [
-            {"params": network_params, "lr": cfg.learning_rate,
-             "name": "network"},
-            {"params": [policy.log_z], "lr": cfg.log_z_learning_rate,
-             "name": "log_z"},
-        ]
+        [{"params": network_params, "lr": cfg.learning_rate,
+          "name": "network"}, *groups]
     )
 
 
 def apply_lr_warmup(optimiser, cfg: GFNCellCfg, step: int) -> None:
     """House-mirror linear lr ramp (training.py): (step+1)/warmup_steps over
     the first warmup_steps updates, then the full lr. Applied to the
-    NETWORK group only — the TB log_z group exists because Adam starves a
-    scalar at the shared lr, and re-throttling it for the ramp would
-    re-create a mild version of that failure at the start of every run.
+    NETWORK group only — the split groups (TB's log_z, FL-DB's flow head)
+    exist because Adam starves the normaliser at the shared lr, and
+    re-throttling them for the ramp would re-create a mild version of that
+    failure at the start of every run.
     A no-op when warmup_steps is 0 (every archived d16 cell)."""
     if cfg.warmup_steps <= 0 or step > cfg.warmup_steps:
         return

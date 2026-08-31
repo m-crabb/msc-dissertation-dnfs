@@ -35,8 +35,10 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
-CFG=${1:?usage: sbatch gfn_d64_wave.sbatch <cfg name>}
-TAG=20260830-gfn-d64
+CFG=${1:?usage: sbatch gfn_d64_wave.sbatch <cfg name> [tag]}
+# Default = the s94 wave tag; later arms (e.g. the s100 flr pair) pass
+# their own so a resubmission resumes against the right dirs.
+TAG=${2:-20260830-gfn-d64}
 
 cd "$REPO"
 echo "node=$(hostname) cfg=$CFG tag=$TAG seeds=42,43,44"
