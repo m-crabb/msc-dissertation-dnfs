@@ -33,8 +33,9 @@ def test_registry_keys_match_cell_names_and_objectives():
     # sigma_c star per objective = 12 d64 cells; plus the s100 flow-lr
     # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2;
     # plus the s100 budget-doubled fldb diagnostic = 1; plus the s100
-    # standalone-flow arm = 1.
-    assert len(GFN_CONFIGS) == 40
+    # standalone-flow arm = 1; plus the s102 16x16 rung: d256 `_par`
+    # centres at both couplings x both arms = 4.
+    assert len(GFN_CONFIGS) == 44
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
@@ -91,12 +92,13 @@ def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
             parent.learning_rate, parent.epsilon)
 
 
-def test_compile_policy_off_at_d16_on_at_d64():
+def test_compile_policy_off_at_d16_on_at_d64_and_d256():
     # Archived cells never retro-flip: every d16 cell stays eager exactly
-    # as it ran. The d64 cells ship compiled from launch (s94 decision),
-    # still gated by the GPU numerical-parity check at the launch bench.
+    # as it ran. The d64+ cells ship compiled from launch (s94 decision),
+    # still gated by the GPU numerical-parity check at the launch bench
+    # run at each cell's own size on the venue stack.
     for cell in GFN_CONFIGS.values():
-        assert cell.compile_policy is (cell.D == 8)
+        assert cell.compile_policy is (cell.D in (8, 16))
 
 
 def test_build_optimiser_splits_log_z_group():
@@ -444,3 +446,73 @@ def test_sfh_cell_is_the_fldb_centre_twin_plus_the_standalone_flow():
         if a != b
     }
     assert set(diff) == {"name", "standalone_flow_head"}, diff
+
+
+def test_d256_parity_cells_measured_params_within_anchor_band():
+    """Parity is measured params per rung, and at d256 the policy must be
+    re-sized: the d64 sizing (hidden 64) lands at 116,738 params, 12.6%
+    under the chapter's thp2 head (133,632) and 15.1% under the ma cell
+    (137,440) — outside the precedent band (+0.4% at d16, -3.5% at d64).
+    hidden 68 restores it, and sits at parity with BOTH candidate anchors
+    at once, so the anchor choice cannot be motivated. The flow head is
+    excluded from the count, matching the d16/d64 parity audits (it is a
+    declared delta on the fldb family, not part of the policy)."""
+    from discrete_flow_sampler.models.raster_gfn_policy import RasterGFNPolicy
+
+    cell = GFN_CONFIGS["GFN_d256_c50_s220_tb_100k_par"]
+    policy = RasterGFNPolicy(
+        D=cell.D,
+        n_plus_target=128,
+        hidden_dim=cell.hidden_dim,
+        n_layers=cell.n_layers,
+        n_heads=cell.n_heads,
+        with_flow_head=False,
+    )
+    n_params = sum(p.numel() for p in policy.parameters())
+    assert n_params == 130_562
+    for anchor in (133_632, 137_440):  # thp2 / ma stacks, measured s102
+        assert abs(n_params - anchor) / anchor < 0.055
+
+
+def test_d256_sigma_c_cells_mirror_the_house_100k_ladder():
+    """The house d256 100k curriculum climbs 0.100 -> sigma_c over stages
+    starting at 0/5k/10k/15k/20k/25k/30k then holds sigma_c for 70k. The
+    GFN sigma_stages rule gives every entry an equal n_steps/len share, so
+    20 stages of 5k (six climbing + fourteen at sigma_c) reproduce those
+    start-steps and the plateau exactly."""
+    house_climb = (0.100, 0.140, 0.170, 0.190, 0.205, 0.215)
+    for objective in GFN_OBJECTIVES:
+        cell = GFN_CONFIGS[f"GFN_d256_c50_s220_{objective}_100k_par"]
+        assert cell.n_steps == 100_000
+        assert len(cell.sigma_stages) == 20
+        assert cell.sigma_stages[:6] == house_climb
+        assert all(s == SIGMA_C for s in cell.sigma_stages[6:])
+
+
+def test_d256_cells_are_d64_twins_plus_declared_levers():
+    """The 16x16 cells are the judged d64 recipe with only the declared
+    rung levers moved: lattice size, the parity re-size (hidden 68), and —
+    on the sigma_c cells only — the house d256 budget (100k) with its
+    dilated ladder. Anything else moving would break recipe parity with
+    the judged 8x8 wave."""
+    from dataclasses import asdict
+
+    for objective in GFN_OBJECTIVES:
+        for sigma_label, expected_extra in (
+            ("s010", set()),
+            ("s220", {"n_steps", "sigma_stages"}),
+        ):
+            steps = "50k" if sigma_label == "s010" else "100k"
+            d64 = GFN_CONFIGS[f"GFN_d64_c50_{sigma_label}_{objective}_50k_par"]
+            d256 = GFN_CONFIGS[
+                f"GFN_d256_c50_{sigma_label}_{objective}_{steps}_par"
+            ]
+            assert d256.D == 16
+            assert d256.hidden_dim == 68
+            assert d256.compile_policy is True
+            diff = {
+                field
+                for field in asdict(d64)
+                if asdict(d64)[field] != asdict(d256)[field]
+            }
+            assert diff == {"name", "D", "hidden_dim"} | expected_extra, diff

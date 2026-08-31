@@ -333,3 +333,72 @@ GFN_CONFIGS.update({
         ),
     )
 })
+
+
+# The 16x16 rung (s102): the fairness claim the comparator subsection
+# still owes — 256-step trajectories are the regime the GFN literature
+# documents as hard for TB (Madan/Pan expect FL>TB there), so the d64
+# verdict "FL>TB has not appeared by 64-step trajectories" is only
+# defensible as a scoped claim if this rung tests the scope.
+#
+# The sigma_c ladder mirrors the house d256 100k curriculum exactly under
+# the equal-share rule: 20 stages of 5k = the house start-steps
+# 0/5k/10k/15k/20k/25k/30k with the final 70k on the exact critical
+# coupling. Budget parity is per rung: the house d256 cells train 50k at
+# the floor and 100k at sigma_c, so these do too (the d64 wave's 50k/50k
+# matched ITS rung's house cells). Flat lr stays a declared deviation, as
+# at d64.
+_D256_GFN_SIGMA_STAGES = (
+    0.100, 0.140, 0.170, 0.190, 0.205, 0.215,
+) + (SIGMA_C,) * 14
+
+
+def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
+    """16x16 centre: the judged d64 recipe with only the rung levers moved.
+
+    Parity is measured params a third time, and this rung is the first
+    where the policy must be RE-SIZED to keep it: the d64 sizing's only
+    d-dependent parameters are the position embedding (256 x hidden), so
+    carrying hidden 64 up unchanged lands at 116,738 params — 12.6% under
+    the chapter's thp2 stack (133,632) and 15.1% under the ma cell
+    (137,440), against the +0.4%/-3.5% precedent at d16/d64. hidden 68
+    (17 dims per head) gives 130,562: within 2.3% of thp2 and 5.0% of ma,
+    i.e. at parity with BOTH candidate anchors, so the anchor question
+    (the flagship ma comparator vs the chapter's head at a rung where ma
+    fails) dissolves rather than needing a defence. Alternatives rejected:
+    hidden 72 overshoots both anchors (+8.6%/+5.6%); a third layer blows
+    past by 25%.
+
+    Every other lever rides the judged d64 `_par` recipe unchanged
+    (batch 128, warmup 500, grad clip 500, EMA 0.9999 dual eval, bf16
+    eval autocast, in-training frozen eval every 200 steps, compile ON
+    gated by the launch bench at THIS size on the venue stack).
+    NOTE (cost-ladder tripwire, s100): registering this cell at hidden 68
+    obsoletes tab:head-cost-ladder's d256 GFN entries, which price the
+    d64 recipe re-realised at D=16 — profile_swap's gfn modes re-point
+    here automatically; re-run modal_app::bench when the rows are next
+    touched."""
+    sigma_c = sigma_label == "s220"
+    cell = replace(
+        _gfn_d64_parity_cell(
+            objective, sigma_label, SIGMA_C if sigma_c else 0.10
+        ),
+        D=16,
+        hidden_dim=68,
+        n_steps=100_000 if sigma_c else 50_000,
+        sigma_stages=_D256_GFN_SIGMA_STAGES if sigma_c else (),
+    )
+    steps_label = "100k" if sigma_c else "50k"
+    return replace(
+        cell, name=f"GFN_d256_c50_{sigma_label}_{objective}_{steps_label}_par"
+    )
+
+
+GFN_CONFIGS.update({
+    cell.name: cell
+    for objective in GFN_OBJECTIVES
+    for cell in (
+        _gfn_d256_parity_cell(objective, "s010"),
+        _gfn_d256_parity_cell(objective, "s220"),
+    )
+})

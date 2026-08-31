@@ -141,11 +141,23 @@ def wall_clock_bench(cfg, device):
           f"(+ eval_every rollouts on top)")
 
 
+# Inductor kernels differ per SIZE as well as per backend, so each rung's
+# sigma_c centres gate their own launch (the d256 wave must not ride the
+# d64 certification).
+_RUNG_GATE_CELLS = {
+    "d64": "GFN_d64_c50_s220_{objective}_50k_par",
+    "d256": "GFN_d256_c50_s220_{objective}_100k_par",
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allow-cpu", action="store_true",
                         help="smoke the script off-venue; the gate only "
                              "certifies the stack it runs on")
+    parser.add_argument("--rung", choices=sorted(_RUNG_GATE_CELLS),
+                        default="d64",
+                        help="which rung's cells to gate and bench")
     args = parser.parse_args()
     if not torch.cuda.is_available() and not args.allow_cpu:
         sys.exit("no CUDA device: run on the launch venue (or --allow-cpu)")
@@ -155,7 +167,7 @@ def main():
 
     all_ok = True
     for objective in ("tb", "fldb"):
-        cfg = GFN_CONFIGS[f"GFN_d64_c50_s220_{objective}_50k_par"]
+        cfg = GFN_CONFIGS[_RUNG_GATE_CELLS[args.rung].format(objective=objective)]
         print(f"\n=== {cfg.name} ===")
         print("compile parity gate:")
         all_ok &= parity_gate(cfg, device)
@@ -164,7 +176,7 @@ def main():
 
     if not all_ok:
         sys.exit("PARITY GATE FAILED — do not launch compiled cells")
-    print("\nGATE PASSED on this stack; d64 wave may ship compiled.")
+    print(f"\nGATE PASSED on this stack; {args.rung} wave may ship compiled.")
 
 
 if __name__ == "__main__":
