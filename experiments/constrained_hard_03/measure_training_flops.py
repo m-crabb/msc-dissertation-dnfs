@@ -72,6 +72,20 @@ from experiments.constrained_hard_03.configs import CONFIGS
 from experiments.constrained_hard_03.run import build_target_and_head
 
 
+def curriculum_within(curriculum, horizon: int):
+    """Stages that start inside the horizon — the smoke-cell pattern
+    (`_SMOKE12K_SIGMA_LADDER`): the trainer's validator correctly rejects
+    stages starting at or beyond n_steps, and passing the full production
+    ladder to a 500-step measurement trips it. Truncation changes nothing
+    about what is measured: every valid horizon sits inside the first
+    stage (first boundary 5,000 vs horizons ≤ 1,500), and the module
+    docstring already scopes the measured slope to the first stage's
+    rate."""
+    if curriculum is None:
+        return None
+    return tuple(s for s in curriculum.stages if s.start_step < horizon)
+
+
 def measure_horizon(cfg, horizon: int, output_dir: Path, device: str) -> int:
     """Total FLOPs for a fresh training run of `horizon` inner steps.
 
@@ -96,9 +110,7 @@ def measure_horizon(cfg, horizon: int, output_dir: Path, device: str) -> int:
             output_dir,
             use_wandb=False,
             estimator_mode=cfg.estimator,
-            sigma_curriculum=(
-                cfg.curriculum.stages if cfg.curriculum is not None else None
-            ),
+            sigma_curriculum=curriculum_within(cfg.curriculum, horizon),
         )
     return counter.get_total_flops()
 

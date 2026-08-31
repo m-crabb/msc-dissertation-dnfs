@@ -171,3 +171,24 @@ def test_eval_every_none_falls_back_to_the_cycle():
         inner_steps_per_outer=100, eval_every=None, n_horizons=3
     )
     assert horizons == [100, 200, 300]
+
+
+def test_measurement_curriculum_is_truncated_to_the_horizon():
+    """The production ladder's later stages start beyond every measurement
+    horizon, and the trainer's validator correctly refuses such stages
+    (`curriculum start_step must be < n_steps`) — the failure that killed
+    the first live run (Modal, 2026-08-31). The harness must hand the
+    trainer only the stages the horizon can reach, which for every valid
+    horizon is exactly the first stage."""
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from experiments.constrained_hard_03.measure_training_flops import (
+        curriculum_within,
+    )
+
+    cfg = CONFIGS["H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3"]
+    stages = curriculum_within(cfg.curriculum, horizon=500)
+    assert len(stages) == 1
+    assert stages[0].start_step == 0
+    assert curriculum_within(None, horizon=500) is None
+    full = curriculum_within(cfg.curriculum, horizon=cfg.train.n_steps)
+    assert full == tuple(cfg.curriculum.stages)
