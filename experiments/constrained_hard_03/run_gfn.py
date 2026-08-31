@@ -59,6 +59,7 @@ def build_target_and_policy(cfg: GFNCellCfg, device):
         n_layers=cfg.n_layers,
         n_heads=cfg.n_heads,
         with_flow_head=cfg.with_flow_head,
+        standalone_flow_head=cfg.standalone_flow_head,
     ).to(device)
     return target, policy
 

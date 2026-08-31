@@ -37,6 +37,12 @@ class GFNCellCfg:
     n_layers: int = 3
     n_heads: int = 4
     with_flow_head: bool = False  # forced True for fldb in the builder below
+    # Standalone flow module instead of the shared-trunk linear readout
+    # (s100): the torchgfn-conventional parameterisation — a separate MLP
+    # over the one-hot prefix state — which also DECOUPLES flow gradients
+    # from the policy trunk (the shielding mechanism the flow-lr arms
+    # surfaced). False = every archived cell, byte-identical.
+    standalone_flow_head: bool = False
     # Training.
     n_steps: int = 10_000
     batch_size: int = 256
@@ -312,6 +318,18 @@ GFN_CONFIGS.update({
             _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
             name="GFN_d64_c50_s220_fldb_100k_par",
             n_steps=100_000,
+        ),
+        # Standalone-flow arm (s100): the torchgfn-conventional
+        # parameterisation at the matched 50k budget, ONE lever off the
+        # judged centre. Judged against the centre (policy identical), so
+        # the added flow-MLP params (~17k at d64) are a declared delta,
+        # not a parity break — parity with the house heads binds the
+        # PRINTED centre rows, and this arm's comparison never leaves the
+        # fldb family.
+        replace(
+            _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
+            name="GFN_d64_c50_s220_fldb_50k_sfh",
+            standalone_flow_head=True,
         ),
     )
 })

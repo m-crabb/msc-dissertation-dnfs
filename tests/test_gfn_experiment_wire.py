@@ -32,8 +32,9 @@ def test_registry_keys_match_cell_names_and_objectives():
     # s94 8x8 rung: d64 `_par` centres at both couplings + the 4-arm
     # sigma_c star per objective = 12 d64 cells; plus the s100 flow-lr
     # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2;
-    # plus the s100 budget-doubled fldb diagnostic = 1.
-    assert len(GFN_CONFIGS) == 39
+    # plus the s100 budget-doubled fldb diagnostic = 1; plus the s100
+    # standalone-flow arm = 1.
+    assert len(GFN_CONFIGS) == 40
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
@@ -207,8 +208,8 @@ def test_d64_cells_carry_the_house_recipe_levers():
     # house levers (warmup/clip/EMA/bf16 eval/in-training eval) are
     # matched field by field to H2_d64_*_w2's train/eval blocks.
     d64 = {n: c for n, c in GFN_CONFIGS.items() if c.D == 8}
-    # 12 s94 wave cells + 2 s100 flr arms + 1 s100 100k diagnostic.
-    assert len(d64) == 15
+    # 12 s94 wave cells + 2 flr arms + 100k diagnostic + sfh arm.
+    assert len(d64) == 16
     for name, cell in d64.items():
         assert cell.hidden_dim == 64 and cell.n_layers == 2
         # The one exception to the matched 50k budget is the DECLARED
@@ -424,3 +425,22 @@ def test_fldb_100k_diagnostic_is_the_centre_twin_plus_budget():
         if a != b
     }
     assert set(diff) == {"name", "n_steps"}, diff
+
+
+def test_sfh_cell_is_the_fldb_centre_twin_plus_the_standalone_flow():
+    """The standalone-flow arm answers ONE question (does the
+    torchgfn-conventional parameterisation change FLDB's convergence) and
+    must move only that field off the judged centre."""
+    from dataclasses import asdict
+
+    centre = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_par"]
+    cell = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_sfh"]
+    assert cell.standalone_flow_head is True
+    diff = {
+        field: (a, b)
+        for field, (a, b) in (
+            (f, (asdict(centre)[f], asdict(cell)[f])) for f in asdict(centre)
+        )
+        if a != b
+    }
+    assert set(diff) == {"name", "standalone_flow_head"}, diff

@@ -312,3 +312,80 @@ def test_fldb_training_recovers_exact_distribution():
         optimiser.step()
 
     assert _total_variation_to_exact(policy, target) < 0.05
+
+
+# ---------------------------------------------------------------------------
+# Standalone flow module (s100: the torchgfn-conventional parameterisation).
+# ---------------------------------------------------------------------------
+
+
+def _standalone_policy(target):
+    torch.manual_seed(0)
+    return RasterGFNPolicy(
+        D=target.D,
+        n_plus_target=target.n_plus_target,
+        hidden_dim=32,
+        n_layers=2,
+        n_heads=2,
+        with_flow_head=True,
+        standalone_flow_head=True,
+    )
+
+
+def test_standalone_flow_residual_depends_only_on_its_prefix():
+    """The FL-DB loss reads flow_residuals[:, i] as log F_res of the prefix
+    BEFORE site i. A standalone module that peeked at later sites would be
+    a different (wrong) flow function: perturbing any site j >= i must
+    leave residual i exactly unchanged."""
+    target = _target(D=4, c=0.5)
+    policy = _standalone_policy(target)
+    x, _ = policy.sample(4)
+    _, residuals = policy.site_log_probs_and_flow_residuals(x)
+    x_perturbed = x.clone()
+    # Swap two later sites' spins (stays on-slice; changes sites 10 and 14).
+    x_perturbed[:, 10], x_perturbed[:, 14] = x[:, 14], x[:, 10]
+    _, residuals_perturbed = policy.site_log_probs_and_flow_residuals(
+        x_perturbed)
+    assert torch.allclose(residuals[:, :11], residuals_perturbed[:, :11],
+                          atol=1e-6)
+    assert not torch.allclose(residuals[:, 11:], residuals_perturbed[:, 11:])
+
+
+def test_standalone_flow_gradients_do_not_touch_the_trunk():
+    """The point of the standalone module (beyond matching the torchgfn
+    convention): flow gradients must not flow into the shared trunk. Under
+    the shared-trunk readout they do — which is the shielding mechanism the
+    s100 flow-lr arms surfaced. Backward through the residuals alone must
+    leave every trunk/policy parameter without gradient."""
+    target = _target(D=4, c=0.5)
+    policy = _standalone_policy(target)
+    x, _ = policy.sample(4)
+    _, residuals = policy.site_log_probs_and_flow_residuals(x)
+    residuals.sum().backward()
+    flow_params = {id(p) for p in policy.flow_head.parameters()}
+    for name, p in policy.named_parameters():
+        if id(p) in flow_params:
+            assert p.grad is not None and p.grad.abs().sum() > 0, name
+        else:
+            assert p.grad is None or p.grad.abs().sum() == 0, name
+
+
+def test_fldb_training_recovers_exact_distribution_with_standalone_flow():
+    """The 2x2 convergence gate, standalone parameterisation: the loss
+    algebra is parameterisation-independent, so the exact conditionals
+    must still be recovered."""
+    torch.manual_seed(42)
+    target = _target(D=2, sigma=0.3, c=0.5)
+    policy = _standalone_policy(target)
+    optimiser = torch.optim.Adam(policy.parameters(), lr=1e-2)
+    for _ in range(800):
+        with torch.no_grad():
+            x, _ = policy.sample(128, epsilon=0.05)
+        site_log_probs, flow_residuals = policy.site_log_probs_and_flow_residuals(x)
+        increments = raster_prefix_log_reward_increments(target, x)
+        loss = forward_looking_db_loss(site_log_probs, increments, flow_residuals)
+        optimiser.zero_grad()
+        loss.backward()
+        optimiser.step()
+
+    assert _total_variation_to_exact(policy, target) < 0.05

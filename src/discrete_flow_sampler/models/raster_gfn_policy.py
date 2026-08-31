@@ -123,11 +123,13 @@ class RasterGFNPolicy(nn.Module):
         n_layers: int = 3,
         n_heads: int = 4,
         with_flow_head: bool = False,
+        standalone_flow_head: bool = False,
     ):
         super().__init__()
         self.D = D
         self.d = D * D
         self.n_plus_target = n_plus_target
+        self.standalone_flow_head = standalone_flow_head
 
         self.token_embedding = nn.Embedding(3, hidden_dim)
         self.position_embedding = nn.Parameter(torch.randn(self.d, hidden_dim) * 0.02)
@@ -137,7 +139,29 @@ class RasterGFNPolicy(nn.Module):
         self.final_norm = nn.LayerNorm(hidden_dim)
         self.policy_head = nn.Linear(hidden_dim, 1)
         self.log_z = nn.Parameter(torch.zeros(()))
-        self.flow_head = nn.Linear(hidden_dim, 1) if with_flow_head else None
+        # Two flow parameterisations (s100). The shared-trunk readout (the
+        # original) reads log F_res off the causal features — cheapest, but
+        # its gradients flow INTO the policy trunk, and the s100 flow-lr
+        # arms surfaced the failure mode: a fast flow readout absorbs DB
+        # residuals and SHIELDS the policy from its own gradient signal.
+        # The standalone module is the torchgfn convention (a separate
+        # ScalarEstimator over the state, verified in reference source):
+        # it decouples flow gradients from the trunk entirely, at a
+        # declared parameter cost (a small MLP over the 3-way one-hot
+        # prefix encoding; hidden = trunk hidden_dim, 2 hidden layers —
+        # OUR sizing choice, declared, kept small to bound the delta).
+        if not with_flow_head:
+            self.flow_head = None
+        elif standalone_flow_head:
+            self.flow_head = nn.Sequential(
+                nn.Linear(3 * self.d, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.GELU(),
+                nn.Linear(hidden_dim, 1),
+            )
+        else:
+            self.flow_head = nn.Linear(hidden_dim, 1)
 
         # True above the diagonal = position i may not attend to sites >= i.
         self.register_buffer(
@@ -238,8 +262,25 @@ class RasterGFNPolicy(nn.Module):
         """log q_theta(x), (B,). Off-slice states score -inf (mask violated)."""
         return self.site_log_probs(spins).sum(dim=-1)
 
+    def _standalone_flow_residuals(self, spins: torch.Tensor) -> torch.Tensor:
+        """(B, d) residuals from the standalone module: entry i is
+        log F_res of the prefix BEFORE site i (sites < i assigned, the rest
+        an explicit 'unassigned' class), matching the loss's alignment
+        exactly. All d prefixes of each sample are encoded as a 3-way
+        one-hot over sites — (B, d, 3d) — and scored in one MLP batch."""
+        batch, d = spins.shape
+        token_ids = (spins > 0).long()                       # (B, d) in {0, 1}
+        site = torch.arange(d, device=spins.device)
+        assigned = site[None, :] < site[:, None]             # (d_prefix, d_site)
+        prefix_ids = torch.where(
+            assigned[None, :, :], token_ids[:, None, :], 2
+        )                                                    # (B, d, d); 2 = unassigned
+        one_hot = torch.nn.functional.one_hot(prefix_ids, 3).float()
+        return self.flow_head(one_hot.reshape(batch, d, 3 * d)).squeeze(-1)
+
     def site_log_probs_and_flow_residuals(self, spins: torch.Tensor) -> tuple:
-        """Both FL-DB ingredients from a single shared encoder pass."""
+        """Both FL-DB ingredients; one shared encoder pass for the policy,
+        and the flow from whichever parameterisation the cell declares."""
         if self.flow_head is None:
             raise ValueError(
                 "policy was built with with_flow_head=False; the FL-DB arm "
@@ -247,7 +288,10 @@ class RasterGFNPolicy(nn.Module):
             )
         features = self._encode(self._shifted_token_ids(spins))
         logits = self.policy_head(features).squeeze(-1)
-        flow_residuals = self.flow_head(features).squeeze(-1)
+        if self.standalone_flow_head:
+            flow_residuals = self._standalone_flow_residuals(spins)
+        else:
+            flow_residuals = self.flow_head(features).squeeze(-1)
         return self._masked_chosen_log_probs(spins, logits), flow_residuals
 
     # -- sequential sampling ----------------------------------------------
