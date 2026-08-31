@@ -344,11 +344,86 @@ class _CompileGaveUp(logging.Handler):
 _COMPILE_WATCH = _CompileGaveUp()
 
 
+def _run_gfn_bench(args, device: torch.device) -> None:
+    """GFN comparator rows for tab:head-cost-ladder (s100).
+
+    The GFN has no per-Euler-step head forward: its sampler IS the
+    KV-cached autoregressive rollout (d sequential one-token steps, EAGER
+    BY CONSTRUCTION -- the per-step cache shapes are recompile territory),
+    so the "forward" this mode prices is the WHOLE per-sample rollout at
+    the bench batch, and the table's caption must say so. The policy is
+    built from the registry's d64 `_par` recipe exactly as the comparator
+    cells run it (hidden 64/2/4 = measured-param parity with the
+    masked-attention head; a different --d re-realises the same policy at
+    that lattice, the same convention the head rows use for sizes no cell
+    was trained at). Train step = eager rollout + scoring loss
+    forward/backward (compiled under --compile, the shipped
+    compile_policy=True configuration) + AdamW with the arm's own split
+    lr groups.
+    """
+    from dataclasses import replace as dataclass_replace
+
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+    from experiments.constrained_hard_03.run_gfn import (
+        _loss_and_train_diagnostics,
+        build_optimiser,
+        build_target_and_policy,
+    )
+
+    side = int(round(args.d ** 0.5))
+    if side * side != args.d:
+        raise ValueError(f"--d must be a square lattice site count, got {args.d}")
+    cfg = dataclass_replace(
+        GFN_CONFIGS[f"GFN_d64_c50_s220_{args.gfn_objective}_50k_par"],
+        D=side, batch_size=args.batch,
+    )
+    torch.manual_seed(42)
+    target, policy = build_target_and_policy(cfg, str(device))
+
+    if args.mode == "gfn_rollout":
+        def runner():
+            with torch.no_grad():
+                policy.sample(args.batch)
+    else:  # gfn_train_step
+        if args.compile:
+            policy.site_log_probs = torch.compile(policy.site_log_probs)
+            if cfg.with_flow_head:
+                policy.site_log_probs_and_flow_residuals = torch.compile(
+                    policy.site_log_probs_and_flow_residuals
+                )
+        optimiser = build_optimiser(cfg, policy)
+
+        def runner():
+            spins, _ = policy.sample(cfg.batch_size, epsilon=cfg.epsilon)
+            loss, _ = _loss_and_train_diagnostics(cfg, policy, target, spins)
+            optimiser.zero_grad()
+            loss.backward()
+            optimiser.step()
+
+    baseline_bytes = 0
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+        baseline_bytes = torch.cuda.max_memory_allocated()
+    times = _timed(runner, args.repeats, device)
+    _report(
+        f"{args.mode}_{args.gfn_objective}_d{args.d}_B{args.batch}",
+        times, device, baseline_bytes,
+    )
+    if args.profile:
+        _profile_once(runner, device)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode", required=True,
-        choices=("head", "train_step", "eval", "components"),
+        choices=("head", "train_step", "eval", "components",
+                 "gfn_rollout", "gfn_train_step"),
+    )
+    parser.add_argument(
+        "--gfn-objective", default="tb", choices=("tb", "fldb"),
+        help="gfn_* modes only: which comparator arm's registry recipe to "
+             "price (costs differ only by the fldb flow head's linear).",
     )
     parser.add_argument("--d", type=int, default=64, help="site count (D*D)")
     parser.add_argument(
@@ -437,6 +512,9 @@ def main(argv=None):
     device = torch.device(
         args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     )
+    if args.mode.startswith("gfn_"):
+        _run_gfn_bench(args, device)
+        return
     head, target = build_head_and_target(
         args.d, device, args.anchor_chunk, use_sdpa=args.sdpa,
         head_kind=args.head_kind,
