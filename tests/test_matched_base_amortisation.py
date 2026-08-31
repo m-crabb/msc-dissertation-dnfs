@@ -233,7 +233,12 @@ def test_d8_camort_cell_is_three_declared_levers_off_house_centre(
         if parent["model"][key] != cell["model"][key]
     }
     assert model_diff == {"condition_on_composition"}, model_diff
-    assert cell["composition"]["values"] == SPINE
+    # The quantised continuum (s101 post-gate amendment): every
+    # realisable composition in [0.25, 0.5] at d=64, uniform draw.
+    assert cell["composition"]["values"] == tuple(
+        sites / 64 for sites in range(16, 33))
+    assert all(
+        (c * 64) == int(c * 64) for c in cell["composition"]["values"])
     assert cell["composition"]["centre"] == 0.5
     assert cell["composition"]["half_width"] == 0.0
     assert cell["composition"]["curriculum"] is None

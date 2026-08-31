@@ -2106,6 +2106,21 @@ CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
 # off the house centre cell, pinned by test_matched_base_amortisation.
 _CAMORT_SPINE = CompositionCfg(
     centre=0.5, half_width=0.0, values=(0.25, 0.375, 0.5))
+# The d8 cells draw uniform over EVERY realisable composition in
+# [0.25, 0.5] — the "quantised continuum", 17 values at 1/64 steps
+# (s101, post-gate amendment). The D=4 gate exposed the cost of sparse
+# draws (held-out 0.4375 dipped to raw ESS 0.73 across a 0.125 gap while
+# 0.3125 read 0.95 across 0.0625), and the matched base removed the
+# mechanism that once made wide draw sets dangerous (off-centre rollouts
+# under a uniform base — the flatw30 killer). An explicit values tuple,
+# not a half_width window: every draw an integer site count, uniform
+# weights, no quantisation plumbing. Watched risk at judging: per-value
+# exposure is 1/17 of the budget (the gate's zero-exposure held-out at
+# 0.95 says smoothness shares it). The D=4 gate cell below keeps its
+# archived 3-value spine — archived cells never retro-flip.
+_CAMORT_D8_DRAWS = CompositionCfg(
+    centre=0.5, half_width=0.0,
+    values=tuple(sites / 64 for sites in range(16, 33)))
 for _sigma_suffix in ("", "_sc"):
     _camort_parent = CONFIGS[
         f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
@@ -2115,7 +2130,7 @@ for _sigma_suffix in ("", "_sc"):
         name=_camort_name,
         ising=replace(_camort_parent.ising, base_matches_composition=True),
         model=replace(_camort_parent.model, condition_on_composition=True),
-        composition=_CAMORT_SPINE,
+        composition=_CAMORT_D8_DRAWS,
     )
 
 # D=4 gate for the matched-base cells (validate-at-D=4 rule): the wave-3
