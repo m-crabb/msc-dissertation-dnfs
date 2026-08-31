@@ -35,3 +35,15 @@ def latest_run_dir(results_dir: Path, config: str, seed: int,
 def seed_of(run_dir_name: str) -> str:
     """The seed token out of a `{config}_seed{seed}[_timestamp]` dir name."""
     return run_dir_name.split("_seed")[1].split("_")[0]
+
+
+# The revamp request grid (2026-08-30): specialists {0.25, 0.375, 0.50}
+# plus Z2 mirrors {0.625, 0.75} and the held-outs, every value a multiple
+# of 1/16 (integer site counts at d=16). The fit depends mildly on the
+# grid, so wave-3 model slopes are scored against THIS grid's exact
+# reference (0.9950 at lambda=50), never the archived 0.976 — one
+# definition here so the reference derivation (16) and the model slope
+# fit (15) can never disagree about the grid.
+REVAMP_GRID = (
+    0.25, 0.3125, 0.375, 0.4375, 0.50, 0.5625, 0.625, 0.6875, 0.75,
+)

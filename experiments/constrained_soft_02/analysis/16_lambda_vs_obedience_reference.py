@@ -53,14 +53,10 @@ PENALTY_STRENGTHS = (10.0, 25.0, 50.0)
 # them.
 SWEEP_BAND_GRID = (0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.575, 0.60, 0.65, 0.70)
 REGULAR_GRID = (0.30, 0.40, 0.50, 0.60, 0.70)
-# The revamp request grid (2026-08-30): specialists {0.25, 0.375, 0.50}
-# plus Z2 mirrors {0.625, 0.75} and the held-outs, every value a multiple
-# of 1/16 (integer site counts at d=16). The fit depends mildly on the
-# grid, so wave-3 model slopes are scored against THIS grid's reference,
-# never the archived 0.976.
-REVAMP_GRID = (
-    0.25, 0.3125, 0.375, 0.4375, 0.50, 0.5625, 0.625, 0.6875, 0.75,
-)
+# The revamp request grid lives in _common (shared with the model slope
+# fit in 15, which must use the identical grid or the 0.9950 reference
+# stops being comparable).
+from experiments.constrained_soft_02.analysis._common import REVAMP_GRID
 
 
 def exact_delivered(D: int, sigma: float, strength: float, c_req: float) -> float:
