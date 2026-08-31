@@ -2386,6 +2386,29 @@ def test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob():
     assert set(diff) == {"name", "composition_mixture"}, diff
 
 
+def test_d256_camort_cell_is_the_thp2_critical_twin_plus_the_mixture_knob():
+    """The d256 confirmation must be the judged design moved ONE lever
+    (size, via the thp2 parent) with the SAME mixture fractions as the
+    d64 cell — a grid change would make it a new design un-anchored from
+    the d64 verdict."""
+    from dataclasses import asdict
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    centre = CONFIGS["H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3"]
+    cell = CONFIGS["H2_d256_camort_s220_letf_thp2_100k_curr"]
+    d64 = CONFIGS["H2_d64_camort_s220_letf_thp_50k_curr"]
+    assert cell.composition_mixture == d64.composition_mixture
+    assert all((c * 256) == round(c * 256) for c in cell.composition_mixture)
+    diff = {
+        field: (a, b)
+        for field, (a, b) in (
+            (f, (asdict(centre)[f], asdict(cell)[f])) for f in asdict(centre)
+        )
+        if a != b
+    }
+    assert set(diff) == {"name", "composition_mixture"}, diff
+
+
 def test_composition_mixture_builds_the_mixture_target():
     """The knob must reach the target constructor: the built target carries
     the registered slice set, and the anchor slice is the inherited scalar

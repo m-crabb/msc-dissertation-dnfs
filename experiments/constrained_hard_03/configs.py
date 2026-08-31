@@ -4054,6 +4054,21 @@ CONFIGS.update({
     )
 })
 
+# d256 camort CONFIRMATION (s101, earned by the d64 pass): the judged
+# thp2 sigma_c cell + the mixture knob, one lever, SAME fractions as the
+# d64 camort grid (n+/256 = 128/120/112/96/80, all integral) so it is a
+# size confirmation of the judged design, not a new one — deliberately
+# NOT the soft chapter's randomised draw set: hard has no conditioning
+# channel to interpolate, cross-slice generalisation rides the physics,
+# and a confirmation must not move the grid. The d256 null's 0.019
+# dagger at c=0.25 is where the amortised before/after lives.
+_D256_CAMORT_PARENT = _d256_house_critical_cell("thp2")
+CONFIGS["H2_d256_camort_s220_letf_thp2_100k_curr"] = replace(
+    _D256_CAMORT_PARENT,
+    name="H2_d256_camort_s220_letf_thp2_100k_curr",
+    composition_mixture=(0.5, 0.46875, 0.4375, 0.375, 0.3125),
+)
+
 
 # --- 20x20 radius probe (w4, 2026-08-27) ---------------------------------
 #
