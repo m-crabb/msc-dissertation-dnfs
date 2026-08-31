@@ -499,6 +499,34 @@ def bench(argv: str = "", isolate: bool = True):
     bench_remote.remote(argv=argv, isolate=isolate)
 
 
+@app.function(gpu="A100-80GB", volumes={"/results": volume}, timeout=2 * 60 * 60)
+def training_flops_remote(argv: str = ""):
+    """Run the training-FLOP measurement harness (measure_training_flops)
+    on the production GPU. `argv` is its space-separated CLI string, e.g.
+    "--cfg H2_d256_... --out /results/training_flops_d256_thp2.json".
+    Point --out inside /results so the payload survives the container;
+    --scratch stays container-local on purpose (the per-horizon run dirs
+    are measurement scaffolding, wiped between horizons, and must never
+    shadow real run dirs on the volume). A100-80GB matches the venue the
+    d256 cells trained on (Modal's bare "A100" is the 40 GB variant)."""
+    import sys
+
+    sys.path.insert(0, PROJECT_DIR)
+    from experiments.constrained_hard_03.measure_training_flops import (
+        main as training_flops_main,
+    )
+
+    training_flops_main(argv.split())
+    volume.commit()
+
+
+@app.local_entrypoint()
+def training_flops(argv: str = ""):
+    """Blocking local CLI entry so the per-horizon progress and the final
+    measured/derived verdict stream back to the local terminal."""
+    training_flops_remote.remote(argv=argv)
+
+
 @app.function(
     # A100-80GB, spelled out: Modal's bare "A100" is the 40 GB variant, and
     # every other function in this file inherits that 40 GB default. The

@@ -146,7 +146,7 @@ def derived_flops(cfg, head, target, device: str, n_steps: int) -> dict:
     }
 
 
-def main():
+def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--cfg", required=True, choices=list(CONFIGS.keys()))
     parser.add_argument("--n-horizons", type=int, default=3)
@@ -156,7 +156,7 @@ def main():
     )
     parser.add_argument("--scratch", type=Path, default=Path("results/flop_probe"))
     parser.add_argument("--out", type=Path, default=None)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     cfg = CONFIGS[args.cfg]
     device = "cuda" if torch.cuda.is_available() else "cpu"
