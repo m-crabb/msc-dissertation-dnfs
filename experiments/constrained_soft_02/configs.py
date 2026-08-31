@@ -2090,6 +2090,45 @@ CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
     CONFIGS["S2_d4_camort_50k_l50_letf"],
     name="S2_d4_camort_50k_l50_letf_house"))
 
+# Matched-base amortisation (s101, plan 2026-08-31-soft-camort-matched-base).
+# Design mirrors hard camort's shape where soft's flip dynamics permit it:
+# discrete spine draw from step 0 (no widening staircase, no lambda
+# curriculum — the D=10 campaign's G0/G1 convictions removed outright, not
+# survived), base matched to the drawn c per cycle (motivated by the 8x8 mb
+# twins: the off-centre specialist collapse was base reachability, one
+# lever, full rescue at every window). The base is Bernoulli(c), NOT hard's
+# slice-uniform mixture: single-flip dynamics leave a slice at the first
+# flip and the Eq. 4 path is -inf off-slice for t<1 under a slice base —
+# full support is a structural requirement, not a softening. The channel
+# stays on: soft has no conservation law pinning delivered composition, so
+# the request rides the conditioning scalar; zero-init means it costs
+# nothing if the matched base has absorbed its job. Exactly three levers
+# off the house centre cell, pinned by test_matched_base_amortisation.
+_CAMORT_SPINE = CompositionCfg(
+    centre=0.5, half_width=0.0, values=(0.25, 0.375, 0.5))
+for _sigma_suffix in ("", "_sc"):
+    _camort_parent = CONFIGS[
+        f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
+    _camort_name = f"S2_d8_camort_l50_letf_ne128_house{_sigma_suffix}"
+    CONFIGS[_camort_name] = replace(
+        _camort_parent,
+        name=_camort_name,
+        ising=replace(_camort_parent.ising, base_matches_composition=True),
+        model=replace(_camort_parent.model, condition_on_composition=True),
+        composition=_CAMORT_SPINE,
+    )
+
+# D=4 gate for the matched-base cells (validate-at-D=4 rule): the wave-3
+# camort house cell with the staircase swapped for the spine draw and the
+# base matched — every spine c is an integer site count at d=16 (4/6/8).
+_D4_CAMORT_HOUSE = CONFIGS["S2_d4_camort_50k_l50_letf_house"]
+CONFIGS["S2_d4_camort_mb_50k_l50_letf_house"] = replace(
+    _D4_CAMORT_HOUSE,
+    name="S2_d4_camort_mb_50k_l50_letf_house",
+    ising=replace(_D4_CAMORT_HOUSE.ising, base_matches_composition=True),
+    composition=_CAMORT_SPINE,
+)
+
 # The tab:amort-4x4 comparator rows, SAME recipe (s96): pricing the
 # conditioning machinery against comparators on the retiring clip50
 # recipe would rebuild the recipe confound the archived cnull pair was

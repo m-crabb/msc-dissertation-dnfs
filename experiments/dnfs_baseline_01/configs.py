@@ -52,6 +52,12 @@ class IsingCfg:
     target_composition: float | None = None
     composition_penalty_strength: float = 0.0
     base_composition: float = 0.5
+    # Matched base (s101, plan 2026-08-31-soft-camort-matched-base): the
+    # base reads the composition the run is conditioned on — the bound
+    # per-cycle vector during amortised training, else target_composition —
+    # instead of the static base_composition. One lever; motivated by the
+    # 8x8 mb twins (off-centre collapse = base reachability).
+    base_matches_composition: bool = False
     # Ceiling on log p̃_t(y)/p̃_t(x) at single-flip neighbours. The paper's 5
     # suits an unpenalised Ising target; a composition penalty of strength λ
     # adds ∓2λ·(c(x)−c_target) to the same ratio, so 5 binds once obedience

@@ -80,6 +80,12 @@ AMORTISED_CELLS = (
     # on the house recipe (fixed lambda + channel; tests/
     # test_soft_house_configs.py pins their declared-diff sets).
     "S2_d4_camort_50k_l50_letf_house", "S2_d4_cnull_50k_l50_letf_house",
+    # Matched-base cells (s101, plan 2026-08-31-soft-camort-matched-base):
+    # spine-values draw, no staircase, base matched per cycle. Their own
+    # lever pins live in tests/test_matched_base_amortisation.py.
+    "S2_d4_camort_mb_50k_l50_letf_house",
+    "S2_d8_camort_l50_letf_ne128_house",
+    "S2_d8_camort_l50_letf_ne128_house_sc",
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the

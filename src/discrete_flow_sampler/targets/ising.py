@@ -67,6 +67,7 @@ class IsingTarget:
         target_composition: float | None = None,
         composition_penalty_strength: float = 0.0,
         base_composition: float = 0.5,
+        base_matches_composition: bool = False,
         log_ratio_clamp: float = DEFAULT_LOG_RATIO_CLAMP,
     ):
         if log_ratio_clamp <= 0.0:
@@ -93,6 +94,12 @@ class IsingTarget:
                 "target_composition must be set when "
                 "composition_penalty_strength is nonzero"
             )
+        if base_matches_composition and target_composition is None:
+            raise ValueError(
+                "base_matches_composition requires target_composition: with "
+                "nothing bound and no scalar c*, there is no composition for "
+                "the base to match"
+            )
 
         self.D = D
         self.d = D * D
@@ -102,6 +109,7 @@ class IsingTarget:
         self.target_composition = target_composition
         self.composition_penalty_strength = composition_penalty_strength
         self.base_composition = base_composition
+        self.base_matches_composition = base_matches_composition
         # Ceiling for log p̃_t(y)/p̃_t(x) at single-flip neighbours. The
         # composition penalty contributes ∓2λ·(c(x)−c_target) to that ratio,
         # so the paper's 5 binds once the obedience error exceeds 5/(2λ) —
@@ -164,14 +172,48 @@ class IsingTarget:
         """Fraction of +1 spins in each state, shape (B,)."""
         return ((x + 1.0) * 0.5).mean(dim=-1)
 
+    def _matched_base_p(self, n_rows: int) -> Tensor:
+        """Per-row base probability p when the base matches the composition.
+
+        The bound per-cycle/per-row vector when one is in force (expanded
+        b-major, the same alignment rule the penalty uses), else the
+        scalar `target_composition`. Base and penalty MUST read the same
+        binding: a base drawn at one c while the path density assumes
+        another is the pre-de9db7c eval bug (a silent ~6.9-nat log w0
+        hole), which sharing this single read makes impossible.
+        """
+        if self._bound_composition is not None:
+            p = expand_b_major(self._bound_composition, n_rows)
+        else:
+            p = torch.full((n_rows,), float(self.target_composition))
+        if not ((p > 0.0) & (p < 1.0)).all():
+            raise ValueError(
+                "matched base requires compositions in the open interval "
+                "(0, 1): a c of exactly 0 or 1 has a degenerate base with "
+                "-inf log-density off its single state"
+            )
+        return p
+
     def base_log_eta(self, x: Tensor) -> Tensor:
         """Log-density of the per-site Bernoulli base η, shape (B,).
 
-        η(x) = ∏_i p^{[x_i=+1]} (1-p)^{[x_i=-1]}, p = base_composition.
-        For the uniform base (p=0.5) this is the constant -d·log2 for all x;
-        we return that exact expression so the annealing path stays
+        η(x) = ∏_i p^{[x_i=+1]} (1-p)^{[x_i=-1]}. p is `base_composition`,
+        or — with `base_matches_composition` — the composition each row is
+        conditioned on, so the annealing path (Eq. 4) starts AT the
+        requested composition rather than transporting mass to it. NOTE
+        this makes the base part of the path density at every t, not just
+        an x0 convention: for p≠0.5 it contributes a field-like
+        (1−t)-weighted term to every neighbour log-ratio the rates see.
+        For the uniform base (p=0.5) this is the constant -d·log2 for all
+        x; we return that exact expression so the annealing path stays
         byte-identical to a uniform base.
         """
+        if self.base_matches_composition:
+            p = self._matched_base_p(x.shape[0]).to(
+                device=x.device, dtype=x.dtype
+            )
+            n_plus = ((x + 1.0) * 0.5).sum(dim=-1)
+            return n_plus * p.log() + (self.d - n_plus) * (1.0 - p).log()
         if self.base_composition == 0.5:
             return torch.full(
                 (x.shape[0],), -self.d * math.log(2),
@@ -187,8 +229,22 @@ class IsingTarget:
         """Draw n states from the base η, shape (n, d), entries in {-1, +1}.
 
         At p=0.5 this is a plain randint draw (identical RNG consumption, so
-        existing runs reproduce bit-for-bit).
+        existing runs reproduce bit-for-bit). The matched route keeps that
+        branch when every row's composition is exactly 0.5, so an amortised
+        cycle at the centre draws the same bits as the house specialist —
+        the anchor the merged table compares against.
         """
+        if self.base_matches_composition:
+            p = self._matched_base_p(n)
+            if bool((p == 0.5).all()):
+                return (
+                    torch.randint(0, 2, (n, self.d), device=device).float()
+                    * 2 - 1
+                )
+            return (
+                (torch.rand(n, self.d, device=device)
+                 < p.to(device).unsqueeze(-1)).float() * 2 - 1
+            )
         if self.base_composition == 0.5:
             return torch.randint(0, 2, (n, self.d), device=device).float() * 2 - 1
         return (

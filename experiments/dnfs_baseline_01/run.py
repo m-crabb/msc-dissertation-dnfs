@@ -82,6 +82,44 @@ SWEEP_COMPOSITIONS = tuple(
 )
 
 
+def _construct_target(
+    ising, device, sigma=None, composition_penalty_strength=None,
+    log_ratio_clamp=None,
+):
+    """Build the IsingTarget from an IsingCfg — the ONE construction seam.
+
+    Both the train path and the rebuild-eval path go through here, so a
+    field added to IsingCfg cannot reach training while silently missing
+    from eval (the divergence that would, for `base_matches_composition`,
+    eval a matched-base run against a uniform base — the pre-de9db7c bug
+    class reborn).
+
+    `sigma` / `composition_penalty_strength` override the config values at
+    the train site, where a curriculum starts the run at its first stage.
+    `log_ratio_clamp=None` keeps the IsingTarget default: the rebuild path
+    has always evaluated at the default clamp regardless of the trained
+    value, and archived evals are judged artefacts — do not change it here.
+    """
+    kwargs = {}
+    if log_ratio_clamp is not None:
+        kwargs["log_ratio_clamp"] = log_ratio_clamp
+    return IsingTarget(
+        D=ising.D,
+        sigma=ising.sigma if sigma is None else sigma,
+        bias=ising.bias,
+        device=device,
+        target_composition=ising.target_composition,
+        composition_penalty_strength=(
+            ising.composition_penalty_strength
+            if composition_penalty_strength is None
+            else composition_penalty_strength
+        ),
+        base_composition=ising.base_composition,
+        base_matches_composition=ising.base_matches_composition,
+        **kwargs,
+    )
+
+
 def _build_model(cfg, target):
     model = _construct_model(cfg, target)
     if getattr(cfg.model, "exact_field_channel", False):
@@ -483,14 +521,11 @@ def train(
         )
     else:
         target_lambda_init = cfg.ising.composition_penalty_strength
-    target = IsingTarget(
-        D=cfg.ising.D,
-        sigma=target_sigma_init,
-        bias=cfg.ising.bias,
+    target = _construct_target(
+        cfg.ising,
         device=device,
-        target_composition=cfg.ising.target_composition,
+        sigma=target_sigma_init,
         composition_penalty_strength=target_lambda_init,
-        base_composition=cfg.ising.base_composition,
         log_ratio_clamp=cfg.ising.log_ratio_clamp,
     )
     model = _build_model(cfg, target)
@@ -640,15 +675,7 @@ def _rebuild_from_run_dir(run_dir: Path):
     cfg_dict = json.loads((run_dir / "config.json").read_text())
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ising = _sub_config(IsingCfg, cfg_dict["ising"])
-    target = IsingTarget(
-        D=ising.D,
-        sigma=ising.sigma,
-        bias=ising.bias,
-        device=device,
-        target_composition=ising.target_composition,
-        composition_penalty_strength=ising.composition_penalty_strength,
-        base_composition=ising.base_composition,
-    )
+    target = _construct_target(ising, device=device)
     cfg = SimpleNamespace(
         ising=ising,
         model=_sub_config(ModelCfg, cfg_dict["model"]),
