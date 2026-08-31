@@ -3642,6 +3642,15 @@ CONFIGS.update({
             name="H2_d64_camort_s220_letf_thp_50k_curr",
             composition_mixture=(0.5, 0.46875, 0.4375, 0.375, 0.3125),
         ),
+        # D=4 gate twin (validate-before-GPU): the campaign fractions that
+        # are integral at d=16 (n+ = 8/7/6/5; 0.46875*16 = 7.5 has no
+        # slice). Judged per-slice against exact enumeration by
+        # gate_camort_4x4.py.
+        replace(
+            _wave2_d16_cell("thp", "s220", SIGMA_C),
+            name="H2_d16_camort_s220_letf_thp_10k",
+            composition_mixture=(0.5, 0.4375, 0.375, 0.3125),
+        ),
     )
 })
 

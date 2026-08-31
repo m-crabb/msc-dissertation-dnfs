@@ -2422,3 +2422,22 @@ def test_composition_mixture_conflicts_with_potts_route():
     )
     with pytest.raises(ValueError, match="mixture"):
         build_target_and_head(cfg, device="cpu")
+
+
+def test_camort_gate_cell_is_the_d16_thp_twin_plus_the_mixture_knob():
+    """Same one-lever discipline as the d64 cell, one rung down; the d16
+    grid drops 0.46875 because 7.5 up-spins is no slice."""
+    from dataclasses import asdict
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    centre = CONFIGS["H2_d16_c50_s220_letf_thp_10k_w2"]
+    cell = CONFIGS["H2_d16_camort_s220_letf_thp_10k"]
+    assert cell.composition_mixture == (0.5, 0.4375, 0.375, 0.3125)
+    diff = {
+        field: (a, b)
+        for field, (a, b) in (
+            (f, (asdict(centre)[f], asdict(cell)[f])) for f in asdict(centre)
+        )
+        if a != b
+    }
+    assert set(diff) == {"name", "composition_mixture"}, diff
