@@ -154,6 +154,36 @@ def test_sweep_covers_the_specialists_and_the_held_out_points(amortised_run):
     )
 
 
+def test_sweep_on_the_ema_checkpoint_lands_in_eval_ema(tmp_path):
+    """A sweep is a statement about ONE parameter state, so it must land
+    beside that state's own frozen eval: `final_ema.pt` -> `eval_ema/`.
+
+    Writing the EMA sweep into `eval/` would silently overwrite the raw
+    model's sweep with EMA numbers wearing the raw path — the dual-eval
+    convention keys every artefact by the weights that produced it.
+    """
+    from dataclasses import replace
+
+    torch.manual_seed(0)
+    cfg = _tiny_cfg("tiny_amortised_ema")
+    cfg = replace(cfg, ema_decay=0.9)
+    run_dir = train(cfg, seed=0, output_dir=tmp_path, use_wandb=False)
+    raw_sweep_path = run_dir / "eval" / "composition_sweep.json"
+    ema_sweep_path = run_dir / "eval_ema" / "composition_sweep.json"
+
+    raw_rows = composition_sweep(run_dir, compositions=(0.50,))
+    assert raw_sweep_path.exists() and not ema_sweep_path.exists()
+
+    ema_rows = composition_sweep(
+        run_dir, compositions=(0.50,), checkpoint="final_ema.pt"
+    )
+    assert json.loads(ema_sweep_path.read_text()) == ema_rows
+    # The raw sweep survived untouched, and the two states genuinely
+    # differ — otherwise this test would pass on a broken load path.
+    assert json.loads(raw_sweep_path.read_text()) == raw_rows
+    assert ema_rows[0]["ess"] != raw_rows[0]["ess"]
+
+
 def test_sweep_rows_carry_a_cost_axis(amortised_run):
     """Cost has to be recorded at draw time or it is gone.
 

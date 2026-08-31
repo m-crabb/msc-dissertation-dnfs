@@ -854,7 +854,12 @@ def composition_sweep(
         )
 
     if save:
-        eval_dir = run_dir / "eval"
+        # Keyed by the parameter state that produced the rows: an EMA-shadow
+        # sweep lands beside the shadow's own frozen eval, never over the
+        # raw model's sweep.
+        eval_dir = run_dir / (
+            "eval_ema" if checkpoint == "final_ema.pt" else "eval"
+        )
         eval_dir.mkdir(exist_ok=True)
         (eval_dir / "composition_sweep.json").write_text(
             json.dumps(rows, indent=2)
