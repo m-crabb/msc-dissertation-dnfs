@@ -98,6 +98,11 @@ def main() -> None:
     p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval")
     p.add_argument("--ess_floor", type=float, default=0.30)
     p.add_argument("--out", type=Path, default=None)
+    p.add_argument(
+        "--matched-base", action="store_true",
+        help="read the *_house_mb families at the off-centre windows (the "
+             "centre stays the house cell: Bernoulli(0.5) is already "
+             "matched there)")
     args = p.parse_args()
 
     sigma = COUPLINGS[args.coupling]
@@ -108,8 +113,10 @@ def main() -> None:
 
     cs = torch.arange(N_SITES + 1).float() / N_SITES
     for ax, c_target in zip(axes, TRAINED_COMPOSITIONS):
+        family = ("house_mb" if args.matched_base and c_target != 0.5
+                  else "house")
         config = (f"S2_d8_c{int(round(c_target * 1000)):04d}"
-                  f"_l50_letf_ne128_house{config_suffix}")
+                  f"_l50_letf_ne128_{family}{config_suffix}")
 
         ref, n_frames = reference_pmf(sigma, c_target)
         ax.bar(cs, ref, width=1 / N_SITES, color=REFERENCE_FILL,
