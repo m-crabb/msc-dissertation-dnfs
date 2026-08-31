@@ -50,11 +50,14 @@ D64_TEMPLATE = ("H2_d64_c50_s220_letf_thp_50k_curr_w2"
 CAMORT_TEMPLATE = ("H2_d64_camort_s220_letf_thp_50k_curr"
                    "_seed{seed}_20260831-camort-d64")
 
-# The composition table's row set: the shared d256/d64 fractions plus the
-# two d256-only rows. 0.625 (the Z2 mirror of 0.375) is deliberately NOT a
-# row: it measures the trained head's Z2 symmetry, not transfer, and lives
-# in the section prose.
-COMPOSITION_ROWS = (0.5, 0.46875, 0.4375, 0.375, 0.3125, 0.25)
+# The cross-chapter composition spine (user decision s100): fractions
+# realisable at EVERY rung (n+ = 4/6/8 at d16, 16/24/32 at d64, 64/96/128
+# at d256), shared verbatim by any future soft-chapter zero-shot table.
+# The finer d256 probe fractions (0.46875, 0.4375, 0.3125) stay in the
+# JSONs and resolve the collapse ONSET — a prose point, not rows (0.46875
+# does not even exist at d16). 0.625 (the Z2 mirror of 0.375) is also NOT
+# a row: it measures the trained head's Z2 symmetry, not transfer.
+COMPOSITION_ROWS = (0.5, 0.375, 0.25)
 
 
 def load_rows(results_dir, template):
