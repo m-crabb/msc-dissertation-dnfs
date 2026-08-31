@@ -2014,6 +2014,28 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"] = replace(
     model=replace(_HOUSE_SC_CENTRE.model, exact_field_channel=False),
 )
 
+# The sigma_c anneal arm (s99): completes the three-fates trio at the
+# production size and coupling -- parent (= the nochan control), anneal,
+# channel -- so fig:penalty-variance can be drawn at 8x8 sigma_c instead
+# of 10x10 and the chapter body becomes single-size (user decision,
+# s99). The nochan control PLUS the chapter's declared lambda schedule
+# (10/25/50 at 0/10k/20k), one lever, test-pinned; the anneal's job is
+# the deferred-shock trace: it defers the lambda^2 Var[delta_P] shock
+# and repays at each boundary where the channel discharges it once.
+_NOCHAN_SC = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"]
+CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"] = replace(
+    _NOCHAN_SC,
+    name="S2_d8_c0500_l50_letf_ne128_house_sc_anneal",
+    lambda_curriculum=LambdaCurriculumCfg(stages=(
+        LambdaCurriculumStageCfg(start_step=0,
+                                 composition_penalty_strength=10.0),
+        LambdaCurriculumStageCfg(start_step=10_000,
+                                 composition_penalty_strength=25.0),
+        LambdaCurriculumStageCfg(start_step=20_000,
+                                 composition_penalty_strength=50.0),
+    )),
+)
+
 # Matched-base twins (s99): base_composition = c* at the OFF-CENTRE
 # windows, both couplings — at c* = 0.5 the house cells' Bernoulli(0.5)
 # base is already matched, so the centre rows anchor both columns

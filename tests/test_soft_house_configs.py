@@ -70,6 +70,23 @@ def test_sc_cells_carry_exact_sigma_c():
         assert cell.ising.sigma == SIGMA_C
 
 
+def test_sc_anneal_arm_adds_the_schedule_to_nochan_only():
+    """The s99 three-fates trio at sigma_c: parent (nochan), anneal, channel.
+
+    The anneal arm is the nochan control PLUS the chapter's declared
+    lambda schedule (10/25/50 at 0/10k/20k) and NOTHING else -- it must
+    differ from nochan by the schedule alone, or the deferred-vs-
+    discharged comparison in fig:penalty-variance carries a second
+    change. (It differs from the channel-on house cell by exactly two
+    levers as a consequence: channel off, schedule on.)"""
+    nochan = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"])
+    anneal = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"])
+    assert _diff(nochan, anneal) == {"name", "lambda_curriculum"}
+    stages = anneal["lambda_curriculum"]["stages"]
+    assert [(s["start_step"], s["composition_penalty_strength"])
+            for s in stages] == [(0, 10.0), (10_000, 25.0), (20_000, 50.0)]
+
+
 def test_matched_base_twins_give_back_base_composition_only():
     """The s99 matched-base wave: base_composition = c* at the off-centre
     windows, one declared lever against the run house twin — any second
