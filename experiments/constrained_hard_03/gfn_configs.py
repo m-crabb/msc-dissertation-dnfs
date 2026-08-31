@@ -293,3 +293,25 @@ GFN_CONFIGS = {
 GFN_CONFIGS.update(
     {cell.name: cell for cell in map(_gfn_d64_flow_lr_cell, _FLOW_LR_GRID)}
 )
+
+# Budget-doubled FLDB diagnostic (s100): settles "slow vs broken". The
+# seed-42 flow-lr logs showed the centre's slow ESS climb is the POLICY
+# converging (DB loss ~0.007 by 15k, ESS still +0.06/5k at 50k) and a hot
+# flow head makes things WORSE (dose-monotone), so the remaining question
+# is whether FLDB simply needs more steps. One lever: n_steps 100k. NOTE
+# the sigma ladder DILATES with it (equal step shares: 10k/stage, 40k
+# final plateau) — declared; the endpoint question is unaffected but
+# mid-training step-matched comparisons against the 50k centre are
+# confounded during the ladder. NEVER a table row (breaks budget parity);
+# it buys the sentence "comparable quality at twice the budget, TB
+# dominates at matched budget" — or refutes it.
+GFN_CONFIGS.update({
+    cell.name: cell
+    for cell in (
+        replace(
+            _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
+            name="GFN_d64_c50_s220_fldb_100k_par",
+            n_steps=100_000,
+        ),
+    )
+})

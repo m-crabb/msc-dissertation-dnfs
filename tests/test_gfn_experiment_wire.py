@@ -31,8 +31,9 @@ def test_registry_keys_match_cell_names_and_objectives():
     # cell itself) x both arms at sigma_c only = 16 `_swp` cells; plus the
     # s94 8x8 rung: d64 `_par` centres at both couplings + the 4-arm
     # sigma_c star per objective = 12 d64 cells; plus the s100 flow-lr
-    # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2.
-    assert len(GFN_CONFIGS) == 38
+    # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2;
+    # plus the s100 budget-doubled fldb diagnostic = 1.
+    assert len(GFN_CONFIGS) == 39
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
@@ -206,7 +207,8 @@ def test_d64_cells_carry_the_house_recipe_levers():
     # house levers (warmup/clip/EMA/bf16 eval/in-training eval) are
     # matched field by field to H2_d64_*_w2's train/eval blocks.
     d64 = {n: c for n, c in GFN_CONFIGS.items() if c.D == 8}
-    assert len(d64) == 14  # 12 s94 wave cells + the 2 s100 flr arms
+    # 12 s94 wave cells + 2 s100 flr arms + 1 s100 100k diagnostic.
+    assert len(d64) == 15
     for name, cell in d64.items():
         assert cell.hidden_dim == 64 and cell.n_layers == 2
         assert cell.n_steps == 50_000 and cell.batch_size == 128
@@ -398,3 +400,23 @@ def test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever():
             if a != b
         }
         assert set(diff) == {"name", "flow_head_learning_rate"}, diff
+
+
+def test_fldb_100k_diagnostic_is_the_centre_twin_plus_budget():
+    """The budget-doubled arm settles slow-vs-broken and must move ONLY
+    n_steps off the judged fldb sigma_c centre; any second lever would
+    confound the reading. (The sigma ladder dilates WITH n_steps by the
+    equal-share rule — that is the same field, not a second lever.)"""
+    from dataclasses import asdict
+
+    centre = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_par"]
+    cell = GFN_CONFIGS["GFN_d64_c50_s220_fldb_100k_par"]
+    assert cell.n_steps == 100_000
+    diff = {
+        field: (a, b)
+        for field, (a, b) in (
+            (f, (asdict(centre)[f], asdict(cell)[f])) for f in asdict(centre)
+        )
+        if a != b
+    }
+    assert set(diff) == {"name", "n_steps"}, diff
