@@ -1,117 +1,166 @@
-"""Fill pass for tab:eval-soft-4x4: the soft house recipe against exact
-enumeration at the one size where the target is summable (2^16 states).
+"""Fill pass for tab:eval-soft-4x4: the soft house table at the enumerable
+size, in the HOUSE layout (columns as tab:eval-hard-4x4 / the 10x10 house
+tables; the s108 first cut with TV / Z2 / std(c) / dF columns is retired).
 
-Mirrors hard's enumerable gate: every column is scored against ground
-truth, never against a reference chain.
+  reference -- exact enumeration: all 2^16 states weighted by the soft
+               target's own normalised probabilities (the soft target is
+               unconstrained, so no slice); the error columns read against
+               truth and the reference row is exactly zero.
+  floor     -- the error a PERFECT sampler shows at the neural cells' own
+               draw count (5000 exact multinomial draws from the enumerated
+               target, 200 replicates): a cell at or below it is
+               indistinguishable from exact at its N. (hard's house_table_4x4
+               convention; the 10x10 fills bootstrap a sampled reference
+               instead because there the reference is itself sampled.)
+  cells     -- lambda=50 house specialists at c* in {0.25, 0.375, 0.5}
+               (softhouse-d16) and the lambda=100 centre cell (efc-sweep:
+               the channel recipe pre-house, the only 4x4 lambda=100 cells
+               with the channel); every seed reported, mean +- SD.
+  FLOP/es   -- measured eager forward at the run's architecture x n_euler
+               / frozen ESS, as the 8x8 fill (analysis/24).
+  couplings -- sigma=0.1 and sigma_c halves; a half with no runs on disk
+               prints as skipped (no 4x4 sigma_c soft cells exist yet).
 
-  ESS         -- frozen-eval ESS fraction (metrics.json).
-  TV(c)       -- total variation between the importance-weighted
-                 composition marginal and the exact one on the 17 support
-                 points k/16.
-  Z2 split    -- |mass(m>0) - mass(m<0)| under the weights; the target at
-                 c*=0.5, bias 0 is exactly Z2-symmetric so the truth is 0.
-                 Off-centre the symmetry maps c* onto 1-c*, so the column
-                 is not applicable there.
-  std(c)      -- weighted composition SD vs the analytic 1/sqrt(2 lambda d)
-                 (0.0177 at lambda=50, 0.0125 at lambda=100, d=16). NB the
-                 Gaussian width is the ENVELOPE; the exact marginal's own
-                 SD is also printed, because at d=16 the discrete entropic
-                 factor tilts it visibly off the envelope.
-  dF/site     -- IS free-energy estimate -<log w>/(2 sigma d) minus the
-                 exact -log Z/(2 sigma d), in nats per site (Eq. 37 lower
-                 bound, so the sign is expected non-negative up to noise).
-
-Families: the softhouse-d16 specialists (c* in {0.25, 0.375, 0.5},
-lambda=50) and the lambda=100 fidelity row (c*=0.5, the efc-sweep family:
-channel recipe pre-house, the only 4x4 lambda=100 cells with the channel).
+Extras kept in the JSON for the comments only: delivered std(c) vs the
+ENUMERATED spread (not the Gaussian envelope 1/sqrt(2 lambda d), which at
+d=16 is wider than the composition step and so is not the marginal), and
+the IS free-energy bias vs the exact -log Z/(2 sigma d) (the Euler-grid
+bias of the weight integral at n_euler=50, drive-proportional).
 """
 import json
-import math
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
+from discrete_flow_sampler.diagnostics.flops import (  # noqa: E402
+    measured_forward_flops, neural_sampling_flops_per_sample,
+    per_effective_sample)
 from discrete_flow_sampler.diagnostics.metrics import (  # noqa: E402
-    enumerate_states, exact_log_probs, free_energy_lb_estimate,
-    marginal_tvd, z2_asymmetry_from_samples)
-from discrete_flow_sampler.targets.ising import IsingTarget  # noqa: E402
+    correlation_profile_error, energy_wasserstein2, enumerate_states,
+    exact_log_probs, free_energy_lb_estimate, magnetisation_profile_error)
+from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget  # noqa: E402
 
 SOFT_RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
-N_SITES = 16
+L, D_SITES, N_DRAWS, N_BOOTSTRAP = 4, 16, 5000, 200
+COUPLINGS = (("s010", 0.1), ("sc", SIGMA_C))
+# family key -> (c*, lambda, run glob); "{sc}" takes "" or "_sc"
 FAMILIES = {
-    "c0.25_l50": "S2_d4_c0250_50k_l50_letf_house_seed4*_20260831-softhouse-d16",
-    "c0.375_l50": "S2_d4_c0375_50k_l50_letf_house_seed4*_20260831-softhouse-d16",
-    "c0.5_l50": "S2_d4_c0500_50k_l50_letf_house_seed4*_20260831-softhouse-d16",
-    "c0.5_l100": "S2_d4_c05_l100_letf_efc_seed4*_20260829-efc-sweep",
+    "c0.25_l50": (0.25, 50.0, "S2_d4_c0250_50k_l50_letf_house{sc}_seed4*"),
+    "c0.375_l50": (0.375, 50.0, "S2_d4_c0375_50k_l50_letf_house{sc}_seed4*"),
+    "c0.5_l50": (0.5, 50.0, "S2_d4_c0500_50k_l50_letf_house{sc}_seed4*"),
+    "c0.5_l100": (0.5, 100.0, "S2_d4_c05_l100_letf_efc{sc}_seed4*"),
 }
 
 
-def composition_pmf(c_values, weights):
-    bucket = (c_values * N_SITES).round().long().clamp(0, N_SITES)
-    pmf = torch.zeros(N_SITES + 1)
-    pmf.index_add_(0, bucket, weights)
-    return pmf
+def energy_per_site(target, states):
+    return -target.base_log_prob(states) / (2 * target.sigma * D_SITES)
 
 
-def exact_reference(target):
-    states = enumerate_states(N_SITES).float()
-    pi = exact_log_probs(target, states).exp()
-    c_states = (states > 0).float().mean(1)
-    pmf = composition_pmf(c_states, pi)
-    mean_c = (pi * c_states).sum()
-    std_c = ((pi * (c_states - mean_c) ** 2).sum()).sqrt().item()
-    log_Z = torch.logsumexp(target.log_prob(states), 0)
-    return pmf, std_c, (-log_Z / (2 * target.sigma * N_SITES)).item()
+def errors(target, x, weights, ref_states, ref_probs):
+    return {
+        "dMag": magnetisation_profile_error(
+            x, weights, ref_states, L, reference_weights=ref_probs),
+        "dCorr": correlation_profile_error(
+            x, weights, ref_states, L, reference_weights=ref_probs),
+        "EW2": energy_wasserstein2(
+            energy_per_site(target, x), weights,
+            energy_per_site(target, ref_states), reference_weights=ref_probs),
+    }
 
 
-def score_run(run_dir: Path, target, exact_pmf, exact_f):
-    samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
-    log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
+def sampling_floor(target, ref_states, ref_probs, seed=0):
+    generator = torch.Generator().manual_seed(seed)
+    uniform = torch.full((N_DRAWS,), 1.0 / N_DRAWS)
+    replicates = []
+    for _ in range(N_BOOTSTRAP):
+        idx = torch.multinomial(ref_probs, N_DRAWS, replacement=True,
+                                generator=generator)
+        replicates.append(errors(target, ref_states[idx], uniform,
+                                 ref_states, ref_probs))
+    return {k: sum(r[k] for r in replicates) / N_BOOTSTRAP
+            for k in replicates[0]}
+
+
+def flops_per_forward(run_dir, target):
+    from experiments.dnfs_baseline_01.configs import ModelCfg
+    from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
+    cfg = json.loads((run_dir / "config.json").read_text())
+    model_cfg = _sub_config(ModelCfg, {**cfg["model"], "compile_model": False})
+    model = _construct_model(SimpleNamespace(model=model_cfg), target)
+    return measured_forward_flops(
+        model, (target.sample_base(1, device="cpu"), torch.zeros(1)))
+
+
+def score_run(run_dir, target, ref_states, ref_probs, per_forward):
     metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
+    x = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
+    log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
     w = torch.softmax(log_w, 0)
-    c = (samples > 0).float().mean(1)
+    n_euler = json.loads(
+        (run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
+    c = (x > 0).float().mean(1)
     mean_c = (w * c).sum()
+    exact_f = -torch.logsumexp(target.log_prob(ref_states), 0) / (2 * target.sigma * D_SITES)
     return {
         "ESS": metrics["ess_fraction"],
-        "TV_c": marginal_tvd(composition_pmf(c, w), exact_pmf),
-        "Z2_split": z2_asymmetry_from_samples(samples, log_w)["asymmetry"],
+        **errors(target, x, w, ref_states, ref_probs),
+        "FLOPes": per_effective_sample(
+            neural_sampling_flops_per_sample(per_forward, n_euler, D_SITES),
+            metrics["ess_fraction"]),
         "std_c": ((w * (c - mean_c) ** 2).sum()).sqrt().item(),
-        "dF_site": free_energy_lb_estimate(log_w, target.sigma, N_SITES).item() - exact_f,
+        "dF_site": (free_energy_lb_estimate(log_w, target.sigma, D_SITES) - exact_f).item(),
     }
 
 
 def mean_sd(values):
-    t = torch.tensor(values)
+    t = torch.tensor(values, dtype=torch.float64)
     return t.mean().item(), (t.std().item() if len(t) > 1 else float("nan"))
 
 
 def main():
     table = {}
-    for key, glob in FAMILIES.items():
-        run_dirs = sorted(SOFT_RESULTS.glob(glob))
-        if not run_dirs:
-            print(f"== {key}: no runs match {glob}")
-            continue
-        cfg = json.loads((run_dirs[0] / "config.json").read_text())["ising"]
-        target = IsingTarget(
-            D=cfg["D"], sigma=cfg["sigma"], bias=cfg["bias"],
-            target_composition=cfg["target_composition"],
-            composition_penalty_strength=cfg["composition_penalty_strength"])
-        exact_pmf, exact_std, exact_f = exact_reference(target)
-        analytic_std = 1 / math.sqrt(2 * cfg["composition_penalty_strength"] * N_SITES)
-        per_seed = {d.name: score_run(d, target, exact_pmf, exact_f) for d in run_dirs}
-        summary = {k: mean_sd([s[k] for s in per_seed.values()]) for k in next(iter(per_seed.values()))}
-        table[key] = {"exact_std_c": exact_std, "analytic_std_c": analytic_std,
-                      "exact_F_site": exact_f, "per_seed": per_seed, "mean_sd": summary}
-        print(f"\n== {key} ({len(run_dirs)} seeds; exact std(c) {exact_std:.4f}, "
-              f"analytic {analytic_std:.4f}, exact F/site {exact_f:.4f})")
-        for name, s in per_seed.items():
-            print("   " + name.split("_seed")[1][:2] + ": " + " ".join(f"{k}={v:.4g}" for k, v in s.items()))
-        print("   mean+-SD: " + " ".join(f"{k}={m:.4g}+-{sd:.2g}" for k, (m, sd) in summary.items()))
+    all_states = enumerate_states(D_SITES).float()
+    for sigma_label, sigma in COUPLINGS:
+        suffix = "_sc" if sigma_label == "sc" else ""
+        for key, (c_target, lam, glob) in FAMILIES.items():
+            run_dirs = sorted(SOFT_RESULTS.glob(glob.format(sc=suffix)))
+            if not run_dirs:
+                print(f"== {sigma_label} {key}: SKIPPED (no runs match {glob.format(sc=suffix)})")
+                continue
+            target = IsingTarget(D=L, sigma=sigma, bias=0.0,
+                                 target_composition=c_target,
+                                 composition_penalty_strength=lam)
+            ref_probs = exact_log_probs(target, all_states).exp()
+            c_states = (all_states > 0).float().mean(1)
+            exact_mean_c = (ref_probs * c_states).sum()
+            exact_std_c = ((ref_probs * (c_states - exact_mean_c) ** 2).sum()).sqrt().item()
+            floor = sampling_floor(target, all_states, ref_probs)
+            per_forward = flops_per_forward(run_dirs[0], target)
+            per_seed = {d.name: score_run(d, target, all_states, ref_probs, per_forward)
+                        for d in run_dirs}
+            summary = {k: mean_sd([s[k] for s in per_seed.values()])
+                       for k in next(iter(per_seed.values()))}
+            table[f"{sigma_label}_{key}"] = {
+                "floor": floor, "exact_std_c": exact_std_c,
+                "per_seed": per_seed, "mean_sd": summary}
+            print(f"\n== {sigma_label} {key} ({len(run_dirs)} seeds) floor "
+                  + " ".join(f"{k}={v * 100:.1f}" for k, v in floor.items())
+                  + f"  exact std(c) {exact_std_c:.4f}")
+            for name, s in per_seed.items():
+                print("   seed" + name.split("_seed")[1][:2] + ": "
+                      + f"ESS={s['ESS']:.3f} " + " ".join(
+                          f"{k}={s[k] * 100:.1f}" for k in ("dMag", "dCorr", "EW2"))
+                      + f" FLOP/es={s['FLOPes']:.2g} std_c={s['std_c']:.4f} dF={s['dF_site']:+.3f}")
+            m = summary
+            print("   mean+-SD: " + f"ESS {m['ESS'][0]:.3f}+-{m['ESS'][1]:.3f} "
+                  + " ".join(f"{k} {m[k][0] * 100:.1f}+-{m[k][1] * 100:.1f}"
+                             for k in ("dMag", "dCorr", "EW2"))
+                  + f" FLOP/es {m['FLOPes'][0]:.2g}")
     out = SOFT_RESULTS / "enumerable_check_4x4.json"
     out.write_text(json.dumps(table, indent=2))
     print(f"\nwrote {out}")
