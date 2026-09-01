@@ -245,13 +245,20 @@ def test_specialist_sigma_ladder_twin_matches_the_camort_ladder():
     assert twin.curriculum == camort_ladder.curriculum
 
 
-def test_d4_sc_cells_carry_exact_sigma_c_by_one_lever():
-    """The critical half of the 4x4 enumerable table: each cell is its
-    subcritical house twin with sigma alone moved to the exact SIGMA_C."""
+def test_d4_10k_table_family_is_the_50k_cell_at_the_4x4_budget():
+    """tab:eval-soft-4x4 reads the 10k family: each subcritical cell is
+    its _50k_ twin with n_steps alone moved to the cross-chapter 4x4
+    budget, and each sigma_c cell moves sigma alone on top of that, to
+    the exact SIGMA_C, cold (no ladder), like every soft sigma_c
+    specialist."""
     for _, c_tag in SOFT_HOUSE_WINDOWS:
-        parent = CONFIGS[f"S2_d4_{c_tag}_50k_l50_letf_house"]
-        cell = CONFIGS[f"S2_d4_{c_tag}_50k_l50_letf_house_sc"]
-        assert _diff(asdict(parent), asdict(cell)) == {"name", "ising"}
-        assert _diff(asdict(parent.ising), asdict(cell.ising)) == {"sigma"}
-        assert cell.ising.sigma == SIGMA_C
-        assert cell.curriculum is None
+        budget_parent = asdict(CONFIGS[f"S2_d4_{c_tag}_50k_l50_letf_house"])
+        cell = asdict(CONFIGS[f"S2_d4_{c_tag}_10k_l50_letf_house"])
+        assert _diff(budget_parent, cell) == {"name", "train"}
+        assert _diff(budget_parent["train"], cell["train"]) == {"n_steps"}
+        assert cell["train"]["n_steps"] == 10_000
+        sc = CONFIGS[f"S2_d4_{c_tag}_10k_l50_letf_house_sc"]
+        assert _diff(cell, asdict(sc)) == {"name", "ising"}
+        assert _diff(cell["ising"], asdict(sc.ising)) == {"sigma"}
+        assert sc.ising.sigma == SIGMA_C
+        assert sc.curriculum is None

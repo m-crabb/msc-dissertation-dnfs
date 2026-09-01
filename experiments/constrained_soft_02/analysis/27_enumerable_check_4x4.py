@@ -13,13 +13,15 @@ tables; the s108 first cut with TV / Z2 / std(c) / dF columns is retired).
                convention; the 10x10 fills bootstrap a sampled reference
                instead because there the reference is itself sampled.)
   cells     -- lambda=50 house specialists at c* in {0.25, 0.375, 0.5}
-               (softhouse-d16) and the lambda=100 centre cell (efc-sweep:
+               at the cross-chapter 4x4 budget of 10k steps (the _10k_
+               family, tag softhouse-d16-10k; the _50k_ family is the
+               amortised comparator set) and the lambda=100 centre cell (efc-sweep:
                the channel recipe pre-house, the only 4x4 lambda=100 cells
                with the channel); every seed reported, mean +- SD.
   FLOP/es   -- measured eager forward at the run's architecture x n_euler
                / frozen ESS, as the 8x8 fill (analysis/24).
   couplings -- sigma=0.1 and sigma_c halves; a half with no runs on disk
-               prints as skipped (no 4x4 sigma_c soft cells exist yet).
+               prints as skipped.
 
 Extras kept in the JSON for the comments only: delivered std(c) vs the
 ENUMERATED spread (not the Gaussian envelope 1/sqrt(2 lambda d), which at
@@ -50,9 +52,9 @@ L, D_SITES, N_DRAWS, N_BOOTSTRAP = 4, 16, 5000, 200
 COUPLINGS = (("s010", 0.1), ("sc", SIGMA_C))
 # family key -> (c*, lambda, run glob); "{sc}" takes "" or "_sc"
 FAMILIES = {
-    "c0.25_l50": (0.25, 50.0, "S2_d4_c0250_50k_l50_letf_house{sc}_seed4*"),
-    "c0.375_l50": (0.375, 50.0, "S2_d4_c0375_50k_l50_letf_house{sc}_seed4*"),
-    "c0.5_l50": (0.5, 50.0, "S2_d4_c0500_50k_l50_letf_house{sc}_seed4*"),
+    "c0.25_l50": (0.25, 50.0, "S2_d4_c0250_10k_l50_letf_house{sc}_seed4*"),
+    "c0.375_l50": (0.375, 50.0, "S2_d4_c0375_10k_l50_letf_house{sc}_seed4*"),
+    "c0.5_l50": (0.5, 50.0, "S2_d4_c0500_10k_l50_letf_house{sc}_seed4*"),
     "c0.5_l100": (0.5, 100.0, "S2_d4_c05_l100_letf_efc{sc}_seed4*"),
 }
 

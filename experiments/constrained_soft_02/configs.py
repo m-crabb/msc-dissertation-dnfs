@@ -2344,18 +2344,21 @@ for _c_target, _c_tag in ((0.25, "c0250"), (0.375, "c0375")):
             _D4_SPECIALIST_HOUSE_BASE.ising, target_composition=_c_target),
     )
 
-# Critical half of the 4x4 enumerable check (s109): sigma_c by ONE lever
-# off each subcritical house twin, mirroring the d8 house loop. Cold start
-# at sigma_c like every soft sigma_c specialist (no ladder) -- the d8
-# specialists train that way, and the 4x4 table compares against exact
-# enumeration, not against the ladder cells.
+# The 4x4 house TABLE family at the cross-chapter 4x4 budget (s109): the
+# baseline and hard chapters train every 4x4 cell for 10k steps, while the
+# _50k_ family above exists as the budget-matched comparator of the 50k
+# amortised 4x4 cell. tab:eval-soft-4x4 reads these 10k cells at both
+# couplings so its two halves and the other chapters' 4x4 tables share one
+# budget; ONE lever off the _50k_ cell (n_steps), sigma_c by one more.
 for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
-    _d4_house_parent = CONFIGS[f"S2_d4_{_c_tag}_50k_l50_letf_house"]
-    _d4_sc_name = f"S2_d4_{_c_tag}_50k_l50_letf_house_sc"
-    CONFIGS[_d4_sc_name] = replace(
-        _d4_house_parent, name=_d4_sc_name,
-        ising=replace(_d4_house_parent.ising, sigma=SIGMA_C),
-    )
+    for _sigma, _sigma_suffix in ((0.1, ""), (SIGMA_C, "_sc")):
+        _budget_parent = CONFIGS[f"S2_d4_{_c_tag}_50k_l50_letf_house"]
+        _d4_10k_name = f"S2_d4_{_c_tag}_10k_l50_letf_house{_sigma_suffix}"
+        CONFIGS[_d4_10k_name] = replace(
+            _budget_parent, name=_d4_10k_name,
+            train=replace(_budget_parent.train, n_steps=10_000),
+            ising=replace(_budget_parent.ising, sigma=_sigma),
+        )
 
 # Null control on the house recipe: conditioning path ON, window width
 # ZERO, so vs the c0500 specialist above the only differences are the
