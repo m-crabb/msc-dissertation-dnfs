@@ -162,6 +162,71 @@ def _clear_replay(*chunk_lists: list[torch.Tensor]) -> None:
         chunks.clear()
 
 
+_GRADIENT_GROUPS = (
+    "gains",
+    "omega",
+    "composition_embedder",
+    "trunk",
+)
+
+
+def _gradient_group_norms(model) -> dict[str, float]:
+    """Pre-clip L2 norms partitioned by the soft-collapse mechanism groups.
+
+    Every parameter with a gradient lands in exactly one group. The foreach
+    norm keeps the opt-in diagnostic to one multi-tensor reduction per group
+    rather than launching a reduction for every transformer tensor.
+    """
+    grouped: dict[str, list[torch.Tensor]] = {
+        name: [] for name in _GRADIENT_GROUPS
+    }
+    reference = None
+    for name, parameter in model.named_parameters():
+        if parameter.grad is None:
+            continue
+        gradient = parameter.grad.detach()
+        reference = gradient if reference is None else reference
+        components = name.split(".")
+        if name in {
+            "gain_constant",
+            "gain_slope",
+            "composition_gain_constant",
+            "composition_gain_slope",
+        }:
+            group = "gains"
+        elif "omega" in components:
+            group = "omega"
+        elif "comp_embedder" in components:
+            group = "composition_embedder"
+        else:
+            group = "trunk"
+        grouped[group].append(gradient)
+
+    if reference is None:
+        return {f"grad_norm_{name}": 0.0 for name in _GRADIENT_GROUPS}
+
+    norm_tensors = []
+    for name in _GRADIENT_GROUPS:
+        gradients = grouped[name]
+        if gradients:
+            parameter_norms = torch._foreach_norm(gradients, 2.0)
+            group_norm = torch.linalg.vector_norm(torch.stack(parameter_norms))
+        else:
+            group_norm = reference.new_zeros(())
+        norm_tensors.append(group_norm)
+    # The exact-field wrapper historically registers its scalar gains after
+    # the inner model has moved to CUDA, so those gains remain CPU scalars
+    # while omega/embedder/trunk gradients live on the accelerator. PyTorch's
+    # optimizer and clip_grad_norm_ support that mixed-device parameter list;
+    # collect each already-reduced scalar independently rather than stacking
+    # group norms across devices.
+    values = [float(group_norm.cpu()) for group_norm in norm_tensors]
+    return {
+        f"grad_norm_{name}": float(value)
+        for name, value in zip(_GRADIENT_GROUPS, values)
+    }
+
+
 def _rate_diagnostics(
     model, x, t, step_dt: float, *, target=None
 ) -> dict[str, float]:
@@ -472,7 +537,26 @@ def train(
         if resume_state is not None and truncate_log_to_step(log_path, start_step)
         else "w"
     )
-    with log_path.open(log_mode, newline="") as log_file:
+    log_gradient_groups = bool(
+        getattr(train_cfg, "log_gradient_group_norms", False)
+    )
+    gradient_log_path = output_dir / "gradient_group_log.csv"
+    gradient_log_mode = None
+    if log_gradient_groups:
+        gradient_log_mode = (
+            "a"
+            if resume_state is not None
+            and truncate_log_to_step(gradient_log_path, start_step)
+            else "w"
+        )
+    gradient_log_context = (
+        gradient_log_path.open(gradient_log_mode, newline="")
+        if log_gradient_groups else nullcontext(None)
+    )
+    with (
+        log_path.open(log_mode, newline="") as log_file,
+        gradient_log_context as gradient_log_file,
+    ):
         writer = csv.writer(log_file)
         if log_mode == "w":
             writer.writerow(
@@ -484,6 +568,21 @@ def train(
                  "wall_clock_step_s", "composition_current",
                  "composition_half_width", "rollout_resample_events"]
             )
+        gradient_writer = None
+        if gradient_log_file is not None:
+            gradient_writer = csv.writer(gradient_log_file)
+            if gradient_log_mode == "w":
+                gradient_writer.writerow(
+                    [
+                        "step",
+                        "grad_norm_gains",
+                        "grad_norm_omega",
+                        "grad_norm_composition_embedder",
+                        "grad_norm_trunk",
+                        "grad_norm_reconstructed",
+                        "grad_clip_scale",
+                    ]
+                )
 
         step = start_step
         curriculum_idx = -1
@@ -876,6 +975,10 @@ def train(
                     )
                 optimiser.zero_grad()
                 loss_value.backward()
+                gradient_group_norms = (
+                    _gradient_group_norms(model)
+                    if log_gradient_groups else None
+                )
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     model.parameters(),
                     getattr(train_cfg, "grad_clip_max_norm", 500.0),
@@ -938,6 +1041,32 @@ def train(
                      rollout_resample_events]
                 )
                 log_file.flush()
+                if gradient_writer is not None:
+                    reconstructed = sum(
+                        value * value
+                        for value in gradient_group_norms.values()
+                    ) ** 0.5
+                    grad_norm_value = grad_norm.item()
+                    clip_max_norm = float(
+                        getattr(train_cfg, "grad_clip_max_norm", 500.0)
+                    )
+                    clip_scale = min(
+                        1.0, clip_max_norm / (grad_norm_value + 1e-6)
+                    )
+                    gradient_writer.writerow(
+                        [
+                            step,
+                            gradient_group_norms["grad_norm_gains"],
+                            gradient_group_norms["grad_norm_omega"],
+                            gradient_group_norms[
+                                "grad_norm_composition_embedder"
+                            ],
+                            gradient_group_norms["grad_norm_trunk"],
+                            reconstructed,
+                            clip_scale,
+                        ]
+                    )
+                    gradient_log_file.flush()
 
                 if use_wandb:
                     log_dict = {
@@ -952,6 +1081,13 @@ def train(
                     if amortised:
                         log_dict["train/composition_current"] = composition_now
                         log_dict["train/composition_half_width"] = half_width_now
+                    if gradient_group_norms is not None:
+                        log_dict.update(
+                            {
+                                f"train/{key}": value
+                                for key, value in gradient_group_norms.items()
+                            }
+                        )
                     if step % eval_cfg.eval_every == 0:
                         log_dict["train/ess"] = ess_value
                         log_dict.update(
@@ -960,6 +1096,23 @@ def train(
                                 for key, value in rate_diag.items()
                             }
                         )
+                        # Exact-field gains are the live mechanism under test
+                        # in the soft amortisation arm. Keep them in W&B at
+                        # the existing eval cadence (not every step, avoiding
+                        # extra device synchronisation in the hot path). The
+                        # getattr route is inert for every unwrapped model and
+                        # archived global-gain channel.
+                        for gain_name in (
+                            "gain_constant",
+                            "gain_slope",
+                            "composition_gain_constant",
+                            "composition_gain_slope",
+                        ):
+                            gain_param = getattr(model, gain_name, None)
+                            if gain_param is not None:
+                                log_dict[f"train/{gain_name}"] = (
+                                    gain_param.detach().item()
+                                )
                     wandb.log(log_dict, step=step)
 
                 # Step-tagged checkpoints (opt-in): `final.pt` alone cannot

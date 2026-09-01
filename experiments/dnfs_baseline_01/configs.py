@@ -107,6 +107,11 @@ class TrainCfg:
     outer_batch_size: int | None = None  # None -> falls back to batch_size
     replay_buffer_cycles: int = 1        # number of retained outer batches
     grad_clip_max_norm: float = 500.0  # some transformer runs override this
+    # Opt-in mechanism diagnostic: record pre-clip gradient L2 norms split
+    # into exact-field gains, omega readout, composition embedder, and the
+    # remaining trunk on every update. Written to gradient_group_log.csv so
+    # the stable training_log.csv schema and archived resume path do not move.
+    log_gradient_group_norms: bool = False
     # Rows per inner-step backward slice (swap trainer only; None = one
     # backward over the full batch, every archived run). A memory schedule,
     # not a recipe variable: the swap loss is a per-row mean, so slicing the
@@ -331,6 +336,11 @@ class ModelCfg:
     # supplies what training currently learns under lambda^2 penalty-variance
     # fire. OFF = every archived cell byte-identical.
     exact_field_channel: bool = False
+    # Soft amortised route only: retain the exact-field channel's global
+    # g0 + g1*t gain and add a centred composition correction
+    # (c-c0)*(h0+h1*t). Opt-in so archived checkpoints keep their exact
+    # state-dict schema; the two new scalars are zero-init and consume no RNG.
+    exact_field_composition_gain: bool = False
     # rope_vit only (hard route, 2026-08-23): side of the p x p patches whose
     # pooled keys carry the far field in the causal stacks. 1 = dense causal
     # attention with periodic rotary positions; the leTF cells never read it.

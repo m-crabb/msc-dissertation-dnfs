@@ -92,6 +92,17 @@ class ExactFieldFlipModel(nn.Module):
         Delta_i  = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ],
         h = x A,  c_null_i = c(x) - (x_i + 1)/(2d),  gain(t) = g0 + g1 t.
 
+    The opt-in amortised correction keeps that global gain and adds
+
+        gain(t, c) = g0 + g1 t + (c - c0) (h0 + h1 t),
+
+    where c0 is the target's scalar centre composition. It is deliberately
+    the smallest family that can express the critical specialists' observed
+    composition-dependent gains. At c=c0 it is exactly the archived channel;
+    h0=h1=0 at initialisation, so enabling it consumes no RNG and leaves the
+    step-zero forward bit-identical. The parameters are only registered when
+    requested, preserving strict loading of every archived checkpoint.
+
     Delta_i is the exact soft flip log-ratio at t=1 (pinned against brute
     force in tests/test_soft_field_regression.py): written against the
     HOLE-EXCLUDED composition c_null it is exactly odd in x_i, so it lives
@@ -114,17 +125,39 @@ class ExactFieldFlipModel(nn.Module):
     refuses rather than silently mis-scoring Potts.
     """
 
-    def __init__(self, model: nn.Module, target):
+    def __init__(
+        self,
+        model: nn.Module,
+        target,
+        *,
+        composition_conditioned_gain: bool = False,
+    ):
         super().__init__()
         if getattr(model, "vocab_size", 2) != 2:
             raise ValueError(
                 "ExactFieldFlipModel is derived for binary flips; "
                 f"got vocab_size={model.vocab_size}"
             )
+        if composition_conditioned_gain and not getattr(
+            model, "condition_on_composition", False
+        ):
+            raise ValueError(
+                "composition-conditioned gain requires a model built with "
+                "condition_on_composition=True"
+            )
+        if composition_conditioned_gain and target.target_composition is None:
+            raise ValueError(
+                "composition-conditioned gain requires a scalar target "
+                "composition to use as its centre"
+            )
         self.model = model
         self._target = [target]  # list, not attribute: the target is not a Module
+        self.composition_conditioned_gain = composition_conditioned_gain
         self.gain_constant = nn.Parameter(torch.zeros(()))
         self.gain_slope = nn.Parameter(torch.zeros(()))
+        if composition_conditioned_gain:
+            self.composition_gain_constant = nn.Parameter(torch.zeros(()))
+            self.composition_gain_slope = nn.Parameter(torch.zeros(()))
 
     @property
     def target(self):
@@ -178,8 +211,19 @@ class ExactFieldFlipModel(nn.Module):
         )
 
     def forward(self, x: Tensor, t: Tensor, c: Tensor | None = None) -> Tensor:
+        if self.composition_conditioned_gain and c is None:
+            raise ValueError(
+                "composition c must be supplied when the exact-field "
+                "composition-conditioned gain is enabled"
+            )
         G = self.model(x, t) if c is None else self.model(x, t, c)
         gain = self.gain_constant + self.gain_slope * t          # (B,)
+        if self.composition_conditioned_gain:
+            centred_c = c - float(self.target.target_composition)
+            gain = gain + centred_c * (
+                self.composition_gain_constant
+                + self.composition_gain_slope * t
+            )
         contribution = gain.unsqueeze(1) * self.exact_field(x, composition=c)
         # Only the flip slot moves; the current token's slot stays exactly
         # zero (the convention G.sum(-1) == flip score relies on).

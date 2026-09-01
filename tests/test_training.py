@@ -15,10 +15,15 @@ Tests use D=2 and small grids so the suite stays under the existing
 """
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from discrete_flow_sampler.models.mlp import MLPRateMatrix
-from discrete_flow_sampler.samplers.training import _append_replay_buffer, train
+from discrete_flow_sampler.samplers.training import (
+    _append_replay_buffer,
+    _gradient_group_norms,
+    train,
+)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 
@@ -89,6 +94,117 @@ def test_train_runs_outer_inner_without_error(tmp_path):
     # Step-tagged checkpoints are opt-in; without `checkpoint_every` the
     # checkpoint dir holds only the rolling latest + end-of-run final.
     assert not list((tmp_path / "checkpoints").glob("step_*.pt"))
+
+
+def test_gradient_group_norms_partition_every_parameter():
+    class GroupedModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.gain_constant = torch.nn.Parameter(torch.zeros(()))
+            self.gain_slope = torch.nn.Parameter(torch.zeros(()))
+            self.omega = torch.nn.Linear(2, 3)
+            self.comp_embedder = torch.nn.Linear(3, 4)
+            self.trunk = torch.nn.Linear(4, 5)
+
+    model = GroupedModel()
+    scale = {
+        "gains": 1.0,
+        "omega": 2.0,
+        "composition_embedder": 3.0,
+        "trunk": 4.0,
+    }
+
+    def group(name):
+        if name in {"gain_constant", "gain_slope"}:
+            return "gains"
+        if "omega" in name:
+            return "omega"
+        if "comp_embedder" in name:
+            return "composition_embedder"
+        return "trunk"
+
+    counts = {name: 0 for name in scale}
+    for name, parameter in model.named_parameters():
+        parameter.grad = torch.full_like(parameter, scale[group(name)])
+        counts[group(name)] += parameter.numel()
+
+    got = _gradient_group_norms(model)
+    for name, value in scale.items():
+        assert got[f"grad_norm_{name}"] == pytest.approx(
+            value * counts[name] ** 0.5
+        )
+    reconstructed = sum(value * value for value in got.values()) ** 0.5
+    expected = sum(
+        parameter.grad.square().sum().item()
+        for parameter in model.parameters()
+    ) ** 0.5
+    assert reconstructed == pytest.approx(expected)
+
+
+def test_opt_in_gradient_group_log_matches_total_preclip_norm(tmp_path):
+    torch.manual_seed(0)
+    target = IsingTarget(D=2, sigma=0.1)
+    model = MLPRateMatrix(d=target.d, hidden_dim=16, n_layers=2)
+    train_cfg = _tiny_train_cfg(
+        n_steps=4, inner_steps_per_outer=2,
+        batch_size=4, outer_batch_size=4,
+    )
+    train_cfg.log_gradient_group_norms = True
+
+    train(
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=SimpleNamespace(n_euler_steps=3),
+        eval_cfg=SimpleNamespace(eval_every=4, n_eval_samples=4),
+        output_dir=tmp_path,
+        use_wandb=False,
+    )
+
+    main_rows = _read_csv_rows(tmp_path / "training_log.csv")
+    group_rows = _read_csv_rows(tmp_path / "gradient_group_log.csv")
+    assert len(group_rows) == len(main_rows) == 4
+    for main, grouped in zip(main_rows, group_rows):
+        assert grouped["step"] == main["step"]
+        assert float(grouped["grad_norm_gains"]) == 0.0
+        assert float(grouped["grad_norm_omega"]) == 0.0
+        assert float(grouped["grad_norm_composition_embedder"]) == 0.0
+        assert float(grouped["grad_norm_trunk"]) == pytest.approx(
+            float(main["grad_norm"]), rel=1e-6
+        )
+        assert float(grouped["grad_norm_reconstructed"]) == pytest.approx(
+            float(main["grad_norm"]), rel=1e-6
+        )
+
+
+def test_gradient_group_logging_is_trajectory_passive(tmp_path):
+    def run(output_dir, enabled):
+        torch.manual_seed(11)
+        target = IsingTarget(D=2, sigma=0.1)
+        model = MLPRateMatrix(d=target.d, hidden_dim=16, n_layers=2)
+        train_cfg = _tiny_train_cfg(
+            n_steps=4, inner_steps_per_outer=2,
+            batch_size=4, outer_batch_size=4, seed=29,
+        )
+        train_cfg.log_gradient_group_norms = enabled
+        train(
+            model=model,
+            target=target,
+            train_cfg=train_cfg,
+            ctmc_cfg=SimpleNamespace(n_euler_steps=3),
+            eval_cfg=SimpleNamespace(eval_every=4, n_eval_samples=4),
+            output_dir=output_dir,
+            use_wandb=False,
+        )
+        return torch.load(
+            output_dir / "checkpoints" / "final.pt", weights_only=True
+        )
+
+    plain = run(tmp_path / "plain", False)
+    instrumented = run(tmp_path / "instrumented", True)
+    assert plain.keys() == instrumented.keys()
+    for name, value in plain.items():
+        assert torch.equal(value, instrumented[name]), name
 
 
 def test_train_periodic_checkpoints_are_step_tagged(tmp_path):

@@ -11,9 +11,14 @@ from dataclasses import replace
 import math
 
 import pytest
+import torch
 from experiments.constrained_soft_02.configs import CONFIGS
 from experiments.dnfs_baseline_01.run import _build_model
 
+from discrete_flow_sampler.models.composition_conditioned import (
+    CompositionConditioned,
+)
+from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 # The D=4 cell is the cheap end-to-end validation of the same machinery; the
@@ -61,6 +66,15 @@ D10_STAIRCASE_CELL = "S2_d10_camort_offset_clip50_lam10_hw20"
 # surviving recipe in exactly {optimiser, clip}, so like the arms above it
 # joins only the conditioning and specialist guards.
 D10_STADAMW_CELL = "S2_d10_camort_offset_cyc8_stadamw"
+COMPOSITION_GAIN_CELL = (
+    "S2_d8_camort_spine3_cgain_l50_letf_ne128_house_sc"
+)
+PAIRED_SPINE1_CELL = (
+    "S2_d8_camort_spine1_pairgrad_l50_letf_ne128_house_sc"
+)
+PAIRED_SPECIALIST_CELL = (
+    "S2_d8_c0500_pairgrad_l50_letf_ne128_house_sc"
+)
 D10_AMORTISED_CELLS = (
     D10_BASE_AMORTISED_CELL,
     "S2_d10_cgrid_l50_letf_ne128_anneal",
@@ -95,6 +109,10 @@ AMORTISED_CELLS = (
     # (machinery-vs-mixture) and replay_buffer_cycles=1 (staleness lever).
     "S2_d8_camort_spine1_l50_letf_ne128_house_sc",
     "S2_d8_camort_spine3_rb1_l50_letf_ne128_house_sc",
+    # Same A100 spine3 recipe with only a centred c-dependent correction to
+    # the exact-field gain. Its parent is the archived dead 4-seed control.
+    COMPOSITION_GAIN_CELL,
+    PAIRED_SPINE1_CELL,
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the
@@ -125,6 +143,136 @@ def test_amortised_cell_builds_a_conditioned_model(cell_name):
     # the embedder lives on the wrapped leTF, so look through the wrapper.
     inner_model = getattr(model, "model", model)
     assert hasattr(inner_model, "comp_embedder")
+
+
+def test_composition_gain_arm_is_one_lever_over_critical_spine3():
+    parent = CONFIGS["S2_d8_camort_spine3_l50_letf_ne128_house_sc"]
+    arm = CONFIGS[COMPOSITION_GAIN_CELL]
+
+    assert arm.model.exact_field_composition_gain is True
+    assert replace(
+        arm,
+        name=parent.name,
+        model=replace(arm.model, exact_field_composition_gain=False),
+    ) == parent
+
+    target = IsingTarget(
+        D=arm.ising.D,
+        sigma=arm.ising.sigma,
+        target_composition=arm.ising.target_composition,
+        composition_penalty_strength=arm.ising.composition_penalty_strength,
+    )
+    model = _build_model(arm, target)
+    assert model.composition_conditioned_gain is True
+    assert model.composition_gain_constant.item() == 0.0
+    assert model.composition_gain_slope.item() == 0.0
+
+
+def test_pairgrad_arms_add_diagnostics_only_to_their_parents():
+    pairs = (
+        (
+            PAIRED_SPECIALIST_CELL,
+            "S2_d8_c0500_l50_letf_ne128_house_sc",
+        ),
+        (
+            PAIRED_SPINE1_CELL,
+            "S2_d8_camort_spine1_l50_letf_ne128_house_sc",
+        ),
+    )
+    for arm_name, parent_name in pairs:
+        arm = CONFIGS[arm_name]
+        parent = CONFIGS[parent_name]
+        assert arm.train.log_gradient_group_norms is True
+        assert replace(
+            arm,
+            name=parent.name,
+            train=replace(arm.train, log_gradient_group_norms=False),
+        ) == parent
+
+
+def test_pairgrad_specialist_and_spine1_share_every_initial_tensor():
+    specialist_cfg = CONFIGS[PAIRED_SPECIALIST_CELL]
+    spine1_cfg = CONFIGS[PAIRED_SPINE1_CELL]
+
+    def build(cfg):
+        target = IsingTarget(
+            D=cfg.ising.D,
+            sigma=cfg.ising.sigma,
+            target_composition=cfg.ising.target_composition,
+            composition_penalty_strength=cfg.ising.composition_penalty_strength,
+            base_matches_composition=cfg.ising.base_matches_composition,
+        )
+        torch.manual_seed(42)
+        # Compilation has no state-dict effect, but is irrelevant to this
+        # construction invariant and expensive to repeat in a unit test.
+        eager_cfg = replace(
+            cfg, model=replace(cfg.model, compile_model=False)
+        )
+        model = _build_model(eager_cfg, target)
+        return model.state_dict(), torch.get_rng_state().clone()
+
+    specialist_state, specialist_rng = build(specialist_cfg)
+    spine1_state, spine1_rng = build(spine1_cfg)
+    assert torch.equal(specialist_rng, spine1_rng)
+    extras = set(spine1_state) - set(specialist_state)
+    assert extras == {
+        "model.comp_embedder.mlp.0.weight",
+        "model.comp_embedder.mlp.0.bias",
+        "model.comp_embedder.mlp.2.weight",
+        "model.comp_embedder.mlp.2.bias",
+    }
+    for name, value in specialist_state.items():
+        assert torch.equal(value, spine1_state[name]), name
+
+
+def test_pairgrad_step_zero_loss_and_shared_gradients_are_exact():
+    specialist_cfg = CONFIGS[PAIRED_SPECIALIST_CELL]
+    spine1_cfg = CONFIGS[PAIRED_SPINE1_CELL]
+
+    def build(cfg):
+        # D=2 makes the full neighbour residual cheap while preserving the
+        # exact architecture and critical target formula under test.
+        target = IsingTarget(
+            D=2,
+            sigma=cfg.ising.sigma,
+            target_composition=0.5,
+            composition_penalty_strength=(
+                cfg.ising.composition_penalty_strength
+            ),
+            base_matches_composition=cfg.ising.base_matches_composition,
+        )
+        torch.manual_seed(42)
+        eager_cfg = replace(
+            cfg, model=replace(cfg.model, compile_model=False)
+        )
+        return _build_model(eager_cfg, target), target
+
+    specialist, specialist_target = build(specialist_cfg)
+    spine1, spine1_target = build(spine1_cfg)
+    generator = torch.Generator().manual_seed(7)
+    x = torch.randint(
+        0, 2, (6, specialist_target.d), generator=generator
+    ).float() * 2 - 1
+    t = torch.rand(6, generator=generator)
+    c_t = torch.randn(6, generator=generator)
+    c = torch.full((6,), 0.5)
+
+    specialist_loss = kolmogorov_loss(
+        x, t, c_t, specialist, specialist_target
+    )
+    bound_spine1 = CompositionConditioned(spine1, c)
+    with spine1_target.composition_batch(c):
+        spine1_loss = kolmogorov_loss(
+            x, t, c_t, bound_spine1, spine1_target
+        )
+    assert torch.equal(specialist_loss, spine1_loss)
+
+    specialist_loss.backward()
+    spine1_loss.backward()
+    specialist_parameters = dict(specialist.named_parameters())
+    spine1_parameters = dict(spine1.named_parameters())
+    for name, parameter in specialist_parameters.items():
+        assert torch.equal(parameter.grad, spine1_parameters[name].grad), name
 
 
 def test_validation_cell_differs_from_its_comparator_only_by_amortisation():

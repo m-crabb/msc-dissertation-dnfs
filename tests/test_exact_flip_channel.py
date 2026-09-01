@@ -135,6 +135,20 @@ def build_conditioned_pair(target, seed=0):
     return fresh(), ExactFieldFlipModel(fresh(), target)
 
 
+def build_composition_gain_pair(target, seed=0):
+    """Legacy and c-gain wrappers whose shared tensors are identical."""
+    def fresh():
+        torch.manual_seed(seed)
+        return LeTFRateMatrix(
+            d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2,
+            condition_on_composition=True)
+    return (
+        ExactFieldFlipModel(fresh(), target),
+        ExactFieldFlipModel(
+            fresh(), target, composition_conditioned_gain=True),
+    )
+
+
 def test_zero_init_bit_identity_holds_amortised(target):
     """Contract 1 extended to the amortised route: passing c must not
     perturb the identity — the channel term is zero however c* is sourced."""
@@ -143,6 +157,61 @@ def test_zero_init_bit_identity_holds_amortised(target):
     t = torch.rand(x.shape[0])
     c = torch.rand(x.shape[0])
     assert torch.equal(base(x, t, c), wrapped(x, t, c))
+
+
+def test_composition_gain_is_opt_in_zero_init_and_rng_neutral(target):
+    """Adding the two c-gain scalars must not move the legacy trajectory at
+    step zero or perturb any tensor shared with the parent arm."""
+    legacy, conditioned = build_composition_gain_pair(target)
+    legacy_state = legacy.state_dict()
+    conditioned_state = conditioned.state_dict()
+
+    extra = set(conditioned_state) - set(legacy_state)
+    assert extra == {"composition_gain_constant", "composition_gain_slope"}
+    for key, value in legacy_state.items():
+        assert torch.equal(value, conditioned_state[key]), key
+
+    x = random_states(target.d)
+    t = torch.rand(x.shape[0])
+    c = torch.rand(x.shape[0])
+    assert torch.equal(legacy(x, t, c), conditioned(x, t, c))
+
+
+def test_composition_gain_adds_centred_bilinear_correction(target):
+    """The opt-in gain is g0 + g1*t + (c-c0)*(h0+h1*t)."""
+    _, wrapped = build_composition_gain_pair(target)
+    with torch.no_grad():
+        wrapped.gain_constant.fill_(0.2)
+        wrapped.gain_slope.fill_(0.3)
+        wrapped.composition_gain_constant.fill_(0.4)
+        wrapped.composition_gain_slope.fill_(-0.1)
+
+    x = random_states(target.d, n=4)
+    t = torch.tensor([0.0, 0.25, 0.5, 1.0])
+    c = torch.tensor([0.25, target.target_composition, 0.5, 0.75])
+    added = wrapped(x, t, c) - wrapped.model(x, t, c)
+    expected_gain = (
+        0.2 + 0.3 * t
+        + (c - target.target_composition) * (0.4 - 0.1 * t)
+    )
+    expected = expected_gain.unsqueeze(1) * wrapped.exact_field(x, composition=c)
+    flip_slot = (1 - ((x + 1) / 2)).long().unsqueeze(-1)
+    assert torch.allclose(added.gather(-1, flip_slot).squeeze(-1), expected)
+
+
+def test_composition_gain_requires_conditioned_model_and_runtime_c(target):
+    torch.manual_seed(0)
+    unconditioned = LeTFRateMatrix(
+        d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2)
+    with pytest.raises(ValueError, match="composition-conditioned gain"):
+        ExactFieldFlipModel(
+            unconditioned, target, composition_conditioned_gain=True)
+
+    _, wrapped = build_composition_gain_pair(target)
+    x = random_states(target.d, n=4)
+    t = torch.rand(x.shape[0])
+    with pytest.raises(ValueError, match="composition c must be supplied"):
+        wrapped(x, t)
 
 
 def test_per_row_composition_matches_brute_force(target):

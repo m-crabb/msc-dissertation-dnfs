@@ -369,16 +369,26 @@ class LeTFRateMatrix(nn.Module):
         self.time_embedder = TimestepEmbedder(hidden_dim)
         self.condition_on_composition = condition_on_composition
         if condition_on_composition:
-            # Constructed immediately after the time embedder so the two
-            # conditioning channels sit together; when the flag is OFF no
-            # parameters are created at all, so RNG consumption for every
-            # subsequent module is unchanged from the archived runs.
-            self.comp_embedder = TimestepEmbedder(hidden_dim)
+            # Keep this module in its historical registration position: an
+            # optimizer state_dict maps moments to the current parameter list
+            # by order, so moving it after the stacks would silently mis-map
+            # an archived conditioned run on resume. Its initialization uses
+            # a private deterministic RNG stream instead. The surrounding
+            # stream is restored on exit, making every subsequent SHARED
+            # tensor exactly same-seed paired to an unconditioned specialist.
+            # The offset avoids duplicating the random values about to be used
+            # by the first stack while remaining reproducible per run seed.
+            composition_seed = (
+                torch.initial_seed() + 0x5EED_C0DE_51A7
+            ) % (2**63)
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(composition_seed)
+                self.comp_embedder = TimestepEmbedder(hidden_dim)
             # Zero-init the output layer: the composition channel contributes
             # exactly 0 at initialisation, so a conditioned model reproduces
-            # an unconditioned checkpoint bit-for-bit and can warm-start from
-            # one. Training grows the channel from inert rather than
-            # perturbing a working specialist on step 0.
+            # a same-seed unconditioned model bit-for-bit without checkpoint
+            # copying. Training grows the channel from inert rather than
+            # perturbing the paired specialist on step 0.
             nn.init.zeros_(self.comp_embedder.mlp[-1].weight)
             nn.init.zeros_(self.comp_embedder.mlp[-1].bias)
         seq_len = 1 + d

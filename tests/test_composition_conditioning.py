@@ -246,6 +246,45 @@ def test_composition_channel_is_inert_at_initialisation():
     torch.testing.assert_close(low, high)
 
 
+def test_conditioner_preserves_shared_initialisation_and_rng_stream():
+    """A same-seed conditioned model must be a paired specialist at step 0.
+
+    The composition module stays registered before the stacks for optimizer
+    resume compatibility, but its private initialization must not advance the
+    RNG used by any shared tensor or by code after model construction.
+    """
+    def build(conditioned):
+        torch.manual_seed(1234)
+        model = LeTFRateMatrix(
+            d=9, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2,
+            condition_on_composition=conditioned,
+        )
+        return model, torch.get_rng_state().clone()
+
+    specialist, specialist_rng = build(False)
+    conditioned, conditioned_rng = build(True)
+    assert torch.equal(specialist_rng, conditioned_rng)
+
+    specialist_state = specialist.state_dict()
+    conditioned_state = conditioned.state_dict()
+    for name, value in specialist_state.items():
+        assert torch.equal(value, conditioned_state[name]), name
+    assert set(conditioned_state) - set(specialist_state) == {
+        "comp_embedder.mlp.0.weight",
+        "comp_embedder.mlp.0.bias",
+        "comp_embedder.mlp.2.weight",
+        "comp_embedder.mlp.2.bias",
+    }
+
+    # Do not obtain parity by moving the module: parameter registration order
+    # is how optimizer state is mapped on resume and must stay compatible with
+    # existing conditioned checkpoints.
+    names = [name for name, _ in conditioned.named_parameters()]
+    assert names.index("comp_embedder.mlp.0.weight") < names.index(
+        "fwd_stack.blocks.0.proj_in.weight"
+    )
+
+
 def test_unconditioned_checkpoint_warm_starts_a_conditioned_model():
     """The whole point of zero-init: a specialist checkpoint transfers exactly.
 

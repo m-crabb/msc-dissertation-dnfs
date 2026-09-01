@@ -2211,6 +2211,58 @@ CONFIGS[_spine3_rb1_name] = replace(
     train=replace(_spine3_sc.train, replay_buffer_cycles=1),
 )
 
+# Composition-conditioned exact-field gain (s108): the critical spine3 A100
+# family is the clean existing control. Add only
+#   (c-c0) * (composition_gain_constant + composition_gain_slope * t)
+# on top of its archived global gain. The two scalars start at zero and use no
+# RNG, so every shared model tensor and every composition draw stays paired to
+# the dead seeds 42--45; any basin change is attributable to this one added
+# degree-of-freedom pair rather than a different trunk initialisation.
+_spine3_cgain_name = "S2_d8_camort_spine3_cgain_l50_letf_ne128_house_sc"
+CONFIGS[_spine3_cgain_name] = replace(
+    _spine3_sc,
+    name=_spine3_cgain_name,
+    model=replace(
+        _spine3_sc.model,
+        exact_field_composition_gain=True,
+    ),
+)
+
+# Paired-initialisation mechanism wave (s108): the conditioner now uses a
+# private RNG stream, so the critical spine1 and c=.5 specialist share every
+# initial tensor and leave the construction RNG in the same state. Each arm
+# adds only per-group pre-clip gradient telemetry to its existing parent.
+# Running both through train_remote keeps the GPU class at A100-80GB; the
+# comparison then measures what the composition path does after its exactly
+# inert step zero, including whether global clipping throttles the trunk.
+_pairgrad_specialist_name = "S2_d8_c0500_pairgrad_l50_letf_ne128_house_sc"
+_pairgrad_specialist_parent = CONFIGS[
+    "S2_d8_c0500_l50_letf_ne128_house_sc"
+]
+CONFIGS[_pairgrad_specialist_name] = replace(
+    _pairgrad_specialist_parent,
+    name=_pairgrad_specialist_name,
+    train=replace(
+        _pairgrad_specialist_parent.train,
+        log_gradient_group_norms=True,
+    ),
+)
+
+_pairgrad_spine1_name = (
+    "S2_d8_camort_spine1_pairgrad_l50_letf_ne128_house_sc"
+)
+_pairgrad_spine1_parent = CONFIGS[
+    "S2_d8_camort_spine1_l50_letf_ne128_house_sc"
+]
+CONFIGS[_pairgrad_spine1_name] = replace(
+    _pairgrad_spine1_parent,
+    name=_pairgrad_spine1_name,
+    train=replace(
+        _pairgrad_spine1_parent.train,
+        log_gradient_group_norms=True,
+    ),
+)
+
 # D=4 gate for the matched-base cells (validate-at-D=4 rule): the wave-3
 # camort house cell with the staircase swapped for the spine draw and the
 # base matched — every spine c is an integer site count at d=16 (4/6/8).

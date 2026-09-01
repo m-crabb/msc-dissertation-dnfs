@@ -128,7 +128,13 @@ def _build_model(cfg, target):
         # Wrapped BEFORE compile so `.compile()` reaches the inner model
         # (the channel's own arithmetic is three elementwise lines and
         # stays eager, mirroring the hard route's wrapper).
-        model = ExactFieldFlipModel(model, target)
+        model = ExactFieldFlipModel(
+            model,
+            target,
+            composition_conditioned_gain=getattr(
+                cfg.model, "exact_field_composition_gain", False
+            ),
+        )
     if getattr(cfg.model, "compile_model", False):
         # In-place nn.Module.compile: state_dict keys stay unprefixed
         # (torch.compile(module) wrapping would add `_orig_mod.`), so
