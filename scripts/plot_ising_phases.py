@@ -10,13 +10,14 @@ sigma_c = ln(1+sqrt(2))/4 = 0.220343 (targets/ising.py SIGMA_C; K_c =
 Regenerated at the exact value in the s58 sigma_c migration (2026-08-24);
 the pre-migration panel used the legacy 0.22305.
 
-Each snapshot is a single equilibrated Gibbs state reshaped from length d = D*D
+Each snapshot is a single equilibrated state reshaped from length d = D*D
 to a D*D grid. The ordered panel is initialised from a fully aligned lattice:
 with periodic boundaries a random start can freeze into a metastable two-domain
 stripe that single-spin Gibbs will not heal on short timescales, which would
-misrepresent the phase. Off-critical panels mix quickly; the critical panel gets
-the largest sweep budget because correlation time diverges there (critical
-slowing-down).
+misrepresent the phase. Off-critical panels use Gibbs and mix quickly; the
+critical panel is drawn by Wolff, since Gibbs equilibration there needs on the
+order of D^z sweeps (z ~ 2.2, far beyond any reasonable budget at D = 64) while
+cluster moves sidestep the critical slowing-down entirely.
 """
 
 from pathlib import Path
@@ -31,6 +32,7 @@ from discrete_flow_sampler.diagnostics.figure_style import (
     SPIN_UP_COLOUR,
 )
 from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
+from discrete_flow_sampler.mcmc.wolff import wolff_sample
 from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 D = 64
@@ -56,6 +58,10 @@ PANELS = [
 
 def snapshot(sigma: float, n_sweeps: int, aligned_init: bool, seed: int) -> torch.Tensor:
     target = IsingTarget(D=D, sigma=sigma)
+    if sigma == SIGMA_C:
+        # Wolff for the critical panel (see module docstring); 2000 cluster
+        # flips is generous burn-in even at D = 64.
+        return wolff_sample(target, n_samples=1, burn_in_clusters=2000, seed=seed).reshape(D, D)
     generator = torch.Generator().manual_seed(seed)
     x_init = torch.ones(1, target.d) if aligned_init else None
     spins = gibbs_sample(target, n_chains=1, n_sweeps=n_sweeps, x_init=x_init, generator=generator)
