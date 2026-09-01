@@ -2036,6 +2036,46 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"] = replace(
     )),
 )
 
+# s107 single-size completion (2026-09-01): the chapter's motivating
+# exhibits move fully to 8x8 (10x10 retires from the body), so every
+# observation the 10x10 family carried is re-measured here as one-lever
+# twins of the house centre cells. (1) nochan at sigma=0.1 completes the
+# {coupling} x {channel} 2x2 -- the sc nochan control is dead 0/4 where
+# the channel trains 4/4, and this cell measures whether the bare
+# penalty is benign subcritically at d=64 on the SAME recipe (the
+# 20260812 walkback said yes at 0.819 +/- 0.077, but on the pre-house
+# recipe -- ne128 parent without channel/compile/EMA/rollout-CV).
+# (2)+(3) lambda=100 twins, both couplings, carry the "raising lambda
+# helps neither side" half of the lambda trade at production size
+# (10x10: 3 of 4 seeds stick at l100 even with the channel; 4x4 l100
+# fidelity failure persists with it). (4) lambda=10 subcritical supplies
+# the fresh samples for the zero-shot lambda-analogue (reweighting
+# lambda=10 draws onto the lambda=50 target; the printed 0.98 -> 0.61
+# ESS drop is a 10x10 number and retires with the size). lambda=10 at
+# sigma_c is not built: no motivating sentence reads from it. All lambda
+# rungs trained at 4x4 with the channel in the s95 efc sweep, so the
+# validate-at-D4 evidence pre-exists.
+_HOUSE_CENTRE = CONFIGS["S2_d8_c0500_l50_letf_ne128_house"]
+CONFIGS["S2_d8_c0500_l50_letf_ne128_house_nochan"] = replace(
+    _HOUSE_CENTRE,
+    name="S2_d8_c0500_l50_letf_ne128_house_nochan",
+    model=replace(_HOUSE_CENTRE.model, exact_field_channel=False),
+)
+for _lam, _lam_tag in ((10.0, "l10"), (100.0, "l100")):
+    for _sigma_suffix in ("", "_sc"):
+        if _lam_tag == "l10" and _sigma_suffix == "_sc":
+            continue
+        _lam_parent = CONFIGS[
+            f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
+        _lam_name = (
+            f"S2_d8_c0500_{_lam_tag}_letf_ne128_house{_sigma_suffix}")
+        CONFIGS[_lam_name] = replace(
+            _lam_parent,
+            name=_lam_name,
+            ising=replace(
+                _lam_parent.ising, composition_penalty_strength=_lam),
+        )
+
 # Matched-base twins (s99): base_composition = c* at the OFF-CENTRE
 # windows, both couplings — at c* = 0.5 the house cells' Bernoulli(0.5)
 # base is already matched, so the centre rows anchor both columns

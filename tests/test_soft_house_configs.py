@@ -116,6 +116,36 @@ def test_nochan_control_gives_back_channel_flag_only():
     assert control["model"]["exact_field_channel"] is False
 
 
+def test_subcritical_nochan_control_mirrors_the_sc_one():
+    """s107 single-size completion: the {coupling} x {channel} 2x2 needs a
+    subcritical nochan cell that is one declared lever off the run house
+    centre cell, exactly as its sigma_c twin is off _house_sc."""
+    house = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house"])
+    control = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_nochan"])
+    assert _diff(house, control) == {"name", "model"}
+    assert _diff(house["model"], control["model"]) == {"exact_field_channel"}
+    assert control["model"]["exact_field_channel"] is False
+
+
+def test_lambda_twins_give_back_penalty_strength_only():
+    """The 8x8 lambda-trade twins (l10 subcritical; l100 both couplings)
+    are the house centre cell with composition_penalty_strength moved and
+    nothing else -- a second lever would confound the lambda trade the
+    chapter reads off them. l10_sc is deliberately absent (no motivating
+    sentence reads from it)."""
+    for lam, lam_tag, sigma_suffix in (
+            (10.0, "l10", ""), (100.0, "l100", ""), (100.0, "l100", "_sc")):
+        house = asdict(
+            CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{sigma_suffix}"])
+        twin = asdict(CONFIGS[
+            f"S2_d8_c0500_{lam_tag}_letf_ne128_house{sigma_suffix}"])
+        assert _diff(house, twin) == {"name", "ising"}, (lam_tag, sigma_suffix)
+        assert _diff(house["ising"], twin["ising"]) == {
+            "composition_penalty_strength"}
+        assert twin["ising"]["composition_penalty_strength"] == lam
+    assert "S2_d8_c0500_l10_letf_ne128_house_sc" not in CONFIGS
+
+
 def test_eager_gate_twin_gives_back_compile_only():
     gate = asdict(CONFIGS["S2_d4_c05_l50_letf_house_gate"])
     eager = asdict(CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"])
