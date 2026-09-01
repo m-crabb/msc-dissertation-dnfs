@@ -92,16 +92,18 @@ def observable_errors(x, weights, reference, target, sigma):
     }
 
 
-def load_vcsgc_reference(target, sigma, c_target):
+def load_vcsgc_reference(target, sigma, c_target, lam=LAM):
     """Pooled post-burn-in spin frames over the reference seeds, order-checked.
 
     Returns the pooled frames, the chains' cost record for the FLOP/es cell
     (total trials including burn-in; mchammer's own slowest per-observable
     tau_int in frame units), and that tau for the floor's block length.
+    The reference is the chain at kappa = lam: a lambda twin is scored
+    against ITS OWN penalised law, never against the lambda=50 chains.
     """
     frames, wall_seconds, chains = [], 0.0, 0
     total_trials, tau_ints = 0, []
-    pattern = f"D{L}_s{sigma:g}_l{LAM:.1f}_c{c_target:.3f}_seed*"
+    pattern = f"D{L}_s{sigma:g}_l{lam:.1f}_c{c_target:.3f}_seed*"
     for run_dir in sorted(VCSGC_RESULTS.glob(pattern)):
         spins = torch.from_numpy(np.load(run_dir / "spins.npy")).float()
         potential = torch.from_numpy(
@@ -211,25 +213,16 @@ def summarise(per_seed):
     }
 
 
-def main():
-    table = {}
+def house_cells():
+    """(cell key, sigma label, sigma, c*, lambda, {family: run glob}).
+
+    The lambda=50 windows carry the house families; the lambda twins
+    (motivation section, tag 20260901-softmotiv-d64) are single-family
+    cells at the centre with their own kappa=lambda reference.
+    """
     for sigma_label, sigma in COUPLINGS:
-        target = IsingTarget(D=L, sigma=sigma, bias=0.0)
         sigma_suffix = "_sc" if sigma_label == "sc" else ""
         for c_target, c_tag in SOFT_HOUSE_WINDOWS:
-            try:
-                reference, n_chains, wall_seconds, ref_flops_per_es, tau = \
-                    load_vcsgc_reference(target, sigma, c_target)
-            except FileNotFoundError as missing:
-                print(f"\n== {sigma_label} c={c_target}: SKIPPED ({missing})")
-                continue
-            floor, block = reference_floor(reference, target, sigma, tau)
-            cell = {"reference_floor": floor, "reference_chains": n_chains,
-                    "reference_frames": reference.shape[0],
-                    "reference_tau_int_frames": tau,
-                    "reference_floor_block": block,
-                    "reference_wall_seconds": wall_seconds,
-                    "reference_flops_per_es": ref_flops_per_es}
             families = {
                 "specialist":
                     f"S2_d8_{c_tag}_l50_letf_ne128_house{sigma_suffix}"
@@ -241,43 +234,78 @@ def main():
                 families["mb"] = (
                     f"S2_d8_{c_tag}_l50_letf_ne128_house_mb{sigma_suffix}"
                     f"_seed4*")
-            if sigma_label == "sc" and c_target == 0.50:
+            if c_target == 0.50:
+                # Channel-off control at both couplings (trains at
+                # sigma=0.1, dead at sigma_c: the shock arrives with the
+                # coupling); the anneal fate exists at sigma_c only.
                 families["nochan"] = (
-                    "S2_d8_c0500_l50_letf_ne128_house_sc_nochan_seed4*")
-                families["anneal"] = (
-                    "S2_d8_c0500_l50_letf_ne128_house_sc_anneal_seed4*")
-            print(f"\n== {sigma_label} c={c_target} ({n_chains} chains, "
-                  f"{reference.shape[0]} frames, tau {tau:.2f}, "
-                  f"block {block})")
-            print("  reference floor:",
-                  {k: f"{v:.2e}" for k, v in floor.items()},
-                  f" reference FLOP/es: {ref_flops_per_es:.2g}")
-            per_forward_cache = {}
-            for family, glob in families.items():
-                for eval_subdir in ("eval", "eval_ema"):
-                    per_seed = score_runs(
-                        glob, reference, target, sigma, eval_subdir,
-                        per_forward_cache)
-                    if not per_seed:
-                        print(f"  [{family}/{eval_subdir}] no runs match "
-                              f"{glob}")
-                        continue
-                    key = family + (
-                        "_ema" if eval_subdir == "eval_ema" else "")
-                    summary = summarise(per_seed)
-                    cell[key] = {"per_seed": per_seed, **summary}
-                    for name, s in per_seed.items():
-                        print(f"  [{key}] {name}: " + " ".join(
-                            f"{k}={v:.4g}" for k, v in s.items()))
-                    for rule in ("all", "floor"):
-                        if summary[rule]:
-                            print(
-                                f"  [{key}] {rule:5s} mean +- SD "
-                                f"({summary['n_pass']}/{summary['n_total']} "
-                                f"clear {ESS_FLOOR}):",
-                                {k: f"{m:.4g} +- {sd:.2g}"
-                                 for k, (m, sd) in summary[rule].items()})
-            table[f"{sigma_label}_c{c_target:.3f}"] = cell
+                    f"S2_d8_c0500_l50_letf_ne128_house{sigma_suffix}"
+                    f"_nochan_seed4*")
+                if sigma_label == "sc":
+                    families["anneal"] = (
+                        "S2_d8_c0500_l50_letf_ne128_house_sc_anneal_seed4*")
+            yield (f"{sigma_label}_c{c_target:.3f}", sigma_label, sigma,
+                   c_target, LAM, families)
+        for lam in (10, 100):
+            if lam == 10 and sigma_label == "sc":
+                continue  # lambda=10 was run at sigma=0.1 only
+            yield (f"{sigma_label}_c0.500_l{lam}", sigma_label, sigma,
+                   0.50, float(lam), {
+                       "specialist":
+                           f"S2_d8_c0500_l{lam}_letf_ne128_house"
+                           f"{sigma_suffix}_seed4*"})
+
+
+def main():
+    table = {}
+    for key, sigma_label, sigma, c_target, lam, families in house_cells():
+        target = IsingTarget(D=L, sigma=sigma, bias=0.0)
+        try:
+            reference, n_chains, wall_seconds, ref_flops_per_es, tau = \
+                load_vcsgc_reference(target, sigma, c_target, lam)
+        except FileNotFoundError as missing:
+            print(f"\n== {key}: SKIPPED ({missing})")
+            continue
+        floor, block = reference_floor(reference, target, sigma, tau)
+        cell = {"lambda": lam, "reference_floor": floor,
+                "reference_chains": n_chains,
+                "reference_frames": reference.shape[0],
+                "reference_tau_int_frames": tau,
+                "reference_floor_block": block,
+                "reference_wall_seconds": wall_seconds,
+                "reference_flops_per_es": ref_flops_per_es}
+        print(f"\n== {key} ({n_chains} chains, "
+              f"{reference.shape[0]} frames, tau {tau:.2f}, "
+              f"block {block})")
+        print("  reference floor:",
+              {k: f"{v:.2e}" for k, v in floor.items()},
+              f" reference FLOP/es: {ref_flops_per_es:.2g}")
+        per_forward_cache = {}
+        for family, glob in families.items():
+            for eval_subdir in ("eval", "eval_ema"):
+                per_seed = score_runs(
+                    glob, reference, target, sigma, eval_subdir,
+                    per_forward_cache)
+                if not per_seed:
+                    print(f"  [{family}/{eval_subdir}] no runs match "
+                          f"{glob}")
+                    continue
+                family_key = family + (
+                    "_ema" if eval_subdir == "eval_ema" else "")
+                summary = summarise(per_seed)
+                cell[family_key] = {"per_seed": per_seed, **summary}
+                for name, s in per_seed.items():
+                    print(f"  [{family_key}] {name}: " + " ".join(
+                        f"{k}={v:.4g}" for k, v in s.items()))
+                for rule in ("all", "floor"):
+                    if summary[rule]:
+                        print(
+                            f"  [{family_key}] {rule:5s} mean +- SD "
+                            f"({summary['n_pass']}/{summary['n_total']} "
+                            f"clear {ESS_FLOOR}):",
+                            {k: f"{m:.4g} +- {sd:.2g}"
+                             for k, (m, sd) in summary[rule].items()})
+        table[key] = cell
 
     out = SOFT_RESULTS / "house_table_soft_8x8.json"
     out.write_text(json.dumps(table, indent=2))
