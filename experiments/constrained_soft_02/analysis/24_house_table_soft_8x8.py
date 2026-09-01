@@ -247,8 +247,6 @@ def house_cells():
             yield (f"{sigma_label}_c{c_target:.3f}", sigma_label, sigma,
                    c_target, LAM, families)
         for lam in (10, 100):
-            if lam == 10 and sigma_label == "sc":
-                continue  # lambda=10 was run at sigma=0.1 only
             yield (f"{sigma_label}_c0.500_l{lam}", sigma_label, sigma,
                    0.50, float(lam), {
                        "specialist":
