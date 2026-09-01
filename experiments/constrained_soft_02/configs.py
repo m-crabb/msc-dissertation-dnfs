@@ -2132,6 +2132,22 @@ for _sigma_suffix in ("", "_sc"):
         model=replace(_camort_parent.model, condition_on_composition=True),
         composition=_CAMORT_D8_DRAWS,
     )
+    # Draw-set ablation (s104): the 17-value cell above trained healthy at
+    # sigma=0.1 but DEAD 4/4 at sigma_c (centre ESS 0.001-0.007, in-loop
+    # ESS single-digit for all 50k steps, loss plateau ~10-15 vs the sc
+    # centre specialist's ~1.5), while the D=4 gate that authorised the
+    # design ran at sigma=0.1 with the 3-value spine — so "mixed draws at
+    # criticality" and "the post-gate densification to 17 values" are
+    # confounded in the dead cell. ONE lever separates them: the draw set
+    # back to the gate's spine (per-value exposure 1/3 instead of 1/17),
+    # both couplings so sigma=0.1 keeps a should-stay-healthy control.
+    _spine3_name = (
+        f"S2_d8_camort_spine3_l50_letf_ne128_house{_sigma_suffix}")
+    CONFIGS[_spine3_name] = replace(
+        CONFIGS[_camort_name],
+        name=_spine3_name,
+        composition=_CAMORT_SPINE,
+    )
 
 # D=4 gate for the matched-base cells (validate-at-D=4 rule): the wave-3
 # camort house cell with the staircase swapped for the spine draw and the

@@ -86,6 +86,11 @@ AMORTISED_CELLS = (
     "S2_d4_camort_mb_50k_l50_letf_house",
     "S2_d8_camort_l50_letf_ne128_house",
     "S2_d8_camort_l50_letf_ne128_house_sc",
+    # Draw-set ablation twins (s104): the 17-value draw back to the gate's
+    # 3-value spine, one lever, both couplings (the sigma=0.1 twin is the
+    # should-stay-healthy control).
+    "S2_d8_camort_spine3_l50_letf_ne128_house",
+    "S2_d8_camort_spine3_l50_letf_ne128_house_sc",
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the

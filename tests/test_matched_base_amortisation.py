@@ -244,6 +244,33 @@ def test_d8_camort_cell_is_three_declared_levers_off_house_centre(
     assert cell["composition"]["curriculum"] is None
 
 
+@pytest.mark.parametrize("sigma_suffix", ["", "_sc"])
+def test_d8_camort_spine3_is_one_lever_off_the_17_value_cell(sigma_suffix):
+    """The draw-set ablation (s104): the 17-value cell trained healthy at
+    sigma=0.1 but DEAD 4/4 at sigma_c, and the D=4 gate that authorised the
+    design ran at sigma=0.1 with the 3-value spine — so "mixed draws at
+    criticality" and "the post-gate densification to 17 values" are
+    confounded in the dead cell. This twin separates them with ONE lever:
+    the draw set back to the gate's spine {0.25, 0.375, 0.5}, everything
+    else byte-identical to the 17-value cell, both couplings."""
+    from experiments.constrained_soft_02.configs import CONFIGS
+
+    parent = asdict(
+        CONFIGS[f"S2_d8_camort_l50_letf_ne128_house{sigma_suffix}"]
+    )
+    cell = asdict(
+        CONFIGS[f"S2_d8_camort_spine3_l50_letf_ne128_house{sigma_suffix}"]
+    )
+    top = {key for key in parent if parent[key] != cell[key]}
+    assert top == {"name", "composition"}, top
+    composition_diff = {
+        key for key in parent["composition"]
+        if parent["composition"][key] != cell["composition"][key]
+    }
+    assert composition_diff == {"values"}, composition_diff
+    assert cell["composition"]["values"] == (0.25, 0.375, 0.5)
+
+
 def test_d4_camort_mb_gate_cell_spine_and_matched_base():
     from experiments.constrained_soft_02.configs import CONFIGS
 
