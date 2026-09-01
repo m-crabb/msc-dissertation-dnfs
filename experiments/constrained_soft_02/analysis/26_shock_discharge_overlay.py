@@ -1,24 +1,23 @@
 """fig:penalty-variance: the penalty-variance shock and its three fates.
 
-The chapter's one 10x10 float (revamp plan, s95): estimator-integrand
-variance over training for the three arms at the size where fixed
-lambda=50 fails --
+Retargeted at the 8x8 sigma_c centre window (single-size decision, s107;
+the 10x10 ne64 spec this script was built on is in git history):
+estimator-integrand variance over training for three house arms, one
+declared lever apart --
 
-  parent  -- fixed lambda, no channel: three of four seeds never
-             discharge the shock (final ESS 0.02/0.06/0.78/0.05).
-  anneal  -- the lambda 10 -> 25 -> 50 schedule: variance starts low
-             because the target starts easy, then the shock is REPAID at
-             every boundary (10k, 20k; the batch-ESS collapse 3000 ->
-             16-540 at the first boundary is the caption's number).
-  channel -- exact-field channel, fixed lambda: the shock discharges
-             within ~500 steps and stays down (finals 0.95/0.93/0.94/0.96).
+  no channel -- the house recipe minus the exact-field channel: no seed
+                discharges the shock (final ESS 0.005 +/- 0.006).
+  anneal     -- no channel + the lambda 10 -> 25 -> 50 schedule at
+                0/10k/20k: the shock is deferred and repaid at each
+                boundary (raw finals 0.40 +/- 0.21, 3/4 over 0.30).
+  channel    -- the house recipe: the shock discharges early and stays
+                down (finals 0.71 +/- 0.03).
 
-All three arms are the matched ne64 families (parent 20260609, anneal
-20260611, efc twins 20260829 -- the efc twin differs from the parent by
-the channel alone, test-pinned). The y-axis is var_estimator_integrand
-from training_log.csv: the POST-control-variate variance, i.e. the noise
-the optimiser actually sees, which is why the parent's plateau is the
-failure mechanism and not something more variance reduction could fix.
+The y-axis is var_estimator_integrand from training_log.csv: the
+POST-control-variate variance, i.e. the noise the optimiser actually
+sees, which is why the no-channel plateau is the failure mechanism and
+not something more variance reduction could fix (the naive/post ratio at
+the end of training is 1.7-2.7x for nochan vs 27-28x for the channel).
 Log y; rolling-median smoothing (window 51 logged steps) so per-seed
 lines stay readable without hiding the boundary spikes.
 """
@@ -37,10 +36,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
 
 ARMS = (
-    ("fixed $\\lambda$ (parent)", "S2_d10_c05_l50_letf_ne64_seed4?_*", MUTED),
-    ("$\\lambda$-annealed", "S2_d10_c05_l50_letf_ne64_anneal_seed4?_*",
+    ("no channel", "S2_d8_c0500_l50_letf_ne128_house_sc_nochan_seed4?_*",
+     MUTED),
+    ("$\\lambda$-annealed, no channel",
+     "S2_d8_c0500_l50_letf_ne128_house_sc_anneal_seed4?_*",
      NEURAL_COMPARATOR_HUE),
-    ("exact-field channel", "S2_d10_c05_l50_letf_ne64_efc_seed4?_*",
+    ("exact-field channel", "S2_d8_c0500_l50_letf_ne128_house_sc_seed4?_*",
      SAMPLER_HUE),
 )
 ANNEAL_BOUNDARIES = (10_000, 20_000)
@@ -76,7 +77,7 @@ def main() -> None:
     style_axes(ax)
     fig.tight_layout()
 
-    out = RESULTS / "soft_shock_discharge.png"
+    out = RESULTS / "soft_shock_discharge_8x8_sc.png"
     fig.savefig(out, dpi=300, bbox_inches="tight")
     print(f"wrote {out}")
 
