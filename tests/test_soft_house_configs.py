@@ -215,3 +215,20 @@ def test_amort_null_house_isolates_conditioning_machinery():
         "condition_on_composition"}
     assert null["model"]["condition_on_composition"] is True
     assert null["composition"]["half_width"] == 0.0
+
+
+def test_camort_sigma_ladder_twin_adds_the_ladder_only():
+    """The dead sigma_c camort cell starts cold at sigma_c; the hard
+    chapter's amortised sigma_c cell trains on the d64 sigma ladder. The
+    twin must give back the ladder ALONE, end on the exact sigma_c, and
+    align every stage with the outer cycle (the trainer rejects it
+    otherwise)."""
+    dead = asdict(CONFIGS["S2_d8_camort_l50_letf_ne128_house_sc"])
+    twin = CONFIGS["S2_d8_camort_l50_letf_ne128_house_sc_curr"]
+    assert _diff(dead, asdict(twin)) == {"name", "curriculum"}
+    stages = twin.curriculum.stages
+    assert stages[0].start_step == 0 and stages[0].sigma == 0.1
+    assert stages[-1].sigma == SIGMA_C
+    assert all(s.start_step % twin.train.inner_steps_per_outer == 0
+               for s in stages)
+    assert stages[-1].start_step < twin.train.n_steps

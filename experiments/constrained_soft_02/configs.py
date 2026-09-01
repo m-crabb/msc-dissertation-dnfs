@@ -17,6 +17,8 @@ from experiments.dnfs_baseline_01.configs import (
     CompositionCfg,
     CompositionCurriculumStageCfg,
     CTMCCfg,
+    CurriculumCfg,
+    CurriculumStageCfg,
     EvalCfg,
     IsingCfg,
     LambdaCurriculumCfg,
@@ -2172,6 +2174,32 @@ for _sigma_suffix in ("", "_sc"):
         model=replace(_camort_parent.model, condition_on_composition=True),
         composition=_CAMORT_D8_DRAWS,
     )
+    if _sigma_suffix == "_sc":
+        # Sigma-ladder twin (s108): the dead sigma_c camort cell starts at
+        # sigma_c COLD, while the hard chapter's amortised sigma_c cell (and
+        # the baseline's critical recipe) train on a 7-stage sigma ladder,
+        # 0.1 -> sigma_c over 30k steps with the LR dropping at the
+        # near-critical variance spike. The soft-vs-hard amortisation
+        # contrast was therefore not one-lever, and the ladder is exactly
+        # what the measured mechanism calls for: every amortised arm enters
+        # the critical landscape cold at 10-40x the specialist's early loss
+        # and gradient norm and settles in a bad optimum (loss plateau
+        # ~10-15 vs ~1.5). ONE lever: the ladder, stage tuple copied from
+        # the hard d64 recipe with the final stage at the exact sigma_c.
+        _ladder_name = f"{_camort_name}_curr"
+        CONFIGS[_ladder_name] = replace(
+            CONFIGS[_camort_name],
+            name=_ladder_name,
+            curriculum=CurriculumCfg(stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+                CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
+            )),
+        )
     # Draw-set ablation (s104): the 17-value cell above trained healthy at
     # sigma=0.1 but DEAD 4/4 at sigma_c (centre ESS 0.001-0.007, in-loop
     # ESS single-digit for all 50k steps, loss plateau ~10-15 vs the sc
