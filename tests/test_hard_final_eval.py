@@ -361,16 +361,28 @@ def test_eval_only_ema_reads_the_ema_checkpoint_into_a_suffixed_dir(
     )
 
 
-def test_eval_only_ema_without_a_grid_override_is_refused(tmp_path, monkeypatch):
-    """`use_ema` alone would write `eval_ema/` — the directory the TRAINING
-    run owns and the frozen EMA numbers are read from. Re-draws must never
-    overwrite a frozen number, so this combination is refused rather than
-    silently clobbering it."""
+def test_eval_only_ema_without_a_grid_override_guards_only_frozen_numbers(
+    tmp_path, monkeypatch
+):
+    """`use_ema` alone writes `eval_ema/` — the directory the TRAINING run
+    owns. When a frozen EMA eval is already there, re-drawing it must be
+    refused rather than silently clobbering a number the tables read. But
+    when the trainer died BETWEEN the raw and EMA evals (final_ema.pt on
+    disk, eval_ema/ never written — the d256 camort case, 2026-09-01),
+    that same call is the recovery path and must land the canonical
+    eval_ema/, exactly as eval_only recovers a died eval/."""
     cfg = _tiny_cfg()
     monkeypatch.setattr(
         "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
     )
     run_dir = _run_dir_with_both_checkpoints(tmp_path, cfg)
 
+    # Recovery: no frozen EMA eval exists, so the draw is allowed and lands
+    # in the canonical eval_ema/.
+    eval_only(run_dir, use_ema=True)
+    assert (run_dir / "eval_ema" / "metrics.json").exists()
+
+    # Frozen: now that eval_ema/ holds a recorded number, the same call is
+    # refused.
     with pytest.raises(ValueError, match="frozen"):
         eval_only(run_dir, use_ema=True)

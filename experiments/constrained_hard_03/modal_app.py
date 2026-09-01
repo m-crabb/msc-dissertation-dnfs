@@ -322,7 +322,7 @@ def _resolve_multi_event_trit(multi_event: int):
 )
 def eval_remote(
     run_dir_name: str, multi_event: int = -1, smc_tau: float = 0.0,
-    n_euler_override: int = 0, stage_best: int = -1,
+    n_euler_override: int = 0, stage_best: int = -1, use_ema: bool = False,
 ):
     """Re-run the end-of-run eval for a run dir already on the volume
     (recovery for trainings whose final eval died, e.g. the 2026-07-06
@@ -345,7 +345,10 @@ def eval_remote(
     same can't-collide sentinel. `stage_best >= 0` draws from
     best_stage<k>.pt instead of final.pt (artefacts to eval_stage<k>/,
     the pre-registered checkpoint-selection read); -1 is its sentinel,
-    since stage 0 is a real stage and cannot serve as one."""
+    since stage 0 is a real stage and cannot serve as one. `use_ema` draws
+    from final_ema.pt; combined with no grid override it is the recovery
+    for a run whose EMA eval died before landing (eval_only refuses that
+    combination whenever a frozen eval_ema/ already exists)."""
     import sys
     from pathlib import Path
 
@@ -358,6 +361,10 @@ def eval_remote(
         smc_tau=smc_tau or None,
         n_euler_override=n_euler_override or None,
         stage_best=None if stage_best < 0 else stage_best,
+        # Plain `use_ema` (no grid override) is the died-before-landing
+        # recovery for a missing eval_ema/ — eval_only refuses it whenever
+        # the frozen EMA eval actually exists, so this cannot overwrite one.
+        use_ema=use_ema,
     )
     volume.commit()
 

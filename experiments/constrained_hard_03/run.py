@@ -644,7 +644,18 @@ def eval_only(
     checkpoint_name, eval_dir_suffix = _eval_checkpoint_and_suffix(
         use_ema, n_euler_override, stage_best
     )
-    if use_ema and n_euler_override is None:
+    if (
+        use_ema
+        and n_euler_override is None
+        and (Path(run_dir) / "eval_ema" / "metrics.json").exists()
+    ):
+        # Refused only when a frozen EMA eval is actually there: eval_ema/
+        # is normally the training run's own output, and an eval-only
+        # re-draw must never overwrite a frozen number. When the trainer
+        # died between the raw and EMA evals (the d256 camort case,
+        # 2026-09-01: final_ema.pt on disk, eval_ema/ never written), the
+        # canonical dir is empty and this IS the recovery path — the same
+        # died-before-landing recovery this function exists for on eval/.
         raise ValueError(
             "use_ema without n_euler_override would overwrite eval_ema/, the "
             "frozen EMA eval written by the training run; pass a grid "
