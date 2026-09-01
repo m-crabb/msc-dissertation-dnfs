@@ -231,6 +231,58 @@ def redraw_remote(run_dir_name: str, n_euler: int):
 
 
 @app.function(
+    # Same SKU pin as train_remote: sweep rows are compared seed-to-seed
+    # across the four camort replicates, so the device class stays fixed
+    # within the comparison even though the training itself ran on DoC A30s
+    # (that venue boundary is unavoidable — the checkpoints are imports).
+    gpu="A100-80GB",
+    volumes={"/results": volume},
+    timeout=60 * 60,
+)
+def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt"):
+    """Per-composition request-grid sweep of one amortised run dir on the
+    volume (run.composition_sweep — the measurement the amortisation claim
+    rests on; one CRN-paired eval row per requested c).
+
+    `checkpoint` keys the artefact dir exactly as composition_sweep does:
+    final.pt -> eval/composition_sweep.json, final_ema.pt ->
+    eval_ema/composition_sweep.json. Skip-if-exists makes a batch re-run
+    idempotent (the redraw_remote pattern). Needs config.json and
+    checkpoints/<checkpoint> in the run dir; nothing else is read.
+    """
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from pathlib import Path
+
+    from experiments.dnfs_baseline_01.run import composition_sweep
+
+    run_dir = Path("/results") / run_dir_name
+    sweep_dir = "eval_ema" if checkpoint == "final_ema.pt" else "eval"
+    if (run_dir / sweep_dir / "composition_sweep.json").exists():
+        print(f"skip {run_dir_name} {checkpoint} (sweep exists)")
+        return
+    composition_sweep(run_dir, checkpoint=checkpoint)
+    volume.commit()
+
+
+@app.local_entrypoint()
+def sweep_batch(run_dirs: str, checkpoints: str = "final.pt,final_ema.pt"):
+    """Fan out sweep_remote over run_dirs x checkpoints, one container per
+    sweep (both args comma-separated; Modal's CLI takes strings)."""
+    names = [s.strip() for s in run_dirs.split(",") if s.strip()]
+    ckpts = [c.strip() for c in checkpoints.split(",") if c.strip()]
+    calls = [
+        sweep_remote.spawn(run_dir_name=name, checkpoint=ckpt)
+        for name in names
+        for ckpt in ckpts
+    ]
+    print(f"spawned {len(calls)} sweeps: {len(names)} run dirs x {ckpts}")
+    for call in calls:
+        call.get()
+
+
+@app.function(
     # Smallest card Modal serves: D=4 GATE RUNS ONLY. The A100-80GB pin
     # above exists because cross-device FP non-determinism sits inside
     # seed-replicate comparisons; a gate is a single-seed pass/fail
