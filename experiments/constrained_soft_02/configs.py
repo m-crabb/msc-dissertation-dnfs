@@ -2054,7 +2054,8 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"] = replace(
 # the fresh samples for the zero-shot lambda-analogue (reweighting
 # lambda=10 draws onto the lambda=50 target; the printed 0.98 -> 0.61
 # ESS drop is a 10x10 number and retires with the size). lambda=10 at
-# sigma_c is not built: no motivating sentence reads from it. All lambda
+# sigma_c completes the lambda block of the 8x8 house table (s109; it was
+# left unbuilt while no sentence read from it). All lambda
 # rungs trained at 4x4 with the channel in the s95 efc sweep, so the
 # validate-at-D4 evidence pre-exists.
 _HOUSE_CENTRE = CONFIGS["S2_d8_c0500_l50_letf_ne128_house"]
@@ -2065,8 +2066,6 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_nochan"] = replace(
 )
 for _lam, _lam_tag in ((10.0, "l10"), (100.0, "l100")):
     for _sigma_suffix in ("", "_sc"):
-        if _lam_tag == "l10" and _sigma_suffix == "_sc":
-            continue
         _lam_parent = CONFIGS[
             f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
         _lam_name = (

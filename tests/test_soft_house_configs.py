@@ -128,13 +128,13 @@ def test_subcritical_nochan_control_mirrors_the_sc_one():
 
 
 def test_lambda_twins_give_back_penalty_strength_only():
-    """The 8x8 lambda-trade twins (l10 subcritical; l100 both couplings)
-    are the house centre cell with composition_penalty_strength moved and
-    nothing else -- a second lever would confound the lambda trade the
-    chapter reads off them. l10_sc is deliberately absent (no motivating
-    sentence reads from it)."""
+    """The 8x8 lambda-trade twins (both lambdas, both couplings) are the
+    house centre cell with composition_penalty_strength moved and nothing
+    else -- a second lever would confound the lambda trade the chapter
+    reads off them."""
     for lam, lam_tag, sigma_suffix in (
-            (10.0, "l10", ""), (100.0, "l100", ""), (100.0, "l100", "_sc")):
+            (10.0, "l10", ""), (10.0, "l10", "_sc"),
+            (100.0, "l100", ""), (100.0, "l100", "_sc")):
         house = asdict(
             CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{sigma_suffix}"])
         twin = asdict(CONFIGS[
@@ -143,7 +143,6 @@ def test_lambda_twins_give_back_penalty_strength_only():
         assert _diff(house["ising"], twin["ising"]) == {
             "composition_penalty_strength"}
         assert twin["ising"]["composition_penalty_strength"] == lam
-    assert "S2_d8_c0500_l10_letf_ne128_house_sc" not in CONFIGS
 
 
 def test_eager_gate_twin_gives_back_compile_only():
