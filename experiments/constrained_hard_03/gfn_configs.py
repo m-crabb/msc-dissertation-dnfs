@@ -387,6 +387,15 @@ def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
         hidden_dim=68,
         n_steps=100_000 if sigma_c else 50_000,
         sigma_stages=_D256_GFN_SIGMA_STAGES if sigma_c else (),
+        # In-training eval cadence moved to the HOUSE d256 regime
+        # (eval_every=500, 256 draws, bf16 autocast — the swap-head cells'
+        # exact schedule) rather than riding the d64 wave's 200/512:
+        # these rows sit beside the house cells in tab:eval-hard-16x16,
+        # so within-rung parity outranks cross-rung GFN consistency. The
+        # headline 5000-draw final eval is untouched. bf16 eval autocast
+        # is already inherited from the d64 parity cell.
+        eval_every=500,
+        n_eval_samples_training=256,
     )
     steps_label = "100k" if sigma_c else "50k"
     return replace(

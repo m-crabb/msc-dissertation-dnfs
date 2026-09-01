@@ -493,14 +493,18 @@ def test_d256_cells_are_d64_twins_plus_declared_levers():
     """The 16x16 cells are the judged d64 recipe with only the declared
     rung levers moved: lattice size, the parity re-size (hidden 68), and —
     on the sigma_c cells only — the house d256 budget (100k) with its
-    dilated ladder. Anything else moving would break recipe parity with
-    the judged 8x8 wave."""
+    dilated ladder. The in-training eval cadence is also a declared lever
+    at this rung (house d256 regime 500/256 rather than the d64 wave's
+    200/512, for within-rung parity with the swap-head rows the GFN cells
+    join in tab:eval-hard-16x16). Anything else moving would break recipe
+    parity with the judged 8x8 wave."""
     from dataclasses import asdict
 
+    house_eval_cadence = {"eval_every", "n_eval_samples_training"}
     for objective in GFN_OBJECTIVES:
         for sigma_label, expected_extra in (
-            ("s010", set()),
-            ("s220", {"n_steps", "sigma_stages"}),
+            ("s010", house_eval_cadence),
+            ("s220", {"n_steps", "sigma_stages"} | house_eval_cadence),
         ):
             steps = "50k" if sigma_label == "s010" else "100k"
             d64 = GFN_CONFIGS[f"GFN_d64_c50_{sigma_label}_{objective}_50k_par"]
@@ -510,6 +514,9 @@ def test_d256_cells_are_d64_twins_plus_declared_levers():
             assert d256.D == 16
             assert d256.hidden_dim == 68
             assert d256.compile_policy is True
+            assert d256.eval_every == 500
+            assert d256.n_eval_samples_training == 256
+            assert d256.eval_autocast_bf16 is True
             diff = {
                 field
                 for field in asdict(d64)
