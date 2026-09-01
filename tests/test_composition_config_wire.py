@@ -113,6 +113,9 @@ AMORTISED_CELLS = (
     # the exact-field gain. Its parent is the archived dead 4-seed control.
     COMPOSITION_GAIN_CELL,
     PAIRED_SPINE1_CELL,
+    # Sigma-ladder twin of the dead sigma_c camort cell (s108): the ladder
+    # is its one lever; test_soft_house_configs.py pins it.
+    "S2_d8_camort_l50_letf_ne128_house_sc_curr",
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the

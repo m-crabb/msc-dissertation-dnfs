@@ -232,3 +232,27 @@ def test_camort_sigma_ladder_twin_adds_the_ladder_only():
     assert all(s.start_step % twin.train.inner_steps_per_outer == 0
                for s in stages)
     assert stages[-1].start_step < twin.train.n_steps
+
+
+def test_specialist_sigma_ladder_twin_matches_the_camort_ladder():
+    """The ladder camort cell trains where the cold one died, so its yield
+    ratio needs a specialist on the SAME ladder: one lever off the house
+    sigma_c specialist, and the identical stage tuple, or the ratio carries
+    the ladder as a second difference."""
+    specialist = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"])
+    twin = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_curr"]
+    assert _diff(specialist, asdict(twin)) == {"name", "curriculum"}
+    camort_ladder = CONFIGS["S2_d8_camort_l50_letf_ne128_house_sc_curr"]
+    assert twin.curriculum == camort_ladder.curriculum
+
+
+def test_d4_sc_cells_carry_exact_sigma_c_by_one_lever():
+    """The critical half of the 4x4 enumerable table: each cell is its
+    subcritical house twin with sigma alone moved to the exact SIGMA_C."""
+    for _, c_tag in SOFT_HOUSE_WINDOWS:
+        parent = CONFIGS[f"S2_d4_{c_tag}_50k_l50_letf_house"]
+        cell = CONFIGS[f"S2_d4_{c_tag}_50k_l50_letf_house_sc"]
+        assert _diff(asdict(parent), asdict(cell)) == {"name", "ising"}
+        assert _diff(asdict(parent.ising), asdict(cell.ising)) == {"sigma"}
+        assert cell.ising.sigma == SIGMA_C
+        assert cell.curriculum is None

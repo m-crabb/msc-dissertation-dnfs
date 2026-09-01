@@ -2163,6 +2163,18 @@ _CAMORT_SPINE = CompositionCfg(
 _CAMORT_D8_DRAWS = CompositionCfg(
     centre=0.5, half_width=0.0,
     values=tuple(sites / 64 for sites in range(16, 33)))
+# The hard d64 sigma ladder, stage tuple copied verbatim (final stage at the
+# exact sigma_c). Shared by the camort ladder twin below and the specialist
+# ladder twin after the loop, so the two differ by amortisation alone.
+_SOFT_SIGMA_LADDER_SC = CurriculumCfg(stages=(
+    CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+    CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+    CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+    CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+    CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+    CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+    CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
+))
 for _sigma_suffix in ("", "_sc"):
     _camort_parent = CONFIGS[
         f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
@@ -2190,15 +2202,7 @@ for _sigma_suffix in ("", "_sc"):
         CONFIGS[_ladder_name] = replace(
             CONFIGS[_camort_name],
             name=_ladder_name,
-            curriculum=CurriculumCfg(stages=(
-                CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
-                CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
-                CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
-                CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
-                CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
-                CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
-                CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
-            )),
+            curriculum=_SOFT_SIGMA_LADDER_SC,
         )
     # Draw-set ablation (s104): the 17-value cell above trained healthy at
     # sigma=0.1 but DEAD 4/4 at sigma_c (centre ESS 0.001-0.007, in-loop
@@ -2216,6 +2220,19 @@ for _sigma_suffix in ("", "_sc"):
         name=_spine3_name,
         composition=_CAMORT_SPINE,
     )
+
+# Specialist ladder twin (s109): the camort ladder twin TRAINS (centre ESS
+# 0.155-0.352 raw / 0.220-0.452 EMA, 4/4, vs the cold camort cell's
+# 0.001-0.010), so its yield ratio needs a specialist on the SAME ladder --
+# against the cold sigma_c specialist (0.67-0.74 raw) the ratio carries two
+# levers. One lever off the house sigma_c specialist: the ladder.
+_sc_specialist = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"]
+_sc_specialist_ladder_name = "S2_d8_c0500_l50_letf_ne128_house_sc_curr"
+CONFIGS[_sc_specialist_ladder_name] = replace(
+    _sc_specialist,
+    name=_sc_specialist_ladder_name,
+    curriculum=_SOFT_SIGMA_LADDER_SC,
+)
 
 # Collapse-mechanism twins (s106), sc only: spine3 sc died identically to the
 # 17-value cell (grid-uniform ESS 0.001-0.010, plateau ~10-15), and the desk
@@ -2326,6 +2343,19 @@ for _c_target, _c_tag in ((0.25, "c0250"), (0.375, "c0375")):
         _D4_SPECIALIST_HOUSE_BASE, name=_twin_name,
         ising=replace(
             _D4_SPECIALIST_HOUSE_BASE.ising, target_composition=_c_target),
+    )
+
+# Critical half of the 4x4 enumerable check (s109): sigma_c by ONE lever
+# off each subcritical house twin, mirroring the d8 house loop. Cold start
+# at sigma_c like every soft sigma_c specialist (no ladder) -- the d8
+# specialists train that way, and the 4x4 table compares against exact
+# enumeration, not against the ladder cells.
+for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
+    _d4_house_parent = CONFIGS[f"S2_d4_{_c_tag}_50k_l50_letf_house"]
+    _d4_sc_name = f"S2_d4_{_c_tag}_50k_l50_letf_house_sc"
+    CONFIGS[_d4_sc_name] = replace(
+        _d4_house_parent, name=_d4_sc_name,
+        ising=replace(_d4_house_parent.ising, sigma=SIGMA_C),
     )
 
 # Null control on the house recipe: conditioning path ON, window width
