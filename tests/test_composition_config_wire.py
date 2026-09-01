@@ -91,6 +91,10 @@ AMORTISED_CELLS = (
     # should-stay-healthy control).
     "S2_d8_camort_spine3_l50_letf_ne128_house",
     "S2_d8_camort_spine3_l50_letf_ne128_house_sc",
+    # Collapse-mechanism twins (s106), sc only: single-value spine
+    # (machinery-vs-mixture) and replay_buffer_cycles=1 (staleness lever).
+    "S2_d8_camort_spine1_l50_letf_ne128_house_sc",
+    "S2_d8_camort_spine3_rb1_l50_letf_ne128_house_sc",
 )
 # The arms clone this cell, not D10_BASE_AMORTISED_CELL: it is the most
 # advanced surviving-recipe D=10 run (offset lambda ramp, clip 50) and the

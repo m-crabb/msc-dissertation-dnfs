@@ -309,6 +309,45 @@ def train_gate_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     volume.commit()
 
 
+@app.function(
+    # Small-card DIAGNOSTICS ONLY (same scope logic as the T4 gate above):
+    # pass/fail against a coarse bar — here "trains vs the 0.001-0.01 dead
+    # floor" — so SKU homogeneity is not part of the measurement. L4 not T4
+    # because a d64 50k cell needs headroom under the timeout. Never route
+    # a cell that will be compared seed-to-seed against A100 runs through
+    # here; `train` records the card name so provenance stays checkable.
+    gpu="L4",
+    volumes={"/results": volume},
+    secrets=[wandb_secret],
+    timeout=12 * 60 * 60,
+)
+def train_diag_remote(cfg_name: str, seed: int = 42, tag: str = ""):
+    """train_remote's body on a small card — see the gpu comment for scope."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.dnfs_baseline_01.run import train
+    from experiments.constrained_soft_02.configs import CONFIGS
+
+    train(
+        CONFIGS[cfg_name], seed=seed, output_dir="/results", tag=tag or None,
+        on_checkpoint=volume.commit,
+    )
+    volume.commit()
+
+
+@app.local_entrypoint()
+def batch_seeds_diag(cfg_name: str, seeds: str = "42", tag: str = ""):
+    """Spawn train_diag_remote (L4, diagnostics scope) across seeds."""
+    _validate_cfg_name(cfg_name)
+    seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    tag = tag or time.strftime("%Y%m%d-%H%M%S")
+    for seed in seed_list:
+        train_diag_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
+    print(f"spawned {len(seed_list)} diag jobs for {cfg_name}: "
+          f"seeds={seed_list} tag={tag}")
+
+
 @app.local_entrypoint()
 def redraw_batch(run_dirs: str, grids: str):
     """Fan out redraw_remote over run_dirs x grids, one container per eval.

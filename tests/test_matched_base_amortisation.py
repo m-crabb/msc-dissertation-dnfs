@@ -271,6 +271,50 @@ def test_d8_camort_spine3_is_one_lever_off_the_17_value_cell(sigma_suffix):
     assert cell["composition"]["values"] == (0.25, 0.375, 0.5)
 
 
+def test_d8_camort_spine1_is_one_lever_off_spine3_sc():
+    """Collapse-mechanism twin (s106): spine3 sc died identically to the
+    17-value cell, so mixture cardinality is exonerated and the remaining
+    split is machinery-vs-mixture. spine1 keeps the FULL amortised machinery
+    (conditioning channel, matched base, per-cycle draw-and-bind) at a
+    single value {0.5}: if it also dies, the machinery breaks at sigma_c
+    without any mixing; if it matches the mb c=0.5 specialist (~0.96), the
+    mixture is the poison."""
+    from experiments.constrained_soft_02.configs import CONFIGS
+
+    parent = asdict(CONFIGS["S2_d8_camort_spine3_l50_letf_ne128_house_sc"])
+    cell = asdict(CONFIGS["S2_d8_camort_spine1_l50_letf_ne128_house_sc"])
+    top = {key for key in parent if parent[key] != cell[key]}
+    assert top == {"name", "composition"}, top
+    composition_diff = {
+        key for key in parent["composition"]
+        if parent["composition"][key] != cell["composition"][key]
+    }
+    assert composition_diff == {"values"}, composition_diff
+    assert cell["composition"]["values"] == (0.5,)
+
+
+def test_d8_camort_spine3_rb1_is_one_lever_off_spine3_sc():
+    """Collapse-mechanism twin (s106): amortised replay scores each state
+    against its own cycle's frozen c_t (up to replay_buffer_cycles=4 cycles
+    stale) — the one structural asymmetry vs the specialist path, which
+    always uses the latest grid. rb1 sets replay_buffer_cycles=1 so every
+    inner batch is scored against cycle-fresh c_t and trajectories: if it
+    trains, staleness (or off-policy replay) is the killer; if it dies,
+    the mixture itself is."""
+    from experiments.constrained_soft_02.configs import CONFIGS
+
+    parent = asdict(CONFIGS["S2_d8_camort_spine3_l50_letf_ne128_house_sc"])
+    cell = asdict(CONFIGS["S2_d8_camort_spine3_rb1_l50_letf_ne128_house_sc"])
+    top = {key for key in parent if parent[key] != cell[key]}
+    assert top == {"name", "train"}, top
+    train_diff = {
+        key for key in parent["train"]
+        if parent["train"][key] != cell["train"][key]
+    }
+    assert train_diff == {"replay_buffer_cycles"}, train_diff
+    assert cell["train"]["replay_buffer_cycles"] == 1
+
+
 def test_d4_camort_mb_gate_cell_spine_and_matched_base():
     from experiments.constrained_soft_02.configs import CONFIGS
 

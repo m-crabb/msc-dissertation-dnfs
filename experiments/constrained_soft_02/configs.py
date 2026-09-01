@@ -2149,6 +2149,28 @@ for _sigma_suffix in ("", "_sc"):
         composition=_CAMORT_SPINE,
     )
 
+# Collapse-mechanism twins (s106), sc only: spine3 sc died identically to the
+# 17-value cell (grid-uniform ESS 0.001-0.010, plateau ~10-15), and the desk
+# probe showed the disengaged channel gain is a casualty of the dead trunk,
+# not the cause (specialist-gain transplant RAISES loss 9->14/13->20/15->22
+# and leaves 512-sample ESS at 0.003). spine1 keeps the full amortised
+# machinery at a single value {0.5} — machinery-vs-mixture; rb1 kills replay
+# staleness (each state scored against a c_t up to 4 cycles old) with one
+# lever — staleness-vs-mixture.
+_spine1_name = "S2_d8_camort_spine1_l50_letf_ne128_house_sc"
+CONFIGS[_spine1_name] = replace(
+    CONFIGS["S2_d8_camort_spine3_l50_letf_ne128_house_sc"],
+    name=_spine1_name,
+    composition=replace(_CAMORT_SPINE, values=(0.5,)),
+)
+_spine3_rb1_name = "S2_d8_camort_spine3_rb1_l50_letf_ne128_house_sc"
+_spine3_sc = CONFIGS["S2_d8_camort_spine3_l50_letf_ne128_house_sc"]
+CONFIGS[_spine3_rb1_name] = replace(
+    _spine3_sc,
+    name=_spine3_rb1_name,
+    train=replace(_spine3_sc.train, replay_buffer_cycles=1),
+)
+
 # D=4 gate for the matched-base cells (validate-at-D=4 rule): the wave-3
 # camort house cell with the staircase swapped for the spine draw and the
 # base matched — every spine c is an integer site count at d=16 (4/6/8).
