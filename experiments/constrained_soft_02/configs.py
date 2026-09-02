@@ -2360,6 +2360,23 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
             ising=replace(_budget_parent.ising, sigma=_sigma),
         )
 
+# The conditioned row of tab:eval-soft-4x4 (s110): built from the 10k
+# centre specialist exactly as the 8x8 conditioned cell is built from its
+# specialist (matched base, conditioning flag, discrete spine draw), so
+# the row prices amortisation alone at the table's own budget. The spine
+# rather than the d8 quantised continuum because only k/16 compositions
+# are realisable at d=16, and the spine values are 4/6/8 sites.
+for _sigma_suffix in ("", "_sc"):
+    _d4_camort_parent = CONFIGS[f"S2_d4_c0500_10k_l50_letf_house{_sigma_suffix}"]
+    _d4_camort_name = f"S2_d4_camort_10k_l50_letf_house{_sigma_suffix}"
+    CONFIGS[_d4_camort_name] = replace(
+        _d4_camort_parent,
+        name=_d4_camort_name,
+        ising=replace(_d4_camort_parent.ising, base_matches_composition=True),
+        model=replace(_d4_camort_parent.model, condition_on_composition=True),
+        composition=_CAMORT_SPINE,
+    )
+
 # Null control on the house recipe: conditioning path ON, window width
 # ZERO, so vs the c0500 specialist above the only differences are the
 # machinery itself (model flag + the zero-width composition config).

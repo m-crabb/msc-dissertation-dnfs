@@ -262,3 +262,24 @@ def test_d4_10k_table_family_is_the_50k_cell_at_the_4x4_budget():
         assert _diff(cell["ising"], asdict(sc.ising)) == {"sigma"}
         assert sc.ising.sigma == SIGMA_C
         assert sc.curriculum is None
+
+
+def test_d4_10k_conditioned_twin_mirrors_the_8x8_construction():
+    """The conditioned row of tab:eval-soft-4x4 sits at the table's own 10k
+    budget and is built from the 10k centre specialist exactly as the 8x8
+    conditioned cell is built from its specialist: matched base on, the
+    conditioning flag on, the discrete spine draw -- and nothing else, so
+    the row prices amortisation alone. Every spine value is an integer
+    site count at d=16 (4/6/8 sites)."""
+    for sigma_suffix in ("", "_sc"):
+        spec = asdict(CONFIGS[f"S2_d4_c0500_10k_l50_letf_house{sigma_suffix}"])
+        cell = asdict(CONFIGS[f"S2_d4_camort_10k_l50_letf_house{sigma_suffix}"])
+        assert _diff(spec, cell) == {"name", "ising", "model", "composition"}
+        assert _diff(spec["ising"], cell["ising"]) == {"base_matches_composition"}
+        assert cell["ising"]["base_matches_composition"] is True
+        assert _diff(spec["model"], cell["model"]) == {"condition_on_composition"}
+        assert cell["model"]["condition_on_composition"] is True
+        assert cell["train"]["n_steps"] == 10_000
+        assert cell["composition"]["half_width"] == 0.0
+        assert tuple(cell["composition"]["values"]) == (0.25, 0.375, 0.5)
+        assert all(v * 16 == int(v * 16) for v in cell["composition"]["values"])
