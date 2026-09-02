@@ -192,6 +192,14 @@ def main() -> None:
     p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
                    help="which frozen eval to score: raw weights or the s95 "
                         "dual eval's EMA shadow draw")
+    p.add_argument("--hard_rows", nargs="*", type=Path, default=[],
+                   help="zero-shot probe JSONs of the HARD (canonical) sampler, "
+                        "one per seed, native Euler grid; adds the direct "
+                        "fixed-composition free energy as a third series")
+    p.add_argument("--hard_rows_fine", nargs="*", type=Path, default=[],
+                   help="the same seeds redrawn on a finer Euler grid, same "
+                        "order as --hard_rows; enables Richardson extrapolation "
+                        "of the hard series")
     args = p.parse_args()
     rng = np.random.default_rng(0)
 
@@ -350,8 +358,77 @@ def main() -> None:
         soft_offsets = np.array([
             _laplace_offset(lam, d, fp, fpp) / d
             for fp, fpp in zip(ref_Fp, ref_Fpp)])
+        hard = (_hard_series(args.hard_rows, args.hard_rows_fine, d,
+                             lambda c: _ref_at(c, ref_F_persite))
+                if args.hard_rows else None)
         _plot(curve, ref_c, ref_F_persite, ref_F_persite - soft_offsets,
-              args.flag_c, args.plot)
+              args.flag_c, args.plot, hard)
+
+
+def _hard_series(files: list[Path], fine_files: list[Path], d: int,
+                 ref_at) -> list[dict]:
+    """The hard sampler's F(c) read straight off its slice weights.
+
+    Each probe JSON holds one seed's rows; at stop_time 1 the row carries
+    `free_energy_nats_per_site` = -E[log w]/d, the slice free energy with no
+    ensemble offset (there is no ensemble to map out of: the base is uniform
+    on the slice and every move stays on it). Within-seed Monte Carlo error
+    of the mean log-weight is sqrt(Var[log w]/n)/d from the stored variance;
+    between-seed scatter is added in quadrature as for the soft series. With
+    a fine-grid redraw per seed the point is Richardson-extrapolated,
+    F(inf) = (g2 F2 - g1 F1)/(g2 - g1), the same first-order rule as
+    `_richardson_F` (the Euler bias is first order in the step for both
+    samplers). ESS is carried per composition because the estimate is a
+    variational bound whose gap grows as the weights degrade.
+    """
+    def load(path):
+        blob = json.loads(Path(path).read_text())
+        rows = {round(r["composition"], 4): r for r in blob["rows"]
+                if abs(r["stop_time"] - 1.0) < 1e-9}
+        return blob["n_euler_steps"], rows
+
+    seeds = [load(f) for f in files]
+    fine = [load(f) for f in fine_files] if fine_files else [None] * len(seeds)
+    if fine_files and len(fine_files) != len(files):
+        raise SystemExit("--hard_rows_fine must pair one-to-one with --hard_rows")
+    comps = sorted(set().union(*(rows.keys() for _, rows in seeds)))
+    series = []
+    for c in comps:
+        points, errors, ess = [], [], []
+        for (g1, rows), fine_entry in zip(seeds, fine):
+            r = rows[c]
+            f1 = r["free_energy_nats_per_site"]
+            e1 = np.sqrt(r["var_log_w"] / r["n_samples"]) / d
+            if fine_entry is not None:
+                g2, fine_rows = fine_entry
+                rf = fine_rows[c]
+                f2 = rf["free_energy_nats_per_site"]
+                e2 = np.sqrt(rf["var_log_w"] / rf["n_samples"]) / d
+                point = (g2 * f2 - g1 * f1) / (g2 - g1)
+                err = np.hypot(g2 * e2, g1 * e1) / (g2 - g1)
+                ess.append(min(r["ess_fraction"], rf["ess_fraction"]))
+            else:
+                point, err = f1, e1
+                ess.append(r["ess_fraction"])
+            points.append(point)
+            errors.append(err)
+        points = np.array(points)
+        within = float(np.sqrt(np.mean(np.square(errors)) / len(errors)))
+        between = (float(points.std(ddof=1) / np.sqrt(len(points)))
+                   if len(points) > 1 else 0.0)
+        series.append(dict(c=c, F=float(points.mean()),
+                           F_err=float(np.hypot(within, between)),
+                           truth=ref_at(c), ess_lo=min(ess), ess_hi=max(ess),
+                           n=len(points)))
+    print(f"\n--- hard (canonical) series: {len(files)} seeds, "
+          f"{'Richardson' if fine_files else 'native grid'} ---")
+    print(f"{'c':>6} {'ESS frac':>14} {'F_hard':>10} {'F_truth':>9} {'hard-tru':>9}")
+    for row in series:
+        gap = row["F"] - row["truth"] if row["truth"] is not None else np.nan
+        tru = f"{row['truth']:>9.4f}" if row["truth"] is not None else f"{'-':>9}"
+        print(f"{row['c']:>6.3f} {row['ess_lo']:>6.3f}-{row['ess_hi']:<6.3f} "
+              f"{row['F']:>10.4f} {tru} {gap:>9.4f}")
+    return series
 
 
 def _mirror_rows(rows: list[dict]) -> list[dict]:
@@ -380,7 +457,7 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
 
 
 def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
-          out: Path) -> None:
+          out: Path, hard: list[dict] | None = None) -> None:
     """House-standard overlay + residual pair (approved s62; relaid out s101).
 
     Roles: TI truth = REFERENCE_INK line; our sampler = SAMPLER_HUE, with the
@@ -402,8 +479,8 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        FULL_WIDTH_IN, MUTED, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI,
-        parameter_ramp, style_axes, use_house_style)
+        FULL_WIDTH_IN, HARD_DELTA_HUE, MUTED, REFERENCE_INK, SAMPLER_HUE,
+        SAVEFIG_DPI, parameter_ramp, style_axes, use_house_style)
 
     use_house_style()
     rows = [r for r in curve if not np.isnan(r["raw"])]
@@ -436,6 +513,13 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
                 capsize=2, lw=1.0, label="raw")
     ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color=SAMPLER_HUE,
                 capsize=2, lw=1.0, label="Laplace-corrected")
+    # The hard sampler's own read of the same object: no offset, no
+    # correction, the limit the soft route reaches for (HARD_DELTA_HUE).
+    if hard:
+        ax.errorbar([h["c"] for h in hard], [h["F"] for h in hard],
+                    yerr=[h["F_err"] for h in hard], fmt="^",
+                    color=HARD_DELTA_HUE, capsize=2, lw=1.0,
+                    label="hard, direct")
     ax.set_xlabel("composition $c$")
     ax.set_ylabel("$F/d$ (nats per site)")
 
@@ -445,6 +529,11 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
         acorr_res = [c - t for c, t in zip(corr, truth)]
         axr.plot(cs, araw_res, "o-", color=raw_hue, mfc="none", lw=1.0)
         axr.plot(cs, acorr_res, "s-", color=SAMPLER_HUE, lw=1.0)
+        if hard:
+            with_truth = [h for h in hard if h["truth"] is not None]
+            axr.plot([h["c"] for h in with_truth],
+                     [h["F"] - h["truth"] for h in with_truth], "^-",
+                     color=HARD_DELTA_HUE, lw=1.0)
         axr.set_xlabel("composition $c$")
         axr.set_ylabel("$F/d$ residual (nats per site)")
 
@@ -467,7 +556,7 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
     # Panel (b) reuses (a)'s marker/hue identities, so one four-entry row
     # names everything for both panels.
     handles, labels = ax.get_legend_handles_labels()
-    fig.legend(handles, labels, frameon=False, ncol=4, loc="lower center")
+    fig.legend(handles, labels, frameon=False, ncol=len(labels), loc="lower center")
     fig.tight_layout(rect=(0, 0.10, 1, 1))
     fig.savefig(out, dpi=SAVEFIG_DPI)
     print(f"\nwrote {out}")
