@@ -4982,3 +4982,42 @@ for _sites, _steps, _ne, _n_eval, _chunk, _hidden, _layers in (
             n_euler_steps=_ne, n_eval_samples=_n_eval, eval_sample_chunk=_chunk,
             hidden_dim=_hidden, n_layers=_layers,
         )
+
+
+# Desk-check wave on the c=0.5 identity-flow collapse (s117, 2026-09-02). The
+# archived H2_cuau16_c50 cell collapses at the 1200 -> 800 K step: its loss
+# settles at Var_uniform-slice[beta E] (1.86 / 3.32 / 4.77 at 800 / 600 / 500 K)
+# and its eval samples are uniform slice draws, i.e. every swap rate shrank
+# to zero and, from there, 128 uniform draws per outer step never re-find the
+# ~12 modes among 12870 slice states. One knob per cell against that control:
+#   rewarm     -- re-run the lr warmup ramp at every stage boundary
+#   lowlr      -- lr 1e-4 from the 800 K stage on (MetaDNS trains Cu-Au at 1e-4)
+#   keepreplay -- retain the replay window across the boundary
+#   ladder6    -- six stages 1200/1000/900/800/600/500 K: the 1200 -> 800 K
+#                 step carries 0.79 nats of KL (effN 215 -> 12), the rest 0.4
+#   direct500  -- MetaDNS-style: 500 K from init at lr 1e-4, no ladder
+def _cuau_ladder(temps_lrs, n_steps):
+    n_stage = len(temps_lrs)
+    boundaries = [round(k * n_steps / n_stage / 100) * 100 for k in range(n_stage)]
+    return CurriculumCfg(stages=tuple(
+        CurriculumStageCfg(start_step=start, sigma=cuau_sigma(T), lr=lr)
+        for start, (T, lr) in zip(boundaries, temps_lrs)
+    ))
+
+
+_CUAU16_C50_CONTROL = CONFIGS["H2_cuau16_c50_T500_mask_one_10k_curr"]
+_HOUSE_LADDER = [(1200.0, 1e-3), (800.0, 1e-3), (600.0, 3e-4), (500.0, 3e-4)]
+for _variant, _curriculum, _train_overrides, _ising_overrides in (
+    ("rewarm", _cuau_ladder(_HOUSE_LADDER, 10_000), dict(rewarmup_on_stage=True), {}),
+    ("lowlr", _cuau_ladder([(1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)], 10_000), {}, {}),
+    ("keepreplay", _cuau_ladder(_HOUSE_LADDER, 10_000), dict(flush_replay_on_stage=False), {}),
+    ("ladder6", _cuau_ladder([(1200.0, 1e-3), (1000.0, 1e-3), (900.0, 1e-3), (800.0, 1e-3),
+                              (600.0, 3e-4), (500.0, 3e-4)], 10_000), {}, {}),
+    ("direct500", _cuau_ladder([(500.0, 1e-4)], 10_000), dict(lr=1e-4), dict(sigma=cuau_sigma(500.0))),
+):
+    _name = f"H2_cuau16_c50_T500_mask_one_10k_{_variant}"
+    CONFIGS[_name] = replace(
+        _CUAU16_C50_CONTROL, name=_name, curriculum=_curriculum,
+        train=replace(_CUAU16_C50_CONTROL.train, **_train_overrides),
+        ising=replace(_CUAU16_C50_CONTROL.ising, **_ising_overrides),
+    )

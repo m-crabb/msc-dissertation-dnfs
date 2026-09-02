@@ -2453,6 +2453,15 @@ for _sites, _steps in ((16, 10_000), (64, 50_000)):
     CONFIGS[_free] = _cuau_flip_cell(
         _free, sites=_sites, composition=None, penalty=0.0, n_steps=_steps)
     for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
-        _soft = f"S2_cuau{_sites}_{_c_tag}_l50_T500_letf_{_steps // 1000}k_curr"
-        CONFIGS[_soft] = _cuau_flip_cell(
-            _soft, sites=_sites, composition=_c, penalty=50.0, n_steps=_steps)
+        # The penalty lambda*d*(c-c*)^2 carries no beta, so lambda sets a
+        # composition SD of 1/sqrt(2 lambda d): lambda=50 is the 8x8 house
+        # value (0.8 sites); at 16 sites it costs 3.1 nats per single-site
+        # deviation and the s116 cells never trained at any temperature.
+        # lambda=10 is the 4x4 house value (0.9 sites) -- the 16-site twin
+        # (s117, 2026-09-02).
+        _penalties = (50.0, 10.0) if _sites == 16 else (50.0,)
+        for _penalty in _penalties:
+            _soft = (f"S2_cuau{_sites}_{_c_tag}_l{int(_penalty)}_T500_letf_"
+                     f"{_steps // 1000}k_curr")
+            CONFIGS[_soft] = _cuau_flip_cell(
+                _soft, sites=_sites, composition=_c, penalty=_penalty, n_steps=_steps)
