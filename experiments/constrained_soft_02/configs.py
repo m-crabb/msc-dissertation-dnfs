@@ -2479,3 +2479,33 @@ CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"] = replace(
         for k, (T, lr) in enumerate(((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)))
     )),
 )
+
+
+# House-strength 16-site cells (s117, 2026-09-02), mirroring the hard rung's
+# `*_50k_house` cells: 50k steps, ne128, the seven-stage ladder linear in
+# beta from 1200 K to 500 K, lr 1e-4 from the first step down (the hard
+# desk-check verdict: lr 1e-3 there collapses c=0.5 to the identity flow),
+# lambda=10 at 16 sites (the 0.9-site-SD convention). The 16-site gate ran
+# these at a quarter of the 8x8 recipe (10k, ne50, four stages).
+def _cuau_house_curriculum(n_steps, n_stages=7, T_hot=1200.0, T_cold=500.0):
+    beta_hot, beta_cold = 1.0 / T_hot, 1.0 / T_cold
+    temps = [1.0 / (beta_hot + k * (beta_cold - beta_hot) / (n_stages - 1)) for k in range(n_stages)]
+    return CurriculumCfg(stages=tuple(
+        CurriculumStageCfg(start_step=round(k * n_steps / n_stages / 100) * 100,
+                           sigma=cuau_sigma(T), lr=1e-3 if k == 0 else 1e-4)
+        for k, T in enumerate(temps)
+    ))
+
+
+for _parent_name, _house_name in (
+    ("A1_cuau16_T500_letf_10k_curr", "A1_cuau16_T500_letf_50k_house"),
+    ("S2_cuau16_c25_l10_T500_letf_10k_curr", "S2_cuau16_c25_l10_T500_letf_50k_house"),
+    ("S2_cuau16_c50_l10_T500_letf_10k_curr", "S2_cuau16_c50_l10_T500_letf_50k_house"),
+):
+    _parent = CONFIGS[_parent_name]
+    CONFIGS[_house_name] = replace(
+        _parent, name=_house_name,
+        train=replace(_parent.train, n_steps=50_000),
+        ctmc=replace(_parent.ctmc, n_euler_steps=128),
+        curriculum=_cuau_house_curriculum(50_000),
+    )

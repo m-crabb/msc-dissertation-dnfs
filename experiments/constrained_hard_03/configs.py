@@ -5040,3 +5040,28 @@ for _variant, _ladder, _n_steps in (
         _CUAU16_C50_CONTROL, name=_name, curriculum=_cuau_ladder(_ladder, _n_steps),
         train=replace(_CUAU16_C50_CONTROL.train, n_steps=_n_steps),
     )
+
+
+# House-strength Cu-Au cells (s117, 2026-09-02): the 16-site gate was run at
+# a quarter of the 8x8 Ising house recipe (10k steps, ne50, no EMA, four
+# stages) and c=0.5 collapsed at its first temperature step. These cells
+# give the alloy exactly what H2_d64_c50_s220_letf_mo_50k_curr_w2 gets:
+# 50k steps, ne128, EMA 0.9999, a seven-stage ladder (linear in beta from
+# 1200 K to 500 K, so the 1200 -> 800 K ordering step is crossed in two
+# stages), and -- the desk-check verdict -- lr 1e-4 from the first step
+# down, since lr 1e-3 there shrinks every swap rate to the identity flow.
+def _cuau_house_ladder(n_stages=7, T_hot=1200.0, T_cold=500.0, lr_hot=1e-3, lr_cold=1e-4):
+    beta_hot, beta_cold = 1.0 / T_hot, 1.0 / T_cold
+    temps = [1.0 / (beta_hot + k * (beta_cold - beta_hot) / (n_stages - 1)) for k in range(n_stages)]
+    return [(T, lr_hot if k == 0 else lr_cold) for k, T in enumerate(temps)]
+
+
+for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
+    _control = CONFIGS[f"H2_cuau16_{_c_tag}_T500_mask_one_10k_curr"]
+    _name = f"H2_cuau16_{_c_tag}_T500_mask_one_50k_house"
+    CONFIGS[_name] = replace(
+        _control, name=_name, ema_decay=0.9999,
+        curriculum=_cuau_ladder(_cuau_house_ladder(), 50_000),
+        train=replace(_control.train, n_steps=50_000),
+        ctmc=replace(_control.ctmc, n_euler_steps=128),
+    )
