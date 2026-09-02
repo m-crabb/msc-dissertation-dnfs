@@ -121,7 +121,7 @@ def _validate_cfg_name(cfg_name: str) -> None:
     # A100 for Stage 4 leTF re-launch (attention-bound; 2x faster wall-clock
     # vs L4 at d=100). Earlier MLP/leconv stages ran fine on L4; if cost
     # matters for non-attention runs, downgrade per-launch by editing here.
-    gpu="A100",
+    gpu="A100-80GB",  # b512 at d=256 (s117)
     volumes={"/results": volume},
     secrets=[wandb_secret],
     # 24h is generous for D=10; tighten if cost matters.

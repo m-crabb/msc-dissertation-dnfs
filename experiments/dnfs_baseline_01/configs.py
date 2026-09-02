@@ -1021,3 +1021,44 @@ for _wave1_parent_name in (
 ):
     _wave1_twin = sigma_c_twin(CONFIGS[_wave1_parent_name])
     CONFIGS[_wave1_twin.name] = _wave1_twin
+
+
+# ---------------------------------------------------------------------------
+# Unconstrained 8x8 / 16x16 cells on the HARD chapter's house recipes, with
+# exact-field-channel twins (s117, 2026-09-02). The channel had never been
+# run on the unconstrained rung; on the Cu-Au alloy it was the largest
+# single lever (soft c=0.25: 0.66 -> 0.86). Recipe = the hard house cells
+# at the same size (`H2_d64_c50_s220_letf_mo_50k_curr_w2`, `H2_d256_..._100k_curr_b512_ne128_cv2_w3`):
+# 8x8 = 50k steps, batch 128, ne128; 16x16 = 100k steps, batch 512 with
+# microbatch 128, ne128; both EMA 0.9999, the seven-stage sigma ladder to
+# the EXACT sigma_c, replay 8, compiled. The flip MODEL stays the baseline
+# `let` 128x3, so the twin differs from its parent by the channel alone.
+# The archived `stage_4_d16_critical_50k_ladder` ended at the legacy 0.22305
+# and died (ESS 0.0); these replace it as the 16x16 unconstrained record.
+_HARD_HOUSE_LADDER = CurriculumCfg(stages=(
+    CurriculumStageCfg(start_step=0, sigma=0.10, lr=1e-3),
+    CurriculumStageCfg(start_step=5_000, sigma=0.14, lr=1e-3),
+    CurriculumStageCfg(start_step=10_000, sigma=0.17, lr=1e-3),
+    CurriculumStageCfg(start_step=15_000, sigma=0.19, lr=1e-3),
+    CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+    CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+    CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
+))
+
+for _side, _n_steps, _batch, _microbatch in ((8, 50_000, 128, None), (16, 100_000, 512, 128)):
+    _parent = CONFIGS["stage_4_d8_critical_paper_curriculum_sc"]
+    _name = f"stage_4_d{_side}_sc_hardrecipe"
+    _cell = replace(
+        _parent, name=_name,
+        ising=replace(_parent.ising, D=_side, sigma=0.10),
+        train=replace(_parent.train, n_steps=_n_steps, batch_size=_batch,
+                      outer_batch_size=None, replay_buffer_cycles=8,
+                      loss_microbatch_size=_microbatch),
+        ctmc=replace(_parent.ctmc, n_euler_steps=128),
+        curriculum=_HARD_HOUSE_LADDER, ema_decay=0.9999,
+    )
+    CONFIGS[_name] = _cell
+    CONFIGS[f"{_name}_efc"] = replace(
+        _cell, name=f"{_name}_efc",
+        model=replace(_cell.model, exact_field_channel=True),
+    )
