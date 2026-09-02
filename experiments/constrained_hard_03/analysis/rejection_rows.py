@@ -66,12 +66,19 @@ sampler would land on the 4x4 manifold 19.6% of the time
 carries the whole argument -- it is the raw per-sample bill divided by BOTH
 the acceptance rate and the ESS fraction, so a rejected draw is charged for.
 
-WHY SOME CELLS ARE BLANK, and what would fill them. Three runs do not exist:
-a soft 4x4 cell at sigma_c (the soft 4x4 family is sigma = 0.1 only, all 19
-registry entries), an unconstrained 8x8 cell at sigma = 0.1, and a soft 8x8
-specialist at c = 0.5 (the soft chapter's non-enumerable size is 10x10). Each
-is cheap; none has been run. The blanks are left in the printed tables
-deliberately, as the reminder of which three.
+WHY ONE CELL IS BLANK. The unconstrained 8x8 cell at sigma = 0.1 was never
+run (the baseline chapter's 8x8 rung is sigma_c only); every soft cell now
+exists at both sizes and couplings (the soft chapter moved its production
+size to 8x8 and filled its 4x4 sigma_c half on 2026-09-02). The blank is
+left in print as the reminder of which one.
+
+WHAT THE 8x8 SOFT ROW SAYS. The on-slice acceptance is ~0.50 at 64 sites
+against 0.91 at 16 (the envelope exp(-lambda d (c - c_t)^2) on the c = k/d
+grid puts 0.919 / 0.499 of its mass on the exact slice at d = 16 / 64), so
+the "near-free" 1.09x overhead of the enumerable size is 2x at production
+and grows as sqrt(pi d / lambda). The survivors' ESS equals the specialist's
+own ESS in the soft table, which is the weights-are-already-correct
+argument above made measurable.
 
 THE ERROR COLUMNS ARE SCORED AT THE RUNG'S OWN DRAW COUNT, NOT AT WHATEVER
 REJECTION HAPPENED TO LEAVE. Rejection changes N by the acceptance rate --
@@ -117,10 +124,15 @@ CELLS = {
     ("unconstrained", 16, "s220"): ("01_baseline", "stage_4_d4_critical_sc_seed{seed}_20260824-wave1-sc"),
     ("unconstrained", 64, "s010"): None,
     ("unconstrained", 64, "s220"): ("01_baseline", "stage_4_d8_critical_paper_curriculum_sc_seed{seed}_20260824-wave1-sc"),
-    ("soft", 16, "s010"): ("02_constrained_soft", "S2_d4_c05_50k_l50_letf_anneal_offset_clip50_seed{seed}_*"),
-    ("soft", 16, "s220"): None,
-    ("soft", 64, "s010"): None,
-    ("soft", 64, "s220"): None,
+    # Soft cells are the SAME runs the soft chapter's house tables print
+    # (tab:eval-soft-4x4 = the 10k house family, tab:eval-soft-8x8 = the 8x8
+    # house specialists), so the rejection row and the soft table are priced
+    # off identical draws. The old 50k anneal cell (S2_d4_c05_50k_l50_letf_
+    # anneal_offset_clip50) was a different sampler from the one soft prints.
+    ("soft", 16, "s010"): ("02_constrained_soft", "S2_d4_c0500_10k_l50_letf_house_seed{seed}_20260902-softhouse-d16-10k"),
+    ("soft", 16, "s220"): ("02_constrained_soft", "S2_d4_c0500_10k_l50_letf_house_sc_seed{seed}_20260902-softhouse-d16-10k"),
+    ("soft", 64, "s010"): ("02_constrained_soft", "S2_d8_c0500_l50_letf_ne128_house_seed{seed}_20260831-softhouse-d64"),
+    ("soft", 64, "s220"): ("02_constrained_soft", "S2_d8_c0500_l50_letf_ne128_house_sc_seed{seed}_20260831-softhouse-d64"),
 }
 SEEDS = (42, 43, 44, 45)
 # The draw count each rung's neural rows are evaluated at; a rejection cell

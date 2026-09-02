@@ -57,6 +57,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from discrete_flow_sampler.diagnostics.figure_style import (
+    FULL_WIDTH_IN,
     FIGSIZE_FULL_WIDE_SINGLE, FONT_SIZE_ANNOTATION, HARD_DELTA_HUE, MUTED,
     REFERENCE_FILL, REFERENCE_INK, SAMPLER_HUE, parameter_ramp, style_axes,
     uncertainty_band, use_house_style)
@@ -243,7 +244,9 @@ def run_single(args: argparse.Namespace) -> None:
     # never gets a hue of its own -- on panel (b) the two operating points share
     # the limit hue and separate by marker shape.
     use_house_style()
-    fig, (ax, axr) = plt.subplots(1, 2, figsize=(9.0, 3.8))
+    # Print size (FULL_WIDTH_IN x 2.4): the old 9.0 x 3.8 canvas printed at
+    # \textwidth shrank 9 pt type to ~6 pt and took half a page.
+    fig, (ax, axr) = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.4))
 
     # (a) grouped bars over the discrete compositions around c_target: hard target
     # as a full-height bar, soft-exact and DNFS side by side with seed whiskers.
@@ -260,21 +263,26 @@ def run_single(args: argparse.Namespace) -> None:
     ax.bar(xs + width, dnfs_mean[ks], width, color=SAMPLER_HUE, yerr=yerr.numpy(),
            error_kw={"lw": 1.0, "capsize": 2.5, "ecolor": REFERENCE_INK}, zorder=3,
            label="DNFS (seed mean, min-max)")
-    ax.text(c_target, 0.48, f"violating compositions:\n{off_slice:.1%} of soft mass in total",
-            ha="center", fontsize=FONT_SIZE_ANNOTATION, color=REFERENCE_INK, zorder=4,
-            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.94, "pad": 3})
+    # Note in the empty upper-right, legend in the empty upper-left: the
+    # central bars reach 1.0, so nothing may sit over the centre column.
+    ax.text(0.98, 0.70, f"violating compositions:\n{off_slice:.1%} of soft mass",
+            transform=ax.transAxes, ha="right", va="top",
+            fontsize=FONT_SIZE_ANNOTATION, color=REFERENCE_INK, zorder=4)
     for k in (target_idx - 1, target_idx + 1):
         ax.annotate("", xy=(k / N_SITES, soft_pmf[k].item() + 0.03),
-                    xytext=(c_target, 0.46), zorder=4,
+                    xytext=(0.80, 0.55), textcoords="axes fraction", zorder=4,
                     arrowprops={"arrowstyle": "->", "lw": 0.8, "color": MUTED})
     ax.set_xticks(xs)
     ax.set_xticklabels([f"{k}/{N_SITES}" for k in ks.tolist()])
     ax.set_ylim(0, 1.05)
     ax.set_xlabel(r"composition $c_+$")
     ax.set_ylabel("probability mass")
-    ax.set_title(f"(a) composition marginal at $\\lambda={lam:g}$")
     style_axes(ax)
-    ax.legend(framealpha=0.9, loc="upper right")
+    # Legend below the panels (house pattern): the central bars reach 1.0, so
+    # no in-axes corner is free at print width.
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=3, loc="lower center",
+               fontsize=FONT_SIZE_ANNOTATION)
 
     # (b) violating mass vs lambda: never reaches 0 at finite, samplable lambda.
     # Both ends of the trade are marked, so the panel shows what raising lambda
@@ -288,11 +296,10 @@ def run_single(args: argparse.Namespace) -> None:
     axr.set_xscale("log")
     axr.set_xlabel(r"penalty strength $\lambda$")
     axr.set_ylabel(r"mass violating $c_\mathrm{target}$")
-    axr.set_title("(b) the cost: violating mass falls only as $\\lambda$ grows")
     style_axes(axr)
     axr.legend(framealpha=0.9)
 
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.10, 1, 1))
     fig.savefig(args.out)
     print(f"\nsaved figure to {args.out}")
 
