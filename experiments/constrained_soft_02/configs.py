@@ -2531,3 +2531,22 @@ CONFIGS["A1_cuau16_T500_letf_10k_lowlr"] = replace(
         for k, (T, lr) in enumerate(((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)))
     )),
 )
+
+
+# Exact-field channel twins on the alloy (s117): the channel now reads the
+# target's own flip log-ratio (-beta Delta E_i on an expansion), so it is
+# exact on Cu-Au. One declared change from each lr-cut parent, as the
+# Ising `_efc` twins are from theirs.
+_S2_C25_L10 = CONFIGS["S2_cuau16_c25_l10_T500_letf_10k_curr"]
+CONFIGS["S2_cuau16_c25_l10_T500_letf_10k_lowlr"] = replace(
+    _S2_C25_L10, name="S2_cuau16_c25_l10_T500_letf_10k_lowlr",
+    curriculum=CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"].curriculum,
+)
+for _parent_name in ("A1_cuau16_T500_letf_10k_lowlr",
+                     "S2_cuau16_c25_l10_T500_letf_10k_lowlr",
+                     "S2_cuau16_c50_l10_T500_letf_10k_lowlr"):
+    _parent = CONFIGS[_parent_name]
+    CONFIGS[f"{_parent_name}_efc"] = replace(
+        _parent, name=f"{_parent_name}_efc",
+        model=replace(_parent.model, exact_field_channel=True),
+    )

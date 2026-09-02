@@ -259,6 +259,17 @@ class IsingTarget:
             .float() * 2 - 1
         )
 
+    def base_flip_log_ratio(self, x: Tensor) -> Tensor:
+        """log base(flip_i x) - log base(x) for every site, shape (B, d).
+
+        The closed form the exact-field channel feeds the flip model:
+        flipping x_i changes x^T J x by -4 x_i (J x)_i and the bias term by
+        -2 bias x_i, both odd in x_i. Subclasses with another energy override
+        this ONE method and the channel follows (the cluster expansion reads
+        Eq. (2) of its export instead of the quadratic form).
+        """
+        return x * (-4.0 * self.sigma * (x @ self.A) - 2.0 * self.bias)
+
     def base_log_prob(self, x: Tensor) -> Tensor:
         """Unnormalised Ising log-density before optional soft constraints.
 

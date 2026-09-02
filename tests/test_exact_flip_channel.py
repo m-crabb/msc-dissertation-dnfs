@@ -39,6 +39,8 @@ from discrete_flow_sampler.constraints.exact_field_channel import (
     ExactFieldFlipModel)
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.targets.ising import IsingTarget
+from discrete_flow_sampler.targets.cluster_expansion import (
+    BinaryExpansionSpec, ClusterExpansionTarget)
 
 
 D_SIDE = 3  # 9 sites: big enough for a torus, small enough to enumerate
@@ -279,3 +281,48 @@ def test_efc_twins_differ_from_parents_in_flag_and_name_only():
         }
         assert model_dev == {"exact_field_channel"}, (parent_name, model_dev)
         assert twin["model"]["exact_field_channel"] is True
+
+
+# --- the channel on a cluster expansion (s117, 2026-09-02) ----------------
+# The Cu-Au 16-site export carries pair and multi-body terms the Ising
+# quadratic form cannot express; the channel must read the target's own
+# flip log-ratio and match brute force on it exactly as it does on Ising.
+
+@pytest.fixture()
+def alloy_target():
+    spec = BinaryExpansionSpec.from_json("data/ce/cuau_fcc_2x2x4.json")
+    beta = 1.0 / (8.617333262e-5 * 500.0)
+    return ClusterExpansionTarget(
+        spec, beta, device="cpu",
+        target_composition=0.5, composition_penalty_strength=10.0,
+    )
+
+
+@pytest.mark.parametrize("which", ["ising", "alloy"])
+def test_base_flip_log_ratio_matches_brute_force(which, target, alloy_target):
+    tgt = target if which == "ising" else alloy_target
+    x = random_states(tgt.d)
+    base = tgt.base_log_prob(x)
+    for i in range(tgt.d):
+        flipped = x.clone()
+        flipped[:, i] = -flipped[:, i]
+        torch.testing.assert_close(
+            tgt.base_flip_log_ratio(x)[:, i], tgt.base_log_prob(flipped) - base,
+            atol=1e-4, rtol=0)
+
+
+def test_alloy_gain_one_matches_brute_force_log_ratio(alloy_target):
+    _, wrapped = build_pair(alloy_target)
+    with torch.no_grad():
+        wrapped.gain_constant.fill_(1.0)
+    x = random_states(alloy_target.d)
+    t = torch.full((x.shape[0],), 0.3)
+    added = wrapped(x, t) - wrapped.model(x, t)
+    base_lp = alloy_target.log_prob(x)
+    for i in range(alloy_target.d):
+        flipped = x.clone()
+        flipped[:, i] = -flipped[:, i]
+        brute = alloy_target.log_prob(flipped) - base_lp
+        flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
+        torch.testing.assert_close(
+            added[torch.arange(x.shape[0]), i, flip_slot], brute, atol=1e-4, rtol=0)

@@ -90,7 +90,7 @@ class ExactFieldFlipModel(nn.Module):
 
         G(i | x) <- G_model(i | x) + gain(t) * Delta_i(x),
         Delta_i  = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ],
-        h = x A,  c_null_i = c(x) - (x_i + 1)/(2d),  gain(t) = g0 + g1 t.
+        h = x A  (Ising; an expansion supplies -beta Delta E_i instead),  c_null_i = c(x) - (x_i + 1)/(2d),  gain(t) = g0 + g1 t.
 
     The opt-in amortised correction keeps that global gain and adds
 
@@ -197,16 +197,17 @@ class ExactFieldFlipModel(nn.Module):
         """
         target = self.target
         d = x.shape[-1]
-        h = x @ target.A
         c_hollow = ((x + 1.0) * 0.5).mean(-1, keepdim=True) - (x + 1.0) / (2.0 * d)
         lam = target.composition_penalty_strength
         c_star = (
             target.target_composition if composition is None
             else composition.unsqueeze(-1)                      # (B, 1)
         )
-        return x * (
-            -4.0 * target.sigma * h
-            + 2.0 * lam * (c_hollow - c_star)
+        # The energy term is the target's own closed form (Ising: -4 sigma
+        # x_i h_i; cluster expansion: -beta Delta E_i), so the channel is
+        # exact on every binary target that defines it (s117, 2026-09-02).
+        return target.base_flip_log_ratio(x) + x * (
+            2.0 * lam * (c_hollow - c_star)
             + lam / d
         )
 
