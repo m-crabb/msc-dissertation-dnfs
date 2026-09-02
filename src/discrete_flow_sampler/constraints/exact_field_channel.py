@@ -195,12 +195,17 @@ class ExactFieldFlipModel(nn.Module):
         """
         target = self.target
         d = x.shape[-1]
-        c_hollow = ((x + 1.0) * 0.5).mean(-1, keepdim=True) - (x + 1.0) / (2.0 * d)
         lam = target.composition_penalty_strength
         c_star = (
             target.target_composition if composition is None
             else composition.unsqueeze(-1)                      # (B, 1)
         )
+        # Unconstrained target (no penalty, no c*): the channel is the bare
+        # energy log-ratio. Guarded explicitly because c* is None there and
+        # the penalty arithmetic below would raise (s117 baseline twins).
+        if lam == 0.0 or c_star is None:
+            return target.base_flip_log_ratio(x)
+        c_hollow = ((x + 1.0) * 0.5).mean(-1, keepdim=True) - (x + 1.0) / (2.0 * d)
         # The energy term is the target's own closed form (Ising: -4 sigma
         # x_i h_i; cluster expansion: -beta Delta E_i), so the channel is
         # exact on every binary target that defines it (s117, 2026-09-02).

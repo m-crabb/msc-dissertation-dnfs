@@ -326,3 +326,24 @@ def test_alloy_gain_one_matches_brute_force_log_ratio(alloy_target):
         flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
         torch.testing.assert_close(
             added[torch.arange(x.shape[0]), i, flip_slot], brute, atol=1e-4, rtol=0)
+
+
+def test_unconstrained_target_channel_is_the_bare_energy_log_ratio():
+    """No penalty and no c* (the unconstrained rung): the channel must reduce
+    to the base flip log-ratio instead of raising on the missing c*."""
+    unconstrained = IsingTarget(D=D_SIDE, sigma=0.13, device="cpu")
+    assert unconstrained.target_composition is None
+    _, wrapped = build_pair(unconstrained)
+    with torch.no_grad():
+        wrapped.gain_constant.fill_(1.0)
+    x = random_states(unconstrained.d)
+    t = torch.full((x.shape[0],), 0.5)
+    added = wrapped(x, t) - wrapped.model(x, t)
+    base_lp = unconstrained.log_prob(x)
+    for i in range(unconstrained.d):
+        flipped = x.clone()
+        flipped[:, i] = -flipped[:, i]
+        flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
+        torch.testing.assert_close(
+            added[torch.arange(x.shape[0]), i, flip_slot],
+            unconstrained.log_prob(flipped) - base_lp, atol=1e-4, rtol=0)
