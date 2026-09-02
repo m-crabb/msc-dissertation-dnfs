@@ -64,6 +64,8 @@ from discrete_flow_sampler.diagnostics.flops import (  # noqa: E402
 from discrete_flow_sampler.diagnostics.metrics import (  # noqa: E402
     correlation_profile_error, energy_wasserstein2,
     magnetisation_profile_error)
+from discrete_flow_sampler.models.composition_conditioned import (  # noqa: E402
+    CompositionConditioned)
 from discrete_flow_sampler.targets.ising import (  # noqa: E402
     SIGMA_C, IsingTarget)
 from experiments.constrained_soft_02.configs import (  # noqa: E402
@@ -76,6 +78,10 @@ LAM = 50.0
 COUPLINGS = (("s010", 0.1), ("sc", SIGMA_C))
 ESS_FLOOR = 0.30
 N_BOOTSTRAP, N_EVAL = 200, 5000
+# Families scored from the frames their composition sweep filed at the
+# window's c (one conditioned model, asked for each specialist's
+# composition) rather than from the frozen centre eval.
+CONDITIONED_FAMILIES = {"conditioned", "conditioned_ladder"}
 
 
 def energy_per_site(x, target, sigma):
@@ -128,7 +134,7 @@ def load_vcsgc_reference(target, sigma, c_target, lam=LAM):
     return pooled, chains, wall_seconds, flops_per_es, tau_int
 
 
-def specialist_flops_per_forward(run_dir: Path, target) -> int:
+def specialist_flops_per_forward(run_dir: Path, target, composition) -> int:
     """Measured FLOPs of one rate-matrix forward at this run's architecture.
 
     Eager build from the run's own config at batch 1 (compile stripped: a
@@ -143,6 +149,10 @@ def specialist_flops_per_forward(run_dir: Path, target) -> int:
     model_cfg = _sub_config(
         ModelCfg, {**cfg_dict["model"], "compile_model": False})
     model = _construct_model(SimpleNamespace(model=model_cfg), target)
+    if model_cfg.condition_on_composition:
+        # The conditioned forward reads c alongside (x, t); bind it exactly
+        # as the sweep does so the counted forward is the one the row paid.
+        model = CompositionConditioned(model, torch.full((1,), composition))
     example = (target.sample_base(1, device="cpu"), torch.zeros(1))
     return measured_forward_flops(model, example)
 
@@ -171,28 +181,47 @@ def reference_floor(reference, target, sigma, tau_int, seed=0):
 
 
 def score_runs(run_glob, reference, target, sigma, eval_subdir,
-               per_forward_cache):
+               per_forward_cache, c_target, sweep_composition=None):
+    """One row per seed. A specialist is scored from its frozen eval; a
+    conditioned run (`sweep_composition` set) from the frames its sweep
+    filed at that composition, with that sweep row's own ESS. A conditioned
+    run whose sweep predates the frames still yields its ESS (the dead
+    sigma_c cells: the column reports them, the errors print as dagger).
+    """
     per_seed = {}
     for run_dir in sorted(SOFT_RESULTS.glob(run_glob)):
         eval_dir = run_dir / eval_subdir
-        if not (eval_dir / "samples.pt").exists():
-            continue
-        x = torch.load(eval_dir / "samples.pt", weights_only=True).float()
-        weights = torch.softmax(
-            torch.load(eval_dir / "log_weights.pt", weights_only=True), 0)
-        metrics = json.loads((eval_dir / "metrics.json").read_text())
+        if sweep_composition is None:
+            if not (eval_dir / "samples.pt").exists():
+                continue
+            frame_dir = eval_dir
+            ess = json.loads((eval_dir / "metrics.json").read_text())["ess_fraction"]
+        else:
+            sweep_path = eval_dir / "composition_sweep.json"
+            if not sweep_path.exists():
+                continue
+            ess = next(r["ess_fraction"] for r in json.loads(sweep_path.read_text())
+                       if abs(r["composition"] - sweep_composition) < 1e-6)
+            frame_dir = eval_dir / "composition_sweep" / f"c{sweep_composition:.4f}"
+        if (frame_dir / "samples.pt").exists():
+            x = torch.load(frame_dir / "samples.pt", weights_only=True).float()
+            weights = torch.softmax(
+                torch.load(frame_dir / "log_weights.pt", weights_only=True), 0)
+            errors = observable_errors(x, weights, reference, target, sigma)
+        else:
+            errors = {k: float("nan") for k in ("dMag", "dCorr", "EW2")}
         if run_glob not in per_forward_cache:  # one architecture per cell
             per_forward_cache[run_glob] = specialist_flops_per_forward(
-                run_dir, target)
+                run_dir, target, c_target)
         n_euler = json.loads(
             (run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
         per_seed[run_dir.name] = {
-            "ESS": metrics["ess_fraction"],
-            **observable_errors(x, weights, reference, target, sigma),
+            "ESS": ess,
+            **errors,
             "FLOPes": per_effective_sample(
                 neural_sampling_flops_per_sample(
                     per_forward_cache[run_glob], n_euler, target.d),
-                metrics["ess_fraction"]),
+                ess),
         }
     return per_seed
 
@@ -234,6 +263,14 @@ def house_cells():
                 families["mb"] = (
                     f"S2_d8_{c_tag}_l50_letf_ne128_house_mb{sigma_suffix}"
                     f"_seed4*")
+            # The conditioned cell (one model over the window range): cold
+            # at both couplings, plus the sigma-ladder twin at sigma_c, where
+            # the cold cell is dead and the ladder is the delivered arm.
+            families["conditioned"] = (
+                f"S2_d8_camort_l50_letf_ne128_house{sigma_suffix}_seed4*")
+            if sigma_label == "sc":
+                families["conditioned_ladder"] = (
+                    "S2_d8_camort_l50_letf_ne128_house_sc_curr_seed4*")
             if c_target == 0.50:
                 # Channel-off control at both couplings (trains at
                 # sigma=0.1, dead at sigma_c: the shock arrives with the
@@ -283,7 +320,9 @@ def main():
             for eval_subdir in ("eval", "eval_ema"):
                 per_seed = score_runs(
                     glob, reference, target, sigma, eval_subdir,
-                    per_forward_cache)
+                    per_forward_cache, c_target,
+                    sweep_composition=(
+                        c_target if family in CONDITIONED_FAMILIES else None))
                 if not per_seed:
                     print(f"  [{family}/{eval_subdir}] no runs match "
                           f"{glob}")
