@@ -2516,3 +2516,18 @@ for _parent_name, _house_name in (
 for _name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_curr",
               "S2_cuau64_c50_l50_T500_letf_50k_curr"):
     CONFIGS[_name] = replace(CONFIGS[_name], curriculum=_cuau_house_curriculum(50_000))
+
+
+# Free-ensemble 16-site cell with the lr cut (s117): the A1 gate cell kept
+# lr 1e-3 through the 1200 -> 800 K step and its train ESS fell 3131 -> 96,
+# recovering only to ~1400/5000. MetaDNS reports NESS 0.85-0.94 on this
+# cell in the same ensemble (single run, N=10k), so the free rung is the
+# like-for-like comparison and gets every lever the slices got.
+_A1_16 = CONFIGS["A1_cuau16_T500_letf_10k_curr"]
+CONFIGS["A1_cuau16_T500_letf_10k_lowlr"] = replace(
+    _A1_16, name="A1_cuau16_T500_letf_10k_lowlr",
+    curriculum=CurriculumCfg(stages=tuple(
+        CurriculumStageCfg(start_step=k * 2500, sigma=cuau_sigma(T), lr=lr)
+        for k, (T, lr) in enumerate(((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)))
+    )),
+)
