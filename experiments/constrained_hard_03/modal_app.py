@@ -613,6 +613,7 @@ def zero_shot_transfer(
     n_samples: int = 5000,
     n_euler_steps: int = 128,
     sample_chunk: int = 500,
+    out_name: str = "zero_shot_transfer.json",
 ):
     """Local CLI entry: one spawned container per seed, so the three run
     concurrently rather than serialised behind one cold start.
@@ -631,7 +632,7 @@ def zero_shot_transfer(
             f"--compositions {compositions} --stop-times {stop_times} "
             f"--n-samples {n_samples} --n-euler-steps {n_euler_steps} "
             f"--sample-chunk {sample_chunk} "
-            f"--out {run_dir}/zero_shot_transfer.json"
+            f"--out {run_dir}/{out_name}"
         )
         handles.append(zero_shot_transfer_remote.spawn(argv=argv))
         print(f"[zero_shot_transfer] spawned seed {seed.strip()} -> {run_dir}")

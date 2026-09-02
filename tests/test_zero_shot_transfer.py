@@ -317,3 +317,62 @@ def test_drift_in_what_is_sampled_is_fatal(field, value):
     current = dict(saved, **{field: value})
     with pytest.raises(ValueError, match="change what is sampled"):
         check_sampling_provenance(saved, current)
+
+
+# --- 7. free energy on the slice ----------------------------------------------
+
+
+def test_slice_free_energy_recovers_the_enumerated_slice_normaliser():
+    """A perfect sampler's mean running log-weight IS log Z_t (Jensen is tight
+    at zero residual), so feeding the enumerated log Z_t of the annealing
+    density must give back -log Z_slice(t sigma)/d exactly -- including the
+    (1 - t) log C(d, n_plus) slice constant that the base contributes at t < 1
+    and that cancels only at t = 1."""
+    from discrete_flow_sampler.diagnostics.metrics import free_energy_lb_estimate
+    from experiments.constrained_hard_03.probe_zero_shot_transfer import (
+        slice_free_energy_per_site,
+    )
+
+    side, sigma, composition = 2, 0.3, 0.5
+    d = side * side
+    states = slice_states(side, composition).double()
+    target = FixedCompositionIsingTarget(D=side, sigma=sigma, target_composition=composition)
+    quadratic = (states @ target.A.double() * states).sum(-1)
+    log_c = target._log_slice_size
+    assert math.isclose(log_c, math.log(6.0))
+    for stop_time in (0.4, 1.0):
+        log_z_t = torch.logsumexp(-(1 - stop_time) * log_c + stop_time * sigma * quadratic, 0)
+        log_z_slice = torch.logsumexp(stop_time * sigma * quadratic, 0)
+        out = slice_free_energy_per_site(float(log_z_t), stop_time, sigma, d, log_c)
+        assert out["log_z_slice_estimate"] == pytest.approx(float(log_z_slice), abs=1e-12)
+        assert out["free_energy_nats_per_site"] == pytest.approx(-float(log_z_slice) / d)
+        assert out["free_energy_per_site"] == pytest.approx(
+            -float(log_z_slice) / (2 * stop_time * sigma * d)
+        )
+    # at t = 1 the reduced value is the house estimator applied to the weights
+    weights = torch.full((7,), float(log_z_t))
+    assert out["free_energy_per_site"] == pytest.approx(
+        float(free_energy_lb_estimate(weights, sigma, d))
+    )
+    assert math.isnan(slice_free_energy_per_site(0.0, 0.0, sigma, d, log_c)["free_energy_per_site"])
+
+
+def test_transfer_rows_carry_the_free_energy_with_the_bound_sign():
+    """The estimate is an upper bound on F, so on the enumerable 4x4 slice it
+    must sit at or above the exact slice free energy at every stop time."""
+    from experiments.constrained_hard_03.probe_zero_shot_transfer import (
+        slice_free_energy_per_site,
+    )
+
+    head = _head()
+    rows = transfer_grid(
+        head, D=D, sigma=SIGMA, compositions=(0.5,), stop_times=(0.4538, 1.0),
+        n_samples=512, n_euler_steps=N_EULER, seed=3,
+    )
+    states = slice_states(D, 0.5).double()
+    target = FixedCompositionIsingTarget(D=D, sigma=SIGMA, target_composition=0.5)
+    quadratic = (states @ target.A.double() * states).sum(-1)
+    for row in rows:
+        exact = -float(torch.logsumexp(row["stop_time"] * SIGMA * quadratic, 0)) / (D * D)
+        assert math.isfinite(row["mean_log_w"])
+        assert row["free_energy_nats_per_site"] >= exact - 1e-6

@@ -160,6 +160,49 @@ def weighted_diagnostics(log_w, states, target) -> dict:
     }
 
 
+def slice_free_energy_per_site(
+    mean_log_w: float, stop_time: float, sigma: float, d: int, log_slice_size: float
+) -> dict:
+    """Free energy of the fixed-composition slice at coupling t*sigma, per site.
+
+    The running weight at grid time t is the path estimator of log(Z_t / Z_0)
+    for the annealing density p~_t(x) = exp[(1 - t) log eta(x) + t log p(x)].
+    On the slice log eta is the constant -log C(d, n_plus), so
+
+        Z_t = exp[-(1 - t) log C] * sum_x exp[t sigma x^T A x]
+            = exp[-(1 - t) log C] * Z_slice(t sigma),       Z_0 = 1,
+
+    and Jensen gives E_q[log w_t] <= log Z_t (paper Eq. 37: a variational LOWER
+    bound on log Z, hence an UPPER bound on F). Adding the slice constant back,
+
+        log Z_slice(t sigma) >= E_q[log w_t] + (1 - t) log C(d, n_plus),
+
+    which at t = 1 is the bare mean log-weight, the convention of
+    `free_energy_lb_estimate` and of `slice_ti.py`'s reference, and at t < 1
+    prices the intermediate coupling for free from the same pass. Two units
+    are returned: nats per site, -log Z_slice / d, which is what mchammer's
+    thermodynamic integration reports and needs no temperature; and the
+    project's reduced F/d = -log Z_slice / (2 t sigma d) (beta = 2 sigma),
+    undefined at t = 0 and returned as nan there rather than raising, so a
+    stop-time grid that starts at zero still produces a row.
+
+    This is Sadigh et al. (2012) Eq. A.6, exp[-beta F_C(c)] = sum_{x on the
+    slice} exp[-beta E(x)], read off the sampler's own weights: the fixed-
+    composition free energy that the variable-composition ensembles reconstruct
+    by integrating a chemical potential, obtained here with no path.
+    """
+    log_z_slice = mean_log_w + (1.0 - stop_time) * log_slice_size
+    coupling = stop_time * sigma
+    return {
+        "mean_log_w": mean_log_w,
+        "log_z_slice_estimate": log_z_slice,
+        "free_energy_nats_per_site": -log_z_slice / d,
+        "free_energy_per_site": (
+            -log_z_slice / (2.0 * coupling * d) if coupling > 0 else math.nan
+        ),
+    }
+
+
 def slice_states(D: int, composition: float) -> torch.Tensor:
     """Every configuration on the fixed-composition manifold, (C(d, N_A), d)."""
     d = D * D
@@ -264,6 +307,10 @@ def transfer_grid(
                 "n_samples": states.shape[0],
             }
             row.update(weighted_diagnostics(log_w, states, cpu_target))
+            row.update(slice_free_energy_per_site(
+                float(log_w.mean()), row["stop_time"], sigma, D * D,
+                target._log_slice_size,
+            ))
             rows.append(row)
     return rows
 
