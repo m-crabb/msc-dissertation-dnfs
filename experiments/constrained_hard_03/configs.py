@@ -5075,3 +5075,19 @@ for _c_tag in ("c25", "c50"):
         CONFIGS[_name], ema_decay=0.9999,
         curriculum=_cuau_ladder(_cuau_house_ladder(), 50_000),
     )
+
+
+# Fresh-trajectory probe (s117): the 20k lr-cut cell reached ESS 0.79 where
+# 10k gave 0.34, and MetaDNS trains on ~200x more distinct rollouts than our
+# 10k cell (fresh batch every outer step vs 100 inner steps per rollout).
+# Same 10k gradient steps, two ways to get trajectories in: five times the
+# rollouts (inner 100 -> 20) or four times the rollout width (outer 512).
+_LOWLR_10K = CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr"]
+CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr_inner20"] = replace(
+    _LOWLR_10K, name="H2_cuau16_c50_T500_mask_one_10k_lowlr_inner20",
+    train=replace(_LOWLR_10K.train, inner_steps_per_outer=20),
+)
+CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512"] = replace(
+    _LOWLR_10K, name="H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512",
+    train=replace(_LOWLR_10K.train, outer_batch_size=512),
+)
