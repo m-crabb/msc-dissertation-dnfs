@@ -69,6 +69,7 @@ class IsingTarget:
         base_composition: float = 0.5,
         base_matches_composition: bool = False,
         log_ratio_clamp: float = DEFAULT_LOG_RATIO_CLAMP,
+        adjacency: Tensor | None = None,
     ):
         if log_ratio_clamp <= 0.0:
             raise ValueError(
@@ -102,7 +103,9 @@ class IsingTarget:
             )
 
         self.D = D
-        self.d = D * D
+        # `adjacency` (cluster-expansion targets) replaces the torus below and
+        # sets d from its own size; D is then a label, not a geometry.
+        self.d = D * D if adjacency is None else adjacency.shape[0]
         self.sigma = sigma
         self.bias = bias
         self.device = torch.device(device)
@@ -120,8 +123,10 @@ class IsingTarget:
         self._bound_composition: Tensor | None = None
 
         A = torch.zeros((self.d, self.d), device=self.device)
+        if adjacency is not None:
+            A = adjacency.to(self.device, dtype=A.dtype)
 
-        for r in range(self.D):
+        for r in range(self.D if adjacency is None else 0):
             for c in range(self.D):
                 i = r * self.D + c                          # (r, c)             -> flat
                 right = r * self.D + (c + 1) % self.D       # (r, (c+1) % D)     -> flat
@@ -129,8 +134,10 @@ class IsingTarget:
                 A[i, right] = 1.0
                 A[i, down] = 1.0
 
-        # symmetrise so the matrix is symmetric (undirected edges)
-        A = A + A.T
+        # symmetrise so the matrix is symmetric (undirected edges); a supplied
+        # adjacency is already symmetric
+        if adjacency is None:
+            A = A + A.T
         self.A = A                    # kept for `set_sigma` rescaling
         self.J = self.sigma * A
 
