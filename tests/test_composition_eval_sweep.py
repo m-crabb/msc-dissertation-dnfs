@@ -38,6 +38,7 @@ from experiments.dnfs_baseline_01.run import (
     SWEEP_COMPOSITIONS,
     _composition_binding,
     composition_sweep,
+    ess_from_log_weights,
     eval_only,
     train,
 )
@@ -394,3 +395,23 @@ def test_eval_only_redraw_with_grid_override_leaves_eval_frozen(tmp_path):
     # were drawn on the run's own grid, so rescoring cannot move it.
     with pytest.raises(ValueError):
         eval_only(run_dir, n_euler_override=16)
+
+
+def test_sweep_saves_the_frames_behind_each_row(amortised_run):
+    """The house error columns (dMag, dCorr, EW2) score FRAMES against a
+    reference; a row of scalars cannot be re-scored after the fact. So the
+    sweep files each composition's draw and its log-weights beside the JSON,
+    keyed by the requested c, and the filed weights must reproduce that row's
+    own ESS -- the check that a frame set cannot land under a neighbour's c.
+    """
+    rows = composition_sweep(amortised_run)
+    frames_root = amortised_run / "eval" / "composition_sweep"
+    for row in rows:
+        frame_dir = frames_root / f"c{row['composition']:.4f}"
+        samples = torch.load(frame_dir / "samples.pt", weights_only=True)
+        log_weights = torch.load(
+            frame_dir / "log_weights.pt", weights_only=True)
+        assert samples.shape == (row["n_eval_samples"], 4)
+        assert log_weights.shape == (row["n_eval_samples"],)
+        assert ess_from_log_weights(log_weights).item() == pytest.approx(
+            row["ess"], rel=1e-5)

@@ -239,7 +239,8 @@ def redraw_remote(run_dir_name: str, n_euler: int):
     volumes={"/results": volume},
     timeout=60 * 60,
 )
-def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt"):
+def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt",
+                 force: bool = False):
     """Per-composition request-grid sweep of one amortised run dir on the
     volume (run.composition_sweep — the measurement the amortisation claim
     rests on; one CRN-paired eval row per requested c).
@@ -247,8 +248,10 @@ def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt"):
     `checkpoint` keys the artefact dir exactly as composition_sweep does:
     final.pt -> eval/composition_sweep.json, final_ema.pt ->
     eval_ema/composition_sweep.json. Skip-if-exists makes a batch re-run
-    idempotent (the redraw_remote pattern). Needs config.json and
-    checkpoints/<checkpoint> in the run dir; nothing else is read.
+    idempotent (the redraw_remote pattern); `force` redoes a recorded
+    sweep, for sweeps filed before the per-composition frames were kept.
+    Needs config.json and checkpoints/<checkpoint> in the run dir; nothing
+    else is read.
     """
     import sys
 
@@ -259,7 +262,7 @@ def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt"):
 
     run_dir = Path("/results") / run_dir_name
     sweep_dir = "eval_ema" if checkpoint == "final_ema.pt" else "eval"
-    if (run_dir / sweep_dir / "composition_sweep.json").exists():
+    if (run_dir / sweep_dir / "composition_sweep.json").exists() and not force:
         print(f"skip {run_dir_name} {checkpoint} (sweep exists)")
         return
     composition_sweep(run_dir, checkpoint=checkpoint)
@@ -267,13 +270,14 @@ def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt"):
 
 
 @app.local_entrypoint()
-def sweep_batch(run_dirs: str, checkpoints: str = "final.pt,final_ema.pt"):
+def sweep_batch(run_dirs: str, checkpoints: str = "final.pt,final_ema.pt",
+                force: bool = False):
     """Fan out sweep_remote over run_dirs x checkpoints, one container per
     sweep (both args comma-separated; Modal's CLI takes strings)."""
     names = [s.strip() for s in run_dirs.split(",") if s.strip()]
     ckpts = [c.strip() for c in checkpoints.split(",") if c.strip()]
     calls = [
-        sweep_remote.spawn(run_dir_name=name, checkpoint=ckpt)
+        sweep_remote.spawn(run_dir_name=name, checkpoint=ckpt, force=force)
         for name in names
         for ckpt in ckpts
     ]

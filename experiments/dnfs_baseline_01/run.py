@@ -847,8 +847,13 @@ def composition_sweep(
         checkpoint: file under `checkpoints/`; `final.pt` is the end-of-run
             state, `latest.pt` the most recent eval-cadence snapshot.
         seed: common-random-numbers seed, shared by every row.
-        save: write `eval/composition_sweep.json` (skip for exploratory runs
-            that should not overwrite a recorded sweep).
+        save: write `eval/composition_sweep.json` and, beside it, each
+            row's frames under `eval/composition_sweep/c<c>/` (`samples.pt`
+            + `log_weights.pt`). The JSON row is scalars; the house error
+            columns (dMag, dCorr, EW2) score frames against a reference,
+            so without the frames a conditioned run can never take a row
+            in a house table. Skip for exploratory runs that should not
+            overwrite a recorded sweep.
 
     Returns:
         One dict per composition — the full eval metrics plus `composition`
@@ -872,10 +877,15 @@ def composition_sweep(
         )
     )
 
+    # Keyed by the parameter state that produced the rows: an EMA-shadow
+    # sweep lands beside the shadow's own frozen eval, never over the raw
+    # model's sweep.
+    eval_dir = run_dir / ("eval_ema" if checkpoint == "final_ema.pt" else "eval")
+
     rows = []
     for composition in compositions:
         seed_everything(seed)
-        _, _, metrics = _eval_at_composition(
+        samples, log_weights, metrics = _eval_at_composition(
             model, target, cfg, float(composition), device
         )
         rows.append(
@@ -885,14 +895,13 @@ def composition_sweep(
                 **metrics,
             }
         )
+        if save:
+            frame_dir = eval_dir / "composition_sweep" / f"c{composition:.4f}"
+            frame_dir.mkdir(parents=True, exist_ok=True)
+            torch.save(samples.cpu(), frame_dir / "samples.pt")
+            torch.save(log_weights.cpu(), frame_dir / "log_weights.pt")
 
     if save:
-        # Keyed by the parameter state that produced the rows: an EMA-shadow
-        # sweep lands beside the shadow's own frozen eval, never over the
-        # raw model's sweep.
-        eval_dir = run_dir / (
-            "eval_ema" if checkpoint == "final_ema.pt" else "eval"
-        )
         eval_dir.mkdir(exist_ok=True)
         (eval_dir / "composition_sweep.json").write_text(
             json.dumps(rows, indent=2)
