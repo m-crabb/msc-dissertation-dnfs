@@ -36,11 +36,12 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import torch
 
 from discrete_flow_sampler.diagnostics.flops import (
     chain_per_effective_sample, measured_forward_flops,
-    neural_sampling_flops_per_sample, per_effective_sample)
+    neural_sampling_flops_per_sample, per_effective_sample, sgc_run_flops)
 from discrete_flow_sampler.diagnostics.metrics import (
     correlation_profile_error, energy_wasserstein2, integrated_autocorr,
     magnetisation_profile_error)
@@ -62,6 +63,12 @@ OPERATING_POINTS = {
         reference="wolff_ref_d10_sigma0.220343.pt"),
 }
 N_BOOTSTRAP = 200
+# --sgc: the practitioner row, one dir per independent chain (scripts/
+# mchammer_baselines.py sgc --record-spins). Dir names carry sigma at full
+# repr, hence the long sigma_c glob.
+SGC_RUNS = REPO_ROOT / "results" / "mchammer_sgc"
+SGC_CHAINS = {"sigma_0.1": "D10_s0.1_c00.50_seed4*",
+              "sigma_c": f"D10_s{SIGMA_C!r}_c00.50_seed4*"}
 
 
 def observable_errors(x, weights, reference, target):
@@ -109,6 +116,23 @@ def family_flops_per_forward(run_dir: Path, target: IsingTarget) -> int:
     return measured_forward_flops(model, example)
 
 
+def slowest_observable_tau_int(by_chain: torch.Tensor, target: IsingTarget) -> float:
+    """tau_int of the slowest tabled observable, in record units: the larger
+    of the magnetisation and energy reads, each averaged over chains.
+    ``by_chain`` is (n_records, n_chains, d), record-major."""
+    n_records, n_chains, _ = by_chain.shape
+    series = {
+        "m": by_chain.mean(dim=2).T,
+        "E": (-target.log_prob(by_chain.reshape(-1, target.d))
+              .view(n_records, n_chains) / (2 * target.sigma)).T,
+    }
+    return max(
+        float(torch.tensor([integrated_autocorr(chain.numpy())
+                            for chain in per_chain]).mean())
+        for per_chain in series.values()
+    )
+
+
 def reference_flops_per_es(reference: torch.Tensor, n_chains: int,
                            target: IsingTarget, sidecar_path: Path) -> float | None:
     """Reference-row cost cell: the recounted pool build divided by its
@@ -118,19 +142,73 @@ def reference_flops_per_es(reference: torch.Tensor, n_chains: int,
         return None  # recount not run (08 --recount-flops); cell stays blank
     sidecar = json.loads(sidecar_path.read_text())
     n_records = reference.shape[0] // n_chains
-    by_chain = reference.view(n_records, n_chains, -1)
-    series = {
-        "m": by_chain.mean(dim=2).T,
-        "E": (-target.log_prob(reference.view(-1, target.d))
-              .view(n_records, n_chains) / (2 * target.sigma)).T,
-    }
-    tau_int = max(
-        float(torch.tensor([integrated_autocorr(chain.numpy())
-                            for chain in per_chain]).mean())
-        for per_chain in series.values()
-    )
+    tau_int = slowest_observable_tau_int(reference.view(n_records, n_chains, -1), target)
     return chain_per_effective_sample(
         sidecar["total_flops"], sidecar["n_records_pooled"], max(tau_int, 1.0))
+
+
+def score_sgc_row():
+    """Practitioner row "mchammer (SGC)": eight independent single-flip chains
+    per coupling (results/mchammer_sgc, Delta-mu = 0 so the chain targets the
+    same p~(x) as the DNFS row), scored on their post-burn-in spin frames,
+    unweighted, against the SAME Wolff pool and metric functions as the DNFS
+    row. Cells are the per-chain error averaged over the 8 chains +- SD, the
+    same construction as the DNFS row's per-seed average, so the two rows
+    are comparable.
+
+    FLOP/es follows the Wolff reference row exactly: sgc_run_flops =
+    12 x n_trials (a free single-site flip is a bare Gibbs site update,
+    burn-in trials included) over N / tau_int, with tau_int the slowest of
+    the magnetisation and energy reads (slowest_observable_tau_int, chain-
+    averaged, frame units -- spins.npy frame k is the state at trial
+    k x data_write_interval, so N and tau_int share the unit). The bill is
+    linear in tau_int, so the pooled cell equals the mean of the per-chain
+    bills; the per-chain bill is also recorded so its spread is visible.
+    """
+    table = {}
+    for point, spec in OPERATING_POINTS.items():
+        reference = torch.load(RESULTS / spec["reference"], weights_only=False)["samples"].float()
+        target = IsingTarget(D=L, sigma=spec["sigma"], bias=0.0)
+        per_chain, frames_by_chain = {}, []
+        for chain_dir in sorted(SGC_RUNS.glob(SGC_CHAINS[point])):
+            frames = torch.from_numpy(np.load(chain_dir / "spins.npy")).float()
+            summary = json.loads((chain_dir / "summary.json").read_text())
+            uniform = torch.full((frames.shape[0],), 1.0 / frames.shape[0])
+            tau_int = slowest_observable_tau_int(frames.unsqueeze(1), target)
+            per_chain[chain_dir.name] = {
+                **observable_errors(frames, uniform, reference, target),
+                "tau_int_frames": tau_int,
+                "FLOPes": chain_per_effective_sample(
+                    sgc_run_flops(summary["n_steps"]), frames.shape[0], max(tau_int, 1.0)),
+            }
+            frames_by_chain.append(frames)
+
+        # Pooled bill, the Wolff row's construction: all chains' trials over
+        # all chains' frames at the chain-averaged slowest tau_int.
+        pooled = torch.stack(frames_by_chain, dim=1)
+        pooled_tau_int = slowest_observable_tau_int(pooled, target)
+        n_chains, n_trials = len(per_chain), summary["n_steps"]
+        pooled_flops_per_es = chain_per_effective_sample(
+            n_chains * sgc_run_flops(n_trials), pooled.shape[0] * n_chains,
+            max(pooled_tau_int, 1.0))
+
+        aggregate = {k: mean_sd([c[k] for c in per_chain.values()]) for k in next(iter(per_chain.values()))}
+        table[point] = {"sigma": spec["sigma"], "n_chains": n_chains,
+                        "n_trials_per_chain": n_trials, "n_frames_per_chain": pooled.shape[0],
+                        "sgc_per_chain": per_chain, "sgc_mean_sd": aggregate,
+                        "sgc_pooled_tau_int_frames": pooled_tau_int,
+                        "sgc_pooled_flops_per_es": pooled_flops_per_es}
+
+        print(f"\n== {point} (sigma={spec['sigma']}, {n_chains} SGC chains, "
+              f"{n_trials:.0e} trials, {pooled.shape[0]} frames each)")
+        for name, c in per_chain.items():
+            print(f"  {name}: " + " ".join(f"{k}={v:.4g}" for k, v in c.items()))
+        print("  SGC mean +- SD:", {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in aggregate.items()})
+        print(f"  pooled tau_int {pooled_tau_int:.4g} frames -> FLOP/es {pooled_flops_per_es:.2g}")
+
+    out = RESULTS / "house_table_unconstrained_10x10_sgc.json"
+    out.write_text(json.dumps(table, indent=2))
+    print(f"\nwrote {out}")
 
 
 def main():
@@ -183,4 +261,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    score_sgc_row() if "--sgc" in sys.argv[1:] else main()

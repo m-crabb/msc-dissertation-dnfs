@@ -34,8 +34,9 @@ import json
 from pathlib import Path
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    FIGSIZE_FULL_1X2, FONT_SIZE_ANNOTATION, FONT_SIZE_LABEL, REFERENCE_INK,
-    SAMPLER_HUE, SAVEFIG_DPI, seed_band, style_axes, use_house_style)
+    FIGSIZE_FULL_1X2_SHORT, FIGSIZE_SINGLE, FONT_SIZE_ANNOTATION,
+    FONT_SIZE_LABEL, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI, seed_band,
+    style_axes, use_house_style)
 import matplotlib.pyplot as plt
 import torch
 
@@ -252,7 +253,7 @@ def main() -> None:
         mass_plus = run["weights"][magnetisation(run["samples"]) > 0].sum()
         print(f"  {run['name']}: mass(m>0) = {mass_plus:.3f}")
 
-    fig, (ax_energy, ax_magnet) = plt.subplots(1, 2, figsize=FIGSIZE_FULL_1X2)
+    fig, (ax_energy, ax_magnet) = plt.subplots(1, 2, figsize=FIGSIZE_FULL_1X2_SHORT)
     plot_house_panel(ax_energy, energy["support"], energy["ref"],
                      energy["seeds"], r"$E/d$", "(a)",
                      ref.shape[0], with_legend=True)
@@ -263,14 +264,14 @@ def main() -> None:
     critical_out = args.out.with_name(f"{args.out.stem}_critical.png")
     fig.savefig(critical_out, dpi=SAVEFIG_DPI)
 
-    # --- subcritical appendix twin (pre-house form, board: stays as-is) ----
+    # --- subcritical appendix twin (pre-house panel on the house canvas) ----
     subcritical = load_point(args.budget_runs)
     log_density = log_density_marginal(subcritical["target"],
                                        subcritical["ref_samples"],
                                        subcritical["seed_runs"])
     ess = torch.tensor([run["metrics"]["ess_fraction"]
                         for run in subcritical["seed_runs"]])
-    fig_sub, ax_sub = plt.subplots(figsize=(4.6, 3.2))
+    fig_sub, ax_sub = plt.subplots(figsize=FIGSIZE_SINGLE)
     ax_sub.plot(log_density["centres"], log_density["ref"],
                 color=REFERENCE_INK, lw=1.8, label="Wolff reference")
     ax_sub.fill_between(log_density["centres"],
@@ -288,7 +289,7 @@ def main() -> None:
     ax_sub.legend(fontsize=8, framealpha=0.9)
     fig_sub.tight_layout()
     subcritical_out = args.out.with_name(f"{args.out.stem}_subcritical.png")
-    fig_sub.savefig(subcritical_out, dpi=200)
+    fig_sub.savefig(subcritical_out, dpi=SAVEFIG_DPI)
     print(f"\nsaved figures to {critical_out} and {subcritical_out}")
 
 
