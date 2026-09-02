@@ -103,6 +103,17 @@ ARMS = {
     "ma": "masked-attention head",
     "thp": "two-hole patch head",
     "thp2": "two-hole patch head, $R=2$",
+    # The raster-ordering ladder at this rung (tag 20260830-rasterord-d256,
+    # labels as the 8x8 fill): does the ordering lever rescue the rung
+    # where bare `ma` fails at sigma_c? `masep` runs at the floor only
+    # (separable is an exact rewrite of `ma`; the archived dense sigma_c
+    # failure stands as the anchor).
+    "masep": "masked-attention band, one sweep (separable twin)",
+    "mamo2": "masked-attention band, two sweeps",
+    "mamo2ef": "masked-attention band, two sweeps + exact field",
+    "iv": "prefix-sum band, one sweep",
+    "ivmo2": "prefix-sum band, two sweeps",
+    "ivmo2ef": "prefix-sum band, two sweeps + exact field",
 }
 
 # Row order of tab:eval-hard-16x16, FLAT like the 4x4 and 8x8 tables (the
@@ -115,6 +126,13 @@ LATEX_ROWS = (
     ("ma", "masked-attention head"),
     ("thp", "two-hole patch head"),
     ("thp2", "\\quad $R=2$"),
+    None,
+    ("masep", "masked-attention band, one sweep (separable twin)"),
+    ("mamo2", "masked-attention band, two sweeps"),
+    ("mamo2ef", "\\quad + exact field"),
+    ("iv", "prefix-sum band, one sweep"),
+    ("ivmo2", "prefix-sum band, two sweeps"),
+    ("ivmo2ef", "\\quad + exact field"),
 )
 ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 
@@ -210,7 +228,7 @@ def reference_row(chains, chain_energies, trial_counts):
 
 # --- cells ----------------------------------------------------------------
 
-def find_cells(results_dir, sigma_key, arm):
+def find_cells(results_dir, sigma_key, arm, eval_subdir="eval_ema"):
     """Healthy run dirs for one head at one coupling, seed order.
 
     Drops cells the cold-CV tripwire halted, and matches the head token
@@ -228,6 +246,11 @@ def find_cells(results_dir, sigma_key, arm):
             continue
         if (run_dir / "cv_inversion_halt.json").exists():
             print(f"dropped (cv-inversion tripwire halt): {run_dir.name}",
+                  file=sys.stderr)
+            continue
+        if not (run_dir / eval_subdir / "samples.pt").exists():
+            # Still training (or a partial pull): not landed, not a cell.
+            print(f"skipped (no {eval_subdir} yet): {run_dir.name}",
                   file=sys.stderr)
             continue
         seed = int(run_dir.name.split("_seed")[1][:2])
@@ -379,9 +402,11 @@ def main(argv=None):
 
         # One target per coupling, built from a landed cell's OWN config so
         # the coupling on the neural side provably matches the reference's.
-        probe = next((find_cells(args.results_dir, sigma_label, a)
+        probe = next((find_cells(args.results_dir, sigma_label, a,
+                                 args.eval_subdir)
                       for a in ARMS if find_cells(args.results_dir,
-                                                  sigma_label, a)), None)
+                                                  sigma_label, a,
+                                                  args.eval_subdir)), None)
         if not probe:
             print(f"no landed cells at {sigma_label}; skipping", file=sys.stderr)
             continue
@@ -403,7 +428,8 @@ def main(argv=None):
         }
 
         for arm in ARMS:
-            run_dirs = find_cells(args.results_dir, sigma_label, arm)
+            run_dirs = find_cells(args.results_dir, sigma_label, arm,
+                                  args.eval_subdir)
             if not run_dirs:
                 print(f"no cells for {arm} at {sigma_label}", file=sys.stderr)
                 continue

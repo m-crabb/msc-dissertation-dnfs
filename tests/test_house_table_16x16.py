@@ -173,16 +173,23 @@ def test_reference_must_be_composition_exact(tmp_path):
 
 # --- (4) the arm set -----------------------------------------------------
 
-def test_arm_set_is_the_three_heads_that_ran():
-    """Exactly ma, thp and thp2. The plain-`fimo2` row the skeleton declared
-    has no run at either coupling and was deleted s78; `fimo2ef` left with
-    the factorised head (2026-08-29), which is demoted to an exterior-combiner
-    note and prints no results row at any rung. Its cells and config still
-    exist -- this is an editorial removal, not a deletion of the work."""
+def test_arm_set_is_the_heads_that_ran():
+    """The three w3 heads (ma, thp, thp2) plus the raster-ordering ladder
+    that ran at this rung (tag 20260830-rasterord-d256): the two band
+    families at one and two sweeps, with and without the exact field, and
+    the separable `ma` twin at the floor. The plain-`fimo2` row the skeleton
+    declared has no run at either coupling and was deleted s78; `fimo2ef`
+    left with the factorised head (2026-08-29), which is demoted to an
+    exterior-combiner note and prints no results row at any rung. Its cells
+    and config still exist -- an editorial removal, not a deletion."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
-    assert set(h16.ARMS) == {"ma", "thp", "thp2"}
+    assert set(h16.ARMS) == {"ma", "thp", "thp2", "masep", "mamo2", "mamo2ef",
+                             "iv", "ivmo2", "ivmo2ef"}
     assert not {"fimo2", "fimo2ef", "fmo2ef"} & set(h16.ARMS)
+    # Every arm prints a row, and the ladder sits in its own block.
+    printed = [key for row in h16.LATEX_ROWS if row for key in [row[0]]]
+    assert set(h16.ARMS) <= set(printed)
 
 
 def test_no_rejection_row_is_emitted():
