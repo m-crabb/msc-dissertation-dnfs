@@ -270,6 +270,21 @@ class IsingTarget:
         """
         return x * (-4.0 * self.sigma * (x @ self.A) - 2.0 * self.bias)
 
+    def base_swap_log_ratio(self, x: Tensor) -> Tensor:
+        """log base(Swap2(x, i, j)) - log base(x) for every pair, shape (B, d, d).
+
+        The t=1 feature of the swap-form exact-field channel. Ising closed
+        form: with diff = x_j - x_i and h = x A the neighbour sums, the
+        quadratic form changes by sigma [2 diff (h_i - h_j) - 2 diff^2 A_ij]
+        (the i-j bond is swap-invariant, hence the A_ij correction); the bias
+        term is swap-invariant. Zero on like pairs since diff = 0. Subclasses
+        with another energy override this one method and the channel follows.
+        """
+        neighbour_sum = x @ self.A
+        diff = x.unsqueeze(1) - x.unsqueeze(2)
+        field_difference = neighbour_sum.unsqueeze(2) - neighbour_sum.unsqueeze(1)
+        return self.sigma * (2.0 * diff * field_difference - 2.0 * diff * diff * self.A)
+
     def base_log_prob(self, x: Tensor) -> Tensor:
         """Unnormalised Ising log-density before optional soft constraints.
 

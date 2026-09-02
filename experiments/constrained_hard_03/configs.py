@@ -5091,3 +5091,13 @@ CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512"] = replace(
     _LOWLR_10K, name="H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512",
     train=replace(_LOWLR_10K.train, outer_batch_size=512),
 )
+
+
+# Exact-field channel twins on the hard alloy cells (s117): the swap channel
+# now reads the target's own swap log-ratio (-beta Delta E_swap on an
+# expansion), one declared change from the c=0.5 recipe cells.
+for _parent_name in ("H2_cuau16_c50_T500_mask_one_20k_lowlr",
+                     "H2_cuau16_c50_T500_mask_one_50k_house"):
+    _parent = CONFIGS[_parent_name]
+    CONFIGS[f"{_parent_name}_ef"] = replace(
+        _parent, name=f"{_parent_name}_ef", exact_field_channel=True)

@@ -70,14 +70,12 @@ class ExactFieldSwapHead(nn.Module):
         self.head.compile()
 
     def exact_field(self, x: Tensor) -> Tensor:
-        """sigma * Delta_ij for i < j, mirrored to G[j,i] = -G[i,j]: the batched
-        all-pairs form of FixedCompositionIsingTarget.swap_log_ratio at t=1."""
-        A = self.target.A
-        neighbour_sum = x @ A                                   # (B, d)
-        diff = x.unsqueeze(1) - x.unsqueeze(2)                  # x_j - x_i
-        field_difference = neighbour_sum.unsqueeze(2) - neighbour_sum.unsqueeze(1)  # h_i - h_j
-        delta = 2.0 * diff * field_difference - 2.0 * diff * diff * A
-        upper = torch.triu(self.target.sigma * delta, diagonal=1)
+        """sigma * Delta_ij for i < j, mirrored to G[j,i] = -G[i,j]: the target's
+        all-pairs swap log-ratio at t=1 (target.base_swap_log_ratio)."""
+        # The target supplies its own closed form (Ising: the field
+        # difference; cluster expansion: -beta Delta E_swap, Eq. 3), so the
+        # channel is exact on every binary target that defines it (s117).
+        upper = torch.triu(self.target.base_swap_log_ratio(x), diagonal=1)
         return upper - upper.transpose(1, 2)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:

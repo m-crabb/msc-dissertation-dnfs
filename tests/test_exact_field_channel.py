@@ -23,6 +23,8 @@ from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHea
 from discrete_flow_sampler.constraints.swap_readout import swap2
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+from discrete_flow_sampler.targets.cluster_expansion import (
+    BinaryExpansionSpec, FixedCompositionClusterExpansionTarget)
 
 
 def _setup(D=4, sigma=0.223, seed=0):
@@ -90,3 +92,22 @@ def test_state_dict_round_trip_and_backbone_passthrough():
     fresh.load_state_dict(wrapped.state_dict())
     torch.testing.assert_close(fresh(x, t), wrapped(x, t))
     assert fresh.backbone is fresh.head.backbone
+
+
+def test_channel_matches_brute_force_on_cluster_expansion():
+    """The Cu-Au 16-site slice at 500 K (s117): the channel must read the
+    expansion's own swap energy change, not the Ising quadratic form."""
+    torch.manual_seed(0)
+    spec = BinaryExpansionSpec.from_json("data/ce/cuau_fcc_2x2x4.json")
+    target = FixedCompositionClusterExpansionTarget(
+        spec, beta=1.0 / (8.617333262e-5 * 500.0), target_composition=0.5)
+    backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
+    wrapped = ExactFieldSwapHead(IntervalSwapHead(backbone, pair_offsets=(1, 4)), target)
+    x = target.sample_base(3, "cpu")
+    channel = wrapped.exact_field(x)
+    log_p = target.log_prob(x)
+    for i in range(16):
+        for j in range(i + 1, 16):
+            expected = target.log_prob(swap2(x, i, j)) - log_p
+            torch.testing.assert_close(channel[:, i, j], expected, atol=1e-5, rtol=0)
+    torch.testing.assert_close(channel, -channel.transpose(1, 2), atol=0, rtol=0)

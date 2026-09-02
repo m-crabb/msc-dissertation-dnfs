@@ -177,6 +177,11 @@ class ClusterExpansionTarget(IsingTarget):
         """-beta E(s) + bias * sum_i s_i, shape (B,)."""
         return -self.beta * self.spec.energy(x) + self.bias * x.sum(dim=1)
 
+    def base_swap_log_ratio(self, x: Tensor) -> Tensor:
+        """-beta * Delta E_swap(i, j) (Eq. 3), shape (B, d, d), zero on like
+        pairs: the swap-form exact-field channel's feature on an expansion."""
+        return -self.beta * self.spec.swap_energy_change(x)
+
     def base_flip_log_ratio(self, x: Tensor) -> Tensor:
         """-beta * Delta E_i (Eq. 2) - 2 bias x_i, shape (B, d): the exact-field
         channel's feature on an expansion, replacing the Ising quadratic form."""
