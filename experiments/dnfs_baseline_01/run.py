@@ -103,9 +103,7 @@ def _construct_target(
     kwargs = {}
     if log_ratio_clamp is not None:
         kwargs["log_ratio_clamp"] = log_ratio_clamp
-    return IsingTarget(
-        D=ising.D,
-        sigma=ising.sigma if sigma is None else sigma,
+    shared = dict(
         bias=ising.bias,
         device=device,
         target_composition=ising.target_composition,
@@ -118,6 +116,16 @@ def _construct_target(
         base_matches_composition=ising.base_matches_composition,
         **kwargs,
     )
+    sigma_now = ising.sigma if sigma is None else sigma
+    if ising.expansion_json is not None:
+        from discrete_flow_sampler.targets.cluster_expansion import (
+            BinaryExpansionSpec, ClusterExpansionTarget,
+        )
+        return ClusterExpansionTarget(
+            BinaryExpansionSpec.from_json(ising.expansion_json),
+            beta=2.0 * sigma_now, **shared,
+        )
+    return IsingTarget(D=ising.D, sigma=sigma_now, **shared)
 
 
 def _build_model(cfg, target):

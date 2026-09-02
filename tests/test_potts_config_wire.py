@@ -115,9 +115,15 @@ def test_species_count_is_consistent_across_every_cell():
         n_species = int(name.split("_")[0][1:])
         assert cfg.model.vocab_size == n_species, name
         if n_species == 2:
-            assert cfg.target_kind == "ising", name
+            # binary route: the Ising torus, or (s115) a binary cluster
+            # expansion on a real alloy cell, which fixes its own x_Au
+            assert cfg.target_kind in ("ising", "cluster_expansion"), name
             assert cfg.potts_composition is None, name
-            assert cfg.ising.target_composition == 0.5, name
+            if cfg.target_kind == "cluster_expansion":
+                assert cfg.ising.expansion_json is not None, name
+                assert cfg.ising.target_composition in (0.25, 0.5), name
+            else:
+                assert cfg.ising.target_composition == 0.5, name
         else:
             assert cfg.target_kind == "potts", name
             assert len(cfg.potts_composition) == n_species, name

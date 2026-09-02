@@ -63,6 +63,12 @@ class IsingCfg:
     # adds ∓2λ·(c(x)−c_target) to the same ratio, so 5 binds once obedience
     # error exceeds 5/(2λ). Raise it only in cells that mean to test that.
     log_ratio_clamp: float = 5.0
+    # A real alloy in place of the Ising torus: path (repo-relative) to a
+    # binary spin-product expansion exported by
+    # experiments/alloy_ce/export_binary_expansion.py. When set, the target is
+    # ClusterExpansionTarget on that cell, `sigma` means beta/2 = 1/(2 k_B T)
+    # in 1/eV (11.60 at 500 K), and D is a label: d comes from the file.
+    expansion_json: str | None = None
 
 
 @dataclass(frozen=True)

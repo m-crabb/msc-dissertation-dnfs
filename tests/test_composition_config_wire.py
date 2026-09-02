@@ -98,6 +98,11 @@ AMORTISED_CELLS = (
     # spine-values draw, no staircase, base matched per cycle. Their own
     # lever pins live in tests/test_matched_base_amortisation.py.
     "S2_d4_camort_mb_50k_l50_letf_house",
+    # s110 4x4 table family at the cross-chapter 10k budget (afe1060,
+    # e8778a1): conditioned twins at both couplings.
+    "S2_d4_camort_10k_l50_letf_house",
+    "S2_d4_camort_10k_l50_letf_house_sc",
+
     "S2_d8_camort_l50_letf_ne128_house",
     "S2_d8_camort_l50_letf_ne128_house_sc",
     # Draw-set ablation twins (s104): the 17-value draw back to the gate's

@@ -2385,3 +2385,74 @@ CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(replace(
     name="S2_d4_cnull_50k_l50_letf_house",
     train=replace(CONFIGS["S2_d4_cnull_l50_letf"].train, n_steps=50_000),
 ))
+
+
+# ---------------------------------------------------------------------------
+# Cu-Au alloy rungs (s115, 2026-09-02): the free-composition and penalised
+# samplers on the MetaDNS/Damewood Cu-Au fcc expansion (data/ce/, exported by
+# experiments/alloy_ce/export_binary_expansion.py). The single-site LETF
+# trunk is a plain sequence model, so the fcc cell needs no head change on
+# these two rungs. `sigma` is beta/2 = 1/(2 k_B T) in 1/eV; the curriculum
+# cools 1200 K -> 500 K, where the 16-site cell's exact composition marginal
+# is bimodal (0.77 at x_Au = 0.5, CuAu L1_0; 0.15 at 0.25, Cu3Au L1_2) --
+# the free rung must cover both ordered phases, the penalised rung pins one.
+# Penalty strength and matched base follow the soft house recipe; the
+# closed-form flip channel stays OFF because its field is the Ising x A
+# local field, not the expansion's flip response (generalisation owed).
+K_B_EV = 8.617333262e-5
+
+
+def cuau_sigma(temperature_K: float) -> float:
+    """beta/2 in 1/eV at the given temperature (11.602 at 500 K)."""
+    return 1.0 / (2.0 * K_B_EV * temperature_K)
+
+
+_CUAU_TEMPERATURE_LADDER_K = (1200.0, 800.0, 600.0, 500.0)
+
+
+def _cuau_curriculum(n_steps: int) -> CurriculumCfg:
+    stage = n_steps // 4
+    return CurriculumCfg(stages=tuple(
+        CurriculumStageCfg(
+            start_step=k * stage, sigma=cuau_sigma(T),
+            lr=1e-3 if k < 2 else 3e-4,
+        )
+        for k, T in enumerate(_CUAU_TEMPERATURE_LADDER_K)
+    ))
+
+
+_CUAU16_PARENT = CONFIGS["S2_d4_cnull_l50_letf"]
+_CUAU64_PARENT = CONFIGS["S2_d8_c03_l50_letf_ne128"]
+
+
+def _cuau_flip_cell(name, *, sites: int, composition: float | None,
+                    penalty: float, n_steps: int) -> StageCfg:
+    parent = _CUAU16_PARENT if sites == 16 else _CUAU64_PARENT
+    return replace(
+        parent,
+        name=name,
+        ising=replace(
+            parent.ising,
+            sigma=cuau_sigma(_CUAU_TEMPERATURE_LADDER_K[0]),
+            target_composition=composition,
+            composition_penalty_strength=penalty,
+            base_matches_composition=composition is not None,
+            expansion_json=f"data/ce/cuau_fcc_{'2x2x4' if sites == 16 else '4x4x4'}.json",
+        ),
+        train=replace(parent.train, n_steps=n_steps),
+        model=replace(parent.model, condition_on_composition=False,
+                      exact_field_channel=False),
+        composition=None,
+        curriculum=_cuau_curriculum(n_steps),
+        ema_decay=0.9999,
+    )
+
+
+for _sites, _steps in ((16, 10_000), (64, 50_000)):
+    _free = f"A1_cuau{_sites}_T500_letf_{_steps // 1000}k_curr"
+    CONFIGS[_free] = _cuau_flip_cell(
+        _free, sites=_sites, composition=None, penalty=0.0, n_steps=_steps)
+    for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
+        _soft = f"S2_cuau{_sites}_{_c_tag}_l50_T500_letf_{_steps // 1000}k_curr"
+        CONFIGS[_soft] = _cuau_flip_cell(
+            _soft, sites=_sites, composition=_c, penalty=50.0, n_steps=_steps)

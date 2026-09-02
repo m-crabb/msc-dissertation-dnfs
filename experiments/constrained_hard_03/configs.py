@@ -271,7 +271,7 @@ class HardStageCfg(StageCfg):
     # composition an S-vector held in `potts_composition` below. Both fields
     # default to the Ising route so every run dir written before Potts existed
     # backfills to what it actually ran under `eval_only`'s drift guard (89363b3).
-    target_kind: Literal["ising", "potts"] = "ising"
+    target_kind: Literal["ising", "potts", "cluster_expansion"] = "ising"
     # Per-species fractions, length S, summing to 1; each entry times d must be
     # integral or no exact slice exists. This is the SINGLE source of S: the
     # backbone's vocab_size is derived from its length in `_hard_cell`, so the
@@ -4912,3 +4912,73 @@ CONFIGS.update({
         *(_d400_critical_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
     )
 })
+
+
+# ---------------------------------------------------------------------------
+# Cu-Au alloy rungs (s115, 2026-09-02): the canonical sampler on a real
+# cluster expansion -- the MetaDNS/Damewood Cu-Au fcc expansion exported to
+# data/ce/ (experiments/alloy_ce/export_binary_expansion.py). `sigma` is
+# beta/2 = 1/(2 k_B T) in 1/eV, so the temperature curriculum runs 1200 K ->
+# 500 K (the disordered side down into the L1_2 / L1_0 ordered regime, the
+# alloy's own critical slowing). Head = mask_one: the one swap head with no
+# 2D-torus assumption (d anchor passes, exact), since the fcc cell is a
+# sequence of 64 sites with fcc adjacency, not a raster. x_Au = 0.25 (Cu3Au,
+# L1_2) and 0.5 (CuAu, L1_0) are the two ordered minima of the expansion.
+# 16-site cell = the enumerable gate (C(16,4) = 1820, C(16,8) = 12870 states).
+K_B_EV = 8.617333262e-5
+
+
+def cuau_sigma(temperature_K: float) -> float:
+    """beta/2 in 1/eV at the given temperature (11.602 at 500 K)."""
+    return 1.0 / (2.0 * K_B_EV * temperature_K)
+
+
+_CUAU_TEMPERATURE_LADDER_K = (1200.0, 800.0, 600.0, 500.0)
+
+
+def _cuau_curriculum(n_steps: int) -> CurriculumCfg:
+    """Four equal stages cooling to 500 K; lr eases at the last two, as the
+    Ising sigma ladder does approaching sigma_c."""
+    stage = n_steps // 4
+    return CurriculumCfg(stages=tuple(
+        CurriculumStageCfg(
+            start_step=k * stage, sigma=cuau_sigma(T),
+            lr=1e-3 if k < 2 else 3e-4,
+        )
+        for k, T in enumerate(_CUAU_TEMPERATURE_LADDER_K)
+    ))
+
+
+def _cuau_hard_cell(name, *, sites: int, composition: float, n_steps: int,
+                    n_euler_steps: int, n_eval_samples: int,
+                    eval_sample_chunk: int | None, hidden_dim: int,
+                    n_layers: int) -> HardStageCfg:
+    side = {16: 4, 64: 8}[sites]  # D is a label here: d comes from the file
+    cell = _hard_cell(
+        name, cuau_sigma(_CUAU_TEMPERATURE_LADDER_K[0]), "mask_one",
+        D=side, n_steps=n_steps, n_euler_steps=n_euler_steps,
+        n_eval_samples=n_eval_samples, eval_sample_chunk=eval_sample_chunk,
+        eval_every=500, curriculum=_cuau_curriculum(n_steps),
+    )
+    return replace(
+        cell,
+        ising=replace(
+            cell.ising, target_composition=composition,
+            expansion_json=f"data/ce/cuau_fcc_{'2x2x4' if sites == 16 else '4x4x4'}.json",
+        ),
+        model=replace(cell.model, hidden_dim=hidden_dim, n_layers=n_layers),
+        target_kind="cluster_expansion",
+    )
+
+
+for _sites, _steps, _ne, _n_eval, _chunk, _hidden, _layers in (
+    (16, 10_000, 50, 5_000, None, 64, 3),
+    (64, 50_000, 128, 5_000, 256, 128, 3),
+):
+    for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
+        _name = f"H2_cuau{_sites}_{_c_tag}_T500_mask_one_{_steps // 1000}k_curr"
+        CONFIGS[_name] = _cuau_hard_cell(
+            _name, sites=_sites, composition=_c, n_steps=_steps,
+            n_euler_steps=_ne, n_eval_samples=_n_eval, eval_sample_chunk=_chunk,
+            hidden_dim=_hidden, n_layers=_layers,
+        )
