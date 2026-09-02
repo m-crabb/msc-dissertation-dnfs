@@ -2509,3 +2509,10 @@ for _parent_name, _house_name in (
         ctmc=replace(_parent.ctmc, n_euler_steps=128),
         curriculum=_cuau_house_curriculum(50_000),
     )
+
+# 64-site cells onto the same ladder and lr cut (their s115 registration
+# carried the four-stage ladder with lr 1e-3 at the 800 K step); the soft
+# 64-site penalty stays at the 8x8 house lambda=50.
+for _name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_curr",
+              "S2_cuau64_c50_l50_T500_letf_50k_curr"):
+    CONFIGS[_name] = replace(CONFIGS[_name], curriculum=_cuau_house_curriculum(50_000))

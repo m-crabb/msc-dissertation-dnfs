@@ -5065,3 +5065,13 @@ for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
         train=replace(_control.train, n_steps=50_000),
         ctmc=replace(_control.ctmc, n_euler_steps=128),
     )
+
+# The 64-site cells (4x4x4 primitive repeats = the MetaDNS benchmark cell)
+# take the same ladder, lr cut and EMA in place: their s115 registration
+# still carried the four-stage ladder with lr 1e-3 at the 800 K step.
+for _c_tag in ("c25", "c50"):
+    _name = f"H2_cuau64_{_c_tag}_T500_mask_one_50k_curr"
+    CONFIGS[_name] = replace(
+        CONFIGS[_name], ema_decay=0.9999,
+        curriculum=_cuau_ladder(_cuau_house_ladder(), 50_000),
+    )
