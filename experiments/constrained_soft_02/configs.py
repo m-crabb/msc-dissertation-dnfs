@@ -2465,3 +2465,17 @@ for _sites, _steps in ((16, 10_000), (64, 50_000)):
                      f"{_steps // 1000}k_curr")
             CONFIGS[_soft] = _cuau_flip_cell(
                 _soft, sites=_sites, composition=_c, penalty=_penalty, n_steps=_steps)
+
+
+# Soft c=0.5 at lambda=10 trains at 1200 K (train ESS ~1400/5000) and then
+# collapses at the 1200 -> 800 K step exactly as the hard c=0.5 cell did;
+# the hard desk-check (s117, 2026-09-02) found lr 1e-4 from that step the
+# rescue, so the soft twin gets the same schedule.
+_SOFT_C50_L10 = CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_curr"]
+CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"] = replace(
+    _SOFT_C50_L10, name="S2_cuau16_c50_l10_T500_letf_10k_lowlr",
+    curriculum=CurriculumCfg(stages=tuple(
+        CurriculumStageCfg(start_step=k * 2500, sigma=cuau_sigma(T), lr=lr)
+        for k, (T, lr) in enumerate(((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)))
+    )),
+)

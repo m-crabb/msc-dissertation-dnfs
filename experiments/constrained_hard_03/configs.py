@@ -5021,3 +5021,22 @@ for _variant, _curriculum, _train_overrides, _ising_overrides in (
         train=replace(_CUAU16_C50_CONTROL.train, **_train_overrides),
         ising=replace(_CUAU16_C50_CONTROL.ising, **_ising_overrides),
     )
+
+# Follow-up on the desk-check verdict (s117, 2026-09-02): lr 1e-4 from the
+# first step down rescued c=0.5 in 2/2 seeds (eval ESS 0.29 / 0.34, IS F
+# within 0.6 meV/site, train ESS still rising at 10k); the six-stage ladder
+# alone rescued 1/2; rewarm, keepreplay and 500 K-from-init stayed at the
+# identity flow. Two combinations: the low lr on a doubled budget, and the
+# low lr on the six-stage ladder.
+_LOWLR_LADDER = [(1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)]
+_LOWLR_LADDER6 = [(1200.0, 1e-3), (1000.0, 1e-4), (900.0, 1e-4), (800.0, 1e-4),
+                  (600.0, 1e-4), (500.0, 1e-4)]
+for _variant, _ladder, _n_steps in (
+    ("lowlr", _LOWLR_LADDER, 20_000),
+    ("ladder6lowlr", _LOWLR_LADDER6, 10_000),
+):
+    _name = f"H2_cuau16_c50_T500_mask_one_{_n_steps // 1000}k_{_variant}"
+    CONFIGS[_name] = replace(
+        _CUAU16_C50_CONTROL, name=_name, curriculum=_cuau_ladder(_ladder, _n_steps),
+        train=replace(_CUAU16_C50_CONTROL.train, n_steps=_n_steps),
+    )
