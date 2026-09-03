@@ -2183,6 +2183,80 @@ def test_d400_radius_cells_build_their_heads():
         assert head.pooling_radii == (1, 2, 4, 8), (name, head.pooling_radii)
 
 
+def test_d576_cells_are_the_d400_r3_bf16_cell_moved_to_the_lattice():
+    """24x24 sigma_c rung (2026-09-03): the R=3 cell must be the d400 R=3
+    bf16 critical cell transformed by exactly two declared fields -- the
+    lattice and the loss microbatch -- so a d576-vs-d400 read is chargeable
+    to the lattice (the microbatch is gradient-exact, pinned by
+    tests/test_loss_microbatch_parity.py, and rides for memory only: bf16
+    single-shot at R=3 projects from 41.6 GB at d400 to ~86 GB at d576).
+    Everything the 20x20 wave settled -- radius 3, sigma_c, the reused
+    ladder, 100k steps, batch 512, n_euler 128, bf16 training, compiled head
+    -- must ride unchanged."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS, SIGMA_C
+
+    d400 = CONFIGS["H2_d400_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w4bf16"]
+    d576 = CONFIGS["H2_d576_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w5bf16"]
+    assert d576.ising.D == 24
+    assert d576.ising.sigma == SIGMA_C
+    assert d576.train.loss_microbatch_size == 128
+    assert d576.train.train_autocast_bf16
+    assert d576.curriculum is d400.curriculum
+    rebuilt = replace(
+        d576,
+        name=d400.name,
+        ising=replace(d576.ising, D=20),
+        train=replace(d576.train, loss_microbatch_size=None),
+    )
+    assert rebuilt == d400
+
+
+def test_d576_cells_isolate_the_radius():
+    """R=4 vs R=3 at d576 moves the radius and nothing else. R=3 is the
+    anchor because it was the measured winner at d400 sigma_c (EMA ESS
+    0.789-0.810 against R=2's 0.633-0.731, disjoint over six seeds); R=4 is
+    the one continuation of the knob that has now paid at two rungs.
+    Capacity is deliberately NOT moved alongside it."""
+    from dataclasses import replace
+
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    r3 = CONFIGS["H2_d576_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w5bf16"]
+    r4 = CONFIGS["H2_d576_c50_s220_letf_thp4_100k_curr_b512_ne128_cv2_w5bf16"]
+    assert (r3.patch_radius, r4.patch_radius) == (3, 4)
+    assert replace(r4, name=r3.name, patch_radius=3) == r3
+    assert r3.model == r4.model
+    assert r3.patch_feature_dim is None and r4.patch_feature_dim is None
+
+
+def test_d576_cells_build_their_heads():
+    """Construction at the real lattice: both radii must instantiate at
+    d=576 (R=4 needs 2R+1 = 9 <= 24), and the pooled levels must NOT gain
+    one this rung -- powers of two whose box fits the torus give (1, 2, 4, 8)
+    at D=24 exactly as at D=20, since r=16 would need 33 <= D. So the only
+    thing that grows with this lattice is the relative-position embedding."""
+    from discrete_flow_sampler.models.letf import LeTFRateMatrix
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
+    cells = [name for name in CONFIGS if "_w5" in name]
+    assert len(cells) == 2
+    for name in cells:
+        cfg = CONFIGS[name]
+        backbone = LeTFRateMatrix(
+            d=cfg.ising.D ** 2, vocab_size=2, hidden_dim=16, n_layers=2,
+            n_heads=2,
+        )
+        target = FixedCompositionIsingTarget(
+            D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
+        )
+        head = build_swap_head(cfg, backbone, target=target)
+        assert head is not None, name
+        assert head.pooling_radii == (1, 2, 4, 8), (name, head.pooling_radii)
+
+
 def test_every_new_probe_cell_rides_the_optimised_recipe():
     """Standing rule: every NEW cell goes out on the s60 optimised recipe --
     `compile_head=True` and `train.c_t_from_rollout=True`. Archived cells and
@@ -2199,12 +2273,14 @@ def test_every_new_probe_cell_rides_the_optimised_recipe():
     from experiments.constrained_hard_03.configs import CONFIGS
 
     probes = [n for n in CONFIGS
-              if n.endswith("_win") or n.endswith("_rel") or "_w4" in n]
+              if n.endswith("_win") or n.endswith("_rel") or "_w4" in n
+              or "_w5" in n]
     # 4 `mal` window twins + 4 `mar` relative-position twins (4x4 and 8x8,
     # both couplings each) + 8 d400 radius x precision arms (4 at the 0.10
-    # floor, 4 at sigma_c). Update deliberately when a probe is added, so a
-    # cell cannot join the set without someone reading this rule.
-    assert len(probes) == 16, sorted(probes)
+    # floor, 4 at sigma_c) + 2 d576 sigma_c radius arms (2026-09-03). Update
+    # deliberately when a probe is added, so a cell cannot join the set
+    # without someone reading this rule.
+    assert len(probes) == 18, sorted(probes)
     for name in probes:
         cell = CONFIGS[name]
         assert cell.head_kind != "factorised", name

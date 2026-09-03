@@ -207,6 +207,16 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
             f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": 128
             for arm in ("masep", "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
         },
+        # 24x24 sigma_c rung (2026-09-03): the first thp cells to carry the
+        # schedule, and the reason is the measured OOM this test exists
+        # for -- the (B, d, d, f) slab grows as d^2, so bf16 single-shot at
+        # R=3 projects from 41.6 GB at d400 to ~86 GB at d576, over an
+        # 80 GB card. mb128 brings the backward to ~33 GB at a ~9% step
+        # penalty (measured at d400; it falls with lattice size).
+        **{
+            f"H2_d576_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w5bf16": 128
+            for arm in ("thp3", "thp4")
+        },
     }
     for name, cell in CONFIGS.items():
         assert cell.train.loss_microbatch_size == expected.get(name), name

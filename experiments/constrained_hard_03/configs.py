@@ -4279,6 +4279,71 @@ def _d400_critical_bf16_cell(arm: str) -> HardStageCfg:
     )
 
 
+# --- 24x24 at the critical coupling (2026-09-03) --------------------------
+#
+# THE QUESTION. One rung further than 20x20, on the recipe 20x20 measured,
+# with the head's one knob pushed one notch. The d400 sigma_c wave OVERTURNED
+# the floor rung's radius null: R=3 read EMA ESS 0.789-0.810 against R=2's
+# 0.633-0.731, DISJOINT over six seeds per radius, with the +16% forward
+# premium fully absorbed (FLOP/es 1.4e11 both radii). So R=3 is the anchor
+# here -- the d400 recipe moved to d=576, chargeable to the LATTICE -- and
+# R=4 is the one continuation worth a wave, chargeable to the RADIUS.
+#
+# CAPACITY IS HELD, DELIBERATELY. The backbone stays hidden 32 / 2 layers,
+# and the patch head keeps feature_dim 32 / patch_hidden 32, because a wider
+# backbone was measured as a REGRESSION at d256 (Var/site 0.0229 against the
+# 0.0168 anchor, CI-disjoint) and the patch head's own width has never been
+# swept. Pairing a width change with the radius on the only wave this rung
+# gets would make neither read chargeable.
+#
+# bf16 ONLY, no fp32 twin (standing rule since the 20x20 close-out): the
+# precision quality question read null at BOTH d400 couplings and the cost
+# half is settled end-to-end (-21% to -27%, 4/4 matched seeds).
+#
+# THE ONE NEW LEVER: LOSS MICROBATCHING AT 128. The (B, d, d, f) pair slab
+# grows as d^2, so bf16 single-shot at R=3 projects from the measured 41.6 GB
+# at d400 to ~86 GB at d576 -- over an 80 GB card. Microbatching IS gradient
+# accumulation and is gradient-exact (tests/test_loss_microbatch_parity.py);
+# its measured penalty was 9% at d400 (mb128: 63.4 -> 15.9 GB peak,
+# 0.400 -> 0.435 s) and falls with lattice size, so mb128 at d576 projects to
+# ~33 GB for the backward against a ~48 GB rollout. It matches the d256
+# house microbatch, and is the declared deviation from the d400 cell.
+#
+# WHAT GROWS FOR FREE, AND WHAT DOES NOT. The relative-position embedding is
+# nn.Embedding(d, f) and grows by construction. The pooled levels do NOT
+# gain one this time: powers of two whose box 2r+1 fits the torus give
+# (1, 2, 4, 8) at both D=20 and D=24 (r=16 needs 33 <= D). The sigma ladder
+# is reused unrescaled as at d400 (absolute start_steps, no lattice field).
+#
+# THE INSTRUMENT. tau ~ D^1.5 puts the d576 sigma_c Kawasaki reference at
+# ~25 sweeps against d400's 18.9; the d400 one certified in ~5 min on the Mac.
+# ESS and the FLOP columns are self-contained; the envelope from d256's
+# Var/site carried super-extensively predicted ESS ~0.60 at 24x24 for R=1,
+# and R=3 at d400 already beat that envelope's d400 value.
+_D576_RADIUS_ARM_KNOBS: dict[str, dict] = {
+    "thp3": {"patch_radius": 3},
+    "thp4": {"patch_radius": 4},
+}
+_D576_MICROBATCH = 128
+
+
+def _d576_critical_bf16_cell(arm: str) -> HardStageCfg:
+    """One 24x24 sigma_c cell: the d400 R=3 bf16 critical cell moved to
+    D=24, with loss microbatching at 128 and the arm's radius, and nothing
+    else. Chains off the bf16 cell because bf16 is the rule at this scale,
+    so a d576-vs-d400 read at R=3 differs in the lattice and the (exact)
+    microbatch only, and the R=4-vs-R=3 read at d576 differs in the radius
+    only."""
+    parent = _d400_critical_bf16_cell("thp3")
+    return replace(
+        parent,
+        name=f"H2_d576_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w5bf16",
+        ising=replace(parent.ising, D=24),
+        train=replace(parent.train, loss_microbatch_size=_D576_MICROBATCH),
+        **_D576_RADIUS_ARM_KNOBS[arm],
+    )
+
+
 # --- Arm A: the whole-lattice attention window (2026-08-27) --------------
 #
 # THE UNBUILT CELL. The head construction is a 2 x 2 x 2 -- feature family
@@ -4910,6 +4975,7 @@ CONFIGS.update({
         *(_d400_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
         *(_d400_critical_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
         *(_d400_critical_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+        *(_d576_critical_bf16_cell(arm) for arm in _D576_RADIUS_ARM_KNOBS),
     )
 })
 

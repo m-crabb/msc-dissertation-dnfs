@@ -90,13 +90,14 @@ def test_kawasaki_field_is_integer_valued_at_every_lattice_size():
 
 def test_train_autocast_bf16_defaults_off_everywhere():
     """Archived cells must be byte-identical, so the field defaults False
-    and no existing cell turns it on. Only the two `_w4bf16` probe cells
-    may carry it."""
+    and no existing cell turns it on. Only the `_w4bf16` d400 probe cells
+    and the `_w5bf16` d576 cells (bf16-only by standing rule at d400+,
+    2026-09-03) may carry it."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
     on = [n for n, c in CONFIGS.items()
           if getattr(c.train, "train_autocast_bf16", False)]
-    assert all(n.endswith("_w4bf16") for n in on), on
+    assert all(n.endswith(("_w4bf16", "_w5bf16")) for n in on), on
 
 
 def test_bf16_probe_cells_are_their_fp32_twins_plus_the_flag():
