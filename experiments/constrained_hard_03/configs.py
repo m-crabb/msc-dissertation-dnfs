@@ -5181,6 +5181,36 @@ for _c_tag in ("c25", "c50"):
         eval=replace(_parent.eval, n_eval_samples_training=256),
     )
 
+# Revival arms for the 64-site cells (s122 night, 2026-09-04). The first thp
+# wave ordered c=0.25 (samples at the L1_2 ground state, ESS 0.17-0.20 from
+# path weight noise alone) and gave up on c=0.5 gradually: end-of-stage loss
+# / static-flow loss 0.12, 0.30, 0.50, 0.80, ~1.0 from the 818 K stage down,
+# samples 9.5 swaps from the nearest L1_0 (random 13.4), each wrong swap
+# ~7 kT. Reach is exonerated (two-shell R^2 0.95-0.99 on L1_0 + 4/10 swaps).
+# So the levers are the ladder and the trajectory, one declared change each:
+#   l14        fourteen rungs linear in beta 1200 -> 500 K (half the shock
+#              per stage entry) at the same 50k, or at 100k (same steps per
+#              stage as the house recipe);
+#   ne256      4d Euler steps instead of the house 2d (finer path, more
+#              events per trajectory);
+#   l14_ne256  both, the ceiling arm.
+_THP64_PARENTS = {c: CONFIGS[f"H2_cuau64_{c}_T500_thp_50k_curr"] for c in ("c25", "c50")}
+for _c_tag, _variant, _n_stages, _n_steps, _n_euler in (
+    ("c50", "50k_l14", 14, 50_000, 128),
+    ("c50", "100k_l14", 14, 100_000, 128),
+    ("c50", "50k_ne256", 7, 50_000, 256),
+    ("c50", "100k_l14_ne256", 14, 100_000, 256),
+    ("c25", "50k_ne256", 7, 50_000, 256),
+):
+    _parent = _THP64_PARENTS[_c_tag]
+    _name = f"H2_cuau64_{_c_tag}_T500_thp_{_variant}"
+    CONFIGS[_name] = replace(
+        _parent, name=_name,
+        curriculum=_cuau_ladder(_cuau_house_ladder(n_stages=_n_stages), _n_steps),
+        train=replace(_parent.train, n_steps=_n_steps),
+        ctmc=replace(_parent.ctmc, n_euler_steps=_n_euler),
+    )
+
 
 # Fresh-trajectory probe (s117): the 20k lr-cut cell reached ESS 0.79 where
 # 10k gave 0.34, and MetaDNS trains on ~200x more distinct rollouts than our
