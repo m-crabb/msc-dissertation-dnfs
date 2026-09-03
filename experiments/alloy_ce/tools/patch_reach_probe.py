@@ -23,6 +23,7 @@ Usage (CPU, minutes):
 
 import argparse
 import json
+import math
 
 import torch
 
@@ -40,6 +41,41 @@ from discrete_flow_sampler.targets.cluster_expansion import (
     FixedCompositionClusterExpansionTarget,
 )
 from experiments.constrained_hard_03.configs import cuau_sigma
+
+
+def ordered_states(spec, phase):
+    """The L1_0 (six) or L1_2 (four) ordered states of an fcc supercell whose
+    positions are in Cartesian A with the conventional cube edge = the second
+    neighbour distance: layer parity along an axis for L1_0, one simple-cubic
+    sublattice for L1_2. (n_states, n_sites) in {-1, +1}."""
+    positions = torch.tensor(spec.positions, dtype=torch.float64)
+    distances = torch.cdist(positions, positions)
+    nearest = distances[distances > 1e-6].min()                         # raw, no wrap needed
+    cube_edge = nearest * math.sqrt(2.0)                                # fcc: a = sqrt(2) d_nn
+    parity = torch.round(2 * positions / cube_edge).long() % 2          # (n, 3)
+    if phase == "l10":
+        states = []
+        for axis in range(3):
+            s = torch.where(parity[:, axis] == 0, 1.0, -1.0); states += [s, -s]
+        return torch.stack(states)
+    sublattice = parity[:, 0] * 2 + parity[:, 1]
+    return torch.stack([torch.where(sublattice == k, 1.0, -1.0) for k in range(4)])
+
+
+def near_ordered_states(spec, phase, n_swaps, n_states, generator):
+    """Ordered states with `n_swaps` random unlike-pair swaps applied: the
+    domain-wall-ridden neighbourhood the flow must anneal through."""
+    refs = ordered_states(spec, phase)
+    out = []
+    for i in range(n_states):
+        x = refs[torch.randint(0, len(refs), (1,), generator=generator)].clone().flatten()
+        for _ in range(n_swaps):
+            plus = torch.nonzero(x > 0).flatten(); minus = torch.nonzero(x < 0).flatten()
+            a = plus[torch.randint(0, len(plus), (1,), generator=generator)]
+            b = minus[torch.randint(0, len(minus), (1,), generator=generator)]
+            x[a], x[b] = -1.0, 1.0
+        out.append(x)
+    return torch.stack(out)
 
 
 def random_slice_states(n_states, n_sites, n_plus, generator):
@@ -103,17 +139,27 @@ def main(argv=None):
     parser.add_argument("--n-held-out", type=int, default=256)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default=None)
+    parser.add_argument(
+        "--states", default="uniform",
+        help="'uniform' (the base), or 'l10+K' / 'l12+K': the ordered phase "
+             "with K random unlike swaps applied (near-ordered, domain-wall states)",
+    )
     args = parser.parse_args(argv)
 
     spec = BinaryExpansionSpec.from_json(args.spec)
     beta = 2.0 * cuau_sigma(args.temperature)
     target = FixedCompositionClusterExpansionTarget(spec, beta=beta, target_composition=args.composition)
     generator = torch.Generator().manual_seed(args.seed)
-    train_states = random_slice_states(args.n_train, spec.n_sites, target.n_plus_target, generator)
-    held_out_states = random_slice_states(args.n_held_out, spec.n_sites, target.n_plus_target, generator)
+    if args.states == "uniform":
+        train_states = random_slice_states(args.n_train, spec.n_sites, target.n_plus_target, generator)
+        held_out_states = random_slice_states(args.n_held_out, spec.n_sites, target.n_plus_target, generator)
+    else:
+        phase, n_swaps = args.states.split("+")
+        train_states = near_ordered_states(spec, phase, int(n_swaps), args.n_train, generator)
+        held_out_states = near_ordered_states(spec, phase, int(n_swaps), args.n_held_out, generator)
     pairs = upper_tri_pairs(spec.n_sites, train_states.device)
     held_delta, held_unlike = unlike_pair_targets(target, held_out_states, pairs)
-    print(f"{args.spec}: {spec.n_sites} sites, c={args.composition}, T={args.temperature} K, "
+    print(f"{args.spec}: {spec.n_sites} sites, c={args.composition}, T={args.temperature} K, states={args.states}, "
           f"held-out Delta std {held_delta[held_unlike].std():.3f} over {int(held_unlike.sum())} unlike pairs")
 
     results = {}
