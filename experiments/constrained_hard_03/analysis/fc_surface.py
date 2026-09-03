@@ -39,14 +39,27 @@ binodal; on an 8x8 torus at sigma_c the correlation length exceeds the box).
 Read from ONE model's running weights, at every coupling, with the TI truth
 beside it where it exists.
 
-Companion figure (`--sro`): the Warren-Cowley short-range-order parameter
+Dense composition grid. Where a seed dir also holds `zero_shot_fc_grid.json`
+(the 3-Sep Modal probe over EVERY slice, n_+ = 1..63, same seven stop times;
+ESS >= 0.72 on all 63 at sigma_c from a model trained on five compositions in
+[0.3125, 0.5]) it replaces the seven-point file, and a third figure
+(`_dfdc`) draws the free-energy derivative dF/dc by central differences over
+neighbouring slices, one curve per coupling: the quantity the VC-SGC
+tutorials integrate a chemical potential to obtain, here read off the
+absolute surface. Its turnover (dF/dc decreasing with c) is the concave
+stretch of panel (c).
+
+Companion figure (`_sro`): the Warren-Cowley short-range-order parameter
 from the same rows' weighted nearest-neighbour spin product g = <x_i x_j>.
 With occupations n = (1 + x)/2 the ordered-pair fraction P_AB = (1 - g)/4, so
 
-    alpha_1(c, sigma) = 1 - P_{A|B} / c_A = 1 - (1 - g) / (4 c (1 - c)),
+    alpha_1(c, sigma) = 1 - P_{A|B} / c_A = 1 - (1 - g) (d - 1) / (4 c (1 - c) d),
 
-zero at random mixing (g = (2c - 1)^2), positive for like-neighbour
-clustering (the ferromagnet), negative for ordering. Composition is exact on
+zero at random mixing, positive for like-neighbour clustering (the
+ferromagnet), negative for ordering. The (d - 1)/d is the fixed-N baseline:
+placing N_A up-spins WITHOUT replacement gives an unlike-pair probability
+c(1 - c) d/(d - 1), not c(1 - c), and without it a single up-spin on the 8x8
+reads alpha = -0.016 while being exactly random. Composition is exact on
 every draw, so this is the canonical SRO at fixed c with no reweighting --
 the panel the CE tutorials draw from a VC-SGC chain per (phi, T).
 """
@@ -79,8 +92,11 @@ def load_sampler_surface(results_dir: Path, seeds, template: str) -> dict:
     stop-time grid index, so couplings match the reference files exactly."""
     surface: dict = {}
     for seed in seeds:
-        payload = json.loads(
-            (results_dir / template.format(seed=seed) / "zero_shot_fc.json").read_text())
+        run_dir = results_dir / template.format(seed=seed)
+        probe = run_dir / "zero_shot_fc_grid.json"
+        if not probe.is_file():
+            probe = run_dir / "zero_shot_fc.json"
+        payload = json.loads(probe.read_text())
         assert payload["n_euler_steps"] == STOP_GRID + 1
         for row in payload["rows"]:
             k = round(row["stop_time"] * STOP_GRID)
@@ -104,8 +120,11 @@ def mirror_missing(table: dict) -> dict:
     return mirrored
 
 
-def load_reference(reference_dir: Path, ti_prefix: str | None) -> dict:
-    """{(composition, k): F_per_site} from every TI file present."""
+def load_reference(reference_dir: Path, ti_prefix: str | None, printed_first=True) -> dict:
+    """{(composition, k): F_per_site} from every TI file present. With
+    `printed_first=False` only the per-coupling k-files are read: the
+    curvature stencil must difference ONE TI run, since two runs at sigma_c
+    differ by ~0.002/site and the stencil multiplies that by 256."""
     reference: dict = {}
     if ti_prefix is None:
         return reference
@@ -115,7 +134,7 @@ def load_reference(reference_dir: Path, ti_prefix: str | None) -> dict:
     # (-0.8469 vs -0.8493), above the ~0.001/site hysteresis bracket each
     # reports: the TI's own replicate spread is the reference floor here.
     printed = reference_dir / f"{ti_prefix}_sc.npz"
-    if printed.is_file():
+    if printed_first and printed.is_file():
         z = np.load(printed)
         for c, F in zip(z["c_target"], z["F_per_site"]):
             reference[(round(float(c), 6), STOP_GRID)] = float(F)
@@ -132,9 +151,10 @@ def ideal_mixing_per_site(c: float, D: int) -> float:
     return -math.lgamma(D + 1) / D + (math.lgamma(n + 1) + math.lgamma(D - n + 1)) / D
 
 
-def warren_cowley(nn_correlation: float, c: float) -> float:
-    """alpha_1 from the mean bond spin product at composition c (docstring)."""
-    return 1.0 - (1.0 - nn_correlation) / (4.0 * c * (1.0 - c))
+def warren_cowley(nn_correlation: float, c: float, D: int) -> float:
+    """alpha_1 from the mean bond spin product at composition c on d = D sites
+    (module docstring: fixed-N random-mixing baseline)."""
+    return 1.0 - (1.0 - nn_correlation) * (D - 1) / (4.0 * c * (1.0 - c) * D)
 
 
 # The certified 8x8 Kawasaki chains (house_table_8x8's reference) at c = 0.5:
@@ -164,11 +184,11 @@ def reference_sro_at_half(results_root: Path, edge: int, burn_in_fraction=0.2) -
         if not draws:
             continue
         g = [float(nn_correlation(d, adjacency).mean()) for d in draws]
-        out[k] = warren_cowley(float(np.mean(g)), 0.5)
+        out[k] = warren_cowley(float(np.mean(g)), 0.5, edge * edge)
     return out
 
 
-def plot_sro(surface: dict, out: Path, reference_half: dict) -> None:
+def plot_sro(surface: dict, out: Path, reference_half: dict, D: int) -> None:
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
@@ -180,11 +200,12 @@ def plot_sro(surface: dict, out: Path, reference_half: dict) -> None:
     fig, ax = plt.subplots(figsize=FIGSIZE_SINGLE)
     for hue, k in zip(parameter_ramp(SAMPLER_HUE, len(ks)), ks):
         cs = sorted(c for c, kk in surface if kk == k)
-        per_seed = np.array([[warren_cowley(g, c) for g in surface[(c, k)]["nn"]]
+        per_seed = np.array([[warren_cowley(g, c, D) for g in surface[(c, k)]["nn"]]
                              for c in cs]).T
         uncertainty_band(ax, cs, per_seed.min(0), per_seed.max(0), hue)
-        ax.plot(cs, per_seed.mean(0), color=hue, linewidth=1.4, marker="o",
-                markersize=3, zorder=3, label=rf"$\sigma/\sigma_c = {k / STOP_GRID:.2f}$")
+        ax.plot(cs, per_seed.mean(0), color=hue, linewidth=1.4,
+                marker="o" if len(cs) <= 12 else None, markersize=3, zorder=3,
+                label=rf"$\sigma/\sigma_c = {k / STOP_GRID:.2f}$")
     ax.axhline(0, color=MUTED, linewidth=0.8)
     if reference_half:
         ax.plot([0.5] * len(reference_half), list(reference_half.values()), color=REFERENCE_INK,
@@ -192,6 +213,41 @@ def plot_sro(surface: dict, out: Path, reference_half: dict) -> None:
                 label="Kawasaki chains, $c = 0.5$")
     ax.set_xlabel("composition $c$")
     ax.set_ylabel(r"Warren--Cowley $\alpha_1$")
+    style_axes(ax)
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, ncol=3, loc="lower center")
+    fig.tight_layout(rect=(0, 0.2, 1, 1))
+    fig.savefig(out, dpi=SAVEFIG_DPI)
+
+
+def plot_dfdc(surface: dict, out: Path, D: int) -> None:
+    """dF/dc per site by central differences over neighbouring slices (the
+    dense grid only: the seven-point file has no neighbours to difference)."""
+    import matplotlib.pyplot as plt
+
+    from discrete_flow_sampler.diagnostics.figure_style import (
+        FIGSIZE_SINGLE, MUTED, SAMPLER_HUE, SAVEFIG_DPI, parameter_ramp,
+        style_axes, uncertainty_band, use_house_style)
+
+    use_house_style()
+    ks = sorted({k for _, k in surface})
+    fig, ax = plt.subplots(figsize=FIGSIZE_SINGLE)
+    for hue, k in zip(parameter_ramp(SAMPLER_HUE, len(ks)), ks):
+        cs = sorted(c for c, kk in surface if kk == k)
+        per_seed = np.array([surface[(c, k)]["F"] for c in cs]).T  # (seeds, c)
+        step = 1.0 / D
+        interior = [i for i in range(1, len(cs) - 1)
+                    if abs(cs[i + 1] - cs[i - 1] - 2 * step) < 1e-9]
+        if not interior:
+            continue
+        slope = (per_seed[:, [i + 1 for i in interior]] - per_seed[:, [i - 1 for i in interior]]) / (2 * step)
+        centres = [cs[i] for i in interior]
+        uncertainty_band(ax, centres, slope.min(0), slope.max(0), hue)
+        ax.plot(centres, slope.mean(0), color=hue, linewidth=1.4, zorder=3,
+                label=rf"$\sigma/\sigma_c = {k / STOP_GRID:.2f}$")
+    ax.axhline(0, color=MUTED, linewidth=0.8)
+    ax.set_xlabel("composition $c$")
+    ax.set_ylabel(r"$\partial_c (F/d)$ (nats per site)")
     style_axes(ax)
     handles, labels = ax.get_legend_handles_labels()
     fig.legend(handles, labels, frameon=False, ncol=3, loc="lower center")
@@ -208,7 +264,7 @@ def central_curvature(values_by_c: dict) -> float:
     return (left - 2 * centre + right) / (1 / 16) ** 2
 
 
-def plot(surface: dict, reference: dict, out: Path, D: int) -> None:
+def plot(surface: dict, reference: dict, out: Path, D: int, reference_grid: dict) -> None:
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
@@ -225,15 +281,16 @@ def plot(surface: dict, reference: dict, out: Path, D: int) -> None:
         fig, (ax, axc) = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.7))
         axr = None
 
-    cs_guide = np.linspace(0.2, 0.8, 200)
+    cs_guide = np.linspace(min(c for c, _ in surface), max(c for c, _ in surface), 200)
     ax.plot(cs_guide, [ideal_mixing_per_site(c, D) for c in cs_guide], color=ANALYTIC_GUIDE,
             linestyle=":", linewidth=1.0, label=r"$\sigma = 0$ (ideal mixing)")
     for hue, k in zip(ramp, ks):
         cs = sorted(c for c, kk in surface if kk == k)
         per_seed = np.array([surface[(c, k)]["F"] for c in cs]).T  # (seeds, c)
         uncertainty_band(ax, cs, per_seed.min(0), per_seed.max(0), hue)
-        ax.plot(cs, per_seed.mean(0), color=hue, linewidth=1.4, marker="o",
-                markersize=3, zorder=3, label=rf"$\sigma/\sigma_c = {k / STOP_GRID:.2f}$")
+        ax.plot(cs, per_seed.mean(0), color=hue, linewidth=1.4,
+                marker="o" if len(cs) <= 12 else None, markersize=3, zorder=3,
+                label=rf"$\sigma/\sigma_c = {k / STOP_GRID:.2f}$")
         with_ref = [c for c in cs if (c, k) in reference]
         if with_ref:
             residual = [surface[(c, k)]["F"] for c in with_ref]
@@ -254,10 +311,10 @@ def plot(surface: dict, reference: dict, out: Path, D: int) -> None:
     uncertainty_band(axc, couplings, per_seed_curv.min(0), per_seed_curv.max(0), SAMPLER_HUE)
     axc.plot(couplings, per_seed_curv.mean(0), color=SAMPLER_HUE, linewidth=1.4,
              marker="o", markersize=3, zorder=3)
-    ref_k = [k for k in ks if all((c, k) in reference for c in CENTRE_STENCIL)]
+    ref_k = [k for k in ks if all((c, k) in reference_grid for c in CENTRE_STENCIL)]
     if ref_k:
         axc.plot([k / STOP_GRID for k in ref_k],
-                 [central_curvature({c: reference[(c, k)] for c in CENTRE_STENCIL}) for k in ref_k],
+                 [central_curvature({c: reference_grid[(c, k)] for c in CENTRE_STENCIL}) for k in ref_k],
                  color=REFERENCE_INK, linestyle="none", marker="x", markersize=5, zorder=4,
                  label="TI truth")
     axc.axhline(0, color=MUTED, linewidth=0.8)
@@ -293,6 +350,7 @@ def main(argv=None):
     out = args.out or REPO_ROOT / "results" / "03_hard" / f"fc_surface_{args.rung}x{args.rung}.png"
     surface = mirror_missing(load_sampler_surface(args.results_dir, seeds, rung["template"]))
     reference = mirror_missing(load_reference(args.reference_dir, rung["ti_prefix"]))
+    reference_grid = mirror_missing(load_reference(args.reference_dir, rung["ti_prefix"], printed_first=False))
 
     print(f"{'c':>7} {'sig/sig_c':>9} {'F/d mean':>10} {'seed sd':>8} {'ESS':>6} {'TI truth':>10} {'resid':>8}")
     table = []
@@ -303,15 +361,16 @@ def main(argv=None):
         resid = F - truth if truth is not None else None
         table.append({"composition": c, "k": k, "sigma": k / STOP_GRID * SIGMA_C, "F_per_site": F,
                       "F_seed_sd": sd, "ess_fraction": ess, "ti_truth": truth, "residual": resid,
-                      "warren_cowley": float(np.mean([warren_cowley(g, c) for g in cell["nn"]]))})
+                      "warren_cowley": float(np.mean([warren_cowley(g, c, rung["D"]) for g in cell["nn"]]))})
         print(f"{c:7.4f} {k / STOP_GRID:9.3f} {F:10.4f} {sd:8.4f} {ess:6.2f} "
               f"{'--' if truth is None else f'{truth:10.4f}':>10} "
               f"{'--' if resid is None else f'{resid:+8.4f}':>8}")
     out.with_suffix(".json").write_text(json.dumps(table, indent=2))
-    plot(surface, reference, out, rung["D"])
+    plot(surface, reference, out, rung["D"], reference_grid)
     sro_out = out.with_name(out.stem + "_sro" + out.suffix)
-    plot_sro(surface, sro_out, reference_sro_at_half(args.results_dir.parent, args.rung))
-    print(f"wrote {out} and {sro_out}")
+    plot_sro(surface, sro_out, reference_sro_at_half(args.results_dir.parent, args.rung), rung["D"])
+    plot_dfdc(surface, out.with_name(out.stem + "_dfdc" + out.suffix), rung["D"])
+    print(f"wrote {out}, {sro_out} and the _dfdc twin")
 
 
 if __name__ == "__main__":
