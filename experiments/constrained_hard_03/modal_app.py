@@ -525,6 +525,39 @@ def bench(argv: str = "", isolate: bool = True):
     bench_remote.remote(argv=argv, isolate=isolate)
 
 
+@app.function(gpu="A100-80GB", timeout=2 * 60 * 60)
+def bench_cell_remote(argv: str = ""):
+    """Run `bench_cell_step` (the per-phase decomposition of one registered
+    cell) on the production GPU. `argv` is its space-separated CLI string;
+    several rows separated by ";" run back to back, each in a FRESH
+    SUBPROCESS for the same reason `bench_remote` isolates its rows -- the
+    dynamo recompile budget and `set_float32_matmul_precision` are
+    per-process, so a lever row must not inherit the row before it. cwd is
+    the repo root because the cluster-expansion cells load their exported
+    coefficients by a path relative to it (`data/ce/cuau_fcc_4x4x4.json`)."""
+    import os
+    import subprocess
+    import sys
+
+    # PYTHONUNBUFFERED: a mask-one row at 64 sites takes tens of minutes and
+    # block-buffered stdout would withhold every phase line until it ended,
+    # leaving a long row indistinguishable from a hung container.
+    env = {**os.environ, "PYTHONPATH": PROJECT_DIR, "PYTHONUNBUFFERED": "1"}
+    for one in argv.split(";"):
+        subprocess.run(
+            [sys.executable, "-m",
+             "experiments.constrained_hard_03.bench_cell_step", *one.split()],
+            cwd=PROJECT_DIR, env=env, check=True,
+        )
+        print(flush=True)
+
+
+@app.local_entrypoint()
+def bench_cell(argv: str = ""):
+    """Blocking local CLI entry so the phase tables stream back."""
+    bench_cell_remote.remote(argv=argv)
+
+
 @app.function(gpu="A100-80GB", volumes={"/results": volume}, timeout=2 * 60 * 60)
 def training_flops_remote(argv: str = ""):
     """Run the training-FLOP measurement harness (measure_training_flops)
