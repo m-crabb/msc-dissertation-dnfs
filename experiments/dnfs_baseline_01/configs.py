@@ -1045,7 +1045,17 @@ _HARD_HOUSE_LADDER = CurriculumCfg(stages=(
     CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
 ))
 
-for _side, _n_steps, _batch, _microbatch in ((8, 50_000, 128, None), (16, 100_000, 512, 128)):
+# 10x10 (s122, 2026-09-03): the 16x16 100k recipe at the table's own size,
+# four seeds, to see whether the hard house recipe plus the channel reaches
+# the paper's reported 10x10 result at a 100k budget where the printed
+# sigma_c row (0.902) used 200k. Batch 512 needs no microbatching at d=100.
+# Its in-training eval draws 512 rather than 5000: a diagnostic-only cut
+# (the end-of-run eval still draws 5000) that at d16 would have been ~1.5 h
+# of the 100k run's GPU time per seed.
+for _side, _n_steps, _batch, _microbatch, _n_eval_training in (
+    (8, 50_000, 128, None, None), (16, 100_000, 512, 128, None),
+    (10, 100_000, 512, None, 512),
+):
     _parent = CONFIGS["stage_4_d8_critical_paper_curriculum_sc"]
     _name = f"stage_4_d{_side}_sc_hardrecipe"
     _cell = replace(
@@ -1055,6 +1065,7 @@ for _side, _n_steps, _batch, _microbatch in ((8, 50_000, 128, None), (16, 100_00
                       outer_batch_size=None, replay_buffer_cycles=8,
                       loss_microbatch_size=_microbatch),
         ctmc=replace(_parent.ctmc, n_euler_steps=128),
+        eval=replace(_parent.eval, n_eval_samples_training=_n_eval_training),
         curriculum=_HARD_HOUSE_LADDER, ema_decay=0.9999,
     )
     CONFIGS[_name] = _cell
