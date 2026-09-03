@@ -87,16 +87,21 @@ def mirror_missing(table: dict) -> dict:
 def load_reference(reference_dir: Path) -> dict:
     """{(composition, k): F_per_site} from every TI file present."""
     reference: dict = {}
-    for path in sorted(reference_dir.glob("fc_ref_d8_k*.npz")):
-        k = int(path.stem.split("_k")[-1])
-        z = np.load(path)
-        for c, F in zip(z["c_target"], z["F_per_site"]):
-            reference[(round(float(c), 6), k)] = float(F)
+    # The printed t = 1 truth takes precedence where it overlaps the k = 127
+    # replicate, so the surface's t = 1 residuals are the printed ones. The two
+    # independent TI runs differ by up to 0.0024 nats/site at c = 0.375
+    # (-0.8469 vs -0.8493), above the ~0.001/site hysteresis bracket each
+    # reports: the TI's own replicate spread is the reference floor here.
     printed = reference_dir / "fc_ref_d8_sc.npz"
     if printed.is_file():
         z = np.load(printed)
         for c, F in zip(z["c_target"], z["F_per_site"]):
-            reference.setdefault((round(float(c), 6), STOP_GRID), float(F))
+            reference[(round(float(c), 6), STOP_GRID)] = float(F)
+    for path in sorted(reference_dir.glob("fc_ref_d8_k*.npz")):
+        k = int(path.stem.split("_k")[-1])
+        z = np.load(path)
+        for c, F in zip(z["c_target"], z["F_per_site"]):
+            reference.setdefault((round(float(c), 6), k), float(F))
     return reference
 
 
