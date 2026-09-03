@@ -255,6 +255,59 @@ def plot_dfdc(surface: dict, out: Path, D: int) -> None:
     fig.savefig(out, dpi=SAVEFIG_DPI)
 
 
+def concave_region(surface: dict, k: int, half_width: int = 4) -> tuple | None:
+    """Composition range where the second difference of F/d over +-half_width
+    slices is negative at coupling k, or None. The +-4-slice stencil (1/16 in c
+    on the 8x8) is the one panel (c) uses; a +-1 stencil multiplies the 1e-4
+    seed noise by 64^2 and reads noise. Mirrors the +-1/16 spacing exactly, so
+    the range is the finite-size 'spinodal' the tutorial draws its boundary
+    from the free-energy analysis of."""
+    cs = sorted(c for c, kk in surface if kk == k)
+    F = np.array([np.mean(surface[(c, k)]["F"]) for c in cs])
+    concave = [cs[i] for i in range(half_width, len(cs) - half_width)
+               if F[i - half_width] - 2 * F[i] + F[i + half_width] < 0]
+    return (min(concave), max(concave)) if concave else None
+
+
+def plot_sro_map(surface: dict, out: Path, D: int) -> None:
+    """The tutorial's (composition, temperature) SRO map: alpha_1 as filled
+    contours over the dense grid, with the boundary of the concave region
+    (negative curvature of F, the finite-size spinodal) overlaid from the same
+    draws -- their overlay comes from a separate free-energy analysis."""
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap
+
+    from discrete_flow_sampler.diagnostics.figure_style import (
+        FIGSIZE_SINGLE, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI, style_axes,
+        use_house_style)
+
+    use_house_style()
+    ks = sorted({k for _, k in surface})
+    cs = sorted({c for c, _ in surface})
+    alpha = np.array([[np.mean([warren_cowley(g, c, D) for g in surface[(c, k)]["nn"]])
+                       for c in cs] for k in ks])
+    fig, ax = plt.subplots(figsize=FIGSIZE_SINGLE)
+    # Sequential, one hue: the ferromagnet clusters at every coupling, so alpha
+    # is single-signed and a diverging map would invent a midpoint.
+    cmap = LinearSegmentedColormap.from_list("sampler", ["#ffffff", SAMPLER_HUE])
+    filled = ax.contourf(cs, [k / STOP_GRID for k in ks], alpha, levels=20, cmap=cmap)
+    fig.colorbar(filled, ax=ax, label=r"Warren--Cowley $\alpha_1$")
+    left, right, sigmas = [], [], []
+    for k in ks:
+        region = concave_region(surface, k)
+        if region:
+            left.append(region[0]); right.append(region[1]); sigmas.append(k / STOP_GRID)
+    if sigmas:
+        ax.plot(left + right[::-1], sigmas + sigmas[::-1], "o-", color=REFERENCE_INK,
+                markersize=3, linewidth=1.0, label="$\\partial_c^2 F < 0$ (concave region)")
+        ax.legend(frameon=False, loc="lower center", fontsize=7)
+    ax.set_xlabel("composition $c$")
+    ax.set_ylabel(r"$\sigma/\sigma_c$  ($= T_c/T$)")
+    style_axes(ax, grid_axis="both")
+    fig.tight_layout()
+    fig.savefig(out, dpi=SAVEFIG_DPI)
+
+
 CENTRE_STENCIL = (0.4375, 0.5, 0.5625)
 
 
@@ -370,6 +423,8 @@ def main(argv=None):
     sro_out = out.with_name(out.stem + "_sro" + out.suffix)
     plot_sro(surface, sro_out, reference_sro_at_half(args.results_dir.parent, args.rung), rung["D"])
     plot_dfdc(surface, out.with_name(out.stem + "_dfdc" + out.suffix), rung["D"])
+    if len({c for c, _ in surface}) > 20:
+        plot_sro_map(surface, out.with_name(out.stem + "_sro_map" + out.suffix), rung["D"])
     print(f"wrote {out}, {sro_out} and the _dfdc twin")
 
 
