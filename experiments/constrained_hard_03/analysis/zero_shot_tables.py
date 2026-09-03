@@ -61,7 +61,7 @@ D256_CAMORT_TEMPLATE = ("H2_d256_camort_s220_letf_thp2_100k_curr"
 # JSONs and resolve the collapse ONSET — a prose point, not rows (0.46875
 # does not even exist at d16). 0.625 (the Z2 mirror of 0.375) is also NOT
 # a row: it measures the trained head's Z2 symmetry, not transfer.
-COMPOSITION_ROWS = (0.5, 0.375, 0.25)
+COMPOSITION_ROWS = (0.25, 0.375, 0.5)   # ascending, as every house table in the thesis
 
 
 def load_rows(results_dir, template, seeds=SEEDS):

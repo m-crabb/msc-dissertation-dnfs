@@ -344,12 +344,14 @@ def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
                 color=REFERENCE_INK)
     every = [p for _, pmfs in per_head for p in pmfs] + [reference_pmf]
     ax.set_xlim(*_occupied_limits(support, *every))
-    ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=2 if title is not None else 4))
     ax.set_xlabel(xlabel, fontsize=FONT_SIZE_LABEL)
     style_axes(ax)
 
 
-def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue):
+def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None):
+    """`title`: when given (the row layout), the TVD/floor read goes into the panel
+    title after it instead of an in-axes annotation, which collides at row height."""
     ax.plot(support, reference_pmf, color=REFERENCE_INK, linewidth=1.3,
             zorder=4, label="Kawasaki reference (certified)")
     if len(seed_pmfs):
@@ -359,9 +361,13 @@ def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue):
         tvds = [marginal_tvd(torch.from_numpy(p),
                              torch.from_numpy(reference_pmf))
                 for p in seed_pmfs]
-        ax.annotate(f"TVD {np.mean(tvds):.3f}   floor {floor:.3f}",
-                    xy=(0.03, 0.93), xycoords="axes fraction",
-                    fontsize=FONT_SIZE_ANNOTATION, color=REFERENCE_INK)
+        read = f"TVD {np.mean(tvds):.3f}, floor {floor:.3f}"
+        if title is not None:
+            ax.set_title(f"{title}\n{read}", fontsize=FONT_SIZE_ANNOTATION, loc="left")
+        else:
+            ax.annotate(f"TVD {np.mean(tvds):.3f}   floor {floor:.3f}",
+                        xy=(0.03, 0.93), xycoords="axes fraction",
+                        fontsize=FONT_SIZE_ANNOTATION, color=REFERENCE_INK)
     else:
         ax.annotate("no cell at this coupling", xy=(0.03, 0.93),
                     xycoords="axes fraction", fontsize=FONT_SIZE_ANNOTATION,
@@ -375,10 +381,18 @@ def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue):
 
 
 def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
-          n_replicates):
-    """One results cell. `heads` is a list; >1 switches to the all-head form."""
+          n_replicates, layout="2x2"):
+    """One results cell. `heads` is a list; >1 switches to the all-head form.
+    `layout="row"` lays the four panels out in one full-width row (half the page
+    height of the 2x2, decided 2026-09-03 for the float budget); panel order is
+    energy, phi at sigma=0.1, then energy, phi at sigma_c."""
     use_house_style()
-    figure, axes = plt.subplots(2, 2, figsize=FIGSIZE_FULL_2X2)
+    if layout == "row":
+        figure, flat = plt.subplots(1, 4, figsize=(FIGSIZE_FULL_2X2[0], 2.5), gridspec_kw=dict(wspace=0.45))
+        axes = {(r, c): flat[2 * r + c] for r in range(2) for c in range(2)}
+    else:
+        figure, grid = plt.subplots(2, 2, figsize=FIGSIZE_FULL_2X2)
+        axes = {(r, c): grid[r, c] for r in range(2) for c in range(2)}
     d = lattice_edge * lattice_edge
     summary = {}
 
@@ -399,14 +413,15 @@ def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
 
         if len(heads) == 1:
             cells = per_head[0][1]
+            panel_title = SIGMA_LABEL[sigma_key] if layout == "row" else None
             _panel(axes[row, 0], energy_axis, energy_ref,
                    [energy_pmf(c["samples"], lattice_edge, c["weights"])
-                    for c in cells], e_floor, "$E/d$", SAMPLER_HUE)
+                    for c in cells], e_floor, "$E/d$", SAMPLER_HUE, panel_title)
             _panel(axes[row, 1], phi_axis, phi_ref,
                    [phi_pmf(c["samples"], lattice_edge, c["weights"])
                     for c in cells], p_floor,
                    r"$\phi = (m_\mathrm{left} - m_\mathrm{right})/2$",
-                   SAMPLER_HUE)
+                   SAMPLER_HUE, panel_title)
         else:
             _multi_head_panel(
                 axes[row, 0], energy_axis, energy_ref,
@@ -420,8 +435,12 @@ def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
                 [p_floor],
                 r"$\phi = (m_\mathrm{left} - m_\mathrm{right})/2$")
 
-        axes[row, 0].set_ylabel(f"{SIGMA_LABEL[sigma_key]}\nprobability mass",
-                                fontsize=FONT_SIZE_LABEL)
+        if layout == "row":
+            if row == 0:
+                axes[row, 0].set_ylabel("probability mass", fontsize=FONT_SIZE_LABEL)
+        else:
+            axes[row, 0].set_ylabel(f"{SIGMA_LABEL[sigma_key]}\nprobability mass",
+                                    fontsize=FONT_SIZE_LABEL)
         summary[sigma_key] = {
             "n_draws": n_draws,
             "energy_floor": round(e_floor, 4), "phi_floor": round(p_floor, 4),
@@ -433,8 +452,8 @@ def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
     handles, labels = axes[0, 0].get_legend_handles_labels()
     figure.legend(handles, labels, fontsize=FONT_SIZE_ANNOTATION,
                   frameon=False, loc="lower center",
-                  ncol=2 if len(heads) > 1 else 2,
-                  bbox_to_anchor=(0.5, -0.10 if len(heads) > 1 else -0.02))
+                  ncol=4 if layout == "row" else 2,
+                  bbox_to_anchor=(0.5, -0.16 if layout == "row" else (-0.10 if len(heads) > 1 else -0.02)))
     figure.tight_layout()
     figure.savefig(out_path, dpi=SAVEFIG_DPI, bbox_inches="tight")
     print(json.dumps({"figure": str(out_path), "lattice_edge": lattice_edge,
@@ -456,10 +475,11 @@ def main():
                         default=str(REPO_ROOT / "results" / "03_hard"))
     parser.add_argument("--n-replicates", type=int, default=64)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--layout", choices=("2x2", "row"), default="2x2")
     args = parser.parse_args()
     build(args.results_dir, args.lattice_edge,
           [h.strip() for h in args.heads.split(",") if h.strip()],
-          args.eval_subdir, Path(args.out), args.n_replicates)
+          args.eval_subdir, Path(args.out), args.n_replicates, args.layout)
 
 
 if __name__ == "__main__":
