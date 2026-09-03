@@ -91,7 +91,7 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
         # wd*theta balances it there -- i.e. 100 at torch's default 0.01.
         # Harmless at d16/d64 (slice log Z 44-54; the learned value sat
         # 0.08-0.11 nat under the IS estimate, ESS unaffected), but the d256
-        # slice sits at ~183 (sigma 0.1) / ~207 (sigma_c) and the whole
+        # slice sits at ~183 (sigma 0.1) / ~230 (sigma_c) and the whole
         # 16x16 TB wave (tag 20260831-gfn-d256) stalled with log Z pinned at
         # 100.0 +- 0.1 on all six seeds, the ~73-nat residual acting as a
         # wrong REINFORCE baseline (zero-mean, variance-inflating; grad norm

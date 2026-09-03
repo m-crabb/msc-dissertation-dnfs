@@ -129,7 +129,7 @@ def test_log_z_carries_no_weight_decay_and_reaches_the_d256_scale():
     constant-sign gradient Adam's normalised step saturates at magnitude 1
     and the decay term wd*theta balances it at theta = 1/wd -- 100 at the
     default wd = 0.01. That sits above every d64 slice log Z (44 / 54) and
-    BELOW the d256 slice (~183 at sigma = 0.1, ~207 at sigma_c): the first
+    BELOW the d256 slice (~183 at sigma = 0.1, ~230 at sigma_c): the first
     16x16 TB wave (tag 20260831-gfn-d256) stalled with log Z pinned at
     100.0 +- 0.1 on all six seeds and a ~73-nat residual the policy cannot
     close (2026-09-03). log Z is a normaliser, not a weight: no decay, and
