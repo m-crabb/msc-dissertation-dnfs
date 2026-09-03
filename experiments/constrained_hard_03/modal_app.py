@@ -137,11 +137,30 @@ def _resolve_head_kind(head_kind: str) -> str | None:
     timeout=2 * 60 * 60,
 )
 def train_gfn_remote(cfg_name: str, seed: int = 42, tag: str = ""):
-    """Run a single GFN comparator cell on Modal.
+    """Run a single GFN comparator cell on Modal (small-lattice venue).
 
     Same stable-tag preemption contract as train_remote: the tag is minted
     once at spawn time, a retry lands in the same run dir and resumes from
     checkpoints/resume.pt; volume.commit rides the checkpoint hook."""
+    _train_gfn_on_volume(cfg_name, seed, tag)
+
+
+@app.function(
+    # The d256 GFN cells (2026-09-03): 9 h per 100k seed on a DoC A30, and
+    # the DoC queue sat behind the 24x24 rung, so the TB re-run after the
+    # log Z weight-decay fix moved here. Same card family as the archived
+    # d256 swap cells; DNFS_TRAIN_GPU overrides as for train_remote.
+    gpu=os.environ.get("DNFS_TRAIN_GPU", "A100-80GB"),
+    volumes={"/results": volume},
+    secrets=[wandb_secret],
+    timeout=24 * 60 * 60,
+)
+def train_gfn_remote_a100(cfg_name: str, seed: int = 42, tag: str = ""):
+    """train_gfn_remote on the production card, for the d256 cells."""
+    _train_gfn_on_volume(cfg_name, seed, tag)
+
+
+def _train_gfn_on_volume(cfg_name: str, seed: int, tag: str) -> None:
     import sys
 
     sys.path.insert(0, "/repo")
@@ -828,6 +847,22 @@ def ladder(seeds: str = "42,43,44", head_kind: str = ""):
             )
             spawned.append((cfg_name, seed))
     print(f"spawned {len(spawned)} jobs across {LADDER_CFGS}: seeds={seed_list}")
+
+
+@app.local_entrypoint()
+def gfn_batch_seeds(cfg_name: str, seeds: str = "42,43,44", tag: str = ""):
+    """Spawn one GFN cell across seeds on the production card (the d256
+    cells; `gfn_d16` keeps the L4 for the 4x4 registry). Pass the campaign
+    tag so a preemption retry resumes into the same run dirs."""
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+
+    if cfg_name not in GFN_CONFIGS:
+        raise ValueError(f"unknown GFN cell {cfg_name!r}")
+    seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
+    tag = tag or time.strftime("%Y%m%d-%H%M%S")
+    for seed in seed_list:
+        train_gfn_remote_a100.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
+    print(f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list} tag={tag}")
 
 
 @app.local_entrypoint()
