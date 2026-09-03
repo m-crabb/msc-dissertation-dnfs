@@ -71,13 +71,15 @@ def load_sampler_surface(results_dir: Path, seeds) -> dict:
     return surface
 
 
-def mirror_missing(surface: dict) -> dict:
-    """Add c -> 1 - c for compositions not sampled: the slice family is
-    exactly Z2 symmetric, so F(c) = F(1 - c) by construction."""
-    sampled = {c for c, _ in surface}
-    mirrored = dict(surface)
-    for (c, k), cell in surface.items():
-        if round(1 - c, 6) not in sampled:
+def mirror_missing(table: dict) -> dict:
+    """Add c -> 1 - c for compositions not present: the slice family is
+    exactly Z2 symmetric, so F(c) = F(1 - c) by construction. Applied to the
+    sampler surface and to the TI reference alike (the curvature stencil
+    needs 0.5625, which neither ran)."""
+    present = {c for c, _ in table}
+    mirrored = dict(table)
+    for (c, k), cell in table.items():
+        if round(1 - c, 6) not in present:
             mirrored[(round(1 - c, 6), k)] = cell
     return mirrored
 
@@ -186,7 +188,7 @@ def main(argv=None):
 
     seeds = [int(s) for s in args.seeds.split(",")]
     surface = mirror_missing(load_sampler_surface(args.results_dir, seeds))
-    reference = load_reference(args.reference_dir)
+    reference = mirror_missing(load_reference(args.reference_dir))
 
     print(f"{'c':>7} {'sig/sig_c':>9} {'F/d mean':>10} {'seed sd':>8} {'ESS':>6} {'TI truth':>10} {'resid':>8}")
     table = []
