@@ -2550,3 +2550,16 @@ for _parent_name in ("A1_cuau16_T500_letf_10k_lowlr",
         _parent, name=f"{_parent_name}_efc",
         model=replace(_parent.model, exact_field_channel=True),
     )
+
+# House-recipe channel twins on the alloy (s118): the s117 twins showed the
+# flip channel pays on free (+0.1-0.17 at 10k) and soft (c25 0.86, c50 0.47),
+# and the 50k house recipe carried hard c=0.5 to 0.86-0.89 without one, so the
+# 16-site table is completed on house + channel for the flip rungs.
+for _parent_name in ("A1_cuau16_T500_letf_50k_house",
+                     "S2_cuau16_c25_l10_T500_letf_50k_house",
+                     "S2_cuau16_c50_l10_T500_letf_50k_house"):
+    _parent = CONFIGS[_parent_name]
+    CONFIGS[f"{_parent_name}_efc"] = replace(
+        _parent, name=f"{_parent_name}_efc",
+        model=replace(_parent.model, exact_field_channel=True),
+    )
