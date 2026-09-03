@@ -381,22 +381,27 @@ def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None
 
 
 def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
-          n_replicates, layout="2x2"):
+          n_replicates, layout="2x2", couplings=("s010", "s220")):
     """One results cell. `heads` is a list; >1 switches to the all-head form.
     `layout="row"` lays the four panels out in one full-width row (half the page
     height of the 2x2, decided 2026-09-03 for the float budget); panel order is
-    energy, phi at sigma=0.1, then energy, phi at sigma_c."""
+    energy, phi at sigma=0.1, then energy, phi at sigma_c. `couplings` picks the
+    rows; a single coupling with the row layout gives a two-panel cell (the
+    critical-only cells decided 2026-09-03)."""
     use_house_style()
     if layout == "row":
-        figure, flat = plt.subplots(1, 4, figsize=(FIGSIZE_FULL_2X2[0], 2.5), gridspec_kw=dict(wspace=0.45))
-        axes = {(r, c): flat[2 * r + c] for r in range(2) for c in range(2)}
+        n_couplings = len(couplings)
+        width = FIGSIZE_FULL_2X2[0] * (1.0 if n_couplings == 2 else 0.62)
+        figure, flat = plt.subplots(1, 2 * n_couplings, figsize=(width, 2.5), gridspec_kw=dict(wspace=0.45))
+        axes = {(r, c): flat[2 * r + c] for r in range(n_couplings) for c in range(2)}
     else:
+        assert len(couplings) == 2, "the 2x2 layout needs both couplings"
         figure, grid = plt.subplots(2, 2, figsize=FIGSIZE_FULL_2X2)
         axes = {(r, c): grid[r, c] for r in range(2) for c in range(2)}
     d = lattice_edge * lattice_edge
     summary = {}
 
-    for row, sigma_key in enumerate(("s010", "s220")):
+    for row, sigma_key in enumerate(couplings):
         chains = load_reference(lattice_edge, sigma_key)
         pool = torch.cat(chains)
         per_head = [(HEAD_LABEL.get(h, h),
@@ -476,10 +481,13 @@ def main():
     parser.add_argument("--n-replicates", type=int, default=64)
     parser.add_argument("--out", required=True)
     parser.add_argument("--layout", choices=("2x2", "row"), default="2x2")
+    parser.add_argument("--couplings", default="s010,s220",
+                        help="comma-separated coupling keys; 's220' alone gives the critical-only cell")
     args = parser.parse_args()
     build(args.results_dir, args.lattice_edge,
           [h.strip() for h in args.heads.split(",") if h.strip()],
-          args.eval_subdir, Path(args.out), args.n_replicates, args.layout)
+          args.eval_subdir, Path(args.out), args.n_replicates, args.layout,
+          tuple(k.strip() for k in args.couplings.split(",") if k.strip()))
 
 
 if __name__ == "__main__":
