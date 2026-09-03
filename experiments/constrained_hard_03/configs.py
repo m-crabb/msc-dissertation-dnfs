@@ -5160,19 +5160,24 @@ for _c_tag in ("c25", "c50"):
     )
 
 # Two-hole patch twins of the 64-site cells (s122, 2026-09-03). The mask-one
-# head at 64 sites ran at 3.56 s/step (0.235 s of it the inner update) and
-# was killed at step 9k; the patch head is O(d K) patch work on a 12-site fcc
-# window against mask-one's d anchor copies of the trunk. One declared
-# deviation besides the head: the in-training eval draws 256, not 5000 -- a
-# diagnostic-only cut (the final eval still draws 5000). The 16-site gate
-# cannot host this head (the 2x2x4 cell aliases its own neighbour shell), so
-# the gate is the property tests plus the logged-ESS trajectory against the
-# mask-one cells' first 9k steps.
+# head at 64 sites measured 3.76 s/step on an A100 (in-training eval 66% of
+# it, inner update 0.67 s) and was killed at step 9k; the patch cell measured
+# 0.048 s/step with a one-shell window (bench_cell_step.py). Two declared
+# deviations besides the head: the in-training eval draws 256, not 5000 -- a
+# diagnostic-only cut (the final eval still draws 5000) -- and the window is
+# TWO neighbour shells (18 sites): the expansion's pair terms reach 9.3 A,
+# and the reach probe (patch_reach_probe.py, held-out R^2 of the physical
+# score on the swap log-ratio, uniform c=0.25 states at 500 K) gave 0.80 for
+# one shell and 0.95 for two. No exact-field channel: it lost to its plain
+# twin on Ising thp (16x16) and on the 16-site alloy mask-one cell 3/3. The
+# 16-site gate cannot host this head (the 2x2x4 cell aliases its own
+# neighbour shell), so the gate is the property tests plus the logged-ESS
+# trajectory against the mask-one cells' first 9k steps.
 for _c_tag in ("c25", "c50"):
     _parent = CONFIGS[f"H2_cuau64_{_c_tag}_T500_mask_one_50k_curr"]
     _name = f"H2_cuau64_{_c_tag}_T500_thp_50k_curr"
     CONFIGS[_name] = replace(
-        _parent, name=_name, head_kind="two_hole_patch",
+        _parent, name=_name, head_kind="two_hole_patch", patch_shells=2,
         eval=replace(_parent.eval, n_eval_samples_training=256),
     )
 

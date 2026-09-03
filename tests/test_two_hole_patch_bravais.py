@@ -330,7 +330,7 @@ def test_build_swap_head_gives_the_cluster_expansion_cell_the_fcc_geometry():
     assert cell.head_kind == "two_hole_patch"
     _, head = build_target_and_head(cell, torch.device("cpu"))
     assert isinstance(head, TwoHolePatchSwapHead)
-    assert head.n_patch == 12 and head.geometry.lattice_side is None
+    assert head.n_patch == 18 and head.geometry.lattice_side is None
     x = _state(64, batch=2)
     G = head(x, torch.rand(2))
     assert G.shape == (2, 64, 64) and torch.isfinite(G).all()
@@ -344,10 +344,10 @@ def test_cuau64_patch_cells_mirror_their_mask_one_parents():
         cell = CONFIGS[f"H2_cuau64_{c_tag}_T500_thp_50k_curr"]
         parent = CONFIGS[f"H2_cuau64_{c_tag}_T500_mask_one_50k_curr"]
         assert replace(
-            cell, name=parent.name, head_kind=parent.head_kind,
+            cell, name=parent.name, head_kind=parent.head_kind, patch_shells=None,
             eval=replace(cell.eval, n_eval_samples_training=None),
         ) == parent
-        assert cell.eval.n_eval_samples_training == 256
+        assert cell.eval.n_eval_samples_training == 256 and cell.patch_shells == 2
 
 
 # ---- a Bravais cell that IS enumerable: the square-lattice expansion -------
