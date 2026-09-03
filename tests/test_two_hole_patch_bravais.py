@@ -348,3 +348,91 @@ def test_cuau64_patch_cells_mirror_their_mask_one_parents():
             eval=replace(cell.eval, n_eval_samples_training=None),
         ) == parent
         assert cell.eval.n_eval_samples_training == 256
+
+
+# ---- a Bravais cell that IS enumerable: the square-lattice expansion -------
+#
+# `data/ce/square_cuau_4x4.json` is a 4x4 square lattice (2.5 A spacing, one
+# layer in a 10 x 10 x 20 A box). Its translation group is the 4x4 torus's,
+# so the Bravais geometry can be checked against the torus one, and the
+# swap Kolmogorov identity can run on its enumerable c=0.5 slice through the
+# cluster-expansion target -- the identity the loss relies on, here through
+# the same target class and geometry route the 64-site cell uses.
+
+SQUARE_16 = "data/ce/square_cuau_4x4.json"
+
+
+def _square_site_to_raster(spec):
+    """JSON site index -> row-major torus index, from the positions."""
+    positions = torch.tensor(spec.positions)[:, :2]
+    spacing = positions[positions[:, 0] > 0, 0].min()
+    rows = torch.round(positions[:, 1] / spacing).long()
+    cols = torch.round(positions[:, 0] / spacing).long()
+    return rows * 4 + cols
+
+
+def test_square_expansion_two_shells_is_the_torus_radius_one_window():
+    spec = _spec(SQUARE_16)
+    geometry = bravais_patch_geometry(spec.positions, spec.cell, patch_shells=2)
+    torus = torus_patch_geometry(4, 1)
+    to_raster = _square_site_to_raster(spec)
+    assert geometry.neighbour_site.shape == (16, 8)
+    for site in range(16):
+        window = set(to_raster[geometry.neighbour_site[site]].tolist())
+        assert window == set(torus.neighbour_site[to_raster[site]].tolist())
+    one_shell = bravais_patch_geometry(spec.positions, spec.cell, patch_shells=1)
+    assert one_shell.neighbour_site.shape == (16, 4)
+
+
+@torch.no_grad()
+def test_kolmogorov_residual_zero_mean_on_square_expansion_slice(patch_shells=1):
+    """E_{p_t^C}[delta_t] = 0 with exact dt_log_Z on the enumerable c=0.5
+    slice of the square-lattice expansion, with the head on the Bravais
+    geometry and the cluster-expansion target: the reverse rate read off -G
+    is the true reverse rate on this route too.
+
+    The bar is the doubly-hollow reference head's own residual mean on the
+    SAME target, not an absolute: eV-scale energies at beta 20 give a 26-nat
+    log-p spread, and the head-independent term of the residual carries an
+    fp32 floor of ~2.4e-4 of the rms at t=0.1 that is identical across heads
+    and seeds (1e-5 on the Ising target). A head defect would move the
+    patch head OFF that floor; matching it to 20% is the pass. Geometry
+    does not enter the identity, so one shell count and the worst-floor
+    time point suffice (each residual pass over the 12870-state slice is
+    ~20 s)."""
+    from discrete_flow_sampler.constraints.swap_readout import DoublyHollowSwapHead
+    from discrete_flow_sampler.diagnostics.metrics import enumerate_states
+    from discrete_flow_sampler.samplers.swap_kolmogorov import residual_swap
+    from discrete_flow_sampler.targets.cluster_expansion import (
+        FixedCompositionClusterExpansionTarget,
+    )
+
+    spec = _spec(SQUARE_16)
+    geometry = bravais_patch_geometry(spec.positions, spec.cell, patch_shells=patch_shells)
+    target = FixedCompositionClusterExpansionTarget(spec, beta=20.0, target_composition=0.5)
+    states = enumerate_states(16).float()
+    n_plus = ((states + 1) * 0.5).sum(dim=-1)
+    slice_states = states[n_plus == target.n_plus_target]
+
+    def residual_mean_over_rms(head):
+        out = []
+        for t_scalar in (0.1,):
+            t = torch.full((slice_states.shape[0],), t_scalar)
+            log_p = target.log_p_tilde_t(slice_states, t)
+            p_cond = torch.softmax(log_p, dim=0)
+            dt_log_Z = (p_cond * target.dt_log_p_tilde_t(slice_states, t)).sum()
+            residual = residual_swap(slice_states, t, dt_log_Z, head, target)
+            out.append(abs((p_cond * residual).sum().item()) / residual.pow(2).mean().sqrt().item())
+        return out
+
+    torch.manual_seed(3)
+    backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
+    patch = residual_mean_over_rms(
+        TwoHolePatchSwapHead(backbone, geometry=geometry, feature_dim=6).eval()
+    )
+    torch.manual_seed(3)
+    backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
+    reference = residual_mean_over_rms(DoublyHollowSwapHead(backbone).eval())
+    for t_scalar, ours, floor in zip((0.1,), patch, reference):
+        assert ours < 1e-3, (t_scalar, ours)
+        assert ours < 1.2 * floor + 5e-5, (t_scalar, ours, floor)
