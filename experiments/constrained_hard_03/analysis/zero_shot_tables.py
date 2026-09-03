@@ -49,6 +49,10 @@ D64_TEMPLATE = ("H2_d64_c50_s220_letf_thp_50k_curr_w2"
                 "_seed{seed}_20260825-hard-w2-d64")
 CAMORT_TEMPLATE = ("H2_d64_camort_s220_letf_thp_50k_curr"
                    "_seed{seed}_20260831-camort-d64")
+# The 16x16 amortised confirmation (s104): one seed by design, thp2 on the same
+# five-slice mixture; c = 0.25 is outside the mixture there too.
+D256_CAMORT_TEMPLATE = ("H2_d256_camort_s220_letf_thp2_100k_curr"
+                        "_seed{seed}_20260831-camort-d256")
 
 # The cross-chapter composition spine (user decision s100): fractions
 # realisable at EVERY rung (n+ = 4/6/8 at d16, 16/24/32 at d64, 64/96/128
@@ -60,11 +64,11 @@ CAMORT_TEMPLATE = ("H2_d64_camort_s220_letf_thp_50k_curr"
 COMPOSITION_ROWS = (0.5, 0.375, 0.25)
 
 
-def load_rows(results_dir, template):
+def load_rows(results_dir, template, seeds=SEEDS):
     """rows[(composition, stop_time)] -> list over seeds of the probe row.
     Missing run dirs return None (the column is simply not emitted)."""
     per_seed = []
-    for seed in SEEDS:
+    for seed in seeds:
         path = (results_dir / template.format(seed=seed)
                 / "zero_shot_transfer.json")
         if not path.is_file():
@@ -88,6 +92,8 @@ def cell(seed_rows):
         for r in seed_rows
     ])
     dagger = "^{\\dagger}" if ratio > RELIABILITY_BAR else ""
+    if len(ess) == 1:   # a single-seed column prints its value with the one-seed mark
+        return f"${ess[0]:.3f}^{{\\S}}{dagger}$"
     return f"${np.mean(ess):.3f} \\pm {np.std(ess):.3f}{dagger}$"
 
 
@@ -132,6 +138,7 @@ def main(argv=None):
     d256 = load_rows(args.results_dir, D256_TEMPLATE)
     d64 = load_rows(args.results_dir, D64_TEMPLATE)
     camort = load_rows(args.results_dir, CAMORT_TEMPLATE)
+    camort_d256 = load_rows(args.results_dir, D256_CAMORT_TEMPLATE, seeds=(42,))
     if d256 is None:
         sys.exit("d256 probe JSONs missing; nothing to emit")
 
@@ -142,8 +149,11 @@ def main(argv=None):
     columns = {
         "d256_sc": (d256, 1.0),
         "d256_sub": (d256, 0.456693),
-        "d64_sc": (d64, 1.0),
     }
+    if camort_d256 is not None:
+        columns["d256_camort_sc"] = (camort_d256, 1.0)
+        print("% d256 camort column INCLUDED (single seed)")
+    columns["d64_sc"] = (d64, 1.0)
     if camort is not None:
         columns["d64_camort_sc"] = (camort, 1.0)
         print("% camort column INCLUDED (trained-arm probe found)")

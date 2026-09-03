@@ -100,7 +100,7 @@ SIGMA_LABELS = ("s010", "s220")
 SIGMA = {"s010": 0.1, "s220": 0.22034339675488573}
 
 ARMS = {
-    "ma": "masked-attention head",
+    "ma": "masked-attention band, one sweep",
     "thp": "two-hole patch head",
     "thp2": "two-hole patch head, $R=2$",
     # The raster-ordering ladder at this rung (tag 20260830-rasterord-d256,
@@ -123,11 +123,13 @@ LATEX_ROWS = (
     ("reference", "Kawasaki (mchammer), certified reference"),
     ("floor", "sampling floor at $N=5000$"),
     None,
-    ("ma", "masked-attention head"),
+    ("ma", "masked-attention band, one sweep"),
     ("thp", "two-hole patch head"),
     ("thp2", "\\quad $R=2$"),
     None,
-    ("masep", "masked-attention band, one sweep (separable twin)"),
+    # masep (the separable-trained twin) is NOT a row (decided 2026-09-03): one
+    # masked-attention row per rung, billed separable; the twin's 2/3 collapsed
+    # floor seeds are a caveat in the Experimental Setup, not a cell.
     ("mamo2", "masked-attention band, two sweeps"),
     ("mamo2ef", "\\quad + exact field"),
     ("iv", "prefix-sum band, one sweep"),
@@ -154,7 +156,13 @@ CELL_GLOB = "H2_d{d}_c50_{sigma}_letf_{arm}_*_w3_seed*"
 # mass -- where every other cell sits at or below 0.0053; its ESS fraction
 # is 0.0032 against its siblings' 0.805 and 0.918. Averaging it into the
 # row would report a number describing no seed that exists.
-DEGENERATE_SEEDS = {("ma", "s010", 43)}
+DEGENERATE_SEEDS = {
+    ("ma", "s010", 43),
+    # ivmo2 seed 44 at sigma_c: raw 0.790 but EMA 0.001 (the EMA-splits pattern) --
+    # a floor read on the EMA table this row prints, excluded under the same rule
+    # (decided 2026-09-03: every seed prints unless its frozen ESS is at the floor).
+    ("ivmo2", "s220", 44),
+}
 
 
 # --- the reference --------------------------------------------------------
