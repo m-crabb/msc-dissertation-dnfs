@@ -2517,6 +2517,19 @@ for _name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_c
               "S2_cuau64_c50_l50_T500_letf_50k_curr"):
     CONFIGS[_name] = replace(CONFIGS[_name], curriculum=_cuau_house_curriculum(50_000))
 
+# 64-site flip-channel twins (s119, 2026-09-03): at 16 sites the soft house
+# cells only ever ran WITH the channel (the channel-free soft cells died at the
+# 1200 -> 800 K step) and the free cell read level with and without it, so the
+# 64-site soft cells carry the channel and the free cell runs both as the
+# channel's control at the production size.
+for _parent_name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_curr",
+                     "S2_cuau64_c50_l50_T500_letf_50k_curr"):
+    _parent = CONFIGS[_parent_name]
+    CONFIGS[f"{_parent_name}_efc"] = replace(
+        _parent, name=f"{_parent_name}_efc",
+        model=replace(_parent.model, exact_field_channel=True),
+    )
+
 
 # Free-ensemble 16-site cell with the lr cut (s117): the A1 gate cell kept
 # lr 1e-3 through the 1200 -> 800 K step and its train ESS fell 3131 -> 96,
