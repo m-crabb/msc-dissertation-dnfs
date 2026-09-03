@@ -56,6 +56,7 @@ from discrete_flow_sampler.constraints.masked_attention_swap_head import (
 )
 from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
     TwoHolePatchSwapHead,
+    bravais_patch_geometry,
 )
 from discrete_flow_sampler.targets.ising import SIGMA_C
 from discrete_flow_sampler.constraints.swap_readout import (
@@ -256,6 +257,11 @@ class HardStageCfg(StageCfg):
     # "two_hole_patch", so every other cell stays byte-identical.
     patch_radius: int | None = None
     patch_feature_dim: int | None = None
+    # Cluster-expansion cells only (2026-09-03): the window is a count of
+    # neighbour SHELLS of the Bravais supercell (1 = the twelve fcc nearest
+    # neighbours, 2 = eighteen), read from the target's positions and cell;
+    # patch_radius is the torus knob and is ignored there.
+    patch_shells: int | None = None
     # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
     # cell). > 0 arms a warmup-corrected parameter shadow
     # (discrete_flow_sampler.ema) updated after each optimiser step:
@@ -382,12 +388,23 @@ def build_swap_head(
             global_bond_features=cfg.global_bond_features,
         )
     elif cfg.head_kind == "two_hole_patch":
-        head = TwoHolePatchSwapHead(
-            backbone,
-            lattice_side=cfg.ising.D,
-            patch_radius=cfg.patch_radius or 1,
-            feature_dim=cfg.patch_feature_dim or 32,
-        )
+        if cfg.target_kind == "cluster_expansion":
+            # The expansion's supercell is not a square torus: build the
+            # window and pooled balls from its translation group instead.
+            geometry = bravais_patch_geometry(
+                target.spec.positions, target.spec.cell,
+                patch_shells=cfg.patch_shells or 1,
+            )
+            head = TwoHolePatchSwapHead(
+                backbone, geometry=geometry, feature_dim=cfg.patch_feature_dim or 32,
+            )
+        else:
+            head = TwoHolePatchSwapHead(
+                backbone,
+                lattice_side=cfg.ising.D,
+                patch_radius=cfg.patch_radius or 1,
+                feature_dim=cfg.patch_feature_dim or 32,
+            )
     elif cfg.head_kind == "grouped_anchor":
         # k masked passes instead of mask_one's d; lattice_side is cfg.ising.D
         # so the "diagonal" grouping can disperse across the D x D raster.
@@ -5140,6 +5157,23 @@ for _c_tag in ("c25", "c50"):
     CONFIGS[_name] = replace(
         CONFIGS[_name], ema_decay=0.9999,
         curriculum=_cuau_ladder(_cuau_house_ladder(), 50_000),
+    )
+
+# Two-hole patch twins of the 64-site cells (s122, 2026-09-03). The mask-one
+# head at 64 sites ran at 3.56 s/step (0.235 s of it the inner update) and
+# was killed at step 9k; the patch head is O(d K) patch work on a 12-site fcc
+# window against mask-one's d anchor copies of the trunk. One declared
+# deviation besides the head: the in-training eval draws 256, not 5000 -- a
+# diagnostic-only cut (the final eval still draws 5000). The 16-site gate
+# cannot host this head (the 2x2x4 cell aliases its own neighbour shell), so
+# the gate is the property tests plus the logged-ESS trajectory against the
+# mask-one cells' first 9k steps.
+for _c_tag in ("c25", "c50"):
+    _parent = CONFIGS[f"H2_cuau64_{_c_tag}_T500_mask_one_50k_curr"]
+    _name = f"H2_cuau64_{_c_tag}_T500_thp_50k_curr"
+    CONFIGS[_name] = replace(
+        _parent, name=_name, head_kind="two_hole_patch",
+        eval=replace(_parent.eval, n_eval_samples_training=256),
     )
 
 

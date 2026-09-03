@@ -87,6 +87,7 @@ non-local share is what the pooled levels must carry.
 """
 
 import math
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -94,6 +95,62 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
+
+
+# ---- lattice geometry -----------------------------------------------------
+#
+# Every geometric fact the head uses is a statement about the lattice's
+# TRANSLATION GROUP: the hollow window is a list of offsets, each pooled
+# level a ball of offsets, the pair position code the offset class of j from
+# i, and "opposite offset" negation in the group. `PatchGeometry` holds
+# exactly those tensors, so the head's math is the same on the D x D torus
+# (group Z_D^2, offsets (dr, dc) mod D) and on a one-atom-per-primitive-cell
+# supercell such as the 4x4x4 fcc Cu-Au cell (group Z_4^3, offsets read as
+# fractional displacements mod the supercell; 2026-09-03). What changes is
+# only what "radius" means: a Chebyshev radius R on the square lattice, a
+# count of neighbour SHELLS on the Bravais cell (one shell = the twelve fcc
+# nearest neighbours, two = eighteen).
+
+
+@dataclass
+class PatchGeometry:
+    """Translation-group tensors of a lattice, all on CPU, all integer-exact.
+
+    neighbour_site: (d, K) site at offset k from site i (the hollow window).
+    opposite_offset: (K,) index of -offset_k inside the window.
+    level_masks / level_sizes: per pooled level, the (d, d) 0/1 membership of
+        j in the ball around i (centre INCLUDED, as the torus box is) and the
+        ball's site count; the whole-lattice level is appended by the head.
+    pair_displacement: (d, d) class of the offset of j from i, in
+        0..n_displacements-1, with class 0 the identity; on both lattices
+        the class of j from the identity site is j itself.
+    negate_displacement: (n_displacements,) class of the negated offset.
+    lattice_side / pooling_radii: set on the torus only, where the pooled
+        mean runs as a circular conv2d (the archived fast path); None on a
+        Bravais cell, where it runs as the mask matmul (same linear map).
+    """
+
+    neighbour_site: Tensor
+    opposite_offset: Tensor
+    level_masks: list[Tensor]
+    level_sizes: tuple[int, ...]
+    pair_displacement: Tensor
+    negate_displacement: Tensor
+    lattice_side: int | None = None
+    pooling_radii: tuple[int, ...] | None = None
+
+    @property
+    def d(self) -> int:
+        return self.neighbour_site.shape[0]
+
+    @property
+    def n_displacements(self) -> int:
+        return int(self.negate_displacement.shape[0])
+
+    def translation(self, displacement_class: int) -> Tensor:
+        """Permutation of sites under the translation of that class: site i
+        goes to the j whose offset from i has the class, (d,) long."""
+        return (self.pair_displacement == displacement_class).float().argmax(dim=1)
 
 
 def torus_neighbour_offsets(radius: int) -> list[tuple[int, int]]:
@@ -117,6 +174,129 @@ def _torus_displacements(lattice_side: int) -> tuple[Tensor, Tensor]:
     return torch.minimum(dr, lattice_side - dr), torch.minimum(dc, lattice_side - dc)
 
 
+def torus_patch_geometry(
+    lattice_side: int, patch_radius: int, pooling_radii: tuple[int, ...] | None = None,
+) -> PatchGeometry:
+    """The D x D torus: byte-for-byte the tensors the head built before the
+    geometry object existed (every archived two-hole-patch row)."""
+    if 2 * patch_radius + 1 > lattice_side:
+        raise ValueError(
+            f"patch_radius {patch_radius} needs 2R+1 <= D={lattice_side}: "
+            "window entries would alias through the wrap"
+        )
+    if pooling_radii is None:
+        pooling_radii = tuple(
+            2**level for level in range(int(math.log2(lattice_side)) + 1)
+            if 2 * 2**level + 1 <= lattice_side
+        )
+    if any(2 * r + 1 > lattice_side for r in pooling_radii):
+        raise ValueError(f"pooling box must fit the torus: {pooling_radii} at D={lattice_side}")
+    d = lattice_side * lattice_side
+    offsets = torus_neighbour_offsets(patch_radius)
+    sites = torch.arange(d)
+    rows, cols = sites // lattice_side, sites % lattice_side
+    neighbour_site = torch.stack([
+        ((rows + dr) % lattice_side) * lattice_side + (cols + dc) % lattice_side
+        for dr, dc in offsets
+    ], dim=1)                                                       # (d, K)
+    opposite = torch.tensor([offsets.index((-dr, -dc)) for dr, dc in offsets])
+    dr, dc = _torus_displacements(lattice_side)
+    level_masks = [(torch.maximum(dr, dc) <= r).float() for r in pooling_radii]
+    level_sizes = tuple((2 * r + 1) ** 2 for r in pooling_radii)
+    # Signed torus displacement of j from i, one class per (dr, dc).
+    displacement = (
+        ((rows[None, :] - rows[:, None]) % lattice_side) * lattice_side
+        + (cols[None, :] - cols[:, None]) % lattice_side
+    )                                                               # (d, d)
+    return PatchGeometry(
+        neighbour_site=neighbour_site, opposite_offset=opposite,
+        level_masks=level_masks, level_sizes=level_sizes,
+        pair_displacement=displacement, negate_displacement=displacement[:, 0].clone(),
+        lattice_side=lattice_side, pooling_radii=tuple(pooling_radii),
+    )
+
+
+def bravais_patch_geometry(
+    positions, cell, patch_shells: int = 1,
+    pooling_shells: tuple[int, ...] | None = None, tolerance: float = 1e-5,
+) -> PatchGeometry:
+    """A periodic supercell with ONE site per primitive cell (every site
+    translation-equivalent), from Cartesian `positions` (d, 3) and the
+    supercell `cell` (3, 3), rows = lattice vectors, as the expansion JSON
+    stores them.
+
+    Offset classes: the class of j from i is the site k that the identity
+    site 0 is carried to by the same translation, frac_k = frac_j - frac_i +
+    frac_0 (mod 1). That is the group table itself, so translation
+    equivariance of the head is exact by construction, as on the torus.
+
+    Shells: sites ranked by minimum-image Cartesian distance from a centre
+    (the 27 image shifts, no rounding ambiguity). The window is the union of
+    the first `patch_shells` shells; pooled level l is the ball of the first
+    `pooling_shells[l]` shells with the centre (default (1, 2): 13 and 19
+    sites on fcc).
+
+    Refused, like 2R+1 > D on the torus: a window site reached at its
+    minimum distance through MORE THAN ONE image (the 2x2x4 cell, where two
+    repeats put +a and -a on the same site). The patch weight for that entry
+    could not tell the two bonds apart, and the partner-zeroed recompute is
+    only defined when each window entry is one bond.
+    """
+    positions = torch.as_tensor(positions, dtype=torch.float64)
+    cell = torch.as_tensor(cell, dtype=torch.float64)
+    d = positions.shape[0]
+    fractional = positions @ torch.linalg.inv(cell)
+    difference = fractional[None, :, :] - fractional[:, None, :]      # (d, d, 3) j from i
+    # Group table: class of (i -> j) = the site at frac_j - frac_i + frac_0.
+    target = (difference + fractional[0]) % 1.0
+    gap = (fractional[None, None, :, :] - target[:, :, None, :]) % 1.0   # (d, d, d, 3)
+    on_site = (torch.minimum(gap, 1.0 - gap) < tolerance).all(dim=-1)   # (d, d, d)
+    if not (on_site.sum(dim=-1) == 1).all():
+        raise ValueError("positions are not one site per primitive cell of the supercell")
+    pair_displacement = on_site.float().argmax(dim=-1)                # (d, d)
+    negate_displacement = pair_displacement[:, 0].clone()
+    # Minimum-image distances and how many images realise them.
+    shifts = torch.tensor(
+        [[a, b, c] for a in (-1, 0, 1) for b in (-1, 0, 1) for c in (-1, 0, 1)],
+        dtype=torch.float64,
+    )
+    wrapped = difference - torch.round(difference)
+    images = (wrapped[:, :, None, :] + shifts) @ cell                 # (d, d, 27, 3)
+    image_distance = images.norm(dim=-1)
+    distance = image_distance.min(dim=-1).values                       # (d, d)
+    n_images_at_minimum = (image_distance - distance[:, :, None] < tolerance).sum(-1)
+    shell_radii = torch.unique(torch.round(distance[0] / tolerance)) * tolerance
+    shell_radii = shell_radii[shell_radii > tolerance]
+    shell_of = torch.bucketize(distance, shell_radii - tolerance)      # (d, d): 0 = centre
+    if patch_shells > len(shell_radii):
+        raise ValueError(f"patch_shells {patch_shells} exceeds the {len(shell_radii)} shells of the cell")
+    window_classes = [
+        k for k in sorted(range(1, d), key=lambda k: (float(distance[0, k]), k))
+        if shell_of[0, k] <= patch_shells
+    ]
+    aliased = [k for k in window_classes if n_images_at_minimum[0, k] > 1]
+    if aliased:
+        raise ValueError(
+            f"window sites {aliased} alias: reached through several images of the "
+            f"supercell at their minimum distance (cell too small for {patch_shells} shell(s))"
+        )
+    neighbour_site = torch.stack(
+        [(pair_displacement == k).float().argmax(dim=1) for k in window_classes], dim=1
+    )                                                                  # (d, K)
+    opposite = torch.tensor(
+        [window_classes.index(int(negate_displacement[k])) for k in window_classes]
+    )
+    if pooling_shells is None:
+        pooling_shells = (1, 2)
+    level_masks = [(shell_of <= shells).double().float() for shells in pooling_shells]
+    level_sizes = tuple(int(mask[0].sum()) for mask in level_masks)
+    return PatchGeometry(
+        neighbour_site=neighbour_site, opposite_offset=opposite,
+        level_masks=level_masks, level_sizes=level_sizes,
+        pair_displacement=pair_displacement, negate_displacement=negate_displacement,
+    )
+
+
 class TwoHolePatchSwapHead(nn.Module):
     """Ordering-free doubly-hollow swap head (module docstring).
 
@@ -127,73 +307,56 @@ class TwoHolePatchSwapHead(nn.Module):
         backbone: the leTF rate model, reused ONLY for token_embedder,
             time_embedder and omega (shared readout convention); its causal
             stacks and attention readout are never run.
-        lattice_side: D of the D x D torus (d = D^2).
-        patch_radius: R of the hollow (2R+1)^2 window. Needs 2R+1 <= D so
-            two window entries never alias to one site through the wrap.
+        lattice_side: D of the D x D torus (d = D^2); omit when `geometry`
+            is given.
+        patch_radius: R of the hollow (2R+1)^2 torus window. Needs 2R+1 <= D
+            so two window entries never alias to one site through the wrap.
         feature_dim: width f of every pair-context term and of the
             projected omega readout.
         patch_hidden_dim: hidden width of the patch MLP phi.
         pooling_radii: radii of the centred pooled levels; None = powers of
             two while the box fits the torus (2r+1 <= D). The whole-lattice
             level is always appended.
+        geometry: a `PatchGeometry` for any Bravais supercell (see
+            `bravais_patch_geometry`); overrides the three torus arguments.
     """
 
     def __init__(
         self,
         backbone: LeTFRateMatrix,
-        lattice_side: int,
+        lattice_side: int | None = None,
         patch_radius: int = 1,
         feature_dim: int = 32,
         patch_hidden_dim: int = 32,
         pooling_radii: tuple[int, ...] | None = None,
+        geometry: PatchGeometry | None = None,
     ):
         super().__init__()
-        d = lattice_side * lattice_side
-        if d != backbone.d:
-            raise ValueError(f"lattice_side {lattice_side}^2 != backbone.d {backbone.d}")
-        if 2 * patch_radius + 1 > lattice_side:
-            raise ValueError(
-                f"patch_radius {patch_radius} needs 2R+1 <= D={lattice_side}: "
-                "window entries would alias through the wrap"
-            )
-        if pooling_radii is None:
-            pooling_radii = tuple(
-                2**level for level in range(int(math.log2(lattice_side)) + 1)
-                if 2 * 2**level + 1 <= lattice_side
-            )
-        if any(2 * r + 1 > lattice_side for r in pooling_radii):
-            raise ValueError(f"pooling box must fit the torus: {pooling_radii} at D={lattice_side}")
+        if geometry is None:
+            if lattice_side is None:
+                raise ValueError("give lattice_side (torus) or geometry (any Bravais cell)")
+            geometry = torus_patch_geometry(lattice_side, patch_radius, pooling_radii)
+        if geometry.d != backbone.d:
+            raise ValueError(f"geometry has {geometry.d} sites != backbone.d {backbone.d}")
         self.backbone = backbone
-        self.d = d
-        self.lattice_side = lattice_side
-        self.patch_radius = patch_radius
+        self.geometry = geometry
+        self.d = geometry.d
+        # Torus-only labels, kept for the archived cells' readers; None on a
+        # Bravais cell, whose window is a shell count (see the geometry).
+        self.lattice_side = geometry.lattice_side
+        self.patch_radius = patch_radius if geometry.lattice_side is not None else None
+        self.pooling_radii = geometry.pooling_radii
         self.feature_dim = feature_dim
-        self.pooling_radii = tuple(pooling_radii)
+        self.n_patch = geometry.neighbour_site.shape[1]
+        self.n_levels = len(geometry.level_masks)
         hidden = backbone.hidden_dim
 
-        offsets = torus_neighbour_offsets(patch_radius)
-        self.n_patch = len(offsets)
-        sites = torch.arange(d)
-        rows, cols = sites // lattice_side, sites % lattice_side
-        neighbour_site = torch.stack([
-            ((rows + dr) % lattice_side) * lattice_side + (cols + dc) % lattice_side
-            for dr, dc in offsets
-        ], dim=1)                                                   # (d, K)
-        opposite = torch.tensor([offsets.index((-dr, -dc)) for dr, dc in offsets])
-        self.register_buffer("neighbour_site", neighbour_site, persistent=False)
-        self.register_buffer("opposite_offset", opposite, persistent=False)
-
-        dr, dc = _torus_displacements(lattice_side)
-        for level, radius in enumerate(self.pooling_radii):
-            in_box = (torch.maximum(dr, dc) <= radius).float()      # (d, d)
-            self.register_buffer(f"level_mask_{level}", in_box, persistent=False)
-        # Signed torus displacement of j from i, one embedding row per (dr, dc).
-        displacement = (
-            ((rows[None, :] - rows[:, None]) % lattice_side) * lattice_side
-            + (cols[None, :] - cols[:, None]) % lattice_side
-        )                                                           # (d, d)
-        self.register_buffer("pair_displacement", displacement, persistent=False)
-        self.relative_position_embedding = nn.Embedding(d, feature_dim)
+        self.register_buffer("neighbour_site", geometry.neighbour_site, persistent=False)
+        self.register_buffer("opposite_offset", geometry.opposite_offset, persistent=False)
+        for level, mask in enumerate(geometry.level_masks):
+            self.register_buffer(f"level_mask_{level}", mask, persistent=False)
+        self.register_buffer("pair_displacement", geometry.pair_displacement, persistent=False)
+        self.relative_position_embedding = nn.Embedding(geometry.n_displacements, feature_dim)
 
         self.patch_mlp = nn.Sequential(
             nn.Linear(self.n_patch + hidden, patch_hidden_dim),
@@ -204,7 +367,7 @@ class TwoHolePatchSwapHead(nn.Module):
         # a bias is hole-invariant and already lives in the pair MLP.
         self.level_projections = nn.ModuleList([
             nn.Linear(hidden, feature_dim, bias=False)
-            for _ in range(len(self.pooling_radii) + 1)
+            for _ in range(self.n_levels + 1)
         ])
         self.first_hole_map = nn.Linear(feature_dim, feature_dim, bias=False)
         self.second_hole_map = nn.Linear(feature_dim, feature_dim, bias=False)
@@ -245,10 +408,16 @@ class TwoHolePatchSwapHead(nn.Module):
         zeroed = patches.unsqueeze(2) * keep                         # (B, d, K, K)
         return self._patch_mlp(zeroed, t)
 
-    def _level_box_mean(self, values: Tensor, radius: int) -> Tensor:
-        """Mean of `values` (B, d, f) over the centred (2r+1)^2 torus box, (B, d, f)."""
+    def _level_box_mean(self, values: Tensor, level: int) -> Tensor:
+        """Mean of `values` (B, d, f) over level's ball around each site,
+        (B, d, f): circular conv2d on the torus, the membership matmul on any
+        other cell (the same linear map; equality is tested)."""
+        if self.lattice_side is None:
+            mask = getattr(self, f"level_mask_{level}")
+            return torch.einsum("ij,bjf->bif", mask, values) / self.geometry.level_sizes[level]
         batch, d, f = values.shape
         D = self.lattice_side
+        radius = self.pooling_radii[level]
         grid = values.transpose(1, 2).reshape(batch, f, D, D)
         padded = F.pad(grid, (radius,) * 4, mode="circular")
         k = 2 * radius + 1
@@ -258,7 +427,7 @@ class TwoHolePatchSwapHead(nn.Module):
     def _level_values(self, x: Tensor) -> list[tuple[Tensor, float]]:
         """(v^l, n_l) per level: projected per-site embeddings and box size."""
         psi = self.backbone.token_embedder(((x + 1) / 2).long())     # (B, d, h)
-        boxes = [(2 * r + 1) ** 2 for r in self.pooling_radii] + [self.d]
+        boxes = list(self.geometry.level_sizes) + [self.d]
         return [
             (projection(psi), float(n))
             for projection, n in zip(self.level_projections, boxes)
@@ -283,8 +452,8 @@ class TwoHolePatchSwapHead(nn.Module):
         own = f_site.clone()
         levels = []
         for level, (v, n) in enumerate(self._level_values(x)):
-            if level < len(self.pooling_radii):
-                mean = self._level_box_mean(v, self.pooling_radii[level])
+            if level < self.n_levels:
+                mean = self._level_box_mean(v, level)
                 in_box = getattr(self, f"level_mask_{level}").view(1, d, d, 1)
             else:
                 mean = v.sum(dim=1, keepdim=True).expand_as(v) / n
@@ -330,7 +499,7 @@ class TwoHolePatchSwapHead(nn.Module):
             patch[:, neighbours[hole] == partner] = 0.0
             context = self._patch_mlp(patch, t)
             for level, (v, n) in enumerate(self._level_values(x)):
-                if level < len(self.pooling_radii):
+                if level < self.n_levels:
                     box = getattr(self, f"level_mask_{level}")[hole].clone()
                 else:
                     box = torch.ones(self.d, device=x.device)
