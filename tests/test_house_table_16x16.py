@@ -189,7 +189,35 @@ def test_arm_set_is_the_heads_that_ran():
     assert not {"fimo2", "fimo2ef", "fmo2ef"} & set(h16.ARMS)
     # Every arm prints a row, and the ladder sits in its own block.
     printed = [key for row in h16.LATEX_ROWS if row for key in [row[0]]]
-    assert set(h16.ARMS) <= set(printed)
+    # masep is scored (it anchors the floor caveat) but prints no row: one
+    # masked-attention row per rung, billed separable (decided 2026-09-03).
+    assert set(h16.ARMS) - {"masep"} <= set(printed)
+
+
+def test_gfn_rows_stay_outside_the_bold_comparison():
+    """The 8x8 rule carried up: the GFN rows are a different sampling
+    paradigm, so even when a GFN cell holds the best number in a column the
+    bold lands on the best SWAP cell. `best` is computed over ARMS, which
+    the GFN arms are not in; a refactor computing it over every table key
+    would silently move the bold."""
+    from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
+
+    assert not set(h16.GFN_ARMS) & set(h16.ARMS)
+    printed = [row[0] for row in h16.LATEX_ROWS if row]
+    assert set(h16.GFN_ARMS) <= set(printed)
+
+    def entry(ess, flops):
+        return {"ESS": (ess, 0.001), "dMag": (0.05, 0.01),
+                "dCorr": (0.05, 0.01), "EW2": (0.05, 0.01),
+                "FLOP/es": (flops, 0.0)}
+
+    table = {"thp_s010": entry(0.90, 1.0e9),
+             "gfn_tb_s010": entry(0.99, 1.0e6)}  # best ESS and FLOP/es
+    body = h16.latex_table(table)
+    gfn_line = next(l for l in body.splitlines() if "trajectory balance" in l)
+    thp_line = next(l for l in body.splitlines() if "two-hole patch head" in l)
+    assert "mathbf" not in gfn_line
+    assert "mathbf" in thp_line
 
 
 def test_no_rejection_row_is_emitted():
@@ -209,7 +237,7 @@ def test_row_order_puts_reference_and_floor_above_the_heads():
 
     emitted = [row[0] for row in h16.LATEX_ROWS if row is not None]
     assert emitted[:2] == ["reference", "floor"]
-    assert set(emitted[2:]) == set(h16.ARMS)
+    assert set(emitted[2:]) == (set(h16.ARMS) - {"masep"}) | set(h16.GFN_ARMS)
 
 
 # --- cell selection ------------------------------------------------------

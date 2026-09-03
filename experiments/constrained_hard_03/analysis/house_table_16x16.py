@@ -82,16 +82,17 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from discrete_flow_sampler.diagnostics.flops import (
-    chain_per_effective_sample, kawasaki_run_flops, measured_forward_flops,
-    neural_sampling_flops_per_sample, per_effective_sample)
+    chain_per_effective_sample, ising_energy_eval_flops, kawasaki_run_flops,
+    measured_forward_flops, neural_sampling_flops_per_sample,
+    per_effective_sample)
 from discrete_flow_sampler.diagnostics.metrics import (
     correlation_profile_error, energy_wasserstein2, integrated_autocorr,
     magnetisation_profile_error)
 # The lattice-generic half of the 8x8 fill, imported rather than restated.
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-    _sci, aggregate, config_drift, fmt, is_composition_exact,
-    flop_billing_config, reference_standard_error, registry_config_for, run_dir_config,
-    sampling_floor_from_reference)
+    _sci, aggregate, config_drift, fmt, gfn_registry_config_for,
+    is_composition_exact, flop_billing_config, reference_standard_error,
+    registry_config_for, run_dir_config, sampling_floor_from_reference)
 
 L = 16
 D_SITES = L * L
@@ -135,8 +136,32 @@ LATEX_ROWS = (
     ("iv", "prefix-sum band, one sweep"),
     ("ivmo2", "prefix-sum band, two sweeps"),
     ("ivmo2ef", "\\quad + exact field"),
+    None,
+    # Different sampling paradigm: outside the bold comparison, which falls
+    # out structurally -- `best` is computed over ARMS and the GFN arms are
+    # not in it (pinned by test_gfn_rows_stay_outside_the_bold_comparison).
+    ("gfn_tb", "GFlowNet, trajectory balance"),
+    ("gfn_fldb", "GFlowNet, forward-looking DB"),
 )
 ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
+
+# GFlowNet comparator rows: the 256-step fairness rung, the 8x8 fill's GFN
+# block with its lattice-generic parts imported. The bill is the KV-cached
+# rollout plus one target eval for the IS weight (no Euler grid), and the
+# rows read the same eval subdir as the swap arms. Tags are PER ARM: the
+# first wave's TB centres (tag 20260831-gfn-d256) stalled with log Z pinned
+# at 100 by AdamW's default weight decay (run_gfn.build_optimiser) and are
+# re-run under their own tag; the FL-DB loss carries no log Z, so those
+# cells stand as landed.
+GFN_ARMS = {
+    "gfn_tb": "GFlowNet, trajectory balance",
+    "gfn_fldb": "GFlowNet, forward-looking DB",
+}
+GFN_TAG = {"gfn_tb": "20260903-gfn-d256-tb", "gfn_fldb": "20260831-gfn-d256"}
+GFN_CELL_NAME = {
+    "s010": "GFN_d256_c50_s010_{objective}_50k_par",
+    "s220": "GFN_d256_c50_s220_{objective}_100k_par",
+}
 
 # Matched on the tokens that carry meaning -- size, composition, coupling,
 # head, wave -- and NOT on the budget or optimiser infixes. Those differ
@@ -282,8 +307,11 @@ def energy_per_site(target, states, chunk=4096):
     return torch.cat(parts)
 
 
-def neural_cell(run_dir, target, reference, reference_energy, per_forward,
-                n_euler, eval_subdir="eval"):
+def neural_cell(run_dir, target, reference, reference_energy, flops_per_raw,
+                eval_subdir="eval"):
+    """One seed's row. The per-raw-sample bill is the caller's, as in the
+    8x8 fill: a swap cell pays per_forward x n_euler Euler forwards, a GFN
+    cell one cached rollout plus a target eval."""
     run_dir = Path(run_dir)
     metrics = json.loads((run_dir / eval_subdir / "metrics.json").read_text())
     samples = torch.load(run_dir / eval_subdir / "samples.pt",
@@ -293,7 +321,6 @@ def neural_cell(run_dir, target, reference, reference_energy, per_forward,
     weights = torch.softmax(log_w, dim=0)
     ess = metrics["ess_fraction"]
     w_ref = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
-    flops_raw = neural_sampling_flops_per_sample(per_forward, n_euler, D_SITES)
     return {
         "ESS": ess,
         "dMag": magnetisation_profile_error(
@@ -303,7 +330,7 @@ def neural_cell(run_dir, target, reference, reference_energy, per_forward,
         "EW2": energy_wasserstein2(
             energy_per_site(target, samples), weights, reference_energy,
             reference_weights=w_ref),
-        "FLOP/es": per_effective_sample(flops_raw, ess),
+        "FLOP/es": per_effective_sample(flops_per_raw, ess),
     }
 
 
@@ -449,15 +476,45 @@ def main(argv=None):
             per_forward = measured_forward_flops(
                 head, (reference[:1], torch.full((1,), 0.5)))
             n_draws = cfg.eval.n_eval_samples
+            flops_per_raw = neural_sampling_flops_per_sample(
+                per_forward, cfg.ctmc.n_euler_steps, D_SITES)
             rows = [neural_cell(d, target, reference, reference_energy,
-                                per_forward, cfg.ctmc.n_euler_steps,
-                                eval_subdir=args.eval_subdir)
+                                flops_per_raw, eval_subdir=args.eval_subdir)
                     for d in run_dirs]
             cell = aggregate(rows)
             cell["per_forward_flops"] = per_forward
             cell["n_seeds"] = len(run_dirs)
             cell["cells"] = [d.name for d in run_dirs]
             table[f"{arm}_{sigma_label}"] = cell
+
+        for gfn_arm in GFN_ARMS:
+            from experiments.constrained_hard_03.run_gfn import (
+                build_target_and_policy)
+
+            name = GFN_CELL_NAME[sigma_label].format(
+                objective=gfn_arm.removeprefix("gfn_"))
+            run_dirs = [args.results_dir / f"{name}_seed{seed}_{GFN_TAG[gfn_arm]}"
+                        for seed in SEEDS]
+            if not all((d / args.eval_subdir / "metrics.json").is_file()
+                       for d in run_dirs):
+                print(f"no landed cells for {gfn_arm} at {sigma_label}",
+                      file=sys.stderr)
+                continue
+            gfn_cfg = gfn_registry_config_for(run_dirs[0])
+            assert abs(gfn_cfg.sigma - target.sigma) < 1e-9, (
+                f"{name}: trains at sigma={gfn_cfg.sigma} against the "
+                f"reference's {target.sigma}")
+            _, policy = build_target_and_policy(gfn_cfg, "cpu")
+            flops_per_raw = (measured_forward_flops(policy.sample, (1,))
+                             + ising_energy_eval_flops(D_SITES))
+            rows = [neural_cell(d, target, reference, reference_energy,
+                                flops_per_raw, eval_subdir=args.eval_subdir)
+                    for d in run_dirs]
+            cell = aggregate(rows)
+            cell["per_sample_flops"] = flops_per_raw
+            cell["n_seeds"] = len(run_dirs)
+            cell["cells"] = [d.name for d in run_dirs]
+            table[f"{gfn_arm}_{sigma_label}"] = cell
 
         table[f"floor{n_draws}_{sigma_label}"] = {
             k: (v, 0.0) for k, v in sampling_floor_from_reference(

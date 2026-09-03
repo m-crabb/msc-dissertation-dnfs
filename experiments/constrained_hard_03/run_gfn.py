@@ -85,8 +85,23 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
     groups = []
     split_out = set()
     if cfg.log_z_learning_rate is not None:
+        # weight_decay 0 (2026-09-03): log Z is a normaliser, not a weight.
+        # AdamW's decoupled decay caps any scalar at 1/wd -- Adam's
+        # normalised step saturates at magnitude 1 and the decay term
+        # wd*theta balances it there -- i.e. 100 at torch's default 0.01.
+        # Harmless at d16/d64 (slice log Z 44-54; the learned value sat
+        # 0.08-0.11 nat under the IS estimate, ESS unaffected), but the d256
+        # slice sits at ~183 (sigma 0.1) / ~207 (sigma_c) and the whole
+        # 16x16 TB wave (tag 20260831-gfn-d256) stalled with log Z pinned at
+        # 100.0 +- 0.1 on all six seeds, the ~73-nat residual acting as a
+        # wrong REINFORCE baseline (zero-mean, variance-inflating; grad norm
+        # 5.9e3 at step 0 against the 500 clip). The archived d16/d64 cells
+        # trained under the decay and are not re-run. The network group
+        # keeps torch's default 0.01, a declared deviation from the house
+        # trainer's 1e-4.
         groups.append({"params": [policy.log_z],
-                       "lr": cfg.log_z_learning_rate, "name": "log_z"})
+                       "lr": cfg.log_z_learning_rate, "weight_decay": 0.0,
+                       "name": "log_z"})
         split_out.add(id(policy.log_z))
     if cfg.flow_head_learning_rate is not None:
         if policy.flow_head is None:

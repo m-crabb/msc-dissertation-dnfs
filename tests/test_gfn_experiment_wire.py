@@ -124,6 +124,36 @@ def test_build_optimiser_splits_log_z_group():
     assert n_split == len(list(policy.parameters()))
 
 
+def test_log_z_carries_no_weight_decay_and_reaches_the_d256_scale():
+    """AdamW's decoupled decay caps any scalar at 1/weight_decay: under a
+    constant-sign gradient Adam's normalised step saturates at magnitude 1
+    and the decay term wd*theta balances it at theta = 1/wd -- 100 at the
+    default wd = 0.01. That sits above every d64 slice log Z (44 / 54) and
+    BELOW the d256 slice (~183 at sigma = 0.1, ~207 at sigma_c): the first
+    16x16 TB wave (tag 20260831-gfn-d256) stalled with log Z pinned at
+    100.0 +- 0.1 on all six seeds and a ~73-nat residual the policy cannot
+    close (2026-09-03). log Z is a normaliser, not a weight: no decay, and
+    it must be able to reach the 256-site scale."""
+    import torch
+    from experiments.constrained_hard_03.run_gfn import (
+        build_optimiser, build_target_and_policy)
+
+    cfg = replace(_tiny_cell("tb"), log_z_learning_rate=0.1)
+    _, policy = build_target_and_policy(cfg, "cpu")
+    optimiser = build_optimiser(cfg, policy)
+    log_z_group = next(g for g in optimiser.param_groups
+                       if g["name"] == "log_z")
+    assert log_z_group["weight_decay"] == 0.0
+
+    # A constant unit gradient pushing log Z up for 3000 steps at lr 0.1:
+    # undecayed it passes 250; under the default decay it stalls at 100.
+    for _ in range(3000):
+        optimiser.zero_grad()
+        policy.log_z.grad = torch.full_like(policy.log_z, -1.0)
+        optimiser.step()
+    assert policy.log_z.item() > 250
+
+
 def test_sigma_c_cells_use_exact_critical_coupling():
     # s220 must be the exact SIGMA_C = ln(1+sqrt(2))/4, never legacy 0.223
     # (sigma_c migration, s58).
