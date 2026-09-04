@@ -51,7 +51,7 @@ def main(argv=None):
         ax.set_xlabel("Au concentration", fontsize=FONT_SIZE_LABEL); ax.set_xlim(0.1, 0.8)
         style_axes(ax)
     axes[0].set_ylabel("density", fontsize=FONT_SIZE_LABEL)
-    axes[-1].legend(frameon=False, fontsize=FONT_SIZE_ANNOTATION)
+    axes[0].legend(frameon=False, fontsize=FONT_SIZE_ANNOTATION, loc="upper left")
     fig.tight_layout(); fig.savefig(args.out, dpi=SAVEFIG_DPI, bbox_inches="tight"); print("wrote", args.out)
 
 

@@ -5149,6 +5149,21 @@ for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
         ctmc=replace(_control.ctmc, n_euler_steps=128),
     )
 
+# Composition sweep for the 16-site canonical F(c) (s123, 2026-09-04): the
+# house c=0.5 recipe (lr cut, seven rungs, 50k, ne128, EMA) at every slice
+# between the two ordered phases, n_Au = 5, 6, 7 of 16, so that F(c) is read
+# off each cell's weights at five compositions against exact enumeration of
+# the 2^16 states. The 64-site c=0.5 slice is out of reach at 500 K and 680 K
+# (revival and temperature-grid waves), so this is where the alloy F(c) is
+# drawn. c25 / c50 house cells above complete the set.
+for _c, _c_tag in ((0.3125, "c31"), (0.375, "c38"), (0.4375, "c44")):
+    _parent = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]
+    _name = f"H2_cuau16_{_c_tag}_T500_mask_one_50k_house"
+    CONFIGS[_name] = replace(
+        _parent, name=_name, ising=replace(_parent.ising, target_composition=_c),
+    )
+
+
 # The 64-site cells (4x4x4 primitive repeats = the MetaDNS benchmark cell)
 # take the same ladder, lr cut and EMA in place: their s115 registration
 # still carried the four-stage ladder with lr 1e-3 at the 800 K step.

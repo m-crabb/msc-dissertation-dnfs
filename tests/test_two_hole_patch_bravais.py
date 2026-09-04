@@ -459,3 +459,13 @@ def test_cuau64_temperature_grid_cells_stop_their_ladder_at_the_row_temperature(
         assert cell.train.n_steps == (10_000 if one_stage else 30_000)
         assert replace(cell, name=parent.name, curriculum=parent.curriculum,
                        train=parent.train) == parent
+
+
+def test_cuau16_composition_sweep_cells_differ_from_the_house_cell_only_by_composition():
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    house = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]
+    for c, tag in ((0.3125, "c31"), (0.375, "c38"), (0.4375, "c44")):
+        cell = CONFIGS[f"H2_cuau16_{tag}_T500_mask_one_50k_house"]
+        assert cell.ising.target_composition == c and round(c * 16) == int(c * 16)
+        assert replace(cell, name=house.name, ising=house.ising) == house
