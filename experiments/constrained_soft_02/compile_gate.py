@@ -1,4 +1,4 @@
-"""D=4 compile-parity gate for the soft house recipe (0e, s96).
+"""D=4 compile-parity gate for the soft house recipe.
 
 compile_model=True enters the soft chapter with the house recipe, and
 compile has priors on this codebase (~40% catastrophic seeds on the

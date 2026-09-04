@@ -1,4 +1,4 @@
-"""Base-vs-target composition marginal for the soft chapter (2026-08-23).
+"""Base-vs-target composition marginal for the soft chapter.
 
 The three path identities (eq:matched-drive/weight/difficulty/trade) say the
 base lowers the path's difficulty only through the drive g = log rho~ -

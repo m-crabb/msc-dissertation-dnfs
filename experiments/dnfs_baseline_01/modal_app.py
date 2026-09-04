@@ -91,7 +91,7 @@ image = (
                 f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
                 "site-packages/nvidia/cuda_runtime/include"
             ),
-            # B5 (optimisation decision, 2026-08-24): venue parity with
+            # optimisation decision: venue parity with
             # the DoC sbatch scripts, which export this. Allocator
             # headroom, not a speed lever.
             "PYTORCH_ALLOC_CONF": "expandable_segments:True",
