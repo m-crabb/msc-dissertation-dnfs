@@ -61,7 +61,7 @@ def free_energies(log_w, beta):
 
 rows = []
 for run in sorted(glob.glob("results/*/*cuau16*")):
-    name = Path(run).name.split("_2026")[0]
+    name = Path(run).name.replace("_2026", " ")
     T = cell_temperature(run)
     beta, F_free_exact, F_slice_exact, marg_exact = exact_at(T)
     for flavour in ("eval", "eval_ema"):
@@ -93,11 +93,11 @@ for run in sorted(glob.glob("results/*/*cuau16*")):
             row.update(m4_w=wm[4].item(), m8_w=wm[8].item(), m4_raw=raw[4].item(), m8_raw=raw[8].item())
         rows.append(row)
 
-print(f"{'cell':46s} {'flav':8s} {'ESS':>6s} {'F_lb':>8s} {'F_is':>8s} {'F_ex':>8s} {'dlb':>5s} {'dis':>5s} {'<c>':>6s}  m4_w m8_w | m4_raw m8_raw")
+print(f"{'cell':62s} {'flav':8s} {'ESS':>6s} {'F_lb':>8s} {'F_is':>8s} {'F_ex':>8s} {'dlb':>5s} {'dis':>5s} {'<c>':>6s}  m4_w m8_w | m4_raw m8_raw")
 for r in rows:
     extra = ""
     if "m4_w" in r:
         extra = f"  {r['m4_w']:.3f} {r['m8_w']:.3f} | {r['m4_raw']:.3f} {r['m8_raw']:.3f}"
-    print(f"{r['cell']:46s} {r['flavour']:8s} {r['ess']:6.3f} {r['F_lb']:8.4f} {r['F_is']:8.4f} {r['F_exact']:8.4f} "
+    print(f"{r['cell']:62s} {r['flavour']:8s} {r['ess']:6.3f} {r['F_lb']:8.4f} {r['F_is']:8.4f} {r['F_exact']:8.4f} "
           f"{1e3*(r['F_lb']-r['F_exact']):5.1f} {1e3*(r['F_is']-r['F_exact']):5.1f} {r['c_mean']:6.3f}{extra}")
 print("(dlb, dis = F_lb - exact, F_is - exact in meV/site)")

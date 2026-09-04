@@ -58,7 +58,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--free", nargs="+", required=True)
     parser.add_argument("--temperatures", nargs="+", type=int, required=True)
-    parser.add_argument("--specialists", required=True)
+    parser.add_argument("--specialists", nargs="+", required=True)
     parser.add_argument("--amortised", required=True)
     parser.add_argument("--fc-temperature", type=float, default=500.0)
     parser.add_argument("--out", required=True)
@@ -89,7 +89,7 @@ def main(argv=None):
     exact = exact_slice_free_energy(T); floor = exact.min()
     ax.plot(np.arange(D + 1) / D, ((exact - floor) / kT_cell).numpy(), "-", color=REFERENCE_INK, lw=1.2, label="exact")
     by_composition = {}
-    for run in landed(args.specialists):
+    for run in [r for pattern in args.specialists for r in landed(pattern)]:
         log_w = torch.load(f"{run}/eval/log_weights.pt")
         c = round(au_count(torch.load(f"{run}/eval/samples.pt")).double().mean().item() / D * D) / D
         by_composition.setdefault(c, []).append(sampler_slice_free_energy(log_w, beta))
