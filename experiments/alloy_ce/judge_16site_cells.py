@@ -18,19 +18,31 @@ import torch
 from discrete_flow_sampler.targets.cluster_expansion import BinaryExpansionSpec
 
 K_B_EV = 8.617333262e-5
-T, d = 500.0, 16
-beta = 1.0 / (K_B_EV * T)
+d = 16
 spec = BinaryExpansionSpec.from_json("data/ce/cuau_fcc_2x2x4.json")
 states = torch.tensor(list(itertools.product([-1.0, 1.0], repeat=d)), dtype=torch.float64)
 energy = spec.energy(states)
 n_au = ((states + 1) / 2).sum(1)
-log_w_exact = -beta * energy
-p_exact = torch.softmax(log_w_exact, 0)
-marg_exact = torch.zeros(d + 1, dtype=torch.float64).index_add_(0, n_au.long(), p_exact)
-F_free_exact = -torch.logsumexp(log_w_exact, 0).item() / beta / d
-F_slice_exact = {n / d: -torch.logsumexp(log_w_exact[n_au == n], 0).item() / beta / d
-                 for n in range(d + 1)}
-print(f"exact at {T:.0f} K: F_free {F_free_exact:.4f} eV/site; F_slice(0.25) {F_slice_exact[0.25]:.4f}, "
+
+
+def exact_at(T):
+    """Exact free-ensemble F, per-slice F(c) and the composition marginal at temperature T (cached)."""
+    beta = 1.0 / (K_B_EV * T)
+    log_w_exact = -beta * energy
+    p_exact = torch.softmax(log_w_exact, 0)
+    marg = torch.zeros(d + 1, dtype=torch.float64).index_add_(0, n_au.long(), p_exact)
+    F_free = -torch.logsumexp(log_w_exact, 0).item() / beta / d
+    F_slice = {n / d: -torch.logsumexp(log_w_exact[n_au == n], 0).item() / beta / d for n in range(d + 1)}
+    return beta, F_free, F_slice, marg
+
+
+def cell_temperature(run):
+    cfg = json.load(open(Path(run) / "config.json"))
+    return round(1.0 / (2.0 * K_B_EV * cfg["curriculum"]["stages"][-1]["sigma"]))
+
+
+_, F_free_exact, F_slice_exact, marg_exact = exact_at(500.0)
+print(f"exact at 500 K: F_free {F_free_exact:.4f} eV/site; F_slice(0.25) {F_slice_exact[0.25]:.4f}, "
       f"F_slice(0.5) {F_slice_exact[0.5]:.4f}; free marginal mass at n_Au=4,8: "
       f"{marg_exact[4]:.3f} {marg_exact[8]:.3f}")
 
@@ -41,7 +53,7 @@ def marginal(samples, log_w):
     raw = torch.bincount(n, minlength=d + 1).double() / len(n)
     return weighted, raw
 
-def free_energies(log_w):
+def free_energies(log_w, beta):
     lw = log_w.double()
     F_lb = -lw.mean().item() / beta / d
     F_is = -(torch.logsumexp(lw, 0) - math.log(len(lw))).item() / beta / d
@@ -50,6 +62,8 @@ def free_energies(log_w):
 rows = []
 for run in sorted(glob.glob("results/*/*cuau16*")):
     name = Path(run).name.split("_2026")[0]
+    T = cell_temperature(run)
+    beta, F_free_exact, F_slice_exact, marg_exact = exact_at(T)
     for flavour in ("eval", "eval_ema"):
         mfile = Path(run) / flavour / "metrics.json"
         if not mfile.exists():
@@ -61,18 +75,18 @@ for run in sorted(glob.glob("results/*/*cuau16*")):
             for n in sorted(set(((s + 1) / 2).sum(1).long().tolist())):
                 on_slice = ((s + 1) / 2).sum(1).long() == n
                 lw_slice = lw[on_slice].double()
-                F_lb, F_is = free_energies(lw_slice)
+                F_lb, F_is = free_energies(lw_slice, beta)
                 ess = (torch.softmax(lw_slice, 0) ** 2).sum().reciprocal().item() / len(lw_slice)
                 rows.append(dict(cell=f"{name}@n{n}", flavour=flavour, ess=ess, F_lb=F_lb, F_is=F_is,
                                  F_exact=F_slice_exact[n / d], c_mean=n / d))
             continue
-        F_lb, F_is = free_energies(lw)
+        F_lb, F_is = free_energies(lw, beta)
         if name.startswith("H2"):
             F_exact = F_slice_exact[m["target_composition"]]
         else:
             F_exact = m["free_energy_per_site_exact"]
             assert abs(F_lb - m["free_energy_per_site"]) < 1e-5, (name, F_lb, m["free_energy_per_site"])
-        row = dict(cell=name, flavour=flavour, ess=m["ess_fraction"], F_lb=F_lb, F_is=F_is,
+        row = dict(cell=f"{name}@{T}K", flavour=flavour, ess=m["ess_fraction"], F_lb=F_lb, F_is=F_is,
                    F_exact=F_exact, c_mean=m["composition_mean"])
         if name.startswith("A1"):
             wm, raw = marginal(s, lw)
