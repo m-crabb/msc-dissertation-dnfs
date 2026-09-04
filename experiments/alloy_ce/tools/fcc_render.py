@@ -43,23 +43,66 @@ def rectangular_tiling(spec):
     return tiled
 
 
-def draw_structure(ax, tiled, state, title):
-    """The conventional fcc cell (cube edge 3.8 A): 8 corners + 6 face centres, coloured
-    from the periodic reference state; one scatter call so matplotlib depth-sorts the spheres."""
-    corners = [(x, y, z) for x in (0, 2) for y in (0, 2) for z in (0, 2)]
-    faces = [(1, 1, 0), (1, 1, 2), (1, 0, 1), (1, 2, 1), (0, 1, 1), (2, 1, 1)]
-    points = corners + faces
-    colours = [SPIN_UP_COLOUR if state[tiled[q]] > 0 else SPIN_DOWN_COLOUR for q in points]
-    xyz = [[1.9 * q[k] for q in points] for k in range(3)]
-    ax.scatter(*xyz, s=900, c=colours, edgecolor="black", lw=0.5, depthshade=False)
-    for a in (0.0, 3.8):
-        for b in (0.0, 3.8):
-            ax.plot([0, 3.8], [a, a], [b, b], color=MUTED, lw=0.6)
-            ax.plot([a, a], [0, 3.8], [b, b], color=MUTED, lw=0.6)
-            ax.plot([a, a], [b, b], [0, 3.8], color=MUTED, lw=0.6)
-    ax.set_title(title, fontsize=FONT_SIZE_TITLE, pad=0)
-    ax.set_box_aspect((1, 1, 1)); ax.set_axis_off(); ax.view_init(elev=20, azim=-60)
-    ax.set_xlim(-0.3, 4.1); ax.set_ylim(-0.3, 4.1); ax.set_zlim(-0.3, 4.1)
+JMOL = {"Au": (1.0, 0.82, 0.14), "Cu": (0.78, 0.50, 0.20)}    # jmol element colours (ASE's default)
+
+
+def rotation(degrees_x, degrees_y, degrees_z):
+    """Rotation matrix for successive rotations about x, y, z (degrees), as ASE's 'ax,by,cz' strings."""
+    import math
+    def about(axis, angle):
+        c, sn = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        m = torch.eye(3, dtype=torch.float64)
+        i, j = [(1, 2), (0, 2), (0, 1)][axis]
+        m[i, i], m[i, j], m[j, i], m[j, j] = c, -sn, sn, c
+        return m
+    return about(2, degrees_z) @ about(1, degrees_y) @ about(0, degrees_x)
+
+
+def sphere_sprite(colour, n=96):
+    """RGBA image of a lit sphere in `colour` (Lambert + a highlight), transparent outside."""
+    import numpy as np
+    y, x = np.mgrid[-1:1:n * 1j, -1:1:n * 1j]
+    r2 = x * x + y * y
+    z = np.sqrt(np.clip(1 - r2, 0, 1))
+    light = np.array([-0.4, 0.5, 0.75]); light /= np.linalg.norm(light)
+    lambert = np.clip(x * light[0] + y * light[1] + z * light[2], 0, 1)
+    shade = 0.35 + 0.65 * lambert
+    highlight = np.exp(-((x + 0.35) ** 2 + (y - 0.4) ** 2) / 0.05) * 0.35
+    rgb = np.clip(np.array(colour)[None, None, :] * shade[..., None] + highlight[..., None], 0, 1)
+    alpha = (r2 <= 1).astype(float)
+    return np.dstack([rgb, alpha])
+
+
+def draw_structure(ax, positions, symbols, cell, rotate=(-70.0, -10.0, -15.0), radius=0.95):
+    """Orthographic lit-sphere render of an Atoms-like (positions A, symbols, cell) with the
+    cell outline; spheres drawn back to front so nearer atoms occlude farther ones."""
+    import numpy as np
+    R = rotation(*rotate).numpy()
+    view = positions @ R.T                                  # x, y on the page, z toward the viewer
+    corners = np.array([[i, j, k] for i in (0, 1) for j in (0, 1) for k in (0, 1)]) @ cell @ R.T
+    for a in range(8):
+        for b in range(a + 1, 8):
+            if bin(a ^ b).count("1") == 1:                  # cube edges of the cell
+                ax.plot(corners[[a, b], 0], corners[[a, b], 1], color="#3a3a38", lw=0.7, ls="--",
+                        zorder=len(symbols) + 3)
+    sprites = {name: sphere_sprite(JMOL[name]) for name in set(symbols)}
+    for i in np.argsort(view[:, 2]):
+        x, y = view[i, :2]
+        ax.imshow(sprites[symbols[i]], extent=(x - radius, x + radius, y - radius, y + radius),
+                  zorder=2 + i, interpolation="bilinear")
+    lo, hi = view[:, :2].min(0) - radius, view[:, :2].max(0) + radius
+    ax.set_xlim(min(lo[0], corners[:, 0].min()), max(hi[0], corners[:, 0].max()))
+    ax.set_ylim(min(lo[1], corners[:, 1].min()), max(hi[1], corners[:, 1].max()))
+    ax.set_aspect("equal"); ax.set_axis_off()
+
+
+def conventional_cell(tiled, state):
+    """The 14-atom conventional fcc cell (corners + face centres) coloured from a periodic state."""
+    import numpy as np
+    points = [(x, y, z) for x in (0, 2) for y in (0, 2) for z in (0, 2)] + \
+             [(1, 1, 0), (1, 1, 2), (1, 0, 1), (1, 2, 1), (0, 1, 1), (2, 1, 1)]
+    symbols = ["Au" if state[tiled[q]] > 0 else "Cu" for q in points]
+    return 1.9 * np.array(points, dtype=float), symbols, 3.8 * np.eye(3)
 
 
 def draw_state(axes, tiled, state, label):
@@ -93,12 +136,13 @@ def main(argv=None):
         fig = plt.figure(figsize=(FULL_WIDTH_IN * 0.7, 2.4))
         for k, (phase, title) in enumerate((("l12", "Cu$_3$Au (L1$_2$), $c_\\mathrm{Au}=0.25$"),
                                             ("l10", "CuAu (L1$_0$), $c_\\mathrm{Au}=0.5$"))):
-            ax = fig.add_subplot(1, 2, k + 1, projection="3d")
-            draw_structure(ax, tiled, ordered_states(spec, phase)[0].numpy(), title)
-        for colour, name in ((SPIN_UP_COLOUR, "Au"), (SPIN_DOWN_COLOUR, "Cu")):
-            ax.scatter([], [], [], s=60, color=colour, edgecolor="black", lw=0.4, label=name)
-        fig.legend(loc="lower center", ncol=2, frameon=False, fontsize=FONT_SIZE_ANNOTATION, bbox_to_anchor=(0.5, -0.02))
-        fig.subplots_adjust(left=0, right=1, top=0.95, bottom=0.08, wspace=0)
+            ax = fig.add_subplot(1, 2, k + 1)
+            draw_structure(ax, *conventional_cell(tiled, ordered_states(spec, phase)[0].numpy()))
+            ax.set_title(title, fontsize=FONT_SIZE_TITLE)
+        for name in ("Au", "Cu"):
+            ax.scatter([], [], s=60, color=JMOL[name], edgecolor="black", lw=0.3, label=name)
+        fig.legend(loc="lower center", ncol=2, frameon=False, fontsize=FONT_SIZE_ANNOTATION, bbox_to_anchor=(0.5, -0.04))
+        fig.subplots_adjust(left=0.02, right=0.98, top=0.9, bottom=0.05, wspace=0.1)
         fig.savefig(args.out, dpi=SAVEFIG_DPI, bbox_inches="tight"); print("wrote", args.out); return
 
     def energy_label(state):
