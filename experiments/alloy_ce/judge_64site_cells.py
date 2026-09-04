@@ -13,11 +13,16 @@ reads what the sampler's own artefacts can certify:
                  (c50) so ~0 means ordered, ~10 means multi-domain;
   loss/static    end-of-stage training loss over the static-flow (identity) loss of that stage,
                  Var_uniform[beta_stage E] estimated on 4096 uniform slice states: ~0 = the flow
-                 moves the slice, ~1 = it has given up (the s122 c50 signature 0.12 -> 1.0).
+                 moves the slice, ~1 = it has given up (the s122 c50 signature 0.12 -> 1.0);
+  E_ref          the reference chain's energy per site at the cell's final temperature when
+                 results/alloy_ref/cuau64_chain_<c25|c50|free>_T<T>.json exists (reference_chain.py).
 
-Usage:  pixi run -e dev python -m experiments.alloy_ce.judge_64site_cells "results/03_hard/*cuau64*"
+Free-ensemble cells (A1_*) have no slice: E_ground, swaps and the static variance use the
+uniform free ensemble at the sampled composition, and the sample composition is printed.
+
+Usage:  pixi run -e dev python -m experiments.alloy_ce.judge_64site_cells "results/03_hard/*cuau64* results/02_constrained_soft/*cuau64*"
 """
-import glob, json, sys
+import glob, json, os, re, sys
 import pandas as pd, torch
 from discrete_flow_sampler.targets.cluster_expansion import BinaryExpansionSpec
 from experiments.alloy_ce.tools.patch_reach_probe import ordered_states, random_slice_states
@@ -47,22 +52,38 @@ def stage_loss_over_static(run, df, spec, beta_of_sigma, n_sites, n_plus):
     return ratios
 
 
+def reference_energy(c_tag, T_final):
+    path = f"results/alloy_ref/cuau64_chain_{c_tag}_T{T_final}.json"
+    if not os.path.exists(path):
+        return float("nan")
+    return json.load(open(path))["energy_per_site"]["mean"] * MEV
+
+
 def main(pattern):
     rows = []
-    for run in sorted(glob.glob(pattern)):
+    for run in sorted(p for g in pattern.split() for p in glob.glob(g)):
         if not glob.glob(run + "/eval/metrics.json"):
             continue
         cfg = json.load(open(run + "/config.json"))
         spec = BinaryExpansionSpec.from_json(cfg["ising"]["expansion_json"])
-        n_sites = len(spec.positions); c = cfg["ising"]["target_composition"]; n_plus = round(c * n_sites)
+        n_sites = len(spec.positions); c = cfg["ising"].get("target_composition")
+        free = run.split("/")[-1].startswith("A1_")
         beta_of_sigma = lambda sigma: 2.0 * sigma                        # sigma = beta/2 on the alloy cells
         beta_final = beta_of_sigma(cfg["curriculum"]["stages"][-1]["sigma"])
-        T_final = 1.0 / (K_B * beta_final)
-        refs = ordered_states(spec, "l10" if abs(c - 0.5) < 1e-6 else "l12").double()
+        T_final = round(1.0 / (K_B * beta_final))
+        if free:
+            samples = torch.load(run + "/eval/samples.pt").double()
+            c = ((samples + 1) / 2).mean().item()                        # the sampled composition
+            refs = ordered_states(spec, "l10").double()                  # nearest ordered = a formality here
+        else:
+            refs = ordered_states(spec, "l10" if abs(c - 0.5) < 1e-6 else "l12").double()
+        n_plus = round(c * n_sites)
         e_ground = spec.energy(refs).min().item() / n_sites * MEV
         df = pd.read_csv(run + "/training_log.csv")
         ratios = stage_loss_over_static(run, df, spec, beta_of_sigma, n_sites, n_plus)
-        row = {"cell": run.split("/")[-1].replace("_20260904-cuau64-revive", ""), "T": round(T_final)}
+        c_tag = "free" if free else f"c{round(100 * c)}"
+        row = {"cell": re.sub(r"_20\d{6}-[a-z0-9-]+$", "", run.split("/")[-1]), "T": T_final,
+               "c_sample": round(c, 3), "E_ref": reference_energy(c_tag, T_final)}
         for sub in ("eval", "eval_ema"):
             m = json.load(open(f"{run}/{sub}/metrics.json"))
             row[f"ess_{sub}"] = m["ess_fraction"]
@@ -80,7 +101,7 @@ def main(pattern):
         rows.append(row)
     table = pd.DataFrame(rows).set_index("cell")
     pd.set_option("display.width", 250); pd.set_option("display.max_columns", 40)
-    print(table[["T", "E_ground", "ess_eval", "ess_eval_ema", "std_logw_eval"]].round(3).to_string())
+    print(table[["T", "c_sample", "E_ref", "E_ground", "ess_eval", "ess_eval_ema", "std_logw_eval"]].round(3).to_string())
     print()
     print(table[["E_mean_eval", "E_min_eval", "E_is_eval", "swaps_mean_eval", "swaps_is_eval"]].round(2).to_string())
     print()
