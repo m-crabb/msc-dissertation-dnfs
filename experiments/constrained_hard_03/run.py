@@ -112,13 +112,24 @@ def build_target_and_head(
         )
         if cfg.ising.expansion_json is None:
             raise ValueError("target_kind 'cluster_expansion' needs ising.expansion_json")
-        target = FixedCompositionClusterExpansionTarget(
-            BinaryExpansionSpec.from_json(cfg.ising.expansion_json),
-            beta=2.0 * cfg.ising.sigma,
-            target_composition=cfg.ising.target_composition,
-            bias=cfg.ising.bias,
-            device=device,
-        )
+        spec = BinaryExpansionSpec.from_json(cfg.ising.expansion_json)
+        if cfg.composition_mixture is not None:
+            # Amortisation on the alloy: the same slice mixture as the Ising
+            # route below, on the expansion's energy.
+            from discrete_flow_sampler.targets.cluster_expansion import (
+                MixtureCompositionClusterExpansionTarget,
+            )
+            target = MixtureCompositionClusterExpansionTarget(
+                spec, beta=2.0 * cfg.ising.sigma,
+                compositions=tuple(cfg.composition_mixture),
+                bias=cfg.ising.bias, device=device,
+            )
+        else:
+            target = FixedCompositionClusterExpansionTarget(
+                spec, beta=2.0 * cfg.ising.sigma,
+                target_composition=cfg.ising.target_composition,
+                bias=cfg.ising.bias, device=device,
+            )
     elif cfg.composition_mixture is not None:
         # Amortisation route: mixture of slices in the base, everything
         # downstream per-slice exact (swaps conserve composition row-wise;

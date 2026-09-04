@@ -469,3 +469,25 @@ def test_cuau16_composition_sweep_cells_differ_from_the_house_cell_only_by_compo
         cell = CONFIGS[f"H2_cuau16_{tag}_T500_mask_one_50k_house"]
         assert cell.ising.target_composition == c and round(c * 16) == int(c * 16)
         assert replace(cell, name=house.name, ising=house.ising) == house
+
+
+def test_cuau16_amortised_cell_is_the_house_cell_plus_the_mixture_knob():
+    from experiments.constrained_hard_03.configs import CONFIGS
+
+    house = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]
+    cell = CONFIGS["H2_cuau16_camort_T500_mask_one_50k_house"]
+    assert cell.composition_mixture == (0.5, 0.4375, 0.375, 0.3125, 0.25)
+    assert all(c * 16 == round(c * 16) for c in cell.composition_mixture)
+    assert replace(cell, name=house.name, composition_mixture=None) == house
+
+
+def test_cuau16_free_grid_cells_stop_the_ladder_at_the_row_temperature():
+    from experiments.constrained_soft_02.configs import CONFIGS
+
+    house = CONFIGS["A1_cuau16_T500_letf_50k_house"]
+    for name, n_stages, n_steps, T in (("A1_cuau16_T1200_letf_10k", 1, 10_000, 1200.0),
+                                       ("A1_cuau16_T680_letf_30k_l4", 4, 30_000, 680.0)):
+        cell = CONFIGS[name]
+        assert len(cell.curriculum.stages) == n_stages and cell.train.n_steps == n_steps
+        assert 1.0 / (2.0 * 8.617333262e-5 * cell.curriculum.stages[-1].sigma) == pytest.approx(T)
+        assert replace(cell, name=house.name, curriculum=house.curriculum, train=house.train) == house

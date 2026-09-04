@@ -55,6 +55,8 @@ from torch import Tensor
 from discrete_flow_sampler.targets.ising import (
     FixedCompositionIsingTarget,
     IsingTarget,
+    MixtureCompositionIsingTarget,
+    register_composition_grid,
 )
 
 
@@ -229,3 +231,27 @@ class FixedCompositionClusterExpansionTarget(ClusterExpansionTarget):
         """
         delta = self.spec.swap_energy_change(x)
         return t[:, None] * (-self.beta) * delta[:, pairs[:, 0], pairs[:, 1]]
+
+
+class MixtureCompositionClusterExpansionTarget(FixedCompositionClusterExpansionTarget):
+    """The composition-amortisation target on an expansion: one head trained
+    across a grid of fixed-composition slices (the alloy F(c) exhibit).
+
+    The slice-mixture machinery is MixtureCompositionIsingTarget's verbatim
+    (uniform slice choice per base draw, base_log_eta read off each row's
+    count, manifold check against the grid), exactly as the single-slice
+    class borrows FixedCompositionIsingTarget's; the swap ratio is the
+    expansion's Eq. (3) and needs no change because a swap never leaves its
+    slice. `compositions[0]` is the anchor slice the inherited scalar
+    attributes refer to.
+    """
+
+    sample_base = MixtureCompositionIsingTarget.sample_base
+    base_log_eta = MixtureCompositionIsingTarget.base_log_eta
+    assert_on_manifold = MixtureCompositionIsingTarget.assert_on_manifold
+
+    def __init__(self, spec, beta, compositions, bias=0.0, device="cpu"):
+        if not compositions:
+            raise ValueError("compositions must name at least one slice")
+        super().__init__(spec, beta, target_composition=compositions[0], bias=bias, device=device)
+        register_composition_grid(self, compositions)

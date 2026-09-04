@@ -6,7 +6,11 @@ Per cell and eval flavour: ESS fraction, two free-energy readings in eV/site
 the composition mean. Free rung: exact = free-ensemble F and the IS-weighted
 composition-marginal mass at x_Au = 0.25 / 0.5 (exact bimodal). Soft rung:
 exact = the penalised target's own log Z (metrics.json). Hard rung: exact =
-canonical slice F at the cell's composition (Sadigh A.6).
+canonical slice F at the cell's composition (Sadigh A.6). Amortised hard
+cells (`camort`): the eval draws mix five slices, each row's weight is exact
+against its OWN slice (base_log_eta read off x), so the slice's rows alone are
+that slice's importance sample: one row per slice, F_is = -logmeanexp over the
+slice's rows, ESS the slice's own, no correction for the uniform slice choice.
 """
 import glob, itertools, json, math
 from pathlib import Path
@@ -24,8 +28,8 @@ log_w_exact = -beta * energy
 p_exact = torch.softmax(log_w_exact, 0)
 marg_exact = torch.zeros(d + 1, dtype=torch.float64).index_add_(0, n_au.long(), p_exact)
 F_free_exact = -torch.logsumexp(log_w_exact, 0).item() / beta / d
-F_slice_exact = {c: -torch.logsumexp(log_w_exact[n_au == round(c * d)], 0).item() / beta / d
-                 for c in (0.25, 0.5)}
+F_slice_exact = {n / d: -torch.logsumexp(log_w_exact[n_au == n], 0).item() / beta / d
+                 for n in range(d + 1)}
 print(f"exact at {T:.0f} K: F_free {F_free_exact:.4f} eV/site; F_slice(0.25) {F_slice_exact[0.25]:.4f}, "
       f"F_slice(0.5) {F_slice_exact[0.5]:.4f}; free marginal mass at n_Au=4,8: "
       f"{marg_exact[4]:.3f} {marg_exact[8]:.3f}")
@@ -53,6 +57,15 @@ for run in sorted(glob.glob("results/*/*cuau16*")):
         m = json.load(open(mfile))
         lw = torch.load(Path(run) / flavour / "log_weights.pt")
         s = torch.load(Path(run) / flavour / "samples.pt")
+        if "camort" in name:
+            for n in sorted(set(((s + 1) / 2).sum(1).long().tolist())):
+                on_slice = ((s + 1) / 2).sum(1).long() == n
+                lw_slice = lw[on_slice].double()
+                F_lb, F_is = free_energies(lw_slice)
+                ess = (torch.softmax(lw_slice, 0) ** 2).sum().reciprocal().item() / len(lw_slice)
+                rows.append(dict(cell=f"{name}@n{n}", flavour=flavour, ess=ess, F_lb=F_lb, F_is=F_is,
+                                 F_exact=F_slice_exact[n / d], c_mean=n / d))
+            continue
         F_lb, F_is = free_energies(lw)
         if name.startswith("H2"):
             F_exact = F_slice_exact[m["target_composition"]]

@@ -5164,6 +5164,19 @@ for _c, _c_tag in ((0.3125, "c31"), (0.375, "c38"), (0.4375, "c44")):
     )
 
 
+# Composition-amortised 16-site cell (s123, 2026-09-04): the house c=0.5
+# recipe with the slice mixture as the ONLY moved field, over every slice
+# between the two ordered phases (n_Au = 8, 7, 6, 5, 4 of 16; anchor 0.5
+# first). One checkpoint then reads F(c) at all five compositions against
+# exact enumeration, with the specialist sweep above as the per-slice
+# control -- the alloy twin of the Ising amortisation campaign.
+_CUAU16_HOUSE = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]
+CONFIGS["H2_cuau16_camort_T500_mask_one_50k_house"] = replace(
+    _CUAU16_HOUSE, name="H2_cuau16_camort_T500_mask_one_50k_house",
+    composition_mixture=(0.5, 0.4375, 0.375, 0.3125, 0.25),
+)
+
+
 # The 64-site cells (4x4x4 primitive repeats = the MetaDNS benchmark cell)
 # take the same ladder, lr cut and EMA in place: their s115 registration
 # still carried the four-stage ladder with lr 1e-3 at the 800 K step.

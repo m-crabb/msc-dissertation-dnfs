@@ -121,7 +121,11 @@ def test_species_count_is_consistent_across_every_cell():
             assert cfg.potts_composition is None, name
             if cfg.target_kind == "cluster_expansion":
                 assert cfg.ising.expansion_json is not None, name
-                assert cfg.ising.target_composition in (0.25, 0.5), name
+                # (s123) the composition sweep fills every integral slice
+                # between Cu3Au and CuAu; the amortised cell mixes them.
+                n_sites = 16 if "cuau16" in name else 64
+                assert cfg.ising.target_composition * n_sites == round(
+                    cfg.ising.target_composition * n_sites), name
             else:
                 assert cfg.ising.target_composition == 0.5, name
         else:

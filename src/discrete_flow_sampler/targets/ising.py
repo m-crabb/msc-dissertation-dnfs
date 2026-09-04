@@ -564,6 +564,33 @@ class FixedCompositionIsingTarget(IsingTarget):
         return t[:, None] * self.sigma * delta_quadratic
 
 
+def register_composition_grid(target, compositions):
+    """Attach a slice grid to a fixed-composition target: `compositions`,
+    the integral `n_plus_values`, and the log C(d, n) table (n = 0..d) that
+    `base_log_eta` reads per row. float64 because at d=256 the binomial
+    coefficients differ across the grid by ~40 nats and the table is the one
+    place slice constants must stay exact. Shared by the Ising and the
+    cluster-expansion mixtures, whose slice algebra is identical."""
+    n_plus_values = []
+    for c in compositions:
+        n_plus_float = c * target.d
+        n_plus = round(n_plus_float)
+        if abs(n_plus_float - n_plus) > 1e-9:
+            raise ValueError(
+                f"composition {c} * d={target.d} = {n_plus_float} is not "
+                "integral; no exact fixed-N slice exists."
+            )
+        n_plus_values.append(n_plus)
+    target.compositions = tuple(compositions)
+    target.n_plus_values = tuple(n_plus_values)
+    counts = torch.arange(target.d + 1, dtype=torch.float64)
+    target._log_binomial_table = (
+        math.lgamma(target.d + 1)
+        - torch.lgamma(counts + 1)
+        - torch.lgamma(target.d - counts + 1)
+    )
+
+
 class MixtureCompositionIsingTarget(FixedCompositionIsingTarget):
     """Ising target on a MIXTURE of fixed-composition slices, for the
     composition-amortisation campaign (one head trained across slices).
@@ -607,28 +634,7 @@ class MixtureCompositionIsingTarget(FixedCompositionIsingTarget):
             D, sigma, target_composition=compositions[0], bias=bias,
             device=device,
         )
-        n_plus_values = []
-        for c in compositions:
-            n_plus_float = c * self.d
-            n_plus = round(n_plus_float)
-            if abs(n_plus_float - n_plus) > 1e-9:
-                raise ValueError(
-                    f"composition {c} * d={self.d} = {n_plus_float} is not "
-                    "integral; no exact fixed-N slice exists."
-                )
-            n_plus_values.append(n_plus)
-        self.compositions = tuple(compositions)
-        self.n_plus_values = tuple(n_plus_values)
-        # log C(d, n) for every n in 0..d, so base_log_eta is a lookup on
-        # the per-row count. d+1 floats; float64 because at d=256 the
-        # binomial coefficients differ across the grid by ~40 nats and the
-        # table is the one place slice constants must stay exact.
-        counts = torch.arange(self.d + 1, dtype=torch.float64)
-        self._log_binomial_table = (
-            math.lgamma(self.d + 1)
-            - torch.lgamma(counts + 1)
-            - torch.lgamma(self.d - counts + 1)
-        )
+        register_composition_grid(self, compositions)
 
     def sample_base(self, n, device):
         """Uniform slice choice per element, then uniform on that slice:

@@ -2551,6 +2551,25 @@ CONFIGS["A1_cuau64_T680_letf_30k_l4"] = replace(
 
 
 
+# 16-site free cells on MetaDNS's temperature grid (s123): the house free
+# recipe with the ladder stopped at 1200 K (one stage) or 680 K (four
+# stages linear in beta), as the 64-site grid cells; exact composition
+# marginals come from enumeration, so these panels need no chain.
+_A1_16_HOUSE = CONFIGS["A1_cuau16_T500_letf_50k_house"]
+CONFIGS["A1_cuau16_T1200_letf_10k"] = replace(
+    _A1_16_HOUSE, name="A1_cuau16_T1200_letf_10k",
+    train=replace(_A1_16_HOUSE.train, n_steps=10_000),
+    curriculum=CurriculumCfg(stages=(
+        CurriculumStageCfg(start_step=0, sigma=cuau_sigma(1200.0), lr=1e-3),)),
+)
+CONFIGS["A1_cuau16_T680_letf_30k_l4"] = replace(
+    _A1_16_HOUSE, name="A1_cuau16_T680_letf_30k_l4",
+    train=replace(_A1_16_HOUSE.train, n_steps=30_000),
+    curriculum=_cuau_house_curriculum(30_000, n_stages=4, T_cold=680.0),
+)
+
+
+
 # Free-ensemble 16-site cell with the lr cut (s117): the A1 gate cell kept
 # lr 1e-3 through the 1200 -> 800 K step and its train ESS fell 3131 -> 96,
 # recovering only to ~1400/5000. MetaDNS reports NESS 0.85-0.94 on this
