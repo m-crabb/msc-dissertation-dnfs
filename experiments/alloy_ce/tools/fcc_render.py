@@ -58,7 +58,7 @@ def rotation(degrees_x, degrees_y, degrees_z):
     return about(2, degrees_z) @ about(1, degrees_y) @ about(0, degrees_x)
 
 
-def sphere_sprite(colour, n=96):
+def sphere_sprite(colour, n=192):
     """RGBA image of a lit sphere in `colour` (Lambert + a highlight), transparent outside."""
     import numpy as np
     y, x = np.mgrid[-1:1:n * 1j, -1:1:n * 1j]
@@ -66,30 +66,44 @@ def sphere_sprite(colour, n=96):
     z = np.sqrt(np.clip(1 - r2, 0, 1))
     light = np.array([-0.4, 0.5, 0.75]); light /= np.linalg.norm(light)
     lambert = np.clip(x * light[0] + y * light[1] + z * light[2], 0, 1)
-    shade = 0.35 + 0.65 * lambert
-    highlight = np.exp(-((x + 0.35) ** 2 + (y - 0.4) ** 2) / 0.05) * 0.35
+    shade = 0.52 + 0.48 * lambert
+    highlight = np.exp(-((x + 0.35) ** 2 + (y - 0.4) ** 2) / 0.07) * 0.18
     rgb = np.clip(np.array(colour)[None, None, :] * shade[..., None] + highlight[..., None], 0, 1)
-    alpha = (r2 <= 1).astype(float)
+    alpha = np.clip((1 - np.sqrt(r2)) * n / 2, 0, 1)
     return np.dstack([rgb, alpha])
 
 
-def draw_structure(ax, positions, symbols, cell, rotate=(-70.0, -10.0, -15.0), radius=0.95):
+def draw_structure(ax, positions, symbols, cell, rotate=(-65.0, -25.0, 0.0), radius=0.64):
     """Orthographic lit-sphere render of an Atoms-like (positions A, symbols, cell) with the
-    cell outline; spheres drawn back to front so nearer atoms occlude farther ones."""
+    cell outline; spheres drawn back to front so nearer atoms occlude farther ones.
+
+    Radius is a display choice shared by both species, not a fitted atomic
+    radius. Cell edges are clipped against the visible sphere surfaces in
+    camera coordinates, so a frontmost outline cannot cut through an atom.
+    """
     import numpy as np
+    from matplotlib.collections import LineCollection
     R = rotation(*rotate).numpy()
     view = positions @ R.T                                  # x, y on the page, z toward the viewer
     corners = np.array([[i, j, k] for i in (0, 1) for j in (0, 1) for k in (0, 1)]) @ cell @ R.T
+    visible_edges = []
     for a in range(8):
         for b in range(a + 1, 8):
             if bin(a ^ b).count("1") == 1:                  # cube edges of the cell
-                ax.plot(corners[[a, b], 0], corners[[a, b], 1], color="#3a3a38", lw=0.7, ls="--",
-                        zorder=len(symbols) + 3)
+                points = np.linspace(corners[a], corners[b], 161)
+                midpoint = (points[:-1] + points[1:]) / 2
+                distance_sq = ((midpoint[:, None, :2] - view[None, :, :2]) ** 2).sum(-1)
+                surface_z = view[None, :, 2] + np.sqrt(np.maximum(radius**2 - distance_sq, 0))
+                hidden = ((distance_sq < radius**2) & (surface_z > midpoint[:, None, 2])).any(1)
+                segments = np.stack((points[:-1, :2], points[1:, :2]), axis=1)
+                visible_edges.extend(segments[~hidden])
+    ax.add_collection(LineCollection(visible_edges, colors="#95958f", linewidths=0.65,
+                                     zorder=len(symbols) + 3))
     sprites = {name: sphere_sprite(JMOL[name]) for name in set(symbols)}
-    for i in np.argsort(view[:, 2]):
+    for depth_rank, i in enumerate(np.argsort(view[:, 2])):
         x, y = view[i, :2]
         ax.imshow(sprites[symbols[i]], extent=(x - radius, x + radius, y - radius, y + radius),
-                  zorder=2 + i, interpolation="bilinear")
+                  zorder=2 + depth_rank, interpolation="bilinear", origin="lower")
     lo, hi = view[:, :2].min(0) - radius, view[:, :2].max(0) + radius
     ax.set_xlim(min(lo[0], corners[:, 0].min()), max(hi[0], corners[:, 0].max()))
     ax.set_ylim(min(lo[1], corners[:, 1].min()), max(hi[1], corners[:, 1].max()))

@@ -82,11 +82,15 @@ def draw_structures(ax_l12, ax_l10):
     tiled = rectangular_tiling(spec)
     for ax, phase, title in ((ax_l12, "l12", "Cu$_3$Au (L1$_2$)\n$c_\\mathrm{Au} = 0.25$"),
                              (ax_l10, "l10", "CuAu (L1$_0$)\n$c_\\mathrm{Au} = 0.5$")):
-        draw_structure(ax, *conventional_cell(tiled, ordered_states(spec, phase)[0].numpy()))
+        # Show the L1_0 variant layered along z, so the Cu/Au planes stack
+        # vertically in the shared camera view. These are ideal reference
+        # cells, not selected sampler draws; symmetry-equivalent to index 0.
+        variant = 4 if phase == "l10" else 0
+        draw_structure(ax, *conventional_cell(tiled, ordered_states(spec, phase)[variant].numpy()))
         ax.set_title(title, fontsize=FONT_SIZE_ANNOTATION, pad=2)
     for name in ("Au", "Cu"):
         ax_l10.scatter([], [], s=40, color=JMOL[name], edgecolor="black", lw=0.3, label=name)
-    ax_l10.legend(loc="lower center", bbox_to_anchor=(0.5, -0.16), ncol=2, frameon=False,
+    ax_l10.legend(loc="lower center", bbox_to_anchor=(0.5, -0.22), ncol=2, frameon=False,
                   fontsize=FONT_SIZE_ANNOTATION, handletextpad=0.3, columnspacing=1.0)
 
 
