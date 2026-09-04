@@ -80,8 +80,8 @@ def main(argv=None):
         if not runs:
             ax.text(0.5, 0.5, "no cell", transform=ax.transAxes, ha="center", fontsize=FONT_SIZE_ANNOTATION)
         ax.set_title(f"$T = {T}$ K", fontsize=FONT_SIZE_LABEL); ax.set_xlim(0.05, 0.75)
-        ax.set_xticks([0.25, 0.5, 0.75]); ax.tick_params(labelsize=FONT_SIZE_ANNOTATION)
         ax.set_xlabel("$c_\\mathrm{Au}$", fontsize=FONT_SIZE_LABEL); style_axes(ax)
+        ax.set_xticks([0.25, 0.5, 0.75]); ax.tick_params(labelsize=FONT_SIZE_ANNOTATION)
     axes[0].set_ylabel("mass", fontsize=FONT_SIZE_LABEL)
     axes[0].legend(frameon=False, fontsize=FONT_SIZE_ANNOTATION, loc="upper left")
 
@@ -112,8 +112,8 @@ def main(argv=None):
     ax.set_xlim(0.05, 0.75); ax.set_ylim(-0.5, None)
     ax.set_title(f"$F(c)$ at $T = {T:.0f}$ K", fontsize=FONT_SIZE_LABEL)
     ax.set_xlabel("$c_\\mathrm{Au}$", fontsize=FONT_SIZE_LABEL); ax.set_ylabel("$F / k_BT$ per cell", fontsize=FONT_SIZE_LABEL)
-    ax.set_xticks([0.25, 0.5, 0.75]); ax.tick_params(labelsize=FONT_SIZE_ANNOTATION)
-    ax.legend(frameon=False, fontsize=FONT_SIZE_ANNOTATION, loc="lower right"); style_axes(ax)
+    style_axes(ax); ax.set_xticks([0.25, 0.5, 0.75]); ax.tick_params(labelsize=FONT_SIZE_ANNOTATION)
+    ax.legend(frameon=False, fontsize=FONT_SIZE_ANNOTATION, loc="upper right")
     fig.tight_layout(); fig.savefig(args.out, dpi=SAVEFIG_DPI, bbox_inches="tight"); print("wrote", args.out)
 
 
