@@ -7,7 +7,7 @@ the house seed-band grammar. The two families share one role (our sampler),
 so they take a ``parameter_ramp`` on the sampler hue -- light = subcritical,
 dark = critical -- rather than two roles.
 
-EGM-style early-phase shading (adopted s62, board L5): the critical family
+EGM-style early-phase shading: the critical family
 trains under a sigma curriculum, so until the final stage begins its ESS is
 measured against the *current stage's* target, not the final sigma_c -- a
 read against a moving goalpost. That span is shaded as unreliable rather

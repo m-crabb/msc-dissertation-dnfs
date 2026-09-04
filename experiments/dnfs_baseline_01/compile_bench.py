@@ -1,16 +1,8 @@
 """Same-container eager-vs-compiled bench of the flip-route trainer
 
-Measures what the board asks for before Wave 1 is scheduled: the leTF
-trunk is the GEMM/attention case (expect ~1.7x updates from compile, more
-where runs are launch-bound), and Wave 1 is 60-70 GPU-h, so even 1.5x
-returns ~25 h of cluster time.
-
 Method:
   * BOTH arms run in ONE process/container, so the ratio is same-device
-    by construction (the s59 "thp slower at d256" reading was a
-    cross-venue artefact; the device name is printed because Modal's
-    A100 class mixes PCIe/SXM4 and only same-container ratios are the
-    unit).
+    by construction.
   * Update time is the trainer's own `wall_clock_step_s` column, which
     times ONLY the inner loss update (its documented scope) — median over
     the tail so the compiled arm's first-step compilation cost is
@@ -19,8 +11,7 @@ Method:
     trajectory mode (the outer step's buffer rebuild), warmup pass first.
 
 Nothing lands on the results volume: this is a bench, and its numbers go
-to the printed table (copy into the profiling review beside the s59
-records).
+to the printed table (copy into the profiling review).
 
 Run on Modal (the profiling venue):
     pixi run -e dev modal run -m \

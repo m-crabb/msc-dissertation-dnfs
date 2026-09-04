@@ -2,10 +2,7 @@
 
 Reads the frozen eval artefacts of the eight Stage-4 10x10 runs (samples.pt,
 log_weights.pt, metrics.json; seeds 42-45 at sigma = 0.1 and sigma_c) and the
-two cached WOLFF references (the sample-level ground truth since s58
-2026-08-24 — built by 08_wolff_reference_pool.py, which records why the
-Gibbs pools were demoted; the certifying cross-check is
-07_reference_crosscheck.py), and prints the table's observable cells:
+two cached WOLFF references, and prints the table's observable cells:
 
   ESS    -- frozen eval/ess_fraction, re-read not recomputed (the in-print value);
   dMag   -- MDNS Eq. 26, dCorr -- MDNS Eq. 28, EW2 -- 1-D W2 on E(x)/d (DASBS),

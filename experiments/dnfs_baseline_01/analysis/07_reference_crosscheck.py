@@ -10,21 +10,11 @@ here, by two independent instruments:
      |M| marginals, not just means;
   2. the exact Kaufman / Ferdinand--Fisher internal energy at the OPERATING
      coupling (ising_exact; note DNFS Table 2's critical column is evaluated
-     at exact criticality 0.220343, not at 0.22305 — the s58 finding — so
-     the exact anchor here is recomputed, not quoted).
+     at exact criticality 0.220343, not at 0.22305).
 
 Reads: results/01_baseline/gibbs_ref_d10_sigma{0.1,0.22305}.pt.
 Writes: results/01_baseline/reference_crosscheck.json + printed verdict.
 
-Verdict rule (restart-prompt item (e)): agreement -> the Gibbs reference
-stands and baseline.tex gains one sentence; disagreement -> Wolff becomes
-the reference. POSTSCRIPT (s58, same day): the verdict was AGREE at both
-points, and the choice then fell on the swap anyway -- not as a correction but
-because the Wolff pool's floor is honest where the Gibbs pool's dMag floor
-at sigma_c (0.26) is mode-stickiness. 08_wolff_reference_pool.py builds the
-pools; this script remains the certification record. "Agreement" is read per observable: |mean difference| within
-3 combined standard errors, and the energy-level total variation within the
-same-size Wolff-vs-Wolff resampling scale.
 """
 import json
 from pathlib import Path

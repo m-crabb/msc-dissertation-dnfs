@@ -1,14 +1,5 @@
 """Build the Wolff reference pools that replace the Gibbs pools as the
-baseline chapter's sample-level ground truth (decision, s58 2026-08-24).
-
-Why the swap: the s58 cross-check (07_reference_crosscheck.py) certified the
-two pools AGREE, so this is not a correction — it is choosing the instrument
-whose floor is honest. The Gibbs pool's dMag floor at sigma_c (0.26) is
-mode-stickiness: chains stuck in one Z2 sector make pooled |m| balance a
-matter of luck (chain-mean SD 0.31). A Wolff chain tunnels sectors freely
-(cluster flips change M by +-2|C|), so the same chain-block bootstrap floor
-collapses to the 1/sqrt(N) scale and the reference can finally certify Z2
-balance at the level the neural cells sit at.
+baseline chapter's sample-level ground truth.
 
 Pool structure mirrors the Gibbs pools exactly (100 independent chains x 50
 records, pooled record-major, same dict keys) so the house-table filler's

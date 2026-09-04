@@ -1,6 +1,6 @@
 """fig:unconstrained-clean -- the chapter's K2 results cell, house standard.
 
-The approved house figure set (s62) makes this the unconstrained chapter's
+The house figure set makes this the unconstrained chapter's
 two-panel results-cell figure at the headline 10x10 size:
 
   (a) energy marginal drawn on the EXACT energy levels, E/d axis (the same
@@ -13,8 +13,8 @@ two-panel results-cell figure at the headline 10x10 size:
       covers both phases puts ~half its weighted mass in each mode, which is
       exactly what the Kawasaki chains of the hard chapter cannot do.
 
-Reference = the certified Wolff cluster pool (the chapter's ground truth
-since s58; built by 08_wolff_reference_pool.py, R-hat <= 1.002). The pool
+Reference = the certified Wolff cluster pool (the chapter's ground truth; 
+built by 08_wolff_reference_pool.py, R-hat <= 1.002). The pool
 file is keyed by the RUN's own coupling, so legacy runs meet the legacy pool
 and sigma_c retrains meet the 0.220343 pool -- couplings are never mixed.
 
