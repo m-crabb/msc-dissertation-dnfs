@@ -5212,6 +5212,28 @@ for _c_tag, _variant, _n_stages, _n_steps, _n_euler in (
     )
 
 
+# MetaDNS temperature-grid cells (s123, 2026-09-04). MetaDNS reports its
+# 4x4x4 Cu-Au cell at 1200, 680 and 500 K; the revival wave left 500 K at
+# c=0.5 out of reach (every ladder x trajectory arm dead, loss/static ~1 by
+# 500 K), so the 64-site rows are reported on the comparator's own grid with
+# 500 K as the honest limit. The ladder simply STOPS at the row's
+# temperature: one 1200 K stage (the house recipe's stage-0 settings, lr
+# 1e-3), or four stages linear in beta 1200 -> 680 K at the house lr cut,
+# each stage 7.5k steps as against the house cell's 7.1k. Head, window and
+# in-training eval cut ride the thp cells unchanged.
+for _c_tag in ("c25", "c50"):
+    _parent = _THP64_PARENTS[_c_tag]
+    for _variant, _ladder, _n_steps in (
+        ("T1200_thp_10k", [(1200.0, 1e-3)], 10_000),
+        ("T680_thp_30k_l4", _cuau_house_ladder(n_stages=4, T_cold=680.0), 30_000),
+    ):
+        _name = f"H2_cuau64_{_c_tag}_{_variant}"
+        CONFIGS[_name] = replace(
+            _parent, name=_name, curriculum=_cuau_ladder(_ladder, _n_steps),
+            train=replace(_parent.train, n_steps=_n_steps),
+        )
+
+
 # Fresh-trajectory probe (s117): the 20k lr-cut cell reached ESS 0.79 where
 # 10k gave 0.34, and MetaDNS trains on ~200x more distinct rollouts than our
 # 10k cell (fresh batch every outer step vs 100 inner steps per rollout).

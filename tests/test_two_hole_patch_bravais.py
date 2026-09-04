@@ -436,3 +436,26 @@ def test_kolmogorov_residual_zero_mean_on_square_expansion_slice(patch_shells=1)
     for t_scalar, ours, floor in zip((0.1,), patch, reference):
         assert ours < 1e-3, (t_scalar, ours)
         assert ours < 1.2 * floor + 5e-5, (t_scalar, ours, floor)
+
+
+def test_cuau64_temperature_grid_cells_stop_their_ladder_at_the_row_temperature():
+    """MetaDNS grid rows: same cell as the 500 K thp / flip parents, ladder
+    truncated at 1200 K (one stage) or 680 K (four stages linear in beta)."""
+    from experiments.constrained_hard_03.configs import CONFIGS as HARD, cuau_sigma
+    from experiments.constrained_soft_02.configs import CONFIGS as SOFT
+
+    def final_temperature(cfg):
+        return 1.0 / (2.0 * 8.617333262e-5 * cfg.curriculum.stages[-1].sigma)
+
+    grid = [(HARD[f"H2_cuau64_{c}_{v}"], HARD[f"H2_cuau64_{c}_T500_thp_50k_curr"])
+            for c in ("c25", "c50") for v in ("T1200_thp_10k", "T680_thp_30k_l4")]
+    grid += [(SOFT[v], SOFT["A1_cuau64_T500_letf_50k_curr"])
+             for v in ("A1_cuau64_T1200_letf_10k", "A1_cuau64_T680_letf_30k_l4")]
+    for cell, parent in grid:
+        one_stage = "T1200" in cell.name
+        assert len(cell.curriculum.stages) == (1 if one_stage else 4)
+        assert final_temperature(cell) == pytest.approx(1200.0 if one_stage else 680.0)
+        assert cell.curriculum.stages[0].sigma == pytest.approx(cuau_sigma(1200.0))
+        assert cell.train.n_steps == (10_000 if one_stage else 30_000)
+        assert replace(cell, name=parent.name, curriculum=parent.curriculum,
+                       train=parent.train) == parent
