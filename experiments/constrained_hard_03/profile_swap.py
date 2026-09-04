@@ -6,13 +6,17 @@ measured rather than guessed:
 
     head        one LeTFMaskOneSwapHead forward (no_grad): the (d*B)-row pass
     train_step  one inner gradient step: loss_swap forward + backward + AdamW
+    gfn_update  GFlowNet loss forward + backward + AdamW on a prepared batch
     eval        one eval slice: sample_swap_ctmc(return_log_weights=True)
     components  per-piece timings inside one Euler step (head / gather /
                 log-ratio / xi / one-event step / matching step / base draw)
 
-Timing protocol: fixed seeds, one warmup call, `--repeats` timed calls with
-torch.cuda.synchronize() around each on CUDA; reports median/min seconds and
-CUDA peak memory. `--profile` additionally wraps one call in torch.profiler
+Timing protocol: fixed seeds, `--warmup` calls (default one), then `--repeats`
+timed calls with torch.cuda.synchronize() around each on CUDA. Peak counters
+are reset after warmup, excluding compilation/setup peaks. Reports median/min
+seconds and additional CUDA memory; BENCH_JSON also records every timing and
+total allocated peak, including model, prepared batch and optimiser state.
+`--profile` additionally wraps one call in torch.profiler
 and prints the top ops by self time (CPU table locally, CUDA table on GPU).
 
 Usage (local CPU):
@@ -24,6 +28,7 @@ On the Modal L4 (see modal_app.bench):
         --argv "--mode eval --d 64 --batch 256 --n-euler-steps 128"
 """
 import argparse
+import json
 import logging
 import statistics
 import time
@@ -134,8 +139,13 @@ def build_head_and_target(
     return head, target
 
 
-def _timed(fn, repeats: int, device: torch.device) -> list[float]:
-    fn()  # warmup (allocator, autotune, lazy init)
+def _timed(fn, repeats: int, device: torch.device, warmup: int = 1) -> list[float]:
+    for _ in range(warmup):
+        fn()  # compilation, allocator, autotune, lazy optimiser state
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+        # Report steady-state update memory, excluding compilation/setup peaks.
+        torch.cuda.reset_peak_memory_stats()
     times = []
     for _ in range(repeats):
         if device.type == "cuda":
@@ -175,6 +185,16 @@ def _report(name: str, times: list[float], device: torch.device,
         f"{name:24s} median {statistics.median(times):9.4f}s  "
         f"min {min(times):9.4f}s  peak_mem {peak_gb:6.2f} GB"
     )
+    print("BENCH_JSON " + json.dumps({
+        "name": name, "seconds": times,
+        "median_seconds": statistics.median(times),
+        "peak_additional_gb": peak_gb,
+        "peak_total_gb": (torch.cuda.max_memory_allocated() / 1e9
+                          if device.type == "cuda" else None),
+        "device": (torch.cuda.get_device_name(device)
+                   if device.type == "cuda" else str(device)),
+        "torch": torch.__version__,
+    }))
 
 
 def _profile_once(fn, device: torch.device) -> None:
@@ -360,6 +380,11 @@ def _run_gfn_bench(args, device: torch.device) -> None:
     forward/backward (compiled under --compile, the shipped
     compile_policy=True configuration) + AdamW with the arm's own split
     lr groups.
+
+    gfn_update instead prepares and detaches one batch before timing, then
+    reuses it for loss evaluation, backward and AdamW. This matches the
+    swap train_step boundary: neither includes trajectory generation. It
+    measures update cost, not total training cost or convergence speed.
     """
     from dataclasses import replace as dataclass_replace
 
@@ -403,7 +428,7 @@ def _run_gfn_bench(args, device: torch.device) -> None:
         def runner():
             with torch.no_grad():
                 policy.sample(args.batch)
-    else:  # gfn_train_step
+    else:  # gfn_train_step or gfn_update
         if args.compile:
             policy.site_log_probs = torch.compile(policy.site_log_probs)
             if cfg.with_flow_head:
@@ -411,9 +436,17 @@ def _run_gfn_bench(args, device: torch.device) -> None:
                     policy.site_log_probs_and_flow_residuals
                 )
         optimiser = build_optimiser(cfg, policy)
+        prepared_spins = None
+        if args.mode == "gfn_update":
+            with torch.no_grad():
+                prepared_spins, _ = policy.sample(cfg.batch_size, epsilon=cfg.epsilon)
+            prepared_spins = prepared_spins.detach()
 
         def runner():
-            spins, _ = policy.sample(cfg.batch_size, epsilon=cfg.epsilon)
+            if prepared_spins is None:
+                spins, _ = policy.sample(cfg.batch_size, epsilon=cfg.epsilon)
+            else:
+                spins = prepared_spins
             loss, _ = _loss_and_train_diagnostics(cfg, policy, target, spins)
             optimiser.zero_grad()
             loss.backward()
@@ -423,7 +456,10 @@ def _run_gfn_bench(args, device: torch.device) -> None:
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats()
         baseline_bytes = torch.cuda.max_memory_allocated()
-    times = _timed(runner, args.repeats, device)
+    print(f"mode={args.mode} d={args.d} batch={args.batch} "
+          f"compile={args.compile} warmup={args.warmup} repeats={args.repeats} "
+          f"gfn_objective={cfg.objective} hidden={cfg.hidden_dim}")
+    times = _timed(runner, args.repeats, device, warmup=args.warmup)
     _report(
         f"{args.mode}_{args.gfn_objective}_d{args.d}_B{args.batch}",
         times, device, baseline_bytes,
@@ -437,7 +473,7 @@ def main(argv=None):
     parser.add_argument(
         "--mode", required=True,
         choices=("head", "train_step", "eval", "components",
-                 "gfn_rollout", "gfn_train_step"),
+                 "gfn_rollout", "gfn_train_step", "gfn_update"),
     )
     parser.add_argument(
         "--gfn-objective", default="tb", choices=("tb", "fldb"),
@@ -524,9 +560,12 @@ def main(argv=None):
              "swap log-ratio and therefore the importance weights.",
     )
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--profile", action="store_true")
     parser.add_argument("--device", default=None)
     args = parser.parse_args(argv)
+    if args.warmup < 1 or args.repeats < 1:
+        parser.error("--warmup and --repeats must be positive")
 
     device = torch.device(
         args.device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -603,7 +642,8 @@ def main(argv=None):
             if device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats()
                 baseline = torch.cuda.memory_allocated()
-            _report(name, _timed(fn, args.repeats, device), device, baseline)
+            _report(name, _timed(fn, args.repeats, device, warmup=args.warmup),
+                    device, baseline)
         if compile_watch is not None and compile_watch.gave_up:
             print(
                 "  *** COMPILE ABANDONED: dynamo hit its recompile limit, so "

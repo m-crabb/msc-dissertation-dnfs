@@ -30,9 +30,11 @@ def parse(lines):
             rows.append(current)
             continue
         timing = TIMING.match(line.strip())
-        if timing and timing.group(1).startswith("gfn_"):
-            # The GFN modes print no `mode=` header: the timing name carries
-            # the configuration (gfn_<mode>_<objective>_d<sites>_B<batch>).
+        if (timing and timing.group(1).startswith("gfn_")
+                and (current is None or not current["mode"].startswith("gfn_")
+                     or current["timings"])):
+            # Archived GFN logs have no header; new logs retain the explicit
+            # configuration header, including the update-only timing scope.
             current = {"mode": timing.group(1).strip(), "timings": {}}
             rows.append(current)
         if timing and current is not None:
