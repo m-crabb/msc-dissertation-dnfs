@@ -411,3 +411,47 @@ GFN_CONFIGS.update({
         _gfn_d256_parity_cell(objective, "s220"),
     )
 })
+
+
+# The 20x20 rung (s125): the TB comparator carried to the chapter's largest
+# printed swap-head table (tab:eval-hard-20x20, whose GFN rows read "--").
+# Only TB is launched -- FL-DB was dead at 256-step trajectories with the
+# same construction and is printed that way, so its 400-step row would buy
+# a predictable zero for a GPU-day; the fldb cell is registered so the
+# rung's gate and any later completeness run need no new code.
+def _gfn_d400_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
+    """20x20 centre: the judged d256 recipe with the lattice and the parity
+    re-size moved, nothing else.
+
+    Parity is measured params a fourth time. The 20x20 swap heads are larger
+    than their 16x16 siblings (thp2 158,848 / thp3 159,616 vs 133,632; the
+    readout carries lattice-dependent terms) and the policy's position
+    embedding grows with d, so hidden 68 carried up lands at 140,354 --
+    11.6% under both anchors, outside every precedent band. hidden 72
+    (18 dims per head) gives 155,522: -2.1% vs thp2, -2.6% vs thp3, at
+    parity with both. hidden 76 overshoots (+8%/+7%).
+
+    Budgets (50k floor / 100k sigma_c), the sigma ladder (the house d400
+    cells reuse the d256 ladder unrescaled, absolute start-steps) and the
+    house in-training eval cadence (500 / 256 draws, bf16 autocast) all ride
+    the d256 cell unchanged. Compile stays ON, gated by gfn_launch_bench
+    --rung d400 on the launch venue: inductor kernels are certified per
+    venue AND size (the d256 gate carries nothing at 400 tokens)."""
+    steps_label = "100k" if sigma_label == "s220" else "50k"
+    cell = _gfn_d256_parity_cell(objective, sigma_label)
+    return replace(
+        cell,
+        name=f"GFN_d400_c50_{sigma_label}_{objective}_{steps_label}_par",
+        D=20,
+        hidden_dim=72,
+    )
+
+
+GFN_CONFIGS.update({
+    cell.name: cell
+    for objective in GFN_OBJECTIVES
+    for cell in (
+        _gfn_d400_parity_cell(objective, "s010"),
+        _gfn_d400_parity_cell(objective, "s220"),
+    )
+})

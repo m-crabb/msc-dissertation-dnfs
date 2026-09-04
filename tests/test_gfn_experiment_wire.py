@@ -34,8 +34,9 @@ def test_registry_keys_match_cell_names_and_objectives():
     # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2;
     # plus the s100 budget-doubled fldb diagnostic = 1; plus the s100
     # standalone-flow arm = 1; plus the s102 16x16 rung: d256 `_par`
-    # centres at both couplings x both arms = 4.
-    assert len(GFN_CONFIGS) == 44
+    # centres at both couplings x both arms = 4; plus the s125 20x20 rung:
+    # d400 `_par` centres, same shape = 4.
+    assert len(GFN_CONFIGS) == 48
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
@@ -92,13 +93,13 @@ def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
             parent.learning_rate, parent.epsilon)
 
 
-def test_compile_policy_off_at_d16_on_at_d64_and_d256():
+def test_compile_policy_off_at_d16_on_at_d64_and_above():
     # Archived cells never retro-flip: every d16 cell stays eager exactly
     # as it ran. The d64+ cells ship compiled from launch (s94 decision),
     # still gated by the GPU numerical-parity check at the launch bench
     # run at each cell's own size on the venue stack.
     for cell in GFN_CONFIGS.values():
-        assert cell.compile_policy is (cell.D in (8, 16))
+        assert cell.compile_policy is (cell.D in (8, 16, 20))
 
 
 def test_build_optimiser_splits_log_z_group():
@@ -553,3 +554,47 @@ def test_d256_cells_are_d64_twins_plus_declared_levers():
                 if asdict(d64)[field] != asdict(d256)[field]
             }
             assert diff == {"name", "D", "hidden_dim"} | expected_extra, diff
+
+
+def test_d400_parity_cells_measured_params_within_anchor_band():
+    """Parity is measured params per rung, and at d400 the policy must be
+    re-sized a second time: the 20x20 swap heads are larger than their
+    16x16 siblings (thp2 158,848 / thp3 159,616 vs 133,632 at d256) and
+    the policy's position embedding grows with the lattice, so carrying
+    hidden 68 up lands at 140,354, 11.6% under both anchors. hidden 72
+    (18 dims per head) gives 155,522, within 2.6% of both, so the anchor
+    choice again cannot be motivated. Flow head excluded as at d16/d64/d256."""
+    from discrete_flow_sampler.models.raster_gfn_policy import RasterGFNPolicy
+
+    cell = GFN_CONFIGS["GFN_d400_c50_s220_tb_100k_par"]
+    policy = RasterGFNPolicy(
+        D=cell.D,
+        n_plus_target=200,
+        hidden_dim=cell.hidden_dim,
+        n_layers=cell.n_layers,
+        n_heads=cell.n_heads,
+        with_flow_head=False,
+    )
+    n_params = sum(p.numel() for p in policy.parameters())
+    assert n_params == 155_522
+    for anchor in (158_848, 159_616):  # thp2 / thp3 d400 stacks, measured s125
+        assert abs(n_params - anchor) / anchor < 0.055
+
+
+def test_d400_cells_are_d256_twins_plus_lattice_and_resize():
+    """The 20x20 cells are the judged d256 recipe with exactly two levers
+    moved: the lattice (D=20) and the parity re-size (hidden 72). Budgets,
+    the sigma ladder (the house reuses the d256 ladder unrescaled at d400,
+    absolute start-steps) and the house eval cadence all ride unchanged."""
+    from dataclasses import asdict
+
+    for objective in GFN_OBJECTIVES:
+        for sigma_label, steps in (("s010", "50k"), ("s220", "100k")):
+            d256 = GFN_CONFIGS[f"GFN_d256_c50_{sigma_label}_{objective}_{steps}_par"]
+            d400 = GFN_CONFIGS[f"GFN_d400_c50_{sigma_label}_{objective}_{steps}_par"]
+            assert d400.D == 20 and d400.hidden_dim == 72
+            diff = {
+                field for field in asdict(d256)
+                if asdict(d256)[field] != asdict(d400)[field]
+            }
+            assert diff == {"name", "D", "hidden_dim"}, diff
