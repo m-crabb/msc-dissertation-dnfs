@@ -30,6 +30,11 @@ def parse(lines):
             rows.append(current)
             continue
         timing = TIMING.match(line.strip())
+        if timing and timing.group(1).startswith("gfn_"):
+            # The GFN modes print no `mode=` header: the timing name carries
+            # the configuration (gfn_<mode>_<objective>_d<sites>_B<batch>).
+            current = {"mode": timing.group(1).strip(), "timings": {}}
+            rows.append(current)
         if timing and current is not None:
             current["timings"][timing.group(1).strip()] = {
                 "median_s": float(timing.group(2)),
