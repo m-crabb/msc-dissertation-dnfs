@@ -62,6 +62,7 @@ pre-EMA d10 cells keep the default):
 """
 import argparse
 import json
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -108,6 +109,44 @@ def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng,
     return point, boot
 
 
+def _bootstrap_slice_F(run_dir: Path, d: int, n_boot: int, rng, eval_dir: str,
+                       lam: float, c_t: float) -> tuple[float, np.ndarray]:
+    """Canonical F/site at c_t read off the SOFT draw by the slice-mass identity.
+
+    Conditioning the penalised target on the composition slice cancels the
+    penalty (eq:reject-off-soft), so the canonical normaliser is the soft
+    normaliser times the soft ensemble's mass on the slice:
+
+        Z_can(c_t) = Z_lambda * pi_lambda(c = c_t) = E_Q[ w * 1[c(x) = c_t] ],
+
+    estimated by (1/B) sum_b w_b 1[c(x_b) = c_t] over ALL B draws (the
+    rejected draws stay in the denominator: dividing by the survivor count
+    would estimate Z_lambda instead). No Laplace offset, no reference shape
+    and no continuum approximation enter: the identity is exact at every
+    lambda and every lattice size, which is what lets it be gated against
+    exact enumeration at 4x4, where the Gaussian-sum offset fails (the
+    penalty is narrower than one composition step there). The price is the
+    acceptance pi_lambda(c = c_t) ~ sqrt(lambda / pi d) (0.92 at 4x4, 0.48
+    at 8x8), so the estimate uses that fraction of the draw. The bootstrap
+    resamples the B draws jointly with their on-slice indicator, so the
+    acceptance's own sampling noise is inside the error bar.
+    """
+    logw = torch.load(run_dir / eval_dir / "log_weights.pt").double().numpy().ravel()
+    samples = torch.load(run_dir / eval_dir / "samples.pt").double().numpy()
+    on_slice = np.isclose((samples > 0).mean(axis=1), c_t)
+    B = logw.size
+    if not on_slice.any():
+        raise SystemExit(f"{run_dir.name}/{eval_dir}: no draw lands on c={c_t}")
+
+    def log_Z_can(idx):
+        kept = logw[idx][on_slice[idx]]
+        return np.logaddexp.reduce(kept) - np.log(B) if kept.size else np.nan
+
+    point = float(-log_Z_can(np.arange(B)) / d)
+    boot = np.array([-log_Z_can(rng.integers(0, B, B)) / d for _ in range(n_boot)])
+    return point, boot
+
+
 def _grids_available(run_dir: Path, native_ne: int,
                      eval_dir: str = "eval") -> list[tuple[int, str]]:
     """Euler grids this checkpoint has been drawn on, coarsest first.
@@ -126,7 +165,7 @@ def _grids_available(run_dir: Path, native_ne: int,
 
 
 def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
-                  rng, eval_dir: str = "eval",
+                  rng, eval_dir: str = "eval", bootstrap=_bootstrap_F,
                   ) -> tuple[float, np.ndarray, tuple[int, int] | None]:
     """First-order Richardson extrapolation of F/site to the continuum grid.
 
@@ -143,14 +182,18 @@ def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
     replicate-wise. Falls back to the native draw (pair = None) when the
     checkpoint has no side-grid redraws -- the caller warns, so a partially
     redrawn family cannot silently mix extrapolated and raw points.
+    `bootstrap` is the per-grid estimator, `_bootstrap_F` for the soft
+    free energy or a `_bootstrap_slice_F` partial for the canonical one;
+    both carry the same first-order Euler bias (measured: the slice-mass
+    residual halves per grid doubling at 8x8), so the same rule applies.
     """
     grids = _grids_available(run_dir, native_ne, eval_dir)
     if len(grids) < 2:
-        point, boot = _bootstrap_F(run_dir, d, n_boot, rng, eval_dir)
+        point, boot = bootstrap(run_dir, d, n_boot, rng, eval_dir)
         return point, boot, None
     (g1, dir1), (g2, dir2) = grids[-2], grids[-1]
-    p1, b1 = _bootstrap_F(run_dir, d, n_boot, rng, dir1)
-    p2, b2 = _bootstrap_F(run_dir, d, n_boot, rng, dir2)
+    p1, b1 = bootstrap(run_dir, d, n_boot, rng, dir1)
+    p2, b2 = bootstrap(run_dir, d, n_boot, rng, dir2)
     point = (g2 * p2 - g1 * p1) / (g2 - g1)
     boot = (g2 * b2 - g1 * b1) / (g2 - g1)
     return point, boot, (g1, g2)
@@ -164,6 +207,26 @@ def _laplace_offset(lam: float, d: int, Fp_total: float, Fpp_total: float) -> fl
     """
     a = lam * d + 0.5 * Fpp_total
     return float(np.log(d) + 0.5 * np.log(np.pi / a) + (Fp_total ** 2) / (4.0 * a))
+
+
+def _enumerated_canonical(run_dir: Path) -> dict[float, float]:
+    """Exact canonical F/site per composition at D <= 4, from the run's own target.
+
+    log Z_can(u) is the unpenalised Ising density (`base_log_prob`, x^T J x in
+    the paper's convention) summed over the states of composition u; the
+    penalty must NOT enter, since it vanishes only on the run's own slice.
+    (`metrics.json`'s `free_energy_per_site_exact` is the SOFT exact
+    -log Z_lambda/(2 sigma d), not the canonical one, so it cannot serve as
+    the truth here.)
+    """
+    from discrete_flow_sampler.diagnostics.metrics import enumerate_states
+    from experiments.dnfs_baseline_01.run import _rebuild_from_run_dir
+    _, target, _ = _rebuild_from_run_dir(run_dir)
+    states = enumerate_states(target.d).to(target.device)   # target.d = total sites
+    log_p = target.base_log_prob(states.float()).double().cpu()
+    composition = (states > 0).double().mean(dim=1)
+    return {round(float(u), 4): float(-torch.logsumexp(log_p[composition == u], 0) / target.d)
+            for u in composition.unique()}
 
 
 def main() -> None:
@@ -182,6 +245,10 @@ def main() -> None:
                    help="bootstrap resamples of the per-window importance weights")
     p.add_argument("--plot", type=Path, default=None,
                    help="optional output path for the overlay + residual figure")
+    p.add_argument("--correction", choices=["laplace", "slice_mass"], default="laplace",
+                   help="soft -> canonical map for the filled series: the continuum "
+                        "Laplace offset (reference shape enters) or the exact "
+                        "slice-mass identity (reference-free, see _bootstrap_slice_F)")
     p.add_argument("--richardson", action="store_true",
                    help="extrapolate each seed's F to the continuum grid from its "
                         "two finest available draws (eval/ + eval_ne<k>/ redraws)")
@@ -241,15 +308,14 @@ def main() -> None:
         ref_F_persite = np.asarray(ref["F_per_site"], float)
         ref_src = str(args.reference)
     else:
-        # D<=4: build the canonical curve from the exact-enum column run.py stores
-        exact = {round(r["c_target"], 4): r["F_per_site_exact"] * two_sigma
-                 for r in records if r["F_per_site_exact"] is not None}
-        if not exact:
-            raise SystemExit("no --reference and no exact column; cannot place ground truth")
+        # D<=4: enumerate the canonical slice sums from the run's own target
+        if D > 4:
+            raise SystemExit("no --reference and D > 4; cannot place ground truth")
+        exact = _enumerated_canonical(records[0]["run_dir"])
         ref_c = np.array(sorted(exact))
         ref_F_persite = np.array([exact[c] for c in ref_c])
         ref_F_total = ref_F_persite * d
-        ref_src = "exact enumeration (metrics.json)"
+        ref_src = "exact canonical enumeration (2^d states, slice sums)"
     order = np.argsort(ref_c)
     ref_c, ref_F_total, ref_F_persite = ref_c[order], ref_F_total[order], ref_F_persite[order]
     ref_Fp = np.gradient(ref_F_total, ref_c)
@@ -315,15 +381,34 @@ def main() -> None:
         between = float(seed_pts.std(ddof=1) / np.sqrt(len(seed_pts))) if len(seed_pts) > 1 else 0.0
         F_raw_err = float(np.hypot(within, between))
 
-        # Laplace correction (continuum, with curvature) from the reference shape
-        Fp_t = _ref_at(c_t, ref_Fp)
-        Fpp_t = _ref_at(c_t, ref_Fpp)
-        if Fp_t is None or Fpp_t is None:
-            offset_ps = np.nan
+        if args.correction == "slice_mass":
+            # exact identity, read on the same draws (and the same grids)
+            slice_estimator = partial(_bootstrap_slice_F, lam=lam, c_t=c_t)
+            slice_pts, slice_boots = [], []
+            for r in gated:
+                if args.richardson:
+                    pt, boot, _ = _richardson_F(r["run_dir"], r["n_euler"], d, args.n_boot,
+                                                rng, args.eval_dir, slice_estimator)
+                else:
+                    pt, boot = slice_estimator(r["run_dir"], d, args.n_boot, rng, args.eval_dir)
+                slice_pts.append(pt)
+                slice_boots.append(boot)
+            slice_pts = np.array(slice_pts)
+            F_corr = float(slice_pts.mean())
+            within = float(np.mean(np.stack(slice_boots), axis=0).std())
+            between = (float(slice_pts.std(ddof=1) / np.sqrt(len(slice_pts)))
+                       if len(slice_pts) > 1 else 0.0)
+            F_corr_err = float(np.hypot(within, between))
         else:
-            offset_ps = _laplace_offset(lam, d, Fp_t, Fpp_t) / d
-        F_corr = F_raw + offset_ps
-        F_corr_err = F_raw_err  # offset treated as exact
+            # Laplace correction (continuum, with curvature) from the reference shape
+            Fp_t = _ref_at(c_t, ref_Fp)
+            Fpp_t = _ref_at(c_t, ref_Fpp)
+            if Fp_t is None or Fpp_t is None:
+                offset_ps = np.nan
+            else:
+                offset_ps = _laplace_offset(lam, d, Fp_t, Fpp_t) / d
+            F_corr = F_raw + offset_ps
+            F_corr_err = F_raw_err  # offset treated as exact
 
         raw_gap = (F_raw - F_truth) if F_truth is not None else None
         corr_gap = (F_corr - F_truth) if F_truth is not None else None
@@ -362,7 +447,9 @@ def main() -> None:
                              lambda c: _ref_at(c, ref_F_persite))
                 if args.hard_rows else None)
         _plot(curve, ref_c, ref_F_persite, ref_F_persite - soft_offsets,
-              args.flag_c, args.plot, hard)
+              args.flag_c, args.plot, hard,
+              corrected_label={"laplace": "Laplace-corrected",
+                               "slice_mass": "slice mass"}[args.correction])
 
 
 def _hard_series(files: list[Path], fine_files: list[Path], d: int,
@@ -457,7 +544,8 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
 
 
 def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
-          out: Path, hard: list[dict] | None = None) -> None:
+          out: Path, hard: list[dict] | None = None,
+          corrected_label: str = "Laplace-corrected") -> None:
     """House-standard overlay + residual pair (approved s62; relaid out s101).
 
     Roles: TI truth = REFERENCE_INK line; our sampler = SAMPLER_HUE, with the
@@ -512,7 +600,7 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
     ax.errorbar(cs, raw, yerr=raw_e, fmt="o", color=raw_hue, mfc="none",
                 capsize=2, lw=1.0, label="raw")
     ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color=SAMPLER_HUE,
-                capsize=2, lw=1.0, label="Laplace-corrected")
+                capsize=2, lw=1.0, label=corrected_label)
     # The hard sampler's own read of the same object: no offset, no
     # correction, the limit the soft route reaches for (HARD_DELTA_HUE).
     if hard:
