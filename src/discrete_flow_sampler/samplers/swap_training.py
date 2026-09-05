@@ -50,6 +50,9 @@ from discrete_flow_sampler.samplers.resume import (
 )
 from discrete_flow_sampler.samplers.swap_ctmc import (
     compute_c_t_grid_swap,
+    n_slices,
+    reduce_c_t_grid,
+    slice_index_of,
     sample_swap_ctmc,
 )
 from discrete_flow_sampler.samplers.optim import StableAdamW
@@ -324,6 +327,7 @@ def train_swap(
     train_autocast_bf16 = getattr(train_cfg, "train_autocast_bf16", False)
     outer_batch = train_cfg.outer_batch_size or train_cfg.batch_size
     n_grid = ctmc_cfg.n_euler_steps
+    n_composition_slices = n_slices(target)   # 1 for a specialist, K on a composition mixture
     # Trajectory step for every simulation in this loop (buffer rebuild and
     # in-training eval draw): the matching step is required from d=256 up,
     # where one-event clip-safety would need ~3x the Euler grid. getattr
@@ -661,8 +665,11 @@ def train_swap(
                     rollout_resample_events = float(rollout_smc_stats.n_events)
                 if reuse_rollout_integrand:
                     # c_t = mean_m ξ_t (Eq. 8) — the same reduction
-                    # compute_c_t_grid_swap applies, on the same values.
-                    c_t_grid = integrand_per_t.mean(dim=-1)
+                    # compute_c_t_grid_swap applies, on the same values:
+                    # a plain mean for a specialist, a WITHIN-slice mean
+                    # (T, K) on a composition mixture (see mean_per_slice).
+                    c_t_grid = reduce_c_t_grid(
+                        integrand_per_t, x_traj_full[0], target)
                 else:
                     c_t_grid, integrand_per_t = compute_c_t_grid_swap(
                         t_grid, x_traj_full, target, head,
@@ -811,8 +818,11 @@ def train_swap(
             # cycle's inner steps, so that is the window over which a per-slot
             # residual mean estimates a single Δ_t. Carrying them across
             # cycles would average over c_t values that no longer apply.
-            delta_residual_sum = torch.zeros(n_grid, device=device)
-            delta_residual_count = torch.zeros(n_grid, device=device)
+            # Indexed by (slot, slice) so that on a mixture the per-slice
+            # offsets, which are equal and opposite around the pooled
+            # mean, cannot cancel in the signed slot mean.
+            delta_residual_sum = torch.zeros(n_grid * n_composition_slices, device=device)
+            delta_residual_count = torch.zeros(n_grid * n_composition_slices, device=device)
 
             for _inner in range(inner_steps_per_outer):
                 step_start = time.time()
@@ -839,7 +849,12 @@ def train_swap(
                 x_sample = x_buffer[sample_idx]                    # (N, D)
                 t_idx_sample = t_idx_buffer[sample_idx]            # (N,)
                 t_sample = t_grid[t_idx_sample]                    # (N,)
-                c_t_sample = c_t_grid[t_idx_sample]                # (N,)
+                # Each row's baseline is ITS slice's ∂_t log Z_t: the grid
+                # is (T,) for a specialist and (T, K) on a mixture, and
+                # the slice is read off the state (swaps conserve it).
+                slice_sample = slice_index_of(target, x_sample)    # (N,)
+                c_t_sample = c_t_grid.reshape(n_grid, -1)[
+                    t_idx_sample, slice_sample]                   # (N,)
 
                 # loss_microbatch_size slices this one backward over batch
                 # rows — the gradient-identical memory schedule that fits
@@ -887,11 +902,10 @@ def train_swap(
                 # the cycle because c_t is fixed there and a single inner
                 # batch gives ~1 sample per slot. Sign flipped on readout,
                 # not here, so the running sums stay plain residual sums.
-                delta_residual_sum.index_add_(
-                    0, t_idx_sample, residual_sample
-                )
+                delta_slot = t_idx_sample * n_composition_slices + slice_sample
+                delta_residual_sum.index_add_(0, delta_slot, residual_sample)
                 delta_residual_count.index_add_(
-                    0, t_idx_sample, torch.ones_like(residual_sample)
+                    0, delta_slot, torch.ones_like(residual_sample)
                 )
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     head.parameters(),

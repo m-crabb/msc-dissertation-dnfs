@@ -421,12 +421,90 @@ def sample_swap_ctmc(
     return state
 
 
+
+def n_slices(target) -> int:
+    """Number of fixed-composition slices the target mixes over (1 without
+    a registered grid, i.e. every specialist target)."""
+    return len(getattr(target, "n_plus_values", ()) or ()) or 1
+
+
+def slice_index_of(target, x: Tensor) -> Tensor:
+    """Position of each row's slice in the target's composition grid. (B,)
+    long; all zeros for a single-slice target.
+
+    Swaps conserve n_plus, so a row's slice is readable off the state at
+    any time, which is what lets the trainer look c_t up per row without
+    storing a slice label in the replay buffer or the resume checkpoint.
+    """
+    counts = getattr(target, "n_plus_values", None)
+    if not counts or len(counts) == 1:
+        return torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
+    n_plus = ((x + 1.0) * 0.5).sum(dim=-1).long()
+    count_to_slice = torch.full((x.shape[1] + 1,), -1, dtype=torch.long,
+                                device=x.device)
+    count_to_slice[torch.tensor(counts, device=x.device)] = torch.arange(
+        len(counts), device=x.device)
+    slice_idx = count_to_slice[n_plus]
+    if (slice_idx < 0).any():
+        raise AssertionError(
+            f"rows off the composition grid: n_plus in "
+            f"{n_plus[slice_idx < 0][:5].tolist()}, grid {tuple(counts)}"
+        )
+    return slice_idx
+
+
+def mean_per_slice(values: Tensor, slice_idx: Tensor, n_slices: int) -> Tensor:
+    """Within-slice mean of a (T, M) integrand table over its M rows. (T, K).
+
+    THE CORRECTION THIS ENCODES (2026-09-05). On a slice mixture the
+    residual for a row on slice C needs ∂_t log Z_t^{(C)}: swap dynamics
+    hold every slice's mass fixed, so only each slice's conditional
+    evolves and no mixture-level ∂_t log Z_t exists for the residual to
+    use. E_{p_t^{(C)}}[ξ_t] = ∂_t log Z_t^{(C)} within a slice for any
+    rates (Stein), so the estimator is a within-slice mean. The pooled
+    mean over all rows (the pre-fix reduction) left every row an offset
+    ∂_t log Z_t^{(C)} − mean_C ∂_t log Z_t^{(C)}, ~2 nats at d16 and ~18
+    nats at d256 from the binomial base constant alone; with c_t detached
+    that offset reaches the gradient as 2·Δ·E_q[∇ξ_t], which is zero
+    on-policy and not zero over a replay buffer of past models' states.
+
+    K == 1 is `values.mean(dim=-1)` bit-for-bit (the archived specialist
+    path). A slice with no rows (~K·(1−1/K)^M, negligible at M ≥ 128)
+    takes the pooled slot mean rather than NaN.
+    """
+    if n_slices == 1:
+        return values.mean(dim=-1, keepdim=True)
+    n_grid = values.shape[0]
+    sums = torch.zeros(n_grid, n_slices, dtype=values.dtype, device=values.device)
+    sums.index_add_(1, slice_idx, values)
+    counts = torch.bincount(slice_idx, minlength=n_slices).to(values.dtype)
+    means = sums / counts.clamp(min=1.0)
+    pooled = values.mean(dim=-1, keepdim=True).expand(n_grid, n_slices)
+    return torch.where(counts > 0, means, pooled)
+
+
+def reduce_c_t_grid(integrand_per_t: Tensor, x_rows: Tensor, target) -> Tensor:
+    """(T,) plain mean for a specialist, (T, K) within-slice means for a
+    mixture. Shared by the estimator and the trainer's rollout-reuse path
+    so both grids are the same reduction on the same values."""
+    n_slice = n_slices(target)
+    if n_slice == 1:
+        return integrand_per_t.mean(dim=-1)
+    return mean_per_slice(integrand_per_t, slice_index_of(target, x_rows), n_slice)
+
+
 def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
                           mode, chunk_rows: int | None = None):
     """Per-time-slot c_t for the swap loss (mirror of compute_c_t_grid).
 
     mode='naive_mc'        -> c_t = mean_m ∂_t log p̃_t(x_t^{(m)})
     mode='control_variate' -> c_t = mean_m ξ_t^swap(x_t^{(m)})   (Eq. 8, swap form)
+
+    Returns (c_t_grid, integrand_per_t). The grid is (T,) for a single-
+    slice target — the archived contract, bit-identical — and (T, K) for a
+    K-slice composition mixture, the mean taken WITHIN each slice (see
+    `mean_per_slice` for why the pooled mean was wrong). Rows keep their
+    slice for the whole trajectory, so `x_traj[0]` labels every slot.
 
     chunk_rows (M7a, 2026-08-14; plan Task 7): None runs the per-slot
     sequential loop — n_grid integrand calls at outer_batch rows each, the
@@ -476,7 +554,7 @@ def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
                     integrand_flat[start:stop] = compute_xi_t_swap(
                         x_flat[start:stop], t_flat[start:stop], head, target
                     )
-        return integrand_per_t.mean(dim=-1), integrand_per_t
+        return reduce_c_t_grid(integrand_per_t, x_traj[0], target), integrand_per_t
     with torch.no_grad():
         for k in range(n_grid):
             x_k = x_traj[k]
@@ -485,4 +563,4 @@ def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
                 integrand_per_t[k] = target.dt_log_p_tilde_t(x_k, t_k)
             else:
                 integrand_per_t[k] = compute_xi_t_swap(x_k, t_k, head, target)
-    return integrand_per_t.mean(dim=-1), integrand_per_t
+    return reduce_c_t_grid(integrand_per_t, x_traj[0], target), integrand_per_t
