@@ -1,6 +1,11 @@
 """One trajectory of the trained swap process, base to terminal state, with the learned rate
 field drawn at a few grid times: what the generator looks like, as a picture.
 
+Approved 20x20 figure, without rerunning the model:
+    python -m experiments.constrained_hard_03.analysis.rate_field_strip
+        --recorded assets/hard_rate_field_strip_20x20.npz --out figure.pdf
+The archive includes the displayed frames and checkpoint/rollout provenance.
+
 Three rows per displayed time t_k of ONE rollout of the trained head from a uniform-on-slice
 base state:
   1. the state x_{t_k}, with a fixed anchor site marked;
@@ -11,8 +16,8 @@ base state:
   3. the closed-form channel sigma * Delta_aj(x) of eq:swap-log-ratio for the same anchor,
      Delta_aj = 2 (x_j - x_a)(h~_a - h~_j) with the hole-excluded fields -- the linear part the
      regression table scores the head against, drawn signed.
-Rows 2 and 3 are the two things tab:local-field compares: how much of the learned rate is the
-exact field, and what the non-local remainder looks like on the lattice.
+The closed form describes the terminal target, not the time-t path ratio,
+which has another factor t. It is not a rate: learned swaps may raise energy.
 
 Colour follows the job: the rate is a magnitude (one hue, light -> dark, the sampler blue);
 the channel is signed (two poles about a neutral mid-grey); the state uses the house spin
@@ -22,8 +27,12 @@ import argparse
 import json
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+
 from discrete_flow_sampler.diagnostics.figure_style import (
-    CLASSICAL_HUE, FONT_SIZE_ANNOTATION, FULL_WIDTH_IN, GRID, MUTED,
+    CLASSICAL_HUE, FONT_SIZE_ANNOTATION, FULL_WIDTH_IN, GRID,
     SAMPLER_HUE, SAVEFIG_DPI, SPIN_CMAP, use_house_style)
 from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
 from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
@@ -44,15 +53,83 @@ def channel_for_anchor(x, anchor, A, sigma):
     return sigma * delta
 
 
+def plot_strip(columns, side, anchor, out):
+    """State, learned rate and terminal log ratio; explanatory text lives in the caption.
+
+    Each row uses a common scale across time. The two fields have different
+    units and separate colour scales. Read unordered-pair rates before calling
+    this function; G[a,j] alone has the wrong sign whenever j < a.
+    """
+    use_house_style()
+    rate_cmap = LinearSegmentedColormap.from_list("rate", ["#f4f4f1", SAMPLER_HUE])
+    diverging = LinearSegmentedColormap.from_list("channel", [CLASSICAL_HUE, "#e6e5df", SAMPLER_HUE])
+    rate_max = max(float(np.asarray(c["rate"]).max()) for c in columns)
+    chan_max = max(float(np.abs(np.asarray(c["channel"])).max()) for c in columns)
+    n = len(columns)
+    fig = plt.figure(figsize=(FULL_WIDTH_IN, 3.65))
+    grid = fig.add_gridspec(
+        3, n + 1, width_ratios=[1] * n + [0.055],
+        left=0.13, right=0.92, bottom=0.04, top=0.93,
+        wspace=0.10, hspace=0.15,
+    )
+    row_labels = ["Configuration", "Learned\nswap rate", "Closed-form\nlog ratio"]
+    anchor_row, anchor_col = divmod(anchor, side)
+    for row, key in enumerate(("x", "rate", "channel")):
+        for col, values in enumerate(columns):
+            ax = fig.add_subplot(grid[row, col])
+            field = np.asarray(values[key]).reshape(side, side)
+            if row == 0:
+                im = ax.imshow(field, cmap=SPIN_CMAP, vmin=-1, vmax=1, interpolation="nearest")
+            elif row == 1:
+                im = ax.imshow(field, cmap=rate_cmap, vmin=0, vmax=max(rate_max, 1e-12), interpolation="nearest")
+            else:
+                limit = max(chan_max, 1e-12)
+                im = ax.imshow(field, cmap=diverging, norm=TwoSlopeNorm(0, -limit, limit), interpolation="nearest")
+            for colour, width in [("white", 2.4), ("#1a1a19", 1.2)]:
+                ax.add_patch(plt.Rectangle(
+                    (anchor_col - 0.5, anchor_row - 0.5), 1, 1,
+                    fill=False, lw=width, edgecolor=colour,
+                ))
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_edgecolor(GRID)
+            if col == 0:
+                ax.set_ylabel(row_labels[row], fontsize=FONT_SIZE_ANNOTATION, labelpad=8)
+            if row == 0:
+                ax.set_title(f"$t = {values['t']:.2f}$", fontsize=FONT_SIZE_ANNOTATION)
+        if row:
+            colourbar = fig.colorbar(im, cax=fig.add_subplot(grid[row, n]))
+            colourbar.ax.tick_params(labelsize=FONT_SIZE_ANNOTATION - 1)
+            colourbar.outline.set_edgecolor(GRID)
+    fig.savefig(out, dpi=SAVEFIG_DPI, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("run_dir", type=Path)
+    parser.add_argument("run_dir", type=Path, nargs="?")
+    parser.add_argument("--recorded", type=Path,
+                        help="render a saved figure archive without sampling a checkpoint")
     parser.add_argument("--anchor", type=int, default=None,
                         help="anchor site index (default: the centre site)")
     parser.add_argument("--times", type=float, nargs="+", default=[0.0, 0.25, 0.5, 0.75, 1.0])
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=Path, default=Path("rate_field_strip.png"))
     args = parser.parse_args()
+    if args.recorded is not None:
+        if args.run_dir is not None:
+            parser.error("choose a run directory or --recorded, not both")
+        with np.load(args.recorded, allow_pickle=False) as data:
+            metadata = json.loads(str(data["metadata"]))
+            columns = [dict(t=t, x=x, rate=rate, channel=channel)
+                       for t, x, rate, channel in zip(
+                           data["times"], data["states"], data["rates"], data["channels"], strict=True)]
+        plot_strip(columns, metadata["side"], metadata["anchor"], args.out)
+        print(f"saved {args.out} from {args.recorded}")
+        return
+    if args.run_dir is None:
+        parser.error("provide a run directory or --recorded")
     use_house_style()
     torch.manual_seed(args.seed)
 
@@ -86,51 +163,13 @@ def main():
         channel = channel_for_anchor(x, anchor, A, sigma)
         columns.append(dict(t=ts[k].item(), x=x, rate=rate, channel=channel, total_rate=total_rate))
 
-    rate_cmap = LinearSegmentedColormap.from_list("rate", ["#f4f4f1", SAMPLER_HUE])
-    diverging = LinearSegmentedColormap.from_list("channel", [CLASSICAL_HUE, "#e6e5df", SAMPLER_HUE])
-    rate_max = max(c["rate"].max().item() for c in columns)
-    chan_max = max(c["channel"].abs().max().item() for c in columns)
-
-    n = len(columns)
-    fig, axes = plt.subplots(3, n, figsize=(FULL_WIDTH_IN, 0.78 * FULL_WIDTH_IN * 3 / n + 0.5),
-                             gridspec_kw=dict(wspace=0.08, hspace=0.12))
-    row_labels = ["state $x_t$", "learned rate\n$[G(a,j\\mid x,t)]_+$",
-                  "closed form\n$\\sigma\\Delta_{aj}(x)$"]
-    ar, ac = divmod(anchor, side)
-    for col, c in enumerate(columns):
-        grids = [c["x"].view(side, side).numpy(),
-                 c["rate"].view(side, side).numpy(),
-                 c["channel"].view(side, side).numpy()]
-        for row, grid in enumerate(grids):
-            ax = axes[row, col]
-            if row == 0:
-                ax.imshow(grid, cmap=SPIN_CMAP, vmin=-1, vmax=1, interpolation="nearest")
-            elif row == 1:
-                im_rate = ax.imshow(grid, cmap=rate_cmap, vmin=0, vmax=rate_max, interpolation="nearest")
-            else:
-                im_chan = ax.imshow(grid, cmap=diverging, norm=TwoSlopeNorm(0, -chan_max, chan_max),
-                                    interpolation="nearest")
-            ax.add_patch(plt.Rectangle((ac - 0.5, ar - 0.5), 1, 1, fill=False, lw=1.6,
-                                       edgecolor="#1a1a19"))
-            ax.set_xticks([]); ax.set_yticks([])
-            for spine in ax.spines.values():
-                spine.set_edgecolor(GRID)
-            if col == 0:
-                ax.set_ylabel(row_labels[row], fontsize=FONT_SIZE_ANNOTATION - 1)
-        axes[0, col].set_title(f"$t = {c['t']:.2f}$   $\\Lambda = {c['total_rate']:.1f}$",
-                               fontsize=FONT_SIZE_ANNOTATION, color=MUTED)
-    cb1 = fig.colorbar(im_rate, ax=axes[1, :].tolist(), fraction=0.02, pad=0.01)
-    cb2 = fig.colorbar(im_chan, ax=axes[2, :].tolist(), fraction=0.02, pad=0.01)
-    for cb in (cb1, cb2):
-        cb.ax.tick_params(labelsize=FONT_SIZE_ANNOTATION - 1)
-        cb.outline.set_edgecolor(GRID)
-    fig.savefig(args.out, dpi=SAVEFIG_DPI, bbox_inches="tight")
+    plot_strip(columns, side, anchor, args.out)
 
     # numbers for the caption: how non-local is the anchor's rate at the end?
     x_end, rate_end = columns[-1]["x"], columns[-1]["rate"]
     adjacent = A[anchor] > 0
     unlike = x_end != x_end[anchor]
-    print(f"anchor {anchor} (row {ar}, col {ac}); Lambda along the strip: "
+    print(f"anchor {anchor} (row {anchor // side}, col {anchor % side}); Lambda along the strip: "
           + ", ".join(f"{c['total_rate']:.1f}" for c in columns))
     print(f"t=1: rate on the anchor's {int((adjacent & unlike).sum())} unlike neighbours "
           f"{rate_end[adjacent].sum():.3f} vs {int((~adjacent & unlike).sum())} unlike distant sites "
