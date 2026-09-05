@@ -1,0 +1,45 @@
+{
+  "tail": 10,
+  "cells": {
+    "4x4-critical": [
+      "results/03_hard/H2_d16_c50_s223_letf_thp_10k_seed42_20260823-143734",
+      "results/03_hard/H2_d16_c50_s223_letf_thp_10k_seed43_20260823-143734",
+      "results/03_hard/H2_d16_c50_s223_letf_thp_10k_seed44_20260823-143734"
+    ],
+    "4x4-subcritical": [
+      "results/03_hard/H2_d16_c50_s010_letf_thp_10k_seed42_20260823-143453",
+      "results/03_hard/H2_d16_c50_s010_letf_thp_10k_seed43_20260823-143453",
+      "results/03_hard/H2_d16_c50_s010_letf_thp_10k_seed44_20260823-143453"
+    ],
+    "8x8-critical": [
+      "results/03_hard/H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2_seed42_20260828-rasterord-d64",
+      "results/03_hard/H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2_seed43_20260828-rasterord-d64",
+      "results/03_hard/H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2_seed44_20260828-rasterord-d64"
+    ],
+    "8x8-subcritical": [
+      "results/03_hard/H2_d64_c50_s010_letf_mamo2ef_50k_w2_seed42_20260828-rasterfloor-d64",
+      "results/03_hard/H2_d64_c50_s010_letf_mamo2ef_50k_w2_seed43_20260828-rasterfloor-d64",
+      "results/03_hard/H2_d64_c50_s010_letf_mamo2ef_50k_w2_seed44_20260828-rasterfloor-d64"
+    ],
+    "16x16-critical": [
+      "results/03_hard/H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3_seed42_20260826-d256-sc",
+      "results/03_hard/H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3_seed43_20260826-d256-sc",
+      "results/03_hard/H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3_seed44_20260826-d256-sc"
+    ],
+    "16x16-subcritical": [
+      "results/03_hard/H2_d256_c50_s010_letf_thp2_50k_b512_ne128_cv2_w3_seed42_20260826-d256-s010",
+      "results/03_hard/H2_d256_c50_s010_letf_thp2_50k_b512_ne128_cv2_w3_seed43_20260826-d256-s010",
+      "results/03_hard/H2_d256_c50_s010_letf_thp2_50k_b512_ne128_cv2_w3_seed44_20260826-d256-s010"
+    ],
+    "20x20-critical": [
+      "results/03_hard/H2_d400_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w4_seed42_20260829-d400-sc",
+      "results/03_hard/H2_d400_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w4_seed43_20260829-d400-sc",
+      "results/03_hard/H2_d400_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w4_seed44_20260829-d400-sc"
+    ],
+    "20x20-subcritical": [
+      "results/03_hard/H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4_seed42_20260827-d400-s010",
+      "results/03_hard/H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4_seed43_20260827-d400-s010",
+      "results/03_hard/H2_d400_c50_s010_letf_thp3_50k_b512_ne128_cv2_w4_seed44_20260827-d400-s010"
+    ]
+  }
+}
