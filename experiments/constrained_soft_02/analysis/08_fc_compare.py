@@ -172,11 +172,12 @@ def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
     The Euler-grid error is first order (pre-registered 2026-08-21: step
     ratios 0.44-0.49 across ne64 -> 128 -> 256; reproduced by the s62
     retrain halving the residual vs the TI truth in every window), so
-    F(g) = F(inf) + C/g and two grids g1 < g2 give
+    With g grid POINTS, torch.linspace spans g-1 intervals, so
+    F(g) = F(inf) + C/(g-1) and two grids g1 < g2 give
 
-        F(inf) = (g2 F(g2) - g1 F(g1)) / (g2 - g1)
+        F(inf) = ((g2-1) F(g2) - (g1-1) F(g1)) / (g2 - g1)
 
-    (the familiar 2 F(2g) - F(g) when g2 = 2 g1). The two FINEST available
+    The two FINEST available
     grids are used; the two draws are independent (fresh eval batches), so
     the bootstrap resamples each grid's weights independently and combines
     replicate-wise. Falls back to the native draw (pair = None) when the
@@ -194,8 +195,8 @@ def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
     (g1, dir1), (g2, dir2) = grids[-2], grids[-1]
     p1, b1 = bootstrap(run_dir, d, n_boot, rng, dir1)
     p2, b2 = bootstrap(run_dir, d, n_boot, rng, dir2)
-    point = (g2 * p2 - g1 * p1) / (g2 - g1)
-    boot = (g2 * b2 - g1 * b1) / (g2 - g1)
+    point = ((g2 - 1) * p2 - (g1 - 1) * p1) / (g2 - g1)
+    boot = ((g2 - 1) * b2 - (g1 - 1) * b1) / (g2 - g1)
     return point, boot, (g1, g2)
 
 
@@ -463,7 +464,8 @@ def _hard_series(files: list[Path], fine_files: list[Path], d: int,
     of the mean log-weight is sqrt(Var[log w]/n)/d from the stored variance;
     between-seed scatter is added in quadrature as for the soft series. With
     a fine-grid redraw per seed the point is Richardson-extrapolated,
-    F(inf) = (g2 F2 - g1 F1)/(g2 - g1), the same first-order rule as
+    F(inf) = ((g2-1) F2 - (g1-1) F1)/(g2 - g1), because g grid points
+    span g-1 Euler intervals. This is the same first-order rule as
     `_richardson_F` (the Euler bias is first order in the step for both
     samplers). ESS is carried per composition because the estimate is a
     variational bound whose gap grows as the weights degrade.
@@ -491,8 +493,8 @@ def _hard_series(files: list[Path], fine_files: list[Path], d: int,
                 rf = fine_rows[c]
                 f2 = rf["free_energy_nats_per_site"]
                 e2 = np.sqrt(rf["var_log_w"] / rf["n_samples"]) / d
-                point = (g2 * f2 - g1 * f1) / (g2 - g1)
-                err = np.hypot(g2 * e2, g1 * e1) / (g2 - g1)
+                point = ((g2 - 1) * f2 - (g1 - 1) * f1) / (g2 - g1)
+                err = np.hypot((g2 - 1) * e2, (g1 - 1) * e1) / (g2 - g1)
                 ess.append(min(r["ess_fraction"], rf["ess_fraction"]))
             else:
                 point, err = f1, e1
@@ -591,7 +593,7 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
     ax.plot(ref_c, ref_F_persite, color=REFERENCE_INK, lw=1.4,
             label="TI truth")
     ax.plot(ref_c, ref_F_soft_persite, color=raw_hue, lw=1.0,
-            linestyle="--", label="soft truth (TI $-$ offset)")
+            linestyle="--", label="soft, Laplace reference")
     # Capped bars, not a shaded band. Each abscissa here is a SEPARATELY
     # TRAINED window (eleven of them, six trained plus their Z2 reflections),
     # so there is no curve in c for a ribbon to be the envelope of: the marks
@@ -607,9 +609,9 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
         ax.errorbar([h["c"] for h in hard], [h["F"] for h in hard],
                     yerr=[h["F_err"] for h in hard], fmt="^",
                     color=HARD_DELTA_HUE, capsize=2, lw=1.0,
-                    label="hard, direct")
+                    label="hard, mean log")
     ax.set_xlabel("composition $c$")
-    ax.set_ylabel("$F/d$ (nats per site)")
+    ax.set_ylabel(r"$\beta F/d$ (nats per site)")
 
     if all(t is not None for t in truth):
         axr.axhline(0, color=MUTED, lw=0.8)
@@ -623,7 +625,7 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
                      [h["F"] - h["truth"] for h in with_truth], "^-",
                      color=HARD_DELTA_HUE, lw=1.0)
         axr.set_xlabel("composition $c$")
-        axr.set_ylabel("$F/d$ residual (nats per site)")
+        axr.set_ylabel(r"$\beta F/d$ residual (nats per site)")
 
     for axis, ys in ((ax, corr), (axr, acorr_res if all(t is not None for t in truth) else None)):
         if ys is None:
