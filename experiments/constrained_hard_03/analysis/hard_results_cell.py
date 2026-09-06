@@ -67,12 +67,12 @@ slicing because the floor needs the chain as its unit of independence.
 `kawasaki_ref_d256_sc` is MISLABELLED (actually sigma = 0.22305, not
 0.220343) and is never read here.
 
-THE FLOOR answers "how far from the reference does a draw of N land when it
-IS the reference": resample whole chains with replacement, draw N from the
-resampled pool, take the TVD against the full pool, average over
-replicates. Chain-level rather than snapshot-level because snapshots within
-a chain are not independent, and a snapshot bootstrap would price the floor
-too low and make every head look worse than it is.
+THE FLOOR is the mean TVD of N independently resampled reference frames
+against the full pool. It represents ideal draw noise conditional on that
+pool. The earlier hierarchical bootstrap (chains, then frames) also included
+reference uncertainty and was not comparable to the table's iid floor.
+Reference uncertainty is now reported separately in the tables. Neither
+proximity to this mean nor a smaller error establishes equivalence.
 """
 import argparse
 import json
@@ -214,16 +214,19 @@ def load_reference(lattice_edge, sigma_key, burn_in_fraction=0.2):
 
 
 def _floor(chains, n_draws, n_replicates, seed, pmf_of):
-    """Chain-level bootstrap TVD of an N-draw resample against the full pool."""
+    """Mean TVD of n_draws iid frames against the empirical reference pool.
+
+    Estimate E[TV(p_hat_N, p_pool)], excluding chain-pool uncertainty. The
+    conditional benchmark assumes the empirical pool represents the target;
+    whole-chain splitting diagnoses its uncertainty separately.
+    """
     pool = torch.cat(chains)
     reference = pmf_of(pool)
     generator = torch.Generator().manual_seed(seed)
     distances = []
     for _ in range(n_replicates):
-        picked = torch.randint(len(chains), (len(chains),), generator=generator)
-        resampled = torch.cat([chains[i] for i in picked])
-        rows = torch.randint(len(resampled), (n_draws,), generator=generator)
-        distances.append(marginal_tvd(torch.from_numpy(pmf_of(resampled[rows])),
+        rows = torch.randint(len(pool), (n_draws,), generator=generator)
+        distances.append(marginal_tvd(torch.from_numpy(pmf_of(pool[rows])),
                                       torch.from_numpy(reference)))
     return float(np.mean(distances))
 

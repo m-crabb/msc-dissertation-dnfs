@@ -14,34 +14,29 @@ C(64,32) ~ 1.8e18 states, enumeration is out, and the reference becomes the
 certified mchammer Kawasaki chain pool. Three consequences:
 
   * THE REFERENCE HAS ITS OWN PRECISION. It cannot print zero without
-    claiming the chain is exact. Its error cells carry a standard error
+    claiming the chain is exact. Its error cells carry approximate uncertainty
     instead, which is what the float's caption already promises.
   * THE REFERENCE AND THE CHAIN BASELINE ARE THE SAME ENGINE, so they are
     one row rather than the 4x4 fill's two. At 4x4 the "Kawasaki, run long"
     row was a separate object from the enumerated reference; here scoring
     the chain against itself would be identically zero, and the honest
-    single row reports the reference's SE in the error columns and its own
+    single row reports the reference's uncertainty in the error columns and its own
     algorithmic bill in FLOP/es.
   * THE FLOOR IS ESTIMATED, NOT DRAWN FROM AN EXACT PMF. It resamples the
     reference pool at the neural cells' own N.
 
-THE REFERENCE STANDARD ERROR: a HALF-SPLIT estimator, not a bootstrap.
-Partition the chain pool into two disjoint halves, measure the error metric
-BETWEEN the halves, halve it. Each half-size reference carries sqrt(2) times
-the full pool's noise and the separation combines two of them, so the split
-distance is ~2x the full pool's SE. The rejected alternative -- bootstrapping
-the reference against itself -- answers "how much does this reference wobble
-under resampling", which is not the quantity an error column needs; the
-column needs "how far apart would two independent references land".
+REFERENCE UNCERTAINTY: retain the historical function/key names for archived
+callers, but label the result approximate uncertainty. Partition whole chains
+into two disjoint groups, measure their distance and halve it. The factor two
+follows the noise scale for equally sized independent halves and a regular
+root-N statistic; it is a heuristic for nonlinear distances such as W2, and
+for unequal groups. Repeated splits of a fixed set are not fresh chains.
 
-THE FLOOR'S SELF-REFERENCE, and why it is tolerable. The floor draws N from
-the same pool it scores against, so draw and reference overlap. Measured on
-the shipped chains the pool is 120,015 post-burn-in snapshots against
-N = 5,000 draws -- a 4% overlap, an order below the 0.02 scale the table
-quotes. Holding chains out would remove that 4% at the cost of a less
-precise reference for every row, which is the worse trade; the 4x4 fill's
-floor draws from the exact pmf for the same structural reason and the two
-scripts stay readable side by side.
+THE IID FLOOR resamples individual reference frames with replacement and
+scores the draws against the full empirical pool. It measures ideal draw
+noise conditional on that pool, excluding the pool's own uncertainty. It is
+not a lower bound or a significance test, and does not independently validate
+the reference. Reference uncertainty is therefore reported separately.
 
 WHY THE POOL IS PRECISE ENOUGH TO BE A REFERENCE AT ALL. Snapshots are
 thinned 100 trials apart, so the integrated autocorrelation of the
@@ -241,9 +236,13 @@ def reference_standard_error(chains, lattice_edge, n_splits=64, seed=0,
                              chain_energies=None):
     """How far apart two independent references would land, halved.
 
-    See the module docstring: the half-split distance carries ~2x the full
-    pool's standard error, because each half is a sqrt(2)-noisier reference
-    and the separation combines two of them.
+    Approximate metric-scale uncertainty, not an exact standard error for
+    nonlinear distances. For equally sized independent halves and a regular
+    root-N statistic, the difference has twice the full-pool noise scale.
+    Halving its distance is a heuristic beyond that setting (especially W2
+    on discrete support, connected correlations, and unequal chain halves).
+    Whole chains stay intact so serial correlation is preserved. The name is
+    retained for archived callers; do not label the result an exact SE.
     """
     generator = torch.Generator().manual_seed(seed)
     n_chains = len(chains)
@@ -267,12 +266,12 @@ def reference_standard_error(chains, lattice_edge, n_splits=64, seed=0,
 def sampling_floor_from_reference(reference, lattice_edge, n_draws,
                                   n_replicates=200, seed=0,
                                   reference_energy=None):
-    """The error a PERFECT sampler still shows at the neural cells' own N.
+    """Mean discrepancy of n_draws iid frames against the empirical pool.
 
-    Draws are taken from the reference pool itself; at the shipped sizes
-    they overlap it by ~4% (see the module docstring), which is an order
-    below the scale the table quotes. A cell at or below this row is
-    indistinguishable from the reference at its own draw count.
+    This estimates ideal sampling noise conditional on that pool, which is
+    itself an uncertain proxy for the target. Resampling the pool is not an
+    independent validation of it. A mean benchmark is neither a lower bound
+    nor a statistical equivalence test; reference uncertainty is separate.
     """
     generator = torch.Generator().manual_seed(seed)
     replicates = []

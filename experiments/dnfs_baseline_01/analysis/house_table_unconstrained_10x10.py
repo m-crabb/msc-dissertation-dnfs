@@ -1,5 +1,14 @@
 """Fill pass for tab:eval-unconstrained-10x10 (the house evaluation table).
 
+ARCHIVED TABLE EXPORTER: its reference_floor below retains the historical
+chain/block-bootstrap convention for reproducing archived JSON. Current
+thesis reference rows and iid floors are computed separately by
+scripts/thesis_reference_diagnostics.py, preserving the neural exports.
+Do not paste this export over the revised thesis table: the new table has
+separate reference-uncertainty and iid-floor rows, and the soft layout was
+split into specialist, ablation and amortisation tables.
+
+
 Reads the frozen eval artefacts of the eight Stage-4 10x10 runs (samples.pt,
 log_weights.pt, metrics.json; seeds 42-45 at sigma = 0.1 and sigma_c) and the
 two cached WOLFF references, and prints the table's observable cells:

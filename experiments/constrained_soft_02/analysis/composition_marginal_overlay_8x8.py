@@ -21,9 +21,9 @@ Three things are drawn per panel:
                and the reference sits visibly off it at c_target = 0.25.
 
 Each panel is annotated with the seed-mean TV distance between the DNFS and
-reference marginals and the reference's own sampling floor: the TV a 5000-frame
-block-bootstrap replicate of the chains shows against the pooled chains, so "at
-the floor" means the same thing as in the unconstrained and hard cells.
+reference marginals and an iid sampling benchmark: mean TV of 5000 independently
+resampled reference frames against the full pool. This is conditional on the
+empirical pool, not a hard lower bound or a test of statistical equivalence.
 
 Example:
     python -m experiments.constrained_soft_02.analysis.composition_marginal_overlay_8x8 \
@@ -54,7 +54,6 @@ TRAINED_COMPOSITIONS = (0.25, 0.375, 0.50)
 SEEDS = (42, 43, 44, 45)
 COUPLINGS = {"s010": 0.1, "sc": SIGMA_C}
 N_EVAL = 5000            # replicate size = the neural draw count
-FLOOR_BLOCK = 10         # frames per bootstrap block
 N_FLOOR_BOOTSTRAP = 200
 ENERGY_SUPPORT = (torch.arange(N_SITES + 1) * 4.0 - 2.0 * N_SITES) / N_SITES
 COMPOSITION_SUPPORT = torch.arange(N_SITES + 1).float() / N_SITES
@@ -92,15 +91,18 @@ def load_reference(sigma, c_target, target):
 
 
 def reference_tv_floor(reference, pmf_of, seed=0):
-    """TV of an N_EVAL-frame block-bootstrap replicate against the pooled chains."""
+    """Estimate E[TV(p_hat_N, p_pool)] for N_EVAL iid draws from p_pool.
+
+    Individual-frame resampling represents an ideal independent sampler.
+    Correlated blocks instead measure chain sampling noise and cannot provide
+    the same benchmark. Pool uncertainty is a separate chain-aware diagnostic.
+    """
     generator = torch.Generator().manual_seed(seed)
-    n_blocks = reference.shape[0] // FLOOR_BLOCK
-    by_block = reference[: n_blocks * FLOOR_BLOCK].view(n_blocks, FLOOR_BLOCK, -1)
     pool_pmf = pmf_of(reference, torch.full((reference.shape[0],), 1.0 / reference.shape[0]))
     tvs = []
     for _ in range(N_FLOOR_BOOTSTRAP):
-        blocks = torch.randint(0, n_blocks, (N_EVAL // FLOOR_BLOCK,), generator=generator)
-        replicate = by_block[blocks].reshape(-1, N_SITES)
+        indices = torch.randint(reference.shape[0], (N_EVAL,), generator=generator)
+        replicate = reference[indices]
         uniform = torch.full((replicate.shape[0],), 1.0 / replicate.shape[0])
         tvs.append(marginal_tvd(pmf_of(replicate, uniform), pool_pmf))
     return sum(tvs) / len(tvs)
@@ -188,7 +190,7 @@ def main():
                 ax.set_xlabel(xlabel)
             print(f"{args.coupling} c={c_target} {key:11} TV {tv:.4f} floor {floor:.4f} "
                   f"seeds {len(seed_pmfs)} ref frames {reference.shape[0]}")
-        axes[0, col].set_xlabel(rows[0][3])
+        axes[0, col].set_xlabel(rows[0][3], fontsize=FONT_SIZE_ANNOTATION)
     axes[0, 0].set_ylabel("probability mass")
     axes[1, 0].set_ylabel("probability mass")
     handles, labels = axes[1, -1].get_legend_handles_labels()

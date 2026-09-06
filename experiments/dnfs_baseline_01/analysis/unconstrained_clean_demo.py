@@ -18,12 +18,10 @@ built by wolff_reference_pool.py, R-hat <= 1.002). The pool
 file is keyed by the RUN's own coupling, so legacy runs meet the legacy pool
 and sigma_c retrains meet the 0.220343 pool -- couplings are never mixed.
 
-The caption quotes each panel's total-variation distance beside the
-reference's own sampling floor; both are printed here. The floor is the
-chain-block bootstrap of the pool against itself (resample the 100 chains
-with replacement, TV of replicate pmf vs pool pmf, mean over replicates) --
-the same construction as the house table's floor row, so "at the floor"
-means the same thing in figure and table.
+The caption quotes each panel's total-variation distance beside an iid
+sampling floor: the mean TV of 5000 independently resampled frames against
+the empirical reference pool. Pool uncertainty is a separate diagnostic;
+proximity to this mean does not establish statistical equivalence.
 
 The subcritical appendix figure (log-density marginal, uniform bins -- a
 genuinely continuous axis) stays in its pre-house form: the approved board
@@ -120,21 +118,22 @@ def magnetisation_pmfs(ref_samples: torch.Tensor, seed_runs: list[dict]) -> dict
 
 
 def reference_tv_floor(ref_samples: torch.Tensor, n_chains: int,
-                       pmf_of: callable, seed: int = 0) -> float:
-    """Sampling floor for a TV read: chain-block bootstrap of the pool
-    against itself (the house table's floor construction). TV between a
-    same-size resample and the pool is what pure sampling noise produces,
-    so a sampler TV at this value is indistinguishable from the reference."""
+                       pmf_of: callable, seed: int = 0, n_draws: int = 5000) -> float:
+    """Mean TV of n_draws iid reference frames against the empirical pool.
+
+    This conditional ideal-draw benchmark excludes uncertainty in the pool
+    itself; whole-chain resampling answers that different question. Retain
+    n_chains for compatibility with existing plot callers, but do not use it
+    to correlate draws. A distance near this mean is not an equivalence test.
+    """
     generator = torch.Generator().manual_seed(seed)
-    n_records = ref_samples.shape[0] // n_chains
-    by_chain = ref_samples.view(n_records, n_chains, -1)  # pooled record-major
     uniform = torch.full((ref_samples.shape[0],), 1.0 / ref_samples.shape[0])
     pool_pmf = pmf_of(ref_samples, uniform)
+    draw_weights = torch.full((n_draws,), 1.0 / n_draws)
     tvs = []
     for _ in range(N_FLOOR_BOOTSTRAP):
-        chains = torch.randint(0, n_chains, (n_chains,), generator=generator)
-        replicate = by_chain[:, chains].reshape(-1, ref_samples.shape[1])
-        tvs.append(marginal_tvd(pmf_of(replicate, uniform), pool_pmf))
+        indices = torch.randint(ref_samples.shape[0], (n_draws,), generator=generator)
+        tvs.append(marginal_tvd(pmf_of(ref_samples[indices], draw_weights), pool_pmf))
     return sum(tvs) / len(tvs)
 
 
