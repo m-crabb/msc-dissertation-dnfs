@@ -1,7 +1,7 @@
 """App I figure: soft-chapter ESS-over-training, house standard (K4).
 
 The appendix kit's training-curve figure for the soft chapter, mirroring
-09_training_curves_unconstrained: in-training evaluation ESS fraction over
+training_curves_unconstrained: in-training evaluation ESS fraction over
 the 50k-step budget at the headline window (10x10, lambda=50, c=0.50),
 four seeds each as the house seed-band grammar. Two families, one role
 (our sampler), so a ``parameter_ramp`` on the sampler hue rather than two
