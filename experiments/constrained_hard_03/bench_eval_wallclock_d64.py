@@ -58,9 +58,8 @@ from experiments.constrained_hard_03.run_gfn import (
 from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 
 
-# Nine arms compile in one process; dynamo's default per-function cache of
-# 8 would silently drop the later ones to eager (s88: the fallback raises
-# nothing) and the bench would time an eager arm against compiled siblings.
+# Nine arms compile in one process; the default per-function cache of 8
+# would silently time later arms in eager mode against compiled siblings.
 torch._dynamo.config.cache_size_limit = 64
 
 

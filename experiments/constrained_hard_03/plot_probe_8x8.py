@@ -215,8 +215,7 @@ def plot_cost_quality(analysis, probe_root, out_path, summary_rows):
     axes[0].set_ylabel(r"cumulative $N_{\rm eff}$(energy)", fontsize=8,
                        color=MUTED)
     axes[0].legend(fontsize=7, frameon=False, loc="upper left")
-    # No suptitle: prints as the hard-chapter probe figure, whose LaTeX
-    # caption carries the description (layout review 2026-08-08).
+    # The report caption supplies the figure description.
     fig.tight_layout()
     fig.savefig(out_path, dpi=180)
     plt.close(fig)

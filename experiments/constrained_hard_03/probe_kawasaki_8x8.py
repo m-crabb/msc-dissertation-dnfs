@@ -208,10 +208,8 @@ def run_chains_parallel(specs: list[ChainSpec], n_workers: int) -> list[dict]:
         return pool.map(run_chain_worker, specs)
 
 
-# ---------------------------------------------------------------------------
-# Observable traces + R-hat (parent process only; torch imported lazily so
-# spawned chain workers never pay the demo_4x4 -> gate_4x4 -> models import)
-# ---------------------------------------------------------------------------
+# Compute traces and R-hat in the parent; lazy Torch imports keep the
+# demo_4x4 -> gate_4x4 -> models dependency out of spawned chain workers.
 
 
 def observable_traces(specs: list[ChainSpec], lattice_side: int,
@@ -268,9 +266,7 @@ def post_discard_moments(traces: dict[str, np.ndarray]) -> dict[str, dict]:
     return moments
 
 
-# ---------------------------------------------------------------------------
-# Stages
-# ---------------------------------------------------------------------------
+# Reference and competitor stages.
 
 
 def chain_dir(out_root: Path, spec_stage: str, point: str, variant: str,
@@ -425,9 +421,8 @@ def run_competitor_point(point: str, args, out_root: Path) -> None:
     for variant, specs in specs_by_variant.items():
         traces = observable_traces(specs, args.lattice_side,
                                    OPERATING_POINTS[point])
-        # Full-trace R-hat: competitors are recorded from step 0 with no
-        # burn-in discard (the analysis stage owns burn-in), so the health
-        # number is computed on exactly what is stored.
+        # Competitor health uses every stored record from step 0; burn-in
+        # is discarded only by the analysis stage.
         rhat_full_trace = rhat_block(traces, discard_first_half=False)
         health_floor_exceeded = [
             name for name, value in rhat_full_trace.items()

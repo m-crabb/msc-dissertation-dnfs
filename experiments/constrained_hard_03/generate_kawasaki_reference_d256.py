@@ -75,11 +75,10 @@ from discrete_flow_sampler.mcmc.kawasaki import (
 from discrete_flow_sampler.targets.ising import (
     SIGMA_C, FixedCompositionIsingTarget)
 
-# DEFAULTS, not fixed sizes. `main` rebinds both from --lattice-side before
-# anything reads them, which is safe only because this module is a CLI entry
-# point: nothing imports its internals (the two analysis modules and two tests
-# that name it do so in comments). If that ever stops being true, thread the
-# size through build_initial_spins / run_one_chain / main instead.
+# `main` sets these defaults from --lattice-side before generating chains.
+# build_initial_spins and run_one_chain read this shared size; imported use
+# at multiple sizes would need explicit size arguments. The tested
+# external_nn_anchor helper already takes its lattice side explicitly.
 LATTICE_SIDE = 16
 N_SITES = LATTICE_SIDE * LATTICE_SIDE          # 256
 DEFAULT_SIGMA = SIGMA_C    # exact sigma_c since the s58 migration; the archived
