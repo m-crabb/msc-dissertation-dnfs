@@ -26,10 +26,8 @@ submit_when_free() {
     result=$(sbatch "$@" 2>&1)
     if echo "$result" | grep -q "Submitted batch job"; then
       echo "$(date -Is) SUBMITTED $label: $result" >&2
-      # DoC sbatch prefixes two "sbatch:" preamble lines; an unanchored
-      # awk prints field 4 of ALL of them, yielding a multi-line "id"
-      # that broke the s102 gate wait (squeue on garbage -> instant
-      # fall-through -> gate declared failed at submit time).
+      # Anchor the job line: DoC's two "sbatch:" preamble lines otherwise
+      # produce a multi-line ID, breaking squeue and falsely failing the gate.
       echo "$result" | awk '/^Submitted batch job/{print $4}'
       return 0
     fi

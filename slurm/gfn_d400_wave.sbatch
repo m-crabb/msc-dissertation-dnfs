@@ -20,15 +20,11 @@
 # seed with evals) x 1.6-1.9 for 400 vs 256 sequential rollout steps:
 # 20-26 h per 100k seed, 10-13 h per 50k -> 40-52 h and 50-65 h.
 #
-# THE GATE RUNS FIRST, INSIDE THE JOB: the cells ship compile_policy=True
-# and inductor kernels are certified per venue AND size, so the d256 gate
-# carries nothing. Running it here costs no submission slot (the 8-job
-# QOS cap is what the wave is packed against); ~15 min on an A30. Its
-# train-step projection is the number to check against --time.
-#
-# Fixed --tag so a resubmission resumes: train_gfn short-circuits a cell
-# whose eval set is complete (eval/ AND eval_ema/) and continues a partial
-# one from resume.pt -- a timeout is a resubmit of the same line.
+# The in-job gate certifies compile_policy=True per venue AND size; d256's
+# gate does not cover d400. It takes ~15 min on an A30 without another slot
+# under the 8-job QOS cap. Check its train-step projection against --time.
+# Fixed tags resume partial cells from resume.pt and skip completed raw+EMA
+# evals; after a timeout, resubmit the same command.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

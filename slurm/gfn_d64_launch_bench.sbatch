@@ -7,13 +7,10 @@
 #SBATCH --time=00:30:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# d64 GFN launch gate + bench (s94): compile numerical parity (eager vs
-# compiled scoring, both objectives) and the cached-rollout wall clock with
-# phase and batch named. MUST PASS on this stack before any gfn_d64_wave
-# job is submitted -- the wave ships compile_policy=True, and inductor
-# kernels are certified per venue, never inherited from the CPU tests.
-# The train-step timing also replaces the design's wall-time guess: read
-# the projected hours from the log before picking the wave's --time.
+# d64 GFN gate: eager/compiled parity for both objectives and cached-rollout
+# timing by phase and batch. Must pass on the launch stack before gfn_d64_wave:
+# compile_policy=True requires venue certification; CPU tests do not certify it.
+# Use the log's train-step projection to choose the wave's --time.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export PYTORCH_ALLOC_CONF=expandable_segments:True

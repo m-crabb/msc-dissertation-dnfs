@@ -1,12 +1,10 @@
 """Certification gate for compiled swap heads (optimisation A1, s60).
 
-The s59 gate passed on LOCAL CPU inductor (record in the profiling review's
-bench-results). Inductor generates different kernels per backend, so the
-same gate must pass ONCE on the training venue's GPU stack before any
-compiled cell ships — this script is that gate, tracked this time (the
-s59 runner was session-local scratch).
+The earlier gate passed on local CPU Inductor (profiling review, bench-results).
+Backend-specific kernels require a separate pass on the training GPU stack
+before compiled cells ship.
 
-Two parts, mirroring the s59 pass:
+Two checks:
 
 1. **Head test file under compilation.** The full two-hole-patch head test
    file runs with every `_head`-factory head compiled in place — the tests
@@ -46,9 +44,7 @@ GRAD_ABSOLUTE_TOLERANCE = 1e-6
 
 
 class _CompileHeadsPlugin:
-    """Wraps the test module's `_head` factory so every head is compiled
-    in place before the tests exercise it (same mechanism as the s59
-    scratch plugin). Hooked after collection so the module is imported."""
+    """Compile each test-factory head after collection imports the test module."""
 
     def pytest_collection_finish(self, session):
         import tests.test_two_hole_patch_swap_head as head_tests

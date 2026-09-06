@@ -7,8 +7,7 @@
 #SBATCH --time=42:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# GFN 16x16 wave (s102): one cell per job, three seeds serial inside it
-# (the gfn_d64_wave pattern):
+# GFN 16x16 wave: one config per job, seeds 42-44 run serially.
 #   sbatch -J gfn-d256-<short> slurm/gfn_d256_wave.sbatch <cfg name>
 #
 # THE FOUR CELLS (house d256 budgets: 50k floor / 100k sigma_c):
@@ -20,14 +19,10 @@
 # armer submits the s010 jobs with --time=24:00:00. Read the launch
 # bench's train-step projection before trusting these further.
 #
-# GATE FIRST: gfn_d256_launch_bench.sbatch must have PASSED on this stack
-# before the first submission -- these cells ship compile_policy=True and
-# inductor kernels differ per size, so the d64 certification carries
-# nothing. slurm/retry_gfn_d256.sh sequences gate-then-wave automatically.
-#
-# Fixed --tag so a resubmission resumes: train_gfn short-circuits a seed
-# whose eval set is complete (eval/ AND eval_ema/) and continues a
-# partial one from resume.pt.
+# Require gfn_d256_launch_bench.sbatch to pass on this stack first:
+# compile_policy=True needs size-specific certification; d64 does not cover it.
+# slurm/retry_gfn_d256.sh sequences the gate and wave.
+# Fixed tags resume partial seeds from resume.pt and skip completed raw+EMA evals.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

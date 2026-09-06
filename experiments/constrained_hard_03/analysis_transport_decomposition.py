@@ -58,12 +58,9 @@ diagnostic is meant to interrogate.  The cost is one (B, d) @ (d, d) product
 per Euler step, which is negligible beside the head call already happening
 there.
 
-REJECTED ALTERNATIVE: accumulating Delta S inside `_euler_step_swap` as a new
-`matching_stats` counter.  That would touch a hot production path shared by
-training and eval to serve a diagnostic, and it would need the adjacency
-threaded into the step function.  `return_all_states=True` already exists and
-gives a strictly more informative result (the full per-step distribution, not
-just sums) for zero production risk.
+`return_all_states=True` provides the full per-step distribution without
+adding a diagnostic counter or threading adjacency through the shared
+training/evaluation `_euler_step_swap` path.
 
 FAILURE MODE GUARDED: `return_all_states=True` is mutually exclusive with
 `return_log_weights=True` (the trajectory mode deliberately withholds

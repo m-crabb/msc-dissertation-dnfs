@@ -21,13 +21,9 @@
 # QOS admits 8 queued: submit the four centres + first star arms, feed the
 # rest as slots free (or chain with --dependency=singleton per name).
 #
-# GATE FIRST: gfn_d64_launch_bench.sbatch must have PASSED on this stack
-# before the first submission -- these cells ship compile_policy=True.
-#
-# Fixed --tag so a resubmission resumes: train_gfn short-circuits a seed
-# whose eval set is complete (eval/ AND eval_ema/ -- the dual-eval
-# instrument) and continues a partial one from resume.pt (EMA shadow and
-# its warmup counter ride the checkpoint).
+# Require gfn_d64_launch_bench.sbatch to pass on this stack before submitting
+# these compile_policy=True cells. Fixed tags skip completed raw+EMA evals
+# and resume partial seeds from resume.pt, including EMA shadow/warmup state.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline
@@ -36,8 +32,7 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
 CFG=${1:?usage: sbatch gfn_d64_wave.sbatch <cfg name> [tag]}
-# Default = the s94 wave tag; later arms (e.g. the s100 flr pair) pass
-# their own so a resubmission resumes against the right dirs.
+# Later campaigns pass their own tag to resume the correct run directories.
 TAG=${2:-20260830-gfn-d64}
 
 cd "$REPO"

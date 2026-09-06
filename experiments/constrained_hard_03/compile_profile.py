@@ -1,12 +1,9 @@
 """Post-compile profile of the production swap stack (s60 follow-up).
 
-The optimisation board left A2 (einsum readout), A3 (level-loop collapse),
-A4 (rank-one zeroed patch) and A8 (scatter alternatives) gated on one
-question: do their regions still show in a profile taken AFTER the head is
-compiled? This script answers it — four region-scoped profiles of the
-compiled thp2 record cell at production shapes on the profiling venue
-(Modal A100; same-container discipline), whose tables a research agent
-then compares against the board's candidate list.
+Profile the compiled thp2 record cell at production shapes on one Modal
+A100 container before revisiting A2 (einsum readout), A3 (level-loop collapse),
+A4 (rank-one zeroed patch) and A8 (scatter alternatives). The four regions
+below show which costs remain after compilation.
 
 Regions (each warmed up past compilation before profiling):
   1. head forward, no-grad, B = inner microbatch — the A2/A3/A4 territory.

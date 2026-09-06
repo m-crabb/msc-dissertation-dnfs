@@ -199,17 +199,10 @@ def main(argv: list[str] | None = None):
     with torch.no_grad():
         derived = derived_flops(cfg, head, target, device, cfg.train.n_steps)
 
-    # The amortisation currency: how many frozen-eval draws one training run
-    # costs. This is the number the discussion chapter's "one run serves many
-    # targets" defence has to clear -- and it is the ratio the zero-shot
-    # transfer probe is trying to earn, since every extra target a single
-    # checkpoint serves divides this number.
-    #
-    # Priced off the SAME measured forward reading as the training leg, at the
-    # same batch, rather than via a per-sample figure: the counter's number is
-    # not linear in batch (per-call fixed work does not scale with rows), so
-    # dividing it by batch_size to get a per-sample price would misstate both
-    # sides in different directions.
+    # Price training in frozen-eval draw sets: each additional target served
+    # by one checkpoint amortises this cost. Use the same measured forward
+    # at the same batch as the training leg; per-call fixed work means the
+    # counter is not linear in batch, so a per-sample price would misstate it.
     one_eval_draw_set = derived["sampling_flops_per_eval_draw_set"]
 
     # Three-way split (decided 2026-08-31, after the d64 certification

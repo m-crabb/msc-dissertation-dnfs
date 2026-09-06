@@ -1,20 +1,13 @@
 """D=4 go/no-go gate for the composition-amortisation campaign.
 
-THE QUESTION, and only this: does ONE head trained on the slice mixture
-(`H2_d16_camort_s220_letf_thp_10k`, grid n+ = 8/7/6/5) serve EVERY slice in
-its grid — healthy per-slice IS-ESS, energy marginal at the exactly
-enumerated conditional — at the size where exactness is checkable? This is
-the validate-at-D=4-before-GPU rule applied to the d64 launch
+Validate `H2_d16_camort_s220_letf_thp_10k` on every trained slice
+(n+ = 8/7/6/5) against exact enumeration before the d64 GPU launch
 (docs/plans/2026-08-31-hard-camort-8x8.md, Task 3).
 
-WHY PER-SLICE EVAL IS THE ONLY HONEST READ. The in-training eval draws from
-the mixture, so its ESS mixes slices and its composition observables spread
-by construction — it can look healthy while one slice is dead, or sick
-while every slice is fine. The gate therefore rebuilds the SINGLE-SLICE
-target at each grid composition and scores the trained head against that
-slice's own enumerated conditional, exactly as the zero-shot probe scores
-transfer — which is also what makes this gate's table directly comparable
-to the probe's null rows.
+Mixture-eval ESS can hide a failed slice, and composition spread is expected
+under the mixture. Rebuild the single-slice target at each grid composition
+and score against its own enumerated conditional, as in the zero-shot
+probe's null rows.
 
 PRE-REGISTERED BARS (before the gate run was judged):
   * energy-marginal TV <= 0.02 on every slice — the house 4x4 gate bar;

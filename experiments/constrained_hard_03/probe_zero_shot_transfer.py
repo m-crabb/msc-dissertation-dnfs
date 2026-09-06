@@ -1,10 +1,7 @@
 """Zero-shot transfer probe: what a trained swap sampler delivers OFF its
 training target, with no retraining and no architectural change.
 
-Motivation. The cost argument in the discussion chapter leans on amortisation
-across targets, and that has been promised rather than delivered. Before
-spending anything on amortised TRAINING, this probe asks how much amortisation
-the existing checkpoints already carry, along two axes.
+Measures transfer across coupling and composition from existing checkpoints.
 
 -------------------------------------------------------------------------------
 Axis 1: coupling (temperature), by early stopping. No retraining, no new base.
@@ -98,12 +95,10 @@ def running_log_weights(head, target, x0, ts, *, multi_event: bool = False):
     aligned so that `running[k]` is the correct importance log-weight for the
     ensemble `trajectory[k]` against the target p~_{ts[k]}.
 
-    The alignment is the part worth stating, because an off-by-one here shifts
-    every reported coupling and would still look plausible: `cv_integrand[k]` is
-    xi_t evaluated at (trajectory[k], ts[k]) — the LEFT endpoint of step k — so
-    the weight carried by trajectory[k] is the sum of increments 0..k-1, and
-    running[0] is identically zero (at t=0 the ensemble is the base and the
-    weight integral is empty).
+    An off-by-one shifts every reported coupling: `cv_integrand[k]` is xi_t
+    at (trajectory[k], ts[k]), the LEFT endpoint of step k. The weight at
+    trajectory[k] sums increments 0..k-1; running[0] = 0 because the t=0
+    ensemble is the base and the weight integral is empty.
     """
     with torch.no_grad():
         trajectory, cv_integrand = sample_swap_ctmc(

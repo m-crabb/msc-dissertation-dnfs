@@ -31,8 +31,8 @@ Why each metric (examiner-facing rationale):
   heads (so ~0) but broken for a non-antisymmetric head (so the reverse rate,
   hence the IS weight, is biased). It validates that antisymmetry is NECESSARY.
 
-Local runs are forbidden to instantiate the backbone; the controller runs the
-real gate. CLI: mirror run.py. All sampling/eval under torch.no_grad().
+Run through the local CLI or Modal gate wrapper. Sampling/evaluation uses
+torch.no_grad().
 """
 import argparse
 import csv

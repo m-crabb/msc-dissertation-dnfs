@@ -398,13 +398,9 @@ def _run_gfn_bench(args, device: torch.device) -> None:
     side = int(round(args.d ** 0.5))
     if side * side != args.d:
         raise ValueError(f"--d must be a square lattice site count, got {args.d}")
-    # Prefer a SIZE-NATIVE registered parity cell: parity is measured
-    # params PER RUNG, so if a 16x16 GFN arm is ever registered at its own
-    # capacity, this bench re-points to it automatically and the
-    # cost-ladder row re-benches at the architecture that actually runs.
-    # Until then, sizes without a cell price the d64 `_par` recipe
-    # re-realised at that lattice — the same convention the head rows use
-    # for sizes no cell was trained at — and say so in the output line.
+    # Prefer the size-native parity cell; otherwise re-realise the d64
+    # `_par` recipe at this lattice and report the fallback. Capacity is
+    # measured per rung, so adding a native cell changes the benchmark.
     native = [
         name for name in GFN_CONFIGS
         if name.startswith(f"GFN_d{args.d}_c50_s220_{args.gfn_objective}_")
@@ -585,17 +581,10 @@ def main(argv=None):
         separable_band_scores=args.separable_band_scores,
     )
     if args.tf32:
-        # THE CORRECTNESS GATE, reported rather than assumed. TF32 is a
-        # GLOBAL matmul setting, so it reaches the target's `h = x @ A` --
-        # the closed-form Kawasaki field sum behind the swap log-ratio, and
-        # so behind every importance weight. The argument that this is safe
-        # is that both operands are tiny exactly-representable integers (x
-        # is +-1, A is the 0/1 torus adjacency counted twice per edge) and
-        # A100 TF32 accumulates in fp32, so the rounding TF32 applies to its
-        # inputs has nothing to round. That is a claim about one operator,
-        # and a claim is worth what its check is worth, so print the
-        # residual. A nonzero value here means TF32 moves the weights and
-        # the flag is an ESTIMATOR change, not a speed lever.
+        # TF32 also affects the target field h = x @ A and importance weights.
+        # Inputs are exactly representable integers (x is +/-1; A is the
+        # 0/1 torus adjacency counted twice per edge), and A100 accumulates
+        # in fp32. Check the residual: a nonzero value changes the estimator.
         probe = target.sample_base(min(args.batch, 64), device=device).float()
         adjacency = target.A.float()
         torch.set_float32_matmul_precision("high")

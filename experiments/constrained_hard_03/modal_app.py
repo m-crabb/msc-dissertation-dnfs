@@ -400,14 +400,11 @@ def eval_remote(
 def transport_decomposition_remote(run_dir_name: str, n_samples: int = 0):
     """Split a run's bond-correlation transport into gross vs net.
 
-    The eval reports only the NET endpoint gap closed, which cannot tell a
-    sampler whose swaps are individually small (a TARGETING limit, fixed in
-    the architecture) from one whose swaps are large but undo each other (a
-    CANCELLATION limit, fixed in the rate field). This draws trajectories with
-    `return_all_states=True` and accumulates both, writing
-    transport_decomposition.json beside the run. It never touches eval/: the
-    trajectory mode withholds importance weights by construction, so this
-    draw is a diagnostic and is not an eval."""
+    Separate small swap effects (targeting) from effects that undo each other
+    (cancellation); see analysis_transport_decomposition.py for the method.
+    `return_all_states=True` withholds importance weights, so this diagnostic
+    writes transport_decomposition.json beside the run and leaves eval/ intact.
+    """
     import json
     import sys
     from pathlib import Path
@@ -561,13 +558,12 @@ def bench_cell(argv: str = ""):
 @app.function(gpu="A100-80GB", volumes={"/results": volume}, timeout=2 * 60 * 60)
 def training_flops_remote(argv: str = ""):
     """Run the training-FLOP measurement harness (measure_training_flops)
-    on the production GPU. `argv` is its space-separated CLI string, e.g.
+    on A100-80GB, matching d256 training (bare "A100" selects 40 GB).
+    `argv` is a space-separated CLI string, e.g.
     "--cfg H2_d256_... --out /results/training_flops_d256_thp2.json".
-    Point --out inside /results so the payload survives the container;
-    --scratch stays container-local on purpose (the per-horizon run dirs
-    are measurement scaffolding, wiped between horizons, and must never
-    shadow real run dirs on the volume). A100-80GB matches the venue the
-    d256 cells trained on (Modal's bare "A100" is the 40 GB variant)."""
+    Keep --out in /results for persistence and --scratch container-local:
+    scratch run dirs are wiped between horizons and must not shadow real runs.
+    """
     import sys
 
     sys.path.insert(0, PROJECT_DIR)
@@ -623,10 +619,9 @@ def resolution_sweep_remote(argv: str = ""):
 )
 def zero_shot_transfer_remote(argv: str = ""):
     """Zero-shot coupling/composition transfer probe against a checkpoint
-    already staged on the volume. Sampling only -- no optimiser, no gradients,
-    no new weights -- so it is cheap enough to run before committing to any
-    amortised training design. `argv` is the space-separated CLI string; see
-    `probe_zero_shot_transfer` for the two derivations and the grid rationale."""
+    staged on the volume. Samples without gradients, optimisation or new
+    weights. `argv` is the space-separated CLI string; see
+    `probe_zero_shot_transfer` for derivations and the grid rationale."""
     import sys
 
     sys.path.insert(0, "/repo")
@@ -728,11 +723,9 @@ def gate(
 @app.function(gpu="A100-80GB", volumes={"/results": volume}, timeout=60 * 60)
 def residue_probe_remote(run_dirs: str, n_states: int = 256):
     """Forward-only compile-vs-eager residue probe on trained checkpoints
-    already on the volume (s70 HOLD mechanism leg; method and instruments
-    in compile_residue_probe.py). A100-80GB deliberately: the question is
-    whether TRAINING-VENUE inductor numerics enlarge the factorised head's
-    cancellation residue, so the probe must run on the training GPU class —
-    a CPU or L4 read answers a different question."""
+    on the volume; method in compile_residue_probe.py. Use the training
+    A100-80GB class to measure Inductor's effect on cancellation residue;
+    CPU or L4 results answer a different venue question."""
     import sys
 
     sys.path.insert(0, "/repo")
@@ -756,10 +749,8 @@ def residue_probe(run_dirs: str, n_states: int = 256):
 
 @app.function(gpu="A100-80GB", timeout=45 * 60)
 def compile_gate_remote():
-    """GPU-stack compile certification gate (A1, s60): the s59 CPU-passed
-    gate re-run once on the training venue's stack, because inductor
-    generates different kernels per backend. Raises on failure so the
-    calling entrypoint fails loudly."""
+    """Run the CPU-passed compile gate on the training GPU stack: Inductor
+    generates different kernels per backend. Raise on a failed gate."""
     from experiments.constrained_hard_03.compile_gate import main as gate_main
 
     if gate_main() != 0:

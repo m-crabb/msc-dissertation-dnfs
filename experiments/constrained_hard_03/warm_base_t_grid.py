@@ -23,11 +23,6 @@ measurement, and exactly where three other hazards also live (the closed-form
 swap_log_ratio break is worst at t->0, the epsilon-floor stresses the clamp at
 t->0, and the extra |Dlog eta| range peaks at t->0).
 
-If the front-loading is severe the warm base could be HARDER to fit over the
-part of the path that matters, while still passing every t = 1 gate.  That is
-the failure mode this probe is built to catch, before any code or GPU-hour is
-spent.
-
 MEASURED ANSWER (d256, this script): the warm base sits below the uniform
 base at EVERY t, so the design is not overturned -- but the ratio runs from
 0.70x at t = 0 to 0.24x at t = 1, path-averaged 0.49x.  The two curves peak

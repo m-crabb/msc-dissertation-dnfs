@@ -181,11 +181,8 @@ class BlockOccupancyBase:
     def _prepare_weights(self, weights: np.ndarray) -> np.ndarray:
         """Z2-symmetrise w(m) = w(s - m), normalise, then floor.
 
-        Order matters: symmetrise-then-floor keeps the floored weight exactly
-        Z2-symmetric (the floor is itself flat, hence symmetric).  Flooring
-        first and symmetrising after would give the same answer here but not
-        for a non-flat floor, so the symmetry is imposed on the object that
-        carries the asymmetry.
+        The flat floor preserves Z2 symmetry; a non-flat floor would make the
+        order of symmetrisation and flooring matter.
         """
         w = np.asarray(weights, dtype=np.float64).copy()
         if w.shape != (self.tile_sites + 1,):

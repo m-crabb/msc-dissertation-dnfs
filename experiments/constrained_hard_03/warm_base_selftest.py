@@ -54,9 +54,7 @@ def translate(spins: np.ndarray, lattice_side: int, dr: int, dc: int) -> np.ndar
     return np.roll(np.roll(grid, dr, axis=1), dc, axis=2).reshape(spins.shape)
 
 
-# --------------------------------------------------------------------------
 # 0. adjacency agrees with the library's
-# --------------------------------------------------------------------------
 try:
     import torch
 
@@ -70,9 +68,7 @@ try:
 except Exception as exc:                                     # pragma: no cover
     check("adjacency matches ising.py", False, f"could not import: {exc}")
 
-# --------------------------------------------------------------------------
 # 1. exact normalisation on the slice at D = 4
-# --------------------------------------------------------------------------
 SIDE, N_UP = 4, 8
 states = all_slice_states(SIDE, N_UP)
 n_states = states.shape[0]
@@ -99,9 +95,7 @@ for block_side, n_offsets in ((2, 1), (2, 4), (4, 16)):
           np.isfinite(base.log_density(states)).all(),
           f"min log_eta = {base.log_density(states).min():.3f}")
 
-# --------------------------------------------------------------------------
 # 2. sampler matches the density (chi-square) at D = 4
-# --------------------------------------------------------------------------
 state_key = {tuple(s.tolist()): i for i, s in enumerate(states)}
 for block_side, n_offsets in ((2, 1), (2, 4)):
     base = BlockOccupancyBase.fit(fit_pop, SIDE, block_side, n_offsets=n_offsets)
@@ -132,9 +126,7 @@ for block_side, n_offsets in ((2, 1), (2, 4)):
           pvalue > 0.001,
           f"chi2 = {stat:.1f} on {len(obs_bins) - 1} bins-1 dof, p = {pvalue:.3f}")
 
-# --------------------------------------------------------------------------
 # 3. Z2 and translation symmetry
-# --------------------------------------------------------------------------
 for block_side, n_offsets in ((2, 1), (2, 4), (4, 16)):
     base = BlockOccupancyBase.fit(fit_pop, SIDE, block_side, n_offsets=n_offsets)
     lp = base.log_density(states)
@@ -151,9 +143,7 @@ for block_side, n_offsets in ((2, 1), (2, 4), (4, 16)):
           shifted_ok == expect,
           f"max |diff| = {np.abs(lp - lp_shift).max():.2e}")
 
-# --------------------------------------------------------------------------
 # 4. degenerate tiling b = D reduces to uniform on the slice
-# --------------------------------------------------------------------------
 base_full = BlockOccupancyBase.fit(fit_pop, SIDE, SIDE, n_offsets=1)
 uniform = UniformSliceBase(SIDE, N_UP)
 check("b = D collapses to uniform on the slice",
@@ -161,18 +151,14 @@ check("b = D collapses to uniform on the slice",
       f"log_eta = {base_full.log_density(states)[0]:.6f} vs "
       f"-log C(16,8) = {-uniform.log_normaliser:.6f}")
 
-# --------------------------------------------------------------------------
 # 5. the uniform base's exact nn-correlation -1/(d-1)
-# --------------------------------------------------------------------------
 draws = uniform.sample(200_000, np.random.default_rng(7))
 emp = nn_correlation(draws, A4).mean()
 check("uniform-slice nn-correlation == -1/(d-1)",
       abs(emp - uniform.exact_nn_correlation()) < 4e-3,
       f"empirical {emp:+.5f} vs exact {uniform.exact_nn_correlation():+.5f}")
 
-# --------------------------------------------------------------------------
 # 6. DP normaliser against brute force at a size where brute force is possible
-# --------------------------------------------------------------------------
 base = BlockOccupancyBase.fit(fit_pop, SIDE, 2, n_offsets=4)
 s, B, N = base.tile_sites, base.n_tiles, base.n_up
 brute = logsumexp([
@@ -183,9 +169,7 @@ check("DP log Z_w == brute-force enumeration",
       abs(brute - base.log_normaliser) < 1e-10,
       f"DP {base.log_normaliser:.10f} vs brute {brute:.10f}")
 
-# --------------------------------------------------------------------------
 # 7. sampled composition is exactly on the slice at production sizes
-# --------------------------------------------------------------------------
 for side, n_up, block_side, n_offsets in ((8, 32, 2, 4), (16, 128, 2, 4), (16, 128, 4, 16)):
     d = side * side
     pop = UniformSliceBase(side, n_up).sample(2000, np.random.default_rng(1))
@@ -195,12 +179,10 @@ for side, n_up, block_side, n_offsets in ((8, 32, 2, 4), (16, 128, 2, 4), (16, 1
           bool(((dr > 0).sum(axis=1) == n_up).all()) and set(np.unique(dr)) == {-1, 1},
           f"n_up unique = {np.unique((dr > 0).sum(axis=1))}")
 
-# --------------------------------------------------------------------------
 # 8. Delta c = c_1 - c_0 = int_0^1 Var_{p_t}[D] dt, and the Monte-Carlo
 #    estimator used by warm_base_offline_table.py, both against exact enumeration.
 #    This is the check that decides which Delta c column is right: the full
 #    (3.3) definition or an energy-only surrogate.
-# --------------------------------------------------------------------------
 base = BlockOccupancyBase.fit(fit_pop, SIDE, 2, n_offsets=4)
 log_rho = SIGMA_SELFTEST * (states.astype(np.float64) @ A4 * states).sum(axis=1)
 log_eta = base.log_density(states)
@@ -246,7 +228,6 @@ check("energy-only surrogate OVERSTATES Delta c for a warm base",
       f"energy-only {energy_only:.4f} vs true {c1 - c0:.4f} "
       f"(base-entropy term {energy_only - mc_delta_c:.4f})")
 
-# --------------------------------------------------------------------------
 print()
 for status, name, detail in results:
     print(f"[{status}] {name:<62s}  {detail}")
