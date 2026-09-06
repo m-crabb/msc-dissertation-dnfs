@@ -7,6 +7,8 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
+# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+#
 # 8x8 sigma_c: the PERIODIC-RoPE BACKBONE under the masked-attention head,
 # three seeds run SEQUENTIALLY on one borrowed B200 (2026-08-28).
 #
@@ -49,25 +51,21 @@
 # 0.9863 there against `ma`'s 0.9845) and cannot discriminate, so the three
 # seeds all go to the coupling that does.
 #
-# ETIQUETTE. Borrowed capacity, spillover only: one GPU, dnfs-* name,
-# bounded walltime. Idle check passed on BOTH required counts before
-# submission (2026-08-28): GPUs 4-7 physically empty at 0 MiB / 0% against
-# the owner's four at ~173 GB, Slurm holding gres/gpu:4 for job 2342, and NO
-# pending jobs -- so taking one of four free GPUs delays nobody.
+# Borrowed-node rules: spillover only, one GPU, dnfs-* name, bounded walltime.
+# Historical idle check (2026-08-28): GPUs 4-7 at 0 MiB / 0%, owner's four
+# at ~173 GB, Slurm gres/gpu:4 for job 2342, no pending jobs. Recheck physical
+# occupancy, Slurm allocation and owner pending jobs before submission.
 #
 # Results written here are NOT synced back automatically; `results/` is
 # excluded from the rsync in both directions.
 export WANDB_MODE=offline
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PIXI_CACHE_DIR=$HOME/.pixi-cache
-# BLACKWELL COMPILE FIX. Triton resolves a SEPARATE assembler for sm_100
-# (`ptxas-blackwell`, chosen whenever arch >= 100) and the locked env ships
-# only plain `ptxas`, so torch.compile raises `InductorError: Cannot find
-# ptxas-blackwell` and the run dies inside the step-0 rate diagnostic. mars
-# carries a CUDA 13.1 ptxas that supports sm_100. Mandatory here: the cell
-# inherits compile_head=True from its parent, and compiling the head compiles
-# the backbone forward with it -- the first time RoPEViTRateMatrix has ever
-# been through Inductor.
+# Use mars CUDA 13.1 ptxas for Blackwell: Triton selects ptxas-blackwell for
+# arch >= 100, absent from the locked env. Without it, torch.compile fails
+# the step-0 diagnostic with `InductorError: Cannot find ptxas-blackwell`.
+# Inherited compile_head=True also compiles the backbone forward; this was
+# RoPEViTRateMatrix's first Inductor run.
 export TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda-13.1/bin/ptxas
 
 REPO=$HOME/msc-dissertation-dnfs

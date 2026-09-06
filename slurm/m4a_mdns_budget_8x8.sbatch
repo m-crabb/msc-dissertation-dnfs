@@ -7,15 +7,14 @@
 #SBATCH --time=8:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# PREPARED, NOT LAUNCHED — release is the user's call, and all 8 submit
-# slots were in use when this was written.
+# Preparation status: unlaunched; all 8 submit slots were occupied.
+# Release required the user's approval.
 #
 # M4a (M-campaign Task 4a): the budget-masked MDNS smoke at 8x8, asking
 # the one question no swap-CTMC cell can answer — is the d256 wall
 # CTMC-specific or target-intrinsic? The constructive family has no
 # pair-rate field, no c_t, no Euler error, and structural feasibility, so
 # the entire W3 complex that starves d256 simply does not exist here.
-# Publishable either way.
 #
 # WHY THIS RECIPE. Gate-3 settled the ingredients at the enumerable size
 # and this cell changes ONE thing, the lattice:
@@ -54,8 +53,7 @@
 #   scaling story to the constructive family. The swap chapter's claims
 #   are unaffected either way; they are frozen-band results.
 #
-# TWO OPEN CHOICES, deliberately left at their minimal-change values and
-# recorded here rather than buried:
+# OPEN CHOICES (retained defaults):
 #   1. hidden_width stays at the module default 128. The trunk width is
 #      therefore UNCHANGED from 4x4; only the size-forced input (3d) and
 #      output (d) layers grow, ~25k -> ~49k params. The 4x4 width was

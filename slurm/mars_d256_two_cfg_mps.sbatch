@@ -7,16 +7,15 @@
 #SBATCH --time=1-06:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# mars-node (B200 183GB) variant of mars_d256_recipe_mps.sbatch: runs TWO
-# DIFFERENT cells at ONE seed on the single allocated GPU under user-level
-# MPS, where the parent script runs one cell at two seeds. Same rationale
-# (each d256 b512 run peaks <=80GB, proven on the DoC A100-80GB, so two fit
-# in 183GB; without MPS two CUDA contexts merely time-slice) and the same
-# etiquette envelope: one GPU, dnfs-* name, bounded walltime. 30h covers a
-# fully-serialised degraded co-run (B200 single-seed measured ~9-12h at 50k
-# steps for the ne512 shape; the ne128 arm carries a quarter of that
-# rollout). wall_clock_step_s from a co-run is contention-contaminated:
-# never quote timings from these runs, only the verdict bands.
+# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+#
+# B200 183GB variant of mars_d256_recipe_mps.sbatch: two configs, one seed.
+# Each d256 b512 run peaks <=80GB on DoC A100-80GB; MPS co-schedules kernels
+# otherwise time-sliced by separate CUDA contexts. B200 measured ~9-12h
+# per ne512 seed at 50k steps; ne128 has a quarter of that rollout and 30h
+# allows a serialised pair. Borrowed-node rules: one GPU, dnfs-* name,
+# bounded walltime. Co-run wall_clock_step_s includes contention: quote
+# verdict bands only, never timings.
 export WANDB_MODE=offline
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 

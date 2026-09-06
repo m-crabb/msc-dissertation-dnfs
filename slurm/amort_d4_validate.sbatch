@@ -15,25 +15,20 @@
 # the c=0.30 and c=0.50 sweep rows compare directly against the four-seed
 # specialist record on disk before any D=10 compute is committed.
 #
-# One array task per seed, matching the comparator's seed set 42-45 (the
-# per-user cap is 3 GPUs, so the fourth task queues behind the first three).
+# Array seeds 42-45 match the comparator; the 3-GPU user cap queues task four.
 #
-# sbatch does not load ~/.bashrc, so pixi is addressed by absolute path.
-# --frozen: activate the already-installed locked env, never re-solve.
+# Absolute pixi path: sbatch omits ~/.bashrc; --frozen uses the locked env.
 export CONDA_OVERRIDE_CUDA=12.9
-# Keep pixi's package cache off the small /homes quota; on gpudata (fast NFS).
+# Keep the package cache on gpudata (fast NFS), off the small /homes quota.
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
-# Offline is the credential-free path that is known to work here: the job
-# still exercises the real wandb code path, and `wandb sync` can upload later.
+# Offline W&B works without credentials; upload later with `wandb sync`.
 export WANDB_MODE=offline
 
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
 RESULTS=results/02_constrained_soft
-# The cell is a positional argument, not an --export: passing it through the
-# environment made this cluster's controller fail user-env retrieval and hold
-# the whole array ("requeued held", 2026-08-01). Slurm hands trailing sbatch
-# arguments to the script as $1, which needs no environment propagation.
+# Positional $1 avoids --export's user-env retrieval failure on this controller
+# (whole array "requeued held", 2026-08-01).
 #   sbatch slurm/amort_d4_validate.sbatch S2_d4_camort_w15_l50_letf
 CFG=${1:-S2_d4_camort_l50_letf}
 
@@ -44,9 +39,7 @@ cd "$REPO"
 echo "node=$(hostname) cfg=$CFG seed=$SEED"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-# The run dir carries a timestamp, so the sweep resolves it by recency —
-# which means a failed training run must exit here rather than let the sweep
-# silently pick up some older run dir and report it as this seed's result.
+# Exit on training failure: recency lookup could otherwise sweep an older run.
 if ! "$PIXI" run --frozen -e cuda python -m experiments.constrained_soft_02.run \
         --cfg "$CFG" --seed "$SEED"; then
     echo "training failed for seed $SEED; skipping sweep"

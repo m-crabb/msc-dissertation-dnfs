@@ -7,20 +7,16 @@
 #SBATCH --time=2-06:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# 16x16 ladder RESCUE on the DoC a100s (2026-08-31): mars was withdrawn
-# mid-wave, so the 17 partial cells of tag 20260830-rasterord-d256 finish
-# here from their staged resume.pt checkpoints. Spec-driven, one cell at a
-# time on the card:
+# 16x16 ladder rescue on DoC A100 (2026-08-31): finish the 17 partial cells
+# of tag 20260830-rasterord-d256 from staged resume.pt after mars withdrawal.
+# One CFG:SEED at a time:
 #
 #     sbatch -J <name> [--time=...] slurm/rasterord_d256_a100_resume.sbatch \
 #         <CFG:SEED> [<CFG:SEED> ...]
 #
-# WHY CFG:SEED SPECS AND NOT THE FLOOR SCRIPT'S SEED LOOP. Only the partial
-# run dirs are staged on this cluster (quota discipline); the 16 finished
-# cells live on the Mac. run.py's short-circuit reads eval/metrics.json in
-# the LOCAL run dir, so looping seeds 42/43/44 here would find no dir for a
-# finished seed and silently retrain it from scratch. Naming each (cfg,
-# seed) pair explicitly makes that failure unbuildable.
+# Stage only partial run dirs to respect quota; the 16 finished cells live
+# on the Mac. run.py skips only LOCAL eval/metrics.json: a 42/43/44 loop
+# would retrain unstaged completed seeds. Supply only the staged pairs.
 #
 # SAME-VENUE CAVEAT FOR JUDGING: these cells trained partly on a B200 under
 # MPS and finish on an A100. Quality reads (ESS, weight variance) carry;
@@ -28,7 +24,7 @@
 # packs they resume from. Cross-hardware frozen-eval drift is ~1%
 # (A30-vs-A100 measurement, 2026-07-24) — quote-as-drift if it ever shows.
 #
-# Fixed --tag: a wall kill is recoverable, a requeue resumes from resume.pt.
+# Fixed --tag reuses the run directory and any resume.pt after a wall kill.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

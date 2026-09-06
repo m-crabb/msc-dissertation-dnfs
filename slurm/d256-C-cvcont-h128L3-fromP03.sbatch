@@ -21,9 +21,7 @@
 # changes the shape of every weight matrix, so it needs an h128L3 parent,
 # which is exactly what P and P_lr03 are.
 #
-# Fixed --tag so a resubmission resumes into the same run dir; resume.pt
-# takes precedence over --init-from by design, which is the desired restart
-# semantics if this job hits its walltime.
+# Fixed --tag reuses the run directory; resume.pt overrides --init-from.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

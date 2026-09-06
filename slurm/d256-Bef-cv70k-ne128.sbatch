@@ -10,9 +10,7 @@
 # Exact-field twin of arm B (2026-08-23, s55, user GO; DoC pinned by user).
 # cell comment (configs.py) BEFORE this launch; one-variable relationships
 # pinned by test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators.
-# Fixed --tag so a resubmission resumes into the same run dir; resume.pt
-# takes precedence over --init-from by design, which is the desired restart
-# semantics if this job hits its walltime.
+# Fixed --tag reuses the run directory; resume.pt overrides --init-from.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

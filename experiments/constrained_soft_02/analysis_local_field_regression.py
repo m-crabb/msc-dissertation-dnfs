@@ -70,11 +70,9 @@ SEEDS = (42, 43, 44, 45)
 def load_run(run_dir):
     """Rebuild (model, target) from config.json + checkpoints/final.pt.
 
-    Delegates to the baseline trainer's own builders so this instrument can
-    never drift from the training stack in how the model is instantiated —
-    the same contract as the hard gate's load_run. Specialists only: a
-    conditioned (amortised) model would need a composition bound at every
-    forward, and that campaign is closed.
+    Use the baseline trainer's builders, as the hard gate does. Specialists
+    only: amortised models require composition at every forward; that
+    campaign is closed.
     """
     from experiments.dnfs_baseline_01.run import (
         _build_model, _rebuild_from_run_dir)

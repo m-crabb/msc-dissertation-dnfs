@@ -87,25 +87,12 @@ N_PLUS = 8
 
 
 def configure_lattice(lattice_side):
-    """Rebind the lattice size for the whole module (M4a, 2026-08-14).
+    """Rebind the CLI lattice globals at call time (M4a, 2026-08-14).
 
-    Why a rebind rather than threaded parameters: every size use below
-    except three now-removed def-time defaults reads these globals at CALL
-    time, so one assignment reconfigures the driver, and the alternative —
-    threading a spec through `build_space`/`run_slate`/`train_arm`/
-    `evaluate_arm`/`conditional_kl_and_late_error` — is ~200 lines of
-    signature churn in a script whose configuration these globals already
-    are. The library underneath (`samplers/budget_masked.py`) is properly
-    parameterised and pinned; this file is the CLI around it.
-
-    The hazard the rebind creates is a stale default captured at import,
-    which is exactly why `n_plus_target` no longer defaults to `N_PLUS`
-    anywhere: after `configure_lattice(8)` such a default would silently
-    keep filling the 4x4 fibre. `tests/test_mdns_gate_driver.py` pins the
-    4x4 numbers against this refactor.
-
-    Half-filling is the fibre convention throughout the hard arc
-    (target_composition 0.5), so N_PLUS follows the site count.
+    Keep n_plus_target explicit: a definition-time N_PLUS default would
+    retain the 4x4 fibre after configure_lattice(8). Half-filling sets
+    N_PLUS = N_SITES // 2; the library remains parameterised.
+    tests/test_mdns_gate_driver.py pins the original 4x4 numbers.
     """
     global LATTICE_SIDE, N_SITES, N_PLUS
     if lattice_side < 2 or lattice_side % 2:
@@ -332,10 +319,8 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
         "free_energy_bias": free_energy_model - free_energy_ref,
     }
     if slice_states is not None:
-        # Within-level uniformity needs the enumerated slice as its
-        # reference population; there is no chain substitute (it asks
-        # whether mass is uniform WITHIN an energy level, which the
-        # chains only sample, never enumerate). Omitted, not faked.
+        # Within-level uniformity requires the enumerated slice population;
+        # sampled chains cannot supply that reference.
         slice_energies = _energy(slice_states.float(), adjacency_cpu)
         sample_energies = _energy(terminals, adjacency_cpu)
         levels = within_level_uniformity(
@@ -373,9 +358,7 @@ def plateau_step(train_ess_series):
     return None
 
 
-# Moved to the library (2026-08-13) so the swap-CTMC trainer can carry the
-# same instrument; re-exported here because this module's CLI grew it first
-# and tests/tools import it from this path.
+# Shared with the swap-CTMC trainer; retain this re-export for tests/tools.
 from discrete_flow_sampler.ema import ExponentialMovingAverage  # noqa: E402
 
 
@@ -674,11 +657,8 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 exact_log_z=space["exact_log_z"],
                 free_energy_ref=space["free_energy_ref"],
             )
-            # Instrument, not a choice: when EMA is active the headline
-            # eval follows the paper's protocol (EMA parameters), and the
-            # raw-parameter eval is RECORDED alongside — at 2,000 steps a
-            # 0.9999 shadow still holds ~82% of init, and pre-registering
-            # both readings beats discovering that after results.
+            # Paper protocol: headline EMA eval plus preregistered raw eval.
+            # At 2,000 steps a 0.9999 shadow still holds ~82% of init.
             raw_param_eval = None
             if ema is not None:
                 ema.swap_out()

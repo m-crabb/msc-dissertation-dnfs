@@ -38,9 +38,7 @@ cd "$REPO"
 echo "node=$(hostname) cfg=$CFG seeds=$SEEDS tag=$TAG"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-# Chain seeds; a failed seed is recorded and the chain continues, so one
-# bad seed cannot cost the slots behind it. Nonzero exit at the end keeps
-# the failure visible in sacct.
+# Continue after failed seeds; exit nonzero at the end to record failure in sacct.
 FAILED=""
 for SEED in $SEEDS; do
     echo "=== seed $SEED start $(date -Is) ==="

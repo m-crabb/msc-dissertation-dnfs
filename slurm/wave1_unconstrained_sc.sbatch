@@ -15,10 +15,9 @@
 # the final fp32 5000-draw eval/ess_fraction, else c030-style regression
 # investigation and the legacy print stays.
 #
-# Runs SEQUENTIALLY through cfg:seed tokens so one queue slot carries a whole
-# family (2-slot budget, 2026-08-24). Fixed tag: a resubmit after timeout or
-# preemption reuses each run dir, skips finished seeds and resumes the
-# unfinished one from checkpoints/resume.pt. Two-job launch plan:
+# Sequential cfg:seed cells share a queue slot (2-slot budget, 2026-08-24).
+# Fixed tag reuses run dirs, skips finished seeds and resumes unfinished ones
+# from checkpoints/resume.pt after timeout/preemption. Two-job launch plan:
 #   sbatch slurm/wave1_unconstrained_sc.sbatch \
 #       stage_4_d10_critical_paper_curriculum_sc:{42,43,44,45}
 #   sbatch slurm/wave1_unconstrained_sc.sbatch \

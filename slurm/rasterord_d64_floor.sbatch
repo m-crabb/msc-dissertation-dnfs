@@ -11,13 +11,10 @@
 # job, THREE SEEDS SERIAL INSIDE IT:
 #   sbatch -J rfloor-mamo2 slurm/rasterord_d64_floor.sbatch H2_d64_c50_s010_letf_mamo2_50k_w2
 #
-# WHY SEEDS LOOP RATHER THAN FAN OUT AS AN ARRAY. Six cells x three seeds is
-# eighteen jobs against six free slots, so an array would leave two thirds
-# PENDING behind a QOS cap while the ladder stayed unreadable -- the column
-# is judged three-seeds-paired or not at all. Serialised, all six cells
-# advance together and the column completes in one pass. A d64 50k run is
-# ~1.3 h a100-class and ~2x that on a30, so three seeds is ~15 h against
-# this 2-day limit.
+# Six cells x three seeds would queue eighteen jobs behind six free QOS
+# slots; serial seeds let all six cells advance together. Judge the column
+# only with three paired seeds. Historical budget: d64 50k ~1.3h on A100,
+# ~2x on A30; three seeds estimated at ~15h within the 2-day limit.
 #
 # WHAT THE COLUMN IS FOR. tab:eval-hard-8x8 prints these cells as `--` and
 # its caption calls them "queued rather than failed". Every head there
@@ -43,8 +40,7 @@
 # matching the recipe of every cell it is read against and reproducing the
 # stress the arm-C seed check cleared.
 #
-# Fixed --tag so a resubmission resumes: run.py skips a seed whose
-# eval/metrics.json exists and continues a partial one from resume.pt.
+# Fixed --tag: run.py skips existing eval/metrics.json and uses any resume.pt.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

@@ -36,8 +36,7 @@ cd "$REPO"
 echo "node=$(hostname) cfgs=$CFGS tag=$TAG"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-# zsh-style word-splitting traps do not apply (bash), but stay explicit:
-# split on commas into an array, never rely on IFS defaults.
+# Split the comma-separated configs explicitly.
 IFS=',' read -r -a CFG_LIST <<< "$CFGS"
 for CFG in "${CFG_LIST[@]}"; do
     for SEED in 42 43 44 45; do

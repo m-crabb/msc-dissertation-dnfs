@@ -7,14 +7,13 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# 20x20 at sigma_c on ONE borrowed B200, several cells co-resident under
-# user-level MPS (2026-08-29). SPEC-DRIVEN on purpose:
+# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+#
+# 20x20 at sigma_c on one borrowed B200 under MPS (2026-08-29):
 #
 #     sbatch slurm/mars_d400_mps.sbatch <TAG> <CFG:SEED> [<CFG:SEED> ...]
 #
-# The packing decision is a MEMORY decision that differs between the R=2 and
-# R=3 waves, so it lives in the submit line rather than in a per-wave copy of
-# this file.
+# Choose the R=2/R=3 pack in the submit-line specs to fit GPU memory.
 #
 # WHY MPS AND NOT SEQUENTIAL. Two CUDA contexts on one card merely
 # time-slice (~serial); under MPS their kernels co-schedule and a pack
@@ -36,29 +35,24 @@
 # wave is verified from nvidia-smi before the second is submitted; the
 # watcher below writes that evidence into this log.
 #
-# ETIQUETTE (docs/imperial-doc-cluster.md section 8). Borrowed capacity,
-# spillover only: dnfs-* name, bounded walltime, and BOTH halves of the idle
-# check must agree before submitting -- GPUs physically empty in nvidia-smi
-# AND free in Slurm's TRES -- plus the owner's pending jobs read for whether
-# ours would delay them. Two cards rather than the usual one is a deliberate
-# deviation, taken because four of eight sat at 0 MiB / 0% with ZERO pending
-# jobs on the node.
+# Borrowed-node rules (docs/imperial-doc-cluster.md section 8): spillover
+# only, dnfs-* name, bounded walltime. Before submission, require physically
+# empty GPUs in nvidia-smi AND free Slurm TRES; check owner pending jobs for
+# delays. Historical two-card exception: four of eight were at 0 MiB / 0%
+# with zero pending jobs; the usual allowance is one card.
 #
-# A WALL KILL IS RECOVERABLE, NOT FATAL. --tag is fixed, so a requeue lands
-# in the same run dir and resumes from resume.pt. That is what lets this ask
-# for 2 days instead of padding to the partition's 7-day maximum.
+# Fixed --tag reuses the run directory and any resume.pt after a wall kill;
+# the 2-day request relies on resume within the partition's 7-day maximum.
 #
 # Results written here are NOT synced back automatically; `results/` is
 # excluded from the rsync in both directions.
 export WANDB_MODE=offline
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PIXI_CACHE_DIR=$HOME/.pixi-cache
-# BLACKWELL COMPILE FIX (2026-08-28, job 2344 died on this at step 0 of every
-# cell). Triton resolves a separate assembler for sm_100 -- `ptxas-blackwell`,
-# triton/knobs.py:492 -- and the locked env ships only plain `ptxas`, so
-# torch.compile raises `InductorError: Cannot find ptxas-blackwell` inside the
-# step-0 rate diagnostic. Every cell here is compiled (patch heads; decision
-# (c) exempts only factorised arms), so this is load-bearing.
+# Blackwell fix: job 2344 failed every cell's step-0 diagnostic on 2026-08-28
+# with `InductorError: Cannot find ptxas-blackwell`. Triton selects that
+# sm_100 assembler (triton/knobs.py:492); the locked env has plain ptxas only.
+# Patch heads here compile; decision (c) exempts only factorised arms.
 export TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda-13.1/bin/ptxas
 
 REPO=$HOME/msc-dissertation-dnfs
@@ -69,9 +63,7 @@ shift
 SPECS=("$@")
 [ ${#SPECS[@]} -gt 0 ] || { echo "no CFG:SEED specs given"; exit 2; }
 
-# User-level MPS scoped to this job: private pipe/log dirs keep the daemon
-# invisible to the box's other users, and the EXIT trap tears it down on ANY
-# end state (completion, failure, scancel, wall kill).
+# Job-private MPS pipe/log directories; the EXIT trap requests shutdown.
 export CUDA_MPS_PIPE_DIRECTORY=$REPO/slurm/logs/mps_${SLURM_JOB_ID}/pipe
 export CUDA_MPS_LOG_DIRECTORY=$REPO/slurm/logs/mps_${SLURM_JOB_ID}/log
 mkdir -p "$CUDA_MPS_PIPE_DIRECTORY" "$CUDA_MPS_LOG_DIRECTORY"
@@ -83,9 +75,7 @@ echo "node=$(hostname) job=$SLURM_JOB_ID tag=$TAG clients=${#SPECS[@]}"
 printf '  spec: %s\n' "${SPECS[@]}"
 nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
 
-# Memory evidence for the packing decision, written into this log at the
-# points where a compiled d400 step has reached steady state. Cheap, and it
-# is the artefact the next wave's pack is sized from.
+# Log GPU memory/utilisation samples for the next wave's packing decision.
 ( for WAIT in 300 600 1800 5400; do
     sleep "$WAIT"
     echo "=== mem @ $(date -Is) ==="

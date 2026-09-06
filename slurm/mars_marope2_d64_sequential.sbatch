@@ -7,6 +7,8 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
+# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+#
 # 8x8 sigma_c: the PERIODIC-RoPE BACKBONE at PATCH SIZE 2 under the
 # masked-attention head, three seeds SEQUENTIAL on one borrowed B200
 # (2026-08-28). Companion to the p = 1 job; read as the triple
@@ -56,10 +58,8 @@
 # the ROTATED site keys, so the patch logit is the mean of the member logits
 # and the periodicity argument survives term by term.
 #
-# DEPENDENCY, NOT A SECOND CONCURRENT GPU. Submitted with
-# --dependency=afterany on the p = 1 job so this node never carries more than
-# one of our GPUs at a time, which is the standing etiquette on borrowed
-# capacity. It costs latency and nothing else.
+# Submitted with --dependency=afterany on the p = 1 job to respect the
+# borrowed-node allowance of one concurrent GPU; dependency adds latency.
 #
 # Results written here are NOT synced back automatically; `results/` is
 # excluded from the rsync in both directions.

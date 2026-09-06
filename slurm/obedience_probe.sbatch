@@ -7,10 +7,8 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Re-draws the composition sweep from step-tagged checkpoints of a finished
-# amortised run to test whether obedience was still improving at the end of
-# training. Pure diagnostic: no training, and the archived
-# eval/composition_sweep.json is left untouched (save=False).
+# Re-draw step-tagged amortised checkpoints to measure late-training obedience.
+# No training; save=False preserves archived eval/composition_sweep.json.
 #
 # 8 checkpoints x 5 compositions x ~100 s ~= 70 min, so 4 h is ample.
 #

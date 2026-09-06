@@ -148,11 +148,9 @@ def bootstrap_confidence_intervals(
 ) -> tuple[tuple[float, float], tuple[float, float]]:
     """95% percentile CIs for (Var[log w], ESS/N) from shared resamples.
 
-    The same resample index matrix feeds both statistics so their CIs are
-    directly comparable — the whole point is to show one statistic's CI
-    separating pairs the other's cannot. Vectorised over resamples: the
-    (B, N) index matrix at B=2000, N=5000 is ~80 MB of float64 transiently,
-    well within the local-analysis budget.
+    Identical indices support comparison of the two statistics' pairwise
+    resolution. Vectorised (B, N) arrays at B=2000, N=5000 use ~80 MB
+    each for int64 indices or float64 values.
     """
     n_draws = len(log_weights)
     resample_indices = rng.integers(0, n_draws, size=(N_BOOTSTRAP_RESAMPLES, n_draws))
@@ -223,10 +221,7 @@ def collect_rows() -> tuple[list[EvalRow], int, int]:
                 .numpy()
                 .ravel()
             )
-            # Per-eval RNG seeded from the fixed seed PLUS the eval's identity,
-            # so each row's CI is reproducible on its own and stays byte-stable
-            # when new run dirs are added to the archive (a single sequential
-            # RNG would perturb every row downstream of an insertion).
+            # Seed by eval identity so adding archive runs cannot change a row's CI.
             per_eval_rng = np.random.default_rng(
                 [BOOTSTRAP_SEED, *f"{run_dir.name}/{eval_dir.name}".encode()]
             )
@@ -275,10 +270,8 @@ def build_table(rows: list[EvalRow]) -> pd.DataFrame:
 
     table = table.sort_values("var_per_site", ascending=True, kind="stable").reset_index(drop=True)
 
-    # Adjacent-pair resolution marks, WITHIN each lattice size: for each row,
-    # is its CI disjoint from the next-worse row of the same d? Cross-size
-    # adjacency is skipped because the archive's contested rankings are all
-    # within-size comparisons.
+    # Compare adjacent rows within each lattice size, matching the archive's
+    # within-size ranking claims.
     table["var_resolved_vs_next_same_d"] = _adjacent_resolution(
         table, "var_log_w_ci_lo", "var_log_w_ci_hi"
     )
@@ -309,8 +302,7 @@ def intervals_disjoint(a: tuple[float, float], b: tuple[float, float]) -> bool:
 
 
 def pairwise_resolution_report(table: pd.DataFrame, label: str) -> None:
-    """Print, for one comparison group, every pair's resolved/unresolved status
-    under Var[log w] and under ESS/N — the head-to-head the script exists for."""
+    """Print each pair's resolved/unresolved status under Var[log w] and ESS/N."""
     print(f"\n=== Pairwise resolution, {label} ({len(table)} evals) ===")
     resolved_var = resolved_ess = 0
     n_pairs = 0
@@ -358,10 +350,7 @@ def main() -> None:
         print(f"run dirs skipped (weights present but no parsable config.json): {runs_without_config}")
     print(f"ranked table written to {OUTPUT_CSV}")
 
-    # Wiring self-check: our self-normalised ESS/N recomputed from the raw
-    # log-weights should match each eval's own recorded ess_fraction (up to
-    # float32-vs-float64 accumulation). A large deviation would mean we are
-    # not looking at the weights the archive's rankings were based on.
+    # Cross-check archived ESS/N, allowing float32/float64 accumulation drift.
     checkable = table.dropna(subset=["ess_fraction_recorded"])
     if len(checkable):
         relative_gap = (

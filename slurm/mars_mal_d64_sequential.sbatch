@@ -7,47 +7,36 @@
 #SBATCH --time=06:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
+# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+#
 # 8x8 whole-lattice attention window (`mal`), six cells run SEQUENTIALLY on
 # ONE borrowed B200 (2026-08-28).
 #
-# WHY SEQUENTIAL AND NOT MPS. The co-run pattern exists and works, but it
-# contaminates `wall_clock_step_s` beyond quoting, and the cost of this
-# window is precisely an open question -- it measured +20% per step at the
-# 4x4 gate, in a launch-bound regime where that is probably an artefact of
-# mask construction rather than the asymptotic price. Running serially keeps
-# those numbers usable. Six cells at a B200's ~2x A100 rate is ~3.25 h
-# against a 6 h request.
+# Serial runs keep wall_clock_step_s free of MPS contention. The window's
+# +20%/step at the 4x4 gate may reflect launch-bound mask construction,
+# not asymptotic cost. Estimated six-cell budget: ~3.25h at B200's ~2x A100
+# rate, within the 6h request.
 #
-# ETIQUETTE. Borrowed capacity, spillover only: one GPU, dnfs-* name,
-# bounded walltime. Idle check passed before submission on BOTH required
-# counts (2026-08-28): GPUs 4-7 physically empty at 0 MiB / 0% against the
-# owner's four at ~173 GB / 100%, Slurm holding gres/gpu:4, and NO pending
-# jobs at all -- so taking one of four free GPUs delays nobody.
+# Borrowed-node rules: spillover only, one GPU, dnfs-* name, bounded walltime.
+# Historical idle check (2026-08-28): GPUs 4-7 at 0 MiB / 0%, owner's four
+# at ~173 GB / 100%, Slurm gres/gpu:4, no pending jobs. Recheck physical
+# occupancy, Slurm allocation and owner pending jobs before submission.
 #
-# ORDER IS DELIBERATE: sigma_c first. That is the coupling that
-# discriminates -- at every rung the sigma=0.10 row saturates near the
-# sampling floor (every d256 head 0.99-1.00 there) -- so if the walltime is
-# ever cut short, the informative half is already done.
+# sigma_c first preserves the discriminating half if walltime runs out;
+# sigma=0.10 saturates near the sampling floor (all d256 heads 0.99-1.00).
 #
 # Results written here are NOT synced back automatically; `results/` is
 # excluded from the rsync in both directions.
 export WANDB_MODE=offline
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PIXI_CACHE_DIR=$HOME/.pixi-cache
-# BLACKWELL COMPILE FIX (2026-08-28, job 2344 died on this at step 0 of every
-# cell). Triton resolves a SEPARATE assembler for sm_100 -- `knobs.nvidia.
-# ptxas_blackwell` at triton/knobs.py:492, i.e. `ptxas-blackwell`, chosen
-# whenever arch >= 100 -- and the locked env ships only plain `ptxas`, so
-# `torch.compile` raises `InductorError: Cannot find ptxas-blackwell` and the
-# run dies inside the step-0 rate diagnostic. The env var is derived from the
-# binary name (knobs.py:194-201), and mars carries a CUDA 13.1 ptxas that
-# does support sm_100. Verified on a B200 before relaunch: capability (10, 0),
-# a compiled kernel built and returned the right value.
-#
-# NOTE what the earlier "sm_100 verified" record does and does not cover: it
-# established that the locked torch carries native Blackwell kernels and that
-# a matmul fires EAGER. It did not exercise Inductor, which is why this only
-# surfaced once the optimised recipe (compile_head=True) reached this node.
+# Blackwell fix: job 2344 failed every cell's step-0 diagnostic on 2026-08-28
+# with `InductorError: Cannot find ptxas-blackwell`. Triton's arch >= 100
+# assembler is knobs.nvidia.ptxas_blackwell (triton/knobs.py:492; env naming
+# at :194-201); the locked env has plain ptxas only. Mars CUDA 13.1 ptxas
+# compiled a correct kernel on B200 capability (10, 0) before relaunch.
+# Earlier sm_100 verification covered native kernels/eager matmul only,
+# not Inductor; compile_head=True exposed the missing assembler.
 export TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda-13.1/bin/ptxas
 
 REPO=$HOME/msc-dissertation-dnfs

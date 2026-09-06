@@ -34,9 +34,8 @@
 # GEMM shape), so quality cannot move and the chain still prices one field
 # per step against the archived anchors.
 #
-# Fixed --tag so a resubmission resumes: run.py skips a seed whose
-# eval/metrics.json exists and continues a partial one from resume.pt.
-# A wall kill at 2 days is therefore recoverable, not fatal.
+# Fixed --tag: run.py skips existing eval/metrics.json and uses any resume.pt
+# after resubmission, including a 2-day wall kill.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline
