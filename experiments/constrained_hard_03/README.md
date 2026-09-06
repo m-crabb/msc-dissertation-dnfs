@@ -1,0 +1,47 @@
+# Exact composition through swap dynamics
+
+[All experiments](../README.md) · [Launcher index](../../slurm/README.md)
+
+Swap moves preserve species counts throughout the path. The experiments compare
+swap-head architectures, Ising lattices through 24×24, composition conditioning,
+Cu–Au cluster expansions, classical Kawasaki sampling, GFlowNets and budget-masked
+diffusion. [configs.py](configs.py) defines swap cells and head construction;
+[gfn_configs.py](gfn_configs.py) holds the GFlowNet comparisons.
+
+```bash
+pixi run -e dev python -m experiments.constrained_hard_03.run --help
+```
+
+[run.py](run.py) trains a selected `--cfg` and writes to `results/03_hard/` by
+default. It also provides checkpoint evaluation, grid changes, EMA, selected-stage
+and SMC modes. **`--eval-only RUN_DIR` generates samples.** It validates the saved
+configuration against the current registry and refuses collisions with existing
+evaluation artifacts. A rejected historical configuration requires provenance
+review; changing the saved config to bypass the guard changes its meaning.
+
+| Workflow | Entrypoints |
+| --- | --- |
+| Main comparison tables | [4×4](analysis/house_table_4x4.py), [8×8](analysis/house_table_8x8.py), [16×16](analysis/house_table_16x16.py), [20×20](analysis/house_table_20x20.py), [24×24](analysis/house_table_24x24.py) |
+| Training and sample exhibits | [training_curves_hard.py](analysis/training_curves_hard.py), [hard_results_cell.py](analysis/hard_results_cell.py), [sample montages](analysis_sample_montages.py) |
+| Learned swap rates | [rate_field_rows.py](analysis/rate_field_rows.py), [rate_field_strip.py](analysis/rate_field_strip.py), [retained manifest](../../assets/hard_rate_field_runs.json) |
+| Composition transfer and free energy | [composition_transfer_figure.py](analysis/composition_transfer_figure.py), [fc_surface.py](analysis/fc_surface.py), [zero_shot_tables.py](analysis/zero_shot_tables.py), [slice_ti.py](slice_ti.py) |
+| Exact small-system checks | [gate_4x4.py](gate_4x4.py), [gate_camort_4x4.py](gate_camort_4x4.py), [demo_4x4.py](demo_4x4.py) |
+| Kawasaki comparison and reference | [probe_kawasaki_8x8.py](probe_kawasaki_8x8.py), [probe_analysis_8x8.py](probe_analysis_8x8.py), [plot_probe_8x8.py](plot_probe_8x8.py), [generate_kawasaki_reference_d256.py](generate_kawasaki_reference_d256.py) |
+| Transport and local-field diagnostics | [analysis_transport_decomposition.py](analysis_transport_decomposition.py), [analysis_local_field_regression.py](analysis_local_field_regression.py) |
+| Importance-weight ranking | [analysis_weight_variance_ranking.py](analysis_weight_variance_ranking.py) — executes and writes its CSV when run; no help parser |
+| Compute measurements | [bench_cell_step.py](bench_cell_step.py), [bench_eval_wallclock_d64.py](bench_eval_wallclock_d64.py), [measure_training_flops.py](measure_training_flops.py), [compile_gate.py](compile_gate.py) |
+| Warm-base experiments | [warm_base_reference.py](warm_base_reference.py), [warm_base_offline_table.py](warm_base_offline_table.py), [warm_base_t_grid.py](warm_base_t_grid.py) |
+| Neural comparators | [run_gfn.py](run_gfn.py), [mdns_vs_dnfs_4x4.py](mdns_vs_dnfs_4x4.py), [mdns_budget_gate_4x4.py](mdns_budget_gate_4x4.py) |
+
+House tables have their own frozen seed/tag/reference selections and raw/EMA
+defaults. The recorded rate-field figure instead uses the EMA trajectory stored
+in [hard_rate_field_strip_20x20.npz](../../assets/hard_rate_field_strip_20x20.npz).
+Its `--recorded` rendering mode is reproducible without a checkpoint; the live
+mode uses a different draw contract. See [visual provenance](../../assets/readme/README.md).
+
+Composition-amortised artifacts require particular care: corrected-tagged d64
+outputs have retained evaluation evidence but no verified local trainer revision
+or checkpoints. The historical d256 seed-42 result used a pooled training
+baseline, and the protected additional-seed launcher snapshot predates the
+per-slice correction. Raw, EMA and SMC results are separate evidence channels.
+Keep these qualifications when interpreting or presenting results.

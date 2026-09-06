@@ -1,94 +1,116 @@
 # Discrete Neural Samplers with Constraints
 
-Code accompanying my MSc thesis at Imperial College London on **constrained discrete neural
-samplers for materials configurations**, supervised by Yingzhen Li, Zijing Ou, and Alex Ganose.
+Code accompanying my MSc dissertation at Imperial College London on constrained
+sampling of discrete materials configurations, supervised by Yingzhen Li,
+Zijing Ou and Alex Ganose.
 
-## Overview
+The project extends Discrete Neural Flow Samplers (DNFS) from unconstrained
+Ising systems to composition penalties, exact composition through swap dynamics,
+and Cu–Au cluster-expansion targets. A learned continuous-time Markov chain
+transports a simple base distribution towards a Boltzmann target; importance
+weights support target expectations and free-energy estimation.
+Training minimises a squared Kolmogorov-forward residual, using a discrete Stein
+control variate to estimate the log-normaliser derivative.
 
-Many materials problems (high-entropy alloys, battery cathodes, disordered solids) require
-drawing lattice configurations from a finite-temperature Boltzmann distribution
+![Five recorded snapshots of a 20×20 neural swap trajectory, alongside learned swap rates from a marked site.](assets/readme/recorded_swap.gif)
 
-```
-pi(x) ~ exp(-beta * E(x)),    x in {0, ..., S-1}^d,    subject to a constraint such as fixed composition c(x) = c_target.
-```
+**Composition is fixed throughout the path:** all five recorded states contain
+200 sites of each species. This is one raw proposal trajectory from the retained
+EMA checkpoint, shown at five times; intermediate swaps are not stored here.
+The rate panel uses a common scale across frames.
+[Static figure and provenance](assets/readme/README.md).
 
-The partition function is intractable, the target is multimodal at low temperature, and the
-constraint reshapes the support. Classical Markov chain Monte Carlo struggles here (critical
-slowing-down and broken ergodicity), and existing discrete neural samplers are unconstrained.
+## Explore the project
 
-This project builds on Discrete Neural Flow Samplers (DNFS), which learn the rate matrix of a
-continuous-time Markov chain (CTMC) that transports an easy base distribution to the target by
-minimising a squared Kolmogorov-forward residual, using a discrete Stein control variate for the
-intractable log-partition derivative and locally equivariant architectures for an O(1) residual.
-The dissertation extends this to constrained sampling for materials, with the constraint handled
-at the level of the CTMC move set.
+| Study | What it investigates |
+| --- | --- |
+| [Unconstrained baseline](experiments/dnfs_baseline_01/README.md) | Paper-derived Ising replication with locally equivariant rate models |
+| [Soft constraints](experiments/constrained_soft_02/README.md) | Composition penalties, acceptance, amortisation and free-energy corrections |
+| [Hard constraints](experiments/constrained_hard_03/README.md) | Count-preserving swap heads, Ising lattices through 24×24, and neural/classical comparisons |
+| [Cu–Au application](experiments/alloy_ce/README.md) | Free, soft and fixed-composition sampling on 16-site and 64-site FCC cluster expansions |
+
+The [experiment guide](experiments/README.md) explains entrypoints, saved runs
+and figure reproduction. The [launcher index](slurm/README.md) groups the retained
+cluster campaigns; [shared scripts](scripts/README.md) cover classical baselines
+and comparisons across experiments.
+
+## A result: free energy across compositions
+
+![Free energy per site and residuals for soft and hard samplers against thermodynamic integration on the critical 8×8 Ising lattice.](assets/readme/fc_hard_direct_8x8_sc.png)
+
+At the critical 8×8 Ising cell, the retained figure compares soft estimates,
+their slice-mass correction, and hard mean-log estimates against thermodynamic
+integration. It uses Euler-grid extrapolation, three hard seeds and four soft
+seeds. The hard branch uses EMA evaluations; the soft branch uses raw-checkpoint
+evaluations. The image is copied unchanged from the dissertation.
+[Input selections and reproduction limits](assets/readme/README.md#free-energy-comparison).
 
 ## Setup
 
-Environment and dependencies are managed with [pixi](https://pixi.sh):
+The environment is managed with [Pixi](https://pixi.sh). From the repository root:
 
 ```bash
-curl -fsSL https://pixi.sh/install.sh | sh   # macOS / Linux; see pixi docs for other platforms
-pixi install                                 # resolve and install the default environment
-pixi run -e dev test                         # run the test suite
+pixi install --locked -e dev
+pixi run -e dev test
 ```
 
-The lockfile (`pixi.lock`) is committed, so installs resolve against the same dependency set
-used for the GPU runs. Supported platforms are `linux-64` and `osx-arm64`.
+The committed `pixi.lock` covers `linux-64` and `osx-arm64`. CUDA runs use the
+separate Linux `cuda` environment. Other project tasks are:
 
-### Tasks
+```bash
+pixi run -e dev lint       # Ruff: src/, experiments/, tests/
+pixi run -e dev format     # Format those directories (modifies files)
+pixi run jupyter
+```
 
-- `pixi run -e dev test` - run the pytest suite
-- `pixi run -e dev lint` - ruff lint `src/`, `experiments/`, `tests/`
-- `pixi run -e dev format` - ruff format the same directories
-- `pixi run jupyter` - launch JupyterLab
+To inspect the hard-training interface or render the committed snapshots:
+
+```bash
+pixi run -e dev python -m experiments.constrained_hard_03.run --help
+pixi run -e dev python -m scripts.animate_recorded_swap --out /tmp/recorded_swap.gif
+```
+
+Training and evaluation examples are described in the [experiment guide](experiments/README.md).
+The test suite covers analytic residuals, estimator checks, equivariance,
+locality, exact composition and checkpoint/resume behaviour.
 
 ## Repository layout
 
-```
-src/discrete_flow_sampler/   library code
-  targets/                   target distributions (Ising, soft composition penalty)
-  samplers/                  CTMC simulation, Kolmogorov residual, Stein log-Z estimator, training loop,
-                             budget-masked masked diffusion (budget_masked.py)
-  models/                    rate-matrix parameterisations (MLP, leMLP, leConv, leTF)
-  mcmc/                      classical baselines (Gibbs, Kawasaki) for validation and failure-mode demos
-  diagnostics/               sampler-quality metrics (ESS, etc.)
-  constraints/               constraint handling
-experiments/                 per-experiment configs, runners, and analysis
-  dnfs_baseline_01/          paper-faithful unconstrained Ising replication (stages 0-4)
-  constrained_soft_02/       soft composition-constraint extension
-  constrained_hard_03/       hard-constraint work (in progress)
-scripts/                     standalone baselines and figure scripts (Kawasaki MCMC, DNFS-vs-MCMC, plots)
-slurm/                       batch scripts for the Imperial DoC GPU cluster (primary compute)
-tests/                       pytest suite (correctness checks, see below)
-notebooks/                   familiarisation and cross-check notebooks
-data/                        small input assets
+```text
+src/discrete_flow_sampler/
+  targets/       Ising, Potts and cluster-expansion targets
+  models/        Rate-model backbones and conditioning
+  constraints/   Swap-readout heads and exact-field channels
+  samplers/      Flip/swap CTMCs, residuals, training, SMC and neural baselines
+  mcmc/          Gibbs, Wolff, Kawasaki and mchammer baselines
+  diagnostics/   Metrics, FLOP accounting and figure style
+experiments/     Configurations, trainers, analysis and experiment guides
+scripts/         Shared baselines, comparisons and figure tools
+slurm/           Historical cluster launchers and campaign index
+assets/          Small retained figure inputs and README visuals
+data/           Exported cluster expansions and reference database
+icet-ce/         Cluster-expansion fitting and energy-prediction workflow
+notebooks/       Familiarisation and cross-check notebooks
+tests/           Correctness and regression checks
 ```
 
-## Running experiments
-
-Each directory under `experiments/` follows the same pattern:
-
-- `configs.py` - named run configurations (lattice size, coupling, model stage, training budget);
-- `run.py` - local entry point for a single run;
-- `modal_app.py` - launcher for GPU runs on [Modal](https://modal.com) (single GPU per run;
-  GPU runs now go primarily to a Slurm cluster via the scripts in `slurm/`, same locked env);
-- `analysis/` - post-hoc analysis and figure generation.
-
-Classical baselines and motivating experiments are standalone scripts under `scripts/` (for
-example `kawasaki_mcmc.py`, `compare_dnfs_vs_mcmc.py`, `vcsgc_mcmc_validation.py`,
-`plot_ising_phases.py`). Per-run artefacts (config, training log, checkpoints, evaluation files)
-are written under `results/` and are not tracked.
+Production runs are stored locally under `results/` and are not tracked. A Git
+checkout therefore supports code inspection, tests and the recorded animation;
+most report analyses also require the original run archives and references.
+Some historical checkpoints, samples and exact training revisions remain
+unavailable. The guides preserve these distinctions and the withdrawn campaign
+restrictions.
 
 ## Acknowledgements
 
-This work builds on Discrete Neural Flow Samplers by Zijing Ou and collaborators; the original
-code is at https://github.com/J-zin/DNFS. Implementation here is derived from the papers'
-equations and algorithmic descriptions.
+This work builds on Discrete Neural Flow Samplers by Zijing Ou and collaborators.
+The original code is at [J-zin/DNFS](https://github.com/J-zin/DNFS).
+Implementation here is derived from the papers' equations and algorithmic
+descriptions.
 
 ## License
 
-To be released under an open-source licence (MIT recommended) at final submission.
+A release licence has not yet been selected.
 
 ## Citation
 
