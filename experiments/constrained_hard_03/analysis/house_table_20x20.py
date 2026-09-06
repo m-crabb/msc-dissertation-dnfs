@@ -126,7 +126,7 @@ LATEX_ROWS = (
 ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 
 
-def reference_trial_counts(provenance):
+def reference_trial_counts(provenance, lattice_side=L):
     """Swap PROPOSALS per chain at THIS rung's lattice, burn-in included.
 
     Deliberately not `house_table_16x16.chain_trial_counts(provenance)`: that
@@ -135,11 +135,11 @@ def reference_trial_counts(provenance):
     the output to show it. Pinned by test_house_table_20x20.
     """
     per_chain = ((provenance["burn_in_sweeps"]
-                  + provenance["sampling_sweeps_per_chain"]) * D_SITES)
+                  + provenance["sampling_sweeps_per_chain"]) * lattice_side ** 2)
     return [per_chain] * provenance["n_chains"]
 
 
-def load_reference(directory, sigma_key):
+def load_reference(directory, sigma_key, lattice_side=L):
     """Certified chains for the one coupling, one tensor per chain.
 
     Asserts the pool's recorded LATTICE as well as its sigma: a reference is
@@ -149,20 +149,23 @@ def load_reference(directory, sigma_key):
     """
     directory = Path(directory)
     provenance = json.loads((directory / "provenance.json").read_text())
-    assert provenance["lattice_side"] == L, (
-        f"{directory.name} records D={provenance['lattice_side']}, not {L}")
+    assert provenance["lattice_side"] == lattice_side, (
+        f"{directory.name} records D={provenance['lattice_side']}, "
+        f"not {lattice_side}")
     assert abs(provenance["sigma"] - SIGMA[sigma_key]) < 1e-9, (
         f"{directory.name} records sigma={provenance['sigma']}, not "
         f"{SIGMA[sigma_key]}: couplings must never be mixed in one column")
     pooled = torch.load(directory / "samples.pt", weights_only=True).float()
-    assert is_composition_exact(pooled, D_SITES // 2), \
+    assert is_composition_exact(pooled, lattice_side ** 2 // 2), \
         f"{directory.name}: reference left the c=0.5 slice"
     return split_pooled_into_chains(pooled, provenance["n_chains"]), provenance
 
 
 def energy_per_site(target, states, chunk=4096):
-    """Chunked: the pool is 1.4e5 states at d=400."""
-    parts = [-target.log_prob(states[i:i + chunk]) / (2 * target.sigma * D_SITES)
+    """Chunked: the pool is 1.4e5 states at d=400. Site count read off the
+    states so the 24x24 fill can share this."""
+    n_sites = states.shape[1]
+    parts = [-target.log_prob(states[i:i + chunk]) / (2 * target.sigma * n_sites)
              for i in range(0, states.shape[0], chunk)]
     return torch.cat(parts)
 
@@ -184,7 +187,10 @@ def find_cells(results_dir, config_name, tag):
 
 
 def neural_cell(run_dir, target, reference, reference_energy, per_forward,
-                n_euler, eval_subdir="eval"):
+                n_euler, eval_subdir="eval", lattice_side=L):
+    """`lattice_side` reshapes the flat states for the profile errors and
+    sets the per-sample FLOP bill; the 24x24 fill passes 24 (a d576 state
+    reshaped as 20x20 raises, so a forgotten argument fails loudly)."""
     run_dir = Path(run_dir)
     metrics = json.loads((run_dir / eval_subdir / "metrics.json").read_text())
     samples = torch.load(run_dir / eval_subdir / "samples.pt",
@@ -194,13 +200,14 @@ def neural_cell(run_dir, target, reference, reference_energy, per_forward,
     weights = torch.softmax(log_w, dim=0)
     ess = metrics["ess_fraction"]
     w_ref = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
-    flops_raw = neural_sampling_flops_per_sample(per_forward, n_euler, D_SITES)
+    flops_raw = neural_sampling_flops_per_sample(per_forward, n_euler,
+                                                 lattice_side ** 2)
     return {
         "ESS": ess,
         "dMag": magnetisation_profile_error(
-            samples, weights, reference, L, reference_weights=w_ref),
+            samples, weights, reference, lattice_side, reference_weights=w_ref),
         "dCorr": correlation_profile_error(
-            samples, weights, reference, L, reference_weights=w_ref),
+            samples, weights, reference, lattice_side, reference_weights=w_ref),
         "EW2": energy_wasserstein2(
             energy_per_site(target, samples), weights, reference_energy,
             reference_weights=w_ref),

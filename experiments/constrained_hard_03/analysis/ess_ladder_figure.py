@@ -1,16 +1,18 @@
 """The ladder figure for the hard chapter: ESS and cost against lattice size, at sigma_c.
 
-Two panels over the four rungs the chapter prints. (a) Frozen ESS fraction at the exact
+Two panels over the five rungs the chapter prints. (a) Frozen ESS fraction at the exact
 critical coupling for selected heads that have a cell at that rung, plus the GFlowNet (TB)
 comparator; (b) FLOP per effective sample at sigma_c, with the certified Kawasaki chain as
 the classical line. The chapter's central trend -- the patch head's ESS falling slowly
 with size while the causal-stream bands need a second sweep to survive -- is otherwise
 spread across four tables.
 
-VALUES ARE THE PRINTED HOUSE-TABLE CELLS (tab:eval-hard-{4x4,8x8,16x16,20x20}), each of
-which is itself the output of its emitter and was re-verified cell by cell on 2026-09-03.
-The read convention follows the tables: raw at 4x4 and 8x8, averaged (EMA) at 16x16 and
-20x20; the marker fill encodes which. Update this dict when a table changes.
+VALUES ARE THE PRINTED HOUSE-TABLE CELLS (tab:eval-hard-{4x4,8x8,16x16,20x20,24x24}),
+each of which is itself the output of its emitter and was re-verified cell by cell on
+2026-09-03 (24x24 added 2026-09-06 from house_table_24x24.py). The read convention follows
+the tables: raw at 4x4 and 8x8, averaged (EMA) at 16x16 and above; the marker fill encodes
+which. The 24x24 rung is sigma_c only, two patch radii. Update this dict when a table
+changes.
 """
 import argparse
 from pathlib import Path
@@ -22,11 +24,11 @@ from discrete_flow_sampler.diagnostics.figure_style import (
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-SIDES = (4, 8, 16, 20)
-EMA_RUNGS = {16, 20}
+SIDES = (4, 8, 16, 20, 24)
+EMA_RUNGS = {16, 20, 24}
 
 # (label, hue, linestyle, {side: (ess, flop_per_es)})
-LIGHT, MID, DARK = parameter_ramp(SAMPLER_HUE, 3)
+LIGHT, MID, DARK, DARKEST = parameter_ramp(SAMPLER_HUE, 4)
 GREY_LIGHT, GREY_DARK = parameter_ramp(MUTED, 2)
 SERIES = [
     ("Mask-one", "#1a1a19", ":",
@@ -42,7 +44,9 @@ SERIES = [
     ("Patch, $R=2$", MID, "-",
      {16: (0.826, 5.3e10), 20: (0.702, 1.4e11)}),
     ("Patch, $R=3$", DARK, "-",
-     {20: (0.798, 1.4e11)}),
+     {20: (0.798, 1.4e11), 24: (0.605, 3.6e11)}),
+    ("Patch, $R=4$", DARKEST, "-",
+     {24: (0.720, 3.6e11)}),
     ("GFlowNet TB", NEURAL_COMPARATOR_HUE, "-",
      {4: (0.991, 3.2e6), 8: (0.955, 1.3e7), 16: (0.883, 6.4e7)}),
 ]
@@ -52,9 +56,9 @@ ESS_SD = [
     {4: .006, 8: .022}, {4: .003, 8: .016, 16: .019},
     {4: .002, 8: .005, 16: .010}, {4: .002, 8: .003, 16: .005},
     {4: .006, 8: .003, 16: .029}, {16: .015, 20: .025},
-    {20: .004}, {4: .002, 8: .005, 16: .018},
+    {20: .004, 24: .054}, {24: .007}, {4: .002, 8: .005, 16: .018},
 ]
-KAWASAKI_FLOP_PER_ES = {4: 1.6e3, 8: 8.4e3, 16: 3.4e5, 20: 8.2e5}
+KAWASAKI_FLOP_PER_ES = {4: 1.6e3, 8: 8.4e3, 16: 3.4e5, 20: 8.2e5, 24: 1.6e6}
 
 
 def main() -> None:
@@ -95,7 +99,7 @@ def main() -> None:
     for ax, identifier in ((ax_ess, "(a)"), (ax_cost, "(b)")):
         ax.set_xlabel(r"Lattice edge $D$")
         ax.set_xticks(SIDES)
-        ax.set_xlim(3, 21.5)
+        ax.set_xlim(3, 25.5)
         style_axes(ax)
         ax.text(0, 1.025, identifier, transform=ax.transAxes, fontsize=9)
     fig.legend(handles=handles, loc="center", bbox_to_anchor=(.52, .10),
