@@ -35,7 +35,7 @@
 # wave is verified from nvidia-smi before the second is submitted; the
 # watcher below writes that evidence into this log.
 #
-# Borrowed-node rules (docs/imperial-doc-cluster.md section 8): spillover
+# Borrowed-node rules: spillover
 # only, dnfs-* name, bounded walltime. Before submission, require physically
 # empty GPUs in nvidia-smi AND free Slurm TRES; check owner pending jobs for
 # delays. Historical two-card exception: four of eight were at 0 MiB / 0%

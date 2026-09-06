@@ -9,19 +9,18 @@ gate tests whether they COMPOSE into a working from-scratch sampler at the
 enumerable size — 4x4 torus, d = 16, c = 0.5, the C(16,8) = 12,870-state
 fibre, exact conditional by enumeration.
 
-Arms (structure frozen in the plan; A = the method, B/C = its ablations):
-  A budget_tilted — budget-masked reference + preconditioner V0.
-  B none          — Fig.-10 mirror: same reference, no preconditioner.
-  C unconstrained — structural-failure arm: the paper's zero-imputation
+Arms (a = the method, b/c = its ablations):
+  a budget_tilted — budget-masked reference + preconditioner V0.
+  b none          — Fig.-10 mirror: same reference, no preconditioner.
+  c unconstrained — structural-failure arm: the paper's zero-imputation
                     preconditioner, blind to the budget.
 
-Two dated passes share this driver (both prereg'd in the plan doc):
+Two passes share this driver:
   1. First pass (2026-08-13, CPU): defaults below — 2,000 steps, seed 42,
-     sigma = 0.223. Verdict recorded G0 PASS / G1 FAIL(KL) / G2 FAIL;
-     stands as recorded.
-  2. Amendment 01 (2026-08-13, a30 GPU): --steps 10000 --seeds 42,43,44
-     --sigmas 0.10,0.223 — budget-only change, justified by the Phase-1
-     finding that the G1 miss was budget-shaped (no plateau anywhere;
+     sigma = 0.223. Outcome: G0 pass / G1 fail (KL) / G2 fail.
+  2. Second pass (2026-08-13, a30 GPU): --steps 10000 --seeds 42,43,44
+     --sigmas 0.10,0.223 — budget-only change, justified by the first
+     pass's finding that the G1 miss was budget-shaped (no plateau anywhere;
      KL mass in rare near-boundary/late-generation contexts). Primary
      purpose: the DNFS 4x4 side-by-side, hence the two added eval
      INSTRUMENTS (within-level excess TV and per-site free-energy bias,
@@ -79,15 +78,15 @@ from discrete_flow_sampler.targets.ising import (
     IsingTarget,
 )
 
-# First-pass frozen protocol (plan launch note, 2026-08-13); the amendment
-# overrides steps/seeds/sigmas on the command line and nothing else.
+# First-pass protocol; the second pass overrides steps/seeds/sigmas on the
+# command line and nothing else.
 LATTICE_SIDE = 4
 N_SITES = 16
 N_PLUS = 8
 
 
 def configure_lattice(lattice_side):
-    """Rebind the CLI lattice globals at call time (M4a, 2026-08-14).
+    """Rebind the CLI lattice globals at call time.
 
     Keep n_plus_target explicit: a definition-time N_PLUS default would
     retain the 4x4 fibre after configure_lattice(8). Half-filling sets
@@ -118,7 +117,7 @@ PLATEAU_WINDOW = 51
 LATE_GENERATION_MAX_MASKED = 4
 
 # arm -> (preconditioner mode, constrained). "Constrained" = the budget-
-# masked reference on the C(16,8) fibre; arm "u" (gate-3 arm 0) is the
+# masked reference on the C(16,8) fibre; arm "u" is the
 # UNCONSTRAINED CONTROL: the paper's own masked diffusion on the free 4x4
 # Ising (uniform species-1/2 reference, no clamp, zero-imputation
 # preconditioner = their App. D.4), against full 2^16 enumeration — the
@@ -129,13 +128,13 @@ ARMS = {
     "a": ("budget_tilted", True),
     "b": ("none", True),
     "c": ("unconstrained", True),
-    "a2": ("budget_tilted_gated", True),  # forensics arm A': V0 with
+    "a2": ("budget_tilted_gated", True),  # forensics arm: V0 with
                                           # learnable scales (init 1.0)
-    "u": ("unconstrained", False),        # gate-3 arm 0
+    "u": ("unconstrained", False),        # unconstrained control
 }
 
 # First-pass G-cuts, computed for every (sigma, seed, arm) for continuity
-# (Amendment 01: printed alongside, not re-adjudicated).
+# (later passes print them alongside, not re-adjudicated).
 CUTS = {"energy_tv": 0.02, "conditional_kl": 0.01, "ess_fraction": 0.20,
         "plateau_ratio": 0.5, "late_error_ratio": 2.0}
 
@@ -245,11 +244,11 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
                  eval_rollouts, n_plus_target, save_artefacts=True,
                  exact_log_z=None, free_energy_ref=None):
     """Eval rollouts -> ESS fraction, G0 count, energy-marginal TV, plus the
-    two DNFS-shared instruments (Amendment 01): within-level excess TV and
+    two DNFS-shared instruments: within-level excess TV and
     per-site free-energy bias. Saves terminals + log-weights so any later
     instrument can rerun off artefacts instead of GPU.
 
-    `slice_states=None` is the non-enumerable regime (M4a at 8x8, where the
+    `slice_states=None` is the non-enumerable regime (8x8, where the
     fibre is C(64,32) ~ 1.8e18): the within-level instrument needs the
     enumerated slice and is DROPPED rather than approximated, and
     `free_energy_ref` must then be supplied — the slice-TI constant, which
@@ -365,7 +364,7 @@ from discrete_flow_sampler.ema import ExponentialMovingAverage  # noqa: E402
 def near_boundary_loss_weight(boost):
     """eta(context) = 1 + boost*1[b in {1, m-1}] — minimiser-safe (context-
     measurable; see wdce_cross_entropy's docstring) gradient reallocation
-    towards the starved near-boundary contexts the Phase-1/forensics KL
+    towards the starved near-boundary contexts the first pass's KL
     decompositions localised."""
     def eta(corrupted):
         masked_count, budget = masked_count_and_budget(corrupted, N_PLUS)
@@ -458,7 +457,7 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
 
 def chain_reference_energies(probe_root, point, adjacency):
     """Pooled post-burn-in energies of the certified Kawasaki reference
-    chains — the 8x8 stand-in for exact enumeration (M4a).
+    chains — the 8x8 stand-in for exact enumeration.
 
     Two conventions have to match the enumerated path exactly or the TV is
     meaningless, and both are matched here BY CONSTRUCTION rather than by
@@ -469,8 +468,7 @@ def chain_reference_energies(probe_root, point, adjacency):
       what the probe's own `observable_values("energy", ...)` resolves to,
       so this reader agrees with `plot_probe_8x8.reference_energies`.)
     * Burn-in discard is the second half of each chain — the probe's
-      frozen convention, applied before any moment of these chains was
-      trusted.
+      convention, applied before any moment of these chains is trusted.
 
     The chains are equilibrium draws, so they enter the histogram with
     UNIFORM weight; there is no importance weight to carry.
@@ -503,7 +501,7 @@ def build_space(constrained, sigma, device, eval_contexts, *,
       enumerable, which is what makes the unconstrained control a
       like-for-like reproduction of the paper's 4x4 protocol rather than a
       chain-referenced comparison.
-    * **Chain-referenced** (M4a at 8x8). C(64,32) ~ 1.8e18 rules
+    * **Chain-referenced** (8x8). C(64,32) ~ 1.8e18 rules
       enumeration out, so the energy histogram comes from the certified
       8-chain Kawasaki reference and the free-energy reference from the
       slice-TI constant. What is LOST is everything that needs the
@@ -569,7 +567,7 @@ def build_space(constrained, sigma, device, eval_contexts, *,
         space_log_p = log_pi          # exact_log_probs is already normalised
         # log Z must come from the UNNORMALISED densities — exact_log_probs
         # returns log-probs with logsumexp = 0 by contract, whose
-        # normaliser is what we are after.
+        # normaliser is the quantity wanted here.
         exact_log_z = torch.logsumexp(
             cpu_target.log_prob(states.float()), dim=0
         ).item()
@@ -657,7 +655,7 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 exact_log_z=space["exact_log_z"],
                 free_energy_ref=space["free_energy_ref"],
             )
-            # Paper protocol: headline EMA eval plus preregistered raw eval.
+            # Paper protocol: headline EMA eval plus the raw-weight eval.
             # At 2,000 steps a 0.9999 shadow still holds ~82% of init.
             raw_param_eval = None
             if ema is not None:
@@ -784,32 +782,32 @@ def main(argv=None):
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--eval-rollouts", type=int, default=EVAL_ROLLOUTS,
-                        help="plumbing smoke only; the frozen protocol is "
+                        help="plumbing smoke only; the protocol value is "
                              "the default")
     parser.add_argument("--eval-contexts", type=int, default=EVAL_CONTEXTS,
                         help="plumbing smoke only")
     parser.add_argument("--near-boundary-boost", type=float, default=0.0,
                         help="eta(context) boost kappa on b in {1, m-1} "
-                             "contexts; 0 = frozen-protocol loss (default)")
+                             "contexts; 0 = the protocol loss (default)")
     parser.add_argument("--objective", choices=["wdce", "lv"],
                         default="wdce",
                         help="lv = constrained F_LV (their strongest 4x4 "
-                             "objective; Amendment 02)")
+                             "objective)")
     parser.add_argument("--replicates", type=int, default=None,
                         help="WDCE corruption replicates R (default: the "
-                             "frozen protocol's 2; paper 4x4 uses 16, "
+                             "protocol's 2; paper 4x4 uses 16, "
                              "ablation-insensitive on 8-64)")
     parser.add_argument("--optimiser", choices=["adam", "adamw"],
                         default="adam")
     parser.add_argument("--ema-decay", type=float, default=0.0,
-                        help="0 = off (frozen protocol); paper always "
+                        help="0 = off (the protocol); paper always "
                              "uses 0.9999 and evaluates the EMA weights")
     parser.add_argument("--ema-warmup", action="store_true",
                         help="bias-correction warmup schedule "
                              "min(decay, (1+t)/(10+t)); off = the "
                              "paper-literal plain shadow")
     parser.add_argument("--lattice-side", type=int, default=LATTICE_SIDE,
-                        help="L for the LxL torus (M4a). 4 = the gate-3 "
+                        help="L for the LxL torus. 4 = the "
                              "enumerable size; 8 requires --probe-root and "
                              "--free-energy-ref, since C(64,32) rules "
                              "enumeration out")

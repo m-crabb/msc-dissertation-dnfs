@@ -14,7 +14,7 @@
 | Exact curriculum slice statistics | [ladder_desk_stats.py](ladder_desk_stats.py) |
 | Two-hole patch reach regression | [patch_reach_probe.py](patch_reach_probe.py) |
 
-The judges live one directory up: [16-site](../judge_16site_cells.py) and
+The cell-scoring scripts live one directory up: [16-site](../judge_16site_cells.py) and
 [64-site](../judge_64site_cells.py). Several tools enumerate states, fit models,
 or inspect run files on execution or import; read the source before using them.
 The retained composition-amortised exhibit selects corrected-tagged
@@ -22,7 +22,7 @@ The retained composition-amortised exhibit selects corrected-tagged
 
 ## Historical launch and transfer wrappers
 
-All seven wrappers use zsh and contain the author's local paths. Launchers call
+All seven wrappers use zsh and resolve the repo root from their own location. Launchers call
 the soft/hard Modal apps with fixed tags and return after submission; they do
 not establish completion of the remote jobs.
 

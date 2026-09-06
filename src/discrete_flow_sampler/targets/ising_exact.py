@@ -3,10 +3,9 @@
 Kaufman (1949) closed the partition function of the finite m x n torus that
 Onsager solved in the thermodynamic limit; Ferdinand & Fisher (1969) used it
 for finite-size analysis, and DNFS Table 2 prints its per-site values as the
-"Optimal Value" rows the baseline replication is judged against. This module
-computes those values so the thesis carries its own exact reference instead
-of citing the paper's numbers (`diagnostics/metrics.py` docstrings did the
-latter until s58).
+"Optimal Value" rows the baseline replication is measured against. This
+module computes those values so the thesis carries its own exact reference
+instead of citing the paper's numbers.
 
 The formula, with K the PER-BOND coupling beta*J (this repo's convention has
 log p = x^T J x double-counting each edge, so K = 2 * sigma):

@@ -1,9 +1,9 @@
 """fig:hard-clean-8x8 / fig:hard-clean-16x16 -- the hard chapter's results cells.
 
-The s62 board's item D1 gives every results chapter the same two-panel
-results cell (energy marginal on exact levels + a Z2-ODD order-parameter
-marginal), and item D8 says the hard body carries that cell at BOTH 8x8 and
-16x16. This one script builds both rungs; `--lattice-edge` picks the rung.
+Every results chapter carries the same two-panel results cell (energy
+marginal on exact levels + a Z2-ODD order-parameter marginal), and the hard
+body carries that cell at BOTH 8x8 and 16x16. This one script builds both
+rungs; `--lattice-edge` picks the rung.
 
 WHAT CHANGES FROM THE OTHER TWO CHAPTERS' CELLS, and why it is not a port.
 
@@ -13,15 +13,14 @@ WHAT CHANGES FROM THE OTHER TWO CHAPTERS' CELLS, and why it is not a port.
     run and that marginal is a spike at zero: it would look perfect for
     every head, at both couplings, while measuring only that the constraint
     holds -- which the chapter already establishes bitwise. The observable
-    that survives the constraint is the pre-registered (2026-07-03)
-    half-magnetisation order parameter
+    that survives the constraint is the half-magnetisation order parameter
 
         phi = (m_left - m_right) / 2,
 
     the mean spin of the left half minus that of the right, halved into
     [-1, 1]. The two phase-separated configurations sit at phi = +-1 while
     the total stays pinned at zero, and E_pi[phi] = 0 by the global
-    spin-flip symmetry of the slice, so phi is Z2-odd as the board requires.
+    spin-flip symmetry of the slice, so phi is Z2-odd as the cell requires.
     On the c = 0.5 slice the halves' magnetisations are equal and opposite,
     so phi reduces to m_left exactly.
 
@@ -52,8 +51,8 @@ WHAT CHANGES FROM THE OTHER TWO CHAPTERS' CELLS, and why it is not a port.
     uniform grid that does not divide that spacing aliases -- a 17-bin
     histogram of the certified D8 pool reads ... 16283 28522 16371 28226
     16191 ..., alternating high/low, which is the bin grid and not the
-    physics. This is the same failure the board outlawed for the energy
-    panel (fig 3.2 left, 40 uniform bins).
+    physics. This is the same failure a 40-bin uniform grid produces on the
+    energy panel.
 
 REFERENCES, and their two shipping formats. At 8x8 the reference is the
 per-chain mchammer Kawasaki pool (results/03_hard/kawasaki_w2,
@@ -95,8 +94,8 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # The two couplings the hard house tables carry. sigma_c is the EXACT
-# critical value the s58 migration froze project-wide; 0.223 is the legacy
-# coupling of the pre-migration archive and must never share a panel with it.
+# critical value used project-wide; 0.223 is the legacy coupling of the
+# older archive and must never share a panel with it.
 SIGMA = {"s010": 0.1, "s220": 0.22034339675488573}
 SIGMA_LABEL = {"s010": r"$\sigma = 0.1$", "s220": r"$\sigma = \sigma_c$"}
 
@@ -246,7 +245,7 @@ def energy_floor(chains, lattice_edge, n_draws, n_replicates=64, seed=0):
 def is_tripwire_truncated(run_dir):
     """True if the cold-CV inversion tripwire halted this run early.
 
-    `halt_on_cv_inversion_after` was a SCREENING verdict that rode into the
+    `halt_on_cv_inversion_after` was a SCREENING rule that rode into the
     d256 w3 production cells through the shared house-cell builder and
     stopped four of them at step 5000 of 50000 on controlled-to-naive
     ratios of just 1.08-1.76. The tell is this file in the run dir; the
@@ -255,8 +254,8 @@ def is_tripwire_truncated(run_dir):
     Excluding them is not tidiness. Their frozen evals read ESS fraction
     0.0009 against the relaunches' 0.898, so a loader that swept both into
     one seed band would put a training-infrastructure artefact on the page
-    as a catastrophic head -- the exact misreading corrected at s73. The
-    relaunches carry the `-r2` tag and are the cells that count.
+    as a catastrophic head. The relaunches carry the `-r2` tag and are the
+    cells that count.
     """
     return (run_dir / "cv_inversion_halt.json").exists()
 

@@ -7,19 +7,19 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 #
-# Historical cross-volume transfer at 16x16 (2026-08-15), $1 selects:
+# Historical cross-volume transfer at 16x16, $1 selects:
 #   coarse -> n_euler 128, the archived 16x16 grid (0.5d)
 #   fine   -> n_euler 512, the builder's clip-safe 2d budget
-# FINE CANCELLED 2026-08-15 (configs.py amendment 2026-08-19): never ran;
-# do not relaunch. Recipe ne512 endpoint NULL and eval-grid sweep superseded it.
+# The fine arm never ran and is not to be relaunched: the ne512 recipe
+# endpoint came back null and the eval-grid sweep answered the question.
 # The two differ in that field ALONE (pinned in test_configs), so the
 # resolution read is separable from the transfer they share.
 #
-# Original rationale: phase-2 continued 16x16 from 16x16, testing estimator
-# switch rather than transfer. Frozen-checkpoint Var[log w] fell 19.44 ->
-# 15.57 over grids 128 -> 384. Re-rolling cannot separate coarse scoring
-# from a model fitted to coarse-grid bias; the proposed fine-training arm
-# addressed the latter question (subsequently cancelled above).
+# Rationale: the cv2 continuation continued 16x16 from 16x16, testing the
+# estimator switch rather than transfer. Frozen-checkpoint Var[log w] fell
+# 19.44 -> 15.57 over grids 128 -> 384. Re-rolling cannot separate coarse
+# scoring from a model fitted to coarse-grid bias; the fine-training arm
+# addressed the latter question.
 #
 # Source: the 8x8 fmo2 run's EMA parameters (per-site 0.00328, the best 8x8
 # model in the archive), resampled onto the larger torus by the warm-start

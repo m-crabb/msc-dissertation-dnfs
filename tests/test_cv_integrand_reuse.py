@@ -1,5 +1,4 @@
-"""c_t CV-grid integrand reuse from rollout forwards (optimisation B1 +
-B1-flip, decided s60 2026-08-24).
+"""c_t CV-grid integrand reuse from rollout forwards (swap and flip routes).
 
 In control_variate mode the outer step re-runs the head/model on
 (trajectory[k], t_k) for every grid slot k — but rollout step k already
@@ -408,7 +407,7 @@ def test_flip_trainer_naive_mode_free_rider(tmp_path):
 
 
 def test_optimised_recipe_flips_only_the_declared_flags():
-    """`optimised_recipe` is the s60 landing vehicle for these
+    """`optimised_recipe` is the transform that lands these
     optimisations: exactly compile_head and train.c_t_from_rollout flip,
     every other field is untouched (twin discipline — the transform must
     never smuggle a third change into a new cell)."""

@@ -1,8 +1,7 @@
 """Exclusion-mask band-attention swap head: direction (a), the reported head.
 
-The 2026-07-07 comparison: direction (b)
-(`interval_swap_head.py`, prefix-sum band) passed all three spike kill
-criteria first, but its band assembly cancels the hole terms by SUBTRACTION,
+Direction (b) (`interval_swap_head.py`, prefix-sum band) came first, but
+its band assembly cancels the hole terms by SUBTRACTION,
 leaving an fp residue that needs a numerics caveat wherever the head is
 claimed exact. This head keeps everything else -- the three-interval
 decomposition, the causal P/S streams, the band feature families, the
@@ -127,8 +126,8 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
     Args (beyond IntervalSwapHead's):
         attention_dim: query/key width of the per-family band attention.
         use_stencil: add the 5-point lattice-stencil band-feature family
-            (2026-07-08). Off by default so every existing MA
-            cell keeps building a byte-identical head. See `band_summaries`.
+            Off by default so every existing MA cell keeps building a
+            byte-identical head. See `band_summaries`.
         lattice_side: side length D of the flattened D x D grid the stencil's
             column neighbours x_{k±D} address. None infers round(sqrt(d))
             and asserts squareness -- pass it explicitly for non-square d.
@@ -467,7 +466,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         hole, decided from the INDICES alone so the mask is
         value-independent. It does NOT require per-site or depth-0 features
         -- that was a rule stated on the depth axis when the live constraint
-        is bounded support (corrected 2026-08-27). Exclusion is applied
+        is bounded support. Exclusion is applied
         BEFORE the softmax either way, so an excluded term carries pooling
         weight exactly zero rather than a small one.
 
@@ -480,7 +479,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         normalises over ~d terms instead of ~|j - i|, which dilutes whatever
         mass the interval deserves, and a learned soft mask approximates the
         hard interval indicator without containing it -- so it can lose, and
-        the arm exists to measure which.
+        the `lattice` option exists to measure which.
         """
         if self.attention_window == "interval":
             return (
@@ -546,7 +545,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 torch.arange(n_terms, device=emb.device),
             )
         if self.use_stencil:
-            # 5-point lattice-stencil family (2026-07-08). Per-term feature
+            # 5-point lattice-stencil family. Per-term feature
             # s_k = MLP(emb(x_k) ++ emb(x_{k±1}) ++ emb(x_{k±side})) -- a 2D
             # neighbourhood statistic, richer than the unary/offset terms that
             # capped the one-pass family at ~0.78 (H-shared).

@@ -1,19 +1,18 @@
-"""(sigma_c, 8x8) headline-cell probe analysis: the frozen S7 N_eff(O) metric
+"""(sigma_c, 8x8) headline-cell probe analysis: the N_eff(O) metric
 assembled from archived artefacts, all local, CPU only.
 
-The headline cell is (sigma_c, 8x8) under every smoke outcome (amendment
-section 1). Machinery mirrors demo_4x4.py — the same frozen metric
+Machinery mirrors demo_4x4.py — the same metric
 
-    N_eff(O) = Var_pi[O] / MSE(O_hat)                    (probe FREEZE-1)
+    N_eff(O) = Var_pi[O] / MSE(O_hat)
 
 — with ONE substitution: ground truth comes from the mode-balance-seeded
-mchammer reference chains (R-hat <= 1.01 validity bar, PASSED at both
+mchammer reference chains (R-hat <= 1.01 validity bar, met at both
 operating points) instead of exact enumeration, because 2^64 states cannot
 be enumerated. MSE is against the reference mean over R = 8 replicates,
 jackknife-over-replicates SE (n_eff_observable, reused verbatim).
 
-Cost accounting (FREEZE-2: two hardware-neutral currencies, reported
-separately, never blended):
+Cost accounting (two hardware-neutral currencies, reported separately,
+never blended):
 
 * Neural, network passes: one backbone call per Euler step, reused for the
   weight integrand (swap_ctmc.py lines 43-45), so
@@ -27,11 +26,11 @@ separately, never blended):
   dt_log_p_tilde_t per sample-step (dt_logp_evals, reported separately;
   folding it in at any reasonable pair-equivalent rate shifts the total by
   ~1-2%, stated rather than blended).
-* Kawasaki: one closed-form pair-Delta-E per trial step (the granted closed
-  form, FREEZE-2), total proposals with burn-in CHARGED — Kawasaki pays its
-  burn-in in real use (demo_4x4 precedent).
+* Kawasaki: one closed-form pair-Delta-E per trial step, total proposals
+  with burn-in CHARGED — Kawasaki pays its burn-in in real use (demo_4x4
+  precedent).
 
-Competitor burn-in (amendment section 3, frozen): discard
+Competitor burn-in: discard
 max(1e4 sweeps, 20 * tau_int(energy)) with tau_int from BATCH MEANS at block
 length >= 10 * tau_int. tau_int is estimated on the second half of each
 chain (clearly post-transient at 1e6 sweeps) so the transient cannot inflate
@@ -39,28 +38,24 @@ its own discard window. The Sokal windowed estimate (integrated_autocorr) is
 reported alongside as the secondary diagnostic, converted snapshot -> trial
 units explicitly (the analyze_data trial-step gotcha).
 
-Coverage axis (prereg section 2, "second, non-negotiable"): neural Z2 mass
-balance + weighted phi histogram against the reference's own phi histogram
-(total variation on the exact 33-point support), Kawasaki's mode-seeded
-split-half R-hat(phi) and its own phi TV alongside. "Covers modes at least
-as well as Kawasaki" is operationalised as TV_neural <= TV_kawasaki with the
-50/50 balance within 0.1 — an operationalisation the freeze left open,
-flagged in the output for my ruling.
+Coverage axis: neural Z2 mass balance + weighted phi histogram against the
+reference's own phi histogram (total variation on the exact 33-point
+support), Kawasaki's mode-seeded split-half R-hat(phi) and its own phi TV
+alongside. "Covers modes at least as well as Kawasaki" is operationalised
+as TV_neural <= TV_kawasaki with the 50/50 balance within 0.1.
 
-Verdict: frozen_verdict transcribes prereg section 7 mechanically. GO needs
-BOTH currencies at 95% CI excluding parity AND point >= 1.5x, the floor not
-worse, coverage at least as good, the gate holding. The floor's neural
-replicates are pending (job 273275); until they land the verdict is
-PROVISIONAL by construction — the function cannot emit GO with the floor
-unknown.
+Outcome: frozen_verdict applies the three-way rule mechanically. A win
+("GO") needs BOTH currencies at 95% CI excluding parity AND point >= 1.5x,
+the floor not worse, coverage at least as good, the 4x4 gate holding.
+Without the floor's neural replicates the outcome is "PROVISIONAL" by
+construction — the function cannot report a win with the floor unknown.
 
-The cross-currency division the freeze left open (Kawasaki performs zero
-network passes) is operationalised as: each ratio prices BOTH samplers per
-unit of ONE currency's honest count — energy-eval ratio charges the neural
-side its pair-Delta-E bill; network-pass ratio charges the neural side its
+The cross-currency division (Kawasaki performs zero network passes) is
+operationalised as: each ratio prices BOTH samplers per unit of ONE
+currency's honest count — the energy-eval ratio charges the neural side
+its pair-Delta-E bill; the network-pass ratio charges the neural side its
 backbone rows against Kawasaki's per-trial bill (its elementary operation
-and its energy evaluation coincide). Flagged in the output as a ruling I
-must own before print.
+and its energy evaluation coincide).
 """
 import argparse
 import json
@@ -86,16 +81,16 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 OPERATING_POINTS = {"sc": 0.223, "s010": 0.10}
 LATTICE_SIDE = 8
-BURN_IN_FLOOR_SWEEPS = 10_000          # amendment section 3, frozen
-BURN_IN_TAU_MULTIPLE = 20              # amendment section 3, frozen
-BLOCK_LENGTH_TAU_MULTIPLE = 10         # prereg section 5, frozen
+BURN_IN_FLOOR_SWEEPS = 10_000          # burn-in = max(1e4, 20 * tau_int)
+BURN_IN_TAU_MULTIPLE = 20
+BLOCK_LENGTH_TAU_MULTIPLE = 10         # batch-means block length >= 10 tau
 MIN_BLOCKS = 20
-GO_POINT_MARGIN = 1.5                  # prereg section 7, frozen
-COVERAGE_BALANCE_TOLERANCE = 0.1       # operationalisation, flagged for ruling
+GO_POINT_MARGIN = 1.5                  # per-currency point margin
+COVERAGE_BALANCE_TOLERANCE = 0.1
 
 
 # ---------------------------------------------------------------------------
-# Batch-means tau_int + the frozen burn-in rule
+# Batch-means tau_int + the burn-in rule
 # ---------------------------------------------------------------------------
 
 
@@ -103,15 +98,15 @@ def batch_means_tau_int(trace, min_blocks=MIN_BLOCKS):
     """Integrated autocorrelation time via batch means, self-certifying.
 
     For block length L >> tau_int, Var(block mean) ~= tau_int * Var(x) / L,
-    so tau_hat = L * Var(block means) / Var(x). The frozen rule requires the
-    block length to satisfy L >= 10 * tau_hat; we iterate L until the
+    so tau_hat = L * Var(block means) / Var(x). The rule requires the
+    block length to satisfy L >= 10 * tau_hat; L is iterated until the
     estimate certifies its own block choice (seeded from the Sokal windowed
     estimate). Returns (tau_hat, block_length, n_blocks).
 
     Failure mode guarded: with too few blocks Var(block means) is itself
     noisy, so L is capped at len(trace) // min_blocks; if certification is
-    impossible under that cap the trace is too short for the rule and we
-    raise rather than return an uncertified number.
+    impossible under that cap the trace is too short for the rule and the
+    function raises rather than return an uncertified number.
     """
     trace = np.asarray(trace, dtype=np.float64)
     n = trace.size
@@ -143,14 +138,14 @@ def batch_means_tau_int(trace, min_blocks=MIN_BLOCKS):
 
 
 def kawasaki_burn_in_sweeps(tau_int_sweeps):
-    """Frozen competitor burn-in: max(1e4 sweeps, 20 * tau_int(energy))."""
+    """Competitor burn-in: max(1e4 sweeps, 20 * tau_int(energy))."""
     return int(max(
         BURN_IN_FLOOR_SWEEPS, BURN_IN_TAU_MULTIPLE * tau_int_sweeps
     ))
 
 
 # ---------------------------------------------------------------------------
-# Ratio CI + the frozen three-way verdict
+# Ratio CI + the three-way outcome rule
 # ---------------------------------------------------------------------------
 
 
@@ -161,7 +156,7 @@ def ratio_with_ci(n_eff_num, se_num, cost_num, n_eff_den, se_den, cost_den):
     deterministic counters, so all uncertainty comes from the two jackknife
     SEs. On the log scale the SEs combine in quadrature as relative errors
     (delta method), giving a CI symmetric in log space — appropriate for a
-    strictly positive ratio whose GO bar is multiplicative (1.5x).
+    strictly positive ratio whose margin bar is multiplicative (1.5x).
     """
     point = (n_eff_num / cost_num) / (n_eff_den / cost_den)
     se_log = math.sqrt(
@@ -189,7 +184,7 @@ def ratio_with_f_ci(n_eff_num, cost_num, r_num, n_eff_den, cost_den, r_den):
 
     Approximation stated: a replicate BIAS makes the MSE noncentral chi2
     and the interval anti-conservative; the per-replicate estimate tables
-    are published so the examiner can see the bias term directly.
+    are published so the bias term is visible directly.
     """
     from scipy.stats import f as f_distribution
 
@@ -205,18 +200,18 @@ def ratio_with_f_ci(n_eff_num, cost_num, r_num, n_eff_den, cost_den, r_den):
 def frozen_verdict(energy_eval_ratio, network_pass_ratio, floor_not_worse,
                    coverage_ok, gate_holds, beats_local_variant,
                    wins_at_floor=None):
-    """Mechanical transcription of the prereg section 7 three-way rule.
+    """The three-way outcome rule, applied mechanically.
 
     Inputs are the sigma_c ratios vs the BEST tuned Kawasaki variant (each a
-    dict with point/excludes_parity), plus the auxiliary conditions. GO's
+    dict with point/excludes_parity), plus the auxiliary conditions. The
     margin rule is two-part per currency: 95% CI excluding parity AND point
-    >= 1.5x. floor_not_worse=None (replicates pending) makes GO impossible:
-    the verdict degrades to PROVISIONAL, never silently to a win.
+    >= 1.5x. floor_not_worse=None (replicates missing) makes "GO"
+    impossible: the outcome degrades to "PROVISIONAL", never silently to a
+    win.
 
-    Outcomes the freeze did not enumerate (e.g. a speed win with a coverage
-    shortfall) return PARTIAL with an *_unenumerated narrative rather than
-    being forced into the nearest frozen bucket — those need a dated ruling,
-    not an interpolation.
+    Outcomes the rule does not enumerate (e.g. a speed win with a coverage
+    shortfall) return "PARTIAL" with an *_unenumerated narrative rather
+    than being forced into the nearest bucket.
     """
     def margin_passes(ratio):
         return ratio["excludes_parity"] and ratio["point"] >= GO_POINT_MARGIN
@@ -264,7 +259,7 @@ def frozen_verdict(energy_eval_ratio, network_pass_ratio, floor_not_worse,
 
 
 def reference_block(probe_root, point, target):
-    """Frozen moments from reference_summary.json, verified by recomputing
+    """Reference moments from reference_summary.json, verified by recomputing
     the pooled post-discard moments from the raw snapshots (a sloppy
     reference contaminates every downstream N_eff, so the numbers the
     analysis reads are re-derived, not trusted)."""
@@ -274,8 +269,8 @@ def reference_block(probe_root, point, target):
     )
     if not summary["passed"]:
         raise RuntimeError(
-            f"reference/{point} failed its R-hat validity bar; the frozen "
-            "rule says these moments are not trustworthy."
+            f"reference/{point} failed its R-hat validity bar; "
+            "these moments are not trustworthy."
         )
     chain_dirs = sorted(
         (probe_root / "reference" / point).glob("chain_*")
@@ -384,13 +379,13 @@ def neural_replicate_rows(run_dir, target, n_euler_steps):
 
 
 # ---------------------------------------------------------------------------
-# Kawasaki side: competitor chains under the frozen burn-in rule
+# Kawasaki side: competitor chains under the burn-in rule
 # ---------------------------------------------------------------------------
 
 
 def kawasaki_chain_rows(probe_root, point, variant, target):
-    """Per-chain post-burn-in estimates, with the frozen burn-in rule
-    applied per chain and the cost charged as TOTAL proposals."""
+    """Per-chain post-burn-in estimates, with the burn-in rule applied per
+    chain and the cost charged as TOTAL proposals."""
     variant_dir = probe_root / "competitor" / point / variant
     rows = []
     for chain_dir in sorted(variant_dir.glob("chain_*")):
@@ -492,14 +487,13 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
     reported separately), the phi second-moment check (weighted E[phi^2] vs
     the reference variance — the guard against symmetry-inflated phi-mean
     scores), and the pooled weighted phi histogram vs the reference's own
-    (total variation on the exact support, judged against each side's OWN
+    (total variation on the exact support, compared against each side's OWN
     finite-sample noise floor). Kawasaki: split-half R-hat(phi) across the
     mode-seeded chains (the seeded-modes Gelman-Rubin construction) + the
     same floor-adjusted TV.
 
     coverage_ok = (neural TV excess over its floor <= kawasaki's excess)
-    AND |balance - 0.5| <= 0.1. The freeze fixed the axis, not the
-    tolerance or the floor construction — flagged for my ruling.
+    AND |balance - 0.5| <= 0.1.
     """
     rng = np.random.default_rng(20260813)
     balances = []
@@ -572,9 +566,7 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
         "operationalisation_note": (
             "coverage_ok = (neural TV excess over its own 95% noise floor "
             "<= kawasaki's excess) AND |balance - 0.5| <= 0.1; effective "
-            "sizes = Kish ESS (neural) and n/tau_int(phi) (chains). The "
-            "freeze fixed the axis but not this construction — ruling owed "
-            "before print"
+            "sizes = Kish ESS (neural) and n/tau_int(phi) (chains)."
         ),
     }
 
@@ -605,8 +597,8 @@ def analyse_point(point, probe_root, run_dir, n_euler_steps):
             "rows": rows,
             "n_eff": n_eff_block(rows, "energy_evals", moments),
         }
-    # Amendment section 2: "stronger per operating point" = larger
-    # N_eff(energy) per energy evaluation, on these same runs.
+    # "Stronger per operating point" = larger N_eff(energy) per energy
+    # evaluation, on these same runs.
     best_variant = max(
         kawasaki,
         key=lambda v:
@@ -776,7 +768,7 @@ def markdown_tables(point_result):
             f"- {variant}: tau_int(energy) batch-means "
             f"{min(tau_bm):.1f}-{max(tau_bm):.1f} sweeps "
             f"(Sokal {min(tau_sokal):.0f}-{max(tau_sokal):.0f} trial "
-            f"steps); burn-in {burn} sweeps (frozen rule: "
+            f"steps); burn-in {burn} sweeps (rule: "
             f"max(1e4, 20*tau))"
         )
     return lines
@@ -792,7 +784,7 @@ def main(argv=None):
     )
     parser.add_argument("--floor-run-dir", default=None,
                         help="floor-cell run dir once its replicate draws "
-                             "exist (job 273275)")
+                             "exist")
     parser.add_argument("--n-euler-steps", type=int, default=128)
     parser.add_argument("--out", default="results/03_hard/probe_8x8_headline")
     args = parser.parse_args(argv)
@@ -832,7 +824,7 @@ def main(argv=None):
             network_pass_ratio=headline_ratios["network_pass"][ci_method],
             floor_not_worse=floor_not_worse,
             coverage_ok=headline["neural"]["coverage"]["coverage_ok"],
-            gate_holds=True,  # 4x4 gate GO at both sigmas, 2026-07-03 record
+            gate_holds=True,  # the 4x4 enumeration gate passes at both sigmas
             beats_local_variant=all(
                 r[ci_method]["point"] > 1.0 for r in local_ratios.values()
             ),
@@ -842,12 +834,12 @@ def main(argv=None):
         "margin_observable": "energy",
         "open_rulings": [
             "CI construction (delta-on-jackknife vs variance-ratio F): "
-            "frozen margin rule names a 95% CI but not its construction; "
+            "the margin rule names a 95% CI but not its construction; "
             "both computed, verdicts may differ",
-            "margin observable: the freeze fixes the observable SET but "
+            "margin observable: the rule fixes the observable SET but "
             "not which observable carries the margin rule; energy (the "
             "demo pack's headline row) used here, full set in the tables",
-            "cross-currency division (SETTLED 2026-08-13, my ruling): "
+            "cross-currency division (settled): "
             "the two currencies BRACKET the method between its best and "
             "worst defensible accounting and carry NO single-number claim "
             "- a backbone row and a pair-Delta-E differ by ~1e4-1e5 FLOPs, "
@@ -869,17 +861,17 @@ def main(argv=None):
     lines = ["# (sigma_c, 8x8) headline-cell probe analysis", ""]
     for point in ("sc", "s010"):
         lines += markdown_tables(results[point]) + [""]
-    lines += ["## Frozen three-way verdict (margin observable: energy)", ""]
+    lines += ["## Three-way verdict (margin observable: energy)", ""]
     for ci_method, v in verdict["per_ci_method"].items():
         lines.append(
             f"- CI method **{ci_method}**: **{v['verdict']}** — "
             f"narrative: {v['narrative']}"
             + (f" — pending: {v['pending']}" if v["pending"] else "")
         )
-    lines += ["", "### Open rulings (owed before print)", ""]
+    lines += ["", "### Open choices", ""]
     lines += [f"- {r}" for r in verdict["open_rulings"]]
     lines += [
-        "", "### FREEZE-5 discharge", "",
+        "", "### One-event Euler step check", "",
         "- one-event Euler step (multi_event=false): events/site/step "
         "<= 1/64 ~= 0.016 < 0.1 structurally",
         "- lambda_dt clip fraction 0.0 at every training-eval row of the "

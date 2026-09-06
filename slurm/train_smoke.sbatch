@@ -14,7 +14,7 @@ export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 
 # Run `wandb login <KEY>` once on the cluster; appending ~/.netrc proved
-# unreliable (docs/imperial-doc-cluster.md §5a). Keep keys out of this file.
+# unreliable. Keep keys out of this file.
 # For key-free local logging, uncomment below; `wandb sync` uploads later:
 # export WANDB_MODE=offline
 

@@ -7,7 +7,8 @@
 #SBATCH --time=00:20:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Venue control for the thp-vs-B step-time story (s59). Arm B recorded
+# Venue control for the thp-vs-fmo2 step-time story. The fmo2 CV-from-zero
+# cell (d256-B-cv70k-ne128) recorded
 # 0.499 s/step on THIS cluster; the thp arms recorded 0.545-0.591 on Modal
 # A100-80GB, and a same-device Modal bench gives fmo2 4x0.161 = 0.64 s/step
 # equivalent -- i.e. on Modal thp is ~16% FASTER, and the recorded "thp

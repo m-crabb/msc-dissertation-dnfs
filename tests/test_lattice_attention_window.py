@@ -1,4 +1,4 @@
-"""Arm A: the masked-attention head over the WHOLE LATTICE, not the interval.
+"""The window arm: the masked-attention head over the WHOLE LATTICE, not the interval.
 
 WHAT CHANGES AND WHY IT IS NEARLY FREE. The head already computes every
 band-feature family for every pair and then masks before the softmax, so the
@@ -10,7 +10,7 @@ visible to the pair (i, j) when
     lattice:   for every o in O,  k + o != i  and  k + o != j
                (equivalently: its support does not touch either hole)
 
-THE LEGALITY RULE (corrected 2026-08-27, see the band-interior memory). What
+THE LEGALITY RULE. What
 blindness requires is NOT that features be per-site or depth-0; it is that
 exclusion remove EVERY term touching a hole, decided from the INDICES alone
 so it is value-independent. Both windows satisfy that; they differ only in
@@ -18,7 +18,7 @@ how much of the lattice survives the mask.
 
 WHAT THE ARM IS FOR. It is the single-variable test of the WINDOW at fixed
 feature family and fixed weights, against the masked-attention head already
-in print. It is one of two cells left unbuilt in the head construction's
+in the house table. It is one of two cells left unbuilt in the head construction's
 2 x 2 x 2 (feature family x window x weights).
 
 IT IS NOT SIMPLY THE MORE GENERAL HEAD, and this is the reason to measure
@@ -144,7 +144,7 @@ def test_lattice_window_is_blind_with_the_stencil_family_too():
 
 
 def test_mal_gate_cells_are_their_ma_twins_plus_the_window():
-    """The twin relationship arm A is read through: each `mal` gate cell
+    """The twin relationship the window arm is read through: each `mal` gate cell
     must differ from its `ma` sibling in `attention_window` and NOTHING
     else, so a window effect is chargeable to the window."""
     from dataclasses import replace

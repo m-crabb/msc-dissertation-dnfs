@@ -13,7 +13,7 @@ Reads the frozen eval artefacts of the eight Stage-4 10x10 runs (samples.pt,
 log_weights.pt, metrics.json; seeds 42-45 at sigma = 0.1 and sigma_c) and the
 two cached WOLFF references, and prints the table's observable cells:
 
-  ESS    -- frozen eval/ess_fraction, re-read not recomputed (the in-print value);
+  ESS    -- frozen eval/ess_fraction, re-read not recomputed (the tabled value);
   dMag   -- MDNS Eq. 26, dCorr -- MDNS Eq. 28, EW2 -- 1-D W2 on E(x)/d (DASBS),
             each on importance-reweighted samples against the reference;
   reference row -- the sampling floor under each column: resample the 100
@@ -29,13 +29,13 @@ two cached WOLFF references, and prints the table's observable cells:
 Per-site energy follows the chapter's convention E/d = -log p~(x) / (2 sigma d)
 (metrics.internal_energy_estimate).
 
-sigma_c MIGRATION (s73, 2026-08-26): the sigma_c point now reads the Wave-1
+sigma_c MIGRATION: the sigma_c point now reads the Wave-1
 `_sc` retrains at the ONE critical coupling SIGMA_C = ln(1+sqrt(2))/4 =
 0.220343, against the matching 0.220343 Wolff pool. It previously read the
 legacy 0.22305 family; those runs are archived records and are not edited.
-The retrain passed its pre-registered bands 4/4 in every family (final fp32
-5000-draw eval ESS: d10 0.902 +- 0.019 over floor 0.86, d8 0.962 +- 0.008
-over 0.89, d4 0.986 +- 0.004 over 0.93), which is what authorises the swap.
+The retrains clear their expected floors 4/4 in every family (final fp32
+5000-draw eval ESS: d10 0.902 +- 0.019 over 0.86, d8 0.962 +- 0.008 over
+0.89, d4 0.986 +- 0.004 over 0.93), which is what justifies the swap.
 Never mix couplings in one comparison: sigma_c runs pair with the sigma_c
 pool, legacy with legacy.
 """

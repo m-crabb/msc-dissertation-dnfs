@@ -7,16 +7,15 @@ Kawasaki chains the same courtesy — a simulated-annealing initialisation
 that walks a sigma-ladder up to the target before anything is measured —
 and ask whether either §5.1 failure demo was a cold-start artefact.
 
-Design (expectations written BEFORE running, so the check cannot be bent
-to fit its result):
+Design and expected outcomes:
 
-  A. tau_int at the measurement couplings, D in {10, 16, 24}: the annealed
-     arm should land inside the cold arm's seed band. tau_int is a property
+  tau_int comparison at the measurement couplings, D in {10, 16, 24}: the
+     annealed arm should land inside the cold arm's seed band. tau_int is a property
      of the stationary dynamics; annealing can only repair burn-in, and the
      cold protocol already spends 200k steps of burn-in. A genuine shift
      here would mean the printed slowing-down curves carry an
      initialisation artefact and must be corrected.
-  B. R-hat(phi) at D=24, sigma in {0.32, 0.40}: annealed chains start
+  R-hat(phi) and mode occupancy at D=24, sigma in {0.32, 0.40}: annealed chains start
      DISORDERED (random at the target composition) and condense into a
      phase-separated mode during the anneal. If each chain freezes into
      whichever mode it condensed into, either R-hat stays >> 1 (chains
@@ -31,10 +30,9 @@ The anneal ladder mirrors the training curriculum's rungs (0.10 to 0.223,
 the d64 recipe) and extends by steps of at most 0.04 when the target lies
 beyond sigma_c. Each rung dwells for the cold protocol's full burn-in
 budget (200k swap steps), so the annealed arm is strictly more generous
-than the cold one. Parallel tempering is deliberately NOT used here: the
-probe pre-registration rules it an orthogonal wrapper (it would equally
-accelerate the neural sampler), and this script must not amend a frozen
-pre-registration through the back door.
+than the cold one. Parallel tempering is deliberately NOT used here: it is
+an orthogonal wrapper that would equally accelerate the neural sampler, so
+it belongs to neither side of the comparison.
 
 Run:  pixi run python -m scripts.kawasaki_annealed_check
       pixi run python -m scripts.kawasaki_annealed_check full_curve
@@ -60,18 +58,19 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 from discrete_flow_sampler.targets.ising import SIGMA_C
 
-SIGMA_CRITICAL = SIGMA_C  # exact since the s58 sigma_c migration
+SIGMA_CRITICAL = SIGMA_C  # the exact critical coupling
 # The training curriculum's rungs, then <=0.04 extensions past sigma_c.
 CURRICULUM_RUNGS = [0.100, 0.140, 0.170, 0.190, 0.205, 0.215, SIGMA_CRITICAL]
 DWELL_STEPS = 200_000  # per rung == the cold protocol's whole burn-in
 
-# Arm A mirrors scripts/kawasaki_sweep.py failure_curves(): same step
+# The tau_int comparison mirrors scripts/kawasaki_sweep.py failure_curves(): same step
 # budget, burn, thinning and seed base, so the only difference is the init.
 TAU_D = [10, 16, 24]
 TAU_SIGMAS = [SIGMA_CRITICAL, 0.26]
 TAU_STEPS, TAU_BURN, TAU_THIN, TAU_CHAINS, TAU_SEED = 1_500_000, 200_000, 50, 8, 100
 
-# Arm B mirrors mode_coverage(): same budgets, same seed ensembles.
+# The R-hat / mode-occupancy check mirrors mode_coverage(): same budgets, same
+# seed ensembles.
 ERGO_D = 24
 ERGO_SIGMAS = [0.10, 0.32, 0.40]  # 0.10 = the built-in positive control
 ERGO_STEPS, ERGO_BURN, ERGO_THIN = 1_500_000, 200_000, 200
@@ -109,7 +108,7 @@ def annealed_init(D, sigma_target, seed, dwell_steps=DWELL_STEPS):
 
 
 def _tau_row(D, sigma, init_kind):
-    """One (D, sigma, init) cell of Arm A: TAU_CHAINS chains, tau_int in sweeps."""
+    """One (D, sigma, init) tau_int cell: TAU_CHAINS chains, tau_int in sweeps."""
     d = D * D
     taus = []
     for chain in range(TAU_CHAINS):
@@ -134,7 +133,7 @@ def _tau_row(D, sigma, init_kind):
 
 
 def tau_arm():
-    """Arm A: cold vs annealed tau_int under the identical measurement."""
+    """Cold vs annealed tau_int under the identical measurement."""
     return [_tau_row(D, sigma, init_kind)
             for D in TAU_D
             for sigma in TAU_SIGMAS
@@ -142,7 +141,7 @@ def tau_arm():
 
 
 def full_curve_arm():
-    """Arm A extended: annealed tau_int at every sigma failure_curves() plots.
+    """Annealed tau_int at every sigma failure_curves() plots.
 
     The spot check above answers the fairness question in prose; the printed
     figure plots the full CURVE_SIGMAS grid, so for the chapter's opening
@@ -180,7 +179,7 @@ def full_curve_arm():
 
 
 def ergodicity_arm():
-    """Arm B: R-hat(phi) + per-chain mode occupancy for annealed starts."""
+    """R-hat(phi) + per-chain mode occupancy for annealed starts."""
     rows = []
     for sigma in ERGO_SIGMAS:
         rhats, mode_signs = [], []

@@ -1,15 +1,15 @@
-"""4x4 supervisor-demo analysis: exact-enumeration fidelity + the frozen
-N_eff(O) metric for the 10k MA/MO cells and the mchammer Kawasaki chains.
+"""4x4 demo analysis: exact-enumeration fidelity + the N_eff(O) metric for
+the 10k MA/MO cells and the mchammer Kawasaki chains.
 
 FRAMING: gate-adjacent validation and demo at the enumerable size -- NOT the
-frozen S7 probe (pre-registration 2026-07-03 fixes probe sizes at 8x8/16x16).
-It reuses the probe's frozen metric so the machinery transfers:
+mixing probe itself (probe sizes are 8x8/16x16). It reuses the probe's
+metric so the machinery transfers:
 
-    N_eff(O) = Var_pi[O] / MSE(O_hat)          (probe FREEZE-1)
+    N_eff(O) = Var_pi[O] / MSE(O_hat)
 
 with exact E_pi[O], Var_pi[O] from the enumerated 12,870-state slice (the one
 rung where ground truth has zero uncertainty) and MSE over replicate
-estimates. Compute currencies stay separate (FREEZE-2): backbone fwd_stack
+estimates. Compute currencies stay separate: backbone fwd_stack
 ROWS for the neural cells (counted by hook, so mask_one's stacked per-anchor
 passes are charged honestly), TRIAL steps = closed-form energy evaluations
 for Kawasaki. Never blended.
@@ -59,7 +59,7 @@ DEMO_SIGMAS = (0.10, 0.223)
 
 
 def observable_values(name, states, target):
-    """Per-sample values of one frozen-set observable (probe FREEZE-1 set)."""
+    """Per-sample values of one probe-set observable."""
     if name == "energy":
         return _energy(states, target.A)
     if name == "nn_correlation":

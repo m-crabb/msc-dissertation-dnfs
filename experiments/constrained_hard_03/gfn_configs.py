@@ -7,10 +7,9 @@ to explain away. The two families meet at the artefact level instead — run
 dirs, eval/metrics.json schema and composition observables are shared, so
 the table scripts ingest GFN rows unchanged.
 
-Fairness protocol (design doc 2026-08-30-gfn-comparator): the s92
-correctness wave ran hidden 128 / 3 layers, which the s93 parity audit
-measured at 597.6k params against 79.5k-101k for the wave-2 d16 heads —
-the `_par` cells are the judging wave at measured parameter parity
+Fairness protocol: the plain (correctness) cells ran hidden 128 / 3
+layers, i.e. 597.6k params against 79.5k-101k for the wave-2 d16 heads —
+the `_par` cells are the comparison cells at measured parameter parity
 (hidden 64 / 2 layers / 4 heads = 101.4k params ~= the ma head's 101.0k;
 batch 128). sigma_stages is the
 beta-annealing knob (the VAN-line criticality mitigation); the 4x4 cells
@@ -37,8 +36,8 @@ class GFNCellCfg:
     n_layers: int = 3
     n_heads: int = 4
     with_flow_head: bool = False  # forced True for fldb in the builder below
-    # Standalone flow module instead of the shared-trunk linear readout
-    # (s100): the torchgfn-conventional parameterisation — a separate MLP
+    # Standalone flow module instead of the shared-trunk linear readout:
+    # the torchgfn-conventional parameterisation — a separate MLP
     # over the one-hot prefix state — which also DECOUPLES flow gradients
     # from the policy trunk (the shielding mechanism the flow-lr arms
     # surfaced). False = every archived cell, byte-identical.
@@ -49,12 +48,12 @@ class GFNCellCfg:
     learning_rate: float = 1e-3
     # Separate Adam lr for the TB arm's scalar log_z (None = share
     # learning_rate). Adam moves a scalar at ~lr/step under a consistent
-    # gradient, so at the flat 1e-3 the s92 wave's log Z (init 0) climbed at
+    # gradient, so at the flat 1e-3 the plain cells' log Z (init 0) climbed at
     # its measured speed limit (+7e-4/step) and sat 2.4 nats below the exact
     # slice value 10.81 at 10k steps — it arithmetically could not arrive.
     # ~100x on log_z alone is the Malkin et al. / torchgfn convention.
     log_z_learning_rate: float | None = None
-    # The FL-DB analogue of the split above (s100). The flow head is the
+    # The FL-DB analogue of the split above. The flow head is the
     # FL-DB arm's normaliser: its output must reach the tens-of-nats
     # completion-entropy scale (log C(64,32) ~ 43 nats enters the prefix
     # flows), and Adam moves a final-layer bias at ~lr/step, so at the
@@ -77,7 +76,7 @@ class GFNCellCfg:
     # O(d^3) to O(d^2) attention.
     compile_policy: bool = False
     sigma_stages: tuple[float, ...] = ()  # annealing ladder; () = train flat
-    # House-recipe training levers, added for the d64 rung (s94). Every
+    # House-recipe training levers, added for the d64 rung. Every
     # default is ARCHIVED-INERT: 0 / None / False reproduces the d16 waves
     # byte-identically, so archived cells never retro-flip and the sweep
     # twin test's field-by-field comparison needs no exemptions.
@@ -140,9 +139,9 @@ def _gfn_d16_cell(objective: str, sigma_label: str, sigma: float) -> GFNCellCfg:
 
 
 def _gfn_d16_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNCellCfg:
-    """s93 judging wave: parameter parity with the wave-2 heads and the
-    split log_z lr on the TB arm. The plain cells above are the s92
-    correctness wave, kept as archived configs (never retro-flipped).
+    """Parity cells: parameter parity with the wave-2 heads and the split
+    log_z lr on the TB arm. The plain cells above are the correctness
+    cells, kept as archived configs (never retro-flipped).
 
     Parity is measured in PARAMETERS, not copied hyperparameters: the house
     d16 sizing (hidden 32 / 2 layers) gives this policy only 26.1k params
@@ -161,7 +160,7 @@ def _gfn_d16_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNC
     return cell
 
 
-# Fair-tuning grid around the `_par` recipe (s93): lr x epsilon, sigma_c
+# Fair-tuning grid around the `_par` recipe: lr x epsilon, sigma_c
 # only (the discriminating coupling), centre EXCLUDED because the centre IS
 # the `_par` cell. The 4x4 gate is a FILTER, not a signal (the window-arm
 # lesson: a disjoint 4x4 separation reversed at 8x8), so this grid exists
@@ -169,7 +168,7 @@ def _gfn_d16_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNC
 # break cheaply — the discriminating sweep belongs at 8x8. Warmup and grad
 # clip are deliberately NOT folded in: all 24 GFN cells to date converged
 # without them, so there is nothing for them to rescue, and changing the
-# centre would orphan the judged `_par` wave.
+# centre would orphan the archived `_par` cells.
 _SWEEP_LR_GRID = {"l3e4": 3e-4, "l1e3": 1e-3, "l3e3": 3e-3}
 _SWEEP_EPSILON_GRID = {"e000": 0.0, "e005": 0.05, "e010": 0.1}
 _SWEEP_CENTRE = ("l1e3", "e005")
@@ -185,7 +184,7 @@ def _gfn_d16_sweep_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCel
     )
 
 
-# The 8x8 rung (s94). The sigma_c stage ladder mirrors the house
+# The 8x8 rung. The sigma_c stage ladder mirrors the house
 # _D64_SIGMA_LADDER exactly, INCLUDING its 20k final plateau: _stage_sigma
 # gives every entry an equal n_steps/len share, so ten 5k-step stages with
 # the final sigma repeated four times reproduce the house start-steps
@@ -199,7 +198,7 @@ _D64_GFN_SIGMA_STAGES = (
 
 # Trimmed star around the d64 centre, sigma_c only (the discriminating
 # coupling — d64 house ESS spans 0.735-0.953 there, against the saturated
-# 4x4 gate). Arms from the s94 4x4 grid verdict: the lr axis first (epsilon
+# 4x4 gate). Arms chosen from the 4x4 grid: the lr axis first (epsilon
 # was flat at 4x4 across both objectives), 3e-4 because "under-trained at
 # 10k" no longer excuses it at 50k, 3e-3 because the FLDB triplet sat
 # disjoint above its centre.
@@ -254,10 +253,10 @@ def _gfn_d64_star_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCell
     )
 
 
-# Flow-head split-lr arms, FL-DB at sigma_c only (s100): the fairness fix
-# the training logs point at — see flow_head_learning_rate on the cfg. Two
+# Flow-head split-lr arms, FL-DB at sigma_c only: the fairness fix the
+# training logs point at — see flow_head_learning_rate on the cfg. Two
 # values bracket the unknown: 1e-1 is the log_z precedent (~100x), 1e-2 a
-# conservative 10x. ONE LEVER off the judged fldb centre (pinned by
+# conservative 10x. ONE LEVER off the fldb centre (pinned by
 # test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever); everything else
 # would confound the diagnosis. sigma_c only because the s010 fldb centre
 # already sits at 0.97.
@@ -300,7 +299,7 @@ GFN_CONFIGS.update(
     {cell.name: cell for cell in map(_gfn_d64_flow_lr_cell, _FLOW_LR_GRID)}
 )
 
-# Budget-doubled FLDB diagnostic (s100): settles "slow vs broken". The
+# Budget-doubled FLDB diagnostic: settles "slow vs broken". The
 # seed-42 flow-lr logs showed the centre's slow ESS climb is the POLICY
 # converging (DB loss ~0.007 by 15k, ESS still +0.06/5k at 50k) and a hot
 # flow head makes things WORSE (dose-monotone), so the remaining question
@@ -319,9 +318,9 @@ GFN_CONFIGS.update({
             name="GFN_d64_c50_s220_fldb_100k_par",
             n_steps=100_000,
         ),
-        # Standalone-flow arm (s100): the torchgfn-conventional
-        # parameterisation at the matched 50k budget, ONE lever off the
-        # judged centre. Judged against the centre (policy identical), so
+        # Standalone-flow arm: the torchgfn-conventional parameterisation
+        # at the matched 50k budget, ONE lever off the centre. Compared
+        # against the centre (policy identical), so
         # the added flow-MLP params (~17k at d64) are a declared delta,
         # not a parity break — parity with the house heads binds the
         # PRINTED centre rows, and this arm's comparison never leaves the
@@ -335,11 +334,11 @@ GFN_CONFIGS.update({
 })
 
 
-# The 16x16 rung (s102): the fairness claim the comparator subsection
-# still owes — 256-step trajectories are the regime the GFN literature
-# documents as hard for TB (Madan/Pan expect FL>TB there), so the d64
-# verdict "FL>TB has not appeared by 64-step trajectories" is only
-# defensible as a scoped claim if this rung tests the scope.
+# The 16x16 rung: the fairness claim the comparator subsection owes —
+# 256-step trajectories are the regime the GFN literature documents as
+# hard for TB (Madan/Pan expect FL>TB there), so the d64 finding "FL>TB
+# has not appeared by 64-step trajectories" is only defensible as a scoped
+# claim if this rung tests the scope.
 #
 # The sigma_c ladder mirrors the house d256 100k curriculum exactly under
 # the equal-share rule: 20 stages of 5k = the house start-steps
@@ -354,7 +353,7 @@ _D256_GFN_SIGMA_STAGES = (
 
 
 def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
-    """16x16 centre: the judged d64 recipe with only the rung levers moved.
+    """16x16 centre: the d64 recipe with only the rung levers moved.
 
     Parity is measured params a third time, and this rung is the first
     where the policy must be RE-SIZED to keep it: the d64 sizing's only
@@ -369,11 +368,11 @@ def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
     hidden 72 overshoots both anchors (+8.6%/+5.6%); a third layer blows
     past by 25%.
 
-    Every other lever rides the judged d64 `_par` recipe unchanged
+    Every other lever rides the d64 `_par` recipe unchanged
     (batch 128, warmup 500, grad clip 500, EMA 0.9999 dual eval, bf16
     eval autocast, in-training frozen eval every 200 steps, compile ON
     gated by the launch bench at THIS size on the venue stack).
-    NOTE (cost-ladder tripwire, s100): registering this cell at hidden 68
+    NOTE (cost-ladder tripwire): registering this cell at hidden 68
     obsoletes tab:head-cost-ladder's d256 GFN entries, which price the
     d64 recipe re-realised at D=16 — profile_swap's gfn modes re-point
     here automatically; re-run modal_app::bench when the rows are next
@@ -413,14 +412,14 @@ GFN_CONFIGS.update({
 })
 
 
-# The 20x20 rung (s125): the TB comparator carried to the chapter's largest
+# The 20x20 rung: the TB comparator carried to the chapter's largest
 # printed swap-head table (tab:eval-hard-20x20, whose GFN rows read "--").
-# Only TB is launched -- FL-DB was dead at 256-step trajectories with the
+# Only TB is run -- FL-DB was dead at 256-step trajectories with the
 # same construction and is printed that way, so its 400-step row would buy
 # a predictable zero for a GPU-day; the fldb cell is registered so the
 # rung's gate and any later completeness run need no new code.
 def _gfn_d400_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
-    """20x20 centre: the judged d256 recipe with the lattice and the parity
+    """20x20 centre: the d256 recipe with the lattice and the parity
     re-size moved, nothing else.
 
     Parity is measured params a fourth time. The 20x20 swap heads are larger

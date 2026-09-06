@@ -7,7 +7,7 @@
 #SBATCH --time=06:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Walk-back-to-8x8 slate (2026-08-12), soft family: D=8 twins of the three
+# Walk-back-to-8x8 slate, soft family: D=8 twins of the three
 # load-bearing d10 specialists, one seed per submission, seeds 42-45 to
 # match each archived d10 family. Fixed-composition specialists only, so no
 # post-training composition sweep (that step is amortised-cells-only).

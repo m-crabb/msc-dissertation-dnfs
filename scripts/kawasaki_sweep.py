@@ -72,7 +72,7 @@ CURVE_CACHE = OUT / "failure_curves_data.json"
 SIGMA_OPERATING = 0.10  # DNFS paper operating point (subcritical)
 from discrete_flow_sampler.targets.ising import SIGMA_C
 
-SIGMA_CRITICAL = SIGMA_C  # exact = log(1+sqrt(2))/4 = 0.220343 (s58 migration)
+SIGMA_CRITICAL = SIGMA_C  # exact = log(1+sqrt(2))/4 = 0.220343
 CURVE_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26]  # monotonic τ_int regime
 ERGO_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26, 0.32, 0.40]
 TRAINED_D = [8, 16]     # the lattices this thesis trains a neural sampler at

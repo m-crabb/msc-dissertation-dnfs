@@ -9,7 +9,7 @@
 #SBATCH --output=slurm/logs/%x_%j.out
 
 # 10x10 unconstrained sigma_c on the 16x16 100k hard house recipe with the
-# exact-field channel (s122, 2026-09-03): two seeds CO-RUN on one card so the
+# exact-field channel: two seeds CO-RUN on one card so the
 # four-seed set fits the two free submission slots. At d=100 the let 128x3
 # flip model leaves most of an A100 idle per process, so the pair overlaps
 # at well under 2x the single-seed time; wall_clock_step_s from a packed

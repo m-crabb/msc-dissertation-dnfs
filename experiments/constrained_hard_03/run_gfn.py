@@ -74,7 +74,7 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
     still climbing toward the ~43-nat completion-entropy scale at d64's
     full 50k budget). Splitting changes NOTHING for cells with the fields
     unset: the archived flat construction is reproduced exactly, so every
-    judged cell stays comparable.
+    archived cell stays comparable.
 
     Requesting a flow-head group on a policy built without one (a TB cell)
     raises rather than silently training nothing at the fast lr.
@@ -85,7 +85,7 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
     groups = []
     split_out = set()
     if cfg.log_z_learning_rate is not None:
-        # weight_decay 0 (2026-09-03): log Z is a normaliser, not a weight.
+        # weight_decay 0: log Z is a normaliser, not a weight.
         # AdamW's decoupled decay caps any scalar at 1/wd -- Adam's
         # normalised step saturates at magnitude 1 and the decay term
         # wd*theta balances it there -- i.e. 100 at torch's default 0.01.
@@ -322,7 +322,7 @@ def train_gfn(
     log_writer = csv.writer(log_file)
     log_columns = [
         "step", "loss", "log_z", "ess_fraction_train", "sigma",
-        # d64 failure-triage columns (s94). grad_norm is the PRE-clip total
+        # d64 failure-triage columns. grad_norm is the PRE-clip total
         # norm (clip_grad_norm_'s return value), so whether the rail engaged
         # is readable as grad_norm > grad_clip_max_norm. mean_log_q is the
         # entropy proxy: RISING mean log q with healthy batch ESS is the

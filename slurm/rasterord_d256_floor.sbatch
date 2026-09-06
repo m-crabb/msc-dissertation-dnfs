@@ -7,7 +7,7 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Sweep-ladder FLOOR rung, 16x16 at sigma = 0.10 (2026-08-30). Comma-chained
+# Sweep-ladder FLOOR rung, 16x16 at sigma = 0.10. Comma-chained
 # configs, THREE SEEDS SERIAL INSIDE EACH:
 #   sbatch -J rlad-masep slurm/rasterord_d256_floor.sbatch <cfg[,cfg,...]>
 #
@@ -28,7 +28,7 @@
 # THE MASKED-ATTENTION ARMS RUN SEPARABLE; the gather RIDES TRUE from the
 # archived parent on every arm -- at d256 it is load-bearing for the
 # full-batch rollout (the ungathered pair slab is 18 GiB per forward at
-# b512; a gather-off launch OOM'd a 183 GB B200 at step 0, 2026-08-30).
+# b512; a gather-off launch OOM'd a 183 GB B200 at step 0).
 # Both knobs are function-preserving (separable: forward agreement 1.5e-7,
 # gradients matched parameter by parameter; gather: bit-class equivalent
 # GEMM shape), so quality cannot move and the chain still prices one field

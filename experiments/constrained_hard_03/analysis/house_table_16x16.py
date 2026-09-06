@@ -6,7 +6,7 @@ Reads the d256 w3 wave (tags `20260826-d256-s010` at sigma = 0.1 and
 down.
 
 WHAT IS SHARED, AND WHY. The 8x8 fill is where the chain-pool reference
-machinery was written and verified against a table now in print: the
+machinery was written and verified against the 8x8 table: the
 half-split standard error, the estimated sampling floor, the error metrics,
 and the FLOP provenance that reads each cell's OWN saved config and asserts
 it against the live registry. All of that is lattice-generic and is
@@ -46,13 +46,11 @@ number that the 8x8 fill cannot get wrong.
     certified at nn-correlation 0.5790 +- 0.0003 against the mchammer
     anchor 0.578756).
 
-  * THE ARM SET IS FOUR HEADS AND THERE IS NO REJECTION ROW. The skeleton
-    declared a plain-`fimo2` row with no run at either coupling; it is
-    deleted rather than launched, the exact-field lever being already
-    answered at 4x4 and 8x8. Rejection rows stay at the two smaller rungs
-    because neither the unconstrained nor the soft chapter has a d256 case
-    to reject off, so a row here would have no counterpart (both decided
-    2026-08-27).
+  * THE ARM SET IS FOUR HEADS AND THERE IS NO REJECTION ROW. There is no
+    plain-`fimo2` row: the exact-field lever is already answered at 4x4
+    and 8x8. Rejection rows stay at the two smaller rungs because neither
+    the unconstrained nor the soft chapter has a d256 case to reject off,
+    so a row here would have no counterpart.
 
 TAU AND THE EFFECTIVE COUNT. Measured with `integrated_autocorr` on each
 chain's STORED energy-per-site series and floored at 1.0, exactly as the
@@ -152,7 +150,7 @@ ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 # first wave's TB centres (tag 20260831-gfn-d256) stalled with log Z pinned
 # at 100 by AdamW's default weight decay (run_gfn.build_optimiser) and are
 # re-run under their own tag; the FL-DB loss carries no log Z, so those
-# cells stand as landed.
+# cells are kept.
 GFN_ARMS = {
     "gfn_tb": "GFlowNet, trajectory balance",
     "gfn_fldb": "GFlowNet, forward-looking DB",
@@ -167,7 +165,7 @@ GFN_CELL_NAME = {
 # head, wave -- and NOT on the budget or optimiser infixes. Those differ
 # legitimately across the wave (the sigma_c cells train 100k with the
 # widening curriculum, the sigma = 0.1 floor cells 50k flat) and the `ma`
-# sigma_c trio launched under its own tag, so pinning them would silently
+# sigma_c trio ran under its own tag, so pinning them would silently
 # drop cells rather than fail loudly. The coupling token already excludes
 # the legacy archive, which is `s223` rather than `s010`/`s220`, and the
 # `_w3_` marker excludes anything older at the same coupling.

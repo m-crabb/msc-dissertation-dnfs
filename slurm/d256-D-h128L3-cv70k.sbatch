@@ -7,8 +7,9 @@
 #SBATCH --time=1-06:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# ne128 x CV composition family (2026-08-21, user GO). Bands frozen in the
-# cell comment (configs.py) BEFORE this launch; one-variable relationships
+# ne128 x CV composition family: CV from step zero at the h128L3 capacity,
+# 70k curriculum.
+# Expected ranges in the configs.py cell comment; one-variable relationships
 # pinned by test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators.
 # Fixed --tag reuses the run directory; resume.pt overrides --init-from.
 export CONDA_OVERRIDE_CUDA=12.9

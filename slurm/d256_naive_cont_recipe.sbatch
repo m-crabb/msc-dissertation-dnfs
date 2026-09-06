@@ -7,13 +7,13 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# NAIVE twin of the CV continuation (2026-08-20, s41, user GO at judging).
+# NAIVE twin of the CV continuation (d256_cv_cont_recipe.sbatch).
 # Continues the SAME seed-43 recipe final.pt with `estimator` naive_mc the
 # only declared change, so the CV continuation's 13.4x (EMA eval ESS/N
 # 0.2655 vs its parent's 0.0198, at sigma_c on 16x16) can be split between
 # the control variate and the 20k additional fixed-sigma_c steps it also
-# bought. Bands frozen in the cell comment (configs.py) BEFORE this launch:
-# CONTINUATION-OWNS / ESTIMATOR-OWNS / SPLIT.
+# bought. Expected outcomes (configs.py cell comment): continuation-owns /
+# estimator-owns / split.
 #
 # Match the CV twin's A100-80GB partition and walltime to control venue.
 #

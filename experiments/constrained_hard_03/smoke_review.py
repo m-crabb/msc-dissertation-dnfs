@@ -1,12 +1,12 @@
-"""Five-arm smoke-wave deep-review harness: one table per arm, computed
-identically, so collection night is mechanical and the judged arms
-(naive PASS, unclip FAIL) double as the harness's own validation set.
+"""Five-arm smoke-wave review harness: one table per arm, computed
+identically, so the reviewed arms (naive PASS, unclip FAIL) double as the
+harness's own validation set.
 
-Measures exactly the pre-stated criteria (configs.py smoke-ladder comment +
-the four lens docs), nothing else:
+Measures exactly the stated criteria (configs.py smoke-ladder comment),
+nothing else:
 
 - (i) rung-0 escape: grad_norm median on steps [2500, 3500]; bar ~500-scale
-  (judged pass at 293; an order of magnitude above is the judged FAIL).
+  (the passing arm read 293; an order of magnitude above is the failing one).
 - (ii) 10k sigma=0.17 survival: least-squares loss slope on [10000, 12000];
   bar <= 0. Transition excursion reported alongside (pre-boundary median
   [9500,10000), peak on [10000,10600), final median [11500,12000)).
@@ -17,10 +17,10 @@ the four lens docs), nothing else:
 - Per-rung medians over the last 500 steps of each rung (rungs 0/5k/10k,
   the truncated smoke view of the 50k ladder).
 
-The harness measures and annotates against the bars; the VERDICT stays a
-human judgement recorded in 5-smoke-verdicts.md (the naive precedent: one
-failed bar stated honestly without failing the arm — a harness that
-auto-verdicts would flatten exactly that nuance).
+The harness measures and annotates against the bars; the pass/fail call
+stays a human judgement (the naive precedent: one failed bar stated
+honestly without failing the arm — a harness that decided automatically
+would flatten exactly that nuance).
 """
 import argparse
 import csv
@@ -190,7 +190,7 @@ def format_report(report):
         f"### {report['name']} "
         f"(rows {report['n_rows']}, last step {report['last_step']:.0f})",
         "",
-        "| lens | bar (pre-stated) | measured | annotation |",
+        "| lens | bar | measured | annotation |",
         "|---|---|---|---|",
         f"| (i) rung-0 escape | grad ~500-scale by 3k "
         f"| median {report['escape_grad_3k']:.3g} on [2.5k,3.5k) "

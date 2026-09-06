@@ -1,7 +1,7 @@
-"""Potts wiring through the hard_03 config + run plumbing (plan Step 2).
+"""Potts wiring through the hard_03 config + run plumbing.
 
-Step 1 shipped `FixedCompositionPottsTarget`; nothing selected it. These tests
-pin what "selecting it from a cell" must mean:
+`FixedCompositionPottsTarget` exists on its own; these tests pin what
+"selecting it from a cell" must mean:
 
 1. a Potts cell builds the Potts target with the right D / sigma / species
    counts, and a backbone whose embedding tables are sized for S -- the one
@@ -9,13 +9,14 @@ pin what "selecting it from a cell" must mean:
    `nn.Embedding` rather than a readable error;
 2. every existing (Ising) cell is untouched -- the new fields default to the
    current behaviour, so no run dir written before them is locked out by the
-   `eval_only` config-drift guard (see 89363b3);
+   `eval_only` config-drift guard (see 58df8e0);
 3. the swap CTMC conserves the *species-count vector*, not just a scalar
    n_plus -- the structural claim that makes the hard constraint generalise
    to S > 2 for free;
 4. the eval path emits NO composition observables on the Potts route, because
-   `diagnostics.metrics` is still two-species (plan Step 3). Silence is the
-   correct output until then; a plausible-looking wrong number is not.
+   `diagnostics.metrics` is still two-species. Silence is the correct
+   output until an S-vector version lands; a plausible-looking wrong number
+   is not.
 """
 import json
 from dataclasses import asdict, replace
@@ -115,13 +116,13 @@ def test_species_count_is_consistent_across_every_cell():
         n_species = int(name.split("_")[0][1:])
         assert cfg.model.vocab_size == n_species, name
         if n_species == 2:
-            # binary route: the Ising torus, or (s115) a binary cluster
+            # binary route: the Ising torus, or a binary cluster
             # expansion on a real alloy cell, which fixes its own x_Au
             assert cfg.target_kind in ("ising", "cluster_expansion"), name
             assert cfg.potts_composition is None, name
             if cfg.target_kind == "cluster_expansion":
                 assert cfg.ising.expansion_json is not None, name
-                # (s123) the composition sweep fills every integral slice
+                # the composition sweep fills every integral slice
                 # between Cu3Au and CuAu; the amortised cell mixes them.
                 n_sites = 16 if "cuau16" in name else 64
                 assert cfg.ising.target_composition * n_sites == round(
@@ -181,7 +182,7 @@ def test_potts_eval_conserves_species_counts_and_omits_binary_metrics(tmp_path):
     ((x+1)/2).mean(), i.e. the mean LABEL INDEX once S > 2. It would not
     raise on Potts spins -- it would write a confident, meaningless
     `composition_mean`. The eval must emit nothing there until the S-vector
-    diagnostics land (plan Step 3)."""
+    diagnostics land."""
     torch.manual_seed(0)
     cfg = _tiny_potts_cfg(n_eval_samples=8, eval_sample_chunk=4)
     target, head = build_target_and_head(cfg, "cpu")

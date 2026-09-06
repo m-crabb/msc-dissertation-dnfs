@@ -1,7 +1,6 @@
 """Eval-phase wall-clock bench, d64, both sampling paradigms on ONE GPU.
 
-WHY THIS EXISTS (the latency counterpoint, decided s93 and anchored in the
-tab:eval-hard-4x4 provenance block): FLOP/es prices arithmetic, not serial
+WHY THIS EXISTS (the latency counterpoint): FLOP/es prices arithmetic, not serial
 depth or kernel utilisation. The KV-cached autoregressive GFN rollout is
 ~250x below the swap heads on FLOP/es at d64, but pays d SEQUENTIAL
 one-token latency-bound kernels per sample, while the swap CTMC's 128 Euler
@@ -13,8 +12,8 @@ B=128 and B=512, i.e. it is latency-bound and batch is nearly free, which
 no FLOP count would reveal.
 
 WHAT IS TIMED, exactly. One frozen-eval chunk per arm, the way each side's
-own frozen eval actually ran (phase and batch named, per the B=128
-bench-ranking lesson: a verdict is scoped to its phase):
+own frozen eval actually ran (phase and batch named: a timing is scoped
+to its phase and batch):
   * swap arms — one `sample_swap_ctmc` eval slice of `eval_sample_chunk`
     (256) draws with IS log-weights over the full 128-step Euler grid,
     fp32 under no_grad (run.py final_eval runs fp32; the bf16 opt-in

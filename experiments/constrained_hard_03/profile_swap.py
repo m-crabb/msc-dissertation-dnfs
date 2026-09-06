@@ -365,7 +365,7 @@ _COMPILE_WATCH = _CompileGaveUp()
 
 
 def _run_gfn_bench(args, device: torch.device) -> None:
-    """GFN comparator rows for tab:head-cost-ladder (s100).
+    """GFN comparator rows for tab:head-cost-ladder.
 
     The GFN has no per-Euler-step head forward: its sampler IS the
     KV-cached autoregressive rollout (d sequential one-token steps, EAGER

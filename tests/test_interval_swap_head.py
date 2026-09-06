@@ -1,7 +1,7 @@
 """Falsification tests for the three-interval (leave-two-out) swap head.
 
-Written BEFORE the head bodies (spike step 2, 2026-07-07): these encode what
-correct looks like for kill criterion K1. The workhorse is the BLINDNESS
+Written before the head bodies: these encode what correct looks like.
+The workhorse is the BLINDNESS
 probe -- flip a held-out spin and demand H_ij unchanged -- which is strictly
 stronger than antisymmetry (a symmetric leak survives the swap test but not
 the flip test), and it is paired with a sensitivity control (a head that
@@ -99,7 +99,7 @@ def test_causal_summaries_blindness():
 @torch.no_grad()
 @pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 def test_pair_context_blind_to_both_holes(gather_triu_pairs):
-    """K1 core: H_ij invariant under ANY change to x_i, x_j (not just swap).
+    """Blindness core: H_ij invariant under ANY change to x_i, x_j (not just swap).
 
     Run on both assembly paths: the triu-pair gather re-indexes the per-pair
     work, and blindness is a property of WHICH terms enter each pair's row,
@@ -158,7 +158,7 @@ def test_blindness_probe_has_teeth():
 @torch.no_grad()
 @pytest.mark.parametrize("d,offsets", [(9, (1, 3)), (16, (1, 4))])
 def test_antisymmetric_at_init(d, offsets):
-    """K1: G(i,j|x) = -G(i,j|Swap2(x,i,j)) at random init, all active pairs."""
+    """Antisymmetry: G(i,j|x) = -G(i,j|Swap2(x,i,j)) at random init, all active pairs."""
     head = _head(d=d, offsets=offsets)
     x = _state(d=d)
     t = torch.rand(1)
@@ -250,7 +250,7 @@ def test_head_parameters_receive_grad():
 
 
 
-# --- bilinear exterior combiner (2026-08-23) ---------------------------------
+# --- bilinear exterior combiner ----------------------------------------------
 # The literal factorisation test: [prefix, suffix] leave the per-pair MLP for
 # a rank-R product added to H before context_norm. Pins: the default is
 # byte-identical to the archived head; the bilinear head keeps blindness and

@@ -61,7 +61,7 @@ image = (
         copy=True,
         ignore=[
             ".pixi/**",
-            ".claude/**",  # agent worktrees carry their own .pixi
+            ".claude/**",  # tool worktrees carry their own .pixi
             "results/**",
             "wandb/**",
             ".git/**",
@@ -76,8 +76,8 @@ image = (
         "pixi install --environment cuda --locked",
         # torch.compile needs the CUDA driver-API header: inductor compiles a
         # small cuda_utils.c with the system gcc, and the locked pixi env
-        # ships no CUDA dev headers (probe s59: no cuda.h anywhere in the
-        # image). The runtime wheel carries include/cuda.h; installed --no-deps
+        # ships no CUDA dev headers (no cuda.h anywhere in the image). The
+        # runtime wheel carries include/cuda.h; installed --no-deps
         # so the locked env's torch/nvidia libs are untouched, and CPATH below
         # puts the header on gcc's search path.
         # (env python called directly: `pixi run` would re-validate the cuda
@@ -97,8 +97,8 @@ image = (
                 f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
                 "site-packages/nvidia/cuda_runtime/include"
             ),
-            # B5 (optimisation decision, 2026-08-24): venue parity with the
-            # DoC sbatch scripts, which export this. Allocator headroom on
+            # Venue parity with the DoC sbatch scripts, which export this.
+            # Allocator headroom on
             # the 40 GB Modal A100s, not a speed lever.
             "PYTORCH_ALLOC_CONF": "expandable_segments:True",
         }
@@ -146,9 +146,8 @@ def train_gfn_remote(cfg_name: str, seed: int = 42, tag: str = ""):
 
 
 @app.function(
-    # The d256 GFN cells (2026-09-03): 9 h per 100k seed on a DoC A30, and
-    # the DoC queue sat behind the 24x24 rung, so the TB re-run after the
-    # log Z weight-decay fix moved here. Same card family as the archived
+    # The d256 GFN cells: ~9 h per 100k seed on an A30, so the TB re-run
+    # after the log Z weight-decay fix runs here. Same card family as the archived
     # d256 swap cells; DNFS_TRAIN_GPU overrides as for train_remote.
     gpu=os.environ.get("DNFS_TRAIN_GPU", "A100-80GB"),
     volumes={"/results": volume},
@@ -210,8 +209,8 @@ def train_remote(
     `tag` is minted ONCE at spawn time by the local entrypoints: a Modal
     preemption retry re-runs this function with identical inputs, so a stable
     tag makes the retry land in the same run dir and resume from
-    checkpoints/resume.pt instead of training from scratch (the 2026-07-23
-    MO 100k recall restarted from step 0 for want of exactly this).
+    checkpoints/resume.pt instead of training from scratch (a 100k mask_one
+    run once restarted from step 0 for want of exactly this).
     `volume.commit` rides along as the checkpoint hook so resume state is on
     the volume even if a preemption skips the death-flush."""
     import sys
@@ -248,7 +247,7 @@ def gate_remote(
     seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False,
     cells: str = "", out: str = "/results/gate_4x4",
 ):
-    """Run the 4x4 exact-enumeration go/no-go gate against the trained run
+    """Run the 4x4 exact-enumeration pass/fail gate against the trained run
     dirs already on the volume; writes verdict.json + plot to /results/gate_4x4."""
     import sys
 
@@ -363,7 +362,7 @@ def eval_remote(
     eval_ne<k>/; the grid-decoupling probe — see run.eval_only); 0 is the
     same can't-collide sentinel. `stage_best >= 0` draws from
     best_stage<k>.pt instead of final.pt (artefacts to eval_stage<k>/,
-    the pre-registered checkpoint-selection read); -1 is its sentinel,
+    the checkpoint-selection read); -1 is its sentinel,
     since stage 0 is a real stage and cannot serve as one. `use_ema` draws
     from final_ema.pt; combined with no grid override it is the recovery
     for a run whose EMA eval died before landing (eval_only refuses that
@@ -578,7 +577,7 @@ def training_flops_remote(argv: str = ""):
 @app.local_entrypoint()
 def training_flops(argv: str = ""):
     """Blocking local CLI entry so the per-horizon progress and the final
-    measured/derived verdict stream back to the local terminal."""
+    measured/derived comparison stream back to the local terminal."""
     training_flops_remote.remote(argv=argv)
 
 
@@ -713,7 +712,7 @@ def gate(
     """Local CLI entry for the gate: blocking `.remote()` so the per-run
     progress prints stream back to the local terminal. `cells` = comma-
     separated CONFIGS names to gate instead of the dh ladder (pass `out` too
-    so the ladder verdict is not overwritten)."""
+    so the ladder's verdict.json is not overwritten)."""
     gate_remote.remote(
         seeds=seeds, n_samples=n_samples, skip_controls=skip_controls,
         cells=cells, out=out,
@@ -876,7 +875,7 @@ def ladder(seeds: str = "42,43,44", head_kind: str = ""):
 @app.local_entrypoint()
 def gfn_batch_seeds(cfg_name: str, seeds: str = "42,43,44", tag: str = ""):
     """Spawn one GFN cell across seeds on the production card (the d256
-    cells; `gfn_d16` keeps the L4 for the 4x4 registry). Pass the campaign
+    cells; `gfn_d16` keeps the L4 for the 4x4 cells). Pass the campaign
     tag so a preemption retry resumes into the same run dirs."""
     from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 
@@ -892,10 +891,9 @@ def gfn_batch_seeds(cfg_name: str, seeds: str = "42,43,44", tag: str = ""):
 @app.local_entrypoint()
 def gfn_d16(seeds: str = "42,43,44", tag: str = "", suffix: str = ""):
     """Spawn the 4x4 GFN comparator cells (tb/fldb x s010/s220) across the
-    given seeds. Pass an explicit tag so the launch tag quoted in the
-    writeup markers is the one on the run dirs. `suffix` restricts to cells
-    whose name ends with it (e.g. `_par` = the s93 parity wave only);
-    empty spawns the whole registry."""
+    given seeds. Pass an explicit tag so the run dirs carry a known label.
+    `suffix` restricts to cells whose name ends with it (e.g. `_par` = the
+    parity cells only); empty spawns every registered cell."""
     from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]

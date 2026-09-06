@@ -1,4 +1,4 @@
-"""The strengthened 4x4 exact-enumeration go/no-go gate + both negative controls.
+"""The strengthened 4x4 exact-enumeration pass/fail gate + both negative controls.
 
 `FixedCompositionIsingTarget(D=4, sigma, c=0.5)` gives d=16, N_A=8, a slice of
 C(16,8)=12,870 states. On the slice Sigma(x) is constant, so the conditional is
@@ -11,7 +11,7 @@ via readout antisymmetry, on-manifold base, ELBO IS weights) must reproduce the
 exact conditional across a sigma-ladder that crosses the Ising transition, and
 both negative controls must fail as designed.
 
-Why each metric (examiner-facing rationale):
+Why each metric:
 
 - Energy-marginal TV is the headline distance the paper reports (App D.1), but
   on the slice it only constrains CROSS-level weights: pi(x|C) is uniform WITHIN
@@ -19,9 +19,9 @@ Why each metric (examiner-facing rationale):
 - Within-level uniformity closes that blind spot. A raw within-level TV is
   uninterpretable when the per-level sample count n_k is much smaller than the
   degeneracy g_k (a perfect sampler still shows TV ~ 1 - n_k/g_k -- the TVD-floor
-  trap) or when the IS weights are dispersed, so we subtract a WEIGHT-MATCHED
+  trap) or when the IS weights are dispersed, so a WEIGHT-MATCHED
   perfect-sampler baseline (the observed IS weights assigned to uniform
-  on-level draws) and report the EXCESS.
+  on-level draws) is subtracted and the EXCESS reported.
 - <E> and nn_correlation are energy-tied observables; diagonal_correlation is the
   INDEPENDENT within-level spatial observable (checkerboard: nn = -1 but diag =
   +1), so it can move even when the energy marginal is right.
@@ -159,7 +159,7 @@ def within_level_uniformity(
       themselves cover the level uniformly, because the within-level effective
       sample size n_eff_k = (Sigma w)^2 / Sigma w^2 < n_k.
 
-    So we subtract a WEIGHT-MATCHED perfect-sampler baseline: each of the
+    So a WEIGHT-MATCHED perfect-sampler baseline is subtracted: each of the
     R = n_ref_replicates replicates keeps the level's OBSERVED normalised IS
     weight vector (the same one used for TV_k) and assigns it to n_k uniform
     draws over the g_k states, accumulated exactly as for the real samples.
@@ -305,7 +305,7 @@ def run_gate(head, target, n_samples, n_euler_steps, seed):
     Draws IS-weighted swap-CTMC samples and compares energy marginal, <E>,
     NN/diagonal correlations, within-level uniformity and F/D against the exactly
     enumerated conditional. Returns every raw number; the booleans/aggregation
-    are `main`'s job (verdict rules live there). Everything is under no_grad.
+    are `main`'s job (pass/fail rules live there). Everything is under no_grad.
     """
     device = next(head.parameters()).device
     d = int(target.d)
@@ -378,7 +378,7 @@ def run_gate(head, target, n_samples, n_euler_steps, seed):
     }
 
 
-# --- aggregation + verdict ---
+# --- aggregation + pass/fail ---
 
 
 def _seed_summary(metrics):
@@ -387,7 +387,7 @@ def _seed_summary(metrics):
 
 
 def _aggregate_rung(per_seed):
-    """Aggregate per-seed gate metrics into rung booleans (verdict rules)."""
+    """Aggregate per-seed gate metrics into rung booleans (pass/fail rules)."""
     tv = torch.tensor([m["energy_tv"] for m in per_seed])
 
     def observable(key):

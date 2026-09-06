@@ -490,8 +490,8 @@ def test_d256_ladder_rung_keeps_the_parents_gather():
     arms must not record the flag their head cannot read).
 
     The gather is load-bearing at this size for the ROLLOUT, not the
-    training step: gather-off was launched on the B=128 step verdict
-    (2026-08-30) and OOM'd a 183 GB B200 at step 0 -- the rollout runs the
+    training step: a gather-off run sized on the B=128 step benchmark
+    OOM'd a 183 GB B200 at step 0 -- the rollout runs the
     head at the full batch 512, where the ungathered pair slab is
     (512, 256, 256, 144) fp32 = 18 GiB per forward and a client peaks
     ~36 GB against the gathered path's ~half. A future no-gather rerun must

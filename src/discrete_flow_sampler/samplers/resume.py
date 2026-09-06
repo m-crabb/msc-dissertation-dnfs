@@ -2,9 +2,9 @@
 
 Both trainers face the same failure: a preempted (or budget-capped) container
 restarts the function with identical inputs, and without a resume checkpoint
-that restart is a run from step 0. The 2026-07-23 Modal GPU recall cost the
-MO 100k run its whole trajectory this way; the 2026-08-21 N11 matched-base
-family lost eight runs at ~94% of a 50k budget to the same gap.
+that restart is a run from step 0. A Modal GPU recall once cost a 100k-step
+run its whole trajectory this way, and a later preemption lost eight
+matched-base runs at ~94% of a 50k budget to the same gap.
 
 Each trainer assembles its own checkpoint payload. This module handles
 atomic writes, loading, RNG state and log truncation.

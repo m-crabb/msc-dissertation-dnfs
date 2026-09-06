@@ -3,11 +3,11 @@
 This rung differs from every other house table in two ways, and both are
 places a fill can go wrong silently rather than loudly.
 
-TWO COUPLINGS SINCE 2026-08-30. The rung was single-coupling by construction
-while only the sigma = 0.1 wave existed (an empty sigma_c half would have
-read as "not yet landed" rather than "never run"). The sigma_c wave (tag
-20260829-d400-sc, 12 cells, 100k steps) landed 2026-08-30 with its own
-certified reference (kawasaki_ref_d400_sc, tau 18.9 sweeps), so the table
+TWO COUPLINGS. The rung was single-coupling by construction while only the
+sigma = 0.1 wave existed (an empty sigma_c half would have read as "not yet
+landed" rather than "never run"). The sigma_c wave (tag 20260829-d400-sc,
+12 cells, 100k steps) has its own certified reference (kawasaki_ref_d400_sc,
+tau 18.9 sweeps), so the table
 now carries the same s010/s220 pair as every rung below. The two waves have
 DIFFERENT config names (50k flat vs 100k_curr) and DIFFERENT tags, so cells
 are pinned per (row, coupling) rather than globbed from one template.
@@ -120,7 +120,7 @@ def test_external_anchor_gates_on_lattice_side_as_well_as_sigma():
     peak at sigma_c), so a d400 chain at exact SIGMA_C must NOT be held to
     the d256 anchor: it could fail certification spuriously, or pass
     narrowly and record an external cross-check that was never valid.
-    Before 2026-08-30 the gate checked sigma alone."""
+    An earlier version of the check keyed on sigma alone."""
     from experiments.constrained_hard_03.generate_kawasaki_reference_d256 import (
         CERTIFICATION_NN_TARGET, external_nn_anchor)
     from discrete_flow_sampler.targets.ising import SIGMA_C

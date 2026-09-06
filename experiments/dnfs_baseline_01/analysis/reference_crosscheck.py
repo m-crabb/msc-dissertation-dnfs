@@ -13,7 +13,7 @@ here, by two independent instruments:
      at exact criticality 0.220343, not at 0.22305).
 
 Reads: results/01_baseline/gibbs_ref_d10_sigma{0.1,0.22305}.pt.
-Writes: results/01_baseline/reference_crosscheck.json + printed verdict.
+Writes: results/01_baseline/reference_crosscheck.json + printed agree/disagree summary.
 
 """
 import json

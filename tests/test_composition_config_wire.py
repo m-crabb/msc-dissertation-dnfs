@@ -35,7 +35,7 @@ FINAL_RECIPE_SPECIALIST_CELL = "S2_d4_c05_50k_l50_letf_anneal_offset_clip50"
 BUDGET_TWIN_CELL = "S2_d4_camort_50k_l50_letf"
 ANNEALED_TWIN_CELL = "S2_d4_camort_50k_l50_letf_anneal"
 OFFSET_ANNEAL_CELL = "S2_d4_camort_50k_l50_letf_anneal_offset"
-# Uniform-from-start ablation of the widening curriculum (s64): a conditioned
+# Uniform-from-start ablation of the widening curriculum: a conditioned
 # twin of the printed cell, so it carries a composition block like any other
 # amortised cell (its own twin pin lives in test_configs.py).
 FLAT_WINDOW_CELL = "S2_d4_camort_50k_l50_letf_anneal_offset_clip50_flatw30"
@@ -61,8 +61,8 @@ D10_SATURATION_CELLS = (
 # periodic checkpoints), so like them it joins only the conditioning and
 # specialist guards, not the surviving-recipe inheritance check.
 D10_STAIRCASE_CELL = "S2_d10_camort_offset_clip50_lam10_hw20"
-# The StableAdamW test of soft.tex 4.4's trust-region recommendation
-# (prereg 2026-08-11-amort-stadamw-test.md): deliberately departs from the
+# The StableAdamW test of soft.tex 4.4's trust-region recommendation:
+# deliberately departs from the
 # surviving recipe in exactly {optimiser, clip}, so like the arms above it
 # joins only the conditioning and specialist guards.
 D10_STADAMW_CELL = "S2_d10_camort_offset_cyc8_stadamw"
@@ -90,35 +90,35 @@ AMORTISED_CELLS = (
     ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
     *D10_SATURATION_CELLS, D10_STAIRCASE_CELL, D10_STADAMW_CELL,
     FINAL_RECIPE_NULL_CELL, FLAT_WINDOW_CELL,
-    # Wave-3 house pair (s96): the conditioned cell and its zero-width null
+    # House pair: the conditioned cell and its zero-width null
     # on the house recipe (fixed lambda + channel; tests/
     # test_soft_house_configs.py pins their declared-diff sets).
     "S2_d4_camort_50k_l50_letf_house", "S2_d4_cnull_50k_l50_letf_house",
-    # Matched-base cells (s101, plan 2026-08-31-soft-camort-matched-base):
+    # Matched-base cells:
     # spine-values draw, no staircase, base matched per cycle. Their own
     # lever pins live in tests/test_matched_base_amortisation.py.
     "S2_d4_camort_mb_50k_l50_letf_house",
-    # s110 4x4 table family at the cross-chapter 10k budget (afe1060,
-    # e8778a1): conditioned twins at both couplings.
+    # 4x4 table family at the cross-chapter 10k budget: conditioned twins
+    # at both couplings.
     "S2_d4_camort_10k_l50_letf_house",
     "S2_d4_camort_10k_l50_letf_house_sc",
 
     "S2_d8_camort_l50_letf_ne128_house",
     "S2_d8_camort_l50_letf_ne128_house_sc",
-    # Draw-set ablation twins (s104): the 17-value draw back to the gate's
+    # Draw-set ablation twins: the 17-value draw back to the gate's
     # 3-value spine, one lever, both couplings (the sigma=0.1 twin is the
     # should-stay-healthy control).
     "S2_d8_camort_spine3_l50_letf_ne128_house",
     "S2_d8_camort_spine3_l50_letf_ne128_house_sc",
-    # Collapse-mechanism twins (s106), sc only: single-value spine
+    # Collapse-mechanism twins, sc only: single-value spine
     # (machinery-vs-mixture) and replay_buffer_cycles=1 (staleness lever).
     "S2_d8_camort_spine1_l50_letf_ne128_house_sc",
     "S2_d8_camort_spine3_rb1_l50_letf_ne128_house_sc",
     # Same A100 spine3 recipe with only a centred c-dependent correction to
-    # the exact-field gain. Its parent is the archived dead 4-seed control.
+    # the exact-field gain. Its parent is the archived (collapsed) 4-seed control.
     COMPOSITION_GAIN_CELL,
     PAIRED_SPINE1_CELL,
-    # Sigma-ladder twin of the dead sigma_c camort cell (s108): the ladder
+    # Sigma-ladder twin of the collapsed sigma_c camort cell: the ladder
     # is its one lever; test_soft_house_configs.py pins it.
     "S2_d8_camort_l50_letf_ne128_house_sc_curr",
 )
@@ -301,7 +301,7 @@ def test_validation_cell_differs_from_its_comparator_only_by_amortisation():
         composition=None,
     )
     assert stripped == specialist
-    # And the widened window must reach the compositions it will be judged at:
+    # And the widened window must reach the compositions it is evaluated at:
     # D=4 has archived specialists at 0.30 and 0.50 only.
     final_half_width = validation.composition.curriculum[-1].half_width
     assert validation.composition.centre - final_half_width <= 0.30
@@ -363,7 +363,7 @@ def test_annealed_twin_varies_only_the_lambda_schedule():
     """The budget twin plus the surviving lambda anneal, nothing else.
 
     Fixed lambda=50 over 50k steps reproduced the from-scratch fragility
-    (seed 42's Z2-breaking collapse, 2026-08-01), so this cell tests whether
+    (seed 42's Z2-breaking collapse), so this cell tests whether
     the anneal restores seed survival while keeping the budget-bought
     obedience. The final stage must land on the operating point lambda=50,
     or the cell samples a different soft target than every comparator.

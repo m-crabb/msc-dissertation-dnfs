@@ -7,7 +7,7 @@
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# GFN 20x20 wave (s125): a job is an ORDERED LIST of cfg:seed cells, run
+# GFN 20x20 wave: a job is an ORDERED LIST of cfg:seed cells, run
 # serially, so the six TB cells pack into two jobs under the 3-day
 # walltime cap instead of one-coupling-per-card (sigma_c trio 60-78 h
 # projected = at the cap):

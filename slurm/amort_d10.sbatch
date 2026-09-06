@@ -24,7 +24,7 @@ REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
 RESULTS=results/02_constrained_soft
 # Positional cell/seed avoid --export's user-env retrieval failure on this
-# controller ("requeued held", 2026-08-01).
+# controller ("requeued held").
 #   sbatch slurm/amort_d10.sbatch S2_d10_camort_l50_letf_ne128_anneal [seed]
 CFG=${1:?usage: sbatch amort_d10.sbatch <cell> [seed]}
 SEED=${2:-42}

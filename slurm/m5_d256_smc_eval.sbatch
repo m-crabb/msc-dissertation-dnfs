@@ -8,20 +8,19 @@
 #SBATCH --array=0-1
 #SBATCH --output=slurm/logs/%x_%A_%a.out
 
-# M5 (M-campaign Task 5, plan 2026-08-14): SMC-eval DIAGNOSTIC on the
-# archived d256 naive-rescue checkpoint — one array task per ESS threshold
+# SMC-eval DIAGNOSTIC on the archived d256 naive-rescue checkpoint — one
+# array task per ESS threshold
 # tau in {0.5, 0.9}. Separates weight-concentration (SMC-fixable) from
 # support-miss (isn't): at d256 the unique-count collapse is expected to be
 # severe (top-10 rows already own 69.5% of mass), so read min(ESS,
 # n_unique), not ESS alone. Artefacts land in eval_smc_tau<tau>/ beside the
-# untouched plain-IS eval/, which stays the quoted baseline (frozen rule:
-# SMC is reported ALONGSIDE plain IS, never instead).
-# Bands frozen in plan Task 5: SMC ESS >= 0.2 with n_unique >= 500 -> a
-# caveated 16x16 sampler EXISTS for the writeup's pending block; otherwise
-# the diagnostic closes (support/coverage, strengthening M2/M3/M4).
+# untouched plain-IS eval/, which stays the quoted baseline (SMC is
+# reported ALONGSIDE plain IS, never instead).
+# Expected: SMC ESS >= 0.2 with n_unique >= 500 would mean a caveated
+# 16x16 sampler exists; otherwise the failure is support/coverage.
 # Scheduling: eval-only, no wandb. a30 because a100 stays reserved for the
-# cv2 strategy — per the priority-inversion rule (imperial-doc-cluster.md §4)
-# submit only once 274187 is RUNNING (or scontrol hold this array until then).
+# d256 cv2 job — to avoid priority inversion, submit only once that job is
+# RUNNING (or scontrol hold this array until then).
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 

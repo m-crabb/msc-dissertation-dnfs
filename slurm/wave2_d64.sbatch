@@ -6,11 +6,11 @@
 #SBATCH --time=36:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Wave-2 d64 house-table cells (s68): sequential cfg:seed cells share a queue slot:
+# Wave-2 d64 house-table cells: sequential cfg:seed cells share a queue slot:
 #   sbatch --job-name=w2-<bundle> slurm/wave2_d64.sbatch <cfg>:<seed> [...]
 # Resubmit the same tokens after timeout/preemption: the fixed tag reuses dirs,
 # skips finished seeds and resumes unfinished ones from resume.pt.
-# a100 header (user, s68): the mo bundles run here (~6.8 h/run,
+# a100 partition: the mo bundles run here (~6.8 h/run,
 # 3-seed bundle ~20.4 h + headroom). Cheaper one-pass bundles may be
 # routed to a30 at submit time via `sbatch --partition=a30` (~2x slower);
 # honour the priority-inversion rule there — hold a30 submissions while

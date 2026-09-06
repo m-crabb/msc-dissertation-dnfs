@@ -1,7 +1,7 @@
-"""FLOP accounting for the house table's FLOP/es column (agreed s50/s63).
+"""FLOP accounting for the house table's FLOP/es column.
 
-The column prices what a user realistically pays AT SAMPLING TIME to obtain
-one independent-equivalent sample; training cost is amortised and lives in
+The column prices what a practitioner realistically pays AT SAMPLING TIME
+to obtain one independent-equivalent sample; training cost is amortised and lives in
 the appendix recipe table. Both sampler families reduce to the same
 two-factor shape -- (cost per raw draw) / (independence yield per draw):
 
@@ -282,7 +282,7 @@ def diagnostic_eval_flops(
     includes this figure; the appendix prints it beside the algorithmic
     bill instead of silently folding it in. The d64 thp certification is
     the calibration: the measured-vs-derived gap reconciled to this term
-    within 0.8% (2026-08-31), which is also what confirmed backward = 2x
+    within 0.8%, which is also what confirmed backward = 2x
     forward on the training-proper leg.
 
     No backward is charged, and the eval's draw count scales the

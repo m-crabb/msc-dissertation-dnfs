@@ -15,7 +15,7 @@
 # the c=0.30 and c=0.50 sweep rows compare directly against the four-seed
 # specialist record on disk before any D=10 compute is committed.
 #
-# Array seeds 42-45 match the comparator; the 3-GPU user cap queues task four.
+# Array seeds 42-45 match the comparator; the per-user 3-GPU cap queues task four.
 #
 # Absolute pixi path: sbatch omits ~/.bashrc; --frozen uses the locked env.
 export CONDA_OVERRIDE_CUDA=12.9
@@ -28,7 +28,7 @@ REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs
 PIXI=/vol/bitbucket/mc625/.pixi/bin/pixi
 RESULTS=results/02_constrained_soft
 # Positional $1 avoids --export's user-env retrieval failure on this controller
-# (whole array "requeued held", 2026-08-01).
+# (whole array "requeued held").
 #   sbatch slurm/amort_d4_validate.sbatch S2_d4_camort_w15_l50_letf
 CFG=${1:-S2_d4_camort_l50_letf}
 

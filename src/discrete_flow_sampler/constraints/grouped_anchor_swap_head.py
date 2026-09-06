@@ -1,6 +1,6 @@
 """Grouped-anchor swap head: mask a GROUP of sites per pass, not a single one.
 
-The 2026-07-22 endpoint comparison: `LeTFMaskOneSwapHead`
+The endpoint comparison: `LeTFMaskOneSwapHead`
 runs **d** masked body passes (one anchor site each, ESS frac 0.9103 at the
 d=64 sigma_c rung), and the one-pass heads (`interval_swap_head.py`,
 `masked_attention_swap_head.py`) run **zero** extra passes (0.78-0.80).

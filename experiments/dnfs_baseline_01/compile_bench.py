@@ -10,10 +10,10 @@ Method:
   * The rollout slice is timed separately around `sample_ctmc` in
     trajectory mode (the outer step's buffer rebuild), warmup pass first.
 
-Nothing lands on the results volume: this is a bench, and its numbers go
-to the printed table (copy into the profiling review).
+Nothing lands on the results volume: this is a bench, and its numbers are
+only printed.
 
-Run on Modal (the profiling venue):
+Run on Modal:
     pixi run -e dev modal run -m \
         experiments.dnfs_baseline_01.modal_app::compile_bench
 """

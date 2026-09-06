@@ -1,6 +1,6 @@
 """Fill pass for tab:eval-soft-4x4: the soft house table at the enumerable
 size, in the HOUSE layout (columns as tab:eval-hard-4x4 / the 10x10 house
-tables; the s108 first cut with TV / Z2 / std(c) / dF columns is retired).
+tables; an earlier cut with TV / Z2 / std(c) / dF columns is retired).
 
   reference -- exact enumeration: all 2^16 states weighted by the soft
                target's own normalised probabilities (the soft target is

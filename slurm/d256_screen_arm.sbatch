@@ -8,7 +8,7 @@
 #SBATCH --output=slurm/logs/%x_%j.out
 
 # 16x16 arm runner (2026-08-15): $1=CFG, $2=SEED (42), $3=TAG (original
-# screen default retained). Registry arms vary declared fields, pinned in
+# screen default retained). Screen arms vary declared fields, pinned in
 # test_screen_pins. Historical dispatch example with a readable job name:
 #   sbatch -J scr5k-ma slurm/d256_screen_arm.sbatch H2_d256_scr5k_ma 42
 # Config, seed and fixed tag reuse the run directory; raw metrics skip training.

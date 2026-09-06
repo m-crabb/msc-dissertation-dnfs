@@ -7,8 +7,8 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# M3 d64 plumbing fallback (M-campaign Task 3, plan 2026-08-14): the d64 MA
-# curriculum recipe at the 12k smoke horizon with c_t_batch=512 the ONLY
+# c_t_batch d64 plumbing smoke: the d64 MA curriculum recipe at the 12k
+# smoke horizon with c_t_batch=512 the ONLY
 # mechanism change (twin-ness pinned by
 # test_m3_ctb512_d64_smoke_mirrors_ma_recipe_except_declared_fields). The
 # ~25-min validation of the enlarged-rollout outer cycle (buffer prefix,

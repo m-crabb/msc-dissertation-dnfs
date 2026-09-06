@@ -1,7 +1,6 @@
 """fig:penalty-variance: the penalty-variance shock and its three fates.
 
-Retargeted at the 8x8 sigma_c centre window (single-size decision, s107;
-the 10x10 ne64 spec this script was built on is in git history):
+Drawn at the 8x8 sigma_c centre window:
 estimator-integrand variance over training for three house arms, one
 declared lever apart --
 

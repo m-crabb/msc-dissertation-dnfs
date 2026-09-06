@@ -17,7 +17,7 @@ Specialists are selected by their **config**, not their directory name: D, σ,
 the final penalty strength, the presence of the λ anneal, an unconditioned
 model, and a uniform base. The last of those matters — the c = 0.80 window has
 a `matched_anneal` sibling that trained against a Bernoulli(0.8) base, which is
-a different experiment (it failed its own ESS gate) and must not be quoted as
+a different experiment (it fell below its own ESS floor) and must not be quoted as
 the specialist comparator. Run dirs predating the `base_composition` field are
 read as the then-default 0.5.
 
@@ -144,13 +144,13 @@ def collect_amortised(results_dir: Path, cells: list[str]) -> pd.DataFrame:
 def _one_run_per_seed(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     """Keep the newest run dir per (group, seed); report what was dropped.
 
-    The archive holds repeated run dirs for the same cell and seed — a relaunch
-    that superseded an earlier attempt, or the same run copied under a new
+    The archive holds repeated run dirs for the same cell and seed — a rerun
+    that replaced an earlier attempt, or the same run copied under a new
     timestamp. Averaging over rows would weight such a seed twice, inflating
     (or deflating) the seed mean while `n_seeds` still reports the honest
     distinct-seed count, so the discrepancy is invisible in the output.
 
-    Newest wins because run dirs carry a trailing timestamp and a relaunch is
+    Newest wins because run dirs carry a trailing timestamp and a rerun is
     the later word on that seed. Duplicates are printed rather than silently
     collapsed: if two dirs for one seed disagree, that is something to look at,
     not something for this function to decide quietly.
@@ -169,7 +169,7 @@ def _aggregate(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     `n_euler_steps` is always a grouping key, never averaged over: c = 0.50 and
     c = 0.80 each have both ne64 and ne128 specialists, and pooling them would
     fold a known 0.699 → 0.918 effect into the seed mean of the very quantity
-    the amortised model is being judged on.
+    the amortised model is being compared on.
 
     The seed count is not decoration either: this leg's documented failure mode
     is that some seeds never learn the physics at all (the c = 0.60 ne64 group

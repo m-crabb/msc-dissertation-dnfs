@@ -7,15 +7,16 @@
 #SBATCH --time=0-08:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Train-grid vs eval-grid decoupling for the KEYSTONE (2026-08-20, s41).
+# Train-grid vs eval-grid decoupling for the KEYSTONE.
 #
-# The keystone (b512 + ne128) judged GRID-HELPS: EMA Var[log w]/site 0.00485
+# The keystone (b512 + ne128) reads GRID-HELPS: EMA Var[log w]/site 0.00485
 # (CI 0.00463-0.00508) against the ne512 recipe parents' 0.00612 (s42) and
 # 0.00735 (s43), CI-disjoint below both and surviving the family-wise
 # correction. But `n_euler_steps` is ONE field shared by training and eval,
 # so the arm moved both grids at once: part of the gain could be that the
-# model is merely being SCORED on a coarser grid. A1 measured the eval grid
-# flat at d256 (0.9% across 8x, all CIs overlapping) but did so on the
+# model is merely being SCORED on a coarser grid. The earlier eval-grid
+# sweep measured the eval grid flat at d256 (0.9% across 8x, all CIs
+# overlapping) but did so on the
 # rescue checkpoint at Var/site ~0.069 -- two orders from this arm's ~0.005,
 # so that flatness is not automatically transferable.
 #
@@ -33,7 +34,7 @@
 #       eval-side. Together (b) and (c) separate the two readings; either
 #       alone leaves the other open.
 #
-# EMA weights throughout because every d256 verdict is EMA-primary (raw
+# EMA weights throughout because every d256 read is EMA-primary (raw
 # eval ESS at sigma_c is top-weight dominated and does not resolve).
 # Artefacts land in eval_ema_ne<k>/ and CANNOT overwrite the frozen
 # eval_ema/ -- run.py refuses --eval-ema without --eval-ne for exactly that

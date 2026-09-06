@@ -1,9 +1,9 @@
 """Swap-head dtype contract: pair scores stay fp32 under bf16 autocast.
 
-Regression for the 2026-07-07 d64 twin-cell crash: einsum sits on autocast's
-lower-precision list, so an einsum readout emits bf16 G inside the Tier-2
+Regression for a d64 twin-cell crash: einsum sits on autocast's
+lower-precision list, so an einsum readout emits bf16 G inside the
 eval_autocast_bf16 block -- crashing the fp32-only torch.quantile rate
-diagnostic at step 0 and departing from the dtype path the Tier-2 flags were
+diagnostic at step 0 and departing from the dtype path the bf16-eval flags were
 validated on. The mask-one readout never had the bug because elementwise
 mul+sum is not autocast-listed. The D=4 gate cells and the smoke configs run
 with the flag OFF, so only a d64-flag run exercises this path -- hence a

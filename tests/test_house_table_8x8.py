@@ -180,7 +180,7 @@ def test_perfect_sampler_sits_at_the_floor():
     assert observed < 2.5 * floor["dMag"]
 
 
-# --- FLOP/es provenance (Tier 4.8) ----------------------------------------
+# --- FLOP/es provenance ---------------------------------------------------
 
 def test_flop_config_comes_from_the_run_dir_not_the_registry(tmp_path):
     """The 4x4 fill bills FLOPs off the LIVE registry (house_table_4x4.py
@@ -240,7 +240,7 @@ def test_real_reference_certifies(sigma_label, npz_tag):
     assert h8.is_composition_exact(torch.cat(chains), n_plus=D_SITES // 2)
 
 
-# --- Separable billing (2026-08-28) ---------------------------------------
+# --- Separable billing ----------------------------------------------------
 #
 # The band identity is EXACT, so a masked-attention head's honest per-sample
 # bill is the cheapest exact way to evaluate it -- not whichever contraction
@@ -385,7 +385,7 @@ def test_gfn_cells_name_real_configs():
 
 
 def test_gfn_registry_audit_catches_architecture_drift(tmp_path):
-    """The GFN rows carry the same Tier-4.8 promise as the swap rows: the
+    """The GFN rows carry the same provenance promise as the swap rows: the
     bill is measured on a policy rebuilt from the registry, so the fill must
     refuse if the run's own saved config disagrees on an architecture field.
     A policy trained at hidden 32 billed at the registry's hidden 64 would

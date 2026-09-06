@@ -1,7 +1,7 @@
 """What correct looks like for the slice-mixture target, written before it.
 
-The composition-amortisation campaign (docs/plans/2026-08-31-hard-camort-8x8)
-trains ONE head on a mixture of fixed-composition slices. The whole design
+Composition amortisation trains ONE head on a mixture of
+fixed-composition slices. The whole design
 rests on three algebraic facts this file pins:
 
   * swaps conserve n_plus row-wise, so a trajectory never leaves the slice
@@ -24,7 +24,7 @@ from discrete_flow_sampler.targets.ising import (
     MixtureCompositionIsingTarget,
 )
 
-# The d64 campaign grid is n+/64 = 32/30/28/24/20; the D=4 twins here use
+# The d64 mixture grid is n+/64 = 32/30/28/24/20; the D=4 twins here use
 # the same kind of spread at d=16.
 COMPOSITIONS = (0.5, 0.375, 0.25)
 

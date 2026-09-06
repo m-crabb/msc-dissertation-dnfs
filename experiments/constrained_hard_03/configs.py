@@ -1,12 +1,11 @@
 """Hard-constraint configs: swap-move CTMC on the fixed-composition manifold.
 
-SIGMA_C MIGRATION (s58, 2026-08-24): the project's critical coupling is
+SIGMA_C: the project's critical coupling is
 targets/ising.py SIGMA_C = ln(1+sqrt(2))/4 = 0.220343 (exact). Every cell
 below with sigma=0.223/0.22305 (the "s223" label, and the 0.223 curriculum
 ladder endpoint) describes an ARCHIVED run trained at the legacy value; those
 literals are records and must not be edited (stored run configs and the eval
-config-drift guard are pinned to them). Any NEW sigma_c cell imports SIGMA_C;
-the hard-chapter retrain wave runs once the head family is finalised.
+config-drift guard are pinned to them). Any NEW sigma_c cell imports SIGMA_C.
 
 Imports the shared schema dataclasses from the baseline experiment (same
 pattern as `constrained_soft_02/configs.py`) and adds `HardStageCfg`, which
@@ -81,11 +80,11 @@ class HardStageCfg(StageCfg):
     equivalent to doubly_hollow, not numerically equal: different H), or
     "masked_attention" (MaskedAttentionSwapHead, the reported one-pass head:
     same three-interval structure, band aggregated by exclusion-mask
-    attention -- bit-exact blindness, decision 2026-07-07), or "factorised"
+    attention -- bit-exact blindness), or "factorised"
     (FactorisedSwapHead, one-pass low-rank bilinear causal factors plus
-    hole-subtracted global context -- no per-pair lattice pooling, 2026-08-13),
+    hole-subtracted global context -- no per-pair lattice pooling),
     or "two_hole_patch" (TwoHolePatchSwapHead, ordering-free: hollow torus
-    patch with the partner zeroed + hole-subtracted pooled levels, 2026-08-23).
+    patch with the partner zeroed + hole-subtracted pooled levels).
     """
 
     head_kind: Literal[
@@ -96,12 +95,11 @@ class HardStageCfg(StageCfg):
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
     # otherwise build a (d*B)-row buffer that OOMs the L4.
     anchor_chunk_size: int | None = None
-    # Opt-in torch.compile of the built head (Tier 2, default OFF). Head
+    # Opt-in torch.compile of the built head (default OFF). Head
     # only — the Euler loop's data-dependent sampling would graph-break.
     compile_head: bool = False
     # Band-capacity knobs for the interval / masked_attention heads
-    # (band-capacity push, 2026-07-08). None = the constructions every prior
-    # run used:
+    # (band-capacity push). None = the constructions every prior run used:
     # band_feature_dim 16, attention_dim 32, pair_offsets (1, D) — row and
     # column adjacency of the flattened D x D lattice. attention_dim is
     # masked_attention-only (the interval head has no attention).
@@ -114,21 +112,21 @@ class HardStageCfg(StageCfg):
     # (the flattened D x D grid), so no separate field is needed.
     use_stencil: bool = False
     # muP readout compensation for the interval/masked_attention pair
-    # score (muP-init arm, 2026-08-18): fixed multiplier on G cancelling
+    # score (muP-init): fixed multiplier on G cancelling
     # the sqrt(hidden) init growth of <LayerNorm'd H, omega_diff> — the
     # dot has no fan-in compensation, so score scale IS the initial rate
     # scale (verified 2x at h32 -> h128). The muP value for width h
     # against the h32 reference is 32/h. 1.0 = every archived cell,
     # byte-identical (the multiply is skipped in the head's forward).
     readout_score_scale: float = 1.0
-    # Grouped-anchor head knobs (2026-07-22). n_groups is k,
+    # Grouped-anchor head knobs. n_groups is k,
     # the number of masked body passes: k = d reproduces mask_one bit-exactly,
     # smaller k trades masked-site count for passes. Only read when head_kind
     # is "grouped_anchor", so every other cell stays byte-identical.
     n_groups: int | None = None
     grouping: str = "diagonal"
     group_chunk_size: int | None = None
-    # Factorised-head knobs (2026-08-13). None = the head's own defaults
+    # Factorised-head knobs. None = the head's own defaults
     # (bilinear_rank 8, factor_dim 32, global_feature_dim 16); the two use_*
     # switches are the head's ablation arms (bilinear-only has no interior
     # visibility, global-only no deep exterior). Only read when head_kind is
@@ -138,13 +136,13 @@ class HardStageCfg(StageCfg):
     global_feature_dim: int | None = None
     use_bilinear: bool = True
     use_global: bool = True
-    # Causal-sweep directions for the factorised bilinear term (A-prime,
-    # 2026-08-14): extras from {"col", "diag"} give every pair a second
+    # Causal-sweep directions for the factorised bilinear term (multi-order
+    # causal streams): extras from {"col", "diag"} give every pair a second
     # blind (prefix, suffix) split, so deep coverage grows to the
     # complement of the intersection of the per-ordering intervals. The
     # default ("row",) is byte-identical to the pre-extension head.
     site_orderings: tuple[str, ...] = ("row",)
-    # Interior band on the factorised head's per-pair path (2026-08-23):
+    # Interior band on the factorised head's per-pair path:
     # "prefix" = the interval head's prefix-sum band, "attention" = the
     # masked-attention band, concatenated into the global term's LN -> MLP
     # input (band_feature_dim / pair_offsets / attention_dim are read as for
@@ -152,7 +150,7 @@ class HardStageCfg(StageCfg):
     # same interior as an existing head, bilinear exterior instead of its
     # per-pair MLP. None = the archived head, byte-identical.
     interior_band: str | None = None
-    # Triu-pair gather (2026-08-26): run the per-pair nonlinear work of the
+    # Triu-pair gather: run the per-pair nonlinear work of the
     # interval / masked_attention / factorised heads on the d(d-1)/2
     # unordered pairs instead of the d^2 grid, mirroring the result back.
     # Those heads' pair contexts are label-SYMMETRIC (H_ji := H_ij), so the
@@ -165,7 +163,7 @@ class HardStageCfg(StageCfg):
     # every other cell stays byte-identical, and False = every archived
     # cell: the flag adds no parameter, no buffer and no RNG draw, and the
     # two paths differ only in GEMM shape (~1e-7 on fp32 CPU).
-    # Which terms the masked-attention band may pool over (2026-08-27).
+    # Which terms the masked-attention band may pool over.
     # "interval" = the open interval (i, j), every archived cell. "lattice" =
     # the whole lattice bar any term whose support TOUCHES a hole -- the
     # unbuilt whole-lattice x learned cell of the head construction's
@@ -180,7 +178,7 @@ class HardStageCfg(StageCfg):
     # removes every term whose support touches a hole, decided from the
     # INDICES alone. What it does NOT require is per-site or depth-0
     # features; that was a rule stated on the depth axis when the live
-    # constraint is bounded support (corrected 2026-08-27).
+    # constraint is bounded support.
     #
     # It is NOT simply the more general head, which is why it is measured
     # rather than assumed: the softmax then normalises over ~d terms instead
@@ -188,7 +186,7 @@ class HardStageCfg(StageCfg):
     # learned soft mask approximates the hard interval indicator without
     # containing it.
     attention_window: str = "interval"
-    # How the masked-attention band's QUERY encodes position (2026-08-28).
+    # How the masked-attention band's QUERY encodes position.
     # "absolute" = every archived cell: `nn.Embedding(d, .)` indexed by site,
     # so W_q(rho_i, rho_j) must LEARN that sites 0 and d-1 are torus
     # neighbours. "relative" = one embedding row per signed torus
@@ -204,11 +202,11 @@ class HardStageCfg(StageCfg):
     # null on quality, consistent with having fixed the layer that matters
     # least.
     pair_position_mode: str = "absolute"
-    # Arm C (2026-08-28): compute the masked-attention band WITHOUT ever
+    # Separable band scores: compute the masked-attention band WITHOUT ever
     # building its (B, d^2, n) score tensor -- this head's largest object,
     # 5.00 GB at B=32 / d=256, and the "d = 256 wants pair chunking" price.
     #
-    # An EXACT identity, not a modelling arm, and not to be confused with the
+    # An EXACT identity, not a modelling change, and not to be confused with the
     # factorised swap head: that one changes the function and pays a measured
     # variance price for it (3.1x per-site log-weight variance at d=16, 2.6x
     # at d=64 against the masked-attention twin). This computes the same
@@ -221,11 +219,11 @@ class HardStageCfg(StageCfg):
     separable_band_scores: bool = False
     gather_triu_pairs: bool = False
     # Exterior combiner for the interval / masked-attention heads
-    # (2026-08-23): "bilinear" moves [P_i, S_j] out of the per-pair MLP into
+    # "bilinear" moves [P_i, S_j] out of the per-pair MLP into
     # a rank-`bilinear_rank` product, nothing else changes -- the literal
     # single-variable test of the factorisation. "mlp" = archived heads.
     exterior_combiner: str = "mlp"
-    # Arm B (2026-08-28): add WHOLE-LATTICE bond sums to the factorised
+    # Bond-carrying global term: add WHOLE-LATTICE bond sums to the factorised
     # global term, hole-touching bonds removed. The global term is a sum of
     # strictly per-site features, so the head carries a lattice-wide UNARY
     # statistic and -- through the band -- a LOCAL bond statistic over the
@@ -239,30 +237,30 @@ class HardStageCfg(StageCfg):
     #
     # The family SHARES the band provider's `band_pair_features` rather than
     # owning a copy, so the difference above is exact in ONE basis and the
-    # arm adds no feature parameters -- 576 of the head's 145,778 at the
+    # family adds no feature parameters -- 576 of the head's 145,778 at the
     # production width, +0.4%, which is what keeps a positive from being
     # confounded with capacity. It therefore requires interior_band; read
     # only by the factorised head, so every other cell stays byte-identical.
     global_bond_features: bool = False
-    # Exact-field channel (2026-08-23, s54): add gain(t) * sigma * Delta_ij --
+    # Exact-field channel: add gain(t) * sigma * Delta_ij --
     # the closed-form Kawasaki energy change, the equilibrium swap log-ratio
     # at t=1 -- to ANY head's score matrix, gain = a + b t learned from zero
     # (bit-identical to the base head at init). The head then learns only
     # the residual. See constraints/exact_field_channel.py for the argument.
     exact_field_channel: bool = False
-    # Two-hole patch head knobs (2026-08-23): hollow window radius R (needs
+    # Two-hole patch head knobs: hollow window radius R (needs
     # 2R+1 <= D) and the pair-context width; None = the head's defaults
     # (R=1, feature_dim 32, patch_hidden 32, pooled radii = powers of two
     # that fit the torus plus the global level). Only read when head_kind is
     # "two_hole_patch", so every other cell stays byte-identical.
     patch_radius: int | None = None
     patch_feature_dim: int | None = None
-    # Cluster-expansion cells only (2026-09-03): the window is a count of
+    # Cluster-expansion cells only: the window is a count of
     # neighbour SHELLS of the Bravais supercell (1 = the twelve fcc nearest
     # neighbours, 2 = eighteen), read from the target's positions and cell;
     # patch_radius is the torus knob and is ignored there.
     patch_shells: int | None = None
-    # Dual-eval EMA instrument (2026-08-13). 0.0 = off (every archived
+    # Dual-eval EMA instrument. 0.0 = off (every archived
     # cell). > 0 arms a warmup-corrected parameter shadow
     # (discrete_flow_sampler.ema) updated after each optimiser step:
     # training dynamics are untouched, eval/ stays the raw-parameter
@@ -270,8 +268,7 @@ class HardStageCfg(StageCfg):
     # checkpoints/final_ema.pt. An instrument, not a recipe change — cells
     # differing only in ema_decay train bit-identically.
     ema_decay: float = 0.0
-    # Target family on the fixed-composition manifold (Potts extension,
-    # 2026-07-31).
+    # Target family on the fixed-composition manifold.
     # "ising" = FixedCompositionIsingTarget, composition a scalar n_plus held
     # in `ising.target_composition`; "potts" = FixedCompositionPottsTarget,
     # composition an S-vector held in `potts_composition` below. Both fields
@@ -285,7 +282,7 @@ class HardStageCfg(StageCfg):
     # would otherwise fail as an index error inside nn.Embedding). Read only
     # when target_kind is "potts", mirroring n_groups / "grouped_anchor".
     potts_composition: tuple[float, ...] | None = None
-    # Composition-amortisation knob (s100): when set, the target becomes
+    # Composition-amortisation knob: when set, the target becomes
     # MixtureCompositionIsingTarget over these slices — sample_base draws a
     # slice per element, swaps conserve it, and the head amortises
     # implicitly through x (no conditioning channel; see that class's
@@ -527,10 +524,10 @@ _SMOKE12K_SIGMA_LADDER = CurriculumCfg(stages=_D64_SIGMA_LADDER.stages[:3])
 def _d64_curriculum_cell(
     name: str, head_kind: str, n_steps: int = 50_000, **head_knobs
 ) -> HardStageCfg:
-    """The d=64 sigma_c curriculum recipe — the shape of the PASSED D=8 rung.
+    """The d=64 sigma_c curriculum recipe — the shape of the D=8 rung.
     Every band-capacity-push cell shares it verbatim and differs only in
     head_kind and the declared head knobs, so outcome differences are
-    attributable to the declared change (2026-07-08; twin-ness is
+    attributable to the declared change (twin-ness is
     pinned by test_band_push_cells_mirror_ma_twin_except_declared_fields).
 
     `n_steps` defaults to the 50k budget every batch-1 / round-2 cell used.
@@ -676,28 +673,28 @@ def _d64_fmo2_loop_cell(
     estimator, batch 128, 128-step Euler grid, one-event stepping, the
     sigma-plateau ladder to 0.223, 50k steps, seed 42, 5000-draw frozen
     eval. Comparator (from that twin's archived run): raw eval ESS/N 0.7452
-    / EMA 0.8104. Band convention shared by every arm, frozen before
-    launch: INSENSITIVE = within +-0.03 EMA ESS/N of 0.8104, the noise
+    / EMA 0.8104. Expected-range convention shared by every arm:
+    INSENSITIVE = within +-0.03 EMA ESS/N of 0.8104, the noise
     scale borrowed from the d64 masked-attention cross-seed spread (~0.026;
     the fmo2 comparator is single-seed).
 
     `n_euler_steps` / `use_matching_step` open the trajectory-simulation
     knobs (CTMCCfg); `train_overrides` opens the TrainCfg loop knobs
     (inner_steps_per_outer, replay_buffer_cycles, outer_batch_size,
-    c_t_batch) and the boundary knobs the 2026-08-19 arms declare
+    c_t_batch) and the boundary knobs the stage-boundary arms declare
     (rewarmup_on_stage, stage_best_checkpoints, flush_replay_on_stage) —
     in fact anything TrainCfg carries, since the overrides go straight
     into `dataclasses.replace`. Defaults are byte-identical to the
     archived rung.
 
-    Second band convention, for arms whose read sits at the ESS ceiling:
+    Second convention, for arms whose read sits at the ESS ceiling:
     the PRIMARY statistic is then the EMA eval Var[log w], rung reference
     0.2068 with bootstrap 95% CI (0.1983, 0.2152) — the population
     (ddof=0) variance of the frozen 5000-draw EMA eval log-weights with a
     2000-resample percentile bootstrap — UPLIFT means a CI disjoint
     BELOW that interval, REGRESSION a CI disjoint above, and the +-0.03
-    EMA ESS/N band above becomes the endpoint read alongside rather than
-    the verdict."""
+    EMA ESS/N range above becomes the endpoint read alongside rather than
+    the primary read."""
     cell = replace(
         _d64_curriculum_cell(name, head_kind="factorised"),
         ema_decay=0.9999,
@@ -773,7 +770,7 @@ def _d256_fmo2_warm_cell(
 
 
 def _d64_smoke12k_replay2_cell(name: str) -> HardStageCfg:
-    """M6 (plan Task 6): the MA curriculum recipe at the 12k smoke horizon,
+    """The MA curriculum recipe at the 12k smoke horizon,
     replay_buffer_cycles 8 -> 2 the ONLY declared change versus the archived
     d64 MA twin recipe (the ladder truncation to the shared 12k view is
     forced by the validator, as on every smoke arm)."""
@@ -786,12 +783,12 @@ def _d64_smoke12k_replay2_cell(name: str) -> HardStageCfg:
 
 
 def _d64_m2_ctema4_cell(name: str) -> HardStageCfg:
-    """M2 (plan Task 2): the archived d64 MA 50k curriculum recipe verbatim
+    """The archived d64 MA 50k curriculum recipe verbatim
     with c_t_ema_halflife_cycles 0.0 -> 4.0 the ONLY declared change
     (twin-ness pinned by
     test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields). The
     dual-eval EMA instrument is deliberately NOT ridden — the no-regression
-    gate is judged raw-vs-archived-twin, so the twin stays pure."""
+    comparison is raw-vs-archived-twin, so the twin stays pure."""
     cell = _d64_curriculum_cell(name, "masked_attention")
     return replace(
         cell, train=replace(cell.train, c_t_ema_halflife_cycles=4.0)
@@ -799,7 +796,7 @@ def _d64_m2_ctema4_cell(name: str) -> HardStageCfg:
 
 
 def _d64_naive_twin_cell(name: str) -> HardStageCfg:
-    """c_t transfer-function cell (2026-08-14): the archived MA 50k
+    """c_t transfer-function cell: the archived MA 50k
     curriculum twin with estimator control_variate -> naive_mc the ONLY
     declared change.
 
@@ -813,7 +810,7 @@ def _d64_naive_twin_cell(name: str) -> HardStageCfg:
     inverted (the diverged d256), which is the confound that makes the
     d256 naive-vs-CV comparison uninterpretable.
 
-    Predictions are pre-registered in
+    Predictions are encoded in
     test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator; the naive
     integrand variance 26.0 is already logged as the CV runs' own
     Var[dt log p tilde] column, so they are arithmetic, not guesses.
@@ -824,11 +821,11 @@ def _d64_naive_twin_cell(name: str) -> HardStageCfg:
 
 
 def optimised_recipe(cell: HardStageCfg) -> HardStageCfg:
-    """s60 optimisation bundle (decided 2026-08-24) as a recipe transform.
+    """Optimisation bundle as a recipe transform.
 
     Two declared changes, nothing else: compile_head=True (measured 2.21x
     inner updates / 4.9x rollout / -60% eval peak memory, Modal A100
-    same-container; certification gate = 22 head tests + grad parity with
+    same-container; verified by 22 head tests + grad parity with
     compiled heads) and train.c_t_from_rollout=True (bit-identical c_t
     grid from the rollout's own head forwards — removes 127 of 128 grid
     head calls per outer at d256). Apply to NEW cells only: archived cells
@@ -843,11 +840,10 @@ def optimised_recipe(cell: HardStageCfg) -> HardStageCfg:
 
 
 def _d64_smoke12k_ctb512_cell(name: str) -> HardStageCfg:
-    """M3 plumbing fallback (plan Task 3): the MA curriculum recipe at the
-    12k smoke horizon with c_t_batch=512 the ONLY mechanism change — the
-    25-min a30 validation of the enlarged-rollout plumbing (buffer prefix,
-    c_t over the full set, resume carriage) if a100 is blocked for the
-    d256 mechanism cell."""
+    """Plumbing fallback: the MA curriculum recipe at the 12k smoke
+    horizon with c_t_batch=512 the ONLY mechanism change — a short
+    validation of the enlarged-rollout plumbing (buffer prefix, c_t over
+    the full set, resume carriage) at d64 rather than d256."""
     cell = _d64_curriculum_cell(name, "masked_attention", n_steps=12_000)
     return replace(
         cell,
@@ -857,7 +853,7 @@ def _d64_smoke12k_ctb512_cell(name: str) -> HardStageCfg:
 
 
 def _d256_smoke12k_naive_ctb512_cell(name: str) -> HardStageCfg:
-    """M3 mechanism cell (plan Task 3): the smoke12k Arm-B naive recipe
+    """Enlarged-rollout mechanism cell: the smoke12k naive-estimator recipe
     verbatim with c_t_batch=512 the ONLY declared change (twin-ness pinned
     by test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields; the
     arg-for-arg copy of the naive arm is guarded by that pin)."""
@@ -912,15 +908,15 @@ def _d256_scr5k_cell(
     unattributable. One variable per arm; every arm reads against the
     scr5k base of its own head family.
 
-    Pre-registered read, frozen before any arm ran: stage-tail FVU = mean
+    Read: stage-tail FVU = mean
     loss / mean var_dt_log_p_tilde over steps 3,000-4,999 (both columns in
     training_log.csv; subtract the naive c_t noise floor 1/128 = 0.0078
-    for cross-estimator comparisons). Bands against the MA base's expected
+    for cross-estimator comparisons). Expected ranges against the MA base's
     0.119 (the archived rescue's own first 5k, seed 42, byte-comparable
     recipe): LIVE if <= 0.08 (>1.5x, outside the +-0.005 within-run
     window noise); PARITY if <= 0.04 (the 8x8 naive yardstick); NULL if
     >= 0.10. Corroboration: final 1000-draw eval ESS/N (base expectation
-    ~0.04; floor 1/1000 is far below any band). Scope stated honestly: a
+    ~0.04; floor 1/1000 is far below any range). Scope: a
     NULL kills an axis for the stage-1 deficit — the bulk of the failure
     (3.6x of the final 5.1x) — not necessarily for the sigma_c increment
     on top; a LIVE fires everywhere it fires.
@@ -929,7 +925,7 @@ def _d256_scr5k_cell(
     failure under investigation, and the c_t noise floor then cancels in
     same-estimator comparisons); n_eval_samples=1000 not 5000 (screen
     precision: SE(Var[log w]) ~ Var*sqrt(2/999) ~ 0.8 at the current 18,
-    ample against bands 2x apart); n_euler=128 and batch 128 as archived
+    ample against ranges 2x apart); n_euler=128 and batch 128 as archived
     (the ne512 arm varies both together — n_grid also sets c_t slots,
     buffer size and the loss's t-support, and inner_batch/n_grid is the
     per-slot gradient density, so the pair moves as one to hold density at
@@ -1002,7 +998,7 @@ def _scr5k_ma_h128_lr03_cell(name: str) -> HardStageCfg:
     slot on the (h128, lr03) corner; the fmo2 family carries the full
     2x2 (base / h128 / lr03 / h128+lr03) that de-confounds the pair.
 
-    Memory schedule (2026-08-16): the single-backward smoke OOMed an
+    Memory schedule: the single-backward smoke OOMed an
     A100-80GB by a whisker (77.0 GiB in use, 4.0 GiB further requested,
     backward pass) at this cell's exact frame (batch 128, d=256, hidden
     128), where the archived h32 twin trains inside the same card. Moving
@@ -1012,8 +1008,8 @@ def _scr5k_ma_h128_lr03_cell(name: str) -> HardStageCfg:
     ample against a 4 GiB shortfall) while accumulating the IDENTICAL
     update at the full batch 128 — a gradient-exact memory schedule, not
     a recipe variable (loss_swap_backward_microbatched's docstring has
-    the algebra; tests/test_loss_microbatch_parity.py pins it). The
-    measured record otherwise stands: single-backward capacity work at
+    the algebra; tests/test_loss_microbatch_parity.py pins it). Otherwise,
+    single-backward capacity work at
     16x16 fits only the factorised head (fmo2: 0.87 GB at batch 32 where
     masked attention reads 5.00 GB, the dominant (B, heads, d, 2d) score
     tensor being hidden-independent)."""
@@ -1028,9 +1024,9 @@ def _scr5k_ma_h128_lr03_cell(name: str) -> HardStageCfg:
 def _scr5k_ma_clip60k_cell(name: str) -> HardStageCfg:
     """The MA screen base with the grad-clip threshold rescaled to d=256
     gradient units — the only change, so the read is chargeable to clip
-    semantics alone. The threshold derivation, the pre-launch refutation
-    of the pair-count heuristic, and the frozen verdict bands live at the
-    registry entry, where the launch decision was made."""
+    semantics alone. The threshold derivation, the refutation of the
+    pair-count heuristic and the expected ranges are at the cell's entry
+    below."""
     cell = _d256_scr5k_cell(name, "masked_attention", eval_sample_chunk=128)
     return replace(
         cell, train=replace(cell.train, grad_clip_max_norm=60_000.0)
@@ -1039,10 +1035,9 @@ def _scr5k_ma_clip60k_cell(name: str) -> HardStageCfg:
 
 def _scr5k_mo_cell(name: str) -> HardStageCfg:
     """The mask_one screen arm: the best 8x8 head (0.00129 Var/site at
-    100k, 2.2x under the MA twin), never before run at 16x16 — the A6
-    question's d256 read.
+    100k, 2.2x under the MA twin), never before run at 16x16.
 
-    Memory schedule (2026-08-16): the single-backward smoke OOMed an
+    Memory schedule: the single-backward smoke OOMed an
     A100-80GB (75.9 GiB in use, 73.4 GiB torch-allocated) at this frame
     (batch 128, d=256) — the head's d stacked anchor passes retain ~d
     trunk graphs per row for the backward, so its training memory scales
@@ -1054,10 +1049,9 @@ def _scr5k_mo_cell(name: str) -> HardStageCfg:
     loss_swap_backward_microbatched; pinned by
     tests/test_loss_microbatch_parity.py). Each slice still stacks all
     256 anchors (4096 trunk rows per forward), so per-pass GPU
-    utilisation stays dense and total FLOPs are unchanged. This
-    supersedes the briefly-registered batch-32 mini-family route, which
-    would have moved the batch — a second variable — where slicing moves
-    none."""
+    utilisation stays dense and total FLOPs are unchanged. Slicing is
+    preferred to a batch-32 route, which would have moved the batch — a
+    second variable — where slicing moves none."""
     cell = _d256_scr5k_cell(name, "mask_one", eval_sample_chunk=64)
     return replace(cell, train=replace(cell.train, loss_microbatch_size=16))
 
@@ -1070,8 +1064,8 @@ def _d256_fmo2_ladder_cell(
     recipe with the factorised family's conventions riding (EMA shadow,
     dual site orderings, the head's own eval chunk). The bare call builds
     the anchor cell; the batch/grid/microbatch knobs build the composed
-    recipe cells (their licences and frozen bands live at the registry
-    entries, where the launch decision is made)."""
+    recipe cells (their rationale and expected ranges are at the cell
+    entries below)."""
     cell = _hard_cell(
         name, sigma=0.223, head_kind="factorised",
         D=16, n_steps=50_000, n_euler_steps=n_euler_steps,
@@ -1098,7 +1092,7 @@ def _d144_ma_bracket_cell(name: str) -> HardStageCfg:
     """The 12x12 volume bracket of the ARCHIVED failure: the 16x16 naive
     rescue recipe with the lattice side the only mechanism change.
 
-    This supersedes the earlier fmo2 12x12 rung as the wall-bracketing
+    This replaces the earlier fmo2 12x12 rung as the wall-bracketing
     cell, which sat three variables from the failure it was meant to
     bracket: factorised head (the failing archive is masked attention),
     control-variate c_t (the from-scratch 16x16 launch diverged under the
@@ -1156,7 +1150,7 @@ def _d256_clip2000_cont_cell(name: str) -> HardStageCfg:
 
     Read against the rescue's own final plateau, which is flat (FVU
     0.137 +- 0.005 across deciles; eval Var/site 0.0707 at N=5000): the
-    null band is that flatness continuing. lr pinned to the ladder's
+    null expectation is that flatness continuing. lr pinned to the ladder's
     final 3e-4 and estimator kept naive so the optimiser regime continues
     rather than restarts — the archived cv2 continuation changed the
     estimator at this same juncture, which is why it cannot serve as this
@@ -1176,8 +1170,8 @@ def _d256_clip2000_cont_cell(name: str) -> HardStageCfg:
 
 
 CONFIGS: dict[str, HardStageCfg] = {
-    # First Potts cell (2026-07-31):
-    # the training path on S=3, kept small enough to smoke end-to-end on CPU.
+    # First Potts cell: the training path on S=3, kept small enough to smoke
+    # end-to-end on CPU.
     # D=3 (d=9) is the smallest lattice that is BOTH non-degenerate (on the L=2
     # torus a site's two neighbours coincide) and divisible by 3, so the equal
     # three-way slice exists exactly at 3 sites per species.
@@ -1206,11 +1200,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d16_c50_s010_letf_na": _hard_cell(
         "H2_d16_c50_s010_letf_na", sigma=0.10, head_kind="non_antisym",
     ),
-    # 4x4 supervisor-demo cells (2026-07-08): 10k-step MA/MO twins of the 2k
+    # 4x4 demo cells: 10k-step MA/MO twins of the 2k
     # dh ladder at the floor and critical rungs. Only head_kind and n_steps
     # differ from the corresponding _dh cells (pinned by
     # test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields); no
-    # curriculum -- the 2k sigma_c dh cell already passed the gate cold.
+    # curriculum -- the 2k sigma_c dh cell already trains cold.
     "H2_d16_c50_s010_letf_ma_10k": _hard_cell(
         "H2_d16_c50_s010_letf_ma_10k", sigma=0.10,
         head_kind="masked_attention", n_steps=10_000,
@@ -1227,7 +1221,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d16_c50_s223_letf_mo_10k", sigma=0.223,
         head_kind="mask_one", n_steps=10_000,
     ),
-    # Factorised-head 4x4 gate cells (2026-08-13): 10k twins of the MA demo
+    # Factorised-head 4x4 gate cells: 10k twins of the MA demo
     # cells above -- only head_kind and the declared factorised knobs differ
     # (pinned by test_factorised_gate_cells_mirror_ma_twin_except_declared_
     # fields), so head effects stay attributable. Four arms: fab8 / fab16 =
@@ -1284,11 +1278,12 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         use_bilinear=False,
     ),
-    # Matched-param arm (fab8 PARTIAL protocol): factor_dim 40 raises the
+    # Matched-param arm: factor_dim 40 raises the
     # head-owned count to 36,384 ~ the MA head's measured 34,272
     # readout-work params (21,440 head-owned + the 12,832-param backbone
     # attention_readout that only MA uses; the factorised head replaces
-    # it). Rules out head-parameter deficit as the PARTIAL's cause.
+    # it). Rules out head-parameter deficit as the cause of fab8's partial
+    # read.
     "H2_d16_c50_s010_letf_fmp40_10k": replace(
         _hard_cell(
             "H2_d16_c50_s010_letf_fmp40_10k", sigma=0.10,
@@ -1303,16 +1298,14 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         factor_dim=40,
     ),
-    # A-prime gate arm (2026-08-14, GO): fab8 + the column-major causal
-    # stream (site_orderings=("row","col")) -- the interior-coverage repair,
-    # adding INFORMATION where the rank/width arms only added capacity. The
-    # 4x4 cells gate the d64 spend; bands FROZEN BEFORE LAUNCH: NO-REGRESSION
-    # (>= fab8's 0.911 at s223 on >= 2/3 seeds) plus clean floor licenses the
-    # d64 arm on the mechanism case; >= 0.94 on >= 2/3 seeds (the original
-    # PASS bar, closing >= half the 0.057 gap) upgrades it to strong support;
-    # < fab8's band means the extra stream hurts and the d64 arm is off.
-    # 4x4 interiors are <= 14 sites, so a small gain here is expected even
-    # if the mechanism is right; the bands are ordered accordingly.
+    # Multi-order arm: fab8 + the column-major causal stream
+    # (site_orderings=("row","col")) -- the interior-coverage repair, adding
+    # INFORMATION where the rank/width arms only added capacity. Expected
+    # ranges: no regression (>= fab8's 0.911 at s223 on >= 2/3 seeds) plus a
+    # clean floor supports the mechanism; >= 0.94 on >= 2/3 seeds (closing
+    # >= half the 0.057 gap) is strong support; below fab8 means the extra
+    # stream hurts. 4x4 interiors are <= 14 sites, so only a small gain is
+    # expected here even if the mechanism is right.
     "H2_d16_c50_s010_letf_fmo2_10k": replace(
         _hard_cell(
             "H2_d16_c50_s010_letf_fmo2_10k", sigma=0.10,
@@ -1327,7 +1320,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         site_orderings=("row", "col"),
     ),
-    # Exterior-vs-interior separation gate (2026-08-23). The head ladder
+    # Exterior-vs-interior separation cells. The head ladder
     # varied the exterior combiner (per-pair MLP vs rank-8 bilinear) and the
     # interior mechanism together; these cells hold an EXISTING interior
     # fixed and change only the combiner, so the factorisation's own price
@@ -1335,12 +1328,12 @@ CONFIGS: dict[str, HardStageCfg] = {
     #   fib    = bilinear exterior + interval prefix-sum band   (twin: interval)
     #   fatt   = bilinear exterior + masked-attention band     (twin: MA)
     #   fimo2 / fmoatt = the same with the column ordering added.
-    #   iv     = the interval head itself at 4x4 (it never had a gate number).
-    # 4x4 READ IS NOT A GATE for interior mechanisms: fmo2 read 0.883 /
-    # 0.938 / 0.879 here (below fab8 on 2/3 seeds) and was STRONG at d64,
-    # interiors being <= 14 sites at 4x4. Bands for the TABLE only: PARITY
+    #   iv     = the interval head itself at 4x4 (it never had a 4x4 number).
+    # The 4x4 read does not decide interior mechanisms: fmo2 read 0.883 /
+    # 0.938 / 0.879 here (below fab8 on 2/3 seeds) yet gained clearly at
+    # d64, interiors being <= 14 sites at 4x4. Expected ranges: PARITY
     # >= 0.955 on 2/3 seeds (inside the MA twin range), MEANINGFUL >= 0.94,
-    # NULL < 0.92. The d64 rungs below launch alongside, not after.
+    # NULL < 0.92.
     **{
         f"H2_d16_c50_{sigma_label}_letf_{arm}_10k": replace(
             _hard_cell(
@@ -1364,11 +1357,12 @@ CONFIGS: dict[str, HardStageCfg] = {
         )
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
     },
-    # The literal factorisation test (2026-08-23): the archived MA / interval
+    # The literal factorisation test: the archived MA / interval
     # heads with ONLY [P_i, S_j] moved from the per-pair MLP into a rank-8
     # bilinear product (exterior_combiner="bilinear"). mab ~ MA at 4x4 and
     # d64 means the factorisation is free; the fatt/fib cells above change
-    # the chassis as well and cannot attribute a gap. Same bands as above.
+    # the chassis as well and cannot attribute a gap. Same expected ranges
+    # as above.
     **{
         f"H2_d16_c50_{sigma_label}_letf_{arm}_10k": replace(
             _hard_cell(
@@ -1380,13 +1374,13 @@ CONFIGS: dict[str, HardStageCfg] = {
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
         for arm, head_kind in (("mab", "masked_attention"), ("ivb", "interval"))
     },
-    # Exact-field channel (2026-08-23, s54): fimo2 and mab chassis with the
+    # Exact-field channel: fimo2 and mab chassis with the
     # closed-form sigma*Delta_ij added as a fixed score channel behind a
     # learned gain (exact_field_channel=True, nothing else changes). The
-    # residual-only reading of the s53 regression (linear field ~ half of
+    # residual-only reading of the field regression (linear field ~ half of
     # Var S) predicts a gain; a null says the interior already carries the
-    # field. 4x4 is a TABLE, not a gate (twins: fimo2 0.924/0.925/0.903,
-    # mab 0.970/0.973/0.973 at sigma_c).
+    # field. Twins at sigma_c: fimo2 0.924/0.925/0.903, mab
+    # 0.970/0.973/0.973.
     **{
         f"H2_d16_c50_{sigma_label}_letf_{arm}ef_10k": replace(
             _hard_cell(
@@ -1402,11 +1396,11 @@ CONFIGS: dict[str, HardStageCfg] = {
             ("mab", "masked_attention", {"exterior_combiner": "bilinear"}),
         )
     },
-    # Periodic-RoPE backbone at the 4x4 gate (2026-08-23): the fimo2 twins
-    # with ONLY the backbone changed (model.kind="rope_vit", patch_size 1 or
-    # 2), run BEFORE the d64 rope cells below per the validate-at-4x4 rule.
-    # This is a correctness gate, not a fidelity table: the 4x4 bars of
-    # subsec:gate-4x4 apply (energy-marginal TV <= 0.02, antisymmetry exactly
+    # Periodic-RoPE backbone at 4x4: the fimo2 twins with ONLY the backbone
+    # changed (model.kind="rope_vit", patch_size 1 or 2), validated at 4x4
+    # before the d64 rope cells below.
+    # This is a correctness check, not a fidelity table: the 4x4
+    # correctness bars apply (energy-marginal TV <= 0.02, antisymmetry exactly
     # zero, observables on their enumerated values), and the fimo2 twins'
     # sigma_c range 0.903-0.925 is the parity reference. Exact torus
     # equivariance is a property of the bidirectional body only; the one-pass
@@ -1429,10 +1423,10 @@ CONFIGS: dict[str, HardStageCfg] = {
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
         for patch_size in (1, 2)
     },
-    # Two-hole patch head at the 4x4 gate (2026-08-23, alongside the rope
-    # twins above): the fimo2 twin protocol with ONLY the head changed to
-    # "two_hole_patch" (R=1, feature_dim 32; the leTF stacks are built but
-    # never run by this head). Same 4x4 correctness bars as subsec:gate-4x4;
+    # Two-hole patch head at 4x4: the fimo2 twin protocol with ONLY the head
+    # changed to "two_hole_patch" (R=1, feature_dim 32; the leTF stacks are
+    # built but never run by this head). Same 4x4 correctness bars as the
+    # rope twins above;
     # fimo2 twins' sigma_c range 0.903-0.925 is the parity reference. This
     # is the one head in the ladder whose pair rate is exactly torus
     # translation-equivariant in a single pass.
@@ -1443,13 +1437,13 @@ CONFIGS: dict[str, HardStageCfg] = {
         )
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
     },
-    # First non-enumerable scaling rung for the §7 mixing probe: D=8 (d=64) at
+    # First non-enumerable scaling rung for the mixing probe: D=8 (d=64) at
     # sigma_c. mask_one head (O(d), bit-exact == doubly_hollow) since correctness
     # here rides the probe's reference chain, not exact enumeration. One-event
     # step sized clip-safe (scout: n~116 at d=64; 128 gives margin, verified via
     # lambda_dt_clipped_frac). 5000-sample eval on the GPU job. This is a
     # VALIDATION run: confirms b-scaling + matching-step fidelity before D=16.
-    # Budget probe (2026-07-06): the 2000-step cell trained healthily but was
+    # Budget probe: the 2000-step cell trained healthily but was
     # cut off mid-descent (loss 22->14 over the last 250 steps; final ESS
     # 0.0005-0.001 vs the D=4 sigma_c reference 0.68-0.80). One seed at 12.5x
     # the budget, cold at sigma_c, isolates the budget variable before
@@ -1460,7 +1454,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_sample_chunk=256, n_eval_samples_training=512,
         use_sdpa_readout=True, eval_autocast_bf16=True,
     ),
-    # Curriculum + budget rung (2026-07-06 eve): the 25k cold probe lifted the
+    # Curriculum + budget rung: the 25k cold probe lifted the
     # final ESS frac 0.001 -> 0.12 with the loss STILL descending, so budget
     # dominates the collapse but had not saturated. This cell adds the other
     # pocketed lever: the sigma-plateau ladder the unconstrained baseline
@@ -1471,9 +1465,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_mo_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_mo_50k_curr", head_kind="mask_one",
     ),
-    # Masked-attention twin of the PASSED 50k curriculum rung: every knob
-    # identical, ONLY head_kind differs. Serves three purposes at once
-    # (2026-07-07 head-switch follow-up): (i) true end-to-end wall-clock A/B
+    # Masked-attention twin of the 50k curriculum rung: every knob
+    # identical, ONLY head_kind differs. Serves three purposes at once:
+    # (i) true end-to-end wall-clock A/B
     # vs the 6.8 h mask_one record (head-level bench says 5.4x on head fwd;
     # the workload is eval-dominated, so the run measures what that buys);
     # (ii) re-validates the new head at a non-enumerable size before D=16;
@@ -1482,8 +1476,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_ma_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr", head_kind="masked_attention",
     ),
-    # Factorised-head d64 scaling rung (2026-08-13, GO): does the 4x4
-    # verdict transfer — the ~0.057 expressivity price AND the one-pass
+    # Factorised-head d64 scaling rung: does the 4x4 read
+    # transfer — the ~0.057 expressivity price AND the one-pass
     # speed win — at the first non-enumerable size? Single-variable twin of
     # the archived MA curriculum rung above: only head_kind and the
     # declared ema_decay instrument differ (EMA never touches training, so
@@ -1495,19 +1489,18 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         ema_decay=0.9999,
     ),
-    # Rank-at-scale arm (2026-08-14, GO): rank-16 twin of the fab8 d64
+    # Rank-at-scale arm: rank-16 twin of the fab8 d64
     # rung. At 4x4 the rank axis was refuted NEAR CEILING (0.057 deficit,
     # nothing for rank to buy); at the fab8 rung's measured 0.27 deficit it
     # has something to buy, and the trained MA field's spectrum leaves
-    # measurable structure between rank 8 and 16 at this size. Bands FROZEN
-    # BEFORE LAUNCH: raw ess_frac >= 0.60 = rank meaningfully binds (closes
+    # measurable structure between rank 8 and 16 at this size. Expected:
+    # raw ess_frac >= 0.60 = rank meaningfully binds (closes
     # >= a third of the 0.27 gap to the MA twin's 0.781); <= 0.55 = rank
     # refuted at scale too, interior coverage becomes the only live repair.
-    # VERDICT (2026-08-19, recovered by the orphaned-results audit — the run
-    # completed 2026-08-14 as DoC job 274188 and sat unadjudicated): raw
-    # 0.5615, bootstrap 95% CI (0.5333, 0.5871), EMA 0.5920. BETWEEN-BANDS,
-    # binds-EXCLUDED (CI upper < 0.60); refuted band straddled. Rank 16 buys
-    # +0.05 raw over fab8 (~19% of the 0.27 gap), under the meaningful bar.
+    # Measured: raw 0.5615, bootstrap 95% CI (0.5333, 0.5871), EMA 0.5920 --
+    # between the two ranges, binding excluded (CI upper < 0.60). Rank 16
+    # buys +0.05 raw over fab8 (~19% of the 0.27 gap), under the meaningful
+    # bar.
         "H2_d64_c50_s223_letf_fab16_50k_curr": replace(
             _d64_curriculum_cell(
                 "H2_d64_c50_s223_letf_fab16_50k_curr", head_kind="factorised",
@@ -1515,22 +1508,20 @@ CONFIGS: dict[str, HardStageCfg] = {
             ema_decay=0.9999,
             bilinear_rank=16,
         ),
-        # A-prime at scale (2026-08-14, GO — LOGGED AMENDMENT): fab8 d64
+        # Multi-order streams at scale: fab8 d64
         # rung + the column-major causal stream (site_orderings=("row","col")),
         # seed 42, single-variable twin of the fab8 rung (pinned by
         # test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings). The 4x4
-        # no-regression band FIRED (0.883/0.938/0.879 vs the 0.911 bar) — the
-        # amendment declares that read INCONCLUSIVE for size-dependent
-        # interior mechanisms rather than refuting: 4x4 interiors are <= 14
-        # sites (the gate was set at no-regression precisely because it is an
+        # read (0.883/0.938/0.879 vs the 0.911 no-regression bar) is
+        # inconclusive for size-dependent interior mechanisms rather than a
+        # refutation: 4x4 interiors are <= 14 sites (no-regression is an
         # insensitive read there), the motivating forensic (field correlation
         # decaying with pair gap) was measured at d64, and the mean is -0.012
-        # with one seed at the 0.938 strong bar. Decided BEFORE any d64 A-prime
-        # data exists. Bands FROZEN at the amendment: MEANINGFUL raw >= 0.60
-        # (closes >= 1/3 of the 0.27 gap to MA 0.781 — the same bar fab16
-        # faced); STRONG raw >= 0.70 (the assessment's "good enough for run
-        # D"); NEGATIVE raw <= 0.55 -> A-prime refuted at scale too and R1
-        # (fint) is the only live interior repair.
+        # with one seed at the 0.938 strong bar. Expected: MEANINGFUL raw
+        # >= 0.60 (closes >= 1/3 of the 0.27 gap to MA 0.781 — the same bar
+        # fab16 faced); STRONG raw >= 0.70; NEGATIVE raw <= 0.55 -> the extra
+        # ordering refuted at scale too and an interior band is the only
+        # live interior repair.
         "H2_d64_c50_s223_letf_fmo2_50k_curr": replace(
             _d64_curriculum_cell(
                 "H2_d64_c50_s223_letf_fmo2_50k_curr", head_kind="factorised",
@@ -1538,10 +1529,10 @@ CONFIGS: dict[str, HardStageCfg] = {
             ema_decay=0.9999,
             site_orderings=("row", "col"),
         ),
-        # Exterior-vs-interior separation rungs (2026-08-23): twins of the
+        # Exterior-vs-interior separation rungs: twins of the
         # fmo2 rung above (EMA instrument kept) with an interior band on the
-        # per-pair path -- see the 4x4 block for the arm table. Bands FROZEN
-        # BEFORE LAUNCH against fmo2 0.745 raw and the MA twin 0.781:
+        # per-pair path -- see the 4x4 block for the arm table. Expected
+        # ranges against fmo2 0.745 raw and the MA twin 0.781:
         # STRONG >= 0.78 raw, MEANINGFUL >= 0.76, NULL <= 0.745. fatt's twin
         # is MA itself (same interior, bilinear exterior): MA-parity there
         # means the factorisation costs nothing, and fab-class memory is
@@ -1560,14 +1551,14 @@ CONFIGS: dict[str, HardStageCfg] = {
                 "fimo2": {"interior_band": "prefix", "site_orderings": ("row", "col")},
             }.items()
         },
-        # Exact-field channel rungs (2026-08-23, s54): the fimo2 rung above
+        # Exact-field channel rungs: the fimo2 rung above
         # and the mab literal cell with exact_field_channel=True, nothing
-        # else changed. Bands FROZEN BEFORE LAUNCH (raw eval ESS/N, seed 42,
+        # else changed. Expected ranges (raw eval ESS/N, seed 42,
         # EMA read alongside): fimo2ef vs fimo2 0.750 raw / 0.830 EMA --
         # STRONG >= 0.78 (MA parity), MEANINGFUL >= 0.765, NULL <= 0.750;
         # mabef vs mab 0.769 / 0.834 -- STRONG >= 0.80, MEANINGFUL >= 0.785,
         # NULL <= 0.769. Single seed: the FP-non-determinism caveat applies
-        # to any call inside ~0.02 of a band edge. The learned gain (a, b)
+        # to any call inside ~0.02 of a range edge. The learned gain (a, b)
         # is read off checkpoints/final.pt after the run.
         "H2_d64_c50_s223_letf_fimo2ef_50k_curr": replace(
             _d64_curriculum_cell(
@@ -1584,21 +1575,20 @@ CONFIGS: dict[str, HardStageCfg] = {
             exterior_combiner="bilinear",
         ),
         # Periodic-RoPE / patch-key backbone twins of the fimo2 rung
-        # (2026-08-23, hail mary; models/rope_vit.py). ONE variable each
+        # (models/rope_vit.py). ONE variable each
         # versus fimo2: the backbone's free absolute position tables are
         # replaced by rotary phases 2*pi*m/L (torus-periodic, signed
         # offsets), and at p=2 the causal stacks' far keys are pooled 2x2
         # patches (keys per query 1+16+16 instead of 65). The head is
         # unchanged and still carries its own absolute site-position
         # embedding, so this tests the BACKBONE's position code only.
-        # FROZEN BANDS (before any launch, seed 42, EMA eval; primary =
+        # Expected ranges (seed 42, EMA eval; primary =
         # Var[log w]/site, bootstrap CI, ESS/N alongside) against the fimo2
         # rung's EMA Var/site 0.00281 (0.00271, 0.00292), raw 0.00389
         # (0.00373, 0.00406), EMA ESS/N 0.830, raw 0.750:
         #   LIFT       iff EMA Var/site CI separated BELOW (0.00271, 0.00292);
         #   NULL       iff the CIs overlap;
         #   REGRESSION iff separated ABOVE.
-        # Not run at the time of writing; CPU-only until it is called for.
         **{
             f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr": (
                 lambda _cell, _p: replace(
@@ -1617,13 +1607,13 @@ CONFIGS: dict[str, HardStageCfg] = {
             )
             for patch_size in (1, 2)
         },
-        # Two-hole patch head twin of the fimo2 rung (2026-08-23, s57). ONE
+        # Two-hole patch head twin of the fimo2 rung. ONE
         # variable versus fimo2: head_kind (R=1, feature_dim 32; the leTF
-        # stacks are built but never run). At the 4x4 gate the head reached
+        # stacks are built but never run). At 4x4 the head reached
         # sigma_c ESS 0.997/0.993/0.988 (fimo2 twins 0.924/0.925/0.903) at
         # ~10 ms/step versus ~28, so this is the rung that asks whether
         # blindness-by-locality survives the non-local remainder at d=64.
-        # FROZEN BANDS (before launch, seed 42, EMA eval; primary = Var[log
+        # Expected ranges (seed 42, EMA eval; primary = Var[log
         # w]/site bootstrap CI, ESS/N alongside) against the fimo2 rung's
         # EMA Var/site 0.00281 (0.00271, 0.00292), EMA ESS/N 0.830:
         #   STRONG     iff EMA Var/site CI separated BELOW (0.00271, 0.00292)
@@ -1637,7 +1627,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             ),
             ema_decay=0.9999,
         ),
-        # Scaling slate (2026-08-15). The fmo2 rung above cleared its band at
+        # Scaling slate. The fmo2 rung above cleared its expected range at
         # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
         # attention twin) and the cost bench priced it at 4.7x faster and
         # 5.7x smaller than that twin at 16x16, so the head is no longer what
@@ -1665,8 +1655,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d256_c50_s223_letf_fmo2_20k_sc_warm": _d256_fmo2_warm_cell(
             "H2_d256_c50_s223_letf_fmo2_20k_sc_warm",
         ),
-        # CANCELLED (2026-08-15, back-annotated 2026-08-19): never ran — do
-        # not relaunch. Its question ("does training at the finer grid beat
+        # CANCELLED: never ran. Its question ("does training at the finer grid beat
         # re-rolling finer?") was answered by the b512+ne512 recipe pair
         # (trained at ne512: endpoint NULL) and the eval-only grid sweep;
         # the builder docstring's "live hope" framing above predates both.
@@ -1674,9 +1663,9 @@ CONFIGS: dict[str, HardStageCfg] = {
             "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512",
             n_euler_steps=512,
         ),
-    # --- 16x16 stage-1 screen (2026-08-15, post-review): flat sigma=0.10,
+    # --- 16x16 stage-1 screen: flat sigma=0.10,
     # 5k steps, naive c_t, one variable per arm, read on stage-tail FVU
-    # (bands frozen in the _d256_scr5k_cell docstring BEFORE launch).
+    # (expected ranges in the _d256_scr5k_cell docstring).
     # The MA pair anchors the archived failure (base expectation 0.119,
     # the rescue's own first 5k); the fmo2 arms screen the head any scaled
     # run would use (4.7x faster / 5.7x smaller, measured at this volume).
@@ -1691,20 +1680,20 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_scr5k_ma_h128_lr03": _scr5k_ma_h128_lr03_cell(
         "H2_d256_scr5k_ma_h128_lr03",
     ),
-    # muP-init arm (2026-08-18, init-review stream): the bridge arm with
+    # muP-init arm: the bridge arm with
     # readout_score_scale = 32/128 the ONLY change — the causal test of
     # the printed muP diagnosis (readout dot has no fan-in compensation;
     # G ~ sqrt(h) at init). Comparators measured from the archived
-    # training logs BEFORE launch (2026-08-18): bridge arm (seed 42) step-0
+    # training logs: bridge arm (seed 42) step-0
     # rate_pair_mean 0.00335 / lambda_dt_clip 0.352 / grad_norm 3.8e7,
     # steps-to-FVU<1 = 825, tail FVU(3-5k) 0.0810; h32 base 0.00231 /
-    # 0.047 / 6.1e6, 65-74 steps, tail 0.1203-0.1219. FROZEN BANDS, seed
+    # 0.047 / 6.1e6, 65-74 steps, tail 0.1203-0.1219. Expected, seed
     # 42: plumbing check — step-0 rate_pair_mean must read EXACTLY
     # 0.25 x 0.00335 = 0.00084 (same seed, deterministic init; any other
     # value means the knob missed the head).
-    # [CORRECTION 2026-08-19: this plumbing check was MIS-SPECIFIED — the
+    # [Caveat: that plumbing check is mis-specified against the CSV — the
     # first CSV row sits on buffer states rolled under scaled rates and
-    # reads 0.00164; the honest instrument is init_diagnostics, which read
+    # reads 0.00164; the right instrument is init_diagnostics, which reads
     # 0.0023753 = exactly 0.25x the bridge's 0.0095. Do not fail the knob
     # on the CSV row.] MECHANISM CONFIRMED iff
     # step-0 lambda_dt_clip <= 0.05 AND step-0 grad_norm <= 1e7
@@ -1713,25 +1702,24 @@ CONFIGS: dict[str, HardStageCfg] = {
     # (the freed ~16% of budget shows up); tail 0.078-0.084 = transient
     # was free at this horizon (mechanism can still confirm); tail >
     # 0.09 = the scale change damaged the trained model — report as-is.
-    # Scope frozen: does NOT reopen the MA family — the ~70x sigma_c ESS
+    # Scope: does NOT reopen the MA family — the ~70x sigma_c ESS
     # penalty at matched FVU is orthogonal to any transient fix.
     "H2_d256_scr5k_ma_h128_lr03_mup": replace(
         _scr5k_ma_h128_lr03_cell("H2_d256_scr5k_ma_h128_lr03_mup"),
         readout_score_scale=32 / 128,
     ),
-    # d-scaled clip arm (2026-08-18, init-review stream): the MA screen
+    # d-scaled clip arm: the MA screen
     # base with grad_clip_max_norm 500 -> 60,000 the ONLY change — the
     # causal test of the printed "clip changes meaning with lattice
     # size" diagnosis. Scale set by MEASUREMENT, not the pair-count
     # heuristic: archived early(0-500) median grad_norm is 925-1108 at
     # d64 vs 1.0-1.2e5 at d256 (ratio 91-131x), so 60,000 = 500 x ~120
     # restores the d64 ratio p50(grad)/clip ~ 2. The pair-count ratio
-    # 16.2x is REFUTED pre-launch by the same logs (an 8,095 threshold
-    # would still bind on ~100% of early steps) — the printed clause
-    # needs that amendment regardless of this arm's outcome.
+    # 16.2x is refuted by the same logs (an 8,095 threshold
+    # would still bind on ~100% of early steps).
     # Comparators (seed 42): d256 base early(0-500) clip% 100, first-5k
-    # 39.9, tail FVU 0.1203; d64 early 72-81%, first-5k 7.3-9.0. FROZEN
-    # BANDS, seed 42: SEMANTICS RESTORED iff early(0-500) clip% <= 85
+    # 39.9, tail FVU 0.1203; d64 early 72-81%, first-5k 7.3-9.0. Expected,
+    # seed 42: SEMANTICS RESTORED iff early(0-500) clip% <= 85
     # AND first-5k clip% <= 15 (the d64 profile); BRAKE-PRICED iff
     # additionally tail FVU <= 0.11 (below both base seeds); NULL if
     # tail in (0.11, 0.13); DAMAGE if tail > 0.13 or FVU >= 1 at any
@@ -1767,8 +1755,8 @@ CONFIGS: dict[str, HardStageCfg] = {
         # starvation rather than resolution.
         "H2_d256_scr5k_fmo2_ne512_b512", n_euler_steps=512, batch_size=512,
     ),
-    # --- screen phase 2 (2026-08-18, GO after judging): two arms, one
-    # variable each against the SAME judged base pair (0.0364/0.0442).
+    # --- screen phase 2: two arms, one
+    # variable each against the SAME base pair (0.0364/0.0442).
     #
     # b512: the batch-only decomposition of the ne512_b512 bundle. That arm
     # moved (honest FVU 0.0118 vs base 0.0286 after floors of 1/512 vs
@@ -1784,9 +1772,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     # invert the McCandlish two-batch identity, so this run MEASURES the
     # critical batch size instead of guessing it — gradient-exact by
     # test_loss_microbatch_parity, so the arm stays the declared twin.
-    # FROZEN READ: honest (floor-subtracted, 1/512) stage-tail FVU —
+    # Read: honest (floor-subtracted, 1/512) stage-tail FVU —
     # lands at the bundle's ~0.012 => batch explains the bundle and the
-    # 50k batch lever is licensed at the base grid; lands at base's
+    # 50k batch lever is supported at the base grid; lands at base's
     # ~0.029 => the grid was the mover and the instruments misled;
     # in between => split, both levers real. Plus the B_crit readout.
     "H2_d256_scr5k_fmo2_b512": _scr5k_fmo2_with(
@@ -1794,13 +1782,13 @@ CONFIGS: dict[str, HardStageCfg] = {
     ),
     # cv: the published control-variate estimator, cold, on the factorised
     # head — never run at this size (the historical "CV inverts cold at
-    # d256" was measured on MA). The 18-Aug warm-CV anatomy showed the
+    # d256" was measured on MA). The warm-CV anatomy showed the
     # inversion tracks RATE MIS-SCALING, not size: var-ratio 30x-worse at
     # the shock's step 0, crossing 1 at ~step 914 as the rates healed, and
     # 0.121 (an 8.3x cut) once healthy. fmo2's COLD init is clean
     # (lambda_dt_clipped_frac 0.0 at init in all ten screen arms), so the
-    # precondition the inversion violated holds here from step 0. FROZEN
-    # READ: var_estimator_integrand/var_dt_log_p_tilde tail (3-5k) < 0.5
+    # precondition the inversion violated holds here from step 0.
+    # Read: var_estimator_integrand/var_dt_log_p_tilde tail (3-5k) < 0.5
     # AND train health at base level => CV WORKS COLD at d256 (the paper's
     # lever needs no schedule on the right head — cross-estimator FVU
     # compared floor-corrected only); sustained ratio > 1 beyond ~1k steps
@@ -1810,8 +1798,8 @@ CONFIGS: dict[str, HardStageCfg] = {
         _scr5k_fmo2_cell("H2_d256_scr5k_fmo2_cv"),
         estimator="control_variate",
     ),
-    # c_t decoupling arm (2026-08-19, Tier 3(a) of the standing queue,
-    # GO): the fmo2 screen base with c_t_batch=512 the ONLY change —
+    # c_t decoupling arm: the fmo2 screen base with c_t_batch=512 the
+    # ONLY change —
     # gradient batch stays 128, only the c_t estimator draws 512. The b512
     # arm showed batch 512 explains the ne512_b512 bundle (honest FVU
     # 0.0115 vs base 0.0286) and its B_crit readout (~45-91) put b512 ~10x
@@ -1819,19 +1807,18 @@ CONFIGS: dict[str, HardStageCfg] = {
     # variance, not gradient noise. This arm is the causal test: it buys
     # the c_t variance WITHOUT the gradient batch. Honest-FVU floor moves
     # with the c_t draw count: subtract 1/512 here (the b512 convention),
-    # not 1/128. FROZEN BANDS (before launch, seed 42, stage-tail FVU
+    # not 1/128. Expected (seed 42, stage-tail FVU
     # 3000-4999): honest FVU <= 0.015 = DECOUPLING CONFIRMED (matches the
     # b512/bundle 0.0115-0.0118 — the batch lever's whole gain is
     # c_t-side, and the cheap lever at 50k is c_t_batch, not batch);
     # >= 0.025 = GRADIENT-SIDE (matches base 0.0286 — the b512 gain needs
     # the gradient batch after all, B_crit read notwithstanding);
     # in between = SPLIT, both channels real, report the fractions.
-    # VENUE (2026-08-19 s37): pulled off the DoC a100 queue and run on
-    # Modal A100-80GB instead (tag 20260819-215249, seed 42). Not a scientific
-    # change -- `train_remote` pins the same 80GB A100 class the anchors
-    # ran on -- but a scheduling one: a comparable 5k d256 screen measured 18 minutes end-to-end
-    # against a three-day queue wait, so the wait was ~150x the compute. Bands above unchanged, frozen
-    # before either launch.
+    # Venue: run on Modal A100-80GB (tag 20260819-215249, seed 42) rather
+    # than the DoC a100 queue. Not a scientific change -- `train_remote`
+    # pins the same 80GB A100 class the anchors ran on -- but a scheduling
+    # one: a comparable 5k d256 screen measured 18 minutes end-to-end
+    # against a three-day queue wait.
     "H2_d256_scr5k_fmo2_ctb512": _scr5k_fmo2_with(
         "H2_d256_scr5k_fmo2_ctb512", c_t_batch=512,
     ),
@@ -1842,15 +1829,15 @@ CONFIGS: dict[str, HardStageCfg] = {
         # the 50k floor at 0.00018 Var/site; 4x4 many). If the stage-1
         # deficit is slow convergence rather than a floor, THIS arm falls
         # toward 0.03 after 5k and every scr5k null gets re-read; if it
-        # stays at ~0.119 for 4x the horizon, the 5k screen read stands.
+        # stays at ~0.119 for 4x the horizon, the 5k screen read holds.
         _scr5k_fmo2_cell("H2_d256_scr20k_fmo2"),
         train=replace(_scr5k_fmo2_cell("H2_d256_scr20k_fmo2").train,
                       n_steps=20_000),
     ),
     "H2_d256_scr5k_mo": _scr5k_mo_cell("H2_d256_scr5k_mo"),
-    # --- 12x12 volume bracket of the archived failure (2026-08-15,
-    # post-review; supersedes the fmo2 12x12 cell as the bracketing rung —
-    # rationale in the builder docstring). Two seeds: this is a headline
+    # --- 12x12 volume bracket of the archived failure (replaces the fmo2
+    # 12x12 cell as the bracketing rung — rationale in the builder
+    # docstring). Two seeds: this is a headline
     # scaling-curve point, not a screen arm.
     "H2_d144_c50_s223_letf_ma_50k_curr_naive": _d144_ma_bracket_cell(
         "H2_d144_c50_s223_letf_ma_50k_curr_naive",
@@ -1859,7 +1846,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_ma_10k_sc_clip2000": _d256_clip2000_cont_cell(
         "H2_d256_c50_s223_letf_ma_10k_sc_clip2000",
     ),
-    # Band-capacity push batch 1 (2026-07-08): three single-variable twins
+    # Band-capacity push, batch 1: three single-variable twins
     # of ma_50k_curr.
     # The discriminator: interval head, head_kind is the ONLY change.
     # Separates "shared band content is the bottleneck" (lands in the MA
@@ -1867,9 +1854,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_iv_50k_curr": _d64_curriculum_cell(
         "H2_d64_c50_s223_letf_iv_50k_curr", head_kind="interval",
     ),
-    # Literal factorisation test at d64 (2026-08-23): the MA / interval rungs
+    # Literal factorisation test at d64: the MA / interval rungs
     # with exterior_combiner="bilinear" and the dual-eval EMA instrument
-    # (never touches training). Bands FROZEN: mab vs MA 0.781 -- PARITY
+    # (never touches training). Expected: mab vs MA 0.781 -- PARITY
     # >= 0.76 raw, COSTS < 0.74; ivb vs interval 0.646 -- PARITY >= 0.63.
     **{
         f"H2_d64_c50_s223_letf_{arm}_50k_curr": _d64_curriculum_cell(
@@ -1898,8 +1885,8 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_ma_stencil_50k_curr", head_kind="masked_attention",
         use_stencil=True,
     ),
-    # Horizon extension (2026-07-22). Judging the stencil
-    # exposed that the 50k budget cuts BOTH heads off mid-descent: over the
+    # Horizon extension. The stencil rung's logs show
+    # that the 50k budget cuts BOTH heads off mid-descent: over the
     # final 10k steps the loss still falls 12.0% (ma) / 7.4% (stencil) and
     # train ESS is still climbing, so the 0.78/0.80 "ceiling" is read off
     # unconverged runs. n_steps is the ONLY change: the ladder holds absolute
@@ -1918,7 +1905,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_ma_stencil_100k_curr", head_kind="masked_attention",
         n_steps=100_000, use_stencil=True,
     ),
-    # The missing twin (judged 2026-07-22). It found the 50k cutoff lands
+    # The missing twin. The horizon check found the 50k cutoff lands
     # mid-descent for the one-pass heads -- but the SAME check on mo_50k_curr's
     # log shows mask_one was still descending fastest of the three at its own
     # cutoff (loss -25.7% over the final 15k, train ESS 0.864 -> 0.900). So the
@@ -1951,15 +1938,15 @@ CONFIGS: dict[str, HardStageCfg] = {
         eval_sample_chunk=256, n_eval_samples_training=512,
         use_sdpa_readout=True, eval_autocast_bf16=True,
     ),
-    # The 16x16 rung — hard.tex §5.6's plan of record, the last training rung
-    # (launched 2026-08-09). The reported masked-attention head on the
+    # The 16x16 rung — the last training rung.
+    # The reported masked-attention head on the
     # vertex-disjoint matching step (validated as a drop-in at the converged
     # 8x8 checkpoint: ESS 0.906 vs 0.910, composition bitwise-preserved), at
     # the 8x8 rung's 50k sigma-ladder recipe UNCHANGED — the ladder holds
     # absolute start_steps, so the schedule is identical, not stretched.
     # n_euler_steps stays 128 only BECAUSE the matching step decouples
     # trajectory length from the total rate: the clip-safe one-event budget
-    # extrapolates to ~390 steps at this size (hard.tex subsec:rate-field).
+    # extrapolates to ~390 steps at this size (thesis, rate-field section).
     # Eval deltas are diagnostics-only: cadence 200 -> 500 and in-training
     # draw 512 -> 256 (each network pass scores ~16x the d64 cell's pairs, so
     # the d64 cadence would spend most of the job evaluating), chunk
@@ -1974,15 +1961,11 @@ CONFIGS: dict[str, HardStageCfg] = {
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
     ),
-    # 50k rescue candidate (2026-08-12, prepped DURING the smoke wave): the
-    # naive-estimator twin of the diverged cell above. Arm B's mechanism —
-    # kill the inverted control variate (adds 2.3-70x variance at d=256 vs
-    # an 8-30x reduction at d64) — is the only arm showing a converging loss
-    # mid-smoke. DO NOT LAUNCH until (i) all five smoke verdicts are judged
-    # against the pre-stated criteria and (ii) I make the launch
-    # call (frozen amendment: launch by 14 Aug EOD or 16x16 degrades to
-    # smoke-level evidence). Everything except the estimator is identical
-    # to the diverged twin, so the comparison isolates the CV.
+    # 50k rescue: the naive-estimator twin of the diverged cell above. Its
+    # mechanism — kill the inverted control variate (adds 2.3-70x variance
+    # at d=256 vs an 8-30x reduction at d64) — was the only smoke arm
+    # showing a converging loss. Everything except the estimator is
+    # identical to the diverged twin, so the comparison isolates the CV.
     "H2_d256_c50_s223_letf_ma_50k_curr_naive": _hard_cell(
         "H2_d256_c50_s223_letf_ma_50k_curr_naive", sigma=0.223,
         head_kind="masked_attention",
@@ -1993,16 +1976,15 @@ CONFIGS: dict[str, HardStageCfg] = {
         curriculum=_D64_SIGMA_LADDER,
         estimator="naive_mc",
     ),
-    # The definitive cold fmo2 ladder at 16x16 (2026-08-18, GO after
-    # the screen fleet was judged): the run every archived d256 number is
+    # The cold fmo2 ladder at 16x16: the run every archived d256 number is
     # missing. The archived MA naive-rescue recipe verbatim with the head
     # family the only mechanism change (+ its riding EMA shadow and dual
     # site orderings, and the eval chunk sized to the factorised head's
     # measured memory — eval-only; all pinned in test_screen_pins), so any
     # difference from the rescue's Var[log w]/site 0.0707 / ESS/N 0.0031
-    # is chargeable to the head. Bands FROZEN BEFORE LAUNCH, seeds 42+43:
+    # is chargeable to the head. Expected ranges, seeds 42+43:
     # stage-1 self-serves at ~5k (tail FVU, steps 3000-4999; screen base
-    # band 0.036-0.044) — transfer CONFIRMED <= 0.05, >= 0.08 means the
+    # range 0.036-0.044) — transfer CONFIRMED <= 0.05, >= 0.08 means the
     # ladder frame breaks the screen result (buffer/curriculum
     # interaction) and later rungs are not trusted until explained. Final
     # 5000-draw eval read on Var[log w]/site + ESS/N, EMA and raw, with
@@ -2018,12 +2000,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_fmo2_50k_curr_naive": _d256_fmo2_ladder_cell(
         "H2_d256_c50_s223_letf_fmo2_50k_curr_naive", estimator="naive_mc",
     ),
-    # The RECIPE runs (2026-08-18, registered ready-to-fire): the composed
-    # best-effort sampler at 16x16, declared openly as a demonstration
-    # arm, not a screen arm — attribution lives in the chain (archived MA
+    # The RECIPE runs: the composed best-effort sampler at 16x16, a
+    # demonstration arm, not a screen arm — attribution lives in the chain (archived MA
     # naive ladder vs the fmo2 naive ladder anchor isolates the head;
     # anchor vs recipe isolates the variance bundle; recipe_naive vs
-    # recipe_cv isolates the estimator). Ingredients and their licences:
+    # recipe_cv isolates the estimator). Ingredients and their rationale:
     # b512+ne512 moved as a pair holding per-slot gradient density at 1.0
     # (the screen's best arm: FVU 0.0138, ESS/N 0.92, clip-free at
     # sigma 0.1; sigma_c grid evidence: lambda_dt p99 0.98 with 1.5-2%
@@ -2032,13 +2013,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     # instrument (gradient-exact, parity-pinned) so B_crit is measured
     # along the whole ladder; horizon 50k matches the anchor so the
     # recipe-vs-anchor read is horizon-controlled (a sigma_c plateau
-    # continuation off final.pt is the licensed extension if the tail is
-    # still descending). LAUNCH GATES, frozen 2026-08-18: the naive
-    # variant fires once the b512 screen arm reads healthy; the cv
-    # variant additionally requires the cold-CV screen arm's frozen PASS
-    # (tail var-ratio < 0.5 at base-level health) — cold CV at this size
-    # inverted on the mis-scaled-init head and must never enter a long
-    # run unlicensed. BANDS, frozen before any launch: final EMA eval
+    # continuation off final.pt is the natural extension if the tail is
+    # still descending). The cv variant depends on the cold-CV screen arm
+    # passing (tail var-ratio < 0.5 at base-level health) — cold CV at
+    # this size inverted on the mis-scaled-init head. Expected ranges:
+    # final EMA eval
     # ESS/N >= 0.30 = STRONG (Var[log w] <= ~1.2 — the methodology bar:
     # a usable sampler at 256 sites); >= 0.10 = PASS (order of magnitude
     # over every archived d256 number); >= 0.02 = PARTIAL (no gain over
@@ -2051,11 +2030,11 @@ CONFIGS: dict[str, HardStageCfg] = {
             estimator="naive_mc", n_euler_steps=512, batch_size=512,
             loss_microbatch_size=128,
         ),
-    # No microbatch on the cv variant: at freeze time the concern was a
-    # batch-coupled control variate breaking the per-row decomposition
-    # silently, so the CV recipe kept the single backward and the
-    # noise-scale measurement rode the naive variant alone. (s71,
-    # 2026-08-26: RESOLVED — c_t is computed in the outer no_grad rollout
+    # No microbatch on the cv variant: when this cell was defined the
+    # concern was a batch-coupled control variate breaking the per-row
+    # decomposition silently, so the CV recipe kept the single backward
+    # and the noise-scale measurement rode the naive variant alone.
+    # (Since resolved — c_t is computed in the outer no_grad rollout
     # and reaches the loss as a detached per-row gather, so microbatching
     # is gradient-exact for ARBITRARY per-row c_t, estimator included;
     # see the ne128-family block below. The archived run stays as it ran;
@@ -2065,30 +2044,30 @@ CONFIGS: dict[str, HardStageCfg] = {
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv",
             estimator="control_variate", n_euler_steps=512, batch_size=512,
         ),
-    # CV continuation of the landed recipe (2026-08-19, GO after the
-    # recipe pair judged NULL/NULL-grazing-PARTIAL per its own bands
-    # above): the cv2 pattern — flat sigma_c, 20k steps, lr pinned to the
-    # ladder's final 3e-4 — applied to the b512+ne512 recipe shape, run
+    # CV continuation of the recipe (the recipe pair read NULL / grazing
+    # PARTIAL against the expected ranges above): the cv2 pattern — flat
+    # sigma_c, 20k steps, lr pinned to the ladder's final 3e-4 — applied to
+    # the b512+ne512 recipe shape, run
     # with --init-from the seed-43 recipe run's final.pt (raw weights: the
     # EMA shadow restarts and is warmup-capped, so early eval_ema reads
-    # are transient — say so at judging). estimator back to the control
-    # variate is the arm variable; the cold-CV route stays unlicensed
-    # (screen arm FAILED), continuation is the validated warm pattern
+    # are transient). estimator back to the control
+    # variate is the arm variable; the cold-CV route is excluded (the
+    # screen arm inverted), continuation is the validated warm pattern
     # (var-ratio crossed 1 at ~step 914 on healing rates, 0.121 once
-    # healthy). No loss_microbatch, per the freeze-time caution above
-    # (s71: resolved — see the cv variant's comment; archived run stays
-    # as it ran). TRIPWIRE ARMED (set 19-Aug):
+    # healthy). No loss_microbatch, per the caution above (since
+    # resolved — see the cv variant's comment; the archived run stays
+    # as it ran). Tripwire:
     # halt_on_cv_inversion_after=2000 with the default window 10 — a
     # sustained controlled/naive integrand-variance inversion after step
     # 2000 halts the run; that halt IS the designed cost-capped negative
-    # verdict, not an accident. FROZEN BANDS (before launch, vs the
+    # outcome, not an accident. Expected ranges (vs the
     # parent's EMA eval ESS/N 0.0198 and the archived single-lever
     # warm-CV 0.0219): mechanism — trailing-median cv_var_ratio < 1 by
     # step 2000 and falling toward the ~0.12-0.14 healthy precedent;
-    # endpoint (EMA eval, bootstrap CI alongside per the addenda) —
+    # endpoint (EMA eval, bootstrap CI alongside) —
     # NULL < 0.03 (no separation from the parent read: the estimator
     # lever adds nothing at this scale and the weight-construction
-    # residue stands as the whole story); PARTIAL 0.03-0.10; PASS
+    # residue remains the whole story); PARTIAL 0.03-0.10; PASS
     # >= 0.10; STRONG >= 0.30. Var[log w]/site, n_unique and top-weight
     # mass read alongside (d144 lesson).
     "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne512": replace(
@@ -2105,10 +2084,10 @@ CONFIGS: dict[str, HardStageCfg] = {
             halt_on_cv_inversion_after=2000,
         ),
     ),
-    # NAIVE twin of the CV continuation above (2026-08-20, s41, GO at
-    # judging): the same cell with `estimator` control_variate -> naive_mc
+    # NAIVE twin of the CV continuation above: the same cell with
+    # `estimator` control_variate -> naive_mc
     # the ONLY declared change, continued with --init-from the SAME seed-43
-    # recipe final.pt. Why it exists: the CV continuation judged PASS at
+    # recipe final.pt. Why it exists: the CV continuation read PASS at
     # EMA eval ESS/N 0.2655 (bootstrap CI 0.2302-0.3043) against its
     # parent's 0.0198 — 13.4x, the largest quality number measured at this
     # size, and at sigma_c rather than a subcritical screen. But it trains
@@ -2124,17 +2103,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     # cv_var_ratio has no meaning when the control variate is not in use.
     # It is a safety halt, never a training-affecting knob, and on the CV
     # run it never fired — so its absence cannot move this read.
-    # FROZEN BANDS (before launch, seed 43, EMA eval ESS/N with bootstrap
+    # Expected ranges (seed 43, EMA eval ESS/N with bootstrap
     # CI, Var[log w]/site and top-weight read alongside; references: parent
     # 0.0198 / Var-site 0.00735, CV continuation 0.2655 / Var-site 0.00495):
     #   CONTINUATION-OWNS iff this arm's CI OVERLAPS the CV continuation's
     #                     (0.2302, 0.3043) -- the estimator is not the
     #                     lever, the finding is "20k more steps at fixed
-    #                     sigma_c", and the CV chapter claim is withdrawn.
+    #                     sigma_c", and the CV claim does not hold.
     #   ESTIMATOR-OWNS    iff EMA eval ESS/N < 0.10 (the PASS threshold the
     #                     CV arm cleared) with CI separation from it -- the
     #                     control variate owns the gain and the claim
-    #                     stands as printed.
+    #                     holds.
     #   SPLIT             otherwise -- report the recovered fraction
     #                     (naive - parent) / (cv - parent) explicitly
     #                     rather than rounding it to either story.
@@ -2152,23 +2131,27 @@ CONFIGS: dict[str, HardStageCfg] = {
             batch_size=512,
         ),
     ),
-    # ---- ne128 x CV composition family (2026-08-21, s42, GO) -------
-    # WHY THIS FAMILY EXISTS. s42 judging certified two d256 levers as
-    # independent and, until now, uncomposed:
+    # ---- ne128 x CV composition family -------
+    # WHY THIS FAMILY EXISTS. Two d256 levers are measured independent
+    # and, before this family, uncomposed:
     #   * the GRID (training): `H2_..._b512_ne128_naive` reads GRID-HELPS
     #     at EMA Var[log w]/site 0.00485 (0.00463, 0.00508) against both
-    #     ne512 parent seeds (0.00612 / 0.00735), and the 276127 grid probe
+    #     ne512 parent seeds (0.00612 / 0.00735), and the grid probe
     #     removed the shared-field caveat -- the keystone keeps its gain
     #     when re-rolled at ne512 (0.00493), and the parent gains nothing
     #     when re-rolled at ne128 (0.00595, CI overlapping its own 0.00612).
     #     The advantage is in the TRAINED MODEL, not the eval sampler.
     #   * the ESTIMATOR (continuation): `H2_..._20k_sc_cv2_b512_ne512`
     #     reads PASS at EMA eval ESS/N 0.2655 (0.2302, 0.3043) vs its
-    #     parent's 0.0198, and 276126's naive twin split the confound --
+    #     parent's 0.0198, and its naive twin split the confound --
     #     ESTIMATOR-OWNS, 20k extra fixed-sigma_c steps alone recovering
     #     only 10.7% of the ESS gain (2.32x of the 13.41x).
     # Nobody has run them together: cvcont ran at ne512, and the keystone
     # says ne128 is both better AND 4x cheaper in rollout FLOPs.
+    # Arms, named by config suffix: cvcont-ne128 (CV continuation of the
+    # keystone), cold-cv70k (CV from step 0 at the matched budget), the
+    # h128L3 parent and its lr03 sibling, h128L3 cvcont (continued from
+    # each parent) and h128L3 cold-cv70k (+ its lr03 sibling).
     #
     # COST, measured not guessed (a100, b512): ne512 costs ~110 min / 5k
     # steps, confirmed three ways (5k screen 109 min, naivecont 20k
@@ -2181,8 +2164,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     # 70k ~13 h, and ~15% more at h128/L3.
     #
     # LOSS MICROBATCHING at 128 rides on ALL SIX arms of this family, and
-    # is NOT a declared variable on any of them. The keystone -- arm A's
-    # continuation parent and the h32 comparator for arms B and P -- runs
+    # is NOT a declared variable on any of them. The keystone --
+    # cvcont-ne128's continuation parent and the h32 comparator for
+    # cold-cv70k and the h128L3 parent -- runs
     # loss_microbatch_size=128 itself, as does the ne512 recipe, so 128 is
     # this lineage's setting and omitting it is what would make an arm
     # differ from its own parent in an extra place. It is gradient-exact:
@@ -2199,11 +2183,12 @@ CONFIGS: dict[str, HardStageCfg] = {
     # arm, and removes an OOM risk at h128/L3 (~6x the activation memory
     # of h32/L2).
     #
-    # A: the CV continuation at the keystone's grid. One variable versus
+    # cvcont-ne128: the CV continuation at the keystone's grid. One
+    # variable versus
     # the landed cvcont (n_euler_steps 512 -> 128); continued with
     # --init-from the keystone's own final.pt, so its parent is its own
     # seed rather than cvcont's.
-    # PRIMARY DECLARED BEFORE THE READ, and deliberately NOT the project's
+    # PRIMARY statistic, deliberately NOT the project's
     # default Var/site: the two levers ALREADY COINCIDE on the bulk
     # statistic -- keystone 0.00485 (0.00463, 0.00508) and cvcont 0.00495
     # (0.00475, 0.00515) are indistinguishable -- so Var/site has no power
@@ -2211,7 +2196,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # ESS/N 0.0532 vs 0.2655, top weight 0.039 vs 0.0076. The tail
     # statistic is therefore the primary for this arm, with Var/site and
     # top weight read alongside.
-    # FROZEN BANDS (before launch, seed 42, EMA eval ESS/N, bootstrap CI):
+    # Expected (seed 42, EMA eval ESS/N, bootstrap CI):
     #   COMPOSES   iff CI separated ABOVE cvcont's (0.2302, 0.3043) -- the
     #              estimator gain survives the cheaper grid and adds to it.
     #   REDUNDANT  iff CI OVERLAPS cvcont's -- both levers reach one
@@ -2223,14 +2208,14 @@ CONFIGS: dict[str, HardStageCfg] = {
     #   composition; a Var/site read stuck at ~0.0049 with ESS above
     #   0.3043 is the informative "tail-only" outcome and must be reported
     #   as such rather than rounded into either story.
-    # SEED CAVEAT, recorded before the read: cvcont is seed 43 and this
+    # SEED CAVEAT: cvcont is seed 43 and this
     # arm is seed 42, and the measured d256 seed-to-seed spread is 18% of
     # mean on Var/site. The within-seed comparison (this arm vs its own
     # keystone parent) carries no such caveat and is the safer read.
-    # TRIPWIRE ARMED at 2000, exactly as the ne512 twin: the continuation
+    # Tripwire at 2000, exactly as the ne512 twin: the continuation
     # is the validated warm pattern (var-ratio crossed 1 at ~step 914 on
     # healing rates, 0.121 once healthy), so 2000 is generous for a warm
-    # start and the halt is the designed cost-capped negative verdict.
+    # start and the halt is the designed cost-capped negative outcome.
     "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne128": replace(
         _d256_fmo2_warm_cell(
             "H2_d256_c50_s223_letf_fmo2_20k_sc_cv2_b512_ne128",
@@ -2246,14 +2231,15 @@ CONFIGS: dict[str, HardStageCfg] = {
             halt_on_cv_inversion_after=2000,
         ),
     ),
-    # B: the same total budget with the control variate on FROM STEP 0.
-    # Matched to A by construction and that is the point: the keystone's
-    # 50k is 30k of sigma ladder + 20k at sigma_c, and A adds 20k more at
-    # sigma_c, so A is 30k ladder + 40k sigma_c = 70k. B runs 70k with the
-    # SAME ladder, whose final stage starts at 30k, giving 30k ladder +
-    # 40k sigma_c. The only difference left between A and B is WHEN the
-    # control variate joins -- warm at 50k, or cold at 0.
-    # ADVERSE PRIOR, recorded before launch: cold CV at d256 is the one
+    # cold-cv70k: the same total budget with the control variate on FROM
+    # STEP 0. Matched to cvcont-ne128 by construction and that is the
+    # point: the keystone's 50k is 30k of sigma ladder + 20k at sigma_c,
+    # and the continuation adds 20k more at sigma_c, giving 30k ladder +
+    # 40k sigma_c = 70k. This arm runs 70k with the SAME ladder, whose
+    # final stage starts at 30k, giving 30k ladder + 40k sigma_c. The only
+    # difference left is WHEN the control variate joins -- warm at 50k, or
+    # cold at 0.
+    # ADVERSE PRIOR: cold CV at d256 is the one
     # configuration already measured catastrophic -- eval ESS/N 0.0069
     # against the naive base's 0.5475 with raw FVU 2.06 (above 1 means the
     # control variate is INJECTING variance, not removing it). That was a
@@ -2262,21 +2248,21 @@ CONFIGS: dict[str, HardStageCfg] = {
     # stage. The mechanism by which ne128 might change it -- a coarser
     # grid means larger dt and a different integrand variance -- is
     # PLAUSIBLE BUT NOT DERIVED, and is not claimed here.
-    # TRIPWIRE ARMED at 5000, deliberately LATER than the warm arms' 2000:
+    # Tripwire at 5000, deliberately LATER than the warm arms' 2000:
     # a cold start has no healed model to recover toward, and the ~914
     # step healing precedent is a WARM number that must not be read across.
-    # 5000 is one full ladder stage, so the arm is judged on a completed
+    # 5000 is one full ladder stage, so the arm is read on a completed
     # stage rather than on a transient. If it fires, that halt IS the
-    # verdict at ~55 min rather than ~13 h.
-    # FROZEN BANDS (before launch, seed 42): frame check -- stage-1 tail
-    # FVU <= 0.05 (the anchor transfer band; a frame break voids the read).
+    # outcome at ~55 min rather than ~13 h.
+    # Expected (seed 42): frame check -- stage-1 tail
+    # FVU <= 0.05 (the anchor transfer range; a frame break voids the read).
     #   WARM-JOIN-REQUIRED iff the tripwire fires, OR final EMA eval ESS/N
-    #                      CI separated BELOW arm A's.
+    #                      CI separated BELOW cvcont-ne128's.
     #   COLD-CV-VIABLE     iff final EMA eval ESS/N CI overlaps or is
-    #                      separated ABOVE arm A's -- the two-phase recipe
-    #                      is then a convention, not a requirement, and
-    #                      the chapter's "CV must join warm" claim is
-    #                      withdrawn.
+    #                      separated ABOVE cvcont-ne128's -- the two-phase
+    #                      recipe is then a convention, not a requirement,
+    #                      and the "CV must join warm" claim does not
+    #                      hold.
     "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2": (
         lambda _cell: replace(
             _cell,
@@ -2291,26 +2277,28 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # ---- exact-field twin of arm B (2026-08-23, s55, GO) ----------
-    # ONE VARIABLE versus arm B above: exact_field_channel=True, nothing
-    # else. B is the clean 16x16 record read (h32, cold CV, 70k, ne128, EMA
+    # ---- exact-field twin of cold-cv70k ----------
+    # ONE VARIABLE versus cold-cv70k above: exact_field_channel=True,
+    # nothing else. That arm is the clean 16x16 record read (h32, cold CV,
+    # 70k, ne128, EMA
     # eval ESS/N 0.381 (0.346, 0.419), Var[log w]/site 0.00358 (0.00344,
     # 0.00372)), and at d64 the channel was worth +0.09 raw ESS on exactly
     # this prefix-band chassis (fimo2ef 0.839 vs fimo2 0.750, STRONG) while
     # doing nothing on the attention-band one (mabef NULL), so the prior is
     # a lift and the question is whether it survives 256 sites.
-    # FROZEN BANDS (before launch, seed 42, EMA eval, bootstrap CI; primary
+    # Expected (seed 42, EMA eval, bootstrap CI; primary
     # = Var/site, the project's d256 convention, ESS/N read alongside):
-    #   LIFT       iff Var/site CI separated BELOW B's (0.00344, 0.00372);
-    #              STRONG additionally iff EMA ESS/N CI separated ABOVE
-    #              B's (0.346, 0.419) -- a bulk AND tail gain.
-    #   NULL       iff Var/site CI overlaps B's.
-    #   REGRESSION iff Var/site CI separated ABOVE B's -- the fixed channel
+    #   LIFT       iff Var/site CI separated BELOW the twin's (0.00344,
+    #              0.00372); STRONG additionally iff EMA ESS/N CI separated
+    #              ABOVE the twin's (0.346, 0.419) -- a bulk AND tail gain.
+    #   NULL       iff Var/site CI overlaps the twin's.
+    #   REGRESSION iff Var/site CI separated ABOVE the twin's -- the fixed
+    #              channel
     #              costs the head at scale what it bought at d64.
     # Single seed; any call inside ~0.02 of an ESS edge or 18% of a Var/site
     # edge (the measured d256 seed spread) carries the FP caveat. Tripwire
-    # at 5000 exactly as B. Venue: DoC a100 (B ran there), pinned given
-    # the ~13 h length.
+    # at 5000 exactly as the twin. Venue: DoC a100 (the twin ran there),
+    # given the ~13 h length.
     "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2_ef": (
         lambda _cell: replace(
             _cell,
@@ -2326,8 +2314,8 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # ---- capacity twins of the composition family (2026-08-21, GO) --
-    # WHY, AND AGAINST WHAT PRIOR. Capacity is a CLOSED door at d256 and
+    # ---- capacity twins of the composition family --
+    # WHY, AND AGAINST WHAT PRIOR. Capacity reads negative at d256 and
     # the evidence points the wrong way: the full-horizon arm
     # `H2_..._fmo2_h128_lr03_50k_curr_naive` read a REGRESSION, EMA
     # Var[log w]/site 0.0229 (0.0219, 0.0239) against the anchor's 0.0168
@@ -2345,7 +2333,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # The project's own convention keeps width and depth in separate cells
     # (see `_d64_fmo2_h128_cell`: "Depth is a separate cell and is
     # deliberately not bundled"), and that convention is knowingly set
-    # aside here because my question is "does more capacity help",
+    # aside here because the question is "does more capacity help",
     # not "which capacity knob helps" -- a bundled arm that reads NULL
     # closes both at once, and only a POSITIVE read would need unbundling.
     # `n_heads` stays 4, so head_dim rides 8 -> 32 as a consequence of
@@ -2355,19 +2343,20 @@ CONFIGS: dict[str, HardStageCfg] = {
     # family; the rationale is stated once in the family header above.
     # LR: these arms keep the recipe ladder (1e-3 -> 3e-4 at stage 4), so
     # capacity is the only knob versus their h32 twins. THE RISK IS
-    # MEASURED AND ON THE RECORD: the 5k screen found un-retuned lr 1e-3
+    # MEASURED: the 5k screen found un-retuned lr 1e-3
     # penalises h128 specifically across sigma transitions (h128 tail FVU
     # 0.0498 vs h128+lr03's 0.0380-0.0406, base-like), which is why the
     # landed capacity arm flattened lr to 3e-4 everywhere. The `_lr03`
     # sibling below exists to separate that artefact from a capacity
-    # verdict rather than leaving it as a caveat.
+    # read rather than leaving it as a caveat.
     #
-    # P: the naive 50k parent. Serves twice -- as arm C's continuation
-    # source (a continuation cannot start from the keystone, because every
-    # weight matrix changes shape when hidden_dim moves), and as the
+    # h128L3 parent: the naive 50k parent. Serves twice -- as the h128L3
+    # cvcont's continuation source (a continuation cannot start from the
+    # keystone, because every weight matrix changes shape when hidden_dim
+    # moves), and as the
     # full-horizon capacity re-read at the CURRENT recipe under naive_mc,
     # which is the direct comparison to the landed anchor regression.
-    # FROZEN BANDS (before launch, seed 42, EMA eval, bootstrap CI, vs its
+    # Expected (seed 42, EMA eval, bootstrap CI, vs its
     # one-variable h32/L2 twin the keystone: Var[log w]/site 0.00485
     # (0.00463, 0.00508), ESS/N 0.0532): frame check -- stage-1 tail FVU
     # <= 0.05, a break VOIDS the read.
@@ -2390,20 +2379,22 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # P_lr03: P with the curriculum lr flattened to 3e-4 at EVERY stage,
-    # matching the landed capacity arm's treatment exactly. This is the
-    # lr/capacity de-confound at full horizon, the same pairing every
-    # screen capacity arm shipped with, and it is judged twice.
-    # FROZEN BANDS (before launch, seed 42, EMA eval Var/site, bootstrap
-    # CI): the P bands above apply unchanged against the keystone; PLUS
-    #   LR-ARTEFACT iff this arm's CI is separated BELOW P's -- the ladder
-    #               lr was damaging h128 and P's read is an lr verdict
-    #               rather than a capacity one, so P is void as a capacity
-    #               read and arm D must be re-run at flat lr before its
-    #               own read means anything.
+    # h128L3 lr03 parent: the h128L3 parent with the curriculum lr
+    # flattened to 3e-4 at EVERY stage, matching the landed capacity arm's
+    # treatment exactly. This is the lr/capacity de-confound at full
+    # horizon, the same pairing every screen capacity arm shipped with,
+    # and it is read twice.
+    # Expected (seed 42, EMA eval Var/site, bootstrap CI): the parent's
+    # ranges above apply unchanged against the keystone; PLUS
+    #   LR-ARTEFACT iff this arm's CI is separated BELOW the parent's --
+    #               the ladder lr was damaging h128 and the parent's read
+    #               is an lr effect rather than a capacity one, so it is
+    #               void as a capacity read and the h128L3 cold-cv70k arm
+    #               must be re-run at flat lr before its own read means
+    #               anything.
     #   LR-FREE     iff the two CIs overlap -- the h128 lr sensitivity the
     #               5k screen measured does not survive to full horizon on
-    #               this recipe, and P's capacity read stands as written.
+    #               this recipe, and the parent's capacity read holds.
     "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_50k_curr_b512_ne128_naive": (
         lambda _cell: replace(
             _cell,
@@ -2423,34 +2414,23 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # C: the capacity twin of arm A -- 20k CV continuation at fixed
-    # sigma_c. PARENT CHOSEN BY A CRITERION FROZEN HERE, BEFORE EITHER
-    # PARENT LANDS, so the choice cannot be made with the answer in hand:
-    # continue from whichever of P / P_lr03 has the lower EMA eval
-    # Var[log w]/site point estimate, and if their CIs overlap take P (the
-    # recipe-ladder arm), because a tie must not silently buy the extra
-    # declared field. If BOTH fail the stage-1 tail FVU <= 0.05 frame
-    # check, this arm does not launch.
-    # LOGGED AMENDMENT (2026-08-22, GO): launched from BOTH parents, not
-    # from the criterion's winner. The criterion existed to stop the parent
-    # being chosen with the answer in hand; running both removes the choice
-    # entirely rather than deferring it, which is strictly stronger, and it
-    # decides the arm on C's own endpoint without needing P / P_lr03 judged
-    # first. Two conditions hold it honest and are fixed HERE, before either
-    # C lands: (i) BOTH endpoints are reported, never only the better one --
-    # reporting one after the fact would be exactly the cherry-pick the
-    # frozen criterion was written to prevent; (ii) the C-vs-A comparison is
-    # now made TWICE, so it carries a Bonferroni factor of 2 (alpha 0.05 ->
-    # 0.025 per arm). Tags 20260822-C-cvcont-h128L3-fromP and -fromP03.
-    # FROZEN BANDS (before launch, EMA eval ESS/N with bootstrap CI,
-    # Var/site and top weight alongside; primary is the tail statistic for
-    # the same reason given at arm A):
-    #   CAPACITY-BINDS-UNDER-CV iff CI separated ABOVE arm A's.
-    #   NULL                    iff CI overlaps arm A's -- capacity does
-    #                           not bind even once the estimator
-    #                           constraint is lifted, which is the
-    #                           strongest form of the closure.
-    #   REGRESSION              iff CI separated BELOW arm A's.
+    # h128L3 cvcont: the capacity twin of cvcont-ne128 -- 20k CV
+    # continuation at fixed sigma_c, run from BOTH h128L3 parents
+    # (recipe-ladder and lr03) rather than from a chosen one, so the
+    # parent cannot be picked with the answer in hand. Two conditions
+    # follow: (i) BOTH endpoints are reported, never only the better one;
+    # (ii) the comparison against cvcont-ne128 is made TWICE, so it
+    # carries a Bonferroni factor of 2 (alpha 0.05 -> 0.025 per arm).
+    # Tags 20260822-C-cvcont-h128L3-fromP and -fromP03.
+    # Expected (EMA eval ESS/N with bootstrap CI, Var/site and top weight
+    # alongside; primary is the tail statistic for the reason given at
+    # cvcont-ne128):
+    #   CAPACITY-BINDS-UNDER-CV iff CI separated ABOVE cvcont-ne128's.
+    #   NULL                    iff CI overlaps it -- capacity does not
+    #                           bind even once the estimator constraint
+    #                           is lifted, the strongest form of the
+    #                           negative result.
+    #   REGRESSION              iff CI separated BELOW it.
     "H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128": (
         lambda _cell: replace(
             _cell,
@@ -2466,22 +2446,22 @@ CONFIGS: dict[str, HardStageCfg] = {
             n_euler_steps=128,
         )
     ),
-    # D: the capacity twin of arm B -- 70k with the control variate on
-    # from step 0. Carries arm B's adverse cold-CV prior AND the capacity
+    # h128L3 cold-cv70k: the capacity twin of cold-cv70k -- 70k with the
+    # control variate on from step 0. Carries its adverse cold-CV prior
+    # AND the capacity
     # prior above, so it is the least likely of the six to read positive;
     # it exists so the 2x2 {when CV joins} x {capacity} is complete and
     # "capacity binds only when CV is cold" is separable from "capacity
-    # binds". Tripwire at 5000 for arm B's reason.
-    # NOT LAUNCHED WITH AN lr03 SIBLING, deliberately: P vs P_lr03 is the
-    # lr probe, and it is cheaper to read that first than to buy a second
-    # 70k arm speculatively. If P_lr03 reads LR-ARTEFACT, D is void as a
-    # capacity read and its flat-lr twin becomes owed.
-    # FROZEN BANDS (before launch, seed 42): frame check -- stage-1 tail
+    # binds". Tripwire at 5000 for cold-cv70k's reason.
+    # The lr03 sibling below was added only once the parent pair had read
+    # LR-ARTEFACT: the parent pair is the cheaper lr probe, and a second
+    # 70k arm is not bought speculatively.
+    # Expected (seed 42): frame check -- stage-1 tail
     # FVU <= 0.05. Then, EMA eval ESS/N with bootstrap CI:
-    #   CAPACITY-BINDS-UNDER-COLD-CV iff CI separated ABOVE arm B's.
-    #   NULL                         iff CI overlaps arm B's.
-    #   REGRESSION                   iff CI separated BELOW arm B's.
-    # If arm B halts on its tripwire and this arm does not (or vice
+    #   CAPACITY-BINDS-UNDER-COLD-CV iff CI separated ABOVE cold-cv70k's.
+    #   NULL                         iff CI overlaps cold-cv70k's.
+    #   REGRESSION                   iff CI separated BELOW cold-cv70k's.
+    # If cold-cv70k halts on its tripwire and this arm does not (or vice
     # versa), that ASYMMETRY is the finding and is reported as the primary
     # result for the pair, ahead of any endpoint number.
     "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2": (
@@ -2499,27 +2479,30 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # D_lr03: arm D with the curriculum lr flattened to 3e-4 at every
-    # stage, the P_lr03 treatment applied to the 70k cold-CV capacity arm.
-    # OWED by the clause frozen on P_lr03 above: it read LR-ARTEFACT
-    # (0.00295 vs P's 0.00574 EMA Var/site, CI-disjoint, 2026-08-23), so
-    # D's NULL is void as a capacity read until capacity is measured at
-    # the lr that does not damage h128. The cold-CV tripwire at 5000 rides
-    # from D unchanged (not a variable).
-    # FROZEN BANDS (2026-08-24, before launch, seed 42, EMA eval ESS/N,
-    # bootstrap CI): frame check -- stage-1 tail FVU <= 0.05, a break
-    # VOIDS the read. Then, primary (capacity leg, vs arm B):
-    #   CAPACITY-BINDS-AT-FLAT-LR iff CI separated ABOVE arm B's
+    # h128L3 lr03 cold-cv70k: the h128L3 cold-cv70k arm with the
+    # curriculum lr flattened to 3e-4 at every stage, the lr03-parent
+    # treatment applied to the 70k cold-CV capacity arm. Exists because
+    # the lr03 parent read LR-ARTEFACT (0.00295 vs the ladder-lr parent's
+    # 0.00574 EMA Var/site, CI-disjoint), so the ladder-lr arm's NULL is
+    # void as a capacity read until capacity is measured at the lr that
+    # does not damage h128. The cold-CV tripwire at 5000 rides unchanged
+    # (not a variable).
+    # Expected (seed 42, EMA eval ESS/N, bootstrap CI): frame check --
+    # stage-1 tail FVU <= 0.05, a break VOIDS the read. Then, primary
+    # (capacity leg, vs cold-cv70k):
+    #   CAPACITY-BINDS-AT-FLAT-LR iff CI separated ABOVE cold-cv70k's
     #                             (0.346, 0.419).
-    #   NULL                      iff CI overlaps arm B's -- capacity
-    #                             closes under cold CV at flat lr too.
-    #   REGRESSION                iff CI separated BELOW arm B's.
-    # Secondary (lr leg, vs D's EMA ESS/N CI recomputed from its archived
-    # run dir at judge time; point 0.430):
-    #   LR-RECOVERY iff CI separated ABOVE D's -- the ladder lr was
-    #               damaging D exactly as P03 measured at 50k/naive.
+    #   NULL                      iff CI overlaps it -- capacity closes
+    #                             under cold CV at flat lr too.
+    #   REGRESSION                iff CI separated BELOW it.
+    # Secondary (lr leg, vs the ladder-lr arm's EMA ESS/N CI recomputed
+    # from its archived run dir; point 0.430):
+    #   LR-RECOVERY iff CI separated ABOVE it -- the ladder lr was
+    #               damaging h128 exactly as the parent pair measured at
+    #               50k/naive.
     #   LR-NEUTRAL  iff overlap -- the artefact does not transfer to the
-    #               70k/CV recipe and D's NULL was capacity after all.
+    #               70k/CV recipe and the ladder-lr arm's NULL was
+    #               capacity after all.
     "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2": (
         lambda _cell: replace(
             _cell,
@@ -2542,18 +2525,16 @@ CONFIGS: dict[str, HardStageCfg] = {
             loss_microbatch_size=128,
         )
     ),
-    # Buffer-depth-to-the-reference-invariant arm (2026-08-19, A6 of the
-    # panel queue, GO under the recipe-NULL clause): the recipe cell
-    # verbatim with replay_buffer_cycles 8 -> 2 the ONLY change. The DNFS
-    # reference bounds retention to ~1024 trajectories
-    # (max_size = 1024 // outer_batch, FIFO — see the consult log at
-    # _retain_chunks); our cycle-count invariant held cycles at 8 while
+    # Buffer-depth-to-the-reference-invariant arm: the recipe cell
+    # verbatim with replay_buffer_cycles 8 -> 2 the ONLY change. A
+    # constant-trajectory retention rule (~1024 trajectories, FIFO) is the
+    # natural alternative; the cycle-count invariant here held cycles at 8 while
     # b512 quadrupled the batch, so the live recipe retains 4096
     # trajectories, 4x the reference invariant, at HALF the per-state
     # draw density (0.195 vs 0.78). cycles=2 at b512 restores 1024
     # exactly — the "fresh half" configuration the d64 replay2 smoke
-    # already validated. FROZEN BANDS (before launch, seed 42, vs the
-    # landed recipe s42: EMA eval ESS/N 0.0105, Var[log w]/site 0.0061):
+    # already validated. Expected (seed 42, vs the recipe run: EMA eval
+    # ESS/N 0.0105, Var[log w]/site 0.0061):
     # CONFIRMED (buffer staleness binds at this scale) iff EMA ESS/N
     # >= 0.021 (2x) with bootstrap-CI separation from the parent read;
     # NULL iff within the parent's CI — the invariant is then refuted as
@@ -2562,15 +2543,15 @@ CONFIGS: dict[str, HardStageCfg] = {
     # should show faster post-boundary recovery if staleness is the
     # mechanism; unchanged recovery with a moved endpoint means the
     # mechanism claim is wrong even if the number moves.
-    # CANCELLED 2026-08-19 (s37, GO) before it ever started: the d64
+    # CANCELLED before it ever started: the d64
     # loop battery measured the retention curve directly -- 256/1024/2048/
     # 4096 retained trajectories gave EMA 0.766/0.810/0.827/0.860,
     # monotone -- so the reference's ~1024 bound is a mid-point on a
     # continuing gain, not a target, and this arm's premise is refuted at
     # the size where it was measurable. The informative direction is the
-    # cyc16 retention arm above. Transfer caveat, stated rather than
-    # hidden: that curve is a d64 read in a healthy regime (EMA ~0.81),
-    # and this arm would have been a d256 read in a broken one.
+    # cyc16 retention arm above. Transfer caveat: that curve is a d64 read
+    # in a healthy regime (EMA ~0.81), and this arm would have been a d256
+    # read in a broken one.
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2",
@@ -2586,22 +2567,23 @@ CONFIGS: dict[str, HardStageCfg] = {
             replay_buffer_cycles=2,
         ),
     ),
-    # KEYSTONE grid arm (2026-08-19 s37, GO): the recipe cell
+    # KEYSTONE grid arm: the recipe cell
     # verbatim with n_euler_steps 512 -> 128 the ONLY change, so the read
-    # is chargeable to the trajectory grid alone against the landed
-    # recipe s42 (EMA eval ESS/N 0.0105, Var[log w]/site 0.0061, bootstrap
+    # is chargeable to the trajectory grid alone against the recipe run
+    # (EMA eval ESS/N 0.0105, Var[log w]/site 0.0061, bootstrap
     # CI (0.0058, 0.0064)). Why now: the recipe adopted ne512 on a
     # clip-safety premise -- "lambda_dt p99 0.98 with 1.5-2% residual
     # clipping at ne128" -- and the d64 loop battery has since run a cell
     # at exactly that saturation (the ne32 grid arm: p99 0.982, 1.2% of
-    # pairs clipping) which landed INSIDE the rung band, while its
+    # pairs clipping) which landed INSIDE the rung's expected range, while
+    # its
     # ne32/ne128/ne256 arms span 8x of training grid within 0.020 EMA.
     # The eval-side twin is measured too: the sigma_c grid sweep moves
     # Var[log w]/site by 0.9% across 8x with all four CIs overlapping.
     # Neither is a d256 TRAINING-grid read, which has never been taken --
     # b512+ne512 vs b512+ne128 is the missing arm, and it is what
-    # licenses printing the cheaper recipe.
-    # FROZEN BANDS (before launch, seed 42; Var-PRIMARY because d256 ESS
+    # supports adopting the cheaper recipe.
+    # Expected (seed 42; Var-PRIMARY because d256 ESS
     # reads are top-weight-dominated and do not resolve):
     #   GRID-FREE  iff Var[log w]/site CI overlaps the parent's
     #              (0.0058, 0.0064) -- ne128 becomes the standing d256
@@ -2622,7 +2604,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             estimator="naive_mc", n_euler_steps=128, batch_size=512,
             loss_microbatch_size=128,
         ),
-    # Retention-depth arm (2026-08-19 s37, GO): the recipe cell
+    # Retention-depth arm: the recipe cell
     # verbatim with replay_buffer_cycles 8 -> 16 the ONLY change --
     # retention 4096 -> 8192 trajectories at UNCHANGED freshness, since
     # the rollout still draws outer_batch fresh trajectories per cycle,
@@ -2632,7 +2614,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # supports: retention 256/1024/2048/4096 gave EMA 0.766/0.810/0.827/
     # 0.860, monotone, which refutes the reference code's ~1024 bound as
     # a target rather than a mid-point on a continuing gain.
-    # FROZEN BANDS (before launch, seed 42, vs the landed recipe s42:
+    # Expected (seed 42, vs the recipe run:
     # EMA eval ESS/N 0.0105, Var[log w]/site 0.0061 CI (0.0058, 0.0064)),
     # Var-PRIMARY:
     #   DEPTH BINDS iff Var/site CI lies wholly BELOW the parent's;
@@ -2640,7 +2622,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     #               the transport wall owns the d256 residue;
     #   REGRESSION  iff the CI lies wholly ABOVE -- staleness costs more
     #               than coverage buys at this size.
-    # One-sidedness declared: at fixed n_steps a deeper buffer changes
+    # One-sidedness: at fixed n_steps a deeper buffer changes
     # only retention, never the fresh-draw count, so a positive read
     # cannot be re-attributed to the freshness axis.
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16": replace(
@@ -2658,28 +2640,26 @@ CONFIGS: dict[str, HardStageCfg] = {
             replay_buffer_cycles=16,
         ),
     ),
-    # Rank arm at the anchor recipe (2026-08-19, Tier 3(d) re-entered
-    # under the recipe-NULL clause, GO): the fmo2 naive ladder
+    # Rank arm at the anchor recipe: the fmo2 naive ladder
     # anchor verbatim with bilinear_rank 8 -> 32 the ONLY change. Why 32:
     # the factorised-head forensics measured the REQUIRED effective rank
     # of the swap-rate field growing ~d/8 with lattice side — d/8 = 32 at
     # 256 sites, where the shipped default 8 was sized at the 4x4 gate.
     # Run at the anchor's b128/ne128 so the read is chargeable to rank
-    # alone against the judged anchor pair (EMA eval ESS/N 0.0048/0.0058,
-    # Var[log w]/site 0.0168/0.0159). FROZEN BANDS (before launch, seed
-    # 42): frame check first — stage-1 tail FVU <= 0.05 (the anchor's own
-    # transfer band; a frame break voids the rank read). RANK BINDS iff
+    # alone against the anchor pair (EMA eval ESS/N 0.0048/0.0058,
+    # Var[log w]/site 0.0168/0.0159). Expected (seed 42): frame check
+    # first — stage-1 tail FVU <= 0.05 (the anchor's own transfer range; a
+    # frame break voids the rank read). RANK BINDS iff
     # EMA eval ESS/N >= 0.010 (2x the seed-42 anchor) with bootstrap-CI
     # separation, or Var[log w]/site <= 0.012; NULL iff within the
     # anchor's spread — the d/8 growth then stays a 4x4-to-d64 result
     # and expressivity is struck from the d256 residue list alongside
-    # the other closed doors.
-    # VENUE (2026-08-19 s37): pulled off the DoC a100 queue and run on
-    # Modal A100-80GB instead (tag 20260819-215307, seed 42). Not a scientific
-    # change -- `train_remote` pins the same 80GB A100 class the anchors
-    # ran on -- but a scheduling one: the anchor shape (this cell minus the rank change) measured
-    # 3h17m end-to-end against a three-day queue wait. Bands above unchanged, frozen
-    # before either launch.
+    # the other settled axes.
+    # Venue: run on Modal A100-80GB (tag 20260819-215307, seed 42) rather
+    # than the DoC a100 queue. Not a scientific change -- `train_remote`
+    # pins the same 80GB A100 class the anchors ran on -- but a scheduling
+    # one: the anchor shape (this cell minus the rank change) measured
+    # 3h17m end-to-end against a three-day queue wait.
     "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_rank32": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_rank32",
@@ -2687,7 +2667,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         bilinear_rank=32,
     ),
-    # Third causal ordering at the anchor recipe (2026-08-19, GO):
+    # Third causal ordering at the anchor recipe:
     # site_orderings ("row","col") -> ("row","col","diag"), the ONLY
     # change. Why this axis is live: at 8x8, adding the SECOND ordering
     # took the factorised rung from raw ESS/N 0.514 to 0.745 — the
@@ -2696,37 +2676,24 @@ CONFIGS: dict[str, HardStageCfg] = {
     # per-ordering (prefix, suffix) intervals; a third, diagonal sweep
     # shrinks that intersection further. Deliberately NOT run at 8x8
     # first: the dual-ordering rung already sits 0.036 under its
-    # masked-attention twin there, inside the verdict noise band, so a
+    # masked-attention twin there, inside the seed-noise range, so a
     # third ordering has nothing measurable to buy at that size — the
     # same near-ceiling logic that made small-lattice rank arms
     # uninformative. 16x16 is where interior coverage could still bind;
     # this is the orderings-axis sibling of the rank-32 arm above, one
-    # variable each against the same anchors. FROZEN BANDS (seed 42, vs
+    # variable each against the same anchors. Expected (seed 42, vs
     # the anchor pair EMA eval ESS/N 0.0048/0.0058, Var[log w]/site
     # 0.0168/0.0159): frame check stage-1 tail FVU <= 0.05; ORDERINGS
     # BIND iff EMA eval ESS/N >= 0.010 with bootstrap-CI separation, or
     # Var[log w]/site <= 0.012; NULL iff within the anchor spread —
-    # interior coverage then joins rank on the closed expressivity list.
-    # CANCELLED 2026-08-19 (s37, GO) before it started, on SLOT
-    # TRIAGE and not on evidence -- the distinction matters and is
-    # recorded deliberately. The d64 diag arm did land FLAT (EMA 0.8069
-    # vs the rung's 0.8104, Var/site CIs overlapping), but this cell's own
-    # reasoning above pre-declared exactly that read uninformative ("a
-    # third ordering has nothing measurable to buy at that size"), and the
-    # in-flight ledger licensed a cancel only on a d64 REGRESSION, which
-    # did not occur. What actually decided it: the a100 queue was the
-    # binding resource against the 8 Sept deadline, the neighbouring
-    # expressivity axis is already covered by the rank-32 arm on the same
-    # anchors, and the full-horizon capacity arm had just read a
-    # REGRESSION. The question is NOT answered and may be relaunched.
-    # RELAUNCHED the same evening on Modal A100-80GB (tag
-    # 20260819-214730, seed 42), once the cost was measured rather than
-    # assumed: the anchor cell -- this cell's shape minus the third
-    # ordering -- runs 3h17m end-to-end on that hardware, so the a100
-    # QUEUE was the real cost, not the compute, and Modal has no queue.
-    # The extra ordering extends only the bilinear term, bounding the
-    # multiplier under 1.5x. BANDS ABOVE ARE UNCHANGED and were frozen
-    # before either launch; nothing about the read moves with the
+    # interior coverage then joins rank on the settled expressivity list.
+    # The d64 diag arm landed FLAT (EMA 0.8069 vs the rung's 0.8104,
+    # Var/site CIs overlapping), which the reasoning above expects to be
+    # uninformative at that size. Run on Modal A100-80GB (tag
+    # 20260819-214730, seed 42): the anchor cell -- this cell's shape
+    # minus the third ordering -- runs 3h17m end-to-end on that hardware,
+    # and the extra ordering extends only the bilinear term, bounding the
+    # multiplier under 1.5x. Nothing about the read moves with the
     # hardware, which is the same A100-80GB class the anchor pair ran on
     # (modal_app.train_remote pins gpu="A100-80GB").
     "H2_d256_c50_s223_letf_fmo2_50k_curr_naive_diag": replace(
@@ -2736,14 +2703,14 @@ CONFIGS: dict[str, HardStageCfg] = {
         ),
         site_orderings=("row", "col", "diag"),
     ),
-    # Capacity arm at the anchor recipe (2026-08-19, GO — the held
-    # full-horizon capacity read): the fmo2 naive ladder anchor with
+    # Capacity arm at the anchor recipe (the full-horizon capacity
+    # read): the fmo2 naive ladder anchor with
     # hidden_dim 32 -> 128 AND flat lr 3e-4 across all curriculum stages.
     # Two declared fields, bundled deliberately: the 5k screen showed
     # un-retuned lr 1e-3 penalises h128 specifically across sigma
     # transitions (h128 tail FVU 0.0498 vs h128+lr03's 0.0380-0.0406 ~=
     # base), so a pure-capacity arm at the ladder's early lr would return
-    # an lr artefact, not a capacity verdict — the same lesson that made
+    # an lr artefact, not a capacity read — the same lesson that made
     # every screen capacity arm ship with an lr03 sibling. Capacity
     # context: at hidden 128 the factorised model is ~1.41M params, ~4.4x
     # the ViT the MDNS paper trains on 16x16 Ising (~318k), so a NULL
@@ -2751,14 +2718,14 @@ CONFIGS: dict[str, HardStageCfg] = {
     # model". Cost measured, not guessed: fmo2 h128 inner steps run ~7%
     # slower than h32 (87.7 vs 82.9 ms on the screen's A100s), so the 50k
     # anchor-shaped run is ~3.5 h — cheap because the factorised head's
-    # cost is dominated by d, not hidden width. FROZEN BANDS (before
-    # launch, seed 42, vs the judged anchor pair EMA eval ESS/N
+    # cost is dominated by d, not hidden width. Expected (seed 42, vs
+    # the anchor pair EMA eval ESS/N
     # 0.0048/0.0058, Var[log w]/site 0.0168/0.0159): frame check —
-    # stage-1 tail FVU <= 0.05 (the anchor transfer band; a frame break
+    # stage-1 tail FVU <= 0.05 (the anchor transfer range; a frame break
     # voids the read); CAPACITY BINDS iff EMA eval ESS/N >= 0.010 (2x the
     # seed-42 anchor) with bootstrap-CI separation, or Var[log w]/site
-    # <= 0.012; NULL iff within the anchor spread — capacity then joins
-    # the closed doors at FULL horizon, not just the 5k screen.
+    # <= 0.012; NULL iff within the anchor spread — capacity is then
+    # settled at FULL horizon, not just the 5k screen.
     "H2_d256_c50_s223_letf_fmo2_h128_lr03_50k_curr_naive": (
         lambda _cell: replace(
             _cell,
@@ -2777,11 +2744,11 @@ CONFIGS: dict[str, HardStageCfg] = {
             estimator="naive_mc",
         )
     ),
-    # ---- 8x8 outer/inner loop battery (2026-08-19) ----------------------
+    # ---- 8x8 outer/inner loop battery ----------------------
     # Eight single-variable twins of the archived fmo2 8x8 curriculum rung,
     # built from _d64_fmo2_loop_cell (its docstring carries the shared
     # frame: comparator raw ESS/N 0.7452 / EMA 0.8104 seed 42, and the
-    # band convention INSENSITIVE = within +-0.03 EMA ESS/N of 0.8104).
+    # convention INSENSITIVE = within +-0.03 EMA ESS/N of 0.8104).
     # The loop knobs opened here have been constants across essentially
     # the whole archive — varied about as often as hidden_dim once was —
     # so their scaling rules rest on provenance, not measurement. Key
@@ -2797,13 +2764,13 @@ CONFIGS: dict[str, HardStageCfg] = {
     # the exact broken density of the NULL 16x16 recipe, reproduced at the
     # healthy size with everything else untouched. Does breaking the
     # density invariant itself cost anything where training is otherwise
-    # known-good? ONE-SIDED by construction, declared before launch: at
+    # known-good? ONE-SIDED by construction: at
     # fixed n_steps, 4x more outer cycles also means 4x more fresh
     # trajectories, biasing this arm toward reading insensitive — a
     # SENSITIVE read is therefore strong evidence, an INSENSITIVE read
     # must carry the caveat. The inner500 cell below is the opposite
     # direction; together they bracket ~two decades of density around
-    # 0.78. FROZEN BANDS: INSENSITIVE within +-0.03 EMA ESS/N of 0.8104;
+    # 0.78. Expected: INSENSITIVE within +-0.03 EMA ESS/N of 0.8104;
     # SENSITIVE-UP >= +0.03 means the big-lattice recipe under-rolled per
     # state (fresh rollouts, not density per se, were the binding margin).
     "H2_d64_c50_s223_letf_fmo2_50k_curr_inner25": _d64_fmo2_loop_cell(
@@ -2817,8 +2784,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # fewer states hurt at 8x8 — but it confounded staleness with buffer
     # size and never ran the full horizon or the factorised family the
     # larger rungs use. Draw density is invariant to depth (cycle count
-    # cancels), so depth is a pure staleness-vs-diversity dial. FROZEN
-    # BANDS: SENSITIVE-DOWN <= -0.03 EMA ESS/N replicates the smoke's
+    # cancels), so depth is a pure staleness-vs-diversity dial.
+    # Expected: SENSITIVE-DOWN <= -0.03 EMA ESS/N replicates the smoke's
     # direction on this family at full horizon; INSENSITIVE +-0.03. Read
     # alongside: the buffer is flushed at every sigma boundary and a
     # 2-cycle buffer refills 4x sooner, so rung-boundary train-ESS
@@ -2837,7 +2804,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # grid cells below: one-event stepping clips whenever total-rate x dt
     # exceeds 1, so a coarser grid under one-event stepping would confound
     # grid resolution with clipping — only under the matching step is the
-    # grid a clean variable. FROZEN BAND: INSENSITIVE +-0.03 EMA ESS/N
+    # grid a clean variable. Expected: INSENSITIVE +-0.03 EMA ESS/N
     # of 0.8104.
     "H2_d64_c50_s223_letf_fmo2_50k_curr_match": _d64_fmo2_loop_cell(
         "H2_d64_c50_s223_letf_fmo2_50k_curr_match",
@@ -2850,13 +2817,13 @@ CONFIGS: dict[str, HardStageCfg] = {
     # This is the TRAINING-side grid question: the eval-only resolution
     # sweep on a frozen checkpoint cannot answer it, because a model
     # trained on a coarse grid learns to compensate that grid's bias.
-    # Declared side effects, recorded before launch: (i) draw density
+    # Side effects: (i) draw density
     # rises to 3.1 (fewer buffer rows per cycle at fixed inner steps),
     # biasing this arm AGAINST finding harm — a drop is strong evidence
     # for a grid-tracks-size rule, flat must carry the caveat; (ii) the
     # eval sampling grid moves with the training grid (the measured
     # eval-grid share is ~0.02 ESS/N, a rounding term at this comparator,
-    # recorded not ignored). FROZEN BAND vs the matching control:
+    # recorded not ignored). Expected vs the matching control:
     # INSENSITIVE +-0.03 EMA ESS/N.
     "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne32": _d64_fmo2_loop_cell(
         "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne32",
@@ -2870,9 +2837,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     # contains no size at which the training grid was an isolated, tested
     # variable at sigma_c. A monotone rise crossing +0.03 EMA ESS/N =
     # training was grid-limited and the grid should track size; flat
-    # closes the training-side grid door with a measurement. Same
-    # eval-grid-moves-with-training-grid note as the 32-step cell. FROZEN
-    # BAND vs the matching control: INSENSITIVE +-0.03 EMA ESS/N.
+    # settles the training-side grid question with a measurement. Same
+    # eval-grid-moves-with-training-grid note as the 32-step cell.
+    # Expected vs the matching control: INSENSITIVE +-0.03 EMA ESS/N.
     "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne256": _d64_fmo2_loop_cell(
         "H2_d64_c50_s223_letf_fmo2_50k_curr_match_ne256",
         use_matching_step=True,
@@ -2889,12 +2856,12 @@ CONFIGS: dict[str, HardStageCfg] = {
     # 128 >= 32), and the gradient batch stays 128. What remains isolated
     # is buffer width/diversity alone. If INSENSITIVE, rollout cost at any
     # size can be cut ~4x for free — the single biggest cost lever this
-    # battery could license (rollouts were ~77% of wall on the widest
-    # 16x16 recipe). FROZEN BANDS: INSENSITIVE +-0.03 EMA ESS/N licenses
+    # battery could support (rollouts were ~77% of wall on the widest
+    # 16x16 recipe). Expected: INSENSITIVE +-0.03 EMA ESS/N supports
     # narrow buffers at scale; SENSITIVE-DOWN <= -0.03 says buffer
     # diversity binds and retention should be restated in trajectories,
-    # not cycles. Mechanism pinned tests-first in
-    # tests/test_outer_batch_decoupling.py before this cell runs.
+    # not cycles. Mechanism pinned in
+    # tests/test_outer_batch_decoupling.py.
     "H2_d64_c50_s223_letf_fmo2_50k_curr_m32ct128": _d64_fmo2_loop_cell(
         "H2_d64_c50_s223_letf_fmo2_50k_curr_m32ct128",
         outer_batch_size=32,
@@ -2903,13 +2870,13 @@ CONFIGS: dict[str, HardStageCfg] = {
     # Gradient steps per outer cycle 100 -> 500: draw density 3.9, fresh
     # trajectories 5x down — the over-reuse direction, paired with the
     # inner25 cell to bracket the archived 0.78. Insensitivity here
-    # licenses cheap high-reuse recipes (rollout share of wall falls to
+    # supports cheap high-reuse recipes (rollout share of wall falls to
     # ~15% at this shape); a drop is the first direct evidence that
     # re-fitting the same finite buffer sample degrades the sampler. 500
     # rather than 400 because the curriculum validator requires every
     # sigma-stage start (multiples of 5000 on this ladder) to be a
     # multiple of the per-cycle inner-step count, and 400 does not divide
-    # 5000. FROZEN BAND: INSENSITIVE +-0.03 EMA ESS/N of 0.8104.
+    # 5000. Expected: INSENSITIVE +-0.03 EMA ESS/N of 0.8104.
     "H2_d64_c50_s223_letf_fmo2_50k_curr_inner500": _d64_fmo2_loop_cell(
         "H2_d64_c50_s223_letf_fmo2_50k_curr_inner500",
         inner_steps_per_outer=500,
@@ -2927,21 +2894,21 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_fmo2_50k_curr_cyc16",
         replay_buffer_cycles=16,
     ),
-    # SMC-in-training arms (2026-08-20): first LIVE runs of
+    # SMC-in-training arms: first LIVE runs of
     # rollout_resample_ess_fraction on the swap route — ESS-triggered
     # resampling inside the buffer-rebuild rollout (LEAPS Alg. 1 lines
     # 11-14; the full c_t argument lives on the baseline TrainCfg field).
     # The d256 estimator wall (eval ESS/N 0.003) is the motivating target;
-    # per the validation order d256 spends nothing until d64 shows a
-    # signal. The builder makes each arm a true twin with tau the one
-    # declared variable, and flag-off bit-identity is test-pinned, so the
-    # archived rung comparator remains the valid control — no fresh
+    # d256 spends nothing until d64 shows a signal. The builder makes each
+    # arm a true twin with tau the one declared variable, and flag-off
+    # bit-identity is test-pinned, so the archived rung comparator remains
+    # the valid control — no fresh
     # control run. The ESS endpoint is near-ceiling here (rung raw 0.745),
-    # so per the diag-arm convention the read is NOT ESS-first. FROZEN
-    # BANDS (seed 42, per arm): PRIMARY = EMA eval Var[log w] against the
+    # so per the diag-arm convention the read is NOT ESS-first.
+    # Expected (seed 42, per arm): PRIMARY = EMA eval Var[log w] against the
     # archived rung's 0.2068, bootstrap 95% CI (0.1983, 0.2152); UPLIFT
     # iff the arm's CI sits wholly BELOW (0.1983, ...) — the variance-axis
-    # signal that alone licenses a d256 twin; REGRESSION iff EMA eval
+    # signal that alone motivates a d256 twin; REGRESSION iff EMA eval
     # ESS/N <= 0.78 or the Var CI sits wholly above; INSENSITIVE
     # otherwise. Tripwire: rollout_resample_events ~ 0 beyond the first
     # sigma stage at BOTH taus = VACUOUS-AT-TAU, a trigger-calibration
@@ -2964,37 +2931,37 @@ CONFIGS: dict[str, HardStageCfg] = {
     # fixed inner steps the per-state draw density falls 0.78 -> 0.195 as
     # a side effect (the same drop the 16x16 recipe made); the inner25
     # cell isolates density alone, so the difference between this arm and
-    # inner25 is width-at-matched-density. FROZEN BAND: INSENSITIVE
+    # inner25 is width-at-matched-density. Expected: INSENSITIVE
     # +-0.03 EMA ESS/N of 0.8104; SENSITIVE-UP >= +0.03 says rollout
-    # width was a starved axis and a wide-M d256 twin is licensed;
+    # width was a starved axis and motivates a wide-M d256 twin;
     # SENSITIVE-DOWN with inner25 also down says density, not width.
     "H2_d64_c50_s223_letf_fmo2_50k_curr_m512ct512": _d64_fmo2_loop_cell(
         "H2_d64_c50_s223_letf_fmo2_50k_curr_m512ct512",
         outer_batch_size=512,
         c_t_batch=512,
     ),
-    # Third causal ordering at 8x8 (2026-08-19, my call — the cheap
-    # validation BEFORE the 16x16 sibling spends a100 hours on an untested
-    # mechanism): site_orderings ("row","col") -> ("row","col","diag"),
-    # the ONLY change vs the archived rung. The ESS endpoint is
+    # Third causal ordering at 8x8 (the cheap validation before the 16x16
+    # sibling spends a100 hours on an untested mechanism): site_orderings
+    # ("row","col") -> ("row","col","diag"), the ONLY change vs the archived
+    # rung. The ESS endpoint is
     # near-ceiling here (rung raw 0.745 vs its masked-attention twin's
     # 0.781), so the read is deliberately NOT ESS-first: the primary
     # statistic is the EMA eval Var[log w], whose archived rung value is
     # 0.2068 with bootstrap 95% CI (0.1983, 0.2152) — variance CIs
-    # resolve differences the ESS band cannot. FROZEN BANDS (seed 42):
+    # resolve differences the ESS range cannot. Expected (seed 42):
     # UPLIFT DETECTED iff the arm's EMA Var[log w] CI sits wholly BELOW
     # (0.1983, ...), i.e. CI-disjoint downward; REGRESSION iff EMA eval
     # ESS/N <= 0.78 or the Var CI sits wholly above — a regression is the
-    # early-warning verdict and the queued 16x16 third-ordering arm
-    # should be cancelled before it runs; INSENSITIVE otherwise = the
+    # early warning against running the 16x16 third-ordering arm;
+    # INSENSITIVE otherwise = the
     # orderings axis is saturated at two sweeps at this size and the
     # 16x16 arm carries the question alone.
     "H2_d64_c50_s223_letf_fmo2_50k_curr_diag": replace(
         _d64_fmo2_loop_cell("H2_d64_c50_s223_letf_fmo2_50k_curr_diag"),
         site_orderings=("row", "col", "diag"),
     ),
-    # Boundary shock at 8x8 (2026-08-19): the size-twin of the 16x16
-    # `_rw` arm below, registered so the boundary question is answered in
+    # Boundary shock at 8x8: the size-twin of the 16x16
+    # `_rw` arm below, so the boundary question is answered in
     # hours at the size where training is known-healthy rather than only
     # on a day-long a100 run. Two changes off the rung and nothing else:
     # rewarmup_on_stage=True (a fresh 500-step LR ramp anchored at each of
@@ -3014,7 +2981,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # timing column is unperturbed. rewarmup_on_stage is therefore the
     # sole training-dynamics change.
     #
-    # MECHANISM BAND (primary read; deliberately NOT the dead
+    # MECHANISM READ (primary; deliberately NOT the dead
     # peak-to-final-decay trigger, which did not survive a binned re-read
     # at 16x16). Statistic: FVU = loss / var_dt_log_p_tilde, per-step in
     # training_log.csv. Per boundary, "spike" means the MEDIAN of FVU over
@@ -3023,11 +2990,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     # median falls within 10% of the new stage's tail median. The median,
     # not the max: on the two landed 16x16 parent seeds the per-boundary
     # PEAK varies 0.68x-3.49x seed-to-seed on an identical recipe while
-    # the median-of-500 stays inside 0.82-1.22, so a peak-based band is
+    # the median-of-500 stays inside 0.82-1.22, so a peak-based read is
     # mostly reading seed noise. Any dip statistic is derived from FVU
     # too, never from `ess`: that column is written only every
     # eval_every=200 steps from 512 draws, so a 500-step window holds two
-    # or three low-N points and cannot carry a verdict. (Raising the eval
+    # or three low-N points and cannot carry a read. (Raising the eval
     # cadence would fix that but is NOT free here — the in-training eval
     # draws through `target.sample_base` / `sample_swap_ctmc` with no RNG
     # save-restore around them, unlike the step-0 init diagnostic, so
@@ -3036,20 +3003,20 @@ CONFIGS: dict[str, HardStageCfg] = {
     #
     # SHOCK-DAMPED iff the spike ratio is reduced vs the rung at >= 4 of 6
     # boundaries AND recovery is faster wherever the rung took > 1k steps.
-    # Recorded now, before launch, so the verdict is read at its true
-    # strength: as a sign test that clause fires at 0.34 under the null;
+    # Its true strength: as a sign test that clause fires at 0.34 under
+    # the null;
     # the last boundaries carry little signal at 16x16 (the parent's
     # first-500 FVU is already at or below the stage tail there), so check
     # rather than assume how many of the six are informative at 8x8; and
     # the six boundaries are ONE trajectory, not six replicates — the arm
     # and the rung are configuration-identical only up to step 5,000, so
     # BOUNDARY 1 IS THE ONLY CONTROLLED COMPARISON and boundaries 2-6 are
-    # descriptive. Pre-registered secondary, carrying the weight the sign
-    # test cannot: the paired median-FVU-over-500 at the informative
-    # boundaries, which must clear the 0.82-1.22 seed-to-seed spread
+    # descriptive. Secondary, carrying the weight the sign test cannot: the
+    # paired median-FVU-over-500 at the informative boundaries, which must
+    # clear the 0.82-1.22 seed-to-seed spread
     # measured on the 16x16 parent pair (BORROWED noise scale — the 8x8
     # fmo2 comparator is single-seed, so it is unverified at this size).
-    # Tie-break for the case the band is otherwise silent on — a smaller
+    # Tie-break for the case the read is otherwise silent on — a smaller
     # spike but slower recovery, which a damped LR can plausibly produce
     # both halves of — is the stage-tail FVU (median of each stage's last
     # 1,000 steps), the quantity that actually survives to the endpoint.
@@ -3067,7 +3034,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # wholly BELOW that CI (disjoint downward); REGRESSION iff wholly
     # above. ENDPOINT READ ALONGSIDE (standard 8x8 convention):
     # INSENSITIVE iff EMA eval ESS/N is within +-0.03 of 0.8104. Bootstrap
-    # 95% CIs on any near-band read.
+    # 95% CIs on any near-edge read.
     #
     # WHAT IT BUYS AT NULL: the boundary transient gets a measured price at
     # a healthy size for the first time, which is what makes the 16x16
@@ -3076,7 +3043,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # for the whole ladder. The stage-best instrument separately gives the
     # first checkpoint-SELECTION read at a size where final.pt is known
     # good: if the sigma_c stage-best does not beat final.pt here but does
-    # at 16x16, selection value is scale-tied too. Judged by an eval-only
+    # at 16x16, selection value is scale-tied too. Read by an eval-only
     # pass on best_stage6.pt vs final.pt at the full 5,000-draw frozen
     # eval WITH a bootstrap CI, and a positive gap called only if it
     # clears that CI width — the rule picks the maximum over ~25 trailing
@@ -3088,22 +3055,20 @@ CONFIGS: dict[str, HardStageCfg] = {
         rewarmup_on_stage=True,
         stage_best_checkpoints=True,
     ),
-    # No-flush at 8x8 (Tier 3(c), 2026-08-19): the rung with
+    # No-flush at 8x8: the rung with
     # flush_replay_on_stage False the ONLY change — the 8-cycle replay
     # window is allowed to carry states ACROSS a sigma boundary instead of
     # being emptied there. Depth stays 8, so this is not the buf2/cyc16
     # axis: the single variable is whether the retention window is
     # truncated at boundaries.
     #
-    # REGISTERED, NOT QUEUED. The A5/no-flush decision memo (2026-08-19)
-    # recommends closing this item with a derived reason instead of
-    # spending the run; the argument is summarised below and the cell is
-    # registered so the reopen condition has something to launch. Reopen
-    # condition, recorded before any launch: the 16x16 `_rw` arm reads
-    # NULL on its MECHANISM band — i.e. damping the LR does not touch the
+    # DEFINED BUT NOT RUN. The derived argument below is the reason not
+    # to spend the run; the cell exists so the reopen condition has
+    # something to launch. Reopen condition: the 16x16 `_rw` arm reads
+    # NULL on its MECHANISM read — i.e. damping the LR does not touch the
     # boundary transient, leaving data starvation as the surviving
-    # suspect. And if it is reopened, prefer the clean form in the
-    # confound paragraph below over this one.
+    # suspect. If it is run, prefer the clean form in the confound
+    # paragraph below over this one.
     #
     # MECHANISM, worked out against the loss as implemented rather than
     # assumed. loss_swap squares delta_t(x) = dt_log_p_tilde_t(x) - c_t +
@@ -3164,12 +3129,11 @@ CONFIGS: dict[str, HardStageCfg] = {
     # log-weights, 2000-resample percentile bootstrap. UPLIFT iff the
     # arm's CI is disjoint BELOW; REGRESSION iff disjoint above.
     # ENDPOINT ALONGSIDE: INSENSITIVE iff EMA eval ESS/N within +-0.03 of
-    # 0.8104. Bootstrap 95% CI on any near-band read. Given the evidence
-    # above, INSENSITIVE is the PRE-REGISTERED EXPECTATION, not a
-    # disappointment.
-    # MECHANISM BAND, both directions declared before launch, on the
-    # per-step columns: no-flush should SHORTEN post-boundary recovery
-    # (steps for FVU = loss / var_dt_log_p_tilde to return within 10% of
+    # 0.8104. Bootstrap 95% CI on any near-edge read. Given the evidence
+    # above, INSENSITIVE is the EXPECTATION, not a disappointment.
+    # MECHANISM READ, both directions, on the per-step columns: no-flush
+    # should SHORTEN post-boundary recovery (steps for FVU = loss /
+    # var_dt_log_p_tilde to return within 10% of
     # the new stage's tail median) at >= 4 of 6 boundaries, and should
     # RAISE `c_t_offset_rms` over the first 800 steps after each boundary.
     # That rise is the predicted price and is the arm's real deliverable:
@@ -3191,20 +3155,20 @@ CONFIGS: dict[str, HardStageCfg] = {
         "H2_d64_c50_s223_letf_fmo2_50k_curr_noflush",
         flush_replay_on_stage=False,
     ),
-    # Boundary-shock arm (2026-08-19, GO on corrected evidence): the
+    # Boundary-shock arm: the
     # recipe cell with rewarmup_on_stage=True the ONLY training-dynamics
     # change — a fresh 500-step LR ramp from every sigma boundary, so the
     # boundary transient (buffer flush + target jump at initialisation-scale
     # gradients) is entered at a damped LR instead of full stride. The
     # per-stage best-checkpoint instrument rides as pure IO (trailing
     # median-of-3 train-eval ESS; see the TrainCfg field comment), so the
-    # arm stays one-variable. EVIDENCE HONESTY, recorded before launch: the
-    # original trigger (a x2.2-2.4 peak-to-final train-ESS decay in the
-    # landed recipe's sigma_c stage) did NOT survive a binned re-read —
+    # arm stays one-variable. Evidence: the original trigger (a x2.2-2.4
+    # peak-to-final train-ESS decay in the landed recipe's sigma_c stage)
+    # did NOT survive a binned re-read —
     # within-stage medians are flat-to-rising and the peak is a noise
     # excursion — so the live mechanism is the TRANSIENT COST at the six
     # boundaries (deep dips, 0-6.5k-step recoveries), not late decay.
-    # FROZEN BANDS (seed 43, vs the landed parent's EMA eval ESS/N 0.0198
+    # Expected (seed 43, vs the parent's EMA eval ESS/N 0.0198
     # and its per-stage boundary profile): mechanism — first-500-step
     # post-boundary FVU spike and dip depth reduced vs the parent at >= 4
     # of 6 boundaries, and recovery-to-stage-median faster where the parent
@@ -3212,7 +3176,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # parent) with bootstrap-CI separation; NULL iff within the parent's
     # CI (expected under the corrected trigger; the arm then still buys the
     # measured boundary-transient cost + the stage-best instrument's
-    # checkpoint-selection read, judged by an eval-only pass on the
+    # checkpoint-selection read, made by an eval-only pass on the
     # sigma_c stage-best vs final).
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw": replace(
         _d256_fmo2_ladder_cell(
@@ -3230,7 +3194,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             stage_best_checkpoints=True,
         ),
     ),
-    # Phase-2 estimator switch (2026-08-14, GO): CONTINUE the completed
+    # Phase-2 estimator switch: CONTINUE the completed
     # naive 50k (launch with --init-from <naive run>/checkpoints/final.pt)
     # with the Stein control variate re-enabled. Mechanism, measured on the
     # trained naive checkpoint (CPU rollout harness that reproduces the d64
@@ -3240,7 +3204,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # optimum is a zero-variance constant, so the ratio improves further as
     # the model sharpens. Flat sigma_c (the ladder was already climbed),
     # lr pinned to the ladder's final 3e-4 with the standard short warmup,
-    # dual-eval EMA rides. Bands FROZEN BEFORE LAUNCH: PASS = train-ESS
+    # dual-eval EMA rides. Expected: PASS = train-ESS
     # > 15/256 sustained AND rising over the final 5k steps, plus final
     # eval ess_fraction >= 0.05 (Var[log w] <= ~3.0); >= 0.20 = strong
     # pass; train-ESS flat in single digits = the estimator lever alone is
@@ -3248,23 +3212,23 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_ma_20k_sc_cv2": _d256_cv2_cell(
         "H2_d256_c50_s223_letf_ma_20k_sc_cv2"
     ),
-    # Clip-50 twin of the cell above (job 271892 diverged 2026-08-10). The
+    # Clip-50 twin of the diverged cell above. The
     # inherited clip of 500 was exceeded twelve-fold from initialisation at
     # d=256, so every step ran at the rescale-not-skip ceiling and the norm
     # escalated to ~2e5 without ever falling back — the same optimiser runaway
     # the soft chapter's amortised cells died of, where clip=50 took survival
-    # from 1/4 to 4/4. Health criterion, stated before launch: success is the
+    # from 1/4 to 4/4. Health criterion: success is the
     # pre-clip norm FALLING BACK between curriculum rungs and train ESS
     # climbing off ~1/128; a norm pinned at the threshold with flat ESS is the
     # runaway persisting, and the next move is a normalised/trust-region
     # update, not another threshold. Everything else identical to the twin.
-    # RETIRED BEFORE LAUNCH (2026-08-11, adversarial-review verdict): with
+    # NEVER RUN: with
     # AdamW, two thresholds that BOTH saturate every step produce gradient
     # sequences differing by a constant factor, which Adam's per-parameter
     # normalisation erases -- and the diverged twin's minimum pre-clip norm
     # over all 50k steps was 186, so clip=50 saturates always and would
     # near-exactly retrace the clip=500 trajectory. Kept as the record of a
-    # rejected arm; superseded by the smoke12k ladder below. Do not launch.
+    # rejected arm; the smoke12k ladder below replaces it. Do not launch.
     "H2_d256_c50_s223_letf_ma_50k_curr_clip50": _hard_cell(
         "H2_d256_c50_s223_letf_ma_50k_curr_clip50", sigma=0.223,
         head_kind="masked_attention",
@@ -3275,23 +3239,23 @@ CONFIGS: dict[str, HardStageCfg] = {
         curriculum=_D64_SIGMA_LADDER,
         grad_clip_max_norm=50.0,
     ),
-    # ---- 16x16 rescue smoke ladder (2026-08-11) -------------------------
-    # Five 12k-step arms, ONE mechanism each, launched CONCURRENTLY after
-    # the four-lens adversarial review of the diverged rung. 12k crosses the
+    # ---- 16x16 rescue smoke ladder -------------------------
+    # Five 12k-step arms, ONE mechanism each, run concurrently after the
+    # review of the diverged rung. 12k crosses the
     # sigma=0.14 (5k) and sigma=0.17 (10k) boundaries -- 0.17 is where the
     # diverged twin's per-rung re-ignition began, so every arm is scored on
     # (i) escaping the clip ceiling on rung 0 (grad_norm below ~500-scale by
     # step ~3k; the twin managed this once, loss 392->11) and (ii) surviving
     # the 10k transition (within-rung loss slope <= 0 on 10k-12k; the twin's
-    # rose on every rung past the first). Pre-stated per-arm criteria live in
-    # the launch plan; identical eval cadence keeps columns comparable.
-    # 2026-08-12: the first wave (jobs 272749-53) all died at startup --
-    # the cells carried the full 50k ladder, whose 15k stage trips the
-    # strict start_step < n_steps validator at n_steps=12k. The smokes only
-    # ever reach the first three stages, so they now share this truncated
-    # view of the SAME ladder (identical sigmas/lrs/boundaries at 0/5k/10k).
+    # rose on every rung past the first). Identical eval cadence keeps
+    # columns comparable.
+    # The cells originally carried the full 50k ladder, whose 15k stage
+    # trips the strict start_step < n_steps validator at n_steps=12k. The
+    # smokes only ever reach the first three stages, so they share this
+    # truncated view of the SAME ladder (identical sigmas/lrs/boundaries
+    # at 0/5k/10k).
     "H2_d256_smoke12k_unclip": _hard_cell(
-        # Arm A: restore clip=500's d64 SEMANTICS (fires on spikes only) by
+        # unclip: restore clip=500's d64 SEMANTICS (fires on spikes only) by
         # raising the threshold above the working-regime norm; under AdamW
         # this is also exactly the per-pair-normalised-loss arm (the two
         # differ by a constant the optimiser erases).
@@ -3305,7 +3269,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         grad_clip_max_norm=20_000.0,
     ),
     "H2_d256_smoke12k_naive": _hard_cell(
-        # Arm B: kill the inverted control variate (it ADDS variance at
+        # naive: kill the inverted control variate (it ADDS variance at
         # d=256: integrand/naive variance ratio 2.3x at rung 0 -> ~70x late,
         # vs an 8-30x REDUCTION at d64) by estimating c_t naively. Also the
         # cheapest arm (~0.7x: skips the c_t head pass).
@@ -3319,7 +3283,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         estimator="naive_mc",
     ),
     "H2_d256_smoke12k_warm": _hard_cell(
-        # Arm C: warm-start from the converged d64 ma_100k checkpoint
+        # warm: warm-start from the converged d64 ma_100k checkpoint
         # (110/116 keys shape-identical; positional tables bilinearly
         # interpolated by scripts/warm_start_swap_head.py, supplied via
         # run.py --init-from). Attacks the init-scale term directly: 96% of
@@ -3335,10 +3299,10 @@ CONFIGS: dict[str, HardStageCfg] = {
         curriculum=_SMOKE12K_SIGMA_LADDER,
     ),
     "H2_d256_smoke12k_stadamw": _hard_cell(
-        # Arm D: StableAdamW -- per-tensor UPDATE clipping (unit-free,
+        # stadamw: StableAdamW -- per-tensor UPDATE clipping (unit-free,
         # size-invariant trust region), the "normalised or trust-region
-        # update" the soft chapter's clip forensics already recommend in
-        # print. Raw-gradient clip effectively disabled so the update
+        # update" the soft chapter's clip forensics recommend.
+        # Raw-gradient clip effectively disabled so the update
         # clipping is the only bounding mechanism (one variable per arm).
         "H2_d256_smoke12k_stadamw", sigma=0.223,
         head_kind="masked_attention",
@@ -3351,7 +3315,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         optimiser="stable_adamw",
     ),
     "H2_d256_smoke12k_rewarmup": _hard_cell(
-        # Arm E: re-run the lr warmup ramp at every sigma transition. The
+        # rewarmup: re-run the lr warmup ramp at every sigma transition. The
         # twin's one healthy window ended exactly at a transition (buffer
         # cleared + target jumped, no ramp); warmup was the only mechanism
         # that ever carried it through a transient. Clip left at the
@@ -3365,7 +3329,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         curriculum=_SMOKE12K_SIGMA_LADDER,
         rewarmup_on_stage=True,
     ),
-    # --- M-campaign Task 6 (2026-08-14): replay-buffer staleness ablation ---
+    # --- replay-buffer staleness ablation ---
     # Inner steps draw from an 8-cycle replay buffer while c_t is FRESH from
     # the latest outer cycle (swap_training.py); staleness is worst in the
     # fast early curriculum. Config-only falsification: the d64 MA
@@ -3374,24 +3338,23 @@ CONFIGS: dict[str, HardStageCfg] = {
     # test_m6_replay2_smoke_mirrors_ma_recipe_except_declared_fields), read
     # against the archived MA twin's first 12k steps. The ladder truncates
     # to the shared 12k view because the validator rejects stages at or past
-    # n_steps (the 2026-08-12 smoke-wave lesson).
-    # Frozen bands (plan Task 6): INSENSITIVE (staleness confound ruled
+    # n_steps.
+    # Expected: INSENSITIVE (staleness confound ruled
     # out) if final train-ESS is within +-10% relative of the archived MA
     # twin at matched steps; SENSITIVE (>10% either way) -> full 50k arm +
     # re-think the buffer window in the d256 recipe.
     "H2_d64_smoke12k_replay2": _d64_smoke12k_replay2_cell(
         "H2_d64_smoke12k_replay2",
     ),
-    # --- M-campaign Task 2 (2026-08-14): c_t EMA no-regression gate -------
-    # MY CALL (session close 2026-08-14): launch WITHOUT waiting for cv2's
-    # band — the gate reads against the ARCHIVED MA twin, so cv2's outcome
-    # changes nothing about its attribution. The archived MA 50k curriculum
+    # --- c_t EMA no-regression check -------
+    # Reads against the ARCHIVED MA twin, independently of cv2's outcome.
+    # The archived MA 50k curriculum
     # recipe with c_t_ema_halflife_cycles=4 the ONLY change (sigma-transition
-    # resets keep the EMA honest across the ladder). Frozen band (plan Task
-    # 2): NO-REGRESSION = final eval ESS frac within the archived MA twin's
+    # resets keep the EMA honest across the ladder). Expected:
+    # NO-REGRESSION = final eval ESS frac within the archived MA twin's
     # seed spread, i.e. >= 0.755 (spread 0.755/0.769/0.781); below that the
-    # across-cycle smoothing is not free and the lever is d256-only-judged.
-    # VERDICT (2026-08-14 slate, back-annotated 2026-08-19): NO-REGRESSION
+    # across-cycle smoothing is not free and the lever is d256-only.
+    # Measured: NO-REGRESSION
     # met but the lever is NEUTRAL — 1.05x, inside the c_t-noise family's
     # measured ~1.19x transfer ceiling (input variance moves 28x, Var[log w]
     # moves 1.19x, log-log slope 0.052). The whole family is deprioritised
@@ -3399,38 +3362,38 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d64_c50_s223_letf_ma_50k_curr_ctema4": _d64_m2_ctema4_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr_ctema4",
     ),
-    # --- c_t transfer function (2026-08-14): the missing naive arm -------
+    # --- c_t transfer function: the missing naive arm -------
     "H2_d64_c50_s223_letf_ma_50k_curr_naive": _d64_naive_twin_cell(
         "H2_d64_c50_s223_letf_ma_50k_curr_naive",
     ),
-    # --- M-campaign Task 3 (2026-08-14): decoupled c_t rollout batch ------
-    # Mechanism cell, same call: d256-naive 12k smoke with c_t_batch
+    # --- decoupled c_t rollout batch ------
+    # Mechanism cell: d256-naive 12k smoke with c_t_batch
     # 128 -> 512 the ONLY change — c_t's per-slot standard error halves
     # (variance /4) while the inner batch and replay buffer stay at 128.
-    # Frozen bands (plan Task 3), read vs the archived naive 50k run's first
+    # Expected, read vs the archived naive 50k run's first
     # 12k at matched steps: MEANINGFUL = train-ESS median on the sigma=0.17
     # rung (steps 10k-12k) >= 2x the archived run's, OR the logged per-slot
-    # var_estimator_integrand down >= 2x. NEVER bundle with M2: one lever
+    # var_estimator_integrand down >= 2x. NEVER bundle with ctema4: one lever
     # per cell keeps attribution clean. Cost ~5 h a100 (trajectory phase
     # +2.25x on ~75% of wall); the no-grad MA pass at B=512 peaks ~20 GB,
     # in-cap on the 80 GB a100.
-    # VERDICT (2026-08-14 slate, back-annotated 2026-08-19): NOT MEANINGFUL
-    # — 1.09x against the >= 2x band; same ~1.19x c_t-noise transfer
+    # Measured: NOT MEANINGFUL
+    # — 1.09x against the >= 2x bar; same ~1.19x c_t-noise transfer
     # ceiling as ctema4 above.
     "H2_d256_smoke12k_naive_ctb512": _d256_smoke12k_naive_ctb512_cell(
         "H2_d256_smoke12k_naive_ctb512",
     ),
     # d64 plumbing fallback for the cell above (~25 min a30): validates the
     # enlarged-rollout outer cycle end-to-end at small size FIRST if a100
-    # scheduling blocks the d256 cell. No quality band — the unit tests
+    # scheduling blocks the d256 cell. No quality bar — the unit tests
     # (test_c_t_batch.py) already pin the semantics; this is an integration
     # smoke.
     "H2_d64_smoke12k_ctb512": _d64_smoke12k_ctb512_cell(
         "H2_d64_smoke12k_ctb512",
     ),
-    # RETIRED 2026-07-22 (my call, after batch 1 landed). Kept, not deleted:
+    # RETIRED after batch 1. Kept, not deleted:
     # these three cells are the only way to reproduce a NEGATIVE result the
-    # writeup will cite, and the head + falsification suite they exercise stay
+    # writeup cites, and the head + falsification suite they exercise stay
     # green at no run cost. Do NOT launch further ga cells at d64.
     #   ga8 0.58072 -- BELOW iv 0.6463, i.e. under the ladder floor, while
     #     costing MORE per inner step than its ma cost peer (28.8 vs 26.4 ms)
@@ -3442,7 +3405,7 @@ CONFIGS: dict[str, HardStageCfg] = {
     # no (k, cost) point here is worth having. Group SHAPE dominates k -- the
     # diagonal-vs-contiguous gap (0.572) is 4x the k gap, which vindicates the
     # independent-set argument far past what the original estimate predicted.
-    # Grouped-anchor batch 1 (2026-07-22): the head family
+    # Grouped-anchor batch 1: the head family
     # sampled BETWEEN its endpoints for the first time -- k masked passes
     # instead of mask_one's d (= 64) or the one-pass heads' zero. Same 50k
     # curriculum as every other ladder rung, so the result reads directly
@@ -3478,8 +3441,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         # the eval otherwise dominates the run (profile: 92% of GPU time).
         # run.py's final eval still draws the full 5000.
         n_eval_samples_training=512,
-        # Tier-2 flags, signed off 2026-07-06 (perf-branch evidence
-        # recorded 2026-07-05): SDPA readout everywhere, bf16 on the
+        # Performance flags: SDPA readout everywhere, bf16 on the
         # in-training eval block only — the final 5000-sample eval runs fp32.
         use_sdpa_readout=True,
         eval_autocast_bf16=True,
@@ -3487,19 +3449,21 @@ CONFIGS: dict[str, HardStageCfg] = {
 }
 
 
-# ---- two-hole patch twins of arm B (2026-08-23, s57, GO) ------------
+# ---- two-hole patch twins of the cold-cv70k arm ------------
 # thp at d64 = STRONG (EMA ESS 0.923 vs fimo2 0.830 and fimo2ef 0.882, 13.5
 # vs 34 ms/step; guard telemetry calmer than fimo2's: grad norm 7.5 vs 17,
 # clip/clamp never fired, cv_var_ratio 0.014 vs 0.041), so the record recipe
-# transfers verbatim. Parent = B, NOT D: D's lever is h128/L3 in the causal
-# stacks, which this head never runs. ONE variable each versus B: head_kind
-# (R=1, f=32); + exact_field_channel ("with preconditioner"); R=2 (5x5
-# patch, the head's one architectural knob). Venue Modal A100-80GB (pinned,
-# ~7.5 h each at 2.5x B's speed). Built by `replace` on B itself so
+# transfers verbatim. Parent = the h32 cold-cv70k arm, NOT its h128/L3
+# twin: that lever lives in the causal stacks, which this head never runs.
+# ONE variable each versus the parent: head_kind (R=1, f=32);
+# + exact_field_channel ("with preconditioner"); R=2 (5x5 patch, the
+# head's one architectural knob). Venue Modal A100-80GB (~7.5 h each at
+# 2.5x the parent's speed). Built by `replace` on the parent itself so
 # the twin-ness is structural (pinned by test_thp_d256_twins_of_arm_b).
-# FROZEN BANDS (ESS currency, EMA eval, seed 42, raw alongside):
-#   STRONG iff EMA ESS/N > 0.430 (beats D = the 16x16 record);
-#   PASS   iff EMA ESS/N in (0.381, 0.430] (beats its parent B);
+# Expected (ESS currency, EMA eval, seed 42, raw alongside):
+#   STRONG iff EMA ESS/N > 0.430 (beats the h128/L3 cold-CV arm = the
+#          16x16 record);
+#   PASS   iff EMA ESS/N in (0.381, 0.430] (beats its parent);
 #   NULL   iff EMA ESS/N <= 0.381.
 _ARM_B = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
 CONFIGS.update({
@@ -3517,11 +3481,11 @@ CONFIGS.update({
     ),
 })
 
-# Wave-2 house-table fill (s68, 2026-08-25): the 4x4 and 8x8 rungs of
-# tab:eval-hard-* rebuilt FRESH at single provenance — four arms (mo = the
+# Wave-2 house-table fill: the 4x4 and 8x8 rungs of the hard eval tables
+# rebuilt FRESH at single provenance — four arms (mo = the
 # mask-one reference ceiling, ma, fimo2ef = the raster champion, thp = the
 # convolutional champion at R=1) x sigma in {0.10 floor, SIGMA_C exact} x
-# seeds 42/43/44, every cell on the s60 optimised recipe. s220 is the exact
+# seeds 42/43/44, every cell on the optimised recipe. s220 is the exact
 # critical label (0.220343); the archived s223 cells (legacy 0.223) stay
 # untouched as records. The d64 s220 cells keep the sigma ladder
 # reused-not-rescaled with only the endpoint moved (0.215 < 0.220343 keeps
@@ -3530,8 +3494,8 @@ CONFIGS.update({
 # the curriculum, not the operating point. Twin-ness pinned by
 # test_wave2_house_cells_mirror_archived_twins_except_declared_fields.
 #
-# FROZEN JUDGING CLAUSE (before any launch). Each arm x sigma is judged
-# against its archived namesake's eval: the s010 cells at identical sigma,
+# Each arm x sigma reads against its archived namesake's eval: the s010
+# cells at identical sigma,
 # the s220 cells against the legacy-0.223 namesakes, where the sigma shift
 # is -1.2% and expected inside seed noise. Archived references — d16 sigma_c:
 # mo/ma raw ESS 0.970/0.973/0.973, fimo2ef 0.938/0.926/0.931 (parents
@@ -3541,11 +3505,10 @@ CONFIGS.update({
 #   PASS iff within the archived three-seed spread (d16) or consistent with
 #        the archived seed-42 value under the FP-non-determinism caveat
 #        (d64, calls within ~0.02 of a reference are not calls);
-#   any arm separated BELOW its archived reference beyond that is HELD from
-#        print and investigated before the table fills.
-# Venues: d16 on Modal batch_seeds --detach (launch-bound); d64 queued on
-# DoC (a30 class, ~0.7-6.8 h per run by arm) — submitted jointly against
-# the 3-GPU per-user cap.
+#   any arm separated BELOW its archived reference beyond that is
+#        investigated before the table fills.
+# Venues: d16 on Modal batch_seeds --detach (launch-bound); d64 on DoC
+# (a30 class, ~0.7-6.8 h per run by arm).
 _WAVE2_ARM_KNOBS: dict[str, dict] = {
     "mo": {"head_kind": "mask_one"},
     "ma": {"head_kind": "masked_attention"},
@@ -3553,11 +3516,11 @@ _WAVE2_ARM_KNOBS: dict[str, dict] = {
         "head_kind": "factorised", "exact_field_channel": True,
         "interior_band": "prefix", "site_orderings": ("row", "col"),
     },
-    # Fifth arm by board extension (s68, approved): ef on the GLOBAL
+    # Fifth arm: ef on the GLOBAL
     # interior chassis — the archived fmo2 (two orderings, no interior_band)
     # plus the exact-field channel. ef was NEVER run on this chassis at any
     # size (fimo2ef's evidence is the prefix-band chassis), so this arm has
-    # no archived namesake and gets its own frozen clause:
+    # no archived namesake and gets its own read:
     #   primary = the w2 fimo2ef sibling at matched sigma and seed set;
     #   PARITY iff within that arm's seed spread — the cost-for-fidelity
     #   question this arm exists to answer (the global interior is the
@@ -3587,7 +3550,7 @@ _D64_SIGMA_LADDER_SC = CurriculumCfg(
 # as well, so an arm added there acquires an 8x8 cell automatically. The
 # doubly-hollow oracle must never acquire one -- it benches at 7,036 ms per
 # forward at d=64 against the masked-attention head's 6.0 ms, ~1,170x, which
-# is why tab:eval-hard-8x8 carries no oracle row at all. At d=16 the same
+# is why the 8x8 eval table carries no oracle row at all. At d=16 the same
 # bench reads 417 ms and the slice is enumerable, so the cell is affordable
 # exactly here and nowhere above.
 _D16_ONLY_ARM_KNOBS: dict[str, dict] = {
@@ -3643,12 +3606,12 @@ CONFIGS.update({
     },
 })
 
-# Composition-amortisation cell (s100, docs-tracked campaign): the judged
-# thp sigma_c cell with the mixture grid as the ONLY moved field (pinned by
+# Composition-amortisation cell: the thp sigma_c cell with the mixture
+# grid as the ONLY moved field (pinned by
 # test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob). Grid =
 # the d256 zero-shot probe's composition FRACTIONS realised at d64
 # (n+ = 32/30/28/24/20), anchor slice 0.5 first, so the trained arm and the
-# zero-shot null read side by side. Judged per-slice via
+# zero-shot null read side by side. Read per-slice via
 # probe_zero_shot_transfer on the trained checkpoints, never on the
 # in-training mixture eval (which mixes slices and is diagnostic only).
 CONFIGS.update({
@@ -3659,9 +3622,9 @@ CONFIGS.update({
             name="H2_d64_camort_s220_letf_thp_50k_curr",
             composition_mixture=(0.5, 0.46875, 0.4375, 0.375, 0.3125),
         ),
-        # D=4 gate twin (validate-before-GPU): the campaign fractions that
-        # are integral at d=16 (n+ = 8/7/6/5; 0.46875*16 = 7.5 has no
-        # slice). Judged per-slice against exact enumeration by
+        # D=4 gate twin: the fractions that are integral at d=16
+        # (n+ = 8/7/6/5; 0.46875*16 = 7.5 has no slice). Read per-slice
+        # against exact enumeration by
         # gate_camort_4x4.py.
         replace(
             _wave2_d16_cell("thp", "s220", SIGMA_C),
@@ -3671,16 +3634,16 @@ CONFIGS.update({
     )
 })
 
-# The oracle row of tab:eval-hard-4x4, registered on the SAME w2 recipe and
+# The oracle row of the 4x4 eval table, on the SAME w2 recipe and
 # the same exact SIGMA_C as every other row of that table so the row is
 # comparable. The legacy `H2_d16_c50_s223_letf_dh` cells are not: they sit at
 # the pre-migration sigma 0.223 rather than SIGMA_C = 0.220343 and predate the
-# s60 optimised recipe. The oracle agrees with the mask_one head numerically
+# optimised recipe. The oracle agrees with the mask_one head numerically
 # (see HardStageCfg.head_kind), so the fidelity columns are expected to
 # reproduce the mask-one row within seed noise and the FLOP/es column is what
 # the row is actually for: the O(d^2) architecture-agnostic gate's price.
 # EAGER, and not by preference -- a compiled oracle cell cannot be run at all.
-# Measured 2026-08-29 (DoC 280196, cancelled): `doubly_hollow` x
+# Measured: `doubly_hollow` x
 # `compile_head=True` spent 26 minutes without reaching step 1 on a 4x4 cell,
 # the process pinned at ~95% of ONE core (utime 129,661 jiffies against a
 # 26:09 runtime) with 373 MiB on the GPU -- the signature of inductor still
@@ -3688,8 +3651,8 @@ CONFIGS.update({
 # forwards, so its graph is enormous in node count however small its tensors
 # are, and the sbatch runs six separate python invocations that would each pay
 # the cost again. `compile_head=False` is therefore the ONE further deviation,
-# the same knob and the same convention as the decision-(c) `_w2e` cells
-# above, and `c_t_from_rollout` is kept for the same reason they keep it.
+# the same knob and the same convention as the `_w2e` cells
+# below, and `c_t_from_rollout` is kept for the same reason they keep it.
 # CONSEQUENCE FOR THE ROW: it now differs from the mask-one row in TWO fields,
 # `head_kind` and `compile_head`, so it is "the same recipe through a
 # different head, run the only way that head can be run" rather than a
@@ -3704,9 +3667,9 @@ CONFIGS.update({
     )
 })
 
-# HOLD-investigation twins (s70, 2026-08-26). The w2 fimo2ef sigma_c cells
+# Sigma-vs-recipe twins. The w2 fimo2ef sigma_c cells
 # landed raw ESS 0.637/0.794/0.831 (seeds 44/43/42) against the archived
-# namesake's 0.926-0.938, tripping the frozen HOLD clause, while the floor
+# namesake's 0.926-0.938, while the floor
 # cells and the other three arms all passed — and the training curves are
 # indistinguishable from the archived runs (no collapse; final 2k-window
 # loss 0.20-0.27 vs 0.15-0.20), so the drop is in where training converges,
@@ -3714,8 +3677,8 @@ CONFIGS.update({
 # two live deltas, and each twin walks ONE back (one-variable pinning:
 # test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef):
 #   `_w2sig` = the w2 recipe at the archived legacy sigma 0.223;
-#   `_eager` = exact SIGMA_C with the two s60 recipe flags off.
-# FROZEN READ (before launch): whichever twin's three-seed spread stays with
+#   `_eager` = exact SIGMA_C with the two optimised-recipe flags off.
+# Read: whichever twin's three-seed spread stays with
 # its sigma-mates names the cause — `_w2sig` in the archived [0.926, 0.938]
 # means the sigma correction owns the drop (exact criticality is simply
 # harder for this chassis, and the archived tightness was off-critical
@@ -3723,7 +3686,7 @@ CONFIGS.update({
 # other side. `_w2sig` depressed OR `_eager` healthy instead indicts the
 # optimised recipe on this chassis — which would put the d64 w2
 # fimo2ef/fmo2ef bundles (same recipe, running on DoC) at risk and reopen
-# the s60 bundle's factorised certification. Seeds 42-44, Modal (4x4 is
+# the optimised bundle's factorised verification. Seeds 42-44, Modal (4x4 is
 # launch-bound), tag 20260826-hold-fimo2ef.
 _W2_FIMO2EF_SC = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_w2"]
 CONFIGS.update({
@@ -3740,22 +3703,23 @@ CONFIGS.update({
     ),
 })
 
-# HOLD round 2 (s70, 2026-08-26, GO). Round 1 localised the depression
+# Round 2. Round 1 localised the depression
 # to the recipe x exact-sigma_c x ef corner (interaction -0.132; both-on
 # 0.637-0.831 vs both-off 0.874-0.944) but left two attributions open, one
 # twin each:
 #   `_cmpl` = the w2 cell with c_t_from_rollout walked back, compile_head
-#   kept. FROZEN READ: depressed (0.637-0.831 class) -> compile_head owns
-#   the interaction (suspicion on record: inductor reassociating
+#   kept. Read: depressed (0.637-0.831 class) -> compile_head owns
+#   the interaction (suspected: inductor reassociating
 #   head + gain*sigma*Delta, a ~450x dynamic-range add at exact sigma_c);
 #   healthy (0.874-0.944 class) -> c_t_from_rollout owns it.
 #   `_w2rec` = the PLAIN fimo2 chassis (ef off, nothing else touched) on
-#   the full w2 recipe at exact sigma_c. FROZEN READ: healthy (archived
+#   the full w2 recipe at exact sigma_c. Read: healthy (archived
 #   plain fimo2 4x4 = 0.903-0.925 at legacy sigma, eager) -> confirms the
 #   ef channel as the necessary mediator and clears the plain-chassis d64
 #   arms; depressed -> the ef attribution is wrong, the recipe hits the
-#   factorised chassis itself, and the s60 factorised certification
-#   REOPENS. Seeds 42-44, Modal, same fixed tag 20260826-hold-fimo2ef.
+#   factorised chassis itself, and the optimised recipe's factorised
+#   verification reopens. Seeds 42-44, Modal, same fixed tag
+#   20260826-hold-fimo2ef.
 CONFIGS.update({
     "H2_d16_c50_s220_letf_fimo2ef_10k_cmpl": replace(
         _W2_FIMO2EF_SC,
@@ -3770,10 +3734,9 @@ CONFIGS.update({
 })
 
 
-# Decision (c) cells (s70, 2026-08-26): factorised arms at exact
-# sigma_c train EAGER. The hold investigation (both rounds + the forward
-# residue probe, docs are session-local; numbers here are the record)
-# localised a ~40% catastrophic-seed rate to factorised x compile_head x
+# Eager factorised cells: factorised arms at exact
+# sigma_c train EAGER. The investigation above (both rounds + a forward
+# residue probe) localised a ~40% catastrophic-seed rate to factorised x compile_head x
 # SIGMA_C (5/12 bad seeds vs 0/21 elsewhere, Fisher p=0.0033), exonerated
 # c_t_from_rollout, the ef channel and the forward numerics (compiled and
 # eager forwards agree to ~1e-5 relative on trained checkpoints, antisym
@@ -3783,17 +3746,17 @@ CONFIGS.update({
 # was exonerated and carries the d256 saving); floor cells and mo/ma/thp
 # stay on the full optimised recipe, which is clean (9/9 >= 0.968).
 # The compiled w2 sc chains keep running as the CONTRAST arm, not results.
-# FROZEN CLAUSES (before launch): fimo2ef d16 judged against the round-1
-# eager-at-SIGMA_C spread 0.874-0.944 (the archived s223 band 0.926-0.938
-# is known too tight — its seed 43 was a non-reproducible draw); fmo2ef =
-# PARITY vs its w2e fimo2ef sibling, as in the w2 campaign. d64: fimo2ef
+# Expected: fimo2ef d16 reads against the round-1
+# eager-at-SIGMA_C spread 0.874-0.944 (the archived s223 range 0.926-0.938
+# is too tight — its seed 43 was a non-reproducible draw); fmo2ef =
+# PARITY vs its w2e fimo2ef sibling, as in the w2 fill. d64: fimo2ef
 # vs the archived s223 namesake 0.839 raw / 0.882 EMA under the FP
 # caveat (calls within ~0.02 are not calls); fmo2ef = parity vs sibling.
 # Any seed below 0.70 at d16 reopens the investigation (the eager cell
 # should not produce catastrophic seeds).
-# DISPOSITION (decision 2026-08-26): fmo2ef seed 44 = 0.531 tripped the
-# reopen while eager; closed without further investigation — both 4x4
-# cells print honest numbers + dagger, the global-interior chassis
+# Outcome: fmo2ef seed 44 = 0.531 tripped the
+# reopen while eager; not investigated further — both 4x4
+# cells print their numbers + dagger, the global-interior chassis
 # (fmo2ef) is retired from forward waves, fimo2ef carries the factorised
 # line at larger sizes.
 _W2_FMO2EF_SC = CONFIGS["H2_d16_c50_s220_letf_fmo2ef_10k_w2"]
@@ -3818,16 +3781,17 @@ CONFIGS.update({
 })
 
 
-# ---- 16x16 house-table fill at exact sigma_c (s71, 2026-08-26) ----------
+# ---- 16x16 house-table fill at exact sigma_c ----------
 # The d256 rung of the hard house table rebuilt at the migrated coupling
-# SIGMA_C = 0.220343 (exact), single provenance, seed 42 at launch. The
+# SIGMA_C = 0.220343 (exact), single provenance, seed 42. The
 # same four arms at both couplings -- thp (the convolutional head at R=1),
-# thp2 (R=2, the 16x16 record: EMA eval ESS 0.760 against arm D's 0.430),
+# thp2 (R=2, the 16x16 record: EMA eval ESS 0.760 against the h128/L3
+# cold-CV arm's 0.430),
 # fimo2ef (the raster champion: the fimo2 prefix-band chassis plus the
 # exact-field channel) and ma (masked attention), so every head the table
 # prints is read at the floor and at criticality on one recipe.
 #
-# ma AT SIGMA_C IS A RETEST, NOT A REPEAT (s74, 2026-08-26). The archived
+# ma AT SIGMA_C IS A RETEST, NOT A REPEAT. The archived
 # d256 masked-attention cells diverged at criticality, which is why the
 # house table's MA row reads "--". Those runs are legacy 0.223 and predate
 # every lever this cell carries: the triu pair gather (d256 b128 training
@@ -3840,7 +3804,7 @@ CONFIGS.update({
 # 0, matching step, SDPA readout, bf16 in-training eval, EMA shadow
 # 0.9999, cv-inversion tripwire armed at 5000, replay 8 cycles, grad clip
 # 500, warmup 500, lr 1e-3 ladder -> 3e-4). Building by replace rather
-# than by a fresh `_hard_cell` call is the s57 thp-twin pattern and makes
+# than by a fresh `_hard_cell` call is the thp-twin pattern and makes
 # twin-ness structural rather than transcribed (pinned by
 # test_d256_house_cells_are_declared_transforms_of_arm_b).
 #
@@ -3853,7 +3817,8 @@ CONFIGS.update({
 # curriculum rather than the operating point.
 #
 # 100k NOT 70k on the sigma_c arms. Every d256 70k run was still descending
-# at its own endpoint -- arm B-ef's loss fell 4.11 -> 3.25 across the last
+# at its own endpoint -- the cold-cv70k ef twin's loss fell 4.11 -> 3.25
+# across the last
 # four 10k windows and thp2's 1.79 -> 1.60, with the integrand variance
 # still falling alongside -- so 70k is a budget, not a convergence point.
 # Because the ladder's start_steps are ABSOLUTE the extra 30k lands
@@ -3864,7 +3829,7 @@ CONFIGS.update({
 # convention. 50k is enough there: the floor row exists to bound the easy
 # end of the table, not to chase a plateau.
 #
-# LOSS MICROBATCHING, per arm and declared. Benched 2026-08-26 on a Modal
+# LOSS MICROBATCHING, per arm and declared. Benched on a Modal
 # A100-80GB at d=256, one train step over 512 rows: compiled 4x128 slices
 # 0.260 s against a single-shot 0.156 s (40% faster single-shot) at 24.9 GB
 # peak, comfortably inside the 80 GB card. Slicing is gradient-exact --
@@ -3883,9 +3848,9 @@ CONFIGS.update({
 #     score buffer is the one head footprint that is hidden-independent
 #     and grows with the lattice (5.00 GB at batch 32 where the factorised
 #     head reads 0.87 GB). Buying a 40% speedup against an unmeasured OOM
-#     is not a trade this campaign takes.
+#     is not a trade taken here.
 #
-# gather_triu_pairs=True on fimo2ef and ma (the 2026-08-26 lever): the
+# gather_triu_pairs=True on fimo2ef and ma: the
 # interval / masked-attention / factorised heads' pair contexts are
 # label-SYMMETRIC, so the lower triangle was always the upper triangle's
 # mirror and its readout rows were computed and thrown away. Running the
@@ -3901,13 +3866,13 @@ CONFIGS.update({
 # is rebuilt bit-identically from the rollout's own head forwards, removing
 # 127 of 128 grid head calls per outer cycle at d256 -- the single largest
 # saving in the recipe at this size. It was one of the two suspects in the
-# s70 hold investigation and was EXONERATED there (the ~40% catastrophic
+# 4x4 depression investigation above and was exonerated (the ~40% catastrophic
 # seed rate localised to factorised x compile_head x SIGMA_C, 5/12 bad
 # seeds against 0/21 elsewhere, Fisher p=0.0033), so it rides everywhere.
 #
 # compile_head, and the ONE declared per-arm deviation. `optimised_recipe`
 # turns it on (2.21x inner updates, 4.9x rollout, -60% eval peak memory).
-# Decision (c) (s70) scopes ONE exception: factorised arms at exact
+# ONE exception: factorised arms at exact
 # sigma_c train EAGER, because factorised x compile x SIGMA_C is the
 # catastrophic-seed cell named above. That scope is exact-sigma_c ONLY --
 # the compiled factorised cells at the 0.10 floor were healthy (9/9 >=
@@ -3922,28 +3887,29 @@ CONFIGS.update({
 # archived value rather than a new one. Nothing else in `eval` moves --
 # 5000 final draws, 256 in-training draws, eval_every 500.
 #
-# FROZEN READS (before any launch).
+# READS.
 # sigma_c arms: the house columns -- ESS fraction, dMag, dCorr, EW2 and
 # FLOP-per-effective-sample -- read against the certified sigma_c Kawasaki
 # reference once it is built, with the lineage's health tripwires riding
-# unchanged (judge grad-clip runaway by norm fall-back and never by
+# unchanged (read grad-clip runaway by norm fall-back and never by
 # survival count; watch max FVU after step 5000). NO namesake exists at
 # this coupling for any of the three: every archived d256 number is the
 # legacy 0.223 label, and the sigma_c cells are a HOUSE-TABLE read, not a
-# twin comparison -- so no numeric band is invented here. The archived
-# 0.223 values are recorded as ORIENTATION only, not as gates: thp2 EMA
-# eval ESS 0.760, arm D 0.430, arm B 0.381 (0.346, 0.419), arm B-ef and
-# thp/thp-ef alongside them. A cell landing far outside that neighbourhood
-# is a reason to look at the run, not a verdict.
+# twin comparison -- so no numeric range is invented here. The archived
+# 0.223 values are recorded as ORIENTATION only, not as thresholds: thp2
+# EMA eval ESS 0.760, the h128/L3 cold-CV arm 0.430, cold-cv70k 0.381
+# (0.346, 0.419), its ef twin and thp/thp-ef alongside them. A cell
+# landing far outside that neighbourhood is a reason to look at the run,
+# not a result.
 # fimo2ef at sigma_c, ADDITIONALLY: any catastrophic seed -- an ESS-class
-# collapse of the kind the 4x4 investigation saw -- REOPENS decision (c)
-# at d256. Eager was chosen there on 4x4 and 8x8 evidence, and a d256
+# collapse of the kind the 4x4 investigation saw -- reopens the eager
+# decision at d256. Eager was chosen on 4x4 and 8x8 evidence, and a d256
 # catastrophic seed would mean compile_head was never the whole mechanism.
-# DISPOSITION 2026-08-27, clause DISCHARGED: all three seeds landed
+# Outcome: all three seeds landed
 # healthy -- EMA eval ESS fraction 0.515 (42), 0.577 (43), 0.503 (44), max
 # self-normalised weight 0.0034/0.0018/0.0051 of 5000 draws. No
-# catastrophic seed, so the clause does not fire and decision (c) stands
-# at d256. Seed 42 needed a relaunch to finish: at 0.92 steps/s a 100k run
+# catastrophic seed, so the eager decision holds at d256. Seed 42 needed a
+# relaunch to finish: at 0.92 steps/s a 100k run
 # exceeds Modal's 24-hour function ceiling, so it stopped at step 80.5k
 # and was resumed under the same tag (its siblings ran 1.71 steps/s and
 # fit in one container).
@@ -3955,7 +3921,7 @@ CONFIGS.update({
 # with gradient norms settling at 180/296, clean optimisation onto a bad
 # optimum, against thp2's loss 1.32 at the same budget -- while seed 44
 # DIVERGES (loss 171 -> 1735, gradient norm 23k -> 443k). All three are
-# printed in tab:eval-hard-16x16; seed 44 is not excluded as degenerate
+# printed in the 16x16 eval table; seed 44 is not excluded as degenerate
 # because, unlike the sigma = 0.1 exclusion, it is not an outlier among
 # healthy siblings.
 # s010 arms: the easy-target floor row of the house table. Same columns,
@@ -3970,13 +3936,13 @@ _D256_HOUSE_ARM_KNOBS: dict[str, dict] = {
         "interior_band": "prefix", "site_orderings": ("row", "col"),
         "gather_triu_pairs": True,
     },
-    # site_orderings PINNED, and declared rather than applied silently
-    # (2026-08-28). This cell inherits ('row','col') from an fmo2 parent
+    # site_orderings PINNED, and declared rather than applied silently.
+    # This cell inherits ('row','col') from an fmo2 parent
     # through `replace`, and it rode INERTLY while the raster heads ignored
     # the field. They no longer do, so without the pin these two ARCHIVED
     # cells -- the `ma` row of the 16x16 house table -- would rebuild as
     # two-ordering heads they were never trained as. Declaring it keeps the
-    # cells transforms-of-arm-B that the census test can still verify.
+    # cells transforms of _ARM_B that the census test can still verify.
     "ma": {
         "head_kind": "masked_attention", "gather_triu_pairs": True,
         "site_orderings": ("row",),
@@ -4012,10 +3978,10 @@ def _d256_house_cell(
             _ARM_B.train,
             n_steps=n_steps,
             loss_microbatch_size=_D256_HOUSE_MICROBATCH[arm],
-            # (s73) The tripwire must NOT ride from _ARM_B. That parent is a
+            # The tripwire must NOT ride from _ARM_B. That parent is a
             # cold-CV SCREENING cell where a sustained controlled/naive
             # variance inversion IS the answer and the halt is a designed
-            # cost-capped negative verdict. These are PRODUCTION cells that
+            # cost-capped negative outcome. These are PRODUCTION cells that
             # must reach their full 50k/100k budget, and there the same
             # tripwire is a silent truncation: it halted the w3 `ma` and
             # `fimo2ef` sigma=0.1 arms at step 5000 of 50000 on trailing
@@ -4040,8 +4006,8 @@ def _d256_house_cell(
 
 def _d256_house_critical_cell(arm: str) -> HardStageCfg:
     """sigma_c arm: exact SIGMA_C at the cell AND the ladder endpoint, 100k
-    steps landing entirely on the final plateau. Decision (c) applies here
-    and ONLY here -- the factorised arm trains eager."""
+    steps landing entirely on the final plateau. The eager exception
+    applies here and ONLY here -- the factorised arm trains eager."""
     cell = _d256_house_cell(
         arm,
         f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3",
@@ -4053,8 +4019,8 @@ def _d256_house_critical_cell(arm: str) -> HardStageCfg:
 
 def _d256_house_floor_cell(arm: str) -> HardStageCfg:
     """sigma=0.10 floor arm: flat coupling, NO curriculum (a ladder at the
-    floor would measure the curriculum), 50k steps as at d64. Decision (c)
-    does not reach here -- compiled factorised cells at the floor were
+    floor would measure the curriculum), 50k steps as at d64. The eager
+    exception does not reach here -- compiled factorised cells at the floor were
     healthy -- so every floor arm keeps the full optimised recipe."""
     return _d256_house_cell(
         arm,
@@ -4071,10 +4037,10 @@ CONFIGS.update({
     )
 })
 
-# d256 camort CONFIRMATION (s101, earned by the d64 pass): the judged
-# thp2 sigma_c cell + the mixture knob, one lever, SAME fractions as the
-# d64 camort grid (n+/256 = 128/120/112/96/80, all integral) so it is a
-# size confirmation of the judged design, not a new one — deliberately
+# d256 camort CONFIRMATION: the thp2 sigma_c cell + the mixture knob, one
+# lever, SAME fractions as the d64 camort grid (n+/256 = 128/120/112/96/80,
+# all integral) so it is a
+# size confirmation of the d64 design, not a new one — deliberately
 # NOT the soft chapter's randomised draw set: hard has no conditioning
 # channel to interpolate, cross-slice generalisation rides the physics,
 # and a confirmation must not move the grid. The d256 null's 0.019
@@ -4087,12 +4053,12 @@ CONFIGS["H2_d256_camort_s220_letf_thp2_100k_curr"] = replace(
 )
 
 
-# --- 20x20 radius probe (w4, 2026-08-27) ---------------------------------
+# --- 20x20 radius probe (w4) ---------------------------------
 #
 # THE QUESTION. Two things at once, deliberately: does the two-hole patch
 # head hold up one rung above 16x16, and does its one architectural knob
 # keep paying there? At d256 the radius bought more than any other lever in
-# the campaign -- R=1 -> R=2 took the exact-sigma_c EMA eval ESS fraction
+# the hard ladder -- R=1 -> R=2 took the exact-sigma_c EMA eval ESS fraction
 # from 0.638 +- 0.029 to 0.826 +- 0.015 for +4% step time -- so whether that
 # continues is the cheapest question worth asking at a new size.
 #
@@ -4119,7 +4085,7 @@ CONFIGS["H2_d256_camort_s220_letf_thp2_100k_curr"] = replace(
 # d256, four orders under its clamp) and events/site/step (0.0005 at the
 # floor against a 0.1 cap).
 #
-# LOSS MICROBATCHING OFF, ON MEASUREMENT. Profiled 2026-08-27 on a Modal
+# LOSS MICROBATCHING OFF, ON MEASUREMENT. Profiled on a Modal
 # A100-80GB -- the same card class as the DoC a100 partition, which is what
 # makes the number transferable -- one train step over 512 rows, compiled:
 # R=2 peaks 58.25 GB at 0.375 s, R=3 peaks 63.41 GB at 0.400 s, against a
@@ -4145,7 +4111,7 @@ def _d400_radius_cell(arm: str) -> HardStageCfg:
     """One 20x20 floor cell: _ARM_B with the lattice, the flat 0.10 coupling
     and the arm's radius, and nothing else. The tripwire is cleared for the
     same reason it is on every d256 house cell -- it is _ARM_B's screening
-    verdict and a silent truncation on a production run."""
+    halt and a silent truncation on a production run."""
     cell = replace(
         _ARM_B,
         name=f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4",
@@ -4193,7 +4159,7 @@ def _d400_bf16_cell(arm: str) -> HardStageCfg:
     )
 
 
-# --- 20x20 at the critical coupling (2026-08-29) --------------------------
+# --- 20x20 at the critical coupling --------------------------
 #
 # THE QUESTION THE FLOOR RUNG COULD NOT ANSWER. The sigma = 0.10 wave came
 # back with every cell ON the sampling floor -- raw ESS 0.988-0.9995 across
@@ -4219,8 +4185,8 @@ def _d400_bf16_cell(arm: str) -> HardStageCfg:
 # Critical slowing down is what makes the chain expensive, so the competitive
 # comparison the chapter wants only exists at sigma_c.
 #
-# THE FLOOR RUNG WAS THE PRE-REGISTERED GATE FOR THIS, AND IT OPENED. Its own
-# registry block above `_d400_radius_cell` says the floor cell "separates the
+# THE FLOOR RUNG WAS THE PRECONDITION FOR THIS, AND IT WAS MET. Its own
+# comment block above `_d400_radius_cell` says the floor cell "separates the
 # two ways this rung can fail": a RATE-LOAD failure leaves the floor clean and
 # sigma_c broken, a statistical failure breaks both. The floor read clean at
 # BOTH radii, so the matching step carries d = 400 and the remaining risk is
@@ -4251,9 +4217,9 @@ def _d400_critical_cell(arm: str) -> HardStageCfg:
     """One 20x20 sigma_c cell: its sigma = 0.10 sibling moved to the exact
     critical coupling, on the reused sigma ladder, for 100k steps.
 
-    Decision (c) -- factorised arms train EAGER at exact sigma_c, because
-    factorised x compile x sigma_c produced catastrophic seeds at ~40% -- does
-    NOT reach here. Both arms are patch heads, so they keep the optimised
+    The eager exception -- factorised arms train EAGER at exact sigma_c,
+    because factorised x compile x sigma_c produced catastrophic seeds at
+    ~40% -- does NOT reach here. Both arms are patch heads, so they keep the optimised
     recipe's compiled step; pinned by
     test_every_new_probe_cell_rides_the_optimised_recipe.
     """
@@ -4296,10 +4262,10 @@ def _d400_critical_bf16_cell(arm: str) -> HardStageCfg:
     )
 
 
-# --- 24x24 at the critical coupling (2026-09-03) --------------------------
+# --- 24x24 at the critical coupling --------------------------
 #
 # THE QUESTION. One rung further than 20x20, on the recipe 20x20 measured,
-# with the head's one knob pushed one notch. The d400 sigma_c wave OVERTURNED
+# with the head's one knob pushed one notch. The d400 sigma_c wave reversed
 # the floor rung's radius null: R=3 read EMA ESS 0.789-0.810 against R=2's
 # 0.633-0.731, DISJOINT over six seeds per radius, with the +16% forward
 # premium fully absorbed (FLOP/es 1.4e11 both radii). So R=3 is the anchor
@@ -4313,7 +4279,7 @@ def _d400_critical_bf16_cell(arm: str) -> HardStageCfg:
 # swept. Pairing a width change with the radius on the only wave this rung
 # gets would make neither read chargeable.
 #
-# bf16 ONLY, no fp32 twin (standing rule since the 20x20 close-out): the
+# bf16 ONLY, no fp32 twin: the
 # precision quality question read null at BOTH d400 couplings and the cost
 # half is settled end-to-end (-21% to -27%, 4/4 matched seeds).
 #
@@ -4361,7 +4327,7 @@ def _d576_critical_bf16_cell(arm: str) -> HardStageCfg:
     )
 
 
-# --- Arm A: the whole-lattice attention window (2026-08-27) --------------
+# --- The whole-lattice attention window (`mal`) --------------
 #
 # THE UNBUILT CELL. The head construction is a 2 x 2 x 2 -- feature family
 # {unary, bond} x window {band, global} x weights {uniform, learned} -- and
@@ -4417,14 +4383,14 @@ CONFIGS.update({
 })
 
 
-# --- Relative pair position code (`mar`, 2026-08-28) ---------------------
+# --- Relative pair position code (`mar`) ---------------------
 #
 # WHY THIS ARM AND NOT ANOTHER WINDOW ONE. The whole-lattice window (`mal`)
 # won at the 4x4 gate on disjoint seeds and came back NULL at 8x8 -- 0.831
 # +- 0.030 EMA against `ma`'s 0.846 +- 0.022 at sigma_c, overlapping and on
 # the wrong side, with Var[log w] worse (0.187 vs 0.164). At 8x8 the interval
 # already covers most of the lattice, so widening it adds little and dilutes
-# the softmax, exactly as the parked note warned. The window is not the
+# the softmax, exactly as the field comment warned. The window is not the
 # lever.
 #
 # What is left is the position code. `ma` indexes `pair_position_embedding`
@@ -4454,7 +4420,7 @@ CONFIGS.update({
 })
 
 
-# --- Periodic-RoPE backbone under the masked-attention head (2026-08-28) ---
+# --- Periodic-RoPE backbone under the masked-attention head ---
 #
 # The last untested layer of the raster head's position code. Three arms have
 # now come back null or negative on this head -- the whole-lattice window
@@ -4486,7 +4452,7 @@ CONFIGS.update({
 #
 # PRIOR IS STILL A NULL, and the chapter's own variance decomposition says
 # so: a change that is positional rather than local should not move the
-# estimator. A null is therefore cheap information (it closes the position
+# estimator. A null is therefore cheap information (it settles the position
 # code as a family, on the head where it was most likely to matter); a lift
 # would be the first non-null on this head and would reopen the backbone.
 #
@@ -4552,7 +4518,7 @@ CONFIGS.update({
 })
 
 
-# --- Arm B: bonds in the global term (4x4 gate, 2026-08-28) --------------
+# --- Bonds in the global term (4x4 gate) --------------
 #
 # `fimo2ef` = bilinear exterior (two causal orderings) + global term (UNARY
 # only) + prefix band (unary AND bond, but LOCAL to the interval). So bonds
@@ -4566,22 +4532,24 @@ CONFIGS.update({
 # density?
 #
 # THREE CELLS, one question each.
-#   B1  bonds added                     -- does the exterior bond sum help?
-#   B2  bonds added, ROW ORDERING ONLY  -- can bonds RETIRE the second causal
-#       ordering? That is the cost cell: orderings are a full extra backbone
-#       pass, where the global term and the band are O(1)-per-pair gathers.
-#   B0  no bonds, global term WIDENED   -- matched-parameter control.
+#   bond    bonds added                     -- does the exterior bond sum help?
+#   bond1o  bonds added, ROW ORDERING ONLY  -- can bonds RETIRE the second
+#           causal ordering? That is the cost cell: orderings are a full extra
+#           backbone pass, where the global term and the band are
+#           O(1)-per-pair gathers.
+#   wide    no bonds, global term WIDENED   -- matched-parameter control.
 #
-# WHY B0 IS NOT OPTIONAL EVEN AT 576 PARAMETERS. This campaign has been bitten
+# WHY THE WIDE CONTROL IS NOT OPTIONAL EVEN AT 576 PARAMETERS. The head ladder
+# has been bitten
 # by attributing a capacity effect to form: `fab16` at DOUBLE the bilinear
 # rank came in WORSE (0.5615), which is how the factorised price was read as
 # structural, and `fmp40` was the control that settled it. The bond family
 # adds 576 of the head's 138,482 at this size (+0.4%, because it SHARES the
 # band's feature modules rather than owning a copy), and global_feature_dim
-# 19 reproduces that to within 33 parameters -- so B0 is cheap and the
-# confound is closed rather than argued away.
+# 19 reproduces that to within 33 parameters -- so the control is cheap and
+# the confound is measured rather than argued away.
 #
-# WHAT A NULL WOULD AND WOULD NOT SETTLE, stated before the run. The interval
+# WHAT A NULL WOULD AND WOULD NOT SETTLE. The interval
 # head -- one FLAT uniform sum over a pair-defined region -- reads 0.646 at
 # d64 against MA's 0.781 after being at parity at 4x4, and the chapter's
 # diagnosis is that a fixed sum "smears them into a total". A whole-lattice
@@ -4592,11 +4560,12 @@ CONFIGS.update({
 # alternative (bond features on the patch head's cumulative levels, giving a
 # radial profile) is deferred rather than dropped.
 #
-# THE GATE IS A FILTER, NOT A SIGNAL. `mal` separated on DISJOINT seeds at
-# 4x4 and REVERSED one rung up. So the pre-commitment is: a positive here
-# buys the d64 rung, never a row in print on its own.
-# The sigma_c parent is the EAGER twin, not the compiled one. Decision (c)
-# is d16-SPECIFIC and this gate is d16 at exact sigma_c: compiled training of
+# THE 4x4 GATE IS A FILTER, NOT A SIGNAL. `mal` separated on DISJOINT seeds
+# at 4x4 and REVERSED one rung up. So a positive here motivates the d64 rung,
+# never a reported row on its own.
+# The sigma_c parent is the EAGER twin, not the compiled one. The eager
+# exception is d16-SPECIFIC and this gate is d16 at exact sigma_c: compiled
+# training of
 # the factorised chassis at criticality produced catastrophic seeds at ~40%
 # there (5/12 against 0/21 elsewhere, Fisher p=0.0033), which at three seeds
 # per arm would read as a null rather than as a broken run. At d64 the same
@@ -4608,7 +4577,8 @@ _ARM_B_PARENTS = {
     "s010": "H2_d16_c50_s010_letf_fimo2ef_10k_w2",
     "s220": "H2_d16_c50_s220_letf_fimo2ef_10k_w2e",
 }
-# global_feature_dim matching B1's +576 to within 33 parameters (138,482 ->
+# global_feature_dim matching the bond arm's +576 to within 33 parameters
+# (138,482 ->
 # 139,058 with bonds, 139,091 widened) at the 4x4 gate's width.
 _ARM_B_MATCHED_GLOBAL_DIM = 19
 _ARM_B_ARMS: dict[str, dict] = {
@@ -4631,36 +4601,38 @@ CONFIGS.update({
 })
 
 
-# --- Arm B at the 8x8 rung: the DISCRIMINATING scale (2026-08-28) --------
+# --- Bonds in the global term at the 8x8 rung: the DISCRIMINATING scale ---
 #
-# The 4x4 gate put B2 (bonds + a single causal ordering) at 0.9107 +- 0.0481
-# against the baseline's 0.8511 +- 0.0423, with the matched-parameter control
-# B0 WORST at 0.7781 +- 0.1210 -- so the lift is not width. But at 4x4 the
+# The 4x4 gate put bond1o (bonds + a single causal ordering) at 0.9107 +-
+# 0.0481 against the baseline's 0.8511 +- 0.0423, with the matched-parameter
+# wide control WORST at 0.7781 +- 0.1210 -- so the lift is not width. But at
+# 4x4 the
 # seed spread is +-0.04 and the arms overlap; at 8x8 the same baseline reads
 # 0.8427 +- 0.0089 raw / 0.8825 +- 0.0069 EMA, a spread FIVE TIMES tighter.
 # That is the whole reason this rung exists: 4x4 filters, 8x8 discriminates.
 # (`mal` separated on disjoint seeds at 4x4 and REVERSED here.)
 #
-# THE CONTROL THE GATE LACKED, and why it is not optional. B2 changes TWO
+# THE CONTROL THE GATE LACKED, and why it is not optional. bond1o changes TWO
 # things against the baseline -- it adds bonds AND drops the second causal
-# ordering -- so a B2 win at 4x4 cannot say which did the work. B3 walks back
-# exactly one of them:
+# ordering -- so a bond1o win at 4x4 cannot say which did the work. The 1o
+# arm walks back exactly one of them:
 #
 #     baseline (2 orderings, no bonds)
 #         |  what does dropping the second ordering COST?
-#     B3  (1 ordering,  no bonds)
+#     1o       (1 ordering,  no bonds)
 #         |  do bonds RECOVER it?
-#     B2  (1 ordering,  + bonds)
+#     bond1o   (1 ordering,  + bonds)
 #
-# and baseline -> B2 asks whether bonds EXCEED it at lower cost. The cost
+# and baseline -> bond1o asks whether bonds EXCEED it at lower cost. The cost
 # story is the point: an ordering is a full extra backbone pass, where the
 # bond family is an O(1)-per-pair gather sharing the band's own modules.
 #
-# B2 vs B3 is also the comparison that survives a venue change, which the
+# bond1o vs 1o is also the comparison that survives a venue change, which the
 # archived baseline does not: those three seeds ran on a DoC A30. Run all
 # three arms on ONE card and every comparison is within-venue.
 #
-# RECIPE: compiled, unlike the 4x4 cells. Decision (c) is d16-SPECIFIC --
+# RECIPE: compiled, unlike the 4x4 cells. The eager exception is
+# d16-SPECIFIC --
 # at d64 compiled reads marginally HIGHER than eager with zero catastrophic
 # seeds in six sigma_c factorised cells, and eager costs ~50% more per step.
 # The parent is the compiled `_w2` cell for that reason.
@@ -4669,7 +4641,7 @@ CONFIGS.update({
 # 0.9976-0.9986) and cannot discriminate.
 _ARM_B_D64_PARENT = "H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2"
 _ARM_B_D64_ARMS: dict[str, dict] = {
-    # B1: the arm's ACTUAL hypothesis -- does the exterior bond sum help, on
+    # bond: the ACTUAL hypothesis -- does the exterior bond sum help, on
     # the standard two-ordering chassis? It read a null at the 4x4 gate
     # (0.8546 +- 0.0640 against 0.8511 +- 0.0423) and is carried here anyway,
     # because that gate cannot discriminate in EITHER direction: `mal`
@@ -4677,17 +4649,17 @@ _ARM_B_D64_ARMS: dict[str, dict] = {
     # null reversing the other way. Pruning on gate evidence would be the same
     # error that "a gate positive is not a result" guards against.
     "fimo2efb_50k_curr_bond": {"global_bond_features": True},
-    # B2: the arm the gate flagged -- bonds, second ordering retired.
+    # bond1o: the arm the gate flagged -- bonds, second ordering retired.
     "fiefb_50k_curr_bond1o": {
         "global_bond_features": True, "site_orderings": ("row",),
     },
-    # B3: the control that isolates it -- second ordering retired, NO bonds.
+    # 1o: the control that isolates it -- second ordering retired, NO bonds.
     "fief_50k_curr_1o": {"site_orderings": ("row",)},
 }
-# NOT run in this wave, deliberately SEQUENCED rather than skipped: the
+# NOT run, deliberately SEQUENCED rather than skipped: the
 # matched-parameter controls. The bond family adds 576 parameters (0.4%), and
-# a control is chassis-specific -- the two-ordering baseline widened for B1,
-# B3 widened for B2. The 4x4 B0 cell does NOT settle it: its seeds were
+# a control is chassis-specific -- the two-ordering baseline widened for bond,
+# 1o widened for bond1o. The 4x4 wide cell does NOT settle it: its seeds were
 # 0.6418/0.8196/0.8728, so dropping the outlier leaves ~0.846, sitting on the
 # baseline, and one low seed carried the whole mean. Capacity is UNTESTED,
 # not disfavoured. Run the control for whichever arm lifts here, before
@@ -4702,8 +4674,8 @@ CONFIGS.update({
 })
 
 
-# ARM C2 (2026-08-28): the interior cell that was UNBUILDABLE until today.
-# The interior is a 2x2 -- what the pooling may SEE (open interval, or the
+# BAND-ONLY INTERIOR: the interior cell a band without its own readout could
+# not express. The interior is a 2x2 -- what the pooling may SEE (open interval, or the
 # whole lattice bar the holes) crossed with how it WEIGHTS (uniformly, or
 # by a learned softmax) -- and a band could not run without a global term
 # because it had no readout of its own. So every band-carrying head also
@@ -4711,7 +4683,7 @@ CONFIGS.update({
 # ISOLATION at 16x16 is the learned one.
     #
 # WHAT IT ASKS. `fbil` -- bilinear exterior, NO global -- was seed-unstable
-# at the 4x4 gate, and the reading on record is "the global term
+# at the 4x4 gate, and the reading is "the global term
 # stabilises". That was measured with NO interior mechanism at all. If the
 # prefix band alone stabilises the bilinear exterior just as well, the
 # global term is not special: it is one of two interchangeable interior
@@ -4724,7 +4696,7 @@ CONFIGS.update({
 _BAND_ONLY_D64_ARMS = {
     "fimo2e_50k_curr_noglobal": {"use_global": False},
 # And the one-ordering twin, so the ordering axis is crossed with it
-# exactly as B3 crosses it with the baseline.
+# exactly as the 1o arm crosses it with the baseline.
     "fie_50k_curr_noglobal1o": {
         "use_global": False, "site_orderings": ("row",),
     },
@@ -4739,7 +4711,7 @@ CONFIGS.update({
 })
 
 
-# ARM C TRAJECTORY CHECK (2026-08-28). `separable_band_scores` computes the
+# SEPARABLE-SCORES TRAJECTORY CHECK. `separable_band_scores` computes the
 # masked-attention band's EXACT function -- forward agreement 1.5e-7 at
 # production shape, gradients matched parameter by parameter -- so quality
 # CANNOT move in exact arithmetic. This is not a quality arm and must never be
@@ -4747,14 +4719,15 @@ CONFIGS.update({
 #
 # WHAT IT DOES ASK: whether the TRAJECTORY it induces lands in the same
 # distribution of outcomes. 50k steps of a chaotic optimisation at the exact
-# critical coupling amplify a step-0 perturbation, and this campaign has the
-# receipt -- turning on `compile_head`, a ~1e-5-class numerics change and
+# critical coupling amplify a step-0 perturbation, and the head ladder has
+# the receipt -- turning on `compile_head`, a ~1e-5-class numerics change and
 # nothing more, made factorised cells at exact sigma_c produce catastrophic
-# seeds at ~40% (5/12 against 0/21, Fisher p = 0.0033). Arm C is the same
-# CATEGORY of change (contraction order, and no softmax shift) about 100x
+# seeds at ~40% (5/12 against 0/21, Fisher p = 0.0033). Separable scores are
+# the same CATEGORY of change (contraction order, and no softmax shift) about 100x
 # smaller.
 #
-# WHY IT IS WORTH THE GPU: arm C exists to make a WIDER MA at d256 affordable,
+# WHY IT IS WORTH THE GPU: separable scores exist to make a WIDER MA at d256
+# affordable,
 # and that experiment has not run. Without this check, a failure there cannot
 # be attributed -- width or numerics. This removes a confound from an
 # experiment not yet done, which is a better reason than flipping a default.
@@ -4767,7 +4740,7 @@ CONFIGS.update({
 # change that caused the catastrophes in the first place.
 #
 # SEEDS 42-47, and the extra three are not padding. Three seeds cannot rule
-# out a decision-(c)-style rate: P(0 of 3 clean | p = 0.4) = 0.6^3 = 22%, so a
+# out a ~40% catastrophic rate: P(0 of 3 clean | p = 0.4) = 0.6^3 = 22%, so a
 # clean trio has a one-in-five chance of missing it; 0.6^6 = 5%. Seeds 42-44
 # carry the like-for-like level read against the twin, 45-47 buy the power. A
 # catastrophic seed is self-evident (ESS collapses), so those three need no
@@ -4788,17 +4761,18 @@ CONFIGS.update({
 })
 
 
-# UNFACTORISED ORDERINGS, 8x8 at exact sigma_c (2026-08-28).
+# UNFACTORISED ORDERINGS, 8x8 at exact sigma_c.
 #
 # THE NARRATIVE THIS SERVES: build the strongest head with the MLP combiner,
 # THEN treat factorisation as an optimisation applied to it -- rather than as
-# a fork in the design, which is how the chapter reads today.
+# a fork in the design.
 #
 # WHY IT IS NOT RULED OUT. The recorded reason orderings were factorised-only
 # was a COVERAGE argument: they shrink the region no bilinear term sees to the
 # intersection of the per-ordering intervals, and the raster heads already
 # tile the lattice (prefix, band and suffix partition everything but the two
-# holes). Arm B refutes it -- `fimo2ef` carries a prefix band, tiles the
+# holes). The one-ordering arm above refutes it -- `fimo2ef` carries a
+# prefix band, tiles the
 # lattice too, and STILL loses 0.144 raw, DISJOINT, without its second
 # ordering. Coverage cannot be the mechanism.
 #
@@ -4821,12 +4795,12 @@ CONFIGS.update({
 # venue and seeds: `ma` reads 0.7593 / 0.7955 / 0.7893 raw and
 # 0.8213 / 0.8635 / 0.8527 EMA.
 # THE LADDER ROSTER, keyed by bare arm so ONE definition of what each arm IS
-# serves every rung (2026-08-28; was d64-only and keyed by full name suffix).
+# serves every rung.
 # Each cell is its `ma` sibling at the same size and coupling with only these
 # knobs replaced, so every step of the chain moves exactly one field and the
-# 8x8 anchors stay valid. The 8x8 critical names are unchanged by the
-# restructure -- they are the cells already run under 20260828-rasterord-d64,
-# and test_raster_ladder_roster_covers_both_rungs pins them.
+# 8x8 anchors stay valid. The 8x8 critical names are the cells run under
+# 20260828-rasterord-d64, and test_raster_ladder_roster_covers_both_rungs
+# pins them.
 _RASTER_LADDER_ARMS = {
     "mamo2": {"site_orderings": ("row", "col")},
     "mamo2ef": {
@@ -4842,7 +4816,7 @@ _RASTER_LADDER_ARMS = {
     },
 }
 
-# The 4x4 rung (2026-08-28). It is a GATE, not a ranking: the bare `ma` head
+# The 4x4 rung. It is a GATE, not a ranking: the bare `ma` head
 # already reads 0.997 at sigma=0.10 and 0.975 at sigma_c there, so the 0.150
 # ESS the ladder spans at 8x8 cannot fit in the 0.003 and 0.025 of headroom
 # left. What these cells buy is that the target is enumerable, so a head that
@@ -4850,9 +4824,8 @@ _RASTER_LADDER_ARMS = {
 # equivalent where the problem is easy and separate where it is hard. They
 # inherit the wave-2 gate chassis, which carries no EMA instrument.
 #
-# THE 8x8 FLOOR RUNG (2026-08-28) completes the sigma=0.10 column that
-# tab:eval-hard-8x8 currently prints as `--` and its caption declares
-# "queued rather than failed". The floor parent trains FLAT -- no `_curr`
+# THE 8x8 FLOOR RUNG completes the sigma=0.10 column of the 8x8 eval
+# table. The floor parent trains FLAT -- no `_curr`
 # infix, no sigma ladder -- so these cells are the flat-coupling `ma` cell
 # plus the roster knobs, exactly as the critical cells are the curriculum
 # one plus the same knobs.
@@ -4860,7 +4833,7 @@ _RASTER_LADDER_ARMS = {
 # WHAT THE COLUMN IS FOR, given every head there already sits between
 # 0.984 (`ma`) and 0.999 (`thp`). It is not a ranking: 0.015 of headroom
 # cannot hold the 0.150 the ladder spans at sigma_c. It is the CONTROL that
-# licenses the sigma_c reading -- a head that were simply better trained,
+# supports the sigma_c reading -- a head that were simply better trained,
 # rather than better matched to critical structure, would separate at both
 # couplings. Every other arm in the table carries both columns, so the
 # ladder's blank halves are the one place that argument cannot be made.
@@ -4869,7 +4842,7 @@ _RASTER_LADDER_PARENTS = {
     "H2_d64_c50_s010_letf_{arm}_50k_w2": "H2_d64_c50_s010_letf_ma_50k_w2",
     "H2_d16_c50_s010_letf_{arm}_10k_w2": "H2_d16_c50_s010_letf_ma_10k_w2",
     "H2_d16_c50_s220_letf_{arm}_10k_w2": "H2_d16_c50_s220_letf_ma_10k_w2",
-    # THE 16x16 RUNG (2026-08-30). The question is whether the ladder
+    # THE 16x16 RUNG. The question is whether the ladder
     # rescues the rung where the bare head FAILS: the archived d256 `ma`
     # sigma_c row is a three-seed failure (EMA ESS 0.0035/0.0422/0.0002,
     # two seeds converge cleanly to an unusable optimum, one diverges),
@@ -4888,7 +4861,7 @@ _RASTER_LADDER_PARENTS = {
         "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3",
 }
 
-# THE FLOOR RUNG RUNS SEPARABLE (2026-08-28), and every new
+# THE FLOOR RUNG RUNS SEPARABLE, and every new
 # masked-attention cell does from here. `separable_band_scores` computes the
 # band's EXACT function -- forward agreement 1.5e-7 at production shape,
 # gradients matched parameter by parameter -- for 3.11x the training step
@@ -4898,8 +4871,8 @@ _RASTER_LADDER_PARENTS = {
 # IT IS A RUNG KNOB, NOT AN ARM KNOB, and that distinction is load-bearing.
 # The sigma_c and 4x4 patterns above are ALREADY RUN dense under
 # 20260828-rasterord-d64; putting the flag in _RASTER_LADDER_ARMS would
-# silently redefine configs whose numbers are already printed in
-# tab:eval-hard-8x8, and the byte-identity those runs were verified against
+# silently redefine configs whose numbers are already reported in the 8x8
+# eval table, and the byte-identity those runs were verified against
 # would go with it.
 #
 # IT REACHES THE ATTENTION ARMS ONLY. The prefix-sum band has no score
@@ -4913,9 +4886,9 @@ _RASTER_LADDER_PARENTS = {
 _RASTER_LADDER_RUNG_KNOBS = {
     "H2_d64_c50_s010_letf_{arm}_50k_w2": {"separable_band_scores": True},
     # The d256 rungs run separable, and the triu gather RIDES TRUE from the
-    # parent. Gather-off was tried first (2026-08-30) on the B=128 verdict
+    # parent. Gather-off was tried first on the B=128 bench
     # (separable alone 52.1 ms / 6.99 GB vs 82.3 / 8.95 with the gather)
-    # and OOM'd a 183 GB B200 at step 0: that verdict prices the TRAINING
+    # and OOM'd a 183 GB B200 at step 0: that bench prices the TRAINING
     # STEP at the microbatch slice, while the ROLLOUT runs the head at the
     # full batch 512 unsliced, where the ungathered pair slab is
     # (512, 256, 256, 144) fp32 = 18 GiB per forward and the client peaks
@@ -4998,7 +4971,7 @@ CONFIGS.update({
 
 
 # ---------------------------------------------------------------------------
-# Cu-Au alloy rungs (s115, 2026-09-02): the canonical sampler on a real
+# Cu-Au alloy rungs: the canonical sampler on a real
 # cluster expansion -- the MetaDNS/Damewood Cu-Au fcc expansion exported to
 # data/ce/ (experiments/alloy_ce/export_binary_expansion.py). `sigma` is
 # beta/2 = 1/(2 k_B T) in 1/eV, so the temperature curriculum runs 1200 K ->
@@ -5067,7 +5040,7 @@ for _sites, _steps, _ne, _n_eval, _chunk, _hidden, _layers in (
         )
 
 
-# Desk-check wave on the c=0.5 identity-flow collapse (s117, 2026-09-02). The
+# Desk-check wave on the c=0.5 identity-flow collapse. The
 # archived H2_cuau16_c50 cell collapses at the 1200 -> 800 K step: its loss
 # settles at Var_uniform-slice[beta E] (1.86 / 3.32 / 4.77 at 800 / 600 / 500 K)
 # and its eval samples are uniform slice draws, i.e. every swap rate shrank
@@ -5105,7 +5078,7 @@ for _variant, _curriculum, _train_overrides, _ising_overrides in (
         ising=replace(_CUAU16_C50_CONTROL.ising, **_ising_overrides),
     )
 
-# Follow-up on the desk-check verdict (s117, 2026-09-02): lr 1e-4 from the
+# Follow-up on the desk-check wave: lr 1e-4 from the
 # first step down rescued c=0.5 in 2/2 seeds (eval ESS 0.29 / 0.34, IS F
 # within 0.6 meV/site, train ESS still rising at 10k); the six-stage ladder
 # alone rescued 1/2; rewarm, keepreplay and 500 K-from-init stayed at the
@@ -5125,13 +5098,13 @@ for _variant, _ladder, _n_steps in (
     )
 
 
-# House-strength Cu-Au cells (s117, 2026-09-02): the 16-site gate was run at
+# House-strength Cu-Au cells: the 16-site gate was run at
 # a quarter of the 8x8 Ising house recipe (10k steps, ne50, no EMA, four
 # stages) and c=0.5 collapsed at its first temperature step. These cells
 # give the alloy exactly what H2_d64_c50_s220_letf_mo_50k_curr_w2 gets:
 # 50k steps, ne128, EMA 0.9999, a seven-stage ladder (linear in beta from
 # 1200 K to 500 K, so the 1200 -> 800 K ordering step is crossed in two
-# stages), and -- the desk-check verdict -- lr 1e-4 from the first step
+# stages), and -- the desk-check finding -- lr 1e-4 from the first step
 # down, since lr 1e-3 there shrinks every swap rate to the identity flow.
 def _cuau_house_ladder(n_stages=7, T_hot=1200.0, T_cold=500.0, lr_hot=1e-3, lr_cold=1e-4):
     beta_hot, beta_cold = 1.0 / T_hot, 1.0 / T_cold
@@ -5149,7 +5122,7 @@ for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
         ctmc=replace(_control.ctmc, n_euler_steps=128),
     )
 
-# Composition sweep for the 16-site canonical F(c) (s123, 2026-09-04): the
+# Composition sweep for the 16-site canonical F(c): the
 # house c=0.5 recipe (lr cut, seven rungs, 50k, ne128, EMA) at every slice
 # between the two ordered phases, n_Au = 5, 6, 7 of 16, so that F(c) is read
 # off each cell's weights at five compositions against exact enumeration of
@@ -5164,12 +5137,12 @@ for _c, _c_tag in ((0.3125, "c31"), (0.375, "c38"), (0.4375, "c44")):
     )
 
 
-# Composition-amortised 16-site cell (s123, 2026-09-04): the house c=0.5
+# Composition-amortised 16-site cell: the house c=0.5
 # recipe with the slice mixture as the ONLY moved field, over every slice
 # between the two ordered phases (n_Au = 8, 7, 6, 5, 4 of 16; anchor 0.5
 # first). One checkpoint then reads F(c) at all five compositions against
 # exact enumeration, with the specialist sweep above as the per-slice
-# control -- the alloy twin of the Ising amortisation campaign.
+# control -- the alloy twin of the Ising amortisation cells.
 _CUAU16_HOUSE = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]
 CONFIGS["H2_cuau16_camort_T500_mask_one_50k_house"] = replace(
     _CUAU16_HOUSE, name="H2_cuau16_camort_T500_mask_one_50k_house",
@@ -5178,8 +5151,8 @@ CONFIGS["H2_cuau16_camort_T500_mask_one_50k_house"] = replace(
 
 
 # The 64-site cells (4x4x4 primitive repeats = the MetaDNS benchmark cell)
-# take the same ladder, lr cut and EMA in place: their s115 registration
-# still carried the four-stage ladder with lr 1e-3 at the 800 K step.
+# take the same ladder, lr cut and EMA in place: their first definition
+# above still carries the four-stage ladder with lr 1e-3 at the 800 K step.
 for _c_tag in ("c25", "c50"):
     _name = f"H2_cuau64_{_c_tag}_T500_mask_one_50k_curr"
     CONFIGS[_name] = replace(
@@ -5187,7 +5160,7 @@ for _c_tag in ("c25", "c50"):
         curriculum=_cuau_ladder(_cuau_house_ladder(), 50_000),
     )
 
-# Two-hole patch twins of the 64-site cells (s122, 2026-09-03). The mask-one
+# Two-hole patch twins of the 64-site cells. The mask-one
 # head at 64 sites measured 3.76 s/step on an A100 (in-training eval 66% of
 # it, inner update 0.67 s) and was killed at step 9k; the patch cell measured
 # 0.048 s/step with a one-shell window (bench_cell_step.py). Two declared
@@ -5209,7 +5182,7 @@ for _c_tag in ("c25", "c50"):
         eval=replace(_parent.eval, n_eval_samples_training=256),
     )
 
-# Revival arms for the 64-site cells (s122 night, 2026-09-04). The first thp
+# Revival arms for the 64-site cells. The first thp
 # wave ordered c=0.25 (samples at the L1_2 ground state, ESS 0.17-0.20 from
 # path weight noise alone) and gave up on c=0.5 gradually: end-of-stage loss
 # / static-flow loss 0.12, 0.30, 0.50, 0.80, ~1.0 from the 818 K stage down,
@@ -5240,7 +5213,7 @@ for _c_tag, _variant, _n_stages, _n_steps, _n_euler in (
     )
 
 
-# MetaDNS temperature-grid cells (s123, 2026-09-04). MetaDNS reports its
+# MetaDNS temperature-grid cells. MetaDNS reports its
 # 4x4x4 Cu-Au cell at 1200, 680 and 500 K; the revival wave left 500 K at
 # c=0.5 out of reach (every ladder x trajectory arm dead, loss/static ~1 by
 # 500 K), so the 64-site rows are reported on the comparator's own grid with
@@ -5262,7 +5235,7 @@ for _c_tag in ("c25", "c50"):
         )
 
 
-# Fresh-trajectory probe (s117): the 20k lr-cut cell reached ESS 0.79 where
+# Fresh-trajectory probe: the 20k lr-cut cell reached ESS 0.79 where
 # 10k gave 0.34, and MetaDNS trains on ~200x more distinct rollouts than our
 # 10k cell (fresh batch every outer step vs 100 inner steps per rollout).
 # Same 10k gradient steps, two ways to get trajectories in: five times the
@@ -5278,7 +5251,7 @@ CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512"] = replace(
 )
 
 
-# Exact-field channel twins on the hard alloy cells (s117): the swap channel
+# Exact-field channel twins on the hard alloy cells: the swap channel
 # now reads the target's own swap log-ratio (-beta Delta E_swap on an
 # expansion), one declared change from the c=0.5 recipe cells.
 for _parent_name in ("H2_cuau16_c50_T500_mask_one_20k_lowlr",

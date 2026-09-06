@@ -1,9 +1,9 @@
 #!/bin/zsh
-# 64-site Cu-Au MetaDNS grid (s123, 2026-09-04), Modal A100-80GB, tag 20260904-cuau64-grid.
+# 64-site Cu-Au MetaDNS grid, Modal A100-80GB, tag 20260904-cuau64-grid.
 # Revival left c=0.5 dead at 500 K on every ladder x trajectory arm; report 1200 / 680 K
 # with the ladder stopped there (configs.py), 500 K as the limit. Hard c25/c50 use the
 # two-hole patch head, free A1 the flip head; three seeds each (18 cells, ~$1 each).
-cd /Users/mitchcrabb/Documents/Imperial/Modules/Dissertation/msc-dissertation-dnfs
+cd "$(dirname "$0")/../../.."
 M=.pixi/envs/dev/bin/modal
 T=20260904-cuau64-grid
 H=experiments/constrained_hard_03/modal_app.py

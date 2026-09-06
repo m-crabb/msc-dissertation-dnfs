@@ -7,17 +7,16 @@
 #SBATCH --time=16:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# M3 mechanism cell (M-campaign Task 3, plan 2026-08-14): user authorised
-# launch WITHOUT waiting for cv2's band; compare ARCHIVED naive 50k run's
-# first 12k at matched steps. Smoke12k Arm-B naive recipe with c_t_batch
-# 128 -> 512 the ONLY declared change (cell comment
-# in configs.py; twin-ness pinned by
-# test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields). c_t's
+# c_t_batch mechanism cell: the smoke12k naive recipe with c_t_batch
+# 128 -> 512 the ONLY declared change (cell comment in configs.py;
+# twin-ness pinned by
+# test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields), read
+# against the ARCHIVED naive 50k run's first 12k at matched steps. c_t's
 # per-slot standard error halves (variance /4) while the inner batch and
-# replay buffer stay at 128. Frozen bands: MEANINGFUL = train-ESS median on
+# replay buffer stay at 128. Expected: meaningful = train-ESS median on
 # the sigma=0.17 rung (steps 10k-12k) >= 2x the archived naive run's at the
 # same steps, OR the logged per-slot var_estimator_integrand down >= 2x.
-# NEVER bundle with M2 — one lever per cell. Cost ~5 h a100 (trajectory
+# Never bundle with the c_t EMA lever — one lever per cell. Cost ~5 h a100 (trajectory
 # phase +2.25x on ~75% of wall); the no-grad MA pass at B=512 peaks ~20 GB,
 # in-cap on the 80 GB a100. Fixed --tag so a resubmission resumes.
 export CONDA_OVERRIDE_CUDA=12.9

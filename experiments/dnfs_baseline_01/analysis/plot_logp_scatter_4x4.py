@@ -1,12 +1,12 @@
 """Per-configuration exact-recovery scatter, UNCONSTRAINED 4x4 (app:logp-scatters).
 
-ARCHIVED FIGURE (6 September 2026). The rationale below is historical:
+ARCHIVED FIGURE. The rationale below is historical:
 DNFS path weights cannot generally be inverted into an endpoint log-density.
 For configuration-probability validation use scripts/configuration_calibration_4x4.py
 and scripts/plot_configuration_calibration_4x4.py instead. This script remains
 only to reproduce the retired image, whose density interpretation was incorrect.
 
-The house tables deliberately exclude TV/KL over configurations; the agreed
+The house tables deliberately exclude TV/KL over configurations; the
 replacement at enumerable sizes is this scatter, one section per results
 chapter. This is the unconstrained chapter's section; the hard chapter's
 counterpart is experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py
@@ -35,9 +35,9 @@ this the stronger exhibit of the two: every state the sampler can emit has an
 exact probability, with no slice to condition on.
 
 Panels are the chapter's two operating points. The sigma_c panel reads the
-Wave-1 `_sc` retrains at the ONE critical coupling SIGMA_C = 0.220343 (they
-passed their pre-registered bands 4/4, final fp32 5000-draw eval ESS
-0.986 +- 0.004 against a 0.93 floor); the sigma = 0.1 panel is untouched by
+Wave-1 `_sc` retrains at the ONE critical coupling SIGMA_C = 0.220343 (final
+fp32 5000-draw eval ESS 0.986 +- 0.004 over an expected floor of 0.93, 4/4
+seeds); the sigma = 0.1 panel is untouched by
 that migration and reads the original family. Never mix couplings in one
 comparison.
 """

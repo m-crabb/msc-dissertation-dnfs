@@ -7,7 +7,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Lambda-sweep exact-field-channel twins (s90, 2026-08-29): rerun
+# Lambda-sweep exact-field-channel twins: rerun
 # tab:soft-lambda-sweep with the closed-form flip channel, one declared
 # change per cell (pinned by tests/test_exact_flip_channel.py). One job per
 # (lattice, lambda) config with seeds 42-45 chained on the one card: the
@@ -22,7 +22,7 @@
 # The comma form chains several configs on one card — used for the four d4
 # cells (~12 min each, all four ~1 h) because the cluster's
 # QOSMaxSubmitJobPerUserLimit counts 8 QUEUED jobs per user and one-job-per-
-# config left no slots for the two heaviest d10 rows (hit 2026-08-29).
+# config left no slots for the two heaviest d10 rows.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

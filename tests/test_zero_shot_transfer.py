@@ -133,7 +133,7 @@ def test_early_stopped_weights_target_the_intermediate_coupling(stop_time):
 
     t* = 0.4538 is the stopping time that lands on sigma = 0.1 for a sigma_c
     path — the one intermediate coupling with a certified d256 reference, so
-    this is the point the production probe will be judged at.
+    this is the point the production probe is evaluated at.
 
     Tolerance is 4 standard errors of the self-normalised estimator, computed
     from the run's own effective sample size rather than assumed: an untrained
@@ -225,7 +225,7 @@ def test_slice_enumeration_has_the_binomial_size():
 def test_exact_statistics_obey_the_z2_mirror():
     """The slice at c and at 1-c are exact global-spin-flip images, and every
     observable here is even under that flip, so the enumerated values must
-    match. Zero-cost control on the reference the probe is judged against."""
+    match. Zero-cost control on the reference the probe is scored against."""
     for composition in (0.25, 0.375):
         low = exact_slice_statistics(D, SIGMA, composition, stop_time=1.0)
         high = exact_slice_statistics(D, SIGMA, 1.0 - composition, stop_time=1.0)
@@ -285,7 +285,7 @@ def test_training_side_drift_is_reported_not_fatal():
     swallowing it.
 
     Live case this encodes: `halt_on_cv_inversion_after` was cleared to None
-    after the thp2 sigma_c cells launched. It is a cold-CV screening halt that
+    after the thp2 sigma_c cells had started. It is a cold-CV screening halt that
     never fired on them, and run.py's whole-config launch guard would refuse
     every one of those checkpoints over it.
     """

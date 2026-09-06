@@ -14,7 +14,7 @@ degenerates.
 Why the existing grid analysis does not answer this. That study reanalysed
 already-recorded 128-step rollouts, comparing 128 against subsampled 64/32
 and warped-64 grids. Every arm it could construct had at most 128 points,
-so its negative verdict is about ALLOCATION at a fixed budget. RESOLUTION
+so its negative result is about ALLOCATION at a fixed budget. RESOLUTION
 -- more points than the run used -- was never testable from those
 artefacts and has never been measured in either direction.
 

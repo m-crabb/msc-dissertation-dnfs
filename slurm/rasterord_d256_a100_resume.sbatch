@@ -18,7 +18,7 @@
 # on the Mac. run.py skips only LOCAL eval/metrics.json: a 42/43/44 loop
 # would retrain unstaged completed seeds. Supply only the staged pairs.
 #
-# SAME-VENUE CAVEAT FOR JUDGING: these cells trained partly on a B200 under
+# SAME-VENUE CAVEAT: these cells trained partly on a B200 under
 # MPS and finish on an A100. Quality reads (ESS, weight variance) carry;
 # nothing timing-shaped from these runs is quotable, same rule as the MPS
 # packs they resume from. Cross-hardware frozen-eval drift is ~1%

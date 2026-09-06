@@ -25,7 +25,7 @@ where two images of the same site are both in range and both count.
 
 Sources:
   --source clease  the MetaDNS Cu-Au expansion (CLEASE 1.1.0 format; run in
-                   the scratchpad venv that has clease installed)
+                   a venv that has clease installed)
   --source icet    the square-grid Cu/Au toy expansion in icet-ce/ (pixi env)
 
 Spin convention in the JSON: s = +1 is species[1] (Au), s = -1 is species[0]

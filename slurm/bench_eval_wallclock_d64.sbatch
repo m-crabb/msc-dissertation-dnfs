@@ -7,9 +7,9 @@
 #SBATCH --time=00:45:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Eval-phase wall-clock bench (s100): both sampling paradigms' frozen-eval
-# chunk timed on ONE GPU -- the latency counterpoint's measurement (s93:
-# FLOP/es prices arithmetic, not the AR policy's d sequential one-token
+# Eval-phase wall-clock bench: both sampling paradigms' frozen-eval
+# chunk timed on ONE GPU -- the latency counterpoint's measurement
+# (FLOP/es prices arithmetic, not the AR policy's d sequential one-token
 # kernels). Same partition as the GFN launch gate (a30) so the numbers sit
 # on the stack the d64 GFN wave actually ran on. Writes
 # results/03_hard/eval_wallclock_bench_d64/wallclock.json -- pull that file

@@ -1,7 +1,7 @@
 """What correct looks like for the matched-base amortised soft design.
 
-Plan: docs/plans/2026-08-31-soft-camort-matched-base.md. The design turns
-one flag (`base_matches_composition`) on IsingTarget: when set, the base
+The design turns one flag (`base_matches_composition`) on IsingTarget:
+when set, the base
 distribution eta reads the composition the run is conditioned on — the
 bound per-cycle vector during amortised training, else the target's own
 scalar c* — instead of the static `base_composition`. Motivated by the
@@ -14,7 +14,7 @@ Failure modes these tests exist to catch:
    scoring row b against row b''s c never raises, it just trains the
    wrong thing (the b-major rule, composition.py). Pinned against a
    brute-force per-site product.
-2. DRAW/PATH DISAGREEMENT. The pre-de9db7c eval bug class: x0 drawn from
+2. DRAW/PATH DISAGREEMENT. The archived-eval bug class: x0 drawn from
    one base while the path density assumes another (a silent 6.9-nat
    log w0 hole at d=64). With the flag, draw and path share one binding;
    pinned by the endpoint identity log p_tilde_0 == base_log_eta on
@@ -233,7 +233,7 @@ def test_d8_camort_cell_is_three_declared_levers_off_house_centre(
         if parent["model"][key] != cell["model"][key]
     }
     assert model_diff == {"condition_on_composition"}, model_diff
-    # The quantised continuum (s101 post-gate amendment): every
+    # The quantised continuum: every
     # realisable composition in [0.25, 0.5] at d=64, uniform draw.
     assert cell["composition"]["values"] == tuple(
         sites / 64 for sites in range(16, 33))
@@ -246,9 +246,10 @@ def test_d8_camort_cell_is_three_declared_levers_off_house_centre(
 
 @pytest.mark.parametrize("sigma_suffix", ["", "_sc"])
 def test_d8_camort_spine3_is_one_lever_off_the_17_value_cell(sigma_suffix):
-    """The draw-set ablation (s104): the 17-value cell trained healthy at
-    sigma=0.1 but DEAD 4/4 at sigma_c, and the D=4 gate that authorised the
-    design ran at sigma=0.1 with the 3-value spine — so "mixed draws at
+    """The draw-set ablation: the 17-value cell trained healthy at
+    sigma=0.1 but collapsed on all four seeds at sigma_c, and the D=4 cell
+    that motivated the design ran at sigma=0.1 with the 3-value spine — so
+    "mixed draws at
     criticality" and "the post-gate densification to 17 values" are
     confounded in the dead cell. This twin separates them with ONE lever:
     the draw set back to the gate's spine {0.25, 0.375, 0.5}, everything
@@ -272,7 +273,7 @@ def test_d8_camort_spine3_is_one_lever_off_the_17_value_cell(sigma_suffix):
 
 
 def test_d8_camort_spine1_is_one_lever_off_spine3_sc():
-    """Collapse-mechanism twin (s106): spine3 sc died identically to the
+    """Collapse-mechanism twin: spine3 sc collapsed identically to the
     17-value cell, so mixture cardinality is exonerated and the remaining
     split is machinery-vs-mixture. spine1 keeps the FULL amortised machinery
     (conditioning channel, matched base, per-cycle draw-and-bind) at a
@@ -294,7 +295,7 @@ def test_d8_camort_spine1_is_one_lever_off_spine3_sc():
 
 
 def test_d8_camort_spine3_rb1_is_one_lever_off_spine3_sc():
-    """Collapse-mechanism twin (s106): amortised replay scores each state
+    """Collapse-mechanism twin: amortised replay scores each state
     against its own cycle's frozen c_t (up to replay_buffer_cycles=4 cycles
     stale) — the one structural asymmetry vs the specialist path, which
     always uses the latest grid. rb1 sets replay_buffer_cycles=1 so every

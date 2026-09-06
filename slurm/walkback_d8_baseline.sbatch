@@ -7,7 +7,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Walk-back-to-8x8 slate (2026-08-12), baseline family: the D=8 twin of the
+# Walk-back-to-8x8 slate, baseline family: the D=8 twin of the
 # d10 critical paper-curriculum cell, one seed per submission, seeds 42-45
 # to match the archived d10 four-seed record.
 #   sbatch -J wb8-base-s42 slurm/walkback_d8_baseline.sbatch \

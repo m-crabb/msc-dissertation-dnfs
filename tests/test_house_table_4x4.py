@@ -10,8 +10,8 @@ this rung has repeatedly gone wrong.
 THE FAILURE MODE IS SILENT. The fill resolves an arm to
 `{cfg.name}_seed{seed}_{tag}`. Get the tag wrong and the directory is simply
 absent; the cell prints `--`, which reads as "not yet run" rather than "run,
-sitting on disk, looked for under the wrong name". s84 hit exactly this at
-8x8, where the ladder's two couplings came from separate campaigns and an
+sitting on disk, looked for under the wrong name". The 8x8 fill hit
+exactly this, where the ladder's two couplings came from separate campaigns and an
 arm-keyed provenance map sent every floor lookup to the sigma_c tag.
 
 WHY THIS RUNG STAYS ARM-KEYED ANYWAY, which is the point of the second test.
@@ -65,7 +65,7 @@ def test_every_registered_arm_names_a_real_config():
         ARMS, ARM_PROVENANCE, SIGMA_LABELS)
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    # The eager-refill branch left with the factorised arms (2026-08-29): the
+    # The eager-refill branch left with the factorised arms: the
     # `_w2e` twins existed only for them, so every surviving arm resolves to
     # the plain wave-2 suffix or to its own ARM_PROVENANCE entry.
     for arm in ARMS:
@@ -116,7 +116,7 @@ def test_oracle_deviates_from_the_mask_one_row_in_head_and_compile_only():
 
     Two deviations, and the second is not a preference. `compile_head=False`
     is there because a COMPILED oracle cell cannot be run at all: measured
-    2026-08-29 (DoC 280196, cancelled), `doubly_hollow` x `compile_head=True`
+    on the cluster (job cancelled), `doubly_hollow` x `compile_head=True`
     spent 26 minutes without reaching step 1 on a 4x4 cell, pinned at ~95% of
     one core with 373 MiB on the GPU -- inductor still compiling a graph that
     unrolls to d^2 = 256 masked pair forwards. `c_t_from_rollout` is KEPT, the
@@ -125,7 +125,7 @@ def test_oracle_deviates_from_the_mask_one_row_in_head_and_compile_only():
     The test exists to stop a THIRD deviation drifting in unnoticed, which
     would quietly make the row unreadable against the mask-one row. The legacy
     `H2_d16_c50_s223_letf_dh` cells fail this twice over -- pre-migration
-    sigma 0.223 rather than SIGMA_C, and the pre-s60 recipe -- which is why
+    sigma 0.223 rather than SIGMA_C, and the pre-optimised recipe -- which is why
     they are not the cells the table fills from.
     """
     from dataclasses import asdict

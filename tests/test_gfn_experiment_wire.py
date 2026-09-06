@@ -25,22 +25,22 @@ def test_registry_keys_match_cell_names_and_objectives():
     for name, cell in GFN_CONFIGS.items():
         assert name == cell.name
         assert cell.objective in GFN_OBJECTIVES
-    # Both arms at both house couplings, twice (s92 correctness wave at
-    # hidden 128/3 flat lr; s93 parity wave `_par`), plus the s93
+    # Both arms at both house couplings, twice (the correctness wave at
+    # hidden 128/3 flat lr; the parity wave `_par`), plus the
     # fair-tuning grid: 3x3 lr x epsilon minus the centre (= the `_par`
     # cell itself) x both arms at sigma_c only = 16 `_swp` cells; plus the
-    # s94 8x8 rung: d64 `_par` centres at both couplings + the 4-arm
-    # sigma_c star per objective = 12 d64 cells; plus the s100 flow-lr
+    # 8x8 rung: d64 `_par` centres at both couplings + the 4-arm
+    # sigma_c star per objective = 12 d64 cells; plus the flow-lr
     # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2;
-    # plus the s100 budget-doubled fldb diagnostic = 1; plus the s100
-    # standalone-flow arm = 1; plus the s102 16x16 rung: d256 `_par`
-    # centres at both couplings x both arms = 4; plus the s125 20x20 rung:
+    # plus the budget-doubled fldb diagnostic = 1; plus the
+    # standalone-flow arm = 1; plus the 16x16 rung: d256 `_par`
+    # centres at both couplings x both arms = 4; plus the 20x20 rung:
     # d400 `_par` centres, same shape = 4.
     assert len(GFN_CONFIGS) == 48
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
-    # The s93 judging wave: the s92 cells carried a ~6x parameter advantage
+    # The parity wave: the first-wave cells carried a ~6x parameter advantage
     # over the wave-2 d16 heads (597.6k vs 79.5k-101k). Parity is measured
     # in PARAMETERS, not copied hyperparameters — hidden 64 / 2 layers puts
     # the policy at 101,378 params, within 0.4% of the masked-attention
@@ -95,7 +95,7 @@ def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
 
 def test_compile_policy_off_at_d16_on_at_d64_and_above():
     # Archived cells never retro-flip: every d16 cell stays eager exactly
-    # as it ran. The d64+ cells ship compiled from launch (s94 decision),
+    # as it ran. The d64+ cells ship compiled from the start,
     # still gated by the GPU numerical-parity check at the launch bench
     # run at each cell's own size on the venue stack.
     for cell in GFN_CONFIGS.values():
@@ -133,7 +133,7 @@ def test_log_z_carries_no_weight_decay_and_reaches_the_d256_scale():
     BELOW the d256 slice (~183 at sigma = 0.1, ~230 at sigma_c): the first
     16x16 TB wave (tag 20260831-gfn-d256) stalled with log Z pinned at
     100.0 +- 0.1 on all six seeds and a ~73-nat residual the policy cannot
-    close (2026-09-03). log Z is a normaliser, not a weight: no decay, and
+    close. log Z is a normaliser, not a weight: no decay, and
     it must be able to reach the 256-site scale."""
     import torch
     from experiments.constrained_hard_03.run_gfn import (
@@ -157,7 +157,7 @@ def test_log_z_carries_no_weight_decay_and_reaches_the_d256_scale():
 
 def test_sigma_c_cells_use_exact_critical_coupling():
     # s220 must be the exact SIGMA_C = ln(1+sqrt(2))/4, never legacy 0.223
-    # (sigma_c migration, s58).
+    # (sigma_c migration).
     for name, cell in GFN_CONFIGS.items():
         if "_s220_" in name:
             assert cell.sigma == SIGMA_C
@@ -235,13 +235,13 @@ def test_train_gfn_writes_house_artefact_set(tmp_path):
 
 
 def test_d64_cells_carry_the_house_recipe_levers():
-    # The s94 8x8 rung: centre = the 4x4 parity recipe at the wave-2 d64
+    # The 8x8 rung: centre = the 4x4 parity recipe at the wave-2 d64
     # budget. Sizing stays hidden 64/2/4 (104,450 params at D=8, within
     # 3.5% of the ma head's 108,256 — parity is measured params); the
     # house levers (warmup/clip/EMA/bf16 eval/in-training eval) are
     # matched field by field to H2_d64_*_w2's train/eval blocks.
     d64 = {n: c for n, c in GFN_CONFIGS.items() if c.D == 8}
-    # 12 s94 wave cells + 2 flr arms + 100k diagnostic + sfh arm.
+    # 12 rung cells + 2 flr arms + 100k diagnostic + sfh arm.
     assert len(d64) == 16
     for name, cell in d64.items():
         assert cell.hidden_dim == 64 and cell.n_layers == 2
@@ -371,7 +371,7 @@ def test_completed_run_short_circuits(tmp_path):
 
 
 def test_build_optimiser_splits_flow_head_group():
-    """The FL-DB analogue of the log_z split (s100): the flow head's output
+    """The FL-DB analogue of the log_z split: the flow head's output
     must reach the tens-of-nats completion-entropy scale and Adam moves it
     ~lr per step, so at the shared lr the d64 centres were still climbing
     at 50k. The split must move EXACTLY the flow head's parameters, and
@@ -442,7 +442,7 @@ def test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever():
 
 def test_fldb_100k_diagnostic_is_the_centre_twin_plus_budget():
     """The budget-doubled arm settles slow-vs-broken and must move ONLY
-    n_steps off the judged fldb sigma_c centre; any second lever would
+    n_steps off the fldb sigma_c centre; any second lever would
     confound the reading. (The sigma ladder dilates WITH n_steps by the
     equal-share rule — that is the same field, not a second lever.)"""
     from dataclasses import asdict
@@ -463,7 +463,7 @@ def test_fldb_100k_diagnostic_is_the_centre_twin_plus_budget():
 def test_sfh_cell_is_the_fldb_centre_twin_plus_the_standalone_flow():
     """The standalone-flow arm answers ONE question (does the
     torchgfn-conventional parameterisation change FLDB's convergence) and
-    must move only that field off the judged centre."""
+    must move only that field off the centre."""
     from dataclasses import asdict
 
     centre = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_par"]
@@ -501,7 +501,7 @@ def test_d256_parity_cells_measured_params_within_anchor_band():
     )
     n_params = sum(p.numel() for p in policy.parameters())
     assert n_params == 130_562
-    for anchor in (133_632, 137_440):  # thp2 / ma stacks, measured s102
+    for anchor in (133_632, 137_440):  # thp2 / ma stacks, measured
         assert abs(n_params - anchor) / anchor < 0.055
 
 
@@ -521,14 +521,14 @@ def test_d256_sigma_c_cells_mirror_the_house_100k_ladder():
 
 
 def test_d256_cells_are_d64_twins_plus_declared_levers():
-    """The 16x16 cells are the judged d64 recipe with only the declared
+    """The 16x16 cells are the d64 recipe with only the declared
     rung levers moved: lattice size, the parity re-size (hidden 68), and —
     on the sigma_c cells only — the house d256 budget (100k) with its
     dilated ladder. The in-training eval cadence is also a declared lever
     at this rung (house d256 regime 500/256 rather than the d64 wave's
     200/512, for within-rung parity with the swap-head rows the GFN cells
     join in tab:eval-hard-16x16). Anything else moving would break recipe
-    parity with the judged 8x8 wave."""
+    parity with the 8x8 wave."""
     from dataclasses import asdict
 
     house_eval_cadence = {"eval_every", "n_eval_samples_training"}
@@ -577,12 +577,12 @@ def test_d400_parity_cells_measured_params_within_anchor_band():
     )
     n_params = sum(p.numel() for p in policy.parameters())
     assert n_params == 155_522
-    for anchor in (158_848, 159_616):  # thp2 / thp3 d400 stacks, measured s125
+    for anchor in (158_848, 159_616):  # thp2 / thp3 d400 stacks, measured
         assert abs(n_params - anchor) / anchor < 0.055
 
 
 def test_d400_cells_are_d256_twins_plus_lattice_and_resize():
-    """The 20x20 cells are the judged d256 recipe with exactly two levers
+    """The 20x20 cells are the d256 recipe with exactly two levers
     moved: the lattice (D=20) and the parity re-size (hidden 72). Budgets,
     the sigma ladder (the house reuses the d256 ladder unrescaled at d400,
     absolute start-steps) and the house eval cadence all ride unchanged."""

@@ -7,11 +7,11 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+# Historical launcher: the borrowed mars node is no longer available; do not submit.
 #
 # 8x8 sigma_c: the PERIODIC-RoPE BACKBONE at PATCH SIZE 2 under the
-# masked-attention head, three seeds SEQUENTIAL on one borrowed B200
-# (2026-08-28). Companion to the p = 1 job; read as the triple
+# masked-attention head, three seeds SEQUENTIAL on one borrowed B200.
+# Companion to the p = 1 job; read as the triple
 # `ma` -> rope1 -> rope2.
 #
 # WHAT p = 2 ADDS OVER p = 1. p = 1 is dense causal attention in two pieces,
@@ -27,9 +27,8 @@
 # the optimum is INTERIOR, p = 4 is worse than p = 2 on cost and coarser in
 # the far field too, so p = 2 is the only larger p worth running at this rung.
 #
-# ***CORRECTED AFTER THE RUN (2026-08-28). The reasoning above was WRONG on
-# both halves, and the claim that once stood here -- "the lever matters at
-# scale rather than here" -- is FALSE.***
+# MEASURED OUTCOME. The reasoning above was WRONG on both halves, and the
+# claim "the lever matters at scale rather than here" is FALSE.
 #
 # 1. NO SPEED. Measured on this node: 8.402 ms/step against p=1's 8.263, and
 #    17m07s against 16m33s end to end per seed. p = 2 is marginally SLOWER.
@@ -46,7 +45,7 @@
 #    disjoint BELOW, and below `mar` too. The far field at patch resolution
 #    loses information the band needs.
 #
-# VERDICT: p = 2 is dead on both axes. p = 1 is the keeper (level quality at
+# So p = 2 loses on both axes. p = 1 is the keeper (level quality at
 # -8.2% parameters). The lever that actually reaches the head's cost is the
 # BAND FACTORISATION, which attacks the (B, d^2, n) tensor itself.
 #

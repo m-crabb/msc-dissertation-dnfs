@@ -1,13 +1,12 @@
 """Frozen, named configurations for DNFS Ising baseline runs.
 
-SIGMA_C MIGRATION (s58, 2026-08-24): the project's critical coupling is
+SIGMA_C MIGRATION: the project's critical coupling is
 targets/ising.py SIGMA_C = ln(1+sqrt(2))/4 = 0.220343 (exact). Every cell
 below that carries sigma=0.22305 (or a 0.223 curriculum stage) describes an
 ARCHIVED run trained at the legacy value; those literals are records and must
 not be edited (stored run configs and the eval config-drift guard are pinned
 to them). Any NEW sigma_c cell imports SIGMA_C; the archived sigma_c cells
-are replaced by retrain waves, unconstrained chapter first, hard chapter
-once the head family is finalised.
+are replaced by their `_sc` retrain twins (`sigma_c_twin`).
 
 Configs are dataclasses keyed by name in `CONFIGS`; new entries show up
 automatically in `run.py` via `--cfg <name>`. The dataclasses are frozen
@@ -18,9 +17,9 @@ Eval sample budget: `n_eval_samples = 5000` matches the paper's Figure 13
 energy-histogram pass (Appendix D.1) and is strictly ≥ the N = 2,048 used
 for the Table 2 numerical pass, so a single eval feeds both downstream
 artefacts. Across-seed std (paper Table 2 reports mean ± std over 10
-independent runs) is a multi-seed sweep planned for a later step.
+independent runs) comes from multi-seed sweeps (`modal_app.batch_seeds`).
 
-Stage layout (framing clarified by Zijing 2026-05-08):
+Stage layout:
     stage_0_d{4,10}     -- vanilla MLP + Eq. 7 + naive MC. Eq. 7 is a valid
                            loss for any single-site-flip parameterisation,
                            but has high empirical variance; naive_mc
@@ -52,11 +51,11 @@ class IsingCfg:
     target_composition: float | None = None
     composition_penalty_strength: float = 0.0
     base_composition: float = 0.5
-    # Matched base (s101, plan 2026-08-31-soft-camort-matched-base): the
-    # base reads the composition the run is conditioned on — the bound
-    # per-cycle vector during amortised training, else target_composition —
-    # instead of the static base_composition. One lever; motivated by the
-    # 8x8 mb twins (off-centre collapse = base reachability).
+    # Matched base: the base reads the composition the run is conditioned
+    # on — the bound per-cycle vector during amortised training, else
+    # target_composition — instead of the static base_composition. One
+    # lever; on the 8x8 matched-base twins, off-centre collapse traced to
+    # base reachability.
     base_matches_composition: bool = False
     # Ceiling on log p̃_t(y)/p̃_t(x) at single-flip neighbours. The paper's 5
     # suits an unpenalised Ising target; a composition penalty of strength λ
@@ -82,14 +81,10 @@ class TrainCfg:
     # stop-gradient; `inner_steps_per_outer` gradient updates draw N=
     # batch_size mixed-t entries from that buffer. n_steps must be a
     # multiple of inner_steps_per_outer.
-    #
-    # Reference: J-zin/DNFS main.py Ising config uses M=256, N=128,
-    # steps_per_epoch=100, and a four-outer-batch replay buffer via
-    # DataBuffer(max_size=1024 // N) (consulted 2026-05-09).
     # Run the LOSS UPDATE under bf16 autocast (opt-in; default fp32, so every
     # archived cell is byte-identical). Scoped to the inner gradient step: the
     # end-of-run eval stays fp32, which is the chapter's standing precision
-    # discipline, so a bf16-TRAINED cell is still JUDGED in fp32.
+    # discipline, so a bf16-TRAINED cell is still evaluated in fp32.
     #
     # It is a BYTE lever, which is the kind that works here. The d400 swap
     # step is bandwidth-bound -- 36% GEMM, and those GEMMs at 8.0 FLOP/byte
@@ -128,8 +123,8 @@ class TrainCfg:
     # an A100-80GB (masked-attention h128; mask_one at d=256).
     loss_microbatch_size: int | None = None
     # LR warmup over the first N inner steps. **Paper deviation:** the DNFS
-    # paper doesn't specify warmup; reference repo has none. Added 2026-05-13
-    # after a 4-seed probe on stage_4_d10_paper showed 1/4 seeds healthy
+    # paper doesn't specify warmup. Added after
+    # a 4-seed probe on stage_4_d10_paper showed 1/4 seeds healthy
     # without warmup (init-basin sensitivity exposed by adding seed_everything).
     # With warmup_steps=500, all 4 seeds recover to ESS frac 0.95-0.97; cross-
     # seed std drops ~50x. Step-0 only — does NOT re-fire at curriculum
@@ -181,7 +176,7 @@ class TrainCfg:
     # NOT evidence either way: the DNFS reference never flushes because it
     # has no curriculum, so it never faced this choice.
     flush_replay_on_stage: bool = True
-    # CV-inversion tripwire (adversarial panel, 2026-08-18). The swap
+    # CV-inversion tripwire. The swap
     # trainer logs `cv_var_ratio` — controlled/naive integrand variance
     # over the same rollout rows, a validated 5/5 in-run classifier of the
     # d256 cold-CV inversion — every step, unconditionally. When
@@ -189,12 +184,12 @@ class TrainCfg:
     # variate, a ratio above 1.0 for a full trailing window of outer
     # cycles at/after that step stops the run gracefully
     # (cv_inversion_halt.json marker; final.pt still saved). None = off =
-    # every archived cell's behaviour. Intended consumer: the registered
-    # CV CONTINUATION cell, armed past the warm-heal horizon (~1000
+    # every archived cell's behaviour. Intended consumer: the d256 CV
+    # continuation cell, armed past the warm-heal horizon (~1000
     # steps) so a re-inversion cannot burn walltime unnoticed.
     halt_on_cv_inversion_after: int | None = None
     halt_cv_inversion_window: int = 10
-    # Per-stage best checkpoints (boundary-shock arm, 2026-08-19). When on,
+    # Per-stage best checkpoints. When on,
     # the swap trainer saves `checkpoints/best_stage<k>.pt` whenever the
     # TRAILING MEDIAN (window 3) of the periodic train-eval ESS makes a new
     # best within curriculum stage k, with the step and value recorded in
@@ -203,7 +198,7 @@ class TrainCfg:
     # excursions over a stationary series, so best-by-peak would checkpoint
     # noise. Pure IO — dynamics, CSV schema and final.pt untouched; the
     # frozen eval still reads final.pt, and a stage-best eval is a separate
-    # eval-only pass declared at judging. Off = every archived config.
+    # eval-only pass. Off = every archived config.
     stage_best_checkpoints: bool = False
     # Save a step-tagged checkpoint every N inner steps (None = only the
     # rolling `latest.pt` + end-of-run `final.pt`). Motivation: a run whose
@@ -219,7 +214,7 @@ class TrainCfg:
     # which writes weights only for eval selection: this one carries the
     # optimiser moments, step counter, RNG streams and replay buffer, i.e.
     # everything needed to CONTINUE rather than to score. Motivating cost:
-    # the 2026-08-21 N11 matched-base family was killed at ~94% of a 50k
+    # a matched-base family was killed at ~94% of a 50k
     # budget and, with only a weights-only `latest.pt` on disk, all eight
     # runs had to restart from step 0. Cadence is a trade between rewritten
     # work after a kill (up to one interval) and IO; 10 cycles = 1000 inner
@@ -227,8 +222,8 @@ class TrainCfg:
     # not move the trajectory (pinned by tests/test_training_resume.py), so
     # runs from this trainer stay comparable to every archived one.
     resume_every_outer: int = 10
-    # Per-slot EMA of the c_t (dt log Z_t) grid across outer cycles
-    # (M2, 2026-08-14). c_t noise enters the loss gradient multiplicatively
+    # Per-slot EMA of the c_t (dt log Z_t) grid across outer cycles.
+    # c_t noise enters the loss gradient multiplicatively
     # through (xi - c)·grad(xi); at d256-naive the per-slot SE is ~0.93 nats.
     # The Eq.-8 identity E[xi] = dt log Z_t holds for the model's own law, so
     # smoothing across recent cycles is pure variance reduction at an
@@ -237,29 +232,28 @@ class TrainCfg:
     # sigma transition (c_t is a function of sigma). 0.0 = OFF, the
     # byte-identical archived behaviour; the candidate value is 4.0 cycles.
     c_t_ema_halflife_cycles: float = 0.0
-    # Decoupled c_t rollout batch (M3, 2026-08-14; plan Task 3). c_t =
-    # mean_m xi_t over the outer cycle's rollout states, so its standard
-    # error falls 1/sqrt(M) in the rollout row count while only the no-grad
-    # trajectory phase pays for the extra rows (the run-D rollout lever is
-    # priced at 95 h because older cells scaled EVERYTHING; here the inner
-    # batch and replay buffer stay at outer_batch). The buffer takes the
+    # Decoupled c_t rollout batch. c_t = mean_m xi_t over the outer
+    # cycle's rollout states, so its standard error falls 1/sqrt(M) in the
+    # rollout row count while only the no-grad trajectory phase pays for
+    # the extra rows (older cells scaled EVERYTHING with the rollout; here
+    # the inner batch and replay buffer stay at outer_batch). The buffer takes the
     # first outer_batch rows of the enlarged rollout (iid base draws make
     # the prefix a uniform subset). None = outer_batch = OFF, the
     # byte-identical archived behaviour; candidate d256 value 512.
     c_t_batch: int | None = None
-    # Batched c_t grid calls (M7a, 2026-08-14; plan Task 7). The c_t grid
+    # Batched c_t grid calls. The c_t grid
     # costs n_grid sequential no-grad integrand calls per outer cycle; at
     # d256 trajectory+c_t is ~75% of wall. When set, the (n_grid x
     # n_rollout) integrand evaluations run flattened in row-chunks of at
     # most this many rows — the same fp32 ops modulo batch-dim blocking,
-    # parity-pinned at the established 1e-5 class (the parity test IS the
-    # M7a gate: no quality change permitted). The cap keeps the flattened
+    # parity-pinned at the established 1e-5 class (the parity test is the
+    # contract: no quality change permitted). The cap keeps the flattened
     # batch inside GPU memory (~40 MB/row no-grad at d256-MA, so 512-2048
     # rows is the in-cap class on an 80 GB a100). None = OFF, the
     # byte-identical per-slot sequential loop every archived run used.
     c_t_grid_chunk_rows: int | None = None
-    # c_t grid built from the rollout's own forwards (B1/B1-flip,
-    # optimisation decision 2026-08-24). In control_variate mode the outer
+    # c_t grid built from the rollout's own forwards. In control_variate
+    # mode the outer
     # step re-runs the head/model on (trajectory[k], t_k) for every grid
     # slot, but rollout step k already computed that exact forward — with
     # this knob the sampler accumulates xi_t during the rollout and only
@@ -270,7 +264,7 @@ class TrainCfg:
     # is the established 1e-5 batch-blocking class. Requires rollout
     # resampling OFF. Supersedes c_t_grid_chunk_rows when on (the grid
     # pass it chunked no longer runs). False = OFF, the byte-identical
-    # archived behaviour; True in the post-s60 base recipe.
+    # archived behaviour; True under `optimised_recipe`.
     c_t_from_rollout: bool = False
     # ESS-triggered SMC resampling INSIDE the training rollout (both
     # trainers consume it: `swap_training.train_swap` and the flip-route
@@ -334,10 +328,10 @@ class ModelCfg:
     # construction identical to an unconditioned model, so archived
     # checkpoints stay loadable.
     condition_on_composition: bool = False
-    # Soft route only (s90, 2026-08-29): wrap the rate model with the exact
+    # Soft route only: wrap the rate model with the exact
     # flip log-ratio as a fixed additive score under a zero-init learned gain
     # (constraints/exact_field_channel.ExactFieldFlipModel, the flip twin of
-    # the hard chapter's swap channel). The s90 4x4 regression put the closed
+    # the hard chapter's swap channel). A 4x4 regression put the closed
     # form at ~95% of every trained lambda=50 specialist, so the channel
     # supplies what training currently learns under lambda^2 penalty-variance
     # fire. OFF = every archived cell byte-identical.
@@ -347,13 +341,12 @@ class ModelCfg:
     # (c-c0)*(h0+h1*t). Opt-in so archived checkpoints keep their exact
     # state-dict schema; the two new scalars are zero-init and consume no RNG.
     exact_field_composition_gain: bool = False
-    # rope_vit only (hard route, 2026-08-23): side of the p x p patches whose
+    # rope_vit only (hard route): side of the p x p patches whose
     # pooled keys carry the far field in the causal stacks. 1 = dense causal
     # attention with periodic rotary positions; the leTF cells never read it.
     patch_size: int = 1
-    # Opt-in torch.compile of the built rate model (optimisation board
-    # section C, decided s60 2026-08-24; mirrors the hard route's
-    # compile_head). Model only — the Euler loop's data-dependent sampling
+    # Opt-in torch.compile of the built rate model (mirrors the hard
+    # route's compile_head). Model only — the Euler loop's data-dependent sampling
     # would graph-break. Compiled runs are 1e-5-class vs eager, never
     # bit-parity. False = every archived cell byte-identical.
     compile_model: bool = False
@@ -446,8 +439,8 @@ class StageCfg:
     lambda_curriculum: LambdaCurriculumCfg | None = None
     composition: CompositionCfg | None = None
     wandb_project: str = "dnfs-baseline"
-    # EMA dual-eval (ported from the hard chassis for the soft-chapter
-    # revamp, s95): > 0 arms a warmup-corrected parameter shadow updated
+    # EMA dual-eval (ported from the hard chassis): > 0 arms a
+    # warmup-corrected parameter shadow updated
     # after every optimiser step (discrete_flow_sampler.ema), saved as
     # checkpoints/final_ema.pt and evaluated alongside the raw weights
     # (eval/ + eval_ema/). The shadow is a passive observer — never read
@@ -463,7 +456,7 @@ def optimised_recipe(cell: StageCfg) -> StageCfg:
 
     Two declared changes, nothing else: model.compile_model=True (measured
     1.58x updates / 2.01x rollout on stage_4_d10 leTF, same-container
-    Modal A100; GPU-stack gate passed) and train.c_t_from_rollout=True
+    Modal A100) and train.c_t_from_rollout=True
     (bit-identical c_t grid from the rollout's own forwards). Every NEW cell
     — Wave-1 retrains included — goes through this transform; archived cells
     and eager twins of eager parents keep both flags off, because compiled
@@ -486,7 +479,7 @@ def sigma_c_twin(parent: StageCfg) -> StageCfg:
     kept because reshaping the ladder would confound the coupling change
     with a schedule change (and a gentler final step is the safe direction —
     hard sigma-boundary shocks are the documented seed-killer, not soft
-    ones). The s60 optimised recipe is then applied, the two declared
+    ones). `optimised_recipe` is then applied, the two declared
     exceptions to the twin discipline for every new cell.
     """
     curriculum = parent.curriculum
@@ -508,8 +501,8 @@ def sigma_c_twin(parent: StageCfg) -> StageCfg:
 CONFIGS: dict[str, StageCfg] = {
     # Stage 0: HIGH-VARIANCE BASELINE. Vanilla MLP + Eq. (7) residual.
     # Eq. 7 does not require local equivariance — it's a valid loss for
-    # any single-site-flip parameterisation. Per Zijing (2026-05-08), its
-    # empirical variance is intractable at scale even with control variates.
+    # any single-site-flip parameterisation. Per Zijing, its empirical
+    # variance is intractable at scale even with control variates.
     # stage_0_d* uses naive_mc; stage_0_d*_cv adds the paper's control-variate
     # estimator to test Zijing's strong claim. Comparing stage_0_d*_cv vs.
     # stage_2_d* isolates "what does LE buy us" (architecture differs;
@@ -534,8 +527,8 @@ CONFIGS: dict[str, StageCfg] = {
     ),
     # Stage 0_cv: vanilla MLP + Eq. (7) + control variate. Same architecture
     # and loss as stage_0_d*, only the estimator changes. Tests Zijing's
-    # "Eq. 7 doesn't scale even with variance reduction" claim within the
-    # post-redo result set; compares apples-to-apples against stage_2_d*.
+    # "Eq. 7 doesn't scale even with variance reduction" claim; compares
+    # apples-to-apples against stage_2_d*.
     "stage_0_d4_cv": StageCfg(
         name="stage_0_d4_cv",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
@@ -594,11 +587,11 @@ CONFIGS: dict[str, StageCfg] = {
         model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
         estimator="control_variate",
     ),
-    # LEAPS-style deep LEC at critical sigma. Reference: Holderrieth/Albergo/
-    # Jaakkola, papers/leaps.pdf, Section 9 + Figure 7. Their depth-5 LEC
-    # with kernels [3,5,7,9,15] hit ESS ~68% on a 15x15 critical Ising at
-    # ~100k params. We trim to [3,5,7,9] (no lattice-spanning kernel since
-    # D=10) and leave d_l (per-layer channel dim) to pick at impl time.
+    # LEAPS-style deep LEC at critical sigma. Reference: LEAPS (Holderrieth,
+    # Albergo & Jaakkola), Section 9 + Figure 7. Their depth-5 LEC with
+    # kernels [3,5,7,9,15] hit ESS ~68% on a 15x15 critical Ising at ~100k
+    # params. Trimmed here to [3,5,7,9] (no lattice-spanning kernel since
+    # D=10); hidden_dim is the per-layer channel dim d_l.
     "stage_3_d10_critical_deep": StageCfg(
         name="stage_3_d10_critical_deep",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
@@ -615,7 +608,7 @@ CONFIGS: dict[str, StageCfg] = {
     ),
     # Same deep LEC recurrence, but with the full LEAPS Figure-7 depth-5
     # schedule [3,5,7,9,15]. On a D=10 torus the k=15 layer is deliberately
-    # lattice-spanning. Future runs under these names also include the
+    # lattice-spanning. Runs under these names also include the
     # time-conditioned kernel state in LeConvDeepRateMatrix.compute_body.
     "stage_3_d10_critical_deep_k15": StageCfg(
         name="stage_3_d10_critical_deep_k15",
@@ -745,7 +738,7 @@ CONFIGS: dict[str, StageCfg] = {
     # which the 10x10 critical run cannot have. Trains direct at sigma_c with
     # no curriculum: the sigma-transition collapse that motivated the d10
     # curriculum was a D=10 finding, and the finite 4x4 lattice has no phase
-    # transition to fight. Fall back to a curriculum only if this fails.
+    # transition to fight.
     "stage_4_d4_critical": StageCfg(
         name="stage_4_d4_critical",
         ising=IsingCfg(D=4, sigma=0.22305, bias=0.0),
@@ -761,8 +754,8 @@ CONFIGS: dict[str, StageCfg] = {
     # earlier cautious stack (smaller h, replay1, tight clip), not as the final
     # Stage 4 comparison row; use `stage_4_d10_budget` for that.
     #
-    # Revised 2026-05-09 (second pass) after second-launch logs showed clip 1.0
-    # was choking learning: pre-clip grad norms ran 100-200 → effective LR
+    # Revised after early logs showed clip 1.0 was choking learning:
+    # pre-clip grad norms ran 100-200 → effective LR
     # ≈ 2e-6, ESS plateaued at ~2%. Stack now: (1) grad clip 10.0 (still
     # tight enough to catch the 30k-norm spikes that motivated the original
     # clip; ~16x looser effective step), (2) LR 3e-4, (3) per-block raw-input
@@ -865,10 +858,9 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
     ),
     # 10k-step probe of stage_4_d10_paper with LR warmup enabled. Used for
-    # the 4-seed gate (42/43/44/45) measuring whether warmup recovers the
-    # init-basin sensitivity exposed by adding seed_everything (finding
-    # recorded 2026-05-13; see the TrainCfg.warmup_steps comment for the
-    # outcome).
+    # the 4-seed probe (42/43/44/45) measuring whether warmup recovers the
+    # init-basin sensitivity exposed by adding seed_everything (see the
+    # TrainCfg.warmup_steps comment for the outcome).
     "stage_4_d10_paper_probe_warmup": StageCfg(
         name="stage_4_d10_paper_probe_warmup",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
@@ -1025,7 +1017,7 @@ for _wave1_parent_name in (
 
 # ---------------------------------------------------------------------------
 # Unconstrained 8x8 / 16x16 cells on the HARD chapter's house recipes, with
-# exact-field-channel twins (s117, 2026-09-02). The channel had never been
+# exact-field-channel twins. The channel had never been
 # run on the unconstrained rung; on the Cu-Au alloy it was the largest
 # single lever (soft c=0.25: 0.66 -> 0.86). Recipe = the hard house cells
 # at the same size (`H2_d64_c50_s220_letf_mo_50k_curr_w2`, `H2_d256_..._100k_curr_b512_ne128_cv2_w3`):
@@ -1045,7 +1037,7 @@ _HARD_HOUSE_LADDER = CurriculumCfg(stages=(
     CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
 ))
 
-# 10x10 (s122, 2026-09-03): the 16x16 100k recipe at the table's own size,
+# 10x10: the 16x16 100k recipe at the table's own size,
 # four seeds, to see whether the hard house recipe plus the channel reaches
 # the paper's reported 10x10 result at a 100k budget where the printed
 # sigma_c row (0.902) used 200k. Batch 512 needs no microbatching at d=100.

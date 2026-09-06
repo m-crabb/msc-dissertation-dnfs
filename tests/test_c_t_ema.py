@@ -1,7 +1,4 @@
-"""Tests for the c_t grid EMA (M2 of the 2026-08-14 M-campaign).
-
-Pre-registered in docs/plans/2026-08-14-m-scaling-experiments.md Task 2;
-diagnosis in docs/design/2026-08-14-scaling-assessment.md §5/§8.
+"""Tests for the c_t grid EMA.
 
 What correct looks like, independent of implementation:
 

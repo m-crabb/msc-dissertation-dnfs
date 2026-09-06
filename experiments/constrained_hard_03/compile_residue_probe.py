@@ -1,6 +1,6 @@
-"""Forward-only compile-vs-eager residue probe (s70 HOLD, mechanism leg).
+"""Forward-only compile-vs-eager residue probe (mechanism leg).
 
-The round-2 twins localised the catastrophic-seed cell to
+Paired re-runs localised the catastrophic-seed cell to
 factorised x compile_head x exact sigma_c without isolating a mechanism.
 The candidate on record: the factorised head is the one tested head whose
 blindness rests on floating-point CANCELLATION (global term
@@ -24,7 +24,7 @@ in-place nn.Module.compile that routes only forward through inductor
   * forward parity |G_compiled - G_eager| (max / mean / p99 over pairs and
     states), the raw size of the numerics perturbation.
   * eager-only compute_pair_context drift under hole flips (the direct
-    cancellation residue), as the baseline scale the violation is judged
+    cancellation residue), as the baseline scale the violation is compared
     against.
 
 States: the run's own eval samples (samples.pt -- trained-distribution,

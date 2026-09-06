@@ -1,7 +1,7 @@
-"""Judge the 64-site Cu-Au cells without a reference chain.
+"""Score the 64-site Cu-Au cells without a reference chain.
 
-At 64 sites the fixed-composition slice cannot be enumerated (C(64,32) ~ 1.8e18), so this judge
-reads what the sampler's own artefacts can certify:
+At 64 sites the fixed-composition slice cannot be enumerated (C(64,32) ~ 1.8e18); this
+script reads what the sampler's own artefacts can certify:
 
   ESS            raw and EMA eval ESS (5000 draws), the headline;
   E/site (meV)   mean, min and IS-weighted (self-normalised log weights) sample energy against
@@ -13,7 +13,7 @@ reads what the sampler's own artefacts can certify:
                  (c50) so ~0 means ordered, ~10 means multi-domain;
   loss/static    end-of-stage training loss over the static-flow (identity) loss of that stage,
                  Var_uniform[beta_stage E] estimated on 4096 uniform slice states: ~0 = the flow
-                 moves the slice, ~1 = it has given up (the s122 c50 signature 0.12 -> 1.0);
+                 moves the slice, ~1 = it has given up (c50 patch cells: 0.12 -> 1.0);
   E_ref          the reference chain's energy per site at the cell's final temperature when
                  results/alloy_ref/cuau64_chain_<c25|c50|free>_T<T>.json exists (reference_chain.py).
 

@@ -7,9 +7,9 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# N5 (2026-08-21, user GO): the d256 twin of the B(a)+B(b) transport probes.
+# d256 transport decomposition: the d256 twin of the d64 transport probes.
 #
-# WHY. The warm-base review's size claim -- "per-swap SELECTION capture falls
+# WHY. The size claim -- "per-swap SELECTION capture falls
 # 68.6% -> 53.8% from d64 to d256" -- rests on ONE unmeasured number. Capture
 # is (achieved - random)/(oracle - random); at d256 the oracle ceiling (14.44)
 # and the random-pair mean (-9.39) are MEASURED on reference draws at t=1,
@@ -17,20 +17,20 @@
 # an assumption of scale-invariance. The d64 side was measured at 3.907. This
 # pass measures the d256 side so the size claim stops being half-estimated.
 #
-# FROZEN BAND, before launch. Achieved = net_edge_units_per_site /
+# EXPECTED OUTCOMES. Achieved = net_edge_units_per_site /
 # swaps_per_site_state_changing, both from transport_decomposition.json:
 #   SIZE-EFFECT-CONFIRMED iff achieved < 6.96 (capture < d64's measured
 #                         68.6%) -- per-swap selection really does degrade
-#                         with lattice size, and the review's headline holds
-#                         with both legs measured.
+#                         with lattice size, and the claim holds with both
+#                         legs measured.
 #   SIZE-EFFECT-REFUTED   iff achieved >= 6.96 -- the inherited 3.44 was an
 #                         artefact of assuming scale-invariance, and the
-#                         "selection degrades with size" claim is WITHDRAWN.
+#                         "selection degrades with size" claim falls.
 #   Report the measured capture explicitly either way, beside 53.8%, rather
 #   than rounding to the nearer story. `cancellation_fraction` rides
 #   alongside: d64 measured 0.184, and a d256 value near 1 would move the
 #   diagnosis from TARGETING to CANCELLATION, which would in turn remove the
-#   measured justification for the periodic-architecture thread (N6).
+#   measured justification for the periodic-architecture thread.
 #
 # TWO RUN DIRS, one allocation. PRIMARY is the keystone: it is the standing
 # d256 recipe AND it is ne128, matching the d64 rung's grid, so the size
@@ -39,7 +39,7 @@
 # between them, the d64->d256 comparison needs the grid stated, and finding
 # that out here costs ~30 min on an already-allocated GPU rather than a
 # whole extra queue slot (queue wait, not compute, is the binding cost).
-# RECIPE CAVEAT ON THE RECORD: the d64 rung is b128 + control_variate; both
+# RECIPE CAVEAT: the d64 rung is b128 + control_variate; both
 # d256 legs are b512 + naive_mc. These are each size's own standing recipe,
 # not a matched twin, and the comparison must be reported that way.
 #

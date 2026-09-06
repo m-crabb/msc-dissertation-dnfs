@@ -7,14 +7,13 @@
 #SBATCH --time=8:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Preparation status: unlaunched; all 8 submit slots were occupied.
-# Release required the user's approval.
+# Never submitted: the 8-job submission cap was full at the time.
 #
-# M4a (M-campaign Task 4a): the budget-masked MDNS smoke at 8x8, asking
-# the one question no swap-CTMC cell can answer — is the d256 wall
-# CTMC-specific or target-intrinsic? The constructive family has no
-# pair-rate field, no c_t, no Euler error, and structural feasibility, so
-# the entire W3 complex that starves d256 simply does not exist here.
+# Budget-masked MDNS smoke at 8x8, asking the one question no swap-CTMC
+# cell can answer — is the d256 wall CTMC-specific or target-intrinsic?
+# The constructive family has no pair-rate field, no c_t, no Euler error,
+# and structural feasibility, so the entire complex that starves d256
+# simply does not exist here.
 #
 # WHY THIS RECIPE. Gate-3 settled the ingredients at the enumerable size
 # and this cell changes ONE thing, the lattice:
@@ -28,12 +27,12 @@
 #                     passed EXPLICITLY: gate-3's own $RECIPE omitted it,
 #                     so six of its eight cells ran the plain shadow,
 #                     which at 2k steps still holds ~82% of init. Only
-#                     the two amendment-03 re-runs had the corrected
-#                     schedule. Do not drop this flag.
+#                     the two later re-runs had the corrected schedule.
+#                     Do not drop this flag.
 #   --steps 10000     the gate-3 constrained-arm horizon.
 #   --seeds 42,43,44  three seeds, as gate-3.
 #
-# REFERENCE BLOCK (the M4a build). C(64,32) ~ 1.8e18 rules enumeration
+# REFERENCE BLOCK. C(64,32) ~ 1.8e18 rules enumeration
 # out, so --probe-root switches the energy reference to the certified
 # 8-chain Kawasaki reference and --free-energy-ref supplies the slice-TI
 # constant. The enumeration-only instruments (conditional KL,
@@ -42,16 +41,15 @@
 # docstring. The two energy conventions are pinned bit-equal in
 # tests/test_mdns_gate_driver.py.
 #
-# FROZEN BANDS (8x8 sigma_c, vs the certified references; frozen before
-# any M4a result exists):
+# EXPECTED RANGES (8x8 sigma_c, vs the certified references):
 #   reference F/d      = -1.90410 +/- 0.00005  (slice-TI, run8x8)
 #   MA swap energy TV  =  0.012476, own 95% noise floor 0.010129
 #   MEANINGFUL: ESS >= 0.5 AND energy TV <= 0.025 (2x the MA swap head's)
 #   STRONG:     ESS >= 0.8 AND energy TV <= 0.0125 (parity with it, which
 #               at this TV's noise floor means indistinguishable from it)
-#   Decision rule: MDNS >= MA-swap at 8x8 -> reprioritise the workshop
-#   scaling story to the constructive family. The swap chapter's claims
-#   are unaffected either way; they are frozen-band results.
+#   MDNS >= MA-swap at 8x8 would move the scaling story to the
+#   constructive family. The swap chapter's claims are unaffected either
+#   way.
 #
 # OPEN CHOICES (retained defaults):
 #   1. hidden_width stays at the module default 128. The trunk width is
@@ -60,7 +58,7 @@
 #      chosen to parameter-match their 26k ViT, a constraint that does
 #      not carry to 8x8, so holding it fixed is the clean single-variable
 #      move rather than a tuned one.
-#   2. --eval-rollouts stays at the frozen 65536. Each rollout is now 64
+#   2. --eval-rollouts stays at 65536. Each rollout is now 64
 #      sequential trunk calls rather than 16, so eval is ~4x the 4x4
 #      cost per rollout; the 8h walltime carries that with headroom, but
 #      if the first seed's wall clock says otherwise this is the knob.

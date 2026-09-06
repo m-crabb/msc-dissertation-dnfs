@@ -1,4 +1,4 @@
-"""Tests for the FLOP/es counter (house-table cost column, agreed s50/s63).
+"""Tests for the FLOP/es counter (house-table cost column).
 
 What correct looks like, fixed before the implementation:
 - the per-forward instrument is torch's FlopCounterMode, so on a bare

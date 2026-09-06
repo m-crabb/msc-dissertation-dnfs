@@ -1,8 +1,8 @@
 """Preemption-resume contract for the flip trainer `samplers.training.train`.
 
-The swap trainer has had this since the 2026-07-23 Modal GPU recall; the flip
-trainer never did, and the 2026-08-21 N11 matched-base family paid for it —
-eight runs killed at ~94% of a 50k-step budget with nothing on disk but a
+The swap trainer has had this since a Modal GPU recall; the flip trainer
+did not, and a matched-base family paid for it — eight runs killed at ~94%
+of a 50k-step budget with nothing on disk but a
 weights-only `latest.pt`, so every one of them had to start again from zero.
 
 The contract these tests pin:

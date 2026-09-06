@@ -137,7 +137,7 @@ OUTPUT_DIR = RESULTS_ROOT / "03_hard" / "sample_montages"
 SPIN_COLOUR_MAP = SPIN_CMAP
 
 # --- run selection --------------------------------------------------------
-# Every default below is a run the writeup already cites, so a reader can
+# Every default below is a run the thesis already cites, so a reader can
 # match a montage to a number they have already seen. Alternatives were
 # rejected for the reasons given inline.
 
@@ -158,9 +158,8 @@ HEADLINE_8X8_EVAL_SUBDIR = "eval_replicate_s101"
 # neural run.
 HEADLINE_8X8_REFERENCE_DIR = RESULTS_ROOT / "kawasaki_probe" / "reference" / "sc"
 
-# The 16x16 recipe run whose landing was judged, and the one the SMC
-# tau-sweep was run on -- i.e. the archive's live 16x16 arm rather than an
-# abandoned rescue attempt.
+# The 16x16 recipe run the SMC tau-sweep was run on -- the archive's live
+# 16x16 arm rather than an abandoned rescue attempt.
 D256_RUN = (
     RESULTS_ROOT / "03_hard"
     / "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_seed43"
@@ -214,7 +213,7 @@ N_PAIRS_D256_PER_BLOCK = 4
 N_TILES_SPINE_PER_REGIME = 4
 
 # Near-clone threshold quoted alongside the figure, in sites (four swaps).
-# Matches the ancestry-aware analysis the SMC sweep was judged on.
+# Matches the ancestry-aware analysis the SMC sweep was scored with.
 NEAR_CLONE_HAMMING = 8
 
 # One fixed jitter for every systematic resample in this script, so reruns

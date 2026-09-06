@@ -47,7 +47,7 @@ def test_train_swap_smoke_runs_and_stays_on_manifold(tmp_path):
 
 
 def test_train_swap_logs_swap_rate_diagnostics_and_preserves_composition(tmp_path):
-    """Pins the AMENDMENT: both the Λ·dt>1 clip fraction and the log-ratio
+    """Both the Λ·dt>1 clip fraction and the log-ratio
     clamp-hit fraction are logged at eval cadence, and the trained head's
     sampler never leaves the fixed-composition manifold."""
     torch.manual_seed(0)

@@ -1,20 +1,20 @@
-"""Figures for the (sigma_c, 8x8) mixing-probe results section (2026-08-13).
+"""Figures for the (sigma_c, 8x8) mixing-probe results section.
 
-Reads the frozen probe analysis output (probe_8x8_headline.json), the raw
+Reads the probe analysis output (probe_8x8_headline.json), the raw
 replicate/chain artefacts, and the competitor chains' meta.json timing
 records, and renders three PNGs:
 
   cost_quality_crossover.png -- cumulative N_eff(energy) against cumulative
       wall-clock seconds (log-log), one panel per operating point. Chain
       curves use the Sokal accumulation N_eff(t) = post-burn-in sweeps /
-      (2 tau_int) with the frozen per-chain tau_int (batch means) and the
-      frozen burn-in rule, so the curve starts where the frozen rule
+      (2 tau_int) with the per-chain tau_int (batch means) and the
+      burn-in rule, so the curve starts where the rule
       starts counting; endpoints agree with the headline table's Var/MSE
       N_eff up to the two constructions' usual gap (the Var/MSE form
       credits cross-chain averaging; printed at build time). The neural
       sampler appears twice: sampling cost alone (marginal accounting)
       and sampling plus one-off training wall-clock (the total-cost
-      accounting the pre-registration commits to publishing).
+      accounting).
   fidelity_coverage_sc.png -- the community-native exhibit at the headline
       cell, two panels: LEFT the energy marginal (IS-weighted neural
       histogram, 8 replicates pooled, over the certified reference
@@ -25,7 +25,7 @@ records, and renders three PNGs:
       95% finite-sample noise floors of both the neural replicate pool
       and the competitor chains, so agreement is read against what
       perfect sampling would show at these effective sizes, not against
-      zero. The figure illustrates; the frozen numeric test decides.
+      zero. The figure illustrates; the numeric test decides.
   fidelity_coverage_s010.png -- the same two-panel figure at the
       subcritical floor (appendix companion).
 
@@ -33,7 +33,7 @@ Energy histogram support: the sigma-free slice energy x^T A x is integer-
 valued on the +/-1 lattice (steps of 8 under swap moves), so both sides
 are binned on the union of exact observed levels -- the 8x8 analogue of
 the demo pack's exact-level bin centres; no continuous binning choice
-enters. TV floors reuse the frozen tv_noise_floor construction with the
+enters. TV floors reuse the tv_noise_floor construction with the
 published effective sizes: Kish ESS for the weighted neural pool and
 n/tau_int for the chains, tau_int(energy) for the energy panel and the
 published tau_int(phi)-based count for the phi panel.
@@ -197,8 +197,8 @@ def plot_cost_quality(analysis, probe_root, out_path, summary_rows):
             "training_seconds_one_off": float(training),
         })
 
-        # The gap the frozen break-even commitment owes when no crossing
-        # occurs in range: post-burn-in rates are constant, so the rate
+        # The gap reported when no break-even crossing occurs in range:
+        # post-burn-in rates are constant, so the rate
         # ratio holds at every wall-clock beyond the chain's burn-in.
         gap_text = "chain lead at equal wall-clock:\n" + "\n".join(
             f"  {variant}: {gap:,.0f}x" if gap >= 100 else
@@ -232,7 +232,7 @@ def pooled_neural_energy(run_dir, target):
     Weights: each replicate's log-weights are self-normalised in its own
     5,000-draw batch (the estimator the analysis scores), then the eight
     batches are averaged with equal replicate weight -- the same pooling
-    the frozen coverage block applies to the phi histogram.
+    the analysis's coverage block applies to the phi histogram.
     """
     energies, weights = [], []
     replicate_dirs = sorted(Path(run_dir).glob("eval_replicate_s*"))
@@ -275,7 +275,7 @@ def mass_on_levels(values, weights, levels):
 
 def energy_panel_data(point, run_dir, probe_root, coverage):
     """Histograms + TV/floor numbers for one operating point's energy
-    panel. Competitor TV uses the nonlocal chains (the frozen carrier)
+    panel. Competitor TV uses the nonlocal chains (the carrier variant)
     with n/tau_int(energy) effective size; floors are seeded for
     reproducible figures."""
     target = FixedCompositionIsingTarget(
@@ -402,7 +402,7 @@ def plot_fidelity_coverage(analysis, point, run_dir, probe_root, out_path,
 
 
 def endpoint_sanity(analysis):
-    """Print the tau-form endpoint against the frozen Var/MSE table so the
+    """Print the tau-form endpoint against the analysis's Var/MSE table so the
     two constructions' agreement is on the record whenever figures are
     rebuilt (they answer the same question with different credit for
     cross-chain averaging; a large gap would mean a broken input)."""

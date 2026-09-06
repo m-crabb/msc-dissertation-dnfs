@@ -6,8 +6,8 @@ derivative: swap dynamics hold every slice's mass fixed, so only the
 conditional on each slice evolves and there is no single mixture-level
 ∂_t log Z_t the residual could use. The control-variate estimate (Eq. 8)
 c_t = mean_m ξ_t(x_m) is unbiased WITHIN a slice for any rates (Stein), so
-the correction is a within-slice mean plus a (time, slice) lookup. Before
-2026-09-05 the hard trainer pooled the mean over every rollout row and
+the correction is a within-slice mean plus a (time, slice) lookup. An
+earlier version of the hard trainer pooled the mean over every rollout row and
 handed every replay row that one scalar, leaving each row an offset
 ∂_t log Z_t^{(C)} − mean_C ∂_t log Z_t^{(C)} that is ~2 nats at d16 and
 ~18 nats at d256 from the binomial base constant alone.
@@ -214,7 +214,7 @@ def _same_time_pairs(x, t, c_t):
 def test_train_swap_hands_each_row_its_own_slice_baseline(
         tmp_path, monkeypatch, c_t_from_rollout):
     """Both grid paths the camort cells use: the standalone estimator and
-    the B1 rollout-integrand reuse. Rows at one time slot on one slice
+    the rollout-integrand reuse (c_t_from_rollout). Rows at one time slot on one slice
     share a baseline; rows at one time slot on different slices do not."""
     torch.manual_seed(0)
     calls = _capture_loss_calls(monkeypatch)

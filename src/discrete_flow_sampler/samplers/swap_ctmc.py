@@ -194,10 +194,10 @@ def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt,
     so no per-step host sync — because this is the RUNNING step's only
     faithfulness record: `lambda_dt_clipped_frac` in the training log gates
     the one-event step, which this function replaces, and the Luby matching
-    silently drops proposals still contested after its round budget. The
-    d256 divergence review (2026-08-11) found the run formally outside its
-    validated envelope precisely because no matching-native diagnostic was
-    logged; the drop fraction this feeds is that missing certificate.
+    silently drops proposals still contested after its round budget.
+    Without a matching-native diagnostic a d256 run can sit outside its
+    validated envelope unnoticed; the drop fraction this feeds is that
+    certificate.
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)
@@ -451,13 +451,13 @@ def slice_index_of(target, x: Tensor) -> Tensor:
 def mean_per_slice(values: Tensor, slice_idx: Tensor, n_slices: int) -> Tensor:
     """Within-slice mean of a (T, M) integrand table over its M rows. (T, K).
 
-    THE CORRECTION THIS ENCODES (2026-09-05). On a slice mixture the
+    THE CORRECTION THIS ENCODES. On a slice mixture the
     residual for a row on slice C needs ∂_t log Z_t^{(C)}: swap dynamics
     hold every slice's mass fixed, so only each slice's conditional
     evolves; a single mixture-level ∂_t log Z_t cannot generally serve
     every slice's residual. E_{p_t^{(C)}}[ξ_t] = ∂_t log Z_t^{(C)} for any
     rates (Stein), so the estimator is a within-slice mean. The pooled
-    mean over all rows (the pre-fix reduction) left every row an offset
+    mean over all rows (the earlier reduction) left every row an offset
     ∂_t log Z_t^{(C)} − mean_C ∂_t log Z_t^{(C)}, ~2 nats at d16 and ~18
     nats at d256 from the binomial base constant alone; with c_t detached
     that offset reaches the gradient as 2·Δ·E_q[∇ξ_t]. With exact ratios,
@@ -502,7 +502,7 @@ def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
     `mean_per_slice` for why the pooled mean was wrong). Rows keep their
     slice for the whole trajectory, so `x_traj[0]` labels every slot.
 
-    chunk_rows (M7a, 2026-08-14; plan Task 7): None runs the per-slot
+    chunk_rows: None runs the per-slot
     sequential loop — n_grid integrand calls at outer_batch rows each, the
     byte-identical archived behaviour. When set, the (n_grid × outer_batch)
     integrand evaluations are flattened and computed in row-chunks of at
@@ -510,8 +510,8 @@ def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
     the no-grad c_t phase at d256 (~75% of wall there is trajectory+c_t).
     The quantities are the SAME fp32 ops modulo batch-dim blocking, so
     parity vs the sequential path is pinned at the established 1e-5
-    batch-blocking class (tests/test_c_t_grid_chunk.py — that parity test
-    IS the M7a gate; no quality change is permitted). The cap exists so
+    batch-blocking class (tests/test_c_t_grid_chunk.py; no quality change
+    is permitted). The cap exists so
     the flattened batch stays inside GPU memory: at d256-MA a no-grad call
     peaks ~40 MB/row, so 512-2048 rows is the in-cap class on an 80 GB
     a100. Stateless and RNG-free, so no resume contract beyond wiring.

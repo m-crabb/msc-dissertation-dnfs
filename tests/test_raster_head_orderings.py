@@ -48,7 +48,7 @@ WHAT IS PINNED HARDEST BELOW:
     one.
 
   * THAT ('row',) IS BYTE-IDENTICAL to the archived head. Every masked-
-    attention and interval cell in print was trained without this, and the
+    attention and interval cell reported was trained without this, and the
     single-ordering path must draw the same parameters in the same order.
 
   * THAT THE ARM IS CHEAP IN PARAMETERS. An extra ordering adds NO modules --
@@ -172,7 +172,7 @@ def test_extra_orderings_change_the_scores(head_kind, orderings):
 
 @pytest.mark.parametrize("head_kind", list(BUILDERS))
 def test_single_ordering_is_byte_identical_to_the_archived_head(head_kind):
-    """Every raster cell in print trained without this. `('row',)` must draw
+    """Every reported raster cell trained without this. `('row',)` must draw
     the same parameters in the same order and produce the same scores."""
     explicit = BUILDERS[head_kind](("row",))
     default = BUILDERS[head_kind]()

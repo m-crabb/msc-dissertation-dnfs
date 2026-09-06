@@ -6,7 +6,7 @@ it, so every checkpoint choice must also change the output directory --
 otherwise a re-draw can silently overwrite a frozen number with one
 computed from different weights.
 
-`stage_best` is the instrument the rw cells' frozen bands declare: whether
+`stage_best` is the instrument the rw cells are read with: whether
 the sigma_c stage's best-trailing-median-ESS checkpoint beats `final.pt`.
 The trainer saves those as RAW weights only (swap_training saves
 `head.state_dict()`, not the EMA shadow), so the EMA pairing must be

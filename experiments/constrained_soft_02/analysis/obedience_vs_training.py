@@ -3,7 +3,7 @@
 The D=10 amortised run reached the end of training with a healthy sampler but
 a broken controller: eval ESS at c=0.5 was 0.392 (fine), while the obedience
 slope d(delivered)/d(requested) over the claim band [0.3, 0.7] was 0.206
-(the pre-registered gate wanted >= 0.9). A single end-of-run number cannot
+(the target was >= 0.9). A single end-of-run number cannot
 distinguish the two explanations that matter:
 
   * UNDERTRAINED — the slope is climbing and simply ran out of steps. The

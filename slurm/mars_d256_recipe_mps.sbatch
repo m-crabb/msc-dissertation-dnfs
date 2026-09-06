@@ -7,15 +7,15 @@
 #SBATCH --time=1-12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+# Historical launcher: the borrowed mars node is no longer available; do not submit.
 #
 # B200 183GB twin of d256_screen_arm.sbatch: two recipe seeds under MPS.
 # Each peaks <=80GB on DoC A100-80GB. Recorded packing rationale: MPS
 # co-schedules kernels (~1.2-1.5x single-run time); separate CUDA contexts
 # time-slice (~serial). B200 measured ~9-12h/seed at 50k steps; 36h allows
-# a serialised pair. Borrowed-node rules (docs/imperial-doc-cluster.md §8):
-# one GPU, dnfs-* name, bounded walltime. Co-run wall_clock_step_s includes
-# contention: quote ESS/FVU verdict bands only, never timings.
+# a serialised pair. Borrowed-node rules: one GPU, dnfs-* name, bounded
+# walltime. Co-run wall_clock_step_s includes contention: quote ESS/FVU
+# only, never timings.
 export WANDB_MODE=offline
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 

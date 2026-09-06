@@ -18,7 +18,7 @@ from experiments.constrained_hard_03.gate_4x4 import (
 from discrete_flow_sampler.diagnostics.metrics import enumerate_states
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
-# --- the two plan-mandated tests (verbatim from plan Task 9 Step 1) ---
+# --- energy-marginal TV basics ---
 
 
 def test_energy_marginal_tv_is_zero_for_identical():
@@ -112,13 +112,13 @@ def test_within_level_concentration_shows_large_excess():
 
 
 def test_within_level_skewed_weights_uniform_states_excess_near_zero():
-    # Weight-matching pin (review fix wave 1): the states cover the level
+    # Weight-matching pin: the states cover the level
     # EXACTLY uniformly, but the IS weights are heavily skewed (lognormal,
     # n_eff_k ~ 37 << n_k = 3200). Weight dispersion alone floors the raw TV_k
     # at ~0.30; the weight-matched null (observed weights on uniform draws)
     # models exactly that, so the excess must sit ~0. Under the old unweighted
     # baseline (tv_ref ~ 0.04) the excess would be ~0.26 >> the 0.05 gate
-    # threshold -- a spurious NO-GO at any low-within-level-ESS rung.
+    # threshold -- a spurious failure at any low-within-level-ESS rung.
     rows = list(itertools.product([-1.0, 1.0], repeat=6))[:32]
     slice_states = torch.tensor(rows)                      # g_k = 32 states
     slice_energies = torch.zeros(32)

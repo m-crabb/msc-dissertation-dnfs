@@ -65,7 +65,7 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
-    # λ sweep at the c=0.5 report operating point (2026-06-11 design): clones
+    # λ sweep at the c=0.5 report operating point: clones
     # of the l50 cell varying only the penalty strength, so the four-seed
     # λ comparison is controlled. λ=50 is the existing cell above.
     "S2_d4_c05_l5_letf": StageCfg(
@@ -227,7 +227,7 @@ CONFIGS: dict[str, StageCfg] = {
     # same widening window. One variable, so a change in conditioning fidelity
     # is attributable to training budget alone.
     #
-    # This is not a proxy for the D=10 launch, and that distinction is the
+    # This is not a proxy for the D=10 cells, and that distinction is the
     # reason it is worth the GPU time. The attenuation result — realised
     # composition tracking requested composition at slope 0.39 against the
     # exact target's 0.984 — can only be stated where the target is
@@ -271,8 +271,8 @@ CONFIGS: dict[str, StageCfg] = {
     # The budget twin plus the lambda anneal, nothing else. The fixed-lambda
     # twin answered the obedience question (a surviving seed reaches the
     # exact target's slope at 5x budget) but reproduced the from-scratch
-    # fragility: seed 42 collapsed into one Z2 mode with ESS ~ 0
-    # (2026-08-01). This cell tests the remaining attribution: does the
+    # fragility: seed 42 collapsed into one Z2 mode with ESS ~ 0.
+    # This cell tests the remaining attribution: does the
     # anneal restore seed survival without giving back the obedience? The
     # lambda schedule steps on the SAME boundaries as the window widening,
     # so the penalty tightens exactly as the window opens (the D=10 cells'
@@ -709,8 +709,8 @@ CONFIGS: dict[str, StageCfg] = {
     # stability stack (warmup=2000, lambda=50) but drops n_euler 128 -> 64 to match
     # the paper-faithful baseline D=10 grid (DNFS uses T=64); the old 128 was an
     # unvalidated conservative pick. This is a controlled escalation of the
-    # validated D=4 c=0.5 run up to D=10. c=0.3 is dropped from the report
-    # (2026-06-09), so this is the D=10 soft witness the final report ships.
+    # validated D=4 c=0.5 run up to D=10. c=0.3 is dropped from the report,
+    # so this is the D=10 soft witness the final report ships.
     "S2_d10_c05_l50_letf_ne64": StageCfg(
         name="S2_d10_c05_l50_letf_ne64",
         ising=IsingCfg(
@@ -736,7 +736,7 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
-    # λ sweep at the c=0.5 report operating point (2026-06-11 design): clones
+    # λ sweep at the c=0.5 report operating point: clones
     # of the l50 witness varying only the penalty strength, so the four-seed
     # λ comparison is controlled. λ=50 is the existing witness above.
     "S2_d10_c05_l5_letf_ne64": StageCfg(
@@ -814,7 +814,7 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
-    # Recipe ladder rung 1 (2026-06-11): clone of the l50 ne64 witness plus a
+    # Recipe ladder rung 1: clone of the l50 ne64 witness plus a
     # 10->25->50 lambda anneal. The c=0.5 lambda sweep showed lambda<=10
     # trains 4/4 at ESS ~0.99 while lambda=50 from scratch goes 1/4; the
     # anneal learns the physics in the trainable window, then tightens onto
@@ -857,12 +857,11 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # F(c) campaign gate windows (2026-06-13): off-centre clones of the won
-    # anneal rung, varying only target_composition. c=0.65 (typical) and
-    # c=0.80 (stress) launch first and gate the rest of the composition sweep
-    # against the pre-declared failure criteria, including the ESS 0.30 floor
-    # the fallback rung below cites. The anneal
-    # schedule and every other knob are held fixed so the off-centre runs are a
+    # F(c) off-centre windows: clones of the surviving anneal rung, varying
+    # only target_composition. c=0.65 (typical) and c=0.80 (stress) run
+    # before the rest of the composition sweep; the survival criterion is
+    # the ESS 0.30 floor the fallback rung below cites. The anneal schedule
+    # and every other knob are held fixed so the off-centre runs are a
     # controlled test of whether the recipe generalises away from c=0.5.
     "S2_d10_c065_l50_letf_ne64_anneal": StageCfg(
         name="S2_d10_c065_l50_letf_ne64_anneal",
@@ -902,8 +901,8 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # F(c) sweep windows released 2026-06-17: ne64 anneal clones of the won
-    # c=0.5 rung, target_composition only. The integrator stays ne64 (no
+    # F(c) sweep windows: ne64 anneal clones of the surviving c=0.5 rung,
+    # target_composition only. The integrator stays ne64 (no
     # measured case for a finer Euler grid on the curve; the off-centre tail
     # beyond ~0.65 is left to the hard sampler). With Z_2 reflection the set
     # {0.30, 0.50, 0.55, 0.60, 0.65} covers compositions 0.30 to 0.70.
@@ -1059,11 +1058,11 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # F(c) gate fallback rung (2026-06-16): clone of the c=0.80 stress window
-    # with a finer Euler grid only (ne64 -> ne128), testing whether the finer
-    # integration rescues seed survival at the most off-centre target. The
-    # ne64 gate went 1/4 over the ESS 0.30 floor; this is the cheap single-seed
-    # diagnostic before spending the per-window lambda or full-window ne128 rung.
+    # Fallback rung for the c=0.80 stress window: the same cell with a finer
+    # Euler grid only (ne64 -> ne128), testing whether finer integration
+    # rescues seed survival at the most off-centre target. At ne64 only 1 of
+    # 4 seeds cleared the ESS 0.30 floor; this is the cheap single-seed
+    # diagnostic before the per-window lambda or full-window ne128 rung.
     "S2_d10_c080_l50_letf_ne128_anneal": StageCfg(
         name="S2_d10_c080_l50_letf_ne128_anneal",
         ising=IsingCfg(
@@ -1102,7 +1101,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # Recipe ladder fallback rung (2026-06-11): clone of the l50 ne64 witness
+    # Recipe ladder fallback rung: clone of the l50 ne64 witness
     # with a finer Euler grid only, testing whether ne128 rescues d10 seed
     # survival at the tight operating point (the c=0.3 ne128 batch went 4/4).
     "S2_d10_c05_l50_letf_ne128": StageCfg(
@@ -1130,15 +1129,15 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
-    # Matched-base validation (2026-06-17): the c=0.80 ne128 anneal window with
-    # a per-site Bernoulli(0.80) base, so the flow starts centred and only
-    # tightens width. base_composition is the only change vs the ne128 anneal.
-    # VERDICT (corrected 2026-08-19): the archived eval ESS/N 0.171 was an
-    # eval bug — x0 drawn inline-uniform while the path used Bernoulli(0.8),
-    # fixed in de9db7c AFTER this run. Production-path A100 redraw: 0.937,
-    # PASSES its ESS >= 0.30 gate and beats the uniform twin (0.419) 2.24x.
-    # The uniform control reproduced its archived number, so the correction
-    # is attributable to the base draw alone.
+    # Matched-base validation: the c=0.80 ne128 anneal window with a per-site
+    # Bernoulli(0.80) base, so the flow starts centred and only tightens
+    # width. base_composition is the only change vs the ne128 anneal.
+    # Measured: the first eval read ESS/N 0.171 because of an eval bug (x0
+    # drawn inline-uniform while the path used Bernoulli(0.8); fixed
+    # after this run). Redrawn on the production path: 0.937, above
+    # the ESS 0.30 floor and 2.24x the uniform twin (0.419). The uniform
+    # control reproduced its earlier number, so the correction is
+    # attributable to the base draw alone.
     "S2_d10_c080_l50_letf_ne128_matched_anneal": StageCfg(
         name="S2_d10_c080_l50_letf_ne128_matched_anneal",
         ising=IsingCfg(
@@ -1179,12 +1178,12 @@ CONFIGS: dict[str, StageCfg] = {
         wandb_project="dnfs-constraints",
     ),
     # Matched base + fixed lambda=50 (no anneal): tests whether the matched
-    # start lets the lambda curriculum be dropped entirely.
-    # VERDICT (corrected 2026-08-19): archived 0.025 was the same eval bug as
-    # the matched_anneal twin. Production-path A100 redraw: 0.483 — passes
-    # the 0.30 gate, so fixed-lambda is viable from a matched start, but the
-    # anneal still buys ~1.9x (0.937 vs 0.483): the curriculum is not
-    # redundant, it is just not load-bearing for gate survival.
+    # start lets the lambda curriculum be dropped entirely. The first eval's
+    # 0.025 was the same eval bug as the matched_anneal twin; redrawn on the
+    # production path: 0.483, above the 0.30 floor, so fixed-lambda is
+    # viable from a matched start, but the anneal still buys ~1.9x (0.937
+    # vs 0.483): the curriculum is not redundant, just not load-bearing for
+    # seed survival.
     "S2_d10_c080_l50_letf_ne128_matched_fixed50": StageCfg(
         name="S2_d10_c080_l50_letf_ne128_matched_fixed50",
         ising=IsingCfg(
@@ -1211,7 +1210,7 @@ CONFIGS: dict[str, StageCfg] = {
         estimator="control_variate",
         wandb_project="dnfs-constraints",
     ),
-    # n_euler consistency control (2026-06-17): the c=0.5 anneal witness at
+    # n_euler consistency control: the c=0.5 anneal witness at
     # ne128, paired against the existing ne64 anneal (same seeds) to check
     # whether n_euler shifts logZ/F at centred compositions before mixing
     # grids across the F(c) curve.
@@ -1454,13 +1453,11 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # StableAdamW test of the amortisation forensics' PRINTED recommendation
-    # (2026-08-11; pre-registered one-run test, gates frozen before launch:
-    # frozen before launch). This is a NEW dated experiment, not a reopening
-    # of the closed campaign: one run, seed 42, testing whether the
-    # "normalised or trust-region update" soft.tex 4.4 recommends clears the
-    # G0 bar (eval ESS fraction >= 0.10) that the clipped recipe failed at
-    # 0.0147 (job 269622). Identical to the cyc8 cell above except the
+    # StableAdamW test of the amortisation forensics' recommendation: one
+    # run, seed 42, testing whether the "normalised or trust-region update"
+    # soft.tex 4.4 recommends clears the eval ESS fraction >= 0.10 bar that
+    # the clipped recipe failed at 0.0147 (job 269622). Identical to the
+    # cyc8 cell above except the
     # optimiser: stable_adamw with the raw-gradient clip disabled, so the
     # per-tensor update-RMS threshold is the only bounding mechanism.
     "S2_d10_camort_offset_cyc8_stadamw": StageCfg(
@@ -1514,8 +1511,8 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # Control: amortise over ONLY the six compositions we have specialists
-    # for. Held-out points between those atoms separate genuine
+    # Control: amortise over ONLY the six compositions that have
+    # specialists. Held-out points between those atoms separate genuine
     # interpolation from memorising the training set.
     "S2_d10_cgrid_l50_letf_ne128_anneal": StageCfg(
         name="S2_d10_cgrid_l50_letf_ne128_anneal",
@@ -1589,7 +1586,7 @@ CONFIGS: dict[str, StageCfg] = {
     #   RAISE the  leaves the ratio alone and stops truncating it. Keeps
     #   ceiling    tightness, but exp(2λΔ) grows without bound if Δ drifts.
     #
-    # PRE-REGISTERED, written before any arm ran. λ=10 survives (Δ*=0.25);
+    # Expected: λ=10 survives (Δ*=0.25);
     # λ=25 marginal (Δ*=0.10); both ceiling arms fail by gradient runaway
     # rather than by saturation, because they trade a bounded bias for an
     # unbounded term. The ceiling arms are the ones that could refute the
@@ -1928,17 +1925,17 @@ CONFIGS[_flat_window_name] = replace(
 )
 
 
-# The lambda-sweep exact-field-channel twins (s90, 2026-08-29): rerun
-# tab:soft-lambda-sweep with the closed-form flip channel wired in
-# (ModelCfg.exact_field_channel; the flip twin of the hard chapter's swap
-# channel, gain zero-init so each twin is bit-identical to its parent at
-# step 0). One declared change per twin, pinned by
-# tests/test_exact_flip_channel.py. Built by replace() from the parents so
-# recipe parity is by construction, not by copy-paste discipline. The s90
-# regression motivating this measured the closed form at ~95% of every
-# trained lambda=50 specialist, with the PENALTY column carrying it — the
-# prediction under test is that the channel rescues the all-or-nothing
-# 10x10 seeds (0.02/0.06/0.78/0.05 at lambda=50 in print).
+# The lambda-sweep exact-field-channel twins: rerun tab:soft-lambda-sweep
+# with the closed-form flip channel wired in (ModelCfg.exact_field_channel;
+# the flip twin of the hard chapter's swap channel, gain zero-init so each
+# twin is bit-identical to its parent at step 0). One declared change per
+# twin, pinned by tests/test_exact_flip_channel.py. Built by replace() from
+# the parents so recipe parity is by construction, not by copy-paste
+# discipline. The local-field regression motivating this measured the
+# closed form at ~95% of every trained lambda=50 specialist, with the
+# PENALTY column carrying it — the prediction under test is that the
+# channel rescues the all-or-nothing 10x10 seeds (0.02/0.06/0.78/0.05 at
+# lambda=50).
 LAMBDA_SWEEP_PARENTS = tuple(
     f"S2_d{side}_c05_l{lam}_letf{suffix}"
     for side, suffix in ((4, ""), (10, "_ne64"))
@@ -1953,27 +1950,26 @@ for _parent_name in LAMBDA_SWEEP_PARENTS:
 
 
 # ---------------------------------------------------------------------------
-# s95 soft-chapter revamp (2026-08-30): the 8x8 house family. Production
-# moves to d=64 (the hard chapter's record size, so the cross-route
-# comparison is matched-size at BOTH couplings once the _sc half lands);
+# The 8x8 house family. Production moves to d=64 (the hard chapter's record
+# size, so the cross-route comparison is matched-size at BOTH couplings);
 # one specialist family serves the F(c) curve and the house table.
 
 
 def soft_house_recipe(cell: StageCfg) -> StageCfg:
-    """s95 house recipe for NEW soft cells, as a recipe transform.
+    """House recipe for new soft cells, as a recipe transform.
 
     Four declared instrument changes on top of an archived parent, nothing
-    else: exact_field_channel=True (the closed-form penalty response — s95
-    sweep verdict: full 10x10 lambda=50 rescue, 0.95/0.93/0.94/0.96 against
+    else: exact_field_channel=True (the closed-form penalty response —
+    measured as a full 10x10 lambda=50 rescue, 0.95/0.93/0.94/0.96 against
     the parent's 0.02/0.06/0.78/0.05), compile_model=True (hard's measured
-    2.2x inner updates; certified by a d4+d64 loss-gap gate before any
-    fan-out, since compile has priors on this codebase), ema_decay=0.9999
-    (dual eval — hard's marginal-seed rescue, 0.750 -> 0.830 class), and
-    train.c_t_from_rollout=True (bit-identical CV grid from the rollout's
-    own forwards). Optimiser-side values (lr, warmup 2000, clip 500,
-    batch/buffer, 50k steps) stay PARENT-matched so the before/after
-    channel comparison carries no second change; evals stay fp32 end to
-    end (bf16/SDPA are hard-chapter-only by standing decision).
+    2.2x inner updates; checked by a d4+d64 loss-gap comparison against
+    eager before any fan-out, since compile has misbehaved on this codebase
+    before), ema_decay=0.9999 (dual eval — hard's marginal-seed rescue,
+    0.750 -> 0.830 class), and train.c_t_from_rollout=True (bit-identical
+    CV grid from the rollout's own forwards). Optimiser-side values (lr,
+    warmup 2000, clip 500, batch/buffer, 50k steps) stay PARENT-matched so
+    the before/after channel comparison carries no second change; evals
+    stay fp32 end to end (bf16/SDPA are hard-chapter-only).
     """
     return replace(
         cell,
@@ -2004,7 +2000,7 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
                 sigma=_sigma, target_composition=_c_target),
         ))
 
-# The wave-2 control: house recipe MINUS the channel, critical coupling,
+# The channel control: house recipe MINUS the channel, critical coupling,
 # centre composition only. If this fails where _house_sc trains, the
 # failure->rescue story gets a measured second act at matched size; if
 # both train, the channel's sigma_c claim rests on the efficiency columns
@@ -2016,11 +2012,11 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"] = replace(
     model=replace(_HOUSE_SC_CENTRE.model, exact_field_channel=False),
 )
 
-# The sigma_c anneal arm (s99): completes the three-fates trio at the
+# The sigma_c anneal arm: completes the three-fates trio at the
 # production size and coupling -- parent (= the nochan control), anneal,
 # channel -- so fig:penalty-variance can be drawn at 8x8 sigma_c instead
-# of 10x10 and the chapter body becomes single-size (user decision,
-# s99). The nochan control PLUS the chapter's declared lambda schedule
+# of 10x10 and the chapter body is single-size.
+# The nochan control PLUS the chapter's declared lambda schedule
 # (10/25/50 at 0/10k/20k), one lever, test-pinned; the anneal's job is
 # the deferred-shock trace: it defers the lambda^2 Var[delta_P] shock
 # and repays at each boundary where the channel discharges it once.
@@ -2038,15 +2034,15 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"] = replace(
     )),
 )
 
-# s107 single-size completion (2026-09-01): the chapter's motivating
-# exhibits move fully to 8x8 (10x10 retires from the body), so every
-# observation the 10x10 family carried is re-measured here as one-lever
-# twins of the house centre cells. (1) nochan at sigma=0.1 completes the
-# {coupling} x {channel} 2x2 -- the sc nochan control is dead 0/4 where
-# the channel trains 4/4, and this cell measures whether the bare
-# penalty is benign subcritically at d=64 on the SAME recipe (the
-# 20260812 walkback said yes at 0.819 +/- 0.077, but on the pre-house
-# recipe -- ne128 parent without channel/compile/EMA/rollout-CV).
+# Single-size completion: the chapter's motivating exhibits move fully to
+# 8x8 (10x10 retires from the body), so every observation the 10x10
+# family carried is re-measured here as one-lever twins of the house
+# centre cells. (1) nochan at sigma=0.1 completes the {coupling} x
+# {channel} 2x2 -- the sc nochan control trains 0/4 where the channel
+# trains 4/4, and this cell measures whether the bare penalty is benign
+# subcritically at d=64 on the SAME recipe (an earlier measurement said
+# yes at 0.819 +/- 0.077, but on the pre-house recipe -- ne128 parent
+# without channel/compile/EMA/rollout-CV).
 # (2)+(3) lambda=100 twins, both couplings, carry the "raising lambda
 # helps neither side" half of the lambda trade at production size
 # (10x10: 3 of 4 seeds stick at l100 even with the channel; 4x4 l100
@@ -2054,9 +2050,8 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"] = replace(
 # the fresh samples for the zero-shot lambda-analogue (reweighting
 # lambda=10 draws onto the lambda=50 target; the printed 0.98 -> 0.61
 # ESS drop is a 10x10 number and retires with the size). lambda=10 at
-# sigma_c completes the lambda block of the 8x8 house table (s109; it was
-# left unbuilt while no sentence read from it). All lambda
-# rungs trained at 4x4 with the channel in the s95 efc sweep, so the
+# sigma_c completes the lambda block of the 8x8 house table. All lambda
+# rungs trained at 4x4 with the channel in the efc lambda sweep, so the
 # validate-at-D4 evidence pre-exists.
 _HOUSE_CENTRE = CONFIGS["S2_d8_c0500_l50_letf_ne128_house"]
 CONFIGS["S2_d8_c0500_l50_letf_ne128_house_nochan"] = replace(
@@ -2077,7 +2072,7 @@ for _lam, _lam_tag in ((10.0, "l10"), (100.0, "l100")):
                 _lam_parent.ising, composition_penalty_strength=_lam),
         )
 
-# Matched-base twins (s99): base_composition = c* at the OFF-CENTRE
+# Matched-base twins: base_composition = c* at the OFF-CENTRE
 # windows, both couplings — at c* = 0.5 the house cells' Bernoulli(0.5)
 # base is already matched, so the centre rows anchor both columns
 # unchanged. What the pair measures: the s010 c=0.25 window is uniformly
@@ -2089,7 +2084,7 @@ for _lam, _lam_tag in ((10.0, "l10"), (100.0, "l100")):
 # rescues a window the failure was base reachability; if not, it is the
 # target itself. One declared lever vs the run house twin (test-pinned);
 # the base enters only the x0 draw and the log w0 term, both on the
-# corrected post-de9db7c path — the exact-field channel is pure target
+# corrected path — the exact-field channel is pure target
 # physics and does not see it.
 for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
     if _c_target == 0.50:
@@ -2104,11 +2099,11 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
             ising=replace(_house_twin.ising, base_composition=_c_target),
         )
 
-# D=4 gates for the compile-parity check (validate-at-D=4 rule): the full
-# house recipe and its eager twin. The gate passes when their loss traces
-# agree to compile tolerance (1e-5-class, never bit-parity) — the GFN
-# wave's gate pattern, rerun here because compile x leTF x sigma_c is
-# untested and the factorised chassis's compile history says gate first.
+# D=4 cells for the compile-parity check: the full house recipe and its
+# eager twin. The check passes when their loss traces agree to compile
+# tolerance (1e-5-class, never bit-parity) — the same pattern the GFN
+# comparator used, rerun here because compile x leTF x sigma_c is untested
+# and compile has diverged silently on this codebase before.
 _D4_GATE_PARENT = CONFIGS["S2_d4_c05_l50_letf"]
 CONFIGS["S2_d4_c05_l50_letf_house_gate"] = soft_house_recipe(replace(
     _D4_GATE_PARENT, name="S2_d4_c05_l50_letf_house_gate"))
@@ -2118,23 +2113,22 @@ CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"] = replace(
     model=replace(_D4_GATE.model, compile_model=False),
 )
 
-# Wave 3: the amortised 4x4 family on the house recipe. The archived
-# fixed-lambda 50k parent plus the four recipe levers, nothing else — no
-# lambda anneal, no offset, no clip. Those cells existed to service
-# anneal-boundary shocks (the lambda steps that took the annealed twin's
-# ESS 4900 -> 11 at each shared boundary); the channel has no boundaries,
-# so if this cell trains 4/4 the whole offset/clip confound family
-# collapses out of the chapter (plan wave 3). The channel reads each
-# row's own conditioned composition via the per-row c* path (s95,
-# `4f94595`), so the amortised widening window keeps its meaning.
+# The amortised 4x4 family on the house recipe. The archived fixed-lambda
+# 50k parent plus the four recipe levers, nothing else — no lambda anneal,
+# no offset, no clip. Those cells existed to service anneal-boundary
+# shocks (the lambda steps that took the annealed twin's ESS 4900 -> 11 at
+# each shared boundary); the channel has no boundaries, so if this cell
+# trains 4/4 the whole offset/clip confound family collapses out of the
+# chapter. The channel reads each row's own conditioned composition via
+# the per-row c* path, so the amortised widening window keeps its meaning.
 CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
     CONFIGS["S2_d4_camort_50k_l50_letf"],
     name="S2_d4_camort_50k_l50_letf_house"))
 
-# Matched-base amortisation (s101, plan 2026-08-31-soft-camort-matched-base).
+# Matched-base amortisation.
 # Design mirrors hard camort's shape where soft's flip dynamics permit it:
 # discrete spine draw from step 0 (no widening staircase, no lambda
-# curriculum — the D=10 campaign's G0/G1 convictions removed outright, not
+# curriculum — the D=10 family's staircase and anneal removed outright, not
 # survived), base matched to the drawn c per cycle (motivated by the 8x8 mb
 # twins: the off-centre specialist collapse was base reachability, one
 # lever, full rescue at every window). The base is Bernoulli(c), NOT hard's
@@ -2148,17 +2142,17 @@ CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
 _CAMORT_SPINE = CompositionCfg(
     centre=0.5, half_width=0.0, values=(0.25, 0.375, 0.5))
 # The d8 cells draw uniform over EVERY realisable composition in
-# [0.25, 0.5] — the "quantised continuum", 17 values at 1/64 steps
-# (s101, post-gate amendment). The D=4 gate exposed the cost of sparse
+# [0.25, 0.5] — the "quantised continuum", 17 values at 1/64 steps.
+# The D=4 cell exposed the cost of sparse
 # draws (held-out 0.4375 dipped to raw ESS 0.73 across a 0.125 gap while
 # 0.3125 read 0.95 across 0.0625), and the matched base removed the
 # mechanism that once made wide draw sets dangerous (off-centre rollouts
 # under a uniform base — the flatw30 killer). An explicit values tuple,
 # not a half_width window: every draw an integer site count, uniform
-# weights, no quantisation plumbing. Watched risk at judging: per-value
-# exposure is 1/17 of the budget (the gate's zero-exposure held-out at
-# 0.95 says smoothness shares it). The D=4 gate cell below keeps its
-# archived 3-value spine — archived cells never retro-flip.
+# weights, no quantisation plumbing. Known risk: per-value exposure is
+# 1/17 of the budget (the D=4 cell's zero-exposure held-out at 0.95 says
+# smoothness shares it). The D=4 cell below keeps its archived 3-value
+# spine.
 _CAMORT_D8_DRAWS = CompositionCfg(
     centre=0.5, half_width=0.0,
     values=tuple(sites / 64 for sites in range(16, 33)))
@@ -2186,9 +2180,10 @@ for _sigma_suffix in ("", "_sc"):
         composition=_CAMORT_D8_DRAWS,
     )
     if _sigma_suffix == "_sc":
-        # Sigma-ladder twin (s108): the dead sigma_c camort cell starts at
-        # sigma_c COLD, while the hard chapter's amortised sigma_c cell (and
-        # the baseline's critical recipe) train on a 7-stage sigma ladder,
+        # Sigma-ladder twin: the sigma_c camort cell above (which does not
+        # train) starts at sigma_c COLD, while the hard chapter's amortised
+        # sigma_c cell (and the baseline's critical recipe) train on a
+        # 7-stage sigma ladder,
         # 0.1 -> sigma_c over 30k steps with the LR dropping at the
         # near-critical variance spike. The soft-vs-hard amortisation
         # contrast was therefore not one-lever, and the ladder is exactly
@@ -2203,14 +2198,14 @@ for _sigma_suffix in ("", "_sc"):
             name=_ladder_name,
             curriculum=_SOFT_SIGMA_LADDER_SC,
         )
-    # Draw-set ablation (s104): the 17-value cell above trained healthy at
-    # sigma=0.1 but DEAD 4/4 at sigma_c (centre ESS 0.001-0.007, in-loop
-    # ESS single-digit for all 50k steps, loss plateau ~10-15 vs the sc
-    # centre specialist's ~1.5), while the D=4 gate that authorised the
-    # design ran at sigma=0.1 with the 3-value spine — so "mixed draws at
-    # criticality" and "the post-gate densification to 17 values" are
-    # confounded in the dead cell. ONE lever separates them: the draw set
-    # back to the gate's spine (per-value exposure 1/3 instead of 1/17),
+    # Draw-set ablation: the 17-value cell above trains at sigma=0.1 but on
+    # no seed of 4 at sigma_c (centre ESS 0.001-0.007, in-loop ESS
+    # single-digit for all 50k steps, loss plateau ~10-15 vs the sc centre
+    # specialist's ~1.5), while the D=4 cell that motivated the design ran
+    # at sigma=0.1 with the 3-value spine — so "mixed draws at criticality"
+    # and "the later densification to 17 values" are confounded in the
+    # collapsed cell. ONE lever separates them: the draw set back to the
+    # D=4 spine (per-value exposure 1/3 instead of 1/17),
     # both couplings so sigma=0.1 keeps a should-stay-healthy control.
     _spine3_name = (
         f"S2_d8_camort_spine3_l50_letf_ne128_house{_sigma_suffix}")
@@ -2220,8 +2215,8 @@ for _sigma_suffix in ("", "_sc"):
         composition=_CAMORT_SPINE,
     )
 
-# Specialist ladder twin (s109): the camort ladder twin TRAINS (centre ESS
-# 0.155-0.352 raw / 0.220-0.452 EMA, 4/4, vs the cold camort cell's
+# Specialist ladder twin: the camort ladder twin trains (centre ESS
+# 0.155-0.352 raw / 0.220-0.452 EMA on 4/4 seeds, vs the cold camort cell's
 # 0.001-0.010), so its yield ratio needs a specialist on the SAME ladder --
 # against the cold sigma_c specialist (0.67-0.74 raw) the ratio carries two
 # levers. One lever off the house sigma_c specialist: the ladder.
@@ -2233,9 +2228,9 @@ CONFIGS[_sc_specialist_ladder_name] = replace(
     curriculum=_SOFT_SIGMA_LADDER_SC,
 )
 
-# Collapse-mechanism twins (s106), sc only: spine3 sc died identically to the
-# 17-value cell (grid-uniform ESS 0.001-0.010, plateau ~10-15), and the desk
-# probe showed the disengaged channel gain is a casualty of the dead trunk,
+# Collapse-mechanism twins, sc only: spine3 sc collapses identically to the
+# 17-value cell (grid-uniform ESS 0.001-0.010, plateau ~10-15), and an
+# offline probe showed the disengaged channel gain is a casualty of the dead trunk,
 # not the cause (specialist-gain transplant RAISES loss 9->14/13->20/15->22
 # and leaves 512-sample ESS at 0.003). spine1 keeps the full amortised
 # machinery at a single value {0.5} — machinery-vs-mixture; rb1 kills replay
@@ -2255,8 +2250,8 @@ CONFIGS[_spine3_rb1_name] = replace(
     train=replace(_spine3_sc.train, replay_buffer_cycles=1),
 )
 
-# Composition-conditioned exact-field gain (s108): the critical spine3 A100
-# family is the clean existing control. Add only
+# Composition-conditioned exact-field gain: the critical spine3 family is
+# the clean existing control. Add only
 #   (c-c0) * (composition_gain_constant + composition_gain_slope * t)
 # on top of its archived global gain. The two scalars start at zero and use no
 # RNG, so every shared model tensor and every composition draw stays paired to
@@ -2272,8 +2267,8 @@ CONFIGS[_spine3_cgain_name] = replace(
     ),
 )
 
-# Paired-initialisation mechanism wave (s108): the conditioner now uses a
-# private RNG stream, so the critical spine1 and c=.5 specialist share every
+# Paired-initialisation mechanism twins: the conditioner uses a private
+# RNG stream, so the critical spine1 and c=.5 specialist share every
 # initial tensor and leave the construction RNG in the same state. Each arm
 # adds only per-group pre-clip gradient telemetry to its existing parent.
 # Running both through train_remote keeps the GPU class at A100-80GB; the
@@ -2307,8 +2302,8 @@ CONFIGS[_pairgrad_spine1_name] = replace(
     ),
 )
 
-# D=4 gate for the matched-base cells (validate-at-D=4 rule): the wave-3
-# camort house cell with the staircase swapped for the spine draw and the
+# D=4 check for the matched-base cells: the amortised 4x4 house cell
+# with the staircase swapped for the spine draw and the
 # base matched — every spine c is an integer site count at d=16 (4/6/8).
 _D4_CAMORT_HOUSE = CONFIGS["S2_d4_camort_50k_l50_letf_house"]
 CONFIGS["S2_d4_camort_mb_50k_l50_letf_house"] = replace(
@@ -2318,11 +2313,11 @@ CONFIGS["S2_d4_camort_mb_50k_l50_letf_house"] = replace(
     composition=_CAMORT_SPINE,
 )
 
-# The tab:amort-4x4 comparator rows, SAME recipe (s96): pricing the
-# conditioning machinery against comparators on the retiring clip50
+# The tab:amort-4x4 comparator rows, SAME recipe: pricing the
+# conditioning machinery against comparators on the retired clip50
 # recipe would rebuild the recipe confound the archived cnull pair was
 # built to remove — so specialists and null re-run on the house recipe
-# at the amortised 50k budget. Windows follow the revamp set
+# at the amortised 50k budget. Windows follow the house set
 # {0.25, 0.375, 0.50} (+ mirrors free): every c* is an integer site
 # count at d=16 (4/6/8 sites), unlike the retired {0.30, 0.65, 0.80}
 # grid (4.8/10.4/12.8). The scatter panels (app:logp-scatters, soft row)
@@ -2344,7 +2339,7 @@ for _c_target, _c_tag in ((0.25, "c0250"), (0.375, "c0375")):
             _D4_SPECIALIST_HOUSE_BASE.ising, target_composition=_c_target),
     )
 
-# The 4x4 house TABLE family at the cross-chapter 4x4 budget (s109): the
+# The 4x4 house TABLE family at the cross-chapter 4x4 budget: the
 # baseline and hard chapters train every 4x4 cell for 10k steps, while the
 # _50k_ family above exists as the budget-matched comparator of the 50k
 # amortised 4x4 cell. tab:eval-soft-4x4 reads these 10k cells at both
@@ -2360,7 +2355,7 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
             ising=replace(_budget_parent.ising, sigma=_sigma),
         )
 
-# The conditioned row of tab:eval-soft-4x4 (s110): built from the 10k
+# The conditioned row of tab:eval-soft-4x4: built from the 10k
 # centre specialist exactly as the 8x8 conditioned cell is built from its
 # specialist (matched base, conditioning flag, discrete spine draw), so
 # the row prices amortisation alone at the table's own budget. The spine
@@ -2388,7 +2383,7 @@ CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(replace(
 
 
 # ---------------------------------------------------------------------------
-# Cu-Au alloy rungs (s115, 2026-09-02): the free-composition and penalised
+# Cu-Au alloy rungs: the free-composition and penalised
 # samplers on the MetaDNS/Damewood Cu-Au fcc expansion (data/ce/, exported by
 # experiments/alloy_ce/export_binary_expansion.py). The single-site LETF
 # trunk is a plain sequence model, so the fcc cell needs no head change on
@@ -2397,8 +2392,8 @@ CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(replace(
 # is bimodal (0.77 at x_Au = 0.5, CuAu L1_0; 0.15 at 0.25, Cu3Au L1_2) --
 # the free rung must cover both ordered phases, the penalised rung pins one.
 # Penalty strength and matched base follow the soft house recipe; the
-# closed-form flip channel stays OFF because its field is the Ising x A
-# local field, not the expansion's flip response (generalisation owed).
+# closed-form flip channel is OFF on these base rungs and switched on by
+# the `_efc` twins below.
 K_B_EV = 8.617333262e-5
 
 
@@ -2456,9 +2451,9 @@ for _sites, _steps in ((16, 10_000), (64, 50_000)):
         # The penalty lambda*d*(c-c*)^2 carries no beta, so lambda sets a
         # composition SD of 1/sqrt(2 lambda d): lambda=50 is the 8x8 house
         # value (0.8 sites); at 16 sites it costs 3.1 nats per single-site
-        # deviation and the s116 cells never trained at any temperature.
-        # lambda=10 is the 4x4 house value (0.9 sites) -- the 16-site twin
-        # (s117, 2026-09-02).
+        # deviation and the lambda=50 16-site cells never trained at any
+        # temperature. lambda=10 is the 4x4 house value (0.9 sites) and is
+        # the 16-site twin's value.
         _penalties = (50.0, 10.0) if _sites == 16 else (50.0,)
         for _penalty in _penalties:
             _soft = (f"S2_cuau{_sites}_{_c_tag}_l{int(_penalty)}_T500_letf_"
@@ -2469,8 +2464,8 @@ for _sites, _steps in ((16, 10_000), (64, 50_000)):
 
 # Soft c=0.5 at lambda=10 trains at 1200 K (train ESS ~1400/5000) and then
 # collapses at the 1200 -> 800 K step exactly as the hard c=0.5 cell did;
-# the hard desk-check (s117, 2026-09-02) found lr 1e-4 from that step the
-# rescue, so the soft twin gets the same schedule.
+# on the hard cell lr 1e-4 from that step was the rescue, so the soft twin
+# gets the same schedule.
 _SOFT_C50_L10 = CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_curr"]
 CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"] = replace(
     _SOFT_C50_L10, name="S2_cuau16_c50_l10_T500_letf_10k_lowlr",
@@ -2481,11 +2476,11 @@ CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"] = replace(
 )
 
 
-# House-strength 16-site cells (s117, 2026-09-02), mirroring the hard rung's
+# House-strength 16-site cells, mirroring the hard rung's
 # `*_50k_house` cells: 50k steps, ne128, the seven-stage ladder linear in
-# beta from 1200 K to 500 K, lr 1e-4 from the first step down (the hard
-# desk-check verdict: lr 1e-3 there collapses c=0.5 to the identity flow),
-# lambda=10 at 16 sites (the 0.9-site-SD convention). The 16-site gate ran
+# beta from 1200 K to 500 K, lr 1e-4 from the first step down (lr 1e-3
+# there collapses the hard c=0.5 cell to the identity flow), lambda=10 at
+# 16 sites (the 0.9-site-SD convention). The `_10k_curr` cells above run
 # these at a quarter of the 8x8 recipe (10k, ne50, four stages).
 def _cuau_house_curriculum(n_steps, n_stages=7, T_hot=1200.0, T_cold=500.0):
     beta_hot, beta_cold = 1.0 / T_hot, 1.0 / T_cold
@@ -2510,14 +2505,14 @@ for _parent_name, _house_name in (
         curriculum=_cuau_house_curriculum(50_000),
     )
 
-# 64-site cells onto the same ladder and lr cut (their s115 registration
-# carried the four-stage ladder with lr 1e-3 at the 800 K step); the soft
+# 64-site cells onto the same ladder and lr cut (their definition above
+# carries the four-stage ladder with lr 1e-3 at the 800 K step); the soft
 # 64-site penalty stays at the 8x8 house lambda=50.
 for _name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_curr",
               "S2_cuau64_c50_l50_T500_letf_50k_curr"):
     CONFIGS[_name] = replace(CONFIGS[_name], curriculum=_cuau_house_curriculum(50_000))
 
-# 64-site flip-channel twins (s119, 2026-09-03): at 16 sites the soft house
+# 64-site flip-channel twins: at 16 sites the soft house
 # cells only ever ran WITH the channel (the channel-free soft cells died at the
 # 1200 -> 800 K step) and the free cell read level with and without it, so the
 # 64-site soft cells carry the channel and the free cell runs both as the
@@ -2531,8 +2526,8 @@ for _parent_name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_let
     )
 
 
-# MetaDNS temperature-grid cells for the free ensemble (s123, 2026-09-04):
-# the 64-site free cell is dead at 500 K with and without the channel, so it
+# MetaDNS temperature-grid cells for the free ensemble: the 64-site free
+# cell does not train at 500 K with or without the channel, so it
 # is reported on MetaDNS's 1200 / 680 K rows with the ladder stopped there
 # (one 1200 K stage at the house stage-0 lr; four stages linear in beta
 # 1200 -> 680 K at the house lr cut), the hard grid cells' schedule exactly.
@@ -2551,7 +2546,7 @@ CONFIGS["A1_cuau64_T680_letf_30k_l4"] = replace(
 
 
 
-# 16-site free cells on MetaDNS's temperature grid (s123): the house free
+# 16-site free cells on MetaDNS's temperature grid: the house free
 # recipe with the ladder stopped at 1200 K (one stage) or 680 K (four
 # stages linear in beta), as the 64-site grid cells; exact composition
 # marginals come from enumeration, so these panels need no chain.
@@ -2570,7 +2565,7 @@ CONFIGS["A1_cuau16_T680_letf_30k_l4"] = replace(
 
 
 
-# Free-ensemble 16-site cell with the lr cut (s117): the A1 gate cell kept
+# Free-ensemble 16-site cell with the lr cut: the A1 `_10k_curr` cell kept
 # lr 1e-3 through the 1200 -> 800 K step and its train ESS fell 3131 -> 96,
 # recovering only to ~1400/5000. MetaDNS reports NESS 0.85-0.94 on this
 # cell in the same ensemble (single run, N=10k), so the free rung is the
@@ -2585,7 +2580,7 @@ CONFIGS["A1_cuau16_T500_letf_10k_lowlr"] = replace(
 )
 
 
-# Exact-field channel twins on the alloy (s117): the channel now reads the
+# Exact-field channel twins on the alloy: the channel reads the
 # target's own flip log-ratio (-beta Delta E_i on an expansion), so it is
 # exact on Cu-Au. One declared change from each lr-cut parent, as the
 # Ising `_efc` twins are from theirs.
@@ -2603,7 +2598,7 @@ for _parent_name in ("A1_cuau16_T500_letf_10k_lowlr",
         model=replace(_parent.model, exact_field_channel=True),
     )
 
-# House-recipe channel twins on the alloy (s118): the s117 twins showed the
+# House-recipe channel twins on the alloy: the lr-cut `_efc` twins showed the
 # flip channel pays on free (+0.1-0.17 at 10k) and soft (c25 0.86, c50 0.47),
 # and the 50k house recipe carried hard c=0.5 to 0.86-0.89 without one, so the
 # 16-site table is completed on house + channel for the flip rungs.

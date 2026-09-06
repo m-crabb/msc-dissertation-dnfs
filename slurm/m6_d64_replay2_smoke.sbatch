@@ -7,20 +7,18 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# M6 (M-campaign Task 6, plan 2026-08-14): replay-buffer staleness ablation.
-# The d64 MA curriculum recipe at the 12k smoke horizon with buffer window
-# 8 -> 2 the ONLY declared change (cell comment in configs.py carries the
-# frozen bands; twin-ness pinned by
+# Replay-buffer staleness ablation: the d64 MA curriculum recipe at the
+# 12k smoke horizon with buffer window 8 -> 2 the ONLY declared change
+# (expected ranges in the configs.py cell comment; twin-ness pinned by
 # test_m6_replay2_smoke_mirrors_ma_recipe_except_declared_fields). Read
-# against the archived MA twin's first 12k steps: INSENSITIVE (final
-# train-ESS within +-10% relative at matched steps) rules staleness out as
-# a d256 confound; SENSITIVE either way buys a full 50k arm and a re-think
-# of the buffer window in the d256 recipe. Fixed tag keeps resume location.
-# Scheduling: ~25 min class on the plan's estimate; 12 h wall request is
-# deliberate headroom (the a30 nodes run ~2x the a100 estimates that priced
-# Task 6's neighbours). a30 because a100 stays reserved for cv2 — per the
-# priority-inversion rule (imperial-doc-cluster.md §4) submit only once
-# 274187 is RUNNING (or scontrol hold this until then).
+# against the archived MA twin's first 12k steps: final train-ESS within
+# +-10% relative at matched steps rules staleness out as a d256 confound;
+# a sensitive read either way buys a full 50k run and a re-think of the
+# buffer window in the d256 recipe. Fixed tag keeps resume location.
+# Scheduling: ~25 min class; 12 h wall is deliberate headroom (a30 nodes
+# run ~2x the a100 estimates). a30 because a100 stays reserved for the
+# d256 cv2 job — to avoid priority inversion, submit only once that job
+# is RUNNING (or scontrol hold this until then).
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

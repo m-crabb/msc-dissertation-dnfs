@@ -68,14 +68,14 @@ from discrete_flow_sampler.seeding import seed_everything
 # 16x16 rung has therefore been running just under a cliff, and d=400 is the
 # first size over it (40,857,600, 2.4x), where the step-0 init diagnostic
 # raised "quantile() input tensor is too large" before the first optimiser
-# step of the 20x20 probe (2026-08-27).
+# step of the first 20x20 run.
 _QUANTILE_MAX_ELEMENTS = 2 ** 24
 
 
 def _p99(values: torch.Tensor) -> float:
     """p99 of a flat tensor, on torch.quantile's own 'linear' convention.
 
-    WHY NOT JUST ALWAYS SORT. Every d256 number in print was logged through
+    WHY NOT JUST ALWAYS SORT. Every archived d256 number was logged through
     `torch.quantile`, so the small-input path must stay bit-identical rather
     than merely equivalent: below the cap this calls torch.quantile
     unchanged and no archived cell moves. Above the cap it sorts and
@@ -115,8 +115,7 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
     exists in the ONE-EVENT step only. Under `use_matching_step=True` this
     column is a diagnostic of one-event clip-safety, not of the running
     step; the matching step's own fidelity is the `proposal_drop_frac` and
-    `events_per_site_per_step` columns (accumulated at the buffer rebuild),
-    which is what the d256 divergence review (2026-08-11) found missing.
+    `events_per_site_per_step` columns (accumulated at the buffer rebuild).
     `lambda_dt_p99` records the tail of the per-state rate load directly,
     since the one-event Euler budget rule reads the tail and the state
     distribution of Lambda is too fat-tailed to reconstruct it from the
@@ -187,7 +186,7 @@ def _save_resume_state(
         # the resume-point weights would re-create the init-contamination
         # failure; a reset counter would restart the warmup schedule.
         "ema": ema.state_dict() if ema is not None else None,
-        # c_t grid EMA (M2): the smoothed grid is a function of every past
+        # c_t grid EMA: the smoothed grid is a function of every past
         # cycle's raw estimate, so it cannot be reconstructed at resume —
         # it must travel for the continuation to be bit-exact.
         "c_t_ema": c_t_ema.state_dict() if c_t_ema is not None else None,
@@ -347,7 +346,7 @@ def train_swap(
         if CTGridEMA.is_enabled(c_t_ema_halflife)
         else None
     )
-    # M3 (2026-08-14): decouple the c_t rollout batch from the buffer
+    # Decouple the c_t rollout batch from the buffer
     # batch. c_t = mean_m xi_t over the cycle's rollout states (Eq. 8
     # holds for the model's own law), so its standard error falls with
     # the rollout row count; only this no-grad phase needs scaling.
@@ -368,7 +367,7 @@ def train_swap(
             )
     # Chunk flattened (n_grid x n_rollout) integrand rows; None preserves
     # the archived per-slot loop. compute_c_t_grid_swap validates the cap;
-    # tests/test_c_t_grid_chunk.py is the M7a sequential-parity gate.
+    # tests/test_c_t_grid_chunk.py pins parity with the sequential path.
     c_t_grid_chunk_rows = getattr(train_cfg, "c_t_grid_chunk_rows", None)
     # ESS-triggered SMC resampling inside the buffer-rebuild rollout (LEAPS
     # Alg. 1 lines 11-14, whose trajectories Alg. 2 line 5 trains on). None
@@ -393,8 +392,8 @@ def train_swap(
         if rollout_resample_ess_fraction is not None
         else None
     )
-    # B1 (optimisation decision, 2026-08-24): build the CV c_t grid from
-    # the rollout's own head forwards instead of re-running them —
+    # Rollout-integrand reuse: build the CV c_t grid from the rollout's
+    # own head forwards instead of re-running them —
     # bit-identical to the sequential grid (same tensors, same arithmetic,
     # no RNG; tests/test_cv_integrand_reuse.py), removing 127 of 128
     # c_t-grid head forwards per outer at d256 (~7-8 h eager per 16x16 CV
@@ -533,7 +532,7 @@ def train_swap(
                 if saved_c_t_ema is not None:
                     c_t_ema.load_state_dict(saved_c_t_ema)
                 else:
-                    # Pre-M2 checkpoint on an EMA-armed cell: the next
+                    # Checkpoint predating the c_t EMA, on an EMA cell: the next
                     # cycle passes through raw (the re-seed path), a
                     # one-cycle lag vs the archived trajectory — say so.
                     print(
@@ -614,13 +613,13 @@ def train_swap(
             # both detached from autograd by the no_grad block; this is
             # the paper's R_t^{θ_sg} (stop-gradient) treatment.
             t_grid = torch.linspace(0.0, 1.0, n_grid, device=device)
-            # M3: c_t's standard error falls 1/sqrt(M) in the rollout row
+            # c_t's standard error falls 1/sqrt(M) in the rollout row
             # count; the rollout is the c_t estimator's sample size.
             # n_rollout = outer_batch when the knob is off (byte-identical).
             n_rollout = outer_batch if c_t_batch is None else c_t_batch
             x_initial = target.sample_base(n_rollout, device=device)
             outer_matching_stats: dict | None = {} if multi_event else None
-            # B1: in CV mode with the knob on, the rollout hands back the
+            # Rollout-integrand reuse: in CV mode the rollout hands back the
             # per-slot ξ_t it computed from its own head forwards, and the
             # grid recompute below is skipped entirely. Naive mode is
             # target-only (no head in the integrand), so the grid path
@@ -665,7 +664,7 @@ def train_swap(
                         mode=estimator_mode,
                         chunk_rows=c_t_grid_chunk_rows,
                     )                                   # (T,), (T, n_rollout)
-                # M2: smooth the grid across cycles (first cycle after
+                # Smooth the grid across cycles (first cycle after
                 # construction/reset passes through raw). The rms delta
                 # logs how much correction the EMA is applying — 0.0 on
                 # passthrough cycles, the mechanism's own read-out.
@@ -682,7 +681,7 @@ def train_swap(
                 # slot has its own ∂_t log p̃ baseline) and meaningful as
                 # "estimator noise per time slot". Over the full rollout
                 # set so the column reflects the c_t estimator's own rows.
-                # B1 free rider: in naive mode the integrand IS
+                # Same knob in naive mode: the integrand IS
                 # ∂_t log p̃_t on these rows, so the knob skips the (T·M)
                 # recompute (and makes cv_var_ratio exactly 1.0).
                 if c_t_from_rollout and estimator_mode == "naive_mc":
@@ -700,7 +699,7 @@ def train_swap(
                     integrand_per_t.var(dim=-1).mean().item()
                 )
 
-            # CV-inversion observer (adversarial panel, 2026-08-18): the
+            # CV-inversion observer: the
             # controlled/naive integrand variance ratio, formed from the two
             # variances above — same rollout rows, no extra estimator pass.
             # In naive mode the integrand IS the naive one, so the column
@@ -736,7 +735,7 @@ def train_swap(
                 )
                 break
 
-            # M3: the buffer takes the FIRST outer_batch rows of the
+            # The buffer takes the FIRST outer_batch rows of the
             # enlarged rollout. Base positions are iid draws, so a prefix
             # is a uniform subset (no selection bias); c_t above used all
             # n_rollout rows. .contiguous() releases the enlarged storage:
@@ -744,9 +743,8 @@ def train_swap(
             # shares storage), and at d256 a c_t_batch=512 chunk is ~400 MB.
             # A no-op view when n_rollout == outer_batch (byte-identical).
             #
-            # CORRECTED 2026-08-20: this block previously claimed the
-            # prefix stays exchangeable under rollout resampling. It does
-            # not. `systematic_resample_indices` returns ancestors in CDF
+            # Under rollout resampling the prefix is NOT a uniform subset:
+            # `systematic_resample_indices` returns ancestors in CDF
             # order (test-pinned in tests/test_resampling.py), so once a
             # resample has fired the rows are SORTED BY ANCESTOR: a prefix
             # is then a contiguous low-CDF block that over-represents the

@@ -1,4 +1,4 @@
-"""d64 GFN launch bench: compile parity gate + rollout wall-clock (s94).
+"""d64 GFN launch bench: compile parity gate + rollout wall-clock.
 
 Runs ONCE on the training venue's GPU before the 8x8 wave ships (the house
 compile-certification pattern, compile_gate.py): inductor generates
@@ -12,8 +12,8 @@ identical seeded batches. Loss must agree to 1e-5; every gradient to 1e-5
 relative on its norm (grads absent from an objective — e.g. log_z under
 FL-DB — must be absent on both sides).
 
-Part 2 — wall-clock, PHASE AND BATCH NAMED (the B=128 bench-ranking lesson:
-a verdict is scoped to its phase). Three timings at d64:
+Part 2 — wall-clock, PHASE AND BATCH NAMED (a timing is scoped to its
+phase and batch). Three timings at d64:
   * rollout, B=128  — the per-step training draw (KV-cached, eager)
   * rollout, B=512  — the eval chunk
   * train step, B=128 — rollout + loss forward/backward + optimiser step

@@ -16,7 +16,7 @@ weights the sampler already computes. That asymmetry is the exhibit.
 
 Inputs (already on disk, tag 20260905-camort-d64-perslice, checkpoint
 final_ema.pt, ne128; the 20260831 twin pooled the c_t baseline across slices
-and read the same surface to 3e-4 nats/site, but is no longer printed): each seed's `zero_shot_fc.json`, seven stop times k/127 for
+and read the same surface to 3e-4 nats/site, but is not the one read): each seed's `zero_shot_fc.json`, seven stop times k/127 for
 k = 16, 32, 58, 76, 95, 111, 127 by seven compositions. Reference: mchammer TI at
 the same couplings (`fc_ref_d8_k{K}.npz` from fc_mchammer_reference.py, run
 per stop time; `fc_ref_d8_sc.npz` is the printed t = 1 truth on five
@@ -41,7 +41,7 @@ Read from ONE model's running weights, at every coupling, with the TI truth
 beside it where it exists.
 
 Dense composition grid. Where a seed dir also holds `zero_shot_fc_grid.json`
-(the 3-Sep Modal probe over EVERY slice, n_+ = 1..63, same seven stop times;
+(the dense probe over EVERY slice, n_+ = 1..63, same seven stop times;
 ESS >= 0.72 on all 63 at sigma_c from a model trained on five compositions in
 [0.3125, 0.5]) it replaces the seven-point file, and a third figure
 (`_dfdc`) draws the free-energy derivative dF/dc by central differences over
@@ -77,10 +77,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SIGMA_C = 0.22034339675488573
 STOP_GRID = 127  # ne128: ts = k / 127
 # The two amortised rungs. The 16x16 twin (one seed, tag 20260831-camort-d256,
-# probed 3-Sep on Modal with the same stop-time grid; still the pooled-baseline
-# run until its per-slice DoC re-run lands) has no TI reference yet;
-# its SRO cross comes from the pooled certified Kawasaki draws instead of the
-# 8x8's per-chain npz files.
+# probed with the same stop-time grid; the pooled-c_t-baseline run) has no
+# TI reference; its SRO cross comes from the pooled certified Kawasaki draws
+# instead of the 8x8's per-chain npz files.
 RUNGS = {
     8: dict(D=64, seeds=(42, 43, 44), ti_prefix="fc_ref_d8",
             template="H2_d64_camort_s220_letf_thp_50k_curr_seed{seed}_20260905-camort-d64-perslice"),

@@ -7,7 +7,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Doubly-hollow ORACLE row of tab:eval-hard-4x4 (2026-08-29).
+# Doubly-hollow ORACLE row of tab:eval-hard-4x4.
 #   sbatch slurm/oracle_gate_4x4.sbatch <s010|s220> <seed>
 #
 # ONE RUN PER JOB: measured 0.55 steps/s (1.82 s/step), so 10k steps ~5.1 h.
@@ -15,12 +15,11 @@
 # separate ~5.1 h jobs give 2.4x margin. Under the 3-GPU cap, use two waves:
 # SUBMIT THE THREE s010 SEEDS FIRST so the first wave yields a COMPLETE cell.
 #
-# EAGER: first attempt (280196, cancelled)
-# used the s60 recipe's compile_head=True and spent 26 minutes without
-# reaching step 1 -- pinned at ~95% of ONE core, 373 MiB on the GPU, i.e.
-# inductor still compiling a graph that unrolls to d^2 = 256 masked pair
-# forwards. The configs carry compile_head=False (c_t_from_rollout kept), the
-# decision-(c) convention.
+# EAGER: a first attempt with the house recipe's compile_head=True spent
+# 26 minutes without reaching step 1 -- pinned at ~95% of ONE core,
+# 373 MiB on the GPU, i.e. inductor still compiling a graph that unrolls
+# to d^2 = 256 masked pair forwards. The configs carry compile_head=False
+# (c_t_from_rollout kept).
 #
 # mask_one agrees with doubly_hollow NUMERICALLY, so the
 # fidelity columns are EXPECTED to reproduce the mask-one row within seed

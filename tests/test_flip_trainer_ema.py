@@ -1,6 +1,6 @@
 """What correct looks like for EMA dual-eval on the FLIP trainer, before it.
 
-Ported from the swap trainer for the soft-chapter revamp (s95): the soft
+Ported from the swap trainer for the soft chapter: the soft
 chassis's one missing instrument. ema_decay > 0 arms a warmup-corrected
 parameter shadow (discrete_flow_sampler.ema.ExponentialMovingAverage)
 updated after every optimiser step and saved as checkpoints/final_ema.pt;

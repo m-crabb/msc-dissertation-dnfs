@@ -7,9 +7,10 @@
 #SBATCH --time=1-06:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Flat-lr twin of arm D (2026-08-24, user GO), owed by P_lr03's LR-ARTEFACT
-# read. Bands frozen in the cell comment (configs.py) BEFORE this launch;
-# one-variable relationship (lr only, vs D) pinned by
+# Flat-lr (lr03) twin of the h128L3 CV-from-step-zero cell
+# (d256-D-h128L3-cv70k), motivated by P_lr03 reading as an lr artefact.
+# Expected ranges in the configs.py cell comment; the one-variable
+# relationship (lr only) is pinned by
 # test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators.
 # Fixed --tag reuses the run directory; resume.pt overrides --init-from.
 export CONDA_OVERRIDE_CUDA=12.9

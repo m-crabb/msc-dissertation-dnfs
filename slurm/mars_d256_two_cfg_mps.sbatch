@@ -7,7 +7,7 @@
 #SBATCH --time=1-06:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+# Historical launcher: the borrowed mars node is no longer available; do not submit.
 #
 # B200 183GB variant of mars_d256_recipe_mps.sbatch: two configs, one seed.
 # Each d256 b512 run peaks <=80GB on DoC A100-80GB; MPS co-schedules kernels
@@ -15,7 +15,7 @@
 # per ne512 seed at 50k steps; ne128 has a quarter of that rollout and 30h
 # allows a serialised pair. Borrowed-node rules: one GPU, dnfs-* name,
 # bounded walltime. Co-run wall_clock_step_s includes contention: quote
-# verdict bands only, never timings.
+# ESS only, never timings.
 export WANDB_MODE=offline
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 

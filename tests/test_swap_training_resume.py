@@ -1,5 +1,5 @@
-"""Preemption-resume contract for `train_swap` (added after the 2026-07-23
-Modal GPU recall restarted the MO 100k run from scratch).
+"""Preemption-resume contract for `train_swap` (added after a Modal GPU
+recall restarted the MO 100k run from scratch).
 
 The contract these tests pin:
 

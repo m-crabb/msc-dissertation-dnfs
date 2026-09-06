@@ -1,5 +1,4 @@
-"""torch.compile opt-in for the flip-route rate model (optimisation board
-section C wiring, decided s60 2026-08-24).
+"""torch.compile opt-in for the flip-route rate model.
 
 Mirrors the hard route's compile_head contract (test_swap_perf_refactors
 ::test_compile_head_flag_matches_uncompiled_and_keeps_state_dict):

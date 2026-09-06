@@ -1,5 +1,5 @@
 """Twin pins for the 16x16 stage-1 screen, the 12x12 bracket and the
-clip-threshold continuation (2026-08-15).
+clip-threshold continuation.
 
 Every cell here is read against a base by differencing, so its
 interpretability rests on being that base with ONLY the declared fields
@@ -7,7 +7,7 @@ changed. These pins encode each declaration: rebuild the arm with its
 declared fields reset to the base's values and require dataclass equality.
 A pin failing means an undeclared variable rode along and the arm's read
 would be unattributable — the exact failure mode that cost the first
-capacity arm its verdict (hidden_dim varied with the learning rate frozen
+capacity arm its reading (hidden_dim varied with the learning rate frozen
 at a value tuned for the narrow net).
 """
 from dataclasses import replace
@@ -48,14 +48,14 @@ FMO2_ARM_DECLARATIONS = {
         ctmc={"n_euler_steps": 128}, train={"batch_size": 128},
     ),
     "H2_d256_scr20k_fmo2": dict(train={"n_steps": 5_000}),
-    # Phase 2 (2026-08-18): the batch-only decomposition arm — the
+    # The batch-only decomposition arm — the
     # microbatch reset rides because loss_microbatch_size on this arm is
     # the noise-scale instrumentation, gradient-exact by parity pin, not
     # a recipe variable.
     "H2_d256_scr5k_fmo2_b512": dict(
         train={"batch_size": 128, "loss_microbatch_size": None},
     ),
-    # Phase 2 (2026-08-18): the cold-CV arm — estimator the only change.
+    # The cold-CV arm — estimator the only change.
     "H2_d256_scr5k_fmo2_cv": dict(estimator="naive_mc"),
 }
 
@@ -125,7 +125,7 @@ def test_ma_h128_bridge_arm_covaries_lr_with_width():
 def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
     """The backward-slicing schedule may live ONLY on cells that declare a
     reason for it: the two arms whose single-backward graph is measured to
-    exceed an A100-80GB, and (2026-08-18) the batch-decomposition arm,
+    exceed an A100-80GB, and the batch-decomposition arm,
     where the slices ARE the gradient-noise-scale instrument (per-slice
     sqnorms + full-batch norm invert the McCandlish two-batch identity).
     It is gradient-identical everywhere (test_loss_microbatch_parity), but
@@ -134,27 +134,26 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
     expected = {
         "H2_d256_scr5k_ma_h128_lr03": 64,
         # The muP-init arm is the bridge arm's twin, so the h128 OOM
-        # schedule rides unchanged (2026-08-18).
+        # schedule rides unchanged.
         "H2_d256_scr5k_ma_h128_lr03_mup": 64,
         "H2_d256_scr5k_mo": 16,
         "H2_d256_scr5k_fmo2_b512": 128,
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive": 128,
         # The buffer-invariant arm is the recipe cell's twin (cycles the
-        # only change), so the noise-scale instrument rides unchanged
-        # (2026-08-19).
+        # only change), so the noise-scale instrument rides unchanged.
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2": 128,
         # The boundary-shock arm is likewise the recipe cell's twin
         # (rewarmup + the pure-IO stage-best instrument), so the schedule
-        # rides unchanged (2026-08-19).
+        # rides unchanged.
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw": 128,
         # The keystone grid arm and the retention-depth arm are both the
         # recipe cell's twins (n_euler and replay cycles respectively, one
         # change each), so the noise-scale instrument rides unchanged --
         # and it has to, or the arms would differ from the parent in two
-        # places at once (2026-08-19).
+        # places at once.
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive": 128,
         "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16": 128,
-        # The ne128 x CV composition family (2026-08-21). Every arm sits on
+        # The ne128 x CV composition family. Every arm sits on
         # the keystone's lineage, and the keystone above already carries the
         # schedule -- so 128 is what keeps each arm a one-variable twin of
         # its own parent, and omitting it is what would add a second
@@ -175,7 +174,7 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         "H2_d256_c50_s223_letf_fmo2_h128L3_20k_sc_cv2_b512_ne128": 128,
         "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2": 128,
         "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2": 128,
-        # 16x16 house-table fill (s71, 2026-08-26). The schedule is now a
+        # 16x16 house-table fill. The schedule is now a
         # DECLARED per-arm field rather than a lineage constant, because it
         # was benched: at d=256 over 512 rows a compiled 4x128 step costs
         # 0.260 s against a single-shot 0.156 s (40% faster) at 24.9 GB
@@ -190,7 +189,7 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
         "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3": 128,
         "H2_d256_c50_s010_letf_fimo2ef_50k_b512_ne128_cv2_w3": 128,
         "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3": 128,
-        # 16x16 raster-ladder rung + floor masep anchor (2026-08-30). All
+        # 16x16 raster-ladder rung + floor masep anchor. All
         # eleven inherit the `ma` house parent wholesale -- that inheritance
         # IS the roster's one-field-per-step guarantee -- and every one is a
         # pair-slab arm: the attention arms carry the score/context slabs
@@ -207,7 +206,7 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
             f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": 128
             for arm in ("masep", "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
         },
-        # 24x24 sigma_c rung (2026-09-03): the first thp cells to carry the
+        # 24x24 sigma_c rung: the first thp cells to carry the
         # schedule, and the reason is the measured OOM this test exists
         # for -- the (B, d, d, f) slab grows as d^2, so bf16 single-shot at
         # R=3 projects from 41.6 GB at d400 to ~86 GB at d576, over an
@@ -223,7 +222,7 @@ def test_loss_microbatch_schedule_is_confined_to_the_measured_oom_arms():
 
 
 def test_ma_mup_arm_is_the_bridge_arm_with_readout_scale_the_only_change():
-    """muP-init arm (2026-08-18): the bridge arm (h128 + lr03) with the
+    """muP-init arm: the bridge arm (h128 + lr03) with the
     readout score scale 32/128 the ONLY change, so the init-transient read
     is chargeable to parametrization alone. The value is the muP readout
     prescription hidden_base/hidden for the verified sqrt(h) score growth
@@ -236,7 +235,7 @@ def test_ma_mup_arm_is_the_bridge_arm_with_readout_scale_the_only_change():
 
 
 def test_ma_clip60k_arm_is_the_screen_base_with_clip_the_only_change():
-    """d-scaled clip arm (2026-08-18): the MA screen base with the clip
+    """d-scaled clip arm: the MA screen base with the clip
     threshold the ONLY change. 60,000 = 500 x the MEASURED early-median
     grad-norm ratio d256/d64 (91-131x from the archived logs; the printed
     pair-count heuristic's 16.2x is refuted by the same logs — an 8,095
@@ -293,7 +292,7 @@ def test_d144_bracket_is_the_rescue_recipe_with_volume_the_only_mechanism_change
 
 
 def test_d256_fmo2_ladder_is_the_rescue_recipe_with_head_family_the_only_mechanism_change():
-    """The definitive cold fmo2 ladder at 16x16 (2026-08-18) must be the
+    """The definitive cold fmo2 ladder at 16x16 must be the
     archived MA naive-rescue recipe with the head family — and its two
     riding conventions, EMA shadow and dual site orderings — the only
     mechanism change, plus the eval chunk sized to the factorised head's
@@ -322,7 +321,7 @@ RECIPE_ANCHOR = "H2_d256_c50_s223_letf_fmo2_50k_curr_naive"
 # recipe cell -> the reset that must reproduce the ladder anchor exactly.
 # The naive recipe's microbatch reset rides for the same reason as the
 # b512 screen arm's (noise-scale instrument, gradient-exact); the cv
-# recipe deliberately has no microbatch (see its registry comment).
+# recipe deliberately has no microbatch (see its comment in configs.py).
 RECIPE_DECLARATIONS = {
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive": dict(
         ctmc={"n_euler_steps": 128},
@@ -380,11 +379,11 @@ def test_clip2000_continuation_mirrors_cv2_continuation_except_declared_fields()
 
 D64_LOOP_BASE = "H2_d64_c50_s223_letf_fmo2_50k_curr"
 
-# 8x8 outer/inner loop battery (2026-08-19): arm name -> the reset that
+# 8x8 outer/inner loop battery: arm name -> the reset that
 # must reproduce the archived fmo2 8x8 curriculum rung exactly. Each arm's
 # read is a difference against that rung (or, for the two grid arms, the
 # matching-step control — pinned separately below), so an undeclared
-# riding field would make the band verdicts unattributable.
+# riding field would make the band reads unattributable.
 D64_LOOP_ARM_DECLARATIONS = {
     "H2_d64_c50_s223_letf_fmo2_50k_curr_inner25": dict(
         train={"inner_steps_per_outer": 100},

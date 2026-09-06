@@ -7,8 +7,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Matched-base amortised soft cells at 8x8 (s101, plan
-# 2026-08-31-soft-camort-matched-base): one conditioned model per
+# Matched-base amortised soft cells at 8x8: one conditioned model per
 # coupling, draws uniform over every realisable composition in
 # [0.25, 0.5] (17 values at 1/64), matched Bernoulli(c) base per cycle,
 # house recipe, no curriculum. Seeds CHAINED inside the job (the 8x8
@@ -18,8 +17,8 @@
 # Walltime: the walkback note prices a 50k ne128 d8 run at ~2.8 h on an
 # A30; four chained seeds ~11-12 h, 2x headroom -> 24 h. Fixed --tag so
 # a resubmission reuses run dirs and completed seeds are skipped, not
-# retrained. Per-composition numbers come from the composition sweep at
-# judging time, not here.
+# retrained. Per-composition numbers come from the composition sweep run
+# afterwards, not here.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

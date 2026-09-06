@@ -44,8 +44,8 @@ stage boundary does change is the replay-buffer flush, which alters what the
 buffer holds but not how many forwards happen.
 
 Nothing here modifies the trainer. FlopCounterMode is a dispatch mode, so it
-wraps the existing `train_swap` call: research-bearing code is untouched and
-archived runs stay byte-identical. The cost is that the counter's interception
+wraps the existing `train_swap` call: the trainer is untouched and archived
+runs stay byte-identical. The cost is that the counter's interception
 slows the loop, which is exactly why this runs at short horizons.
 """
 from __future__ import annotations

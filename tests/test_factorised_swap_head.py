@@ -338,7 +338,7 @@ def test_G_stays_fp32_under_bf16_autocast():
 
 
 # ---------------------------------------------------------------------------
-# Multi-order causal streams (the design's A-prime extension). The bilinear
+# Multi-order causal streams. The bilinear
 # term under the row-major ordering is structurally blind to the whole raster
 # interval between the holes (pinned by
 # test_bilinear_only_blind_to_interval_interior); running the causal stacks
@@ -429,7 +429,7 @@ def test_multi_order_pair_context_blind_to_both_holes():
 
 @torch.no_grad()
 def test_col_ordering_opens_row_interior_coverage():
-    """The mechanism A-prime exists for, two-sided. Bilinear-only, the row
+    """The mechanism multi-order streams exist for, two-sided. Bilinear-only, the row
     ordering leaves pair (1, 7) blind to its whole raster interior {2..6}.
     Under col order [0,3,6,1,4,7,2,5,8] the pair sits at positions (3, 5),
     so site 3 (position 1) moves into the col PREFIX -- deep coverage the
@@ -511,7 +511,7 @@ def test_extra_orderings_validated_at_construction():
         _mo_head(site_orderings=("row", "col"), use_bilinear=False)
 
 
-# --- interior band on the narrow per-pair path (2026-08-23) ------------------
+# --- interior band on the narrow per-pair path -------------------------------
 # The factorised head's global term is the one place a per-pair nonlinearity
 # is paid for; the interval / masked-attention band summaries M_ij (blind by
 # index exclusion, valid for i < j) can ride that same path at band width.
@@ -616,7 +616,7 @@ def test_interior_band_provider_has_no_duplicate_backbone_and_gets_grad(interior
 
 
 # ------------------------------------------------------ global bond features
-# Arm B (2026-08-28). The global term is a sum of STRICTLY PER-SITE features,
+# Global bond features. The global term is a sum of STRICTLY PER-SITE features,
 # so the head carries a whole-lattice UNARY statistic and -- via the band --
 # a LOCAL bond statistic over the interval, but no bond statistic anywhere
 # else. The band gives sum over (i, j); the global gives sum over the lattice

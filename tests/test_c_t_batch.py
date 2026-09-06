@@ -1,8 +1,4 @@
-"""Tests for the decoupled c_t rollout batch (M3 of the 2026-08-14
-M-campaign).
-
-Pre-registered in docs/plans/2026-08-14-m-scaling-experiments.md Task 3;
-diagnosis in docs/design/2026-08-14-scaling-assessment.md §5/§8.
+"""Tests for the decoupled c_t rollout batch.
 
 What correct looks like, independent of implementation:
 

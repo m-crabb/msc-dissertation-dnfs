@@ -3,7 +3,7 @@ neighbour log-ratio ceiling bind?
 
 Runs against trained checkpoints on real buffered states. No training, no GPU
 required, minutes on a laptop. Its job is to decide whether a training sweep
-is worth launching at all, and to calibrate the ceiling if it is.
+is worth running at all, and to calibrate the ceiling if it is.
 
 WHAT IT MEASURES
 
@@ -25,7 +25,7 @@ term cancels — but it cannot answer two things:
   2. CLAMP LOAD-BEARING-NESS. Whether the ceiling on log p̃_t(y)/p̃_t(x) is
      inert or is materially changing the loss, and by how much.
 
-PRE-REGISTERED PREDICTIONS (written before the probe was first run)
+EXPECTED OUTCOMES
 
   A. At the collapsed 10x10 checkpoint the ceiling is load-bearing: raising
      it changes the residual by orders of magnitude, and `clamp_frac` at the

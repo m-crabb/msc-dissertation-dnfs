@@ -7,14 +7,14 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# CV continuation of the landed b512+ne512 recipe (2026-08-19, user GO):
-# continue the seed-43 recipe run's final.pt with the control variate
+# CV continuation of the b512+ne512 recipe: continue the seed-43 recipe
+# run's final.pt with the control variate
 # re-enabled, flat sigma_c, 20k steps, lr at the ladder's final 3e-4 —
 # the cv2 pattern at the recipe shape. Tripwire ARMED in the cell
 # (halt_on_cv_inversion_after=2000, window 10): a sustained
 # controlled/naive integrand-variance inversion halts the run, which is
-# the designed cost-capped negative verdict. Bands frozen in the cell
-# comment (configs.py) BEFORE this launch.
+# the designed cost-capped negative outcome. Expected ranges are in the
+# configs.py cell comment.
 # Fixed tag reuses the run directory; resume.pt overrides the loaded init.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache

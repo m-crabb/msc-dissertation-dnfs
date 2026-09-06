@@ -68,9 +68,9 @@ def masked_state_features(x_masked: Tensor) -> Tensor:
     """Three-channel one-hot encoding (+1 / -1 / masked), shape (B, 3d).
 
     The trunk sees only this: b and m are computable from it, so a capable
-    network CAN learn the budget structure — which is exactly what arm B of
-    the gate measures (how much of it must be learned when the
-    preconditioner does not supply it).
+    network CAN learn the budget structure — which is exactly what the
+    no-preconditioner ablation measures (how much of it must be learned
+    when the preconditioner does not supply it).
     """
     return torch.cat(
         [x_masked == 1.0, x_masked == -1.0, x_masked == 0.0], dim=1
@@ -81,13 +81,13 @@ class MaskedConditionalNet(nn.Module):
     """Minimal trunk Phi_theta for the masked conditional, MDNS-style.
 
     Outputs a per-site logit DIFFERENCE (logit(+1) - logit(-1)); the
-    sampler's conditional is sigmoid(Phi_theta(x) + P(x)) with P the arm's
+    sampler's conditional is sigmoid(Phi_theta(x) + P(x)) with P the chosen
     preconditioner, exactly the paper's softmax(network + preconditioner)
     reduced to two species. The final layer is ZERO-INITIALISED so that at
     step 0 the sampler IS the preconditioner's law — the from-scratch
-    mechanism the Fig.-10 ablation measures (with a random init the arms
+    mechanism the Fig.-10 ablation measures (with a random init the modes
     would differ by init noise as well as by preconditioner, confounding
-    the comparison the gate exists to make).
+    the comparison).
     """
 
     def __init__(self, n_sites: int, hidden_width: int = 128):
@@ -114,7 +114,7 @@ def preconditioner_logit_diff(
     n_plus_target: int,
     mode: str,
 ) -> Tensor:
-    """The arm-defining logit offset P(x), shape (B, d); rows are valid at
+    """The mode-defining logit offset P(x), shape (B, d); rows are valid at
     masked sites only (unmasked positions are revealed, never drawn).
 
     mode = "budget_tilted": the derived V0,
@@ -125,15 +125,15 @@ def preconditioner_logit_diff(
 
     mode = "unconstrained": the paper's App. D.4 form verbatim —
     4*sigma*f_i with masked neighbours at zero and NO budget term. Blind to
-    the budget by construction; the gate's arm C measures what that costs.
+    the budget by construction; the 4x4 gate measures what that costs.
 
-    mode = "none": zero (arm B, the Fig.-10 no-preconditioning mirror).
+    mode = "none": zero (the Fig.-10 no-preconditioning mirror).
 
-    Rejected alternative (documented in the derivation note): V1 imputes
+    Rejected alternative: V1 imputes
     the other masked sites' urn mean CONDITIONED on the hypothesis at i;
     ~10% lower mean error, but needs a hypothesis-dependent field pass and
     shares every exactness limit with V0 — not worth the complication at
-    gate scale.
+    4x4 scale.
     """
     if mode == "none":
         return torch.zeros_like(x_masked)
@@ -191,22 +191,23 @@ def budget_tilt_components(
 
 
 class GatedBudgetTiltOffset(nn.Module):
-    """V0 with learnable scales on its two mechanisms (the Amendment-01
-    forensics' arm A': "keep the good init without the unlearning bill").
+    """V0 with learnable scales on its two mechanisms ("keep the good init
+    without the unlearning bill").
 
         P(x) = gate_budget * log(b/(m-b)) + gate_field * energy_term
         (interior rows; boundary rows keep the UNGATED exact deltas)
 
     Both gates initialise at 1.0, so step 0 is EXACTLY the V0 law — the
-    first-pass finding was that V0's strong-but-imperfect near-boundary
-    opinions must be partially cancelled by the trunk (arm C ends better
-    than arm A precisely there); two scalars turn that cancellation into
+    first 4x4 runs showed that V0's strong-but-imperfect near-boundary
+    opinions must be partially cancelled by the trunk (the unconstrained
+    preconditioner ends better than V0 precisely there); two scalars turn
+    that cancellation into
     a 2-parameter descent instead of distributed trunk weights. The
     boundary branch stays ungated because it is exact at any coupling —
     a gate there could only unlearn a true delta. Rejected alternative:
     a context-conditioned gate g(m, b) (small MLP) — more capacity, but
     the mechanism question ("is the unlearning bill the prior's scale?")
-    is answered by scalars, and scalars stay interpretable in the report.
+    is answered by scalars, and scalars stay interpretable.
     """
 
     def __init__(self, adjacency: Tensor, sigma: float, n_plus_target: int):
@@ -234,7 +235,8 @@ def feasibility_clamped_p_plus(
 
     This is the reference process's own mechanism (the budget lives in the
     species draw, never the site clock), applied to the learned conditional
-    — it is what makes the gate's G0 structural. It is NOT the
+    — it is what makes on-fibre generation (the 4x4 gate's G0 criterion)
+    structural. It is NOT the
     mask-and-renormalise pathology: the rollout log-probability records the
     CLAMPED probabilities actually sampled from, so the importance weights
     stay consistent with the rollout law (the pathology is computing
@@ -432,8 +434,8 @@ def log_variance_loss(
     the batch softmax buys WDCE, bought here by Var instead. The paper's
     4x4 case studies rank F_LV their strongest objective at this size
     (their Tabs. 2 and 4: at beta_critical ESS 0.9809 / path-KL 0.0083
-    vs WDCE's 0.9644 / 0.0177), which is why the gate plan pre-scoped it
-    as the robustness arm. Cost note: unlike WDCE this differentiates
+    vs WDCE's 0.9644 / 0.0177), which is why it is carried here as the
+    robustness objective. Cost note: unlike WDCE this differentiates
     through every species draw of the rollout (the paper's stated reason
     to prefer WDCE at 16x16 scale); at d = 16 the graph is 16 tiny-MLP
     calls deep and fits trivially.

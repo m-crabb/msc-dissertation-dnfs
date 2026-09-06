@@ -17,8 +17,8 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
         experiments.constrained_soft_02.modal_app::batch_seeds \\
         --cfg-name S2_d4_c05_l50_letf --seeds "42,43,44,45"
 
-    # Multi-seed PACKED onto one card (s96 cost decision; wall-clock from
-    # packed runs is contention-contaminated, see train_pack_remote):
+    # Multi-seed PACKED onto one card (wall-clock from packed runs is
+    # contention-contaminated, see train_pack_remote):
     pixi run -e dev modal run --detach -m \\
         experiments.constrained_soft_02.modal_app::batch_seeds_packed \\
         --cfg-name S2_d8_c0250_l50_letf_ne128_house --seeds "42,43,44,45" \\
@@ -60,7 +60,7 @@ image = (
     .run_commands(
         f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
         "pixi install --environment cuda --locked",
-        # torch.compile header fix, ported from the hard app (s59): the
+        # torch.compile header fix, as in the hard app: the
         # runtime wheel carries include/cuda.h for inductor's gcc step;
         # --no-deps leaves the locked env's torch/nvidia libs untouched.
         f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m ensurepip && "
@@ -77,9 +77,8 @@ image = (
                 f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
                 "site-packages/nvidia/cuda_runtime/include"
             ),
-            # B5 (optimisation decision, 2026-08-24): venue parity with
-            # the DoC sbatch scripts, which export this. Allocator
-            # headroom, not a speed lever.
+            # Venue parity with the DoC sbatch scripts, which export this.
+            # Allocator headroom, not a speed lever.
             "PYTORCH_ALLOC_CONF": "expandable_segments:True",
         }
     )
@@ -157,10 +156,9 @@ def train_pack_remote(cfg_name: str, seeds: str, tag: str = ""):
 
     Modal cannot cohabit containers on a GPU, so co-residency happens
     INSIDE the container: one subprocess per seed sharing the A100 this
-    function rents — the mars MPS-pack move (s96, user decision). At d64
-    the leTF cells are small and launch-bound, so four co-resident runs
-    overlap well and the pack cuts the per-wave bill ~4x while keeping
-    the SKU pin.
+    function rents. At d64 the leTF cells are small and launch-bound, so
+    four co-resident runs overlap well and the pack cuts the bill ~4x
+    while keeping the SKU pin.
 
     Two accepted costs. (1) Wall-clock columns from packed runs are
     contention-contaminated — never quote them; ESS, fidelity and the
@@ -200,7 +198,7 @@ def train_pack_remote(cfg_name: str, seeds: str, tag: str = ""):
 @app.function(
     # Same SKU pin as train_remote: the Richardson pair combines two
     # independent draws, so venue is not a within-pair confound, but one SKU
-    # keeps every drawn number in the campaign on one device class.
+    # keeps every drawn number on one device class.
     gpu="A100-80GB",
     volumes={"/results": volume},
     timeout=60 * 60,
@@ -209,8 +207,8 @@ def redraw_remote(run_dir_name: str, n_euler: int):
     """One eval-grid redraw against a volume run dir (run.eval_only).
 
     Writes eval_ne<k>/ beside the frozen eval/ (which stays byte-untouched;
-    see eval_only). redraw_seed=45 is the 2026-08-21 grid-offset prereg
-    convention -- every side-grid draw in the F(c) campaign shares it.
+    see eval_only). redraw_seed=45 is the grid-offset convention every
+    side-grid F(c) draw shares.
     Skip-if-exists makes a re-run of the batch idempotent, mirroring the
     DoC sbatch this replaces. Needs config.json, checkpoints/final.pt and
     training_log.csv in the run dir (the trailing-ESS block reads the log).

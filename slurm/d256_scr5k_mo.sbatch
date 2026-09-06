@@ -7,13 +7,13 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Historical proposal: 2026-08-15 next-session record marks this arm killed
-# by measured OOM before launch (75.9 GiB backward at the recipe batch).
-# mask_one screen arm (2026-08-15): the best 8x8 head on record (0.00129
+# Never submitted: the mask_one head OOMs at the recipe batch at 16x16
+# (75.9 GiB backward, measured).
+# mask_one screen cell: the best 8x8 head on record (0.00129
 # Var[log w]/site at 100k, 2.2x under the masked-attention twin) has never
 # touched 16x16. It runs the stage-1 screen frame (flat sigma=0.10, 5k
-# steps, naive c_t — bands frozen in the scr5k cell builder docstring
-# before launch). On the CLUSTER rather than metered hardware because its
+# steps, naive c_t — expected ranges in the scr5k cell builder
+# docstring). On the CLUSTER rather than metered hardware because its
 # per-step cost at 256 sites is unbenchmarked — the head runs d separate
 # anchor passes, so cost scales with d in a way no archived 16x16 timing
 # covers — and the 24h cap turns a cost blowout into a bounded negative

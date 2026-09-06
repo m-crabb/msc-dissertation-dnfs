@@ -1,12 +1,12 @@
-"""8x8 Kawasaki chain runner for the frozen mixing probe: classical reference
+"""8x8 Kawasaki chain runner for the mixing probe: classical reference
 chains + competitor chains at the two operating points.
 
-Physical setup (frozen — do not re-derive): 2D Ising on the D x D torus,
+Physical setup: 2D Ising on the D x D torus,
 D = 8 (d = 64), spins ±1, fixed composition c = 0.5 (32 up), Kawasaki swap
 dynamics with Metropolis acceptance on log p_tilde(x) = sigma * x^T A x.
 Operating points: `sc` (sigma = 0.223, the critical coupling matching the
 trained cell) and `s010` (sigma = 0.10, the subcritical floor). Observables
-are the frozen probe set reused verbatim from demo_4x4.observable_values:
+are the probe set reused verbatim from demo_4x4.observable_values:
 energy (the sigma-free quadratic form x^T A x), nn_correlation,
 diagonal_correlation, and phi (left-minus-right half magnetisation, in the
 [-1, 1] half-factor convention of diagnostics.metrics).
@@ -17,7 +17,7 @@ Two stages:
   8 chains per point, mode-balanced seeding (chains 0-3 phase-separated in
   the phi > 0 mode, 4-7 in the phi < 0 mode). Validity bar: split-half R-hat
   <= 1.01 on every observable, computed after dropping the first half of each
-  chain (the same discard the frozen moment rule applies; the full-trace
+  chain (the same discard the moment rule applies; the full-trace
   R-hat is reported alongside for transparency). On failure the chain length
   is DOUBLED and the point rerun — mechanically, no judgement — up to 3
   doublings, then the failure is reported loudly and the exit code is
@@ -81,7 +81,7 @@ FULL_LATTICE_SIDE = 8
 REFERENCE_CHAINS_PER_MODE = 4          # 8 chains: 0-3 mode A, 4-7 mode B
 COMPETITOR_RANDOM_CHAINS = 4           # + 2 mode A + 2 mode B = 8 chains
 COMPETITOR_MODE_CHAINS = 2
-REFERENCE_VALIDITY_RHAT = 1.01         # frozen validity bar, every observable
+REFERENCE_VALIDITY_RHAT = 1.01         # validity bar, every observable
 COMPETITOR_HEALTH_RHAT = 1.1           # reported, never gating
 MAX_DOUBLINGS = 3
 REFERENCE_SEED_BASE = 1000
@@ -215,7 +215,7 @@ def run_chains_parallel(specs: list[ChainSpec], n_workers: int) -> list[dict]:
 def observable_traces(specs: list[ChainSpec], lattice_side: int,
                       sigma: float) -> dict[str, np.ndarray]:
     """Per-observable (n_chains, n_snapshots) arrays from the saved npzs,
-    computed with the frozen demo_4x4 observable set."""
+    computed with the demo_4x4 observable set."""
     import torch
 
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
@@ -322,7 +322,7 @@ def competitor_specs(point: str, variant: str, args,
 
 
 def run_reference_point(point: str, args, out_root: Path) -> bool:
-    """Run the reference chains for one operating point, gate on the frozen
+    """Run the reference chains for one operating point, gate on the
     R-hat bar, doubling mechanically on failure. Returns pass/fail."""
     chains_per_mode = (SMOKE_CHAINS_PER_MODE if args.smoke
                        else REFERENCE_CHAINS_PER_MODE)

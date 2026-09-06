@@ -375,7 +375,7 @@ def test_wdce_loss_prefers_the_exact_conditional():
 
 
 # ---------------------------------------------------------------------------
-# Forensics interventions (Amendment-01 follow-up, prepared not launched)
+# Forensics interventions
 # ---------------------------------------------------------------------------
 
 
@@ -532,7 +532,7 @@ def test_ema_shadow_tracks_and_swaps():
 
 
 def test_ema_warmup_forgets_init_where_plain_shadow_cannot():
-    """The gate-3 arm-0 failure mode, pinned. A plain 0.9999 shadow after k
+    """The plain-shadow failure mode, pinned. A plain 0.9999 shadow after k
     updates is decay^k init + (1-decay^k) recent-params: at k=200 that is
     98% init, at the paper's k=2000 still 82% init, so eval-on-EMA reads a
     nearly-untrained model no matter how good training was. The warmup

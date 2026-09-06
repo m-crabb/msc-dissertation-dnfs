@@ -7,7 +7,7 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# 16x16 house-table floor row, masked attention (s71, 2026-08-26). Cell
+# 16x16 house-table floor row, masked attention. Cell
 # comment in configs.py; one-variable relationships pinned by
 # test_d256_house_cells_are_declared_transforms_of_arm_b. Fixed --tag so a
 # resubmission resumes into the same run dir from resume.pt. Walltime is

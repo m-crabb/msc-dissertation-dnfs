@@ -21,7 +21,7 @@ Uses the 10x10 conventions (house_table_soft_10x10.py):
                and, at the critical centre only, the nochan control (house
                recipe minus the channel: the one measured channel-off/on
                comparison at sigma_c, pinned one-lever by
-               tests/test_soft_house_configs.py). Two s99/s100 arms join
+               tests/test_soft_house_configs.py). Two further arms join
                when their runs are on disk: the matched-base twins (`mb`,
                base_composition = c* at the off-centre windows; decides
                base-reachability vs target-itself where the uniform-base

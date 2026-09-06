@@ -77,8 +77,7 @@ class _AttentionBlock(nn.Module):
 class _CausalBlock(nn.Module):
     """One causal block: proj_in -> AttentionBlock -> raw-input skip.
 
-    Per the J-zin/DNFS reference's CausalBlock structure: each block has
-    its own proj_in (a fresh linear transform of the input) plus a
+    Each block has its own proj_in (a fresh linear transform of the input) plus a
     raw-input skip wrapping the inner AttentionBlock. Stacking these
     gives multiple residual paths and per-block fresh transformations,
     helping gradient flow at depth and at long sequences.
@@ -171,7 +170,7 @@ class CausalStack(nn.Module):
 
 
 class AttentionReadout(nn.Module):
-    """Hollow attention readout via slice-and-mask (App B.3 + reference consult).
+    """Hollow attention readout via slice-and-mask (App B.3).
 
     Inputs: fwd_x, bwd_x both (B, 1+d, h); cond_t (B, 1, h).
         sliced_fwd = fwd_x[:, :-1, :]   # (B, d, h)  hollow at every position k
@@ -186,14 +185,15 @@ class AttentionReadout(nn.Module):
         H = (combined + softmax(scores) V_proj) + FFN(LN(...))      # (B, d, h)
 
     The cond_t triple-injection (combined + all-keys + sliced inputs) and
-    per-head readout position embeddings follow the J-zin reference. They are
+    per-head readout position embeddings follow the DNFS architecture. They
+    are
     independent of x_i, so they don't break hollow-ness.
 
     `use_sdpa` (opt-in, default OFF) routes the attention through
     F.scaled_dot_product_attention: the same masked softmax-attention in a
     fused kernel that never materialises the (B, n_heads, d, 2d) score
     buffer — the memory wall that forces small anchor/eval chunks at large d.
-    Tier 2 because the fused reduction order differs from the manual
+    Opt-in because the fused reduction order differs from the manual
     matmul/softmax/matmul (fp32-tolerance equivalent, not bit-exact); masking
     stays structural (masked keys get weight exactly 0), and there are no new
     parameters, so checkpoints are interchangeable across the flag.
@@ -435,8 +435,8 @@ class LeTFRateMatrix(nn.Module):
         # basis is close to linear (sin(cf) ≈ cf for the fastest channel).
         # For c that is a feature rather than a defect — a near-linear
         # featurisation biases the composition channel toward *smooth*
-        # behaviour in c, which is exactly the interpolation property D5
-        # sets out to test. If the channel later underfits, scaling c into
+        # behaviour in c, which is exactly the interpolation property the
+        # amortised runs test. If the channel later underfits, scaling c into
         # a wider range before embedding is the first knob to reach for.
         return (
             self.time_embedder(t).unsqueeze(1)

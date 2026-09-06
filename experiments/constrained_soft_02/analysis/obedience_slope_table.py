@@ -17,15 +17,15 @@ and no training:
     needs no exact enumeration, which is what makes it usable at D=10 where
     `enumerate_states` is impossible.
 
-Why this script exists: the per-family slope comparison was for a while a
-session claim archived nowhere, and it carries a correction that matters --
+Why this script exists: the per-family slope comparison carries a
+correction that matters --
 grouping by family shows the "conditioning is attenuated, slope 0.39" reading
 came from a pre-fix family that averaged dead seeds together with healthy
 ones. Runs are therefore grouped by config family (name minus the `_seedNN`
 suffix) and BOTH the per-seed values and the healthy count are emitted: a
 family mean alone is exactly what produced the wrong conclusion.
 
-Health threshold is the pre-registered G3 band (slope in [0.9, 1.1]) so the
+Health threshold is a band fixed in advance (slope in [0.9, 1.1]) so the
 count is not tuned to the data it summarises.
 
 Usage:
@@ -82,7 +82,7 @@ def main() -> None:
     parser.add_argument("--results", default="results/02_constrained_soft")
     parser.add_argument("--eval_dir", choices=["eval", "eval_ema"],
                         default="eval")
-    parser.add_argument("--out", default="docs/reviews/2026-08-03-lever-jury/"
+    parser.add_argument("--out", default="results/02_constrained_soft/"
                                          "obedience_slope_table.csv")
     args = parser.parse_args()
 

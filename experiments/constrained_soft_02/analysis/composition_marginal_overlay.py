@@ -6,7 +6,7 @@ one-panel figure makes that visible by overlaying three composition marginals
 for the d=4, c_target=0.5 binary alloy:
 
   (a) HARD constraint  -- the exact target puts ALL mass on the c=0.5 slice:
-      a single spike at c_target. This is what we actually want.
+      a single spike at c_target. This is the object of interest.
   (b) SOFT target (exact) -- the penalised target enumerated over all 2^16
       states. It is a spread *around* c_target, not a spike. Its width is set
       by the penalty strength lambda, not the physics: for the quadratic
@@ -27,13 +27,13 @@ Two modes (--mode):
                  marginal at the operating lambda, (b) the violating mass swept
                  over lambda with BOTH ends of the trade starred (54.4% at
                  lam=10, 7.9% at lam=50). Panel (b) is the thesis's only copy of
-                 that sweep. lambda-pair carried a byte-identical duplicate of it
-                 until 2026-08-22, when the duplicate was dropped: this copy is
-                 cited twice in the body and that one never was, and removing it
-                 also left each figure on a single lattice (this one d=4,
-                 lambda-pair d=10) instead of mixing the two inside one float.
-  lambda-pair -- the companion overlay figure for the lambda-sweep comparison
-                 (2026-06-11/12): D=10 composition marginals at a weak and a
+                 that sweep. lambda-pair once carried a byte-identical duplicate
+                 of it, since dropped: this copy is cited twice in the body and
+                 that one never was, and removing it also left each figure on a
+                 single lattice (this one d=4, lambda-pair d=10) instead of
+                 mixing the two inside one float.
+  lambda-pair -- the companion overlay figure for the lambda-sweep
+                 comparison: D=10 composition marginals at a weak and a
                  strong lambda overlaid as curves. Exact enumeration is impossible
                  at 2^100 states, so the trusted reference per lambda is a long
                  penalty-aware Gibbs chain (the report's D=10 convention; cached
@@ -367,15 +367,15 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
     # lambda is drawn: 54.4% of the mass violates at lam=10 against 7.9% at
     # lam=50. This figure used to carry a second copy of that sweep as its own
     # panel (b); it was a d=4 object inside a d=10 float, no body text cited it,
-    # and it was computed from the same grid, so it was dropped 2026-08-22 and
-    # only the print survives as the agreement check between the two figures.
+    # and it was computed from the same grid, so it was dropped and only the
+    # print survives as the agreement check between the two figures.
     off_w4 = 1.0 - soft_composition_pmf(cfg4, lam_w, states_f)[round(c_target * N_SITES)].item()
     off_s4 = 1.0 - soft_composition_pmf(cfg4, lam_s, states_f)[round(c_target * N_SITES)].item()
     print(f"  violating mass (exact, d=4): {off_w4:.1%} at lam={lam_w:g}, {off_s4:.1%} at lam={lam_s:g}")
 
     # --- Figure: the D=10 composition marginals, weak vs strong lambda ---
     # One panel, one lattice. Hue carries the ROLE per the house palette (ink =
-    # the Gibbs reference this figure is judged against, blue = our sampler, red
+    # the Gibbs reference this figure is scored against, blue = our sampler, red
     # = the hard-constraint limit). Lambda is a parameter level, not a role, so
     # the two references separate by lightness within the ink family rather than
     # by linestyle: two solid black curves at 1.6pt tangle at the peak, which is

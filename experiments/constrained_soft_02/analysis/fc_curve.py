@@ -28,7 +28,7 @@ computes in the paper convention rather than recomputing them, so the numbers
 match the per-run eval exactly. Weighted thermodynamics with bootstrap error
 bars and the vcSGC-TI reference at D=10 are a later pass.
 
-Example (the s95 8x8 house family; --eval_dir eval_ema reads the dual
+Example (the 8x8 house family; --eval_dir eval_ema reads the dual
 eval's shadow-weight draw, archived pre-EMA cells keep the default):
     python -m experiments.constrained_soft_02.analysis.fc_curve \
         --results_dir results/02_constrained_soft \
@@ -79,7 +79,7 @@ def main() -> None:
     p.add_argument("--plot", type=Path, default=None,
                    help="optional output path for the F(c) + bias figure")
     p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
-                   help="which frozen eval to score: raw weights or the s95 "
+                   help="which frozen eval to score: raw weights or the "
                         "dual eval's EMA shadow draw")
     args = p.parse_args()
 

@@ -92,7 +92,7 @@ def test_dnfs_table2_sigma01_row():
 
 
 def test_dnfs_table2_critical_row_is_at_exact_criticality_not_022305():
-    """FINDING (s58, 2026-08-24): DNFS Table 2's 'Optimal Value' row labelled
+    """FINDING: DNFS Table 2's 'Optimal Value' row labelled
     sigma = 0.22305 was computed at EXACT criticality sigma = ln(1+sqrt(2))/4
     = 0.220343, not at the labelled coupling. All three printed values match
     the exact-critical evaluation to printed precision and none matches the

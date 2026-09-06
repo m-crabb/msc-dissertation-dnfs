@@ -7,10 +7,10 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Historical launcher: mars permanently withdrawn 2026-08-31; do not submit.
+# Historical launcher: the borrowed mars node is no longer available; do not submit.
 #
 # 8x8 sigma_c: the PERIODIC-RoPE BACKBONE under the masked-attention head,
-# three seeds run SEQUENTIALLY on one borrowed B200 (2026-08-28).
+# three seeds run SEQUENTIALLY on one borrowed B200.
 #
 # WHAT THIS ARM ASKS. `ma` builds its band's keys and values from a backbone
 # carrying d FREE ABSOLUTE position vectors, so the network must learn from d
@@ -52,7 +52,7 @@
 # seeds all go to the coupling that does.
 #
 # Borrowed-node rules: spillover only, one GPU, dnfs-* name, bounded walltime.
-# Historical idle check (2026-08-28): GPUs 4-7 at 0 MiB / 0%, owner's four
+# Idle check at the time: GPUs 4-7 at 0 MiB / 0%, owner's four
 # at ~173 GB, Slurm gres/gpu:4 for job 2342, no pending jobs. Recheck physical
 # occupancy, Slurm allocation and owner pending jobs before submission.
 #

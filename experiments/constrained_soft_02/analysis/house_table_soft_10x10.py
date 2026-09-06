@@ -31,7 +31,7 @@ What differs for the soft target:
             applied only in the summary line, with n_pass/n_total, so the
             table can print either rule and the failed seeds are never hidden.
 
-FLOP/es cells (s64, same conventions as the unconstrained fill):
+FLOP/es cells (same conventions as the unconstrained fill):
 
   neural  -- MEASURED eager forward at the run's own architecture and
             shapes (FlopCounterMode, batch 1, batch-linear) x n_euler
@@ -44,7 +44,7 @@ FLOP/es cells (s64, same conventions as the unconstrained fill):
             tau_int = the slower of mchammer's own composition/potential
             reads (summary.json, frame units), floored at 1.
 
-The matched-budget VC-SGC row was DROPPED (s64): mchammer's ~1e5x
+The matched-budget VC-SGC row was DROPPED: mchammer's ~1e5x
 package overhead makes a matched-FLOP run unrunnable, the same argument
 that made the unconstrained baseline row run-long, and the run-long
 reference with its actually-spent FLOP/es already carries the cost story
@@ -81,10 +81,10 @@ N_BOOTSTRAP, BLOCK, N_EVAL = 200, 10, 5000
 CELLS = {
     (10, 0.30): "S2_d10_c03_l10_letf_ne128_seed4*",
     (10, 0.50): "S2_d10_c05_l10_letf_ne64_seed4*",
-    # The five F(c) windows print from the ne128 retrain families (s62/s64):
+    # The five F(c) windows print from the ne128 retrain families:
     # the ne64 residual vs the TI truth halved under the grid refinement in
     # every window, so ne128 is the production recipe. c=0.30 prints from the
-    # ne128 top-up (s64 decision): 2 of 8 ne128 seeds (47/49) clear the
+    # ne128 top-up: 2 of 8 ne128 seeds (47/49) clear the
     # 0.30 ESS floor at 0.777/0.912 and agree to 0.002/site in F and 2e-4 in
     # delivered c -- tighter than the ne64 trio's 0.015 spread; the glob
     # sweeps all 8 dirs and summarise()'s floor keeps the passing pair.

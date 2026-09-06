@@ -26,7 +26,7 @@ THE TWO THINGS THAT MUST NOT MOVE, and why they are tests and not comments:
   * THE FROZEN EVAL. Every reported number in all three threads is an fp32
     read; the chapter says so. This flag is scoped to the loss update and
     must leave the eval path alone, so a cell that trains in bf16 is still
-    JUDGED in fp32.
+    EVALUATED in fp32.
 
 Default False, so every archived cell is byte-identical.
 """
@@ -45,7 +45,7 @@ def _target(D):
 # The fp32 cells the `bf16` twins are read against, one template per rung.
 # Both couplings are covered on purpose: the floor pair settled the COST half
 # of the precision question (4/4 matched seeds, -21% to -27% end-to-end) and
-# the sigma_c pair (2026-08-29) exists to settle the QUALITY half, which the
+# the sigma_c pair exists to settle the QUALITY half, which the
 # floor could not because every cell sat on the sampling ceiling.
 _D400_FP32_TEMPLATES = (
     "H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4",
@@ -91,8 +91,7 @@ def test_kawasaki_field_is_integer_valued_at_every_lattice_size():
 def test_train_autocast_bf16_defaults_off_everywhere():
     """Archived cells must be byte-identical, so the field defaults False
     and no existing cell turns it on. Only the `_w4bf16` d400 probe cells
-    and the `_w5bf16` d576 cells (bf16-only by standing rule at d400+,
-    2026-09-03) may carry it."""
+    and the `_w5bf16` d576 cells (bf16-only at d400+) may carry it."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
     on = [n for n, c in CONFIGS.items()
@@ -127,7 +126,7 @@ def test_bf16_probe_cells_are_their_fp32_twins_plus_the_flag():
 def test_frozen_eval_stays_fp32_on_a_bf16_trained_cell():
     """The precision discipline: bf16 is scoped to the loss update, so the
     end-of-run eval config of a bf16-trained cell is indistinguishable from
-    its fp32 twin's. A cell trained in bf16 is still judged in fp32."""
+    its fp32 twin's. A cell trained in bf16 is still evaluated in fp32."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
     for label, fp32, bf16 in _d400_precision_pairs(CONFIGS):

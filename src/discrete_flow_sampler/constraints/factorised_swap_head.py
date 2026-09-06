@@ -32,7 +32,7 @@ per-pair work drops from O(d) to a d-free constant:
   real arithmetic (fp leaves an ~ulp cancellation residue, exactly as the
   interval head's prefix-sum band; suite bar 1e-5). This is the term that
   covers the interval interior. Its depth cap is structural, but the cap is
-  narrower than "per-site" (corrected 2026-08-27): what is forced is that
+  narrower than "per-site": what is forced is that
   the subtraction remove EVERY term touching a hole, which needs each
   term's support to be a bounded set known from the indices. Per-site is
   the cheapest such family, at two gathers (psi_i, psi_j). A fixed-offset
@@ -103,8 +103,8 @@ reference is kept OFF the module tree so the shared backbone is not
 checkpointed twice. `interior_band=None` constructs nothing extra, in the
 same RNG order, so archived checkpoints stay byte-identical.
 
-Multi-order causal streams (the design's A-prime extension, opt-in via
-`site_orderings`): the bilinear term under the row-major ordering is
+Multi-order causal streams (opt-in via `site_orderings`): the bilinear
+term under the row-major ordering is
 structurally blind to the whole raster interval between its holes -- prefix
 stops before i, suffix starts after j -- so the interval interior is covered
 only by the shallow global term. Running the causal stacks under EXTRA site
@@ -202,7 +202,7 @@ class FactorisedSwapHead(nn.Module):
             and positions alone, which trains to nothing informative;
             reject at construction rather than at first flat loss.
         site_orderings: causal-sweep directions for the bilinear factors
-            (the A-prime extension; see the module docstring). Must start
+            (see the module docstring). Must start
             with "row" -- the archived-checkpoint module tree -- and the
             default ("row",) adds nothing: no extra modules, no persistent
             state. Extras from {"col", "diag"} each add one shared-backbone
@@ -301,10 +301,10 @@ class FactorisedSwapHead(nn.Module):
         if interior_band is not None:
             pair_offsets = pair_offsets or (1, lattice_side or round(self.d**0.5))
         band_dim = 0 if interior_band is None else band_feature_dim * (1 + len(pair_offsets))
-        # Arm B (2026-08-28): the whole-lattice bond sums ride the SAME
-        # per-pair path at one extra family per offset. No feature
+        # Bond-carrying global term: the whole-lattice bond sums ride the
+        # SAME per-pair path at one extra family per offset. No feature
         # parameters -- they are the band provider's own modules -- so the
-        # arm costs only this widening (576 of the head's 145,778 at the
+        # option costs only this widening (576 of the head's 145,778 at the
         # production width, +0.4%), which is what keeps a positive from
         # being confounded with capacity.
         self.global_bond_features = global_bond_features
@@ -317,7 +317,7 @@ class FactorisedSwapHead(nn.Module):
                 nn.Linear(global_feature_dim, global_feature_dim),
             )
         # The per-pair readout is shared by the global term and the band, and
-        # exists whenever EITHER does (2026-08-28). It used to be built only
+        # exists whenever EITHER does. It used to be built only
         # under `use_global`, which is why a band could not run alone: it had
         # no readout of its own and rode the global term's. That constraint
         # was an implementation detail shaping the experiment -- it made

@@ -129,7 +129,7 @@ def test_ti_on_exact_integrand_recovers_enumeration_reference(sigma_target):
 
 
 def test_known_gate_value_guard():
-    # The gate verdict's s010 reference (-2.9804 per site) is a frozen known
+    # The 4x4 gate's s010 reference (-2.9804 per site) is a known
     # point; the enumeration reference must still say so, or the convention
     # this module targets has drifted.
     target, slice_states, _ = _slice_setup(4, 0.10)

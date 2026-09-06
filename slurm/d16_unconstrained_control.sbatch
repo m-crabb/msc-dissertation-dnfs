@@ -7,11 +7,11 @@
 #SBATCH --time=16:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Unconstrained 16x16 control (2026-08-18): the hard chapter's 50k ladder
-# frame on the unconstrained engine at d=256 — does the sigma_c wall
-# appear without the constraint machinery? Bands frozen at the registry
-# entry (experiments/dnfs_baseline_01/configs.py,
-# stage_4_d16_critical_50k_ladder) before launch.
+# Unconstrained 16x16 control: the hard chapter's 50k ladder frame on the
+# unconstrained engine at d=256 — does the sigma_c wall appear without the
+# constraint machinery? Expected ranges are in the config's comment
+# (experiments/dnfs_baseline_01/configs.py,
+# stage_4_d16_critical_50k_ladder).
 #   sbatch slurm/d16_unconstrained_control.sbatch \
 #       stage_4_d16_critical_50k_ladder 42
 # Walltime: the d8 walkback decomposed to ~9.5 h for 200k steps with 400

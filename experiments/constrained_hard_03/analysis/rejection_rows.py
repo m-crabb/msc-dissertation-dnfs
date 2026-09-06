@@ -70,7 +70,7 @@ WHY ONE CELL IS BLANK. The unconstrained 8x8 cell at sigma = 0.1 was never
 run (the baseline chapter's 8x8 rung is sigma_c only); every soft cell now
 exists at both sizes and couplings (the soft chapter moved its production
 size to 8x8 and filled its 4x4 sigma_c half on 2026-09-02). The blank is
-left in print as the reminder of which one.
+left in the table as the reminder of which one.
 
 WHAT THE 8x8 SOFT ROW SAYS. The on-slice acceptance is ~0.50 at 64 sites
 against 0.91 at 16 (the envelope exp(-lambda d (c - c_t)^2) on the c = k/d

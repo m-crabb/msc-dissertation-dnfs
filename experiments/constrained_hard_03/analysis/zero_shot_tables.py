@@ -47,19 +47,19 @@ D256_TEMPLATE = ("H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3"
                  "_seed{seed}_20260826-d256-sc")
 D64_TEMPLATE = ("H2_d64_c50_s220_letf_thp_50k_curr_w2"
                 "_seed{seed}_20260825-hard-w2-d64")
-# Per-slice c_t baseline (fix bbb169c, 5-Sep-2026). The 20260831-camort-d64
-# twin pooled the baseline across composition slices; its ESS read within
-# 0.008 of this one on every slice, but only this run is scored.
+# Per-slice c_t baseline. The 20260831-camort-d64 twin pooled the baseline
+# across composition slices; its ESS read within 0.008 of this one on every
+# slice, but only this run is scored.
 CAMORT_TEMPLATE = ("H2_d64_camort_s220_letf_thp_50k_curr"
                    "_seed{seed}_20260905-camort-d64-perslice")
-# The 16x16 amortised confirmation (s104): one seed by design, thp2 on the same
-# five-slice mixture; c = 0.25 is outside the mixture there too. Still the
-# pooled-baseline run: its per-slice twin (tag 20260905-camort-d256-perslice)
-# is on the DoC queue and replaces this template when it lands.
+# The 16x16 amortised confirmation: one seed by design, thp2 on the same
+# five-slice mixture; c = 0.25 is outside the mixture there too. This is the
+# pooled-c_t-baseline run; its per-slice twin (tag
+# 20260905-camort-d256-perslice) replaces this template once its run dir exists.
 D256_CAMORT_TEMPLATE = ("H2_d256_camort_s220_letf_thp2_100k_curr"
                         "_seed{seed}_20260831-camort-d256")
 
-# The cross-chapter composition spine (user decision s100): fractions
+# The cross-chapter composition spine: fractions
 # realisable at EVERY rung (n+ = 4/6/8 at d16, 16/24/32 at d64, 64/96/128
 # at d256), shared verbatim by any future soft-chapter zero-shot table.
 # The finer d256 probe fractions (0.46875, 0.4375, 0.3125) stay in the

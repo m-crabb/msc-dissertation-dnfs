@@ -1,6 +1,6 @@
 """What correct looks like for the soft exact-field FLIP channel, before it.
 
-The channel wraps a flip-rate model with the closed form the s90 regression
+The channel wraps a flip-rate model with the closed form the field regression
 measured at ~95% of every trained specialist
 (tests/test_soft_field_regression.py pins the derivation):
 
@@ -24,7 +24,7 @@ Contracts these tests freeze, each guarding a specific failure:
 4. LIVE lambda. Curricula mutate the target in place
    (set_composition_penalty_strength); the channel must follow without
    rebuild, as the hard channel does for sigma.
-5. REGISTRY PARITY. Every `_efc` twin differs from its parent in name and
+5. CONFIG PARITY. Every `_efc` twin differs from its parent in name and
    model.exact_field_channel ONLY — the one-declared-change rule that makes
    the rerun of tab:soft-lambda-sweep readable as "the channel did this".
 """
@@ -282,7 +282,7 @@ def test_efc_twins_differ_from_parents_in_flag_and_name_only():
         assert twin["model"]["exact_field_channel"] is True
 
 
-# --- the channel on a cluster expansion (s117, 2026-09-02) ----------------
+# --- the channel on a cluster expansion -----------------------------------
 # The Cu-Au 16-site export carries pair and multi-body terms the Ising
 # quadratic form cannot express; the channel must read the target's own
 # flip log-ratio and match brute force on it exactly as it does on Ising.

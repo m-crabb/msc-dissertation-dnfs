@@ -81,7 +81,7 @@ from discrete_flow_sampler.targets.ising import (
 # external_nn_anchor helper already takes its lattice side explicitly.
 LATTICE_SIDE = 16
 N_SITES = LATTICE_SIDE * LATTICE_SIDE          # 256
-DEFAULT_SIGMA = SIGMA_C    # exact sigma_c since the s58 migration; the archived
+DEFAULT_SIGMA = SIGMA_C    # exact sigma_c; the archived
                            # d256 reference dumps were generated at legacy 0.22305
                            # and pair ONLY with the pre-migration hard runs
 TARGET_COMPOSITION = 0.5                       # 128 up / 128 down, exact

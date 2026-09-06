@@ -1,24 +1,23 @@
-"""Post-compile profile of the production swap stack (s60 follow-up).
+"""Post-compile profile of the production swap stack.
 
 Profile the compiled thp2 record cell at production shapes on one Modal
-A100 container before revisiting A2 (einsum readout), A3 (level-loop collapse),
-A4 (rank-one zeroed patch) and A8 (scatter alternatives). The four regions
-below show which costs remain after compilation.
+A100 container. The four regions below show which costs remain after
+compilation (candidate follow-ups: einsum readout, level-loop collapse,
+rank-one zeroed patch, scatter alternatives).
 
 Regions (each warmed up past compilation before profiling):
-  1. head forward, no-grad, B = inner microbatch — the A2/A3/A4 territory.
+  1. head forward, no-grad, B = inner microbatch — readout, level loop,
+     patch construction.
   2. loss_swap forward + backward, B = inner microbatch — the training
-     update unit the 2.21x was measured on.
+     update unit the 2.21x compile speed-up was measured on.
   3. rollout slice, production batch and PRODUCTION dt (a leading slice of
      the 128-step grid, so thinning probabilities match production) —
-     the B2/B3 territory (matching rounds, .any() syncs, apply_swaps).
+     matching rounds, .any() syncs, apply_swaps.
   4. xi_t_swap_from_scores on pre-gathered scores — the ~12-kernel
-     RNG-free chain the board named as B2(d)'s fusion unit (B4's cached
-     gather is live here).
+     RNG-free chain (the cached gather is live here).
 
 Output is printed tables (CUDA-time-sorted key_averages + peak memory per
-region); nothing lands on the volume — copy the log beside the s59
-records in the profiling review.
+region); nothing lands on the volume — copy the log by hand.
 
 Run on Modal:
     pixi run -e dev modal run -m \

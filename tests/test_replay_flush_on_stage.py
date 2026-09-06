@@ -1,4 +1,4 @@
-"""Replay-buffer flushing at curriculum sigma boundaries (Tier 3(c) arm).
+"""Replay-buffer flushing at curriculum sigma boundaries.
 
 What correct looks like, written before the flag existed:
 

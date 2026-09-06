@@ -147,7 +147,7 @@ def _small_head_and_target(d_side=4, seed=11):
 
 
 # --------------------------------------------------------------------------
-# Task 2: static-tensor caching
+# Static-tensor caching
 # --------------------------------------------------------------------------
 
 
@@ -173,7 +173,7 @@ def test_letf_mask_caches_not_in_state_dict_and_stable():
 
 
 # --------------------------------------------------------------------------
-# Tasks 3 + 4: Euler steps, swap application, sampler log-weights
+# Euler steps, swap application, sampler log-weights
 # --------------------------------------------------------------------------
 
 
@@ -271,7 +271,7 @@ def test_compute_xi_t_swap_unchanged_behaviour():
 
 
 # --------------------------------------------------------------------------
-# Task 7: invariants under bf16 autocast (opt-in eval path)
+# Invariants under bf16 autocast (opt-in eval path)
 # --------------------------------------------------------------------------
 
 
@@ -325,7 +325,7 @@ def test_head_scores_match_fp32_within_bf16_tolerance():
 
 
 # --------------------------------------------------------------------------
-# Task 8: SDPA readout (opt-in flag, default OFF)
+# SDPA readout (opt-in flag, default OFF)
 # --------------------------------------------------------------------------
 
 
@@ -382,7 +382,7 @@ def test_model_cfg_sdpa_default_off():
 
 
 # --------------------------------------------------------------------------
-# Task 9: torch.compile on the head (opt-in flag, default OFF)
+# torch.compile on the head (opt-in flag, default OFF)
 # --------------------------------------------------------------------------
 
 

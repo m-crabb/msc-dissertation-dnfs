@@ -4,7 +4,7 @@ The 8x8 fill established the chain-pool reference machinery (its own
 standard error via the half-split, an estimated sampling floor, FLOP
 provenance read from each cell's saved config) and `house_table_16x16`
 IMPORTS that machinery rather than restating it -- it is lattice-generic and
-already verified against a table in print. What this module tests is the
+already verified at 8x8. What this module tests is the
 four things the top rung does differently, each of which is a way to print a
 wrong number that the 8x8 tests cannot catch.
 
@@ -15,7 +15,7 @@ wrong number that the 8x8 tests cannot catch.
     `N_SITES = 256` proposals (generate_kawasaki_reference_d256.py:137,
     `burn_proposals = BURN_IN_SWEEPS * N_SITES`). A fill that passed sweeps
     where the bill wants trials would under-price the reference chain by
-    256x, which is the one direction that would flatter our own sampler in
+    256x, which is the one direction that would flatter the neural sampler in
     the FLOP/es column.
 
 (2) CHAIN IDENTITY MUST BE RECOVERED BY SLICING. The half-split standard
@@ -34,9 +34,9 @@ wrong number that the 8x8 tests cannot catch.
 
 (4) THE ARM SET IS FOUR HEADS AND CARRIES NO REJECTION ROW. The skeleton
     declared a plain-`fimo2` row that was never run at either coupling
-    (deleted s78), and the rejection rows stay at 4x4 and 8x8 because
+    (since deleted), and the rejection rows stay at 4x4 and 8x8 because
     neither the unconstrained nor the soft chapter has a d256 case to
-    reject off (s78). A fill that emitted either would print a row with no
+    reject off. A fill that emitted either would print a row with no
     run behind it.
 """
 import json
@@ -177,8 +177,8 @@ def test_arm_set_is_the_heads_that_ran():
     that ran at this rung (tag 20260830-rasterord-d256): the two band
     families at one and two sweeps, with and without the exact field, and
     the separable `ma` twin at the floor. The plain-`fimo2` row the skeleton
-    declared has no run at either coupling and was deleted s78; `fimo2ef`
-    left with the factorised head (2026-08-29), which is demoted to an
+    declared has no run at either coupling and was deleted; `fimo2ef`
+    left with the factorised head, which is demoted to an
     exterior-combiner note and prints no results row at any rung. Its cells
     and config still exist -- an editorial removal, not a deletion."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
@@ -189,7 +189,7 @@ def test_arm_set_is_the_heads_that_ran():
     # Every arm prints a row, and the ladder sits in its own block.
     printed = [key for row in h16.LATEX_ROWS if row for key in [row[0]]]
     # masep is scored (it anchors the floor caveat) but prints no row: one
-    # masked-attention row per rung, billed separable (decided 2026-09-03).
+    # masked-attention row per rung, billed separable.
     assert set(h16.ARMS) - {"masep"} <= set(printed)
 
 
@@ -220,7 +220,7 @@ def test_gfn_rows_stay_outside_the_bold_comparison():
 
 
 def test_no_rejection_row_is_emitted():
-    """Rejection rows stay at 4x4 and 8x8 (s78): neither the unconstrained
+    """Rejection rows stay at 4x4 and 8x8: neither the unconstrained
     nor the soft chapter has a d256 case to reject off, so a row here would
     have no counterpart."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16

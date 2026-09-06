@@ -1,4 +1,4 @@
-"""Falsification suite for the exact-field channel (s54, 2026-08-23).
+"""Falsification suite for the exact-field channel.
 
 The channel adds gain(t) * sigma * Delta_ij to any swap head's score matrix,
 where sigma * Delta_ij is the closed-form Kawasaki energy change of swapping
@@ -95,7 +95,7 @@ def test_state_dict_round_trip_and_backbone_passthrough():
 
 
 def test_channel_matches_brute_force_on_cluster_expansion():
-    """The Cu-Au 16-site slice at 500 K (s117): the channel must read the
+    """The Cu-Au 16-site slice at 500 K: the channel must read the
     expansion's own swap energy change, not the Ising quadratic form."""
     torch.manual_seed(0)
     spec = BinaryExpansionSpec.from_json("data/ce/cuau_fcc_2x2x4.json")

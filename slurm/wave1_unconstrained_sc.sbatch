@@ -7,17 +7,17 @@
 #SBATCH --time=36:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Wave-1 sigma_c retrains (s63, 2026-08-24): the baseline chapter's critical
-# cells retrained at the exact SIGMA_C = 0.220343. Cells, twin discipline and
-# the FROZEN judging bands live at the registry block in
+# Wave-1 sigma_c retrains: the baseline chapter's critical cells retrained
+# at the exact SIGMA_C = 0.220343. Cells, twin discipline and expected
+# ranges are in the config comments in
 # experiments/dnfs_baseline_01/configs.py (Wave-1 sigma_c retrain twins):
 # >= 3 of 4 seeds over the family floor (d10 0.86 / d8 0.89 / d4 0.93) on
-# the final fp32 5000-draw eval/ess_fraction, else c030-style regression
+# the final fp32 5000-draw eval/ess_fraction, else a c030-style regression
 # investigation and the legacy print stays.
 #
-# Sequential cfg:seed cells share a queue slot (2-slot budget, 2026-08-24).
+# Sequential cfg:seed cells share a queue slot (2-slot budget).
 # Fixed tag reuses run dirs, skips finished seeds and resumes unfinished ones
-# from checkpoints/resume.pt after timeout/preemption. Two-job launch plan:
+# from checkpoints/resume.pt after timeout/preemption. Two-job launch:
 #   sbatch slurm/wave1_unconstrained_sc.sbatch \
 #       stage_4_d10_critical_paper_curriculum_sc:{42,43,44,45}
 #   sbatch slurm/wave1_unconstrained_sc.sbatch \

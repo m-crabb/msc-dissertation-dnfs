@@ -8,22 +8,21 @@
 #SBATCH --nice=1000
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# The checkpoint-SELECTION read both rw cells pre-registered: does the
-# sigma_c stage's best-trailing-median-ESS checkpoint beat final.pt?
-# Stage 6 peaked at step 45500 against a 50k run, so there are 4500 steps
-# of training between the two -- a real gap, not a tie by construction.
+# Checkpoint-selection read for the rw cells: does the sigma_c stage's
+# best-trailing-median-ESS checkpoint beat final.pt? Stage 6 peaked at
+# step 45500 against a 50k run, so there are 4500 steps of training
+# between the two -- a real gap, not a tie by construction.
 #
 # Drawn at the cell's NATIVE ne512 so it is paired with the frozen eval/,
 # which was drawn at ne512 by the training run; artefacts land in
 # eval_stage6/ and eval/ is never touched. Budget: d256 eval is ~29 min at
-# ne128 and scales linearly with the grid, so ~2h here -- the s43 prompt's
-# "~29 min" was the ne128 number and does not apply to an ne512 cell.
+# ne128 and scales linearly with the grid, so ~2h here.
 #
-# --nice=1000 deliberately: five deadline-gating a100 family arms are
-# PENDING, and the per-user 3-GPU cap is consumed by whichever job can
-# start first, not by priority. Nice orders jobs competing for the SAME
-# resource, and this job is a100-only like the arms, so it can only take a
-# slot none of them wanted first.
+# --nice=1000 deliberately: while five a100 family jobs are PENDING, the
+# per-user 3-GPU cap is consumed by whichever job can start first, not by
+# priority. Nice orders jobs competing for the SAME resource, and this job
+# is a100-only like those, so it can only take a slot none of them wanted
+# first.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 

@@ -1,10 +1,10 @@
 """Characterisation pin for the MDNS budget-masked gate driver.
 
 Why this file exists. The driver (`mdns_budget_gate_4x4.py`) carries the
-whole gate-3 result and had NO test coverage whatsoever — `build_space`,
+whole budget-masked gate result and had NO test coverage whatsoever — `build_space`,
 `run_slate`, `evaluate_arm` and `conditional_kl_and_late_error` were
 entirely unpinned, while the library underneath it
-(`samplers/budget_masked.py`) is pinned by 35 tests. M4a has to lift the
+(`samplers/budget_masked.py`) is pinned by 35 tests. The 8x8 refactor has to lift the
 lattice size out of the driver's module globals and make the reference
 block pluggable (exact enumeration at 4x4; chains + slice-TI at 8x8,
 where 2^64 states rule enumeration out), and that is precisely the kind
@@ -178,7 +178,7 @@ def test_free_arm_reports_the_free_space_instrument_set(slate):
 
 
 def test_exact_slice_reference_agrees_with_slice_ti(slate):
-    """The 8x8 plan replaces `on_slice_free_energy_reference` (enumeration)
+    """The 8x8 driver replaces `on_slice_free_energy_reference` (enumeration)
     with the slice-TI constant. That substitution is only legitimate if the
     two agree where both are computable — they do, at 4x4."""
     reference = _report(slate, "a_seed42")["free_energy_ref"]
@@ -351,7 +351,7 @@ def test_chain_regime_requires_a_free_energy_reference(lattice_8x8):
 @pytest.mark.skipif(not PROBE_ROOT.exists(),
                     reason="certified probe chains not present locally")
 def test_8x8_eval_runs_end_to_end_and_stays_on_the_fibre(lattice_8x8):
-    """The plumbing gate the plan asks for: an untrained 8x8 model must
+    """The plumbing check: an untrained 8x8 model must
     evaluate against the chain reference and return the fibre instruments
     MINUS within-level, with structural feasibility intact at 64 sites
     (where `_pack_spin_keys` would have silently overflowed had the

@@ -21,8 +21,8 @@ before any fan-out. Two parts, the GFN launch-bench pattern:
    codebase has measured that a 2-ULP step-0 gradient difference
    decorrelates a 50k run entirely (identical config + seed gave ESS
    0.423 vs 0.899 across venues), so no same-math kernel pair can hold a
-   1e-5 trace gap over hundreds of optimiser steps. In the s96 D=4 run
-   the pair was bit-identical through step 25, showed its first
+   1e-5 trace gap over hundreds of optimiser steps. In the reference D=4
+   run the pair was bit-identical through step 25, showed its first
    representable gap at step ~50 (4.7e-7), and amplified to O(1e-1) by
    step 200 while both arms trained healthily — that profile IS the
    same-math signature. The late trace therefore gets a health check
@@ -30,9 +30,10 @@ before any fan-out. Two parts, the GFN launch-bench pattern:
    tolerance; a genuine compile pathology fails part 1, breaks the
    early window, or shows up as one arm not training.
 
-Pass = both parts within tolerance. This CPU pass certifies the compiled
-graph's math; the venue's CUDA backend is certified separately by the
-single d64 gate run before wave 1 fans out (kernels differ per backend).
+Pass = both parts within tolerance. This CPU pass checks the compiled
+graph's math; the venue's CUDA backend is checked separately by a single
+d64 run on the venue before the family fans out (kernels differ per
+backend).
 
 Run:
     pixi run -e dev python -m experiments.constrained_soft_02.compile_gate
@@ -59,13 +60,13 @@ GATE_TRAIN_STEPS = 300          # 3 outer cycles: rollout + replay both exercise
 GATE_OUTPUT_DIR = "results/02_constrained_soft"
 GATE_TAG = "gate0e"             # fixed tag: a rerun resumes/skips, never forks
 
-# The structurally-zero gradient (the hard gate's pair_mlp.2.bias lesson,
-# re-derived here per the deviations-re-derived-per-rung rule): a key
+# The structurally-zero gradient (the hard compile gate's pair_mlp.2.bias
+# case, re-derived here for this architecture): a key
 # projection's bias adds the same vector b to every key, so for query i
 # each score gains the identical constant q_i . b / sqrt(d_k), and softmax
 # over keys removes any per-query constant — d loss / d b == 0 exactly,
 # and only float rounding residue survives (measured 1.1e-6 on loss scale
-# 1.7e3 in the s96 run). A relative test on that residue flags a
+# 1.7e3 in the reference D=4 run). A relative test on that residue flags a
 # non-error, so any parameter ending in one of these suffixes is instead
 # asserted SMALL on both sides.
 STRUCTURAL_ZERO_SUFFIXES = ("k_proj.bias",)
@@ -74,11 +75,11 @@ STRUCTURAL_ZERO_ABSOLUTE_TOLERANCE = 1e-4
 # Trace steps over which the matched-seed pair must agree to 1e-5-class:
 # the window before Adam + replay feedback amplifies ULP-level rounding
 # into macroscopic separation (first representable gap at step ~50 in the
-# s96 D=4 run; module docstring has the measured profile).
+# reference D=4 run; module docstring has the measured profile).
 PRE_AMPLIFICATION_STEPS = 50
 # Health floor for the late trace: both arms' trailing-mean loss must sit
 # well below the shared step-0 loss (a factor-4 decline over 300 steps is
-# far under what either healthy arm achieved — s96 measured ~25-45x —
+# far under what either healthy arm achieved — measured ~25-45x —
 # while a dead arm stays at or above its start).
 HEALTH_DECLINE_FACTOR = 4.0
 

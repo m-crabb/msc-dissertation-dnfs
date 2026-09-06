@@ -4,13 +4,13 @@ This is the apples-to-apples DNFS-vs-vcSGC comparison the F(c) overlay
 (`fc_compare.py`) deliberately left off its plot. Both samplers target the SAME
 semigrand object here: the soft/penalised 2D Ising at penalty strength lambda is
 exactly mchammer's variance-constrained semigrand-canonical (vcSGC) ensemble at
-kappa = lambda, phi_1 = -2*c_target (validated 2026-06-13; the mapping now
-lives in `discrete_flow_sampler.mcmc.mchammer_ising`, pinned by
-`tests/test_mchammer_ising.py`). So at each window we can lay DNFS's
-importance-weighted observables directly against a literal VCSGCEnsemble chain, no
+kappa = lambda, phi_1 = -2*c_target (the mapping lives in
+`discrete_flow_sampler.mcmc.mchammer_ising`, pinned by
+`tests/test_mchammer_ising.py`). So at each window DNFS's importance-weighted
+observables lie directly against a literal VCSGCEnsemble chain, no
 free-energy reconciliation needed.
 
-Per composition window we compare three observables:
+Per composition window three observables are compared:
 
   1. **Composition marginal** - weighted mean and std of c. Both samplers fluctuate
      around c_target with the penalty-set width 1/sqrt(2*lambda*d); this is the
@@ -27,7 +27,7 @@ Per composition window we compare three observables:
 
 Note (honest): with a single NN-pair orbit and no field, energy/site and the NN
 SRO are affine-related (SRO = -E_persite / (4*sigma)), so they are one comparison
-in two units rather than two independent checks. We report both because energy is
+in two units rather than two independent checks. Both are reported because energy is
 the thermodynamic quantity and SRO is the interpretable correlation; agreement on
 one is agreement on the other.
 
@@ -37,7 +37,7 @@ F(c) curve) and bootstrap error bars; the vcSGC reference is a native
 `VCSGCEnsemble` chain (kT = 1) averaged after burn-in, with the seed-to-seed spread
 as its bar. Local CPU, no Modal, no new training.
 
-Example (the s95 8x8 house family; --eval_dir eval_ema reads the dual
+Example (the 8x8 house family; --eval_dir eval_ema reads the dual
 eval's shadow-weight draw, archived pre-EMA d10 cells keep the default):
     python -m experiments.constrained_soft_02.analysis.fc_weighted_thermo \
         --results_dir results/02_constrained_soft \
@@ -172,7 +172,7 @@ def main() -> None:
                         "mirrors inherit it); used while a window awaits retrain "
                         "or prints from a different training grid")
     p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
-                   help="which frozen eval to score: raw weights or the s95 "
+                   help="which frozen eval to score: raw weights or the "
                         "dual eval's EMA shadow draw")
     args = p.parse_args()
     rng = np.random.default_rng(0)
@@ -283,9 +283,9 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
     lands on an already-sampled window. Returns (c, vc, vc_err, dn, dn_err)
     tuples reusing the source window's errors; these are symmetry-implied, not
     independently sampled, but they are drawn identically to the sampled windows
-    — the filled/open marker split confused more than it informed (reader
-    feedback 2026-08-11), so the reflection is stated once in the dissertation
-    body text instead of per-marker.
+    — the filled/open marker split confused more than it informed, so the
+    reflection is stated once in the dissertation body text instead of
+    per-marker.
     """
     sampled = {round(r["c"], 4) for r in have}
     flip = (lambda v: 1.0 - v) if key == "c_mean" else (lambda v: v)
@@ -300,8 +300,8 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
 
 
 def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
-    """House-standard 2x2 at 0.72\\textwidth (s101; was a 1x4 row, before
-    that a full-width 2x2).
+    """House-standard 2x2 at 0.72\\textwidth (was a 1x4 row, before that a
+    full-width 2x2).
 
     The full-width 2x2 printed 14.1 cm tall; the 1x4 fixed that at 6.4 cm
     but left ~0.63 in of data axis per panel -- 60% of the canvas went to

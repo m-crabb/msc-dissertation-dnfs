@@ -116,6 +116,5 @@ def test_x_dependence_at_other_sites(model):
 
 
 def test_is_locally_equivariant_flag(model):
-    """Dispatch flag must be True (kolmogorov.loss reads this attribute
-    in Task 4)."""
+    """Dispatch flag must be True (kolmogorov.loss reads this attribute)."""
     assert model.is_locally_equivariant is True

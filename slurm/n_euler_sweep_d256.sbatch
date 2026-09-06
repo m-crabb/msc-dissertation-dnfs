@@ -18,7 +18,7 @@
 #
 # The earlier grid study cannot answer this: it reanalysed already-recorded
 # 128-step rollouts (128 vs subsampled 64/32 vs warped-64), so its negative
-# verdict is about ALLOCATION at a fixed budget. RESOLUTION was never
+# result is about ALLOCATION at a fixed budget. RESOLUTION was never
 # testable from those artefacts.
 #
 # Eval-only off the archived d256 naive checkpoint — no retraining. Reports
@@ -34,7 +34,7 @@
 # steps), which is weakly negative and exactly what a size that already
 # works should show.
 #
-# Harness gate already passed at d64: at the as-run resolution it reproduces
+# Harness check at d64: at the as-run resolution it reproduces
 # the archived Var[log w] 0.659 to 1.2 sigma. Re-check the 128 arm here
 # against the archived d256 Var[log w] = 18.1 before trusting the finer arms.
 #

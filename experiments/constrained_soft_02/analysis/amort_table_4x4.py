@@ -4,7 +4,7 @@ Revamp re-point (wave 3, plan 2026-08-30-soft-chapter-revamp-efc): the
 offset/clip family retired, so every row now comes from the house-recipe
 rerun (`*_house`, tag 20260831-softhouse-d16, fixed lambda=50 + exact
 field channel + EMA dual eval) and the composition axis moves to the
-revamp grid. The s64 structure is unchanged: every requested composition
+revamp grid. The table structure is unchanged: every requested composition
 gets a SPECIALIST comparator row and both hardware-paired timing columns
 stay replaced by the house FLOP/es currency, so the table prices exactly
 what tab:eval-soft-8x8 prices and no cross-device second appears anywhere.

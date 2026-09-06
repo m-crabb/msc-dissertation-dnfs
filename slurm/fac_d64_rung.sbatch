@@ -7,7 +7,7 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Factorised-head d64 rung (2026-08-13, user GO after 4x4 verdict): seed 42
+# Factorised-head d64 rung (after the 4x4 gate): seed 42
 # twin of archived MA 50k curriculum; only head_kind and dual-eval EMA differ.
 # EMA never touches training; eval/ raw remains primary, eval_ema/ alongside.
 # Submitted WITHOUT nice to outrank nice'd walkback topups. Fixed tag keeps

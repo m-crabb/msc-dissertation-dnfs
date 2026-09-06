@@ -14,18 +14,15 @@ N = 5,000 (≥ 2,048 strictly) so a single eval pass feeds both.
 
 All other distance metrics from earlier drafts (TVD, KL, 1-D Wasserstein
 on log p̃) were off-paper and have been removed -- the paper does not
-report them, and TVD in particular was sample-size-floored at our budget
-(see auto-memory `project_tvd_floor_at_low_n`).
+report them, and TVD in particular was sample-size-floored at this budget.
 
 Note on the σ factor in the per-spin internal energy. Paper Eq. 53
 defines E(x) := -σ x^T A x; paper Table 2's reported `E/D` is the
 standard physics per-spin internal energy u = ⟨H⟩/N with H = -½ x^T A x
 in J = 1 units, which equals -E_p[log p̃] / (2σD). The two differ by a
 factor of β = 2σ (the matrix form `x^T A x` double-counts edges; β is
-the inverse temperature). Cross-check against the reference repo
-J-zin/DNFS:main.py::evaluate confirms the per-β normalisation in their
-internal-energy expression. See `internal_energy_estimate` docstring
-for the derivation.
+the inverse temperature). See `internal_energy_estimate` docstring for
+the derivation.
 """
 
 import itertools
@@ -498,8 +495,8 @@ def half_magnetisation_order_parameter(x: Tensor, D: int) -> Tensor:
     At fixed
     50/50 composition the two phase-separated modes give phi = +1 / -1 while
     total magnetisation is constant on the slice, so phi is the mode-coverage
-    observable of the frozen mixing-probe metric (pre-registration
-    2026-07-03); E_pi[phi] = 0 by the global spin-flip symmetry of the slice.
+    observable of the mixing-probe metric; E_pi[phi] = 0 by the global
+    spin-flip symmetry of the slice.
     """
     grid = x.float().reshape(*x.shape[:-1], D, D)
     m_left = grid[..., :, : D // 2].mean(dim=(-2, -1))

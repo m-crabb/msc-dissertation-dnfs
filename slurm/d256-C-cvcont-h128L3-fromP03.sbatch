@@ -7,17 +7,16 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Arm C of the ne128 x CV family -- the h128L3 capacity twin of arm A,
-# a 20k CV continuation at fixed sigma_c. LOGGED AMENDMENT (2026-08-22, GO):
-# launched from BOTH candidate parents rather than the frozen criterion's
-# winner, so the parent is never chosen with the answer in hand and the arm
-# is decided on C's own endpoint without judging P / P_lr03 first. BOTH
-# endpoints are reported, never only the better one, and the C-vs-A
-# comparison is made twice so it carries a Bonferroni factor of 2
-# (alpha 0.05 -> 0.025 per arm). Bands frozen in the cell comment
-# (configs.py) since 2026-08-21, unchanged by this amendment.
+# h128L3 capacity continuation of the ne128 x CV family: a 20k CV
+# continuation at fixed sigma_c, the capacity twin of the keystone's CV
+# continuation (d256-A-cvcont-ne128). It is run from BOTH candidate h128L3
+# parents (P and P_lr03) rather than from a parent chosen after seeing
+# their endpoints; both endpoints are reported, and the comparison against
+# the keystone continuation is made twice, so it carries a Bonferroni
+# factor of 2 (alpha 0.05 -> 0.025 per arm). Expected ranges are in the
+# configs.py cell comment. This job continues P_lr03.
 #
-# C cannot continue from the keystone the way A does: hidden_dim 32 -> 128
+# It cannot continue from the keystone directly: hidden_dim 32 -> 128
 # changes the shape of every weight matrix, so it needs an h128L3 parent,
 # which is exactly what P and P_lr03 are.
 #

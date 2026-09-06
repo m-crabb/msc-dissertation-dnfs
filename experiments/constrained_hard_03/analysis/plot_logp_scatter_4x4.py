@@ -48,13 +48,13 @@ L = 4
 D_SITES = L * L
 TAG = "20260825-hard-w2"
 SEEDS = (42, 43, 44)
-# Printed arms only (fimo2ef/fmo2ef sigma_c are HELD from print s70).
+# Printed arms only (fimo2ef/fmo2ef sigma_c are withheld).
 ARM_STYLE = {
     "mo": ("mask-one", "tab:green"),
     "ma": ("masked-attention", "tab:blue"),
     "thp": ("two-hole patch", "tab:orange"),
 }
-# GFlowNet comparator arms (s93, `_par` judging wave). Their y-axis is
+# GFlowNet comparator arms (the `_par` parity cells). Their y-axis is
 # EXACT: the AR policy is normalised by construction, so log q = log pi~ -
 # log w with no additive shift — the printed median offset is a sanity
 # check expected ~0, removed anyway for uniform treatment. Draw parity

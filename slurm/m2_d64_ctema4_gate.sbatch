@@ -7,18 +7,17 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# M2 no-regression gate (M-campaign Task 2, plan 2026-08-14): user authorised
-# launch WITHOUT waiting for cv2's band; comparator is the ARCHIVED MA twin.
+# c_t EMA no-regression gate; comparator is the ARCHIVED MA twin.
 # Archived d64 MA 50k curriculum, only c_t_ema_halflife_cycles=4 changed
 # (cell comment in configs.py; twin-ness pinned by
-# test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields). Frozen band:
-# NO-REGRESSION = final eval ESS frac >= 0.755 (the archived MA twin's seed
+# test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields). Expected:
+# no regression = final eval ESS frac >= 0.755 (the archived MA twin's seed
 # spread 0.755/0.769/0.781); below that the across-cycle smoothing is not
 # free. Seed 42 is the d64 ladder's standing seed; fixed tag keeps resume.
 # Scheduling: d64 50k is the 1.3 h A100 class (~2x wall on a30); 2-day
 # request matches the fmo2/fab16 d64 rungs' headroom. a30 because a100
-# stays reserved for the d256 strategy — per the priority-inversion rule
-# (imperial-doc-cluster.md §4) submit only once 274187 is RUNNING.
+# stays reserved for the d256 cv2 job — to avoid priority inversion,
+# submit only once that job is RUNNING.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

@@ -368,8 +368,7 @@ def final_eval_smc(
     eval_dir_suffix: str = "",
 ) -> dict:
     """SMC-resampled end-of-run eval, written ALONGSIDE the plain-IS eval/
-    (never over it — the S7 preregistration keeps the pure-IS numbers as
-    the quoted baseline).
+    (never over it — the pure-IS numbers stay the quoted baseline).
 
     Same draw protocol as `final_eval` (n_eval_samples, chunking, Euler
     grid), plus adaptive systematic resampling at threshold `tau` inside
@@ -608,10 +607,10 @@ def _eval_checkpoint_and_suffix(
 
     `stage_best` selects `best_stage<k>.pt` -- the per-stage checkpoint the
     swap trainer keeps when `stage_best_checkpoints=True`, saved at the best
-    trailing median-of-3 train-eval ESS within that curriculum stage. It is
-    the instrument the rw cells' frozen bands declare: whether the sigma_c
-    stage's best beats `final.pt` is the first checkpoint-SELECTION read at
-    a size where final.pt is known good. The trainer saves `head.state_dict()`
+    trailing median-of-3 train-eval ESS within that curriculum stage.
+    Whether the sigma_c stage's best beats `final.pt` is the rw cells'
+    checkpoint-SELECTION read, at a size where final.pt is known good.
+    The trainer saves `head.state_dict()`
     there and no EMA shadow, so pairing it with `use_ema` is REFUSED rather
     than served from `final_ema.pt` -- that would answer a stage question
     with a run-end checkpoint and look entirely normal in the output.
@@ -657,9 +656,9 @@ def eval_only(
     already exists, and re-drawing it costs real GPU-hours at d=64 — run
     without smc_tau first if it is genuinely missing.
 
-    With `replicate_seed` set, draws a probe REPLICATE: the S7 amendment's
-    DECIDE-1 defines a neural replicate as an independent sampling run with
-    a fresh eval seed off the one converged checkpoint, so the draw RNG is
+    With `replicate_seed` set, draws a probe REPLICATE: a neural replicate
+    is an independent sampling run with a fresh eval seed off the one
+    converged checkpoint, so the draw RNG is
     seeded with `replicate_seed` instead of the training seed and artefacts
     land in eval_replicate_s<seed>/ — the frozen eval/ the headline numbers
     were read from is never touched. Plain IS only: the probe's N_eff(O)
@@ -679,7 +678,7 @@ def eval_only(
     With `use_ema` set, the draw loads `final_ema.pt` instead of
     `final.pt` and the artefacts gain an `_ema` prefix on the suffix
     (eval_ema_ne<k>/). Why this exists (2026-08-20): the EMA weights are
-    the PRIMARY read for every d=256 verdict — raw eval ESS at sigma_c is
+    the PRIMARY read for every d=256 cell — raw eval ESS at sigma_c is
     top-weight dominated and does not resolve — but this function loaded
     only `final.pt`, so an EMA re-draw previously needed a hand-staged
     copy of `final_ema.pt` renamed to `final.pt`. That workaround fails
@@ -692,9 +691,9 @@ def eval_only(
     both their own suffix and the EMA checkpoint identity.
 
     With `stage_best` set, the draw reads `checkpoints/best_stage<k>.pt`
-    and writes eval_stage<k>/ -- the checkpoint-SELECTION read the rw
-    cells pre-registered (sigma_c stage-best vs final.pt at the full
-    frozen eval, judged only against a bootstrap CI because the rule takes
+    and writes eval_stage<k>/ -- the rw cells' checkpoint-SELECTION read
+    (sigma_c stage-best vs final.pt at the full frozen eval, compared
+    only against a bootstrap CI because the rule takes
     a maximum over ~25 trailing medians per stage and a best-of-many
     maximum over a flat series carries upward selection bias). Raw weights
     both sides; see `_eval_checkpoint_and_suffix` for why the EMA pairing
@@ -724,7 +723,7 @@ def eval_only(
         )
     if smc_tau is not None and replicate_seed is not None:
         raise ValueError(
-            "replicate draws are plain-IS by the S7 preregistration; "
+            "replicate draws are plain-IS by construction; "
             "run smc_tau and replicate_seed evals separately"
         )
     if smc_tau is not None and n_euler_override is not None:
@@ -815,7 +814,7 @@ def main():
         default=None,
         metavar="SEED",
         help="With --eval-only: draw a probe replicate with this fresh "
-        "sampling seed (S7 amendment DECIDE-1); artefacts land in "
+        "sampling seed; artefacts land in "
         "eval_replicate_s<SEED>/ beside the frozen eval/",
     )
     parser.add_argument(
@@ -840,7 +839,7 @@ def main():
         default=None,
         metavar="K",
         help="With --eval-only: draw from checkpoints/best_stage<K>.pt "
-        "instead of final.pt; writes eval_stage<K>/. The pre-registered "
+        "instead of final.pt; writes eval_stage<K>/. The "
         "checkpoint-selection read (sigma_c stage-best vs final).",
     )
     parser.add_argument("--seed", type=int, default=42)

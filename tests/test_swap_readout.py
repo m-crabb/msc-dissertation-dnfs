@@ -1,4 +1,4 @@
-"""Tests for the paired-swap antisymmetric readout (P1.1, 2026-06-29)."""
+"""Tests for the paired-swap antisymmetric readout."""
 
 import pytest
 import torch
@@ -98,7 +98,7 @@ def _state_batch(d=16, batch=3, seed=7):
 
 @torch.no_grad()
 def test_doubly_hollow_antisymmetric():
-    """Assertion 1: state-swap antisymmetry, bit-exact (< atol)."""
+    """State-swap antisymmetry, bit-exact (< atol)."""
     for d in (9, 16):
         m = _backbone(d=d)
         head = DoublyHollowSwapHead(m)
@@ -115,7 +115,7 @@ def test_doubly_hollow_antisymmetric():
 
 @torch.no_grad()
 def test_doubly_hollow_trivial_swap_vanishes():
-    """Assertion 3: same-spin pair => G_swap == 0 exactly."""
+    """Same-spin pair => G_swap == 0 exactly."""
     m = _backbone(d=9)
     head = DoublyHollowSwapHead(m)
     x = _state(d=9)
@@ -129,11 +129,11 @@ def test_doubly_hollow_trivial_swap_vanishes():
 
 @torch.no_grad()
 def test_doubly_hollow_unordered_pair_loop_is_bit_identical():
-    """The gate head loops UNORDERED pairs (2026-08-26): `_masked_body` zeroes
+    """The gate head loops UNORDERED pairs: `_masked_body` zeroes
     a SET of sites, so the (j, i) pass recomputed the (i, j) pass exactly and
     the ordered loop paid 2x. This pins the dedup as bit-identical -- not
     close -- against the ordered reference it replaced, so every gate number
-    taken with the old head still stands."""
+    taken with the old head still holds."""
     m = _backbone(d=9)
     x, t = _state(d=9), torch.rand(1)
     om = m.omega(((x + 1) / 2).long())
@@ -151,7 +151,7 @@ def test_doubly_hollow_unordered_pair_loop_is_bit_identical():
 
 @torch.no_grad()
 def test_doubly_hollow_finite():
-    """Assertion 6 (part): no NaN/Inf."""
+    """No NaN/Inf."""
     m = _backbone(d=9)
     head = DoublyHollowSwapHead(m)
     G = head(_state(d=9), torch.rand(1))
@@ -160,7 +160,7 @@ def test_doubly_hollow_finite():
 
 @torch.no_grad()
 def test_mask_one_antisymmetric():
-    """Assertion 5: the real climax head is state-swap antisymmetric, bit-exact."""
+    """The real climax head is state-swap antisymmetric, bit-exact."""
     for d in (9, 16):
         m = _backbone(d=d)
         head = LeTFMaskOneSwapHead(m)
@@ -178,7 +178,7 @@ def test_mask_one_antisymmetric():
 @torch.no_grad()
 @pytest.mark.parametrize("use_sdpa", [False, True])
 def test_mask_one_blind_to_anchor(use_sdpa):
-    """Assertion 5 (part): G_swap(i,j) is invariant to flipping x_i then fixing omega.
+    """G_swap(i,j) is invariant to flipping x_i then fixing omega.
 
     Flip x_i AND keep the readout's omega_{x_i} fixed by comparing the body
     contribution only: assert the masked body H[:,j,:] (anchor i) is unchanged
@@ -197,11 +197,11 @@ def test_mask_one_blind_to_anchor(use_sdpa):
 
 @torch.no_grad()
 def test_mask_one_label_asymmetry_pinned():
-    """Assertion 6: the mask-one head is NOT label-symmetric (H_ij != H_ji).
+    """The mask-one head is NOT label-symmetric (H_ij != H_ji).
 
     This is expected and documents why the downstream residual must order swap
     pairs by site index (i<j), not by spin. State-swap antisymmetry (above) is
-    unaffected; here we PIN the label asymmetry so a future 'fix' that makes it
+    unaffected; here the label asymmetry is PINNED so a future 'fix' that makes it
     symmetric is caught and reconsidered.
     """
     m = _backbone(d=9)
@@ -239,7 +239,7 @@ def _naive_factoring(model, x, t):
 
 @torch.no_grad()
 def test_naive_factoring_breaks_antisymmetry():
-    """Assertion 2: the naive factoring is NOT antisymmetric.
+    """The naive factoring is NOT antisymmetric.
 
     Negative control: max-over-pairs floor + separation from the bit-exact head.
     """
@@ -269,7 +269,7 @@ def test_naive_factoring_breaks_antisymmetry():
 
 @torch.no_grad()
 def test_antisymmetrise_fixes_arbitrary_head():
-    """Assertion 4a: antisymmetrise(non-antisymmetric raw head) is antisymmetric."""
+    """antisymmetrise(non-antisymmetric raw head) is antisymmetric."""
     m = _backbone(d=9)
     x = _state(d=9)
     t = torch.rand(1)
@@ -285,7 +285,7 @@ def test_antisymmetrise_fixes_arbitrary_head():
 
 @torch.no_grad()
 def test_brute_force_matches_mask_one():
-    """Assertion 4b: brute-force mask-both and leTF mask-one agree (read at j)."""
+    """Brute-force mask-both and leTF mask-one agree (read at j)."""
     m = _backbone(d=9)
     x = _state(d=9)
     t = torch.rand(1)
@@ -299,11 +299,11 @@ def test_brute_force_matches_mask_one():
 
 @torch.no_grad()
 def test_brute_force_matches_mask_one_d16_batch_all_pairs():
-    """Assertion 4b, extended: d=16 (gate dim), batch>1, ALL i<j pairs.
+    """Extended: d=16 (gate dim), batch>1, ALL i<j pairs.
 
     test_brute_force_matches_mask_one above only pins d=9, batch 1, active
     (opposite-spin) pairs. Before mask_one is used as an O(d) drop-in for the
-    O(d^2) reference head in the d=16 gate (task 9), the oracle must also cover
+    O(d^2) reference head in the d=16 gate, the oracle must also cover
     the gate's own dimension, more than one state at once, and same-spin pairs
     (where both heads should agree trivially at exactly 0).
     """

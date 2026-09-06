@@ -40,9 +40,9 @@ only trained where the rollout goes — a channel that looks half-useless
 uniformly but complete under p~_t is still a paying channel. The lookup
 tiers are uniform-only: reweighting up to 4,096 cell means by p~_t leaves many
 cells with tiny effective counts and the held-out R^2 becomes an estimate
-of weight noise rather than capacity (decision 2026-08-29).
+of weight noise rather than capacity.
 
-How to read the verdict: the archived hard 4x4 regression put the linear
+How to read the result: the archived hard 4x4 regression put the linear
 field at roughly half the variance, and the channel
 paid at 8x8. If r2_channel here is well above that, the case for wiring
 sigma*h and the lambda-offset into a soft head as fixed channels with
@@ -75,9 +75,9 @@ SEEDS = (42, 43, 44, 45)
 def load_run(run_dir):
     """Rebuild (model, target) from config.json + checkpoints/final.pt.
 
-    Use the baseline trainer's builders, as the hard gate does. Specialists
-    only: amortised models require composition at every forward; that
-    campaign is closed.
+    Use the baseline trainer's builders, as the hard compile gate does.
+    Specialists only: amortised models require composition at every forward
+    and are out of scope here.
     """
     from experiments.dnfs_baseline_01.run import (
         _build_model, _rebuild_from_run_dir)

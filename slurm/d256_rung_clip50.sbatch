@@ -11,7 +11,7 @@
 # refuted this arm by algebra: the diverged twin's minimum pre-clip norm was
 # 186, so clip=50 saturates every step, and AdamW erases the constant factor
 # between two always-saturated thresholds — this job would near-exactly
-# retrace job 271892. Kept as the record of a rejected arm; superseded by
+# retrace job 271892. Kept as the record of a rejected arm; replaced by
 # slurm/d256_smoke12k_arm.sbatch (the five-arm smoke ladder).
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache

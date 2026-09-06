@@ -1,5 +1,5 @@
 """Exact-field channel: the closed-form Kawasaki energy change as a fixed
-additive score, in front of any learned swap head (s54, 2026-08-23).
+additive score, in front of any learned swap head.
 
     G(i, j | x) = G_head(i, j | x) + gain(t) * sigma * Delta_ij(x),
     sigma * Delta_ij = log p(swap2(x, i, j)) - log p(x)          (t = 1)
@@ -83,7 +83,7 @@ class ExactFieldSwapHead(nn.Module):
 
 
 class ExactFieldFlipModel(nn.Module):
-    """The same channel for the soft chapter's FLIP process (s90, 2026-08-29).
+    """The same channel for the soft chapter's FLIP process.
 
         G(i | x) <- G_model(i | x) + gain(t) * Delta_i(x),
         Delta_i  = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ],
@@ -103,7 +103,7 @@ class ExactFieldFlipModel(nn.Module):
     Delta_i is the exact soft flip log-ratio at t=1 (pinned against brute
     force in tests/test_soft_field_regression.py): written against the
     HOLE-EXCLUDED composition c_null it is exactly odd in x_i, so it lives
-    in the leTF's representable set G = -x_i S_i(x). The s90 regression put
+    in the leTF's representable set G = -x_i S_i(x). The local-field regression put
     the two closed-form columns at ~95% of every trained lambda=50
     specialist's variance — dominated by the PENALTY column, i.e. by
     exactly the term whose lambda^2 Var[delta_P] noise makes soft training

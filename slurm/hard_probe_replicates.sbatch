@@ -7,7 +7,7 @@
 #SBATCH --time=16:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Probe neural replicate draws (S7 amendment DECIDE-1): R=8 independent
+# Probe neural replicate draws: R=8 independent
 # sampling runs, fresh eval seeds 101-108, off ONE converged checkpoint.
 # Usage: sbatch slurm/hard_probe_replicates.sbatch <run_dir>
 # One job per checkpoint spends one queue slot against the 8-job submission

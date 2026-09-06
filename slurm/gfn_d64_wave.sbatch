@@ -7,7 +7,7 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# GFN 8x8 wave (s94): one cell per job, THREE SEEDS SERIAL INSIDE IT (the
+# GFN 8x8 wave: one cell per job, THREE SEEDS SERIAL INSIDE IT (the
 # rasterord_d64_floor pattern -- 12 cells x 3 seeds as an array would sit
 # 2/3 PENDING behind the QOS cap while no cell completed its band):
 #   sbatch -J gfn-d64-<short> slurm/gfn_d64_wave.sbatch <cfg name>

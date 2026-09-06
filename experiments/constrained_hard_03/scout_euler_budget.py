@@ -50,7 +50,7 @@ from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.seeding import seed_everything
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
-SIGMA_C = 0.22305  # LEGACY value: this scout profiled the archived (pre-s58-migration) cells
+SIGMA_C = 0.22305  # LEGACY value: this scout profiled the archived (pre-migration) cells
 CANDIDATE_STEPS = (16, 32, 64, 128, 256, 512)
 EXTRAPOLATE_TO = (4, 8, 12, 16)
 

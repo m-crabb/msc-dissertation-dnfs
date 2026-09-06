@@ -10,7 +10,7 @@ step-0 init diagnostic, before its first optimiser step.
 
 These tests pin the fix's two obligations, which pull in opposite
 directions: it must WORK above the cap, and it must not move a single
-number below it -- every d256 figure in print was produced by the
+number below it -- every reported d256 figure was produced by the
 `torch.quantile` path and the 16x16 house table is filled from those runs.
 """
 import torch

@@ -1,7 +1,7 @@
 """fig:soft-clean -- the soft chapter's K2 results cell, house standard.
 
-The approved house figure set (s62 board, K2; soft instantiation decided
-s64: c=0.50 window, lambda-trade figure #6 stays separate) gives the soft
+The house figure set (c=0.50 window; the lambda-trade figure stays
+separate) gives the soft
 chapter the same two-panel results-cell as the other results chapters, at
 the headline 10x10 size, lambda=50, c_target=0.50, sigma=0.1:
 

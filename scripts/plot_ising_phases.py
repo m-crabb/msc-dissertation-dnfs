@@ -7,7 +7,7 @@ coupling -> low temperature -> ordered; small sigma -> high temperature ->
 disordered. The critical panel sits at the exact 2D-Ising critical point
 sigma_c = ln(1+sqrt(2))/4 = 0.220343 (targets/ising.py SIGMA_C; K_c =
 0.5*ln(1+sqrt(2)) with the symmetrised-adjacency double-counting K = 2*sigma).
-Regenerated at the exact value in the s58 sigma_c migration (2026-08-24);
+Regenerated at the exact value in the sigma_c migration;
 the pre-migration panel used the legacy 0.22305.
 
 Each snapshot is a single equilibrated state reshaped from length d = D*D

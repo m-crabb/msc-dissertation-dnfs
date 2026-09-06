@@ -1,25 +1,23 @@
-"""Tests for the (sigma_c, 8x8) headline-cell probe analysis, written BEFORE
-the analysis script bodies (working convention: tests encode "what correct
-looks like" independently of the implementation).
+"""Tests for the (sigma_c, 8x8) headline-cell probe analysis, written before
+the analysis script bodies.
 
 What is under test here is exactly the NEW research-bearing computation the
 probe analysis adds over the already-tested demo_4x4 machinery:
 
-1. batch_means_tau_int — the amendment (2026-08-12, section 3) freezes the
-   competitor burn-in rule to "max(1e4 sweeps, 20*tau_int(energy)) with
-   tau_int from batch means at block length >= 10*tau_int". Batch means
-   estimates tau_int from the variance inflation of block averages,
+1. batch_means_tau_int — the competitor burn-in rule is "max(1e4 sweeps,
+   20*tau_int(energy)) with tau_int from batch means at block length
+   >= 10*tau_int". Batch means estimates tau_int from the variance
+   inflation of block averages,
    Var(block_mean) ~= tau_int * Var(x) / L for block length L >> tau_int,
    so tau_hat = L * Var(block means) / Var(x). The estimator must certify
-   its own block length (L >= 10 * tau_hat), the frozen self-consistency
+   its own block length (L >= 10 * tau_hat), the self-consistency
    condition.
-2. kawasaki_burn_in_sweeps — the frozen max() rule itself.
+2. kawasaki_burn_in_sweeps — the max() rule itself.
 3. ratio_with_ci — the delta-method 95% CI on the per-compute N_eff ratio
-   that the GO margin rule (prereg section 7) reads: CI excluding 1 AND
-   point >= 1.5.
+   that the GO margin rule reads: CI excluding 1 AND point >= 1.5.
 4. frozen_verdict — the three-way GO/PARTIAL/NO-GO mapping with the
-   pre-scoped PARTIAL narratives; this must be a faithful transcription of
-   prereg section 7, because the verdict is decided by it mechanically.
+   PARTIAL narratives; the outcome is decided by it mechanically, so every
+   branch is pinned.
 """
 
 import numpy as np
@@ -71,7 +69,7 @@ def test_batch_means_tau_int_iid_is_about_one():
 
 
 def test_batch_means_block_length_self_consistent():
-    """The frozen rule requires block length >= 10 * tau_hat; the estimator
+    """The rule requires block length >= 10 * tau_hat; the estimator
     must return a block length that certifies its own estimate."""
     trace = _ar1(0.9, 200_000, seed=2)
     tau, block_length, n_blocks = batch_means_tau_int(trace)
@@ -85,7 +83,7 @@ def test_batch_means_block_length_self_consistent():
 
 
 def test_burn_in_floor_dominates_short_tau():
-    # 20 * 100 = 2_000 < 10_000 -> the frozen 1e4-sweep floor wins
+    # 20 * 100 = 2_000 < 10_000 -> the 1e4-sweep floor wins
     assert kawasaki_burn_in_sweeps(tau_int_sweeps=100.0) == 10_000
 
 
@@ -148,14 +146,14 @@ def test_ratio_f_ci_bounds_are_f_quantile_factors():
 
 def test_ratio_f_ci_resolves_large_effects_only():
     # 10x effect: resolvable at R=8; 2x effect: not — the construction's
-    # power is exactly what the CI-method ruling is about
+    # power is exactly what separates the two CI methods
     assert ratio_with_f_ci(5000.0, 1e6, 8, 500.0, 1e6, 8)["excludes_parity"]
     assert not ratio_with_f_ci(1000.0, 1e6, 8, 500.0, 1e6, 8)[
         "excludes_parity"]
 
 
 # ---------------------------------------------------------------------------
-# tv_noise_floor — coverage TV must be judged against the finite-sample
+# tv_noise_floor — coverage TV must be read against the finite-sample
 # floor a PERFECT sampler would show at the same effective sample size
 # ---------------------------------------------------------------------------
 
@@ -188,7 +186,7 @@ def test_tv_noise_floor_shrinks_with_sample_size():
 
 
 # ---------------------------------------------------------------------------
-# frozen_verdict — faithful transcription of prereg section 7
+# frozen_verdict — the GO / PARTIAL / NO-GO / PROVISIONAL mapping
 # ---------------------------------------------------------------------------
 
 
@@ -209,7 +207,7 @@ def test_verdict_go_requires_everything():
 
 
 def test_verdict_marginal_win_is_partial_real_but_marginal():
-    # significant in both currencies but point < 1.5x -> the pre-scoped
+    # significant in both currencies but point < 1.5x -> the
     # "real-but-marginal" narrative, NOT GO (magnitude bar) and NOT NO-GO
     verdict = frozen_verdict(
         energy_eval_ratio=_margin(1.2, True),
@@ -265,7 +263,7 @@ def test_verdict_beats_local_only_is_partial_move_set():
 
 def test_verdict_pending_floor_blocks_go():
     # GO requires "not worse at the floor"; with the floor replicates not yet
-    # drawn the verdict must be provisional, never GO.
+    # drawn the result must be PROVISIONAL, never GO.
     verdict = frozen_verdict(
         energy_eval_ratio=_margin(2.0, True),
         network_pass_ratio=_margin(1.8, True),
@@ -279,7 +277,7 @@ def test_verdict_pending_floor_blocks_go():
 
 
 def test_verdict_coverage_failure_blocks_go():
-    # "a win on speed that loses modes is not a win" (prereg section 1)
+    # a win on speed that loses modes is not a win
     verdict = frozen_verdict(
         energy_eval_ratio=_margin(2.0, True),
         network_pass_ratio=_margin(1.8, True),

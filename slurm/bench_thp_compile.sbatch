@@ -7,8 +7,7 @@
 #SBATCH --time=00:30:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# torch.compile measurement for the thp head (s59 profiling pass, candidate 1
-# of docs/reviews/2026-08-24-thp-profiling/report.md). Runs the eager d256
+# torch.compile measurement for the thp head (profiling pass). Runs the eager d256
 # train_step matrix first (same-node baseline), then the compiled twins.
 # On Modal this failed: inductor's cuda_utils.c needs cuda.h and the image's
 # pixi cuda env ships no CUDA dev headers; the DoC nodes carry a system

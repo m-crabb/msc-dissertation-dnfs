@@ -4,10 +4,9 @@ Reads the Wave-2 4x4 matrix (tag 20260825-hard-w2: five arms x two sigma x
 seeds 42/43/44, evals pulled from the Modal volume into results/03_hard/)
 and prints the house columns of tab:eval-unconstrained-10x10 for each cell:
 
-  ESS    -- frozen eval/ess_fraction, re-read not recomputed (the in-print
-            value; the frozen-clause judging happened upstream of this
-            script and cells held from print stay held regardless of what
-            this fill computes for them);
+  ESS    -- frozen eval/ess_fraction, re-read not recomputed (cells in
+            HELD are withheld regardless of what this fill computes for
+            them);
   dMag   -- MDNS Eq. 26, dCorr -- MDNS Eq. 28, EW2 -- 1-D W2 on E(x)/d
             (DASBS), each on importance-reweighted samples;
   FLOP/es -- measured eager forward at the run's own architecture (one
@@ -85,8 +84,8 @@ ARMS = {
 # Unlike house_table_8x8.ARM_PROVENANCE, this map needs only the arm key:
 # the 8x8 ladder uses separate critical and floor campaign tags.
 ARM_PROVENANCE = {
-    # The oracle's six runs went out as single-run DoC jobs under their own
-    # tag (2026-08-29); the CONFIG is a wave-2 cell, so the suffix stays w2.
+    # The oracle's six runs ran under their own tag; the CONFIG is a
+    # wave-2 cell, so the suffix stays w2.
     "dh": ("w2", "20260829-dh-oracle-d16"),
     "mal": ("win", "20260828-win-gate"),
     **{arm: ("w2", "20260828-rasterord-d16")
@@ -96,7 +95,7 @@ SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
 HELD = set()
 
-# GFlowNet comparator rows (s93): the `_par` judging wave — parameter parity
+# GFlowNet comparator rows: the `_par` cells — parameter parity
 # with the ma head (101,378 vs 100,960 params), split lr_Z on the TB arm.
 # These rows do NOT run through CONFIGS/build_target_and_head: the policy IS
 # the sampler (no Euler grid, no swap head), so the bill is the measured

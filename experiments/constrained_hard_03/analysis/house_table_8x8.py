@@ -53,8 +53,8 @@ failure.
 FLOP/es PROVENANCE. Each cell's architecture is read from its OWN saved
 config.json and asserted equal to the live registry entry before the
 forward is measured, so a cell trained before a lever landed can never be
-billed at today's architecture. Audited 2026-08-27 across all 36 d64 cells
-and all 36 printed 4x4 cells: zero drift.
+billed at today's architecture. Checked across all 36 d64 cells and all 36
+4x4 cells: zero drift.
 
 ONE FIELD IS DELIBERATELY EXEMPT FROM THAT RULE, and only one:
 `separable_band_scores` (see `flop_billing_config`). Every masked-attention
@@ -137,7 +137,7 @@ CELL_NAME = {
 FLOP_BEARING_FIELDS = ("head_kind", "gather_triu_pairs", "compile_head",
                        "compile_model", "use_sdpa_readout")
 
-# GFlowNet comparator rows (s100): the d64 `_par` centres, 4x4 parity recipe
+# GFlowNet comparator rows: the d64 `_par` centres, 4x4 parity recipe
 # at the wave-2 d64 budget (policy 104,450 params vs ma's 108,256, -3.5%).
 # Two departures from the 4x4 fill's GFN block, both simplifications:
 #   * DRAW PARITY HOLDS AT THIS RUNG -- both sides store 5000 draws -- so the
@@ -164,7 +164,7 @@ GFN_FLOP_BEARING_FIELDS = ("hidden_dim", "n_layers", "n_heads",
 
 def gfn_registry_config_for(run_dir):
     """The registered GFN config for a run, asserted against the run's own
-    saved config on every architecture field -- the same Tier-4.8 promise
+    saved config on every architecture field -- the same promise
     `registry_config_for` makes for the swap rows: a policy trained at one
     width can never be billed at another's."""
     from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
@@ -287,7 +287,7 @@ def sampling_floor_from_reference(reference, lattice_edge, n_draws,
             for k in replicates[0]}
 
 
-# --- FLOP provenance (Tier 4.8) -------------------------------------------
+# --- FLOP provenance ------------------------------------------------------
 
 def run_dir_config(run_dir):
     """The run's OWN saved config, defaults backfilled the way the eval-only
@@ -504,7 +504,7 @@ def _sci(value):
     "1.2 x 10^11". Both are correct and the pair is unreadable. Bumping the
     exponent when the rounded mantissa reaches 10 keeps every cell in a
     column on the same power. Only values at or above 9.95e{k} are affected,
-    so no cell already in print moves.
+    so no existing cell moves.
     """
     exponent = int(np.floor(np.log10(value)))
     mantissa = value / 10 ** exponent
@@ -597,7 +597,7 @@ def main(argv=None):
     parser.add_argument("--n-floor-replicates", type=int, default=200)
     parser.add_argument("--out", type=Path,
                         default=REPO_ROOT / "results" / "03_hard" / "w2_8x8_house")
-    # The latency counterpoint's data (s93): per-raw-sample eval-chunk
+    # The latency counterpoint's data: per-raw-sample eval-chunk
     # seconds measured on one GPU by bench_eval_wallclock_d64.py. Optional
     # because the bench runs on the venue; without the file the Wall/es
     # entries are simply absent.

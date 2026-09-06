@@ -1,20 +1,19 @@
-"""D=4 go/no-go gate for the composition-amortisation campaign.
+"""D=4 pass/fail gate for the composition-amortised head.
 
 Validate `H2_d16_camort_s220_letf_thp_10k` on every trained slice
-(n+ = 8/7/6/5) against exact enumeration before the d64 GPU launch
-(docs/plans/2026-08-31-hard-camort-8x8.md, Task 3).
+(n+ = 8/7/6/5) against exact enumeration before the d64 GPU run.
 
 Mixture-eval ESS can hide a failed slice, and composition spread is expected
 under the mixture. Rebuild the single-slice target at each grid composition
 and score against its own enumerated conditional, as in the zero-shot
 probe's null rows.
 
-PRE-REGISTERED BARS (before the gate run was judged):
+Bars:
   * energy-marginal TV <= 0.02 on every slice — the house 4x4 gate bar;
-  * per-slice ESS fraction >= 0.30 on every slice — a launch filter, not a
+  * per-slice ESS fraction >= 0.30 on every slice — a filter, not a
     quality claim (the d16 sigma_c thp SPECIALIST reads ~0.99; the gate
-    asks "is no slice dead", and d64 judging owns the quality question).
-A miss on either bar on any slice = NO-GO for the d64 launch.
+    asks "is no slice dead"; quality is the d64 cells' question).
+A miss on either bar on any slice fails the gate.
 
     pixi run -e dev python -m experiments.constrained_hard_03.gate_camort_4x4
 """

@@ -3,7 +3,7 @@
 These pin behavioural invariants, not numerical correctness of the IS
 weight formula -- the latter requires choosing a specific xi_t form
 (see paper Eq. 8 / 13) and is exercised by the higher-value Kolmogorov
-test in Task 9.
+test (test_kolmogorov.py).
 
 Invariants pinned here:
     1) zero rate -> trajectory is identity (state unchanged).
@@ -77,9 +77,9 @@ def test_log_weights_returned_when_requested():
 
 def test_zero_rate_finite_weights():
     """R=0 freezes the state, but the log-weight still accumulates the
-    target's dt_log_p_tilde contribution. We just assert finiteness here --
+    target's dt_log_p_tilde contribution. Only finiteness is asserted here --
     correctness of the xi_t formula is checked by the Kolmogorov test
-    (Task 9), not here."""
+    (test_kolmogorov.py), not here."""
     target = IsingTarget(D=2, sigma=0.1)
     x0 = torch.tensor([[1.0, -1.0, 1.0, -1.0]])
     time_grid = torch.linspace(0, 1, 10)
@@ -145,7 +145,7 @@ def test_return_all_states_value_set_and_states_ordered_by_grid():
 
 
 def test_return_all_states_is_incompatible_with_log_weights():
-    """We deliberately don't cross-implement log-weights with all-states
+    """Log-weights are deliberately not cross-implemented with all-states
     return -- the buffer-construction path doesn't need IS weights, and
     silently returning a 3-tuple would be a footgun."""
     torch.manual_seed(0)

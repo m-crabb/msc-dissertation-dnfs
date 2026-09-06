@@ -72,7 +72,7 @@ SPIN_DOWN_COLOUR = "#3B3A6B"
 SPIN_UP_COLOUR = "#F2C14E"
 SPIN_CMAP = ListedColormap([SPIN_DOWN_COLOUR, SPIN_UP_COLOUR])
 
-# House geometry (approved s62): figures are designed AT print size, 1:1 --
+# House geometry: figures are designed AT print size, 1:1 --
 # figsize width equals the width the figure prints at, so a point of script
 # font is a point on the page. Two tex widths only: \textwidth for
 # multi-panel figures, 0.72\textwidth for single panels (A4, 2.5 cm margins,
@@ -124,7 +124,7 @@ RC_PARAMS = {
     "figure.dpi": 110,
     "savefig.dpi": SAVEFIG_DPI,
     # Body math is Computer Modern; matching mathtext keeps axis math
-    # indistinguishable from the surrounding text (approved s62).
+    # indistinguishable from the surrounding text.
     "mathtext.fontset": "cm",
     "axes.edgecolor": MUTED,
     "text.color": REFERENCE_INK,

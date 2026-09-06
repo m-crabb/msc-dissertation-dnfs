@@ -8,8 +8,8 @@
 #SBATCH --output=slurm/logs/%x_%j.out
 #SBATCH --array=42-43
 
-# 20x20 radius x precision probe, R=2, bf16, sigma = 0.10 floor
-# (2026-08-27). Cell comments in configs.py; the one-variable relationships
+# 20x20 radius x precision probe, R=2, bf16, sigma = 0.10 floor.
+# Cell comments in configs.py; the one-variable relationships
 # are pinned by test_d400_radius_cells_are_declared_transforms_of_arm_b,
 # test_d400_radius_cells_isolate_the_radius and
 # test_bf16_probe_cells_are_their_fp32_twins_plus_the_flag.

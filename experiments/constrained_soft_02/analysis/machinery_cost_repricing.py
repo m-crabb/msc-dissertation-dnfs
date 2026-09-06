@@ -6,8 +6,8 @@ inherited gradient clip of 500 -- so it confounds the conditioning path with
 short training under a saturating clip. The re-pricing pair
 (`S2_d4_cnull_50k_l50_letf_anneal_offset_clip50` and its `_c05_` twin,
 jobs 271495/271496) holds everything at the delivered recipe and differs only
-in the conditioning path; the two admissible outcomes were recorded in
-`configs.py` (commit ba8f4d9) before either cell ran.
+in the conditioning path; the two admissible outcomes are recorded in
+`configs.py`.
 
 Three numbers are archived, all seed means over seeds 42-45:
 
@@ -23,9 +23,9 @@ Three numbers are archived, all seed means over seeds 42-45:
     noise" is reproducible (the specialist's spread is 4x the null's, driven
     by seed 43).
 
-Guard: the pre-registration voids any machinery quote if a null seed fails to
-train (ESS fraction < 0.1); the script asserts that veto rather than
-reporting around it.
+Guard: no machinery cost may be quoted if a null seed fails to train (ESS
+fraction < 0.1); the script asserts that veto rather than reporting around
+it.
 
 Usage:
     python -m experiments.constrained_soft_02.analysis.machinery_cost_repricing
@@ -87,7 +87,7 @@ def main() -> None:
 
     failed_null_seeds = {s: v for s, v in null.items() if v < NULL_TRAINING_VETO}
     assert not failed_null_seeds, (
-        f"pre-registered veto fires: null seeds {failed_null_seeds} failed to "
+        f"veto fires: null seeds {failed_null_seeds} failed to "
         "train, so no machinery cost may be quoted"
     )
 

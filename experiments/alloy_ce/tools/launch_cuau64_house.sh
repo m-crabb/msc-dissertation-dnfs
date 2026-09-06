@@ -1,8 +1,8 @@
 #!/bin/zsh
-# Tier 2 (s119, 2026-09-03): the 64-site Cu-Au house cells on Modal A100-80GB, tag 20260903-cuau64-house.
+# The 64-site Cu-Au house cells on Modal A100-80GB, tag 20260903-cuau64-house.
 # Hard c=0.25/0.5 mask-one house recipe (no channel: the swap channel regressed on the alloy at 16 sites);
 # free with and without the flip channel; soft lambda=50 with the channel (channel-free soft died at 16 sites).
-cd /Users/mitchcrabb/Documents/Imperial/Modules/Dissertation/msc-dissertation-dnfs
+cd "$(dirname "$0")/../../.."
 M=.pixi/envs/dev/bin/modal
 T=20260903-cuau64-house
 H=experiments/constrained_hard_03/modal_app.py

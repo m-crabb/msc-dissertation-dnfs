@@ -8,9 +8,9 @@
 #SBATCH --nice=1000
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# A2 transport backfill for writeup bucket C2. One-event transport counters
+# Transport backfill. One-event transport counters
 # (jumps_per_site_proposed / _accepted / _state_changing, run.py:276-282)
-# shipped in 97a4b6d after the in-flight evals launched. These three passes
+# were added after the in-flight evals started. These three passes
 # measure the per-site jump rates previously estimated for the d256 claim.
 #
 # Why --eval-ne at each cell's OWN native grid: the override's real job
@@ -24,12 +24,12 @@
 # a transport one.
 #
 # Three sequential passes share one slot under the 8-job cap (six family
-# arms occupied slots). Budget: ~2h + ~2h + ~0.5h at the measured d256 rate
+# jobs occupied slots). Budget: ~2h + ~2h + ~0.5h at the measured d256 rate
 # (~29 min at ne128, linear in grid); 9h includes cold-import headroom.
 #
-# --nice=1000 for the same reason as rw_stage_best_eval.sbatch: five
-# deadline-gating a100 arms are PENDING and the 3-GPU per-user cap goes to
-# whichever job can start first, not to the highest priority.
+# --nice=1000 for the same reason as rw_stage_best_eval.sbatch: while five
+# a100 family jobs are PENDING the 3-GPU per-user cap goes to whichever job
+# can start first, not to the highest priority.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 

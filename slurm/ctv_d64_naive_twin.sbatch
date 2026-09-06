@@ -17,11 +17,12 @@
 # Measures transfer in a healthy CV run; CV inversion confounds the archived
 # diverged-d256 naive-vs-CV comparison.
 #
-# PRE-REGISTERED OUTCOMES (twin ESS 0.7806; the naive integrand variance
+# EXPECTED OUTCOMES (twin ESS 0.7806; the naive integrand variance
 # 26.0 is already logged as the CV runs' own Var[dt log p tilde] column, so
 # these are arithmetic, not guesses):
 #   ~0.78  -> c_t noise does not drive log-weight variance; the whole c_t
-#             thrust has a ceiling and M4/warm-start become the mainline
+#             thrust has a ceiling and the constructive-family and
+#             warm-start levers become the mainline
 #   ~0.25  -> transfer linear in c_t standard error
 #   ~0.001 -> transfer linear in c_t variance
 #   diverges -> the CV is a STABILITY crutch, not only a variance reducer,

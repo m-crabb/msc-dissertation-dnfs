@@ -7,13 +7,12 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Phase-2 estimator switch at 16x16 (2026-08-14, user GO): continue the
-# completed naive rescue (its final.pt, ~/results path below) with the Stein
-# control variate re-enabled, flat sigma_c, 20k steps. Mechanism measured on
-# the trained checkpoint before launch: CV integrand-variance ratio 0.140
-# (reduces 7x; it ADDED variance on the diverged model). Bands frozen in the
-# cell comment (configs.py): PASS = train-ESS > 15/256 sustained+rising over
-# the final 5k AND eval ess_fraction >= 0.05.
+# Estimator switch at 16x16: continue the completed naive rescue (its
+# final.pt below) with the Stein control variate re-enabled, flat sigma_c,
+# 20k steps. Mechanism measured on the trained checkpoint beforehand: CV
+# integrand-variance ratio 0.140 (reduces 7x; it ADDED variance on the
+# diverged model). Expected (configs.py cell comment): pass = train-ESS
+# > 15/256 sustained+rising over the final 5k AND eval ess_fraction >= 0.05.
 # Fixed tag reuses the run directory; resume.pt overrides the loaded init.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache

@@ -19,7 +19,7 @@ def latest_run_dir(results_dir: Path, config: str, seed: int,
     timestamp suffix is zero-padded `YYYYMMDD-HHMMSS`.
 
     `eval_dir` selects which frozen eval qualifies a run as complete:
-    "eval" (raw weights, every run) or "eval_ema" (the s95 dual eval's
+    "eval" (raw weights, every run) or "eval_ema" (the dual eval's
     shadow-weight draw, present only on ema_decay > 0 cells) — so an
     EMA-selected analysis can never silently score a raw draw.
     """

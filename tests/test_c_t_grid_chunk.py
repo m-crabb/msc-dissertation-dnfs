@@ -1,10 +1,7 @@
-"""Tests for the batched c_t grid computation (M7a of the 2026-08-14
-M-campaign).
+"""Tests for the batched c_t grid computation.
 
-Pre-registered in docs/plans/2026-08-14-m-scaling-experiments.md Task 7;
-motivation in docs/design/2026-08-14-scaling-assessment.md §6 (the c_t grid
-pays n_grid sequential no-grad head calls per outer cycle; at d256
-trajectory+c_t is ~75% of wall).
+Motivation: the c_t grid pays n_grid sequential no-grad head calls per
+outer cycle; at d256 trajectory+c_t is ~75% of wall.
 
 What correct looks like, independent of implementation:
 
@@ -18,7 +15,7 @@ What correct looks like, independent of implementation:
    ops modulo batch-dim blocking, so it must match the sequential path
    within the established 1e-5 batch-blocking class (cf. the SDPA/chunk
    parities in test_swap_perf_refactors.py) in BOTH estimator modes. No
-   quality change is permitted — the parity test IS the M7a gate.
+   quality change is permitted — the parity test IS the gate.
 3. **The row cap is respected.** No integrand call may see more than
    chunk_rows rows; the call count is ceil(n_rows / chunk_rows) and the
    final call takes the remainder.

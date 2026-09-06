@@ -1,5 +1,5 @@
 #!/bin/bash
-# GFN d256 wave armer (s102): gate-then-wave, fed in as QOS slots free.
+# GFN d256 wave armer: gate-then-wave, fed in as QOS slots free.
 # The retry_submit_softcamort_s010 pattern, extended to a sequence:
 #   1. submit gfn_d256_launch_bench and WAIT for "GATE PASSED" in its log
 #      (the wave ships compile_policy=True; inductor kernels are certified
@@ -8,8 +8,8 @@
 #      discriminating coupling; the 256-step fairness claim lives there),
 #      floor second -- each retried every 10 min while the QOS submit cap
 #      is the refusal.
-# Survives the laptop session (launch with nohup+setsid on the submission
-# host). Log + pid in slurm/logs. Kill: kill $(cat slurm/logs/retry_gfn_d256.pid)
+# Survives logout (launch with nohup+setsid on the submission host).
+# Log + pid in slurm/logs. Kill: kill $(cat slurm/logs/retry_gfn_d256.pid)
 # ONE ARMER AT A TIME: a second submitter against the same fixed tag
 # double-submits into shared run dirs.
 W=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs

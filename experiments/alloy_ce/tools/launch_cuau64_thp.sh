@@ -1,9 +1,9 @@
 #!/bin/zsh
-# 64-site Cu-Au two-hole patch cells (s122, 2026-09-03), Modal A100-80GB, tag 20260903-cuau64-thp.
+# 64-site Cu-Au two-hole patch cells, Modal A100-80GB, tag 20260903-cuau64-thp.
 # Replaces mask-one killed at step 9k (3.76 s/step); patch benchmark: 0.048 s/step one-shell,
-# registered with two shells. Both compositions, seeds 42-44, no channel, 256 in-training
-# eval draws. Gate: logged ESS vs mask-one's first 9k steps (20260903-cuau64-house, still on volume).
-cd /Users/mitchcrabb/Documents/Imperial/Modules/Dissertation/msc-dissertation-dnfs
+# configured here with two shells. Both compositions, seeds 42-44, no channel, 256 in-training
+# eval draws. Comparison: logged ESS vs mask-one's first 9k steps (tag 20260903-cuau64-house).
+cd "$(dirname "$0")/../../.."
 M=.pixi/envs/dev/bin/modal
 T=20260903-cuau64-thp
 H=experiments/constrained_hard_03/modal_app.py

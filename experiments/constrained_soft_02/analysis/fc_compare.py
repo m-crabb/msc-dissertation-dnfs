@@ -48,7 +48,7 @@ lambda=50 the penalty width 1/sqrt(2*lambda*d) is about one composition step at
 D=10 (and narrower than a step at D=4), so the continuum offset is an
 approximation; the exact discrete deconvolution is a later refinement.
 
-Example (the s95 8x8 house family against the D=8 TI reference;
+Example (the 8x8 house family against the D=8 TI reference;
 --eval_dir eval_ema reads the dual eval's shadow-weight draw, archived
 pre-EMA d10 cells keep the default):
     python -m experiments.constrained_soft_02.analysis.fc_compare \
@@ -98,7 +98,7 @@ def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng,
 
     F_total = -mean(log w); per site = F_total / d. This reproduces
     `free_energy_per_site * 2*sigma` exactly (the stored value is
-    -mean(log w)/(2*sigma*d)) but resamples the weights so we get an error bar.
+    -mean(log w)/(2*sigma*d)) but resamples the weights to give an error bar.
     `eval_dir` selects the frozen draw ("eval") or a grid redraw ("eval_ne256").
     """
     logw = torch.load(run_dir / eval_dir / "log_weights.pt").double().numpy().ravel()
@@ -169,9 +169,9 @@ def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
                   ) -> tuple[float, np.ndarray, tuple[int, int] | None]:
     """First-order Richardson extrapolation of F/site to the continuum grid.
 
-    The Euler-grid error is first order (pre-registered 2026-08-21: step
-    ratios 0.44-0.49 across ne64 -> 128 -> 256; reproduced by the s62
-    retrain halving the residual vs the TI truth in every window), so
+    The Euler-grid error is first order (measured step ratios 0.44-0.49
+    across ne64 -> 128 -> 256, and the ne128 retrain halved the residual
+    vs the TI truth in every window).
     With g grid POINTS, torch.linspace spans g-1 intervals, so
     F(g) = F(inf) + C/(g-1) and two grids g1 < g2 give
 
@@ -258,7 +258,7 @@ def main() -> None:
                         "mirrors inherit it); used while a window awaits retrain "
                         "or prints from a different training grid")
     p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
-                   help="which frozen eval to score: raw weights or the s95 "
+                   help="which frozen eval to score: raw weights or the "
                         "dual eval's EMA shadow draw")
     p.add_argument("--hard_rows", nargs="*", type=Path, default=[],
                    help="zero-shot probe JSONs of the HARD (canonical) sampler, "
@@ -527,7 +527,7 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
     compositions (the canonical reference's own Z_2 check is <=0.00013/site), so
     they reuse the source point's value/error and the same truth. They are drawn
     identically to the trained windows — the filled/open marker split confused
-    more than it informed (reader feedback 2026-08-11), so the reflection is
+    more than it informed, so the reflection is
     stated once in the dissertation body text instead of per-marker. Skip c=0.5
     and any reflection that lands on an already-sampled window.
     """
@@ -546,7 +546,7 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
 def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
           out: Path, hard: list[dict] | None = None,
           corrected_label: str = "Laplace-corrected") -> None:
-    """House-standard overlay + residual pair (approved s62; relaid out s101).
+    """House-standard overlay + residual pair.
 
     Roles: TI truth = REFERENCE_INK line; our sampler = SAMPLER_HUE, with the
     corrected estimate as the filled square (the deliverable) and the raw
@@ -558,7 +558,7 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
     point prints from a different training grid or awaits retrain, and the
     caption says which.
 
-    Legend is FIGURE-level, below the panels (s101): no in-axes placement
+    Legend is FIGURE-level, below the panels: no in-axes placement
     is shape-robust across couplings -- the "empty top-centre" that held
     the legend on the U-shaped subcritical curve is exactly the peak of
     the inverted critical one, where it occluded the truth line and its

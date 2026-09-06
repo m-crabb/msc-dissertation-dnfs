@@ -7,13 +7,10 @@
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# The 16x16 rescue 50k (arm-B mechanism: naive_mc estimator, CV inversion
-# removed). LAUNCH GATE: all five 20260811-smokewave verdicts judged against
-# the pre-stated criteria AND the user's launch call (frozen amendment
-# prereg-s7-amend01: launch by 14 Aug EOD, health-clean by 21 Aug EOD, else
-# 16x16 degrades to smoke-level evidence). At launch, also start the
-# (sigma_c, 16x16) reference chain on the Mac per the amendment's outcome C.
-# Fixed --tag so a resubmission resumes into the same run dir.
+# The 16x16 rescue 50k: the MA curriculum recipe with the naive_mc
+# estimator (the CV inversion seen at d256 removed), following the five
+# 20260811-smokewave cells. The (sigma_c, 16x16) reference chain is run
+# alongside it. Fixed --tag so a resubmission resumes into the same run dir.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

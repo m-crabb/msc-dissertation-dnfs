@@ -1,7 +1,7 @@
-"""Certification gate for compiled swap heads (optimisation A1, s60).
+"""Certification gate for compiled swap heads.
 
-The earlier gate passed on local CPU Inductor (profiling review, bench-results).
-Backend-specific kernels require a separate pass on the training GPU stack
+Inductor kernels are backend-specific, so a pass on local CPU Inductor
+certifies nothing about the training GPU stack; run this on the GPU venue
 before compiled cells ship.
 
 Two checks:

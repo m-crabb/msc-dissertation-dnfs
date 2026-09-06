@@ -1,6 +1,6 @@
 """What correct looks like for the 24x24 fill, written before it.
 
-The 24x24 rung (tag 20260903-d576-sc, 2026-09-03) is the d400 sigma_c R=3
+The 24x24 rung (tag 20260903-d576-sc) is the d400 sigma_c R=3
 bf16 cell moved to the lattice, plus one continuation of the radius knob
 (R=4), three seeds each, ONE coupling. Two things can go wrong silently:
 

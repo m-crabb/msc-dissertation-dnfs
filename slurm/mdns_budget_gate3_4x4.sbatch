@@ -7,8 +7,7 @@
 #SBATCH --time=2:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Preparation status: unlaunched; release required the user's approval.
-# Amendment-02 FINAL, frozen before results: five-arm gate-3 —
+# Five-arm gate-3:
 # arm 0 = the UNCONSTRAINED CONTROL reproducing MDNS's published 4x4
 # critical cell on our implementation (their protocol: 2k steps, R=16,
 # AdamW, EMA 0.9999, eval-on-EMA + recorded raw-param eval; 10k twins

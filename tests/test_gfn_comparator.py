@@ -313,7 +313,7 @@ def test_fldb_training_recovers_exact_distribution():
 
 
 # ---------------------------------------------------------------------------
-# Standalone flow module (s100: the torchgfn-conventional parameterisation).
+# Standalone flow module (the torchgfn-conventional parameterisation).
 # ---------------------------------------------------------------------------
 
 
@@ -353,7 +353,7 @@ def test_standalone_flow_gradients_do_not_touch_the_trunk():
     """The point of the standalone module (beyond matching the torchgfn
     convention): flow gradients must not flow into the shared trunk. Under
     the shared-trunk readout they do — which is the shielding mechanism the
-    s100 flow-lr arms surfaced. Backward through the residuals alone must
+    flow-lr arms surfaced. Backward through the residuals alone must
     leave every trunk/policy parameter without gradient."""
     target = _target(D=4, c=0.5)
     policy = _standalone_policy(target)

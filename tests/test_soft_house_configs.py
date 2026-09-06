@@ -1,6 +1,6 @@
-"""What correct looks like for the s95 8x8 soft house family, before launch.
+"""What correct looks like for the 8x8 soft house family.
 
-The family (plan 2026-08-30-soft-chapter-revamp-efc) is built by
+The family is built by
 `soft_house_recipe` over the printed ne128 parent. These tests are the
 recipe-parity audit in executable form:
 
@@ -12,7 +12,7 @@ recipe-parity audit in executable form:
 2. REPRESENTABILITY + MIRROR ECONOMY. Every trained c* is an integer site
    count at d=64, and no trained composition duplicates another under the
    Z2 mirror c -> 1-c (a trained 0.75 would re-buy 0.25's information).
-3. SIGMA_C IS IMPORTED, NEVER RETYPED (the s58 migration rule): the _sc
+3. SIGMA_C IS IMPORTED, NEVER RETYPED (the sigma_c migration rule): the _sc
    cells carry targets.ising.SIGMA_C to the last bit.
 4. The nochan control gives back the channel flag ONLY — it exists to
    isolate the channel at sigma_c, so any other difference voids it.
@@ -71,7 +71,7 @@ def test_sc_cells_carry_exact_sigma_c():
 
 
 def test_sc_anneal_arm_adds_the_schedule_to_nochan_only():
-    """The s99 three-fates trio at sigma_c: parent (nochan), anneal, channel.
+    """The three-fates trio at sigma_c: parent (nochan), anneal, channel.
 
     The anneal arm is the nochan control PLUS the chapter's declared
     lambda schedule (10/25/50 at 0/10k/20k) and NOTHING else -- it must
@@ -88,7 +88,7 @@ def test_sc_anneal_arm_adds_the_schedule_to_nochan_only():
 
 
 def test_matched_base_twins_give_back_base_composition_only():
-    """The s99 matched-base wave: base_composition = c* at the off-centre
+    """The matched-base wave: base_composition = c* at the off-centre
     windows, one declared lever against the run house twin — any second
     difference would put the uplift claim under two changes. No centre
     twin exists: Bernoulli(0.5) is already the matched base at c* = 0.5,
@@ -117,7 +117,7 @@ def test_nochan_control_gives_back_channel_flag_only():
 
 
 def test_subcritical_nochan_control_mirrors_the_sc_one():
-    """s107 single-size completion: the {coupling} x {channel} 2x2 needs a
+    """Single-size completion: the {coupling} x {channel} 2x2 needs a
     subcritical nochan cell that is one declared lever off the run house
     centre cell, exactly as its sigma_c twin is off _house_sc."""
     house = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house"])
@@ -154,7 +154,7 @@ def test_eager_gate_twin_gives_back_compile_only():
 
 
 def test_amortised_house_cell_is_parent_plus_recipe_only():
-    """Wave 3 (plan): the camort family re-run fixed-lambda + channel, with
+    """The camort family re-run on fixed-lambda + channel, with
     the anneal_offset_clip machinery retired. The cell must be the archived
     fixed-lambda 50k amortised parent plus the four recipe levers and
     NOTHING else — in particular no lambda_curriculum and no offset/clip

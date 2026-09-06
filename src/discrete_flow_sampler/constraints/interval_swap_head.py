@@ -33,10 +33,10 @@ the interval decomposition the two holes induce:
   pair statistics of raw token embeddings), aggregated per pair with
   index-structural exclusion of any term touching a hole site.
 * Cross-interval mixing (prefix <-> band <-> suffix) happens only in the
-  per-pair readout MLP. This is the direction's declared capacity gamble;
-  the D=4 gate (kill criterion K2) prices it.
+  per-pair readout MLP. This is the direction's capacity gamble; the D=4
+  gate prices it.
 
-Efficiency contract (R3): O(d) precompute (causal stacks, feature prefix
+Efficiency contract: O(d) precompute (causal stacks, feature prefix
 sums), O(1) assembly per pair, so all O(d^2) contexts cost one body pass
 plus a batched per-pair MLP -- no d-anchor multiplier.
 
@@ -166,7 +166,7 @@ class IntervalSwapHead(nn.Module):
             blindness constrains only the token VALUES there).
         readout_score_scale: fixed multiplier on the pair scores G — the
             muP readout compensation (MuReadout's output multiplier, Yang
-            et al., arXiv:2203.03466), 2026-08-18. The score chain
+            et al., arXiv:2203.03466). The score chain
             `context_norm -> <H, omega_diff>` has no fan-in compensation:
             LayerNorm pins ||H_ij|| ~ sqrt(hidden) while omega's
             per-component std (0.002) is width-free, so G — and with it
@@ -292,7 +292,7 @@ class IntervalSwapHead(nn.Module):
         # One (prefix, suffix) pair PER ORDERING under the "mlp" combiner: an
         # extra ordering owns no modules of its own -- it reuses the
         # backbone's causal stacks on a permuted sequence -- so this widening
-        # is the arm's ENTIRE parameter cost, which is what keeps a lift from
+        # is the extra ordering's ENTIRE parameter cost, which keeps a lift from
         # being confounded with capacity.
         exterior_dim = (
             2 * hidden * len(self.site_orderings)
@@ -508,7 +508,7 @@ class IntervalSwapHead(nn.Module):
         EXTERIOR bond sum, which neither gives alone. That is already the
         situation on the unary side, where the global term's per-site sum and
         the band's unary sum coexist; this restores the missing basis vector
-        on the bond side (arm B, 2026-08-28).
+        on the bond side.
 
         Blindness. Exclusion in (*) is decided by INDEX arithmetic alone, so
         the result cannot depend on the values excluded -- the same argument

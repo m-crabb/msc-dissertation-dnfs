@@ -18,7 +18,7 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
         experiments.dnfs_baseline_01.modal_app::main \\
         --cfg-name stage_1_d4 --seed 42
 
-    # All 8 post-redo configs in parallel. `--detach` is REQUIRED:
+    # All 8 stage 0-2 configs in parallel. `--detach` is REQUIRED:
     # without it, the ephemeral app stops when the entrypoint returns and
     # all spawned FunctionCalls are cancelled before any container runs.
     pixi run -e dev modal run --detach -m \\
@@ -75,7 +75,7 @@ image = (
         # ships no CUDA dev headers. The runtime wheel carries
         # include/cuda.h; installed --no-deps so the locked env's
         # torch/nvidia libs are untouched, and CPATH below puts the header
-        # on gcc's search path (ported from the hard app's s59 fix; the
+        # on gcc's search path (same fix as the hard app; the
         # unconstrained compile bench runs on this image).
         f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m ensurepip && "
         f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m pip install "
@@ -91,9 +91,8 @@ image = (
                 f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
                 "site-packages/nvidia/cuda_runtime/include"
             ),
-            # optimisation decision: venue parity with
-            # the DoC sbatch scripts, which export this. Allocator
-            # headroom, not a speed lever.
+            # Venue parity with the DoC sbatch scripts, which export
+            # this. Allocator headroom, not a speed lever.
             "PYTORCH_ALLOC_CONF": "expandable_segments:True",
         }
     )
@@ -121,7 +120,7 @@ def _validate_cfg_name(cfg_name: str) -> None:
     # A100 for Stage 4 leTF re-launch (attention-bound; 2x faster wall-clock
     # vs L4 at d=100). Earlier MLP/leconv stages ran fine on L4; if cost
     # matters for non-attention runs, downgrade per-launch by editing here.
-    gpu="A100-80GB",  # b512 at d=256 (s117)
+    gpu="A100-80GB",  # b512 at d=256 needs the 80 GB card
     volumes={"/results": volume},
     secrets=[wandb_secret],
     # 24h is generous for D=10; tighten if cost matters.
@@ -192,9 +191,7 @@ def eval_remote(
     Mirrors `constrained_hard_03.modal_app.eval_remote` but calls the
     BASELINE `eval_only`, which is what the baseline and soft cells actually
     use — the hard app's eval path reads hard-experiment configs and cannot
-    recover these runs. This gap (an eval recovery path existing only for
-    the hard chapter) is part of why the bugged 2026-06-17 matched-base
-    eval went unchallenged for six weeks.
+    recover these runs.
 
     `redraw=False` rescores the saved tensors; `redraw=True` draws a fresh
     eval batch from `checkpoints/final.pt` (archiving the stale `eval/` to
@@ -227,8 +224,8 @@ def eval_remote(
 def compile_bench_remote(cfg_name: str = "stage_4_d10", n_steps: int = 400,
                          tail: int = 200):
     """Same-container eager-vs-compiled bench of the flip-route trainer
-    (optimisation board section C; method in compile_bench.py — both arms
-    in one container so the ratio is same-device by construction)."""
+    (method in compile_bench.py — both arms in one container so the ratio
+    is same-device by construction)."""
     from experiments.dnfs_baseline_01.compile_bench import run_bench
 
     return run_bench(cfg_name=cfg_name, n_steps=n_steps, tail=tail)
@@ -260,7 +257,7 @@ def main_l4(cfg_name: str, seed: int = 42):
 
 @app.local_entrypoint()
 def batch(scale: str = "all", seed: int = 42):
-    """Fire off post-redo configs in parallel. scale: 'all' | 'd4' | 'd10'."""
+    """Fire off the stage 0-2 configs in parallel. scale: 'all' | 'd4' | 'd10'."""
     d4 = ["stage_0_d4", "stage_0_d4_cv", "stage_1_d4", "stage_2_d4"]
     d10 = ["stage_0_d10", "stage_0_d10_cv", "stage_1_d10", "stage_2_d10"]
     groups = {"all": d4 + d10, "d4": d4, "d10": d10}

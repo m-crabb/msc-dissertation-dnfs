@@ -1,13 +1,13 @@
 """ESS-triggered SMC resampling inside the TRAINING rollout (both routes).
 
 Written before the implementation — these encode "what correct looks like".
-Sections 1-6 pinned the swap route (landed 49dc229); section 7 holds the
+Sections 1-6 pin the swap route (821bd19); section 7 holds the
 flip-route twins, written before `train()` was wired to the same flag.
 
 Background. LEAPS (Algorithm 1, lines 11-14) resamples the walker
 population whenever the interim ESS drops below a threshold and resets the
 accumulated log-weights, and its training loop (Algorithm 2, line 5) draws
-its batch from exactly that routine. Our trainer's buffer rebuild calls
+its batch from exactly that routine. This trainer's buffer rebuild calls
 `sample_swap_ctmc(..., return_all_states=True)`, which carries no weights
 at all, so the training rollout has never resampled. This suite pins the
 opt-in flag that closes that gap.
@@ -19,7 +19,7 @@ What correct looks like:
    `resample_if_needed` consumes no RNG, so arming the machinery without
    firing it cannot move a single sample).
 2. THE TRIGGER ACTUALLY FIRES, and the firing count reaches the training
-   log so a run can be judged on whether the flag did anything.
+   log so a run can be checked for whether the flag did anything.
 3. SLICES ARE RECORDED AFTER THE CHECKPOINT. A trajectory slice must be
    the ensemble that CONTINUES from that time — the post-resample,
    equally-weighted one — because that is the ensemble whose plain batch
@@ -279,7 +279,7 @@ def test_trajectory_mode_still_needs_a_target():
 
 
 def test_resample_event_count_reaches_the_training_log(tmp_path):
-    """The flag is judged on whether it fired, so the count is logged: an
+    """The flag is read on whether it fired, so the count is logged: an
     integer per outer cycle when armed, NaN when off (the established idiom
     for a column a run cannot populate)."""
     fired_rows = _log_rows(

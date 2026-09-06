@@ -9,16 +9,16 @@ from torch import Tensor
 from discrete_flow_sampler.composition import expand_b_major
 from discrete_flow_sampler.samplers._neighbours import DEFAULT_LOG_RATIO_CLAMP
 
-# THE project's critical coupling (canonical since the s58 migration,
-# 2026-08-24): exact 2D Ising criticality under THIS repo's double-counted
-# convention (x^T J x picks up each edge twice, so the per-bond coupling is
-# 2*sigma): beta_c = ln(1+sqrt(2))/2 = 0.44069 gives sigma_c = ln(1+sqrt(2))/4.
+# THE project's critical coupling: exact 2D Ising criticality under THIS repo's
+# double-counted convention (x^T J x picks up each edge twice, so the per-bond
+# coupling is 2*sigma): beta_c = ln(1+sqrt(2))/2 = 0.44069 gives
+# sigma_c = ln(1+sqrt(2))/4.
 # Every NEW cell, reference pool and figure uses this value.
 SIGMA_C = math.log(1.0 + math.sqrt(2.0)) / 4.0  # = 0.220343...
-SIGMA_C_EXACT = SIGMA_C  # alias kept for the s58 finding's test/readers
+SIGMA_C_EXACT = SIGMA_C  # alias kept for existing tests and readers
 
-# The LEGACY critical coupling every archived pre-s58 "s223"/sigma_c run was
-# trained and evaluated at, inherited from DNFS Table 2. The s58 finding
+# The LEGACY critical coupling every archived "s223"/sigma_c run was
+# trained and evaluated at, inherited from DNFS Table 2. The finding
 # (test_ising_exact.py): DNFS's own Table 2 "optimal" column at this label is
 # in fact evaluated at SIGMA_C, so 0.22305 was never anyone's exact value.
 # Archived cell definitions keep this literal (their stored configs and the
@@ -186,7 +186,7 @@ class IsingTarget:
         b-major, the same alignment rule the penalty uses), else the
         scalar `target_composition`. Base and penalty MUST read the same
         binding: a base drawn at one c while the path density assumes
-        another is the pre-de9db7c eval bug (a silent ~6.9-nat log w0
+        another is the archived-eval bug (a silent ~6.9-nat log w0
         hole), which sharing this single read makes impossible.
         """
         if self._bound_composition is not None:

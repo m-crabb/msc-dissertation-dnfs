@@ -7,9 +7,9 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Exterior-vs-interior separation d64 rung (2026-08-23): ONE cell, seed 42,
+# Exterior-vs-interior separation d64 rung: ONE cell, seed 42,
 # twin of the fmo2 d64 rung (EMA instrument kept) with an interior band on
-# the factorised head's per-pair path. Bands frozen in configs.py.
+# the factorised head's per-pair path. Expected ranges in configs.py.
 #   sbatch -J int-d64-fib slurm/interior_d64_rung.sbatch H2_d64_c50_s223_letf_fib_50k_curr
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache

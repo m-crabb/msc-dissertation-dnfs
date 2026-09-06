@@ -71,7 +71,7 @@ def main():
                     data_write_interval=args.write_interval,
                     record_spins=args.record_spins,
                 )
-                # Composition at 3 decimals: the s95 8x8 windows include
+                # Composition at 3 decimals: the 8x8 house windows include
                 # 0.375, which the old 2-decimal name would round to c0.38
                 # — a lossy dir name the analysis globs would then have to
                 # guess back. Sigma via %g so a sigma_c chain does not get

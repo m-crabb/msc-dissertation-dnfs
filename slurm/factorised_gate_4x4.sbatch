@@ -7,15 +7,15 @@
 #SBATCH --time=08:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Factorised-head 4x4 gate (2026-08-13): one job per arm, covering both
+# Factorised-head 4x4 gate: one job per head variant, covering both
 # sigma points (s010 floor, s223 critical) x seeds 42-44 sequentially --
 # six 10k-step 4x4 runs. Cells are single-variable twins of the MA demo
 # cells (test_factorised_gate_cells_mirror_ma_twin_except_declared_fields).
 #   sbatch -J fac-gate-fab8 slurm/factorised_gate_4x4.sbatch fab8
 #   arms: fab8 | fab16 | fbil | fglo | fmp40 (matched-param arm)
-#       | fmo2 (A-prime row+col causal streams, 2026-08-14)
+#       | fmo2 (multi-order row+col causal streams)
 # Submitted WITHOUT nice, so these outrank the nice'd walkback topups and
-# take freed GPU slots ahead of them (user priority call, 2026-08-13).
+# take freed GPU slots ahead of them.
 # Walltime: archived demo 10k 4x4 cells are minutes-scale per run on an
 # A30; 8 h is pure headroom. Fixed --tag so a resubmitted job reuses run
 # dirs instead of retraining completed cells.

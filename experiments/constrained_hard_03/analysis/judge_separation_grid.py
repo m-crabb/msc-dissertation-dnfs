@@ -1,10 +1,10 @@
-"""Judge the exterior-vs-interior separation grid (s53 launch, 23-Aug-2026).
+"""Judge the exterior-vs-interior separation grid (runs tagged 20260823).
 
 One row per run: raw ESS/N, EMA ESS/N (d64 only), summed inner-step time
 (``wall_clock_step_s``, loss update ONLY -- never end-to-end), and the
 Modal-volume wall clock (spawn tag -> final checkpoint mtime, minute
-resolution).  Bands are the FROZEN ones in configs.py; the 4x4 band is a
-table, not a gate.
+resolution).  Bands come from configs.py; the 4x4 band is a table, not a
+gate.
 """
 import csv, glob, json, os, re, sys
 import torch
@@ -12,9 +12,9 @@ from datetime import datetime
 
 ROOT = "results/03_hard"
 ARMS = ["iv", "ivb", "mab", "fib", "fatt", "fimo2", "fmoatt", "fimo2ef", "mabef"]
-# Exact-field channel (s54): parent arm and the FROZEN d64 bands (configs.py).
+# Exact-field channel: parent arm and the d64 bands (configs.py).
 EF_BANDS = {"fimo2ef": ("fimo2", 0.78, 0.765, 0.750), "mabef": ("mab", 0.80, 0.785, 0.769)}
-# Archived comparators (same recipe, earlier sessions) -- raw eval ESS/N.
+# Archived comparators (same recipe, earlier runs) -- raw eval ESS/N.
 D64_REF = {"MA (ma, 0707)": 0.7806, "interval (iv, 0708)": 0.6463,
            "fmo2 (0814)": 0.745, "fab8 (0813)": None}
 D16_REF_DIRS = {"ma": "letf_ma_10k_seed*20260708*",
@@ -110,7 +110,7 @@ def main():
         e, ee = ess(run), ess(run, "eval_ema")
         print(f"  ref {name:10s} raw {e if e is None else f'{e:.3f}'}  ema {ee if ee is None else f'{ee:.3f}'}  "
               f"inner {inner_seconds(run)/60:5.1f} min")
-    print("  frozen refs:", D64_REF)
+    print("  archived refs:", D64_REF)
 
 
 if __name__ == "__main__":

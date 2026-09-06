@@ -1,19 +1,18 @@
 """What correct looks like for the hard chapter's house results cell, before it.
 
-The s62 board's item D1 gives every results chapter the same two-panel cell
--- energy marginal on exact levels, plus a Z2-ODD order-parameter marginal
-for mode coverage -- and item D8 says the hard body carries that cell at
-BOTH 8x8 and 16x16. This module encodes the two facts that make the hard
-instantiation different from the soft and unconstrained ones, so that a
-figure built on the wrong observable or the wrong bin grid fails here
-rather than in print.
+Every results chapter carries the same two-panel cell -- energy marginal
+on exact levels, plus a Z2-ODD order-parameter marginal for mode coverage
+-- and the hard body carries that cell at BOTH 8x8 and 16x16. This module
+encodes the two facts that make the hard instantiation different from the
+soft and unconstrained ones, so that a figure built on the wrong observable
+or the wrong bin grid fails here rather than in the thesis.
 
 FACT ONE: THE OBVIOUS Z2-ODD PANEL IS DEAD ON THIS CHAPTER'S SLICE.
 The other two chapters use the magnetisation marginal. Here the swap
 process cannot leave c = 0.5, so sum_i s_i = 0 on EVERY draw of every run:
 the magnetisation marginal is a spike at zero carrying no information, and
 a figure that plotted it would look flawless while saying nothing. The
-observable that survives the constraint is the pre-registered (2026-07-03)
+observable that survives the constraint is the
 half-magnetisation order parameter phi = (m_left - m_right)/2, whose two
 phase-separated configurations sit at +-1 while the total stays pinned.
 E_pi[phi] = 0 by the global spin-flip symmetry of the slice, so a symmetric
@@ -26,7 +25,7 @@ so phi collapses to m_left exactly, and m_left ranges over the d/2 + 1
 values (2k - d/2)/(d/2) for k up-spins in the left half -- spacing 2/(d/2),
 i.e. 0.0625 at 8x8 and 0.015625 at 16x16. Binning phi on a uniform grid
 that does not divide that spacing produces the same alternating high/low
-aliasing the board already outlawed for the energy panel (fig 3.2 left, 40
+aliasing already excluded from the energy panel (fig 3.2 left, 40
 uniform bins). A naive 17-bin histogram of the certified D8 pool reads
 ... 16283 28522 16371 28226 16191 ... -- pure aliasing, not structure.
 
@@ -96,7 +95,7 @@ def test_phi_separates_the_two_phase_separated_modes(lattice_edge):
 
 @pytest.mark.parametrize("lattice_edge", [8, 16])
 def test_phi_is_z2_odd(lattice_edge):
-    """phi(-x) = -phi(x). The board requires the coverage panel to be
+    """phi(-x) = -phi(x). The coverage panel must be
     Z2-ODD; an even observable (energy, |m|, nn-correlation) cannot see a
     sampler that has collapsed onto one of a symmetric pair of modes."""
     d = lattice_edge * lattice_edge

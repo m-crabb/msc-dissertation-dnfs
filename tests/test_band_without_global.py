@@ -40,7 +40,7 @@ WHAT MUST NOT MOVE, and is therefore pinned hardest below:
   * ARCHIVED HEADS MUST BE BYTE-IDENTICAL. The construction order of the
     init draws has to survive the change, so a `use_global=True` head built
     at a fixed seed matches the pre-change one exactly -- not to a
-    tolerance. That is what protects every factorised cell in print.
+    tolerance. That is what protects every reported factorised cell.
 
   * THE HEAD MUST STILL REFUSE AN EMPTY CONTEXT. With bilinear, global and
     band all absent the pair score depends only on time, which is not a

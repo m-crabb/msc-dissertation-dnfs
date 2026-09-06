@@ -7,15 +7,14 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# A-prime at scale (2026-08-14, user GO — LOGGED AMENDMENT): fab8 d64 rung +
-# the row+col causal streams, single-variable twin pinned in test_configs.
-# The 4x4 no-regression band FIRED (0.883/0.938/0.879 vs 0.911); the
-# amendment declares the 4x4 read inconclusive for size-dependent interior
-# mechanisms (interiors <= 14 sites there; the motivating forensic was
-# measured at d64) and prices the question where interiors are long enough.
-# Bands frozen in the cell comment (configs.py) BEFORE launch: MEANINGFUL
-# raw >= 0.60; STRONG raw >= 0.70; NEGATIVE raw <= 0.55 -> A-prime refuted
-# at scale, R1 (fint) the only live interior repair. Fixed tag keeps resume.
+# Multi-order causal streams (fmo2) at d64: the fab8 d64 rung plus the
+# row+col causal streams, a single-variable twin pinned in test_configs.
+# The 4x4 read (0.883/0.938/0.879 vs 0.911) is inconclusive for
+# size-dependent interior mechanisms (interiors <= 14 sites there; the
+# motivating forensic was measured at d64), so the question is priced
+# where interiors are long enough. Expected ranges (configs.py cell
+# comment): raw >= 0.60 meaningful; >= 0.70 strong; <= 0.55 refutes the
+# multi-order streams at scale. Fixed tag keeps resume.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

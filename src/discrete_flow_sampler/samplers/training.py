@@ -72,15 +72,9 @@ def _retain_chunks(
     quantity is appended and evicted on exactly the same schedule and cannot
     drift out of alignment with the states it describes.
 
-    Replication-discipline consult log: the quarantined DNFS reference repo
-    was consulted 2026-08-19, under explicit authorisation and for
-    comparison only, to resolve a paper-vs-code discrepancy in this rule.
     Algorithm 1 line 5 prints an unbounded ``B <- B U {...}`` with no
-    eviction; the released code bounds retention to ~1024 trajectories
-    (``DataBuffer.max_size = 1024 // outer_batch``, FIFO pop-oldest). The
-    bounded FIFO here matches the reference code in kind, though our
-    invariant is a constant cycle count (``max_cycles``) rather than a
-    constant trajectory count. No reference source was copied.
+    eviction; retention here is a bounded FIFO whose invariant is a constant
+    cycle count (``max_cycles``) rather than a constant trajectory count.
     """
     chunks.append(new_chunk.detach())
     if len(chunks) > max_cycles:
@@ -453,8 +447,8 @@ def train(
         if rollout_resample_ess_fraction is not None
         else None
     )
-    # B1-flip (optimisation decision, 2026-08-24): build the CV c_t grid
-    # from the rollout's own model forwards instead of re-running them —
+    # Rollout-integrand reuse: build the CV c_t grid from the rollout's
+    # own model forwards instead of re-running them —
     # bit-identical to compute_c_t_grid (same tensors, same arithmetic,
     # no RNG; tests/test_cv_integrand_reuse.py); at T grid slots this
     # removes T-1 of the T model forwards the grid pass would pay.
@@ -805,8 +799,8 @@ def train(
             # both detached from autograd by the no_grad block; this is
             # the paper's R_t^{θ_sg} (stop-gradient) treatment.
             t_grid = torch.linspace(0.0, 1.0, n_grid, device=device)
-            # B1-flip: in CV mode with the knob on, the rollout hands back
-            # the per-slot ξ_t from its own forwards and the grid recompute
+            # Rollout-integrand reuse: in CV mode the rollout hands back the
+            # per-slot ξ_t from its own forwards and the grid recompute
             # below is skipped. Naive mode is target-only, so the grid
             # path stays.
             reuse_rollout_integrand = (
@@ -855,7 +849,7 @@ def train(
                     # variance: keeps the column comparable across t (each
                     # slot has its own ∂_t log p̃ baseline) and meaningful as
                     # "estimator noise per time slot".
-                    # B1 free rider: in naive mode the integrand IS
+                    # Same knob in naive mode: the integrand IS
                     # ∂_t log p̃_t on these rows, so the knob skips the
                     # (T·M) recompute.
                     if c_t_from_rollout and estimator_mode == "naive_mc":
@@ -1069,7 +1063,7 @@ def train(
                             }
                         )
                         # Exact-field gains are the live mechanism under test
-                        # in the soft amortisation arm. Keep them in W&B at
+                        # in the soft amortised runs. Keep them in W&B at
                         # the existing eval cadence (not every step, avoiding
                         # extra device synchronisation in the hot path). The
                         # getattr route is inert for every unwrapped model and

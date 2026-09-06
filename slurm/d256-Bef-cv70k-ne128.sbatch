@@ -7,8 +7,8 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Exact-field twin of arm B (2026-08-23, s55, user GO; DoC pinned by user).
-# cell comment (configs.py) BEFORE this launch; one-variable relationships
+# Exact-field twin of the CV-from-step-zero cell (d256-B-cv70k-ne128).
+# Expected ranges in the configs.py cell comment; one-variable relationships
 # pinned by test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators.
 # Fixed --tag reuses the run directory; resume.pt overrides --init-from.
 export CONDA_OVERRIDE_CUDA=12.9

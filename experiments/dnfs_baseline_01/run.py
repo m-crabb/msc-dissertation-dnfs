@@ -64,8 +64,8 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 # the analytical solution is the right call.
 ENUMERATION_MAX_SPINS = 20
 
-# The compositions an amortised model is measured at, on the revamp request
-# grid (2026-08-30): every value is an integer site count at d=16 (multiples
+# The compositions an amortised model is measured at: every value is an
+# integer site count at d=16 (multiples
 # of 1/16), unlike the retired {0.30 ... 0.80} grid. The first group has a
 # per-composition specialist on disk under results/02_constrained_soft —
 # directly for c <= 0.5, via the Z2 mirror identity
@@ -91,14 +91,14 @@ def _construct_target(
     Both the train path and the rebuild-eval path go through here, so a
     field added to IsingCfg cannot reach training while silently missing
     from eval (the divergence that would, for `base_matches_composition`,
-    eval a matched-base run against a uniform base — the pre-de9db7c bug
-    class reborn).
+    eval a matched-base run against a uniform base — the archived-eval bug
+    described in `eval_only`).
 
     `sigma` / `composition_penalty_strength` override the config values at
     the train site, where a curriculum starts the run at its first stage.
     `log_ratio_clamp=None` keeps the IsingTarget default: the rebuild path
     has always evaluated at the default clamp regardless of the trained
-    value, and archived evals are judged artefacts — do not change it here.
+    value, and archived evals are frozen artefacts — do not change it here.
     """
     kwargs = {}
     if log_ratio_clamp is not None:
@@ -394,9 +394,8 @@ def write_host_metadata(run_dir: Path) -> None:
     comparable to another's when both ran on the same GPU class -- mars is a
     shared B200 that MPS-shares GPUs between configs, so its step times must
     never be read against a DoC a100's, and `wall_clock_step_s` is
-    uninterpretable without knowing which machine produced it. Nothing
-    recorded the device until now, so venue had to be reconstructed from the
-    submission logs.
+    uninterpretable without knowing which machine produced it. Without this
+    record the venue can only be reconstructed from submission logs.
 
     Appended, not overwritten: a resumed run can be requeued onto a different
     node, and then both hosts are true for different step ranges of the same
@@ -437,8 +436,8 @@ def train(
     lands in the SAME run dir instead of minting a sibling, and a run that
     already finished is detected and skipped, and a `checkpoints/resume.pt`
     there makes `train_loop` CONTINUE from its outer-cycle boundary rather
-    than restart at step 0 (added 2026-08-22, after the N11 matched-base
-    family lost eight runs at ~94% of budget for want of it; see
+    than restart at step 0 (a matched-base family once lost eight runs at
+    ~94% of budget for want of it; see
     `samplers.training.train` for what travels in the checkpoint).
 
     `on_checkpoint` is forwarded to the trainer and fires after each resume
@@ -457,7 +456,7 @@ def train(
     # never triggers, keeping every archived run's semantics unchanged.
     # An EMA-armed cell completes only when BOTH eval dirs exist: a
     # fixed-tag relaunch that finds eval/ without eval_ema/ must fill the
-    # gap, not skip (the GFN wave's short-circuit trap, same fix).
+    # gap, not skip (the same short-circuit trap the GFN comparator hit).
     eval_complete = (run_dir / "eval" / "metrics.json").exists()
     ema_complete = (
         getattr(cfg, "ema_decay", 0.0) <= 0
@@ -592,7 +591,7 @@ def train(
     eval_dir = run_dir / "eval"
     # Per-dir idempotence: a fixed-tag rerun that arrives with eval/ already
     # written (e.g. only eval_ema/ was missing) must not redraw it — the
-    # frozen eval is a judged artefact and a redraw would silently replace
+    # frozen eval is a frozen artefact and a redraw would silently replace
     # it under the same path.
     if (eval_dir / "metrics.json").exists():
         eval_metrics = json.loads((eval_dir / "metrics.json").read_text())
@@ -608,7 +607,7 @@ def train(
         (eval_dir / "metrics.json").write_text(
             json.dumps(eval_metrics, indent=2))
 
-    # EMA dual eval (s95): the same draw through the shadow weights
+    # EMA dual eval: the same draw through the shadow weights
     # (checkpoints/final_ema.pt), landing in eval_ema/ with the identical
     # metric schema so the house-table ingestion reads either dir. The raw
     # weights are restored afterwards so nothing downstream sees the swap.
@@ -742,8 +741,9 @@ def eval_only(
     from `checkpoints/final.pt` and a fresh eval batch is drawn through the
     production `_eval_at_composition` path, replacing all three `eval/`
     artefacts. This exists because rescoring cannot repair a corrupted DRAW:
-    evals archived before de9db7c drew x0 from an inline uniform
-    `torch.randint` while a matched base was Bernoulli(0.8), omitting the
+    evals archived before the base draw went through `target.sample_base`
+    drew x0 from an inline uniform `torch.randint` while a matched base was
+    Bernoulli(0.8), omitting the
     initial-state weight term log w0 = log[p_uniform(x0)/eta(x0)] (sd ~6.9
     nats at D=10, c=0.8) from every saved log-weight. The first redraw
     copies the stale `eval/` to `eval_archived_pre_redraw/` (skipped when
@@ -959,7 +959,7 @@ def main():
         action="store_true",
         help="With --eval-only: ignore the saved samples and draw a fresh "
              "eval batch from checkpoints/final.pt (archives the stale "
-             "eval/ first; for evals whose DRAW was wrong, e.g. pre-de9db7c "
+             "eval/ first; for evals whose DRAW was wrong, e.g. early "
              "matched-base runs)",
     )
     parser.add_argument(

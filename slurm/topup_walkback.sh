@@ -1,6 +1,6 @@
 #!/bin/bash
 # Refill the walk-back queue up to the DoC per-user submission cap
-# (QOSMaxSubmitJobPerUserLimit = 8 queued+running, discovered 2026-08-12).
+# (QOSMaxSubmitJobPerUserLimit = 8 queued+running).
 # Safe to re-run any time: skips jobs already queued (by name) and cells whose
 # run dir is already complete (eval/metrics.json exists — the fixed-tag runner
 # also short-circuits, this just avoids burning a queue slot to find out).

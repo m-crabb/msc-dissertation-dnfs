@@ -1,13 +1,11 @@
-"""MDNS-vs-DNFS 4x4 side-by-side: the Amendment-01 comparison table.
+"""MDNS-vs-DNFS 4x4 side-by-side: the second-pass comparison table.
 
-DNFS anchor (corrected 2026-08-13, coordinator ruling): the 10k
-budget-matched head-twin gate record — configs
+DNFS anchor: the 10k budget-matched head-twin gate record — configs
 H2_d16_c50_{s010,s223}_letf_{ma,mo}_10k, per-seed artefacts in
-results/03_hard/demo_4x4/observables_table.md (provenance:
-results/03_hard/demo_4x4/, the 10k budget-matched head-twin record). The `ma` (masked_attention)
+results/03_hard/demo_4x4/observables_table.md. The `ma` (masked_attention)
 head is the REPORTED cell in hard.tex; `mo` (mask_one) is the reference
 row. The earlier anchor (results/03_hard/gate_4x4/verdict.json) is a
-STALE July-2 artefact of the old dh-head gate and must not anchor this
+STALE artefact of the old dh-head gate and must not anchor this
 comparison — its s223 numbers belong to that early experiment.
 
 Instruments: energy-marginal TV, within-level max excess, and IS-ESS
@@ -15,11 +13,11 @@ fraction are per-seed in the archived table and computed by the SAME
 constructions the MDNS driver reuses (gate_4x4's). Per-site free-energy
 bias for the DNFS cells exists in the pack only as recorded per-point
 bounds (recomputed from the runs' final-eval log-weights: <= 0.003/site
-at sigma = 0.10, <= 0.007/site at sigma_c — provenance doc §2b), so the
-DNFS column prints those bounds, not per-seed values.
+at sigma = 0.10, <= 0.007/site at sigma_c), so the DNFS column prints
+those bounds, not per-seed values.
 
 Cost currencies are stated per family and NEVER divided (bracket
-discipline, the 2026-08-13 framing ruling): the DNFS record's eval spends
+discipline): the DNFS record's eval spends
 5,000 IS draws per replicate at ~5e5 backbone rows per replicate
 (backbone-row currency, neff_table.json); MDNS pays d = 16 network calls
 per sample over 65,536 rollouts. ESS FRACTIONS are the comparable

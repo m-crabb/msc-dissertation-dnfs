@@ -1,6 +1,6 @@
 """End-of-run eval plumbing for the hard-constraint cells: `final_eval` must
 stream the draw in `eval_sample_chunk` slices (the unchunked 5000-sample eval
-OOM'd all three d=64 sigma_c seeds, 2026-07-06) and `eval_only` must recover
+OOM'd all three d=64 sigma_c seeds) and `eval_only` must recover
 the eval/ artefacts from a completed run dir's checkpoint."""
 import json
 import shutil
@@ -153,7 +153,7 @@ def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
     del saved["anchor_chunk_size"]  # default None
     del saved["compile_head"]  # default False — fill must use the field default
     # Nested sub-config additions must backfill too: the real d=16 run dirs
-    # (2026-07-02) predate model.use_sdpa_readout and eval.eval_autocast_bf16,
+    # predate model.use_sdpa_readout and eval.eval_autocast_bf16,
     # and a top-level-only fill left every one of them locked out. Both sit at
     # their defaults in _tiny_cfg, so absence really does mean "then-default"
     # here — deleting a key the cfg sets non-defaultly (eval_sample_chunk=4)
@@ -242,9 +242,9 @@ def test_eval_only_smc_tau_runs_smc_variant_only(tmp_path, monkeypatch):
 def test_eval_only_replicate_seed_writes_replicate_dir_and_preserves_eval(
     tmp_path, monkeypatch
 ):
-    """Probe replicate draws (prereg amendment DECIDE-1: a neural replicate is
-    an independent sampling run with a fresh eval seed off the ONE converged
-    checkpoint) must land in eval_replicate_s<seed>/ and never create or touch
+    """Probe replicate draws (a neural replicate is an independent sampling
+    run with a fresh eval seed off the ONE converged checkpoint) must land in
+    eval_replicate_s<seed>/ and never create or touch
     the frozen eval/ dir the headline numbers were read from."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
@@ -341,7 +341,7 @@ def test_eval_only_ema_reads_the_ema_checkpoint_into_a_suffixed_dir(
     `eval_ema_ne<k>/`.
 
     Why this exists: the EMA weights are the primary read for every d=256
-    verdict (raw eval ESS at sigma_c is top-weight dominated and does not
+    result (raw eval ESS at sigma_c is top-weight dominated and does not
     resolve), but `eval_only` loaded only `final.pt`, so an EMA re-draw
     needed a hand-staged copy of `final_ema.pt` renamed to `final.pt`. That
     workaround is silent when it goes wrong: it produces a plausible number
@@ -376,7 +376,7 @@ def test_eval_only_ema_without_a_grid_override_guards_only_frozen_numbers(
     owns. When a frozen EMA eval is already there, re-drawing it must be
     refused rather than silently clobbering a number the tables read. But
     when the trainer died BETWEEN the raw and EMA evals (final_ema.pt on
-    disk, eval_ema/ never written — the d256 camort case, 2026-09-01),
+    disk, eval_ema/ never written — the d256 camort case),
     that same call is the recovery path and must land the canonical
     eval_ema/, exactly as eval_only recovers a died eval/."""
     cfg = _tiny_cfg()

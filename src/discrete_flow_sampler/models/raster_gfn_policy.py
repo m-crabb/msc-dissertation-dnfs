@@ -19,8 +19,7 @@ where a general GFlowNet framework's state->logits map re-encodes each of the
 d prefixes separately (O(d^3)) — the difference between a runnable and an
 unrunnable 16x16 cell. Fixed raster order also gives each state exactly one
 parent, so P_B == 1 and both the flow-underdetermination problem and the
-learned-backward-policy design question disappear (design doc
-2026-08-30-gfn-comparator, s92 literature survey).
+learned-backward-policy design question disappear.
 
 Failure mode guarded here: the classic AR off-by-one, where the feature that
 predicts x_i has already seen x_i. Token i is the embedding of x_{i-1} (BOS
@@ -101,7 +100,7 @@ class RasterGFNPolicy(nn.Module):
 
     Heads on the shared causal features:
       * policy head    -> logit for P(x_i = +1 | x_{<i})  (before masking);
-      * `log_z`        -> scalar log-partition estimate for the TB arm
+      * `log_z`        -> scalar log-partition estimate for the TB objective
                           (Malkin et al. 2022: at the TB optimum it equals
                           the slice log Z, so it is also a free estimator);
       * flow head      -> log F_res(s_i), the forward-looking flow RESIDUAL
@@ -135,17 +134,17 @@ class RasterGFNPolicy(nn.Module):
         self.final_norm = nn.LayerNorm(hidden_dim)
         self.policy_head = nn.Linear(hidden_dim, 1)
         self.log_z = nn.Parameter(torch.zeros(()))
-        # Two flow parameterisations (s100). The shared-trunk readout (the
+        # Two flow parameterisations. The shared-trunk readout (the
         # original) reads log F_res off the causal features — cheapest, but
-        # its gradients flow INTO the policy trunk, and the s100 flow-lr
-        # arms surfaced the failure mode: a fast flow readout absorbs DB
+        # its gradients flow INTO the policy trunk, and the flow-lr
+        # sweeps surfaced the failure mode: a fast flow readout absorbs DB
         # residuals and SHIELDS the policy from its own gradient signal.
         # The standalone module is the torchgfn convention (a separate
         # ScalarEstimator over the state, verified in reference source):
         # it decouples flow gradients from the trunk entirely, at a
         # declared parameter cost (a small MLP over the 3-way one-hot
         # prefix encoding; hidden = trunk hidden_dim, 2 hidden layers —
-        # OUR sizing choice, declared, kept small to bound the delta).
+        # a sizing choice kept small to bound the delta).
         if not with_flow_head:
             self.flow_head = None
         elif standalone_flow_head:
