@@ -26,13 +26,22 @@ ATOL = 1e-5  # suite bar; subtractive band assembly leaves ~1e-6 fp residue,
 
 
 def _head(
-    d=9, offsets=(1, 3), seed=42, hidden_dim=8, n_heads=2, n_layers=2,
+    d=9,
+    offsets=(1, 3),
+    seed=42,
+    hidden_dim=8,
+    n_heads=2,
+    n_layers=2,
     gather_triu_pairs=False,
 ):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers,
-        n_heads=n_heads, use_sdpa_readout=False,
+        d=d,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        n_heads=n_heads,
+        use_sdpa_readout=False,
     )
     head = IntervalSwapHead(
         backbone, pair_offsets=offsets, gather_triu_pairs=gather_triu_pairs
@@ -116,9 +125,7 @@ def test_pair_context_blind_to_both_holes(gather_triu_pairs):
             (_flip(x, j), f"x_{j}"),
             (_flip(x, i, j), f"x_{i} and x_{j}"),
         ):
-            drift = _drift(
-                head.compute_pair_context(flipped_x, t)[:, i, j, :], base
-            )
+            drift = _drift(head.compute_pair_context(flipped_x, t)[:, i, j, :], base)
             assert drift < ATOL, f"H_[{i},{j}] leaks {label}: {drift:.2e}"
 
 
@@ -133,9 +140,7 @@ def test_pair_context_sensitive_to_context():
     base = head.compute_pair_context(x, t)[:, i, j, :]
 
     for site, interval in ((0, "prefix"), (3, "band"), (7, "suffix")):
-        drift = _drift(
-            head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base
-        )
+        drift = _drift(head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base)
         assert drift > 1e-7, f"H_[{i},{j}] ignores its {interval} (site {site})"
 
 
@@ -240,14 +245,11 @@ def test_head_parameters_receive_grad():
         head.backbone.bwd_stack.parameters()
     )
     assert any(p.grad is not None for p in stacks), "causal stacks dead: no P/S"
-    readout_grads = [
-        p.grad for p in head.backbone.attention_readout.parameters()
-    ]
+    readout_grads = [p.grad for p in head.backbone.attention_readout.parameters()]
     assert all(g is None for g in readout_grads), (
         "attention_readout unexpectedly live; the one-pass design routed "
         "through the machinery it exists to replace"
     )
-
 
 
 # --- bilinear exterior combiner ----------------------------------------------
@@ -264,12 +266,26 @@ from discrete_flow_sampler.constraints.masked_attention_swap_head import (
 def _combiner_head(head_cls, exterior_combiner, d=9, seed=42):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2, use_sdpa_readout=False,
+        d=d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
+        use_sdpa_readout=False,
     )
-    kw = {"attention_dim": 6, "lattice_side": 3} if head_cls is MaskedAttentionSwapHead else {}
+    kw = (
+        {"attention_dim": 6, "lattice_side": 3}
+        if head_cls is MaskedAttentionSwapHead
+        else {}
+    )
     head = head_cls(
-        backbone, pair_offsets=(1, 3), band_feature_dim=5, position_dim=4,
-        exterior_combiner=exterior_combiner, bilinear_rank=3, **kw,
+        backbone,
+        pair_offsets=(1, 3),
+        band_feature_dim=5,
+        position_dim=4,
+        exterior_combiner=exterior_combiner,
+        bilinear_rank=3,
+        **kw,
     )
     head.eval()
     return head
@@ -278,13 +294,29 @@ def _combiner_head(head_cls, exterior_combiner, d=9, seed=42):
 @pytest.mark.parametrize("head_cls", [IntervalSwapHead, MaskedAttentionSwapHead])
 def test_mlp_combiner_is_byte_identical_to_archived_head(head_cls):
     torch.manual_seed(7)
-    backbone = LeTFRateMatrix(d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2, use_sdpa_readout=False)
-    kw = {"attention_dim": 6, "lattice_side": 3} if head_cls is MaskedAttentionSwapHead else {}
-    archived = head_cls(backbone, pair_offsets=(1, 3), band_feature_dim=5, position_dim=4, **kw)
+    backbone = LeTFRateMatrix(
+        d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2, use_sdpa_readout=False
+    )
+    kw = (
+        {"attention_dim": 6, "lattice_side": 3}
+        if head_cls is MaskedAttentionSwapHead
+        else {}
+    )
+    archived = head_cls(
+        backbone, pair_offsets=(1, 3), band_feature_dim=5, position_dim=4, **kw
+    )
     torch.manual_seed(7)
-    backbone = LeTFRateMatrix(d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2, use_sdpa_readout=False)
-    explicit = head_cls(backbone, pair_offsets=(1, 3), band_feature_dim=5, position_dim=4,
-                        exterior_combiner="mlp", **kw)
+    backbone = LeTFRateMatrix(
+        d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2, use_sdpa_readout=False
+    )
+    explicit = head_cls(
+        backbone,
+        pair_offsets=(1, 3),
+        band_feature_dim=5,
+        position_dim=4,
+        exterior_combiner="mlp",
+        **kw,
+    )
     assert archived.state_dict().keys() == explicit.state_dict().keys()
     assert "prefix_factors.weight" not in archived.state_dict()
     x, t = _state(), torch.rand(1)
@@ -301,7 +333,12 @@ def test_bilinear_combiner_context_blind_to_both_holes(head_cls):
             for flips in ((i,), (j,), (i, j)):
                 y = x.clone()
                 y[:, list(flips)] *= -1
-                drift = (head.compute_pair_context(y, t)[:, i, j] - H[:, i, j]).abs().max().item()
+                drift = (
+                    (head.compute_pair_context(y, t)[:, i, j] - H[:, i, j])
+                    .abs()
+                    .max()
+                    .item()
+                )
                 assert drift < ATOL, (head_cls.__name__, i, j, flips, drift)
 
 
@@ -310,7 +347,10 @@ def test_bilinear_combiner_readout_sees_band_and_positions_only(head_cls):
     head = _combiner_head(head_cls, "bilinear")
     band_dim = 5 * (1 + 2)
     assert head.pair_readout[0].in_features == band_dim + 2 * 4
-    assert _combiner_head(head_cls, "mlp").pair_readout[0].in_features == 2 * 8 + band_dim + 2 * 4
+    assert (
+        _combiner_head(head_cls, "mlp").pair_readout[0].in_features
+        == 2 * 8 + band_dim + 2 * 4
+    )
 
 
 @pytest.mark.parametrize("head_cls", [IntervalSwapHead, MaskedAttentionSwapHead])
@@ -320,8 +360,12 @@ def test_bilinear_combiner_antisymmetric_and_exterior_sensitive(head_cls):
     G = head(x, t)
     assert (G + G.transpose(1, 2)).abs().max().item() < ATOL
     # the exterior must still reach H: flip a site outside (i, j) = (3, 5)
-    y = x.clone(); y[:, 0] *= -1
-    assert (head.compute_pair_context(y, t)[:, 3, 5] - head.compute_pair_context(x, t)[:, 3, 5]).abs().max() > ATOL
+    y = x.clone()
+    y[:, 0] *= -1
+    assert (
+        head.compute_pair_context(y, t)[:, 3, 5]
+        - head.compute_pair_context(x, t)[:, 3, 5]
+    ).abs().max() > ATOL
     head.train()
     head(x, t).sum().backward()
     for name in ("prefix_factors", "suffix_factors"):

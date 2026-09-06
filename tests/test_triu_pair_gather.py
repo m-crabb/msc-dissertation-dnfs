@@ -79,32 +79,50 @@ D = LATTICE_SIDE * LATTICE_SIDE
 def _backbone(d=D, seed=42):
     torch.manual_seed(seed)
     return LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
 
 
 def _interval(gather, **kw):
     return IntervalSwapHead(
-        _backbone(), pair_offsets=(1, LATTICE_SIDE), band_feature_dim=6,
-        gather_triu_pairs=gather, **kw,
+        _backbone(),
+        pair_offsets=(1, LATTICE_SIDE),
+        band_feature_dim=6,
+        gather_triu_pairs=gather,
+        **kw,
     )
 
 
 def _masked_attention(gather, **kw):
     return MaskedAttentionSwapHead(
-        _backbone(), pair_offsets=(1, LATTICE_SIDE), band_feature_dim=6,
-        attention_dim=6, lattice_side=LATTICE_SIDE,
-        gather_triu_pairs=gather, **kw,
+        _backbone(),
+        pair_offsets=(1, LATTICE_SIDE),
+        band_feature_dim=6,
+        attention_dim=6,
+        lattice_side=LATTICE_SIDE,
+        gather_triu_pairs=gather,
+        **kw,
     )
 
 
 def _factorised(gather, **kw):
     return FactorisedSwapHead(
-        _backbone(), bilinear_rank=3, factor_dim=4, global_feature_dim=6,
-        position_dim=5, band_feature_dim=6, attention_dim=6,
-        pair_offsets=(1, LATTICE_SIDE), lattice_side=LATTICE_SIDE,
-        gather_triu_pairs=gather, **kw,
+        _backbone(),
+        bilinear_rank=3,
+        factor_dim=4,
+        global_feature_dim=6,
+        position_dim=5,
+        band_feature_dim=6,
+        attention_dim=6,
+        pair_offsets=(1, LATTICE_SIDE),
+        lattice_side=LATTICE_SIDE,
+        gather_triu_pairs=gather,
+        **kw,
     )
 
 
@@ -124,11 +142,11 @@ HEAD_CASES = {
     "factorised": lambda g: _factorised(g),
     "factorised_global_only": lambda g: _factorised(g, use_bilinear=False),
     "factorised_prefix_band": lambda g: _factorised(g, interior_band="prefix"),
-    "factorised_attention_band": lambda g: _factorised(
-        g, interior_band="attention"
-    ),
+    "factorised_attention_band": lambda g: _factorised(g, interior_band="attention"),
     "factorised_multi_order": lambda g: _factorised(
-        g, interior_band="attention", site_orderings=("row", "col"),
+        g,
+        interior_band="attention",
+        site_orderings=("row", "col"),
     ),
 }
 
@@ -145,7 +163,7 @@ def _pair(case, gather_on=True):
 def _state(batch=2, d=D, seed=7):
     torch.manual_seed(seed)
     spins = (torch.randint(0, 2, (batch, d)) * 2 - 1).float()
-    spins[:, 0] = 1.0        # guarantee both spins present in every row
+    spins[:, 0] = 1.0  # guarantee both spins present in every row
     spins[:, 1] = -1.0
     return spins
 
@@ -278,9 +296,7 @@ def test_exact_field_channel_composes_with_the_gather():
     assert _drift(gathered(x, t), dense(x, t)) < GATHER_ATOL
 
 
-@pytest.mark.parametrize(
-    "head_kind", ["interval", "masked_attention", "factorised"]
-)
+@pytest.mark.parametrize("head_kind", ["interval", "masked_attention", "factorised"])
 def test_config_flag_reaches_the_head(head_kind):
     """`cfg.gather_triu_pairs` must arrive at the head it is set for -- a
     silently-dropped memory lever would look like a null result at D=16."""
@@ -290,7 +306,8 @@ def test_config_flag_reaches_the_head(head_kind):
 
     cfg = replace(
         CONFIGS["H2_d16_c50_s223_letf_fab8_10k"],
-        head_kind=head_kind, gather_triu_pairs=True,
+        head_kind=head_kind,
+        gather_triu_pairs=True,
     )
     head = build_swap_head(cfg, _backbone())
     assert head.gather_triu_pairs is True
@@ -309,9 +326,7 @@ def test_config_flag_is_a_no_op_for_the_heads_without_a_symmetric_slab():
     for head_kind in ("two_hole_patch", "mask_one"):
         cfg = replace(base, head_kind=head_kind)
         plain = build_swap_head(cfg, _backbone())
-        flagged = build_swap_head(
-            replace(cfg, gather_triu_pairs=True), _backbone()
-        )
+        flagged = build_swap_head(replace(cfg, gather_triu_pairs=True), _backbone())
         x, t = _state(), torch.rand(2)
         with torch.no_grad():
             assert torch.equal(plain(x, t), flagged(x, t)), head_kind

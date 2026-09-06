@@ -23,6 +23,7 @@ What correct looks like, independent of implementation:
    healthy warm-start pattern) must never trip it; that is why the window
    exists and why the arming step exists.
 """
+
 import csv
 from pathlib import Path
 
@@ -50,19 +51,39 @@ def _head(init_seed: int = 0) -> LeTFMaskOneSwapHead:
     )
 
 
-def _run(run_dir: Path, estimator_mode: str, n_steps: int = 4,
-         halt_after=None, halt_window: int = 2) -> None:
+def _run(
+    run_dir: Path,
+    estimator_mode: str,
+    n_steps: int = 4,
+    halt_after=None,
+    halt_window: int = 2,
+) -> None:
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
-    train_cfg = _Cfg(n_steps=n_steps, batch_size=8, outer_batch_size=8,
-                     inner_steps_per_outer=2, lr=1e-3, seed=0,
-                     replay_buffer_cycles=2, grad_clip_max_norm=500.0,
-                     warmup_steps=0,
-                     halt_on_cv_inversion_after=halt_after,
-                     halt_cv_inversion_window=halt_window)
+    train_cfg = _Cfg(
+        n_steps=n_steps,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=2,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        halt_on_cv_inversion_after=halt_after,
+        halt_cv_inversion_window=halt_window,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=8)
     eval_cfg = _Cfg(eval_every=2, n_eval_samples=16)
-    train_swap(_head(), target, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-               use_wandb=False, estimator_mode=estimator_mode)
+    train_swap(
+        _head(),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        run_dir,
+        use_wandb=False,
+        estimator_mode=estimator_mode,
+    )
 
 
 def _rows(run_dir: Path) -> list[dict]:
@@ -92,8 +113,9 @@ def test_cv_var_ratio_is_the_division_of_its_parent_columns(tmp_path):
     the trainer already logs, never a new estimator pass."""
     _run(tmp_path / "cv", estimator_mode="control_variate")
     for row in _rows(tmp_path / "cv"):
-        expected = (float(row["var_estimator_integrand"])
-                    / float(row["var_dt_log_p_tilde"]))
+        expected = float(row["var_estimator_integrand"]) / float(
+            row["var_dt_log_p_tilde"]
+        )
         assert abs(float(row["cv_var_ratio"]) - expected) < 1e-9 * max(
             1.0, abs(expected)
         )
@@ -123,8 +145,9 @@ def test_sustained_inversion_requires_a_full_window_above_one():
 def test_halt_default_off_and_naive_ratio_never_trips(tmp_path):
     """Armed guard + naive mode: ratio is exactly 1.0 (not > 1), so the run
     must complete every step and write no marker."""
-    _run(tmp_path / "armed_naive", estimator_mode="naive_mc",
-         halt_after=0, halt_window=1)
+    _run(
+        tmp_path / "armed_naive", estimator_mode="naive_mc", halt_after=0, halt_window=1
+    )
     assert len(_rows(tmp_path / "armed_naive")) == 4
     assert not (tmp_path / "armed_naive" / "cv_inversion_halt.json").exists()
 
@@ -133,12 +156,9 @@ def test_halt_stops_gracefully_when_detector_fires(tmp_path, monkeypatch):
     """Wiring: with the detector forced positive, an armed CV run must stop
     before its first inner step, write the marker, and still save final.pt
     (graceful stop, not a crash — artefacts stay judgeable)."""
-    monkeypatch.setattr(
-        swap_training, "_cv_inversion_sustained", lambda *a, **k: True
-    )
+    monkeypatch.setattr(swap_training, "_cv_inversion_sustained", lambda *a, **k: True)
     run_dir = tmp_path / "tripped"
-    _run(run_dir, estimator_mode="control_variate",
-         halt_after=0, halt_window=1)
+    _run(run_dir, estimator_mode="control_variate", halt_after=0, halt_window=1)
     assert (run_dir / "cv_inversion_halt.json").exists()
     assert len(_rows(run_dir)) == 0
     assert (run_dir / "checkpoints" / "final.pt").exists()
@@ -147,9 +167,7 @@ def test_halt_stops_gracefully_when_detector_fires(tmp_path, monkeypatch):
 def test_unarmed_cv_run_is_unchanged(tmp_path, monkeypatch):
     """Default (halt_on_cv_inversion_after=None): even a permanently-firing
     detector must never be consulted — the archived CV cells' behaviour."""
-    monkeypatch.setattr(
-        swap_training, "_cv_inversion_sustained", lambda *a, **k: True
-    )
+    monkeypatch.setattr(swap_training, "_cv_inversion_sustained", lambda *a, **k: True)
     run_dir = tmp_path / "unarmed"
     _run(run_dir, estimator_mode="control_variate", halt_after=None)
     assert len(_rows(run_dir)) == 4

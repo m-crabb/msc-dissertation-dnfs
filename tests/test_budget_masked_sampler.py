@@ -19,6 +19,7 @@ and 0.0 at masked sites; adjacency is the symmetric 0/1 matrix of
 single-site energy tilt is 4*sigma*(A x)_i, matching the ring reference
 where the field is the plain sum of the two neighbour spins.
 """
+
 from math import comb, isclose
 
 import pytest
@@ -56,9 +57,7 @@ def ring_adjacency(n_sites: int) -> torch.Tensor:
 def as_masked_tensor(state) -> torch.Tensor:
     """Pure-python masked state (None = masked) -> the module's convention
     (0.0 = masked)."""
-    return torch.tensor(
-        [[0.0 if spin is None else float(spin) for spin in state]]
-    )
+    return torch.tensor([[0.0 if spin is None else float(spin) for spin in state]])
 
 
 def ring_energy_torch(states: torch.Tensor, adjacency: torch.Tensor):
@@ -70,17 +69,24 @@ def ring_energy_torch(states: torch.Tensor, adjacency: torch.Tensor):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("mode,reference", [
-    ("budget_tilted",
-     lambda state, site, neighbours: budget_tilted_conditional_plus(
-         state, site, RING_SIGMA, 3, neighbours)),
-    ("unconstrained",
-     lambda state, site, neighbours: unconstrained_preconditioner_plus(
-         state, site, RING_SIGMA, neighbours)),
-])
-def test_preconditioner_matches_reference_on_every_masked_state(
-    mode, reference
-):
+@pytest.mark.parametrize(
+    "mode,reference",
+    [
+        (
+            "budget_tilted",
+            lambda state, site, neighbours: budget_tilted_conditional_plus(
+                state, site, RING_SIGMA, 3, neighbours
+            ),
+        ),
+        (
+            "unconstrained",
+            lambda state, site, neighbours: unconstrained_preconditioner_plus(
+                state, site, RING_SIGMA, neighbours
+            ),
+        ),
+    ],
+)
+def test_preconditioner_matches_reference_on_every_masked_state(mode, reference):
     """The torch preconditioner, pushed through sigmoid, must equal the
     exhaustively verified reference at every (feasible state, masked site)
     of the d=6 ring — same numbers, vectorised."""
@@ -96,16 +102,16 @@ def test_preconditioner_matches_reference_on_every_masked_state(
             if spin is not None:
                 continue
             assert isclose(
-                p_plus[site].item(), reference(state, site, neighbours),
-                rel_tol=1e-5, abs_tol=1e-6,
+                p_plus[site].item(),
+                reference(state, site, neighbours),
+                rel_tol=1e-5,
+                abs_tol=1e-6,
             )
 
 
 def test_none_preconditioner_is_zero():
     state = as_masked_tensor((+1, None, -1, None, None, +1))
-    logit = preconditioner_logit_diff(
-        state, ring_adjacency(6), RING_SIGMA, 3, "none"
-    )
+    logit = preconditioner_logit_diff(state, ring_adjacency(6), RING_SIGMA, 3, "none")
     assert torch.all(logit == 0.0)
 
 
@@ -113,19 +119,20 @@ def test_budget_tilted_boundary_is_a_saturating_delta():
     """b = 0 must force p(+1) ~ 0 and b = m must force ~ 1 even after a
     finite trunk perturbation is added (the pseudo-infinite branch has to
     dominate any realistic network logit)."""
-    exhausted = as_masked_tensor((+1, +1, +1, None, None, -1))   # b=0, m=2
-    forced = as_masked_tensor((-1, -1, -1, None, None, +1))      # b=m=2
+    exhausted = as_masked_tensor((+1, +1, +1, None, None, -1))  # b=0, m=2
+    forced = as_masked_tensor((-1, -1, -1, None, None, +1))  # b=m=2
     adjacency = ring_adjacency(6)
     for state, expected in ((exhausted, 0.0), (forced, 1.0)):
         logit = preconditioner_logit_diff(
             state, adjacency, RING_SIGMA, 3, "budget_tilted"
         )
-        perturbed = torch.sigmoid(logit + 10.0) if expected == 0.0 else (
-            torch.sigmoid(logit - 10.0)
+        perturbed = (
+            torch.sigmoid(logit + 10.0)
+            if expected == 0.0
+            else (torch.sigmoid(logit - 10.0))
         )
         masked_sites = state[0] == 0.0
-        assert torch.all(torch.abs(perturbed[0][masked_sites] - expected)
-                         < 1e-6)
+        assert torch.all(torch.abs(perturbed[0][masked_sites] - expected) < 1e-6)
 
 
 # ---------------------------------------------------------------------------
@@ -144,19 +151,15 @@ def test_rollout_never_leaves_the_fibre(mode):
     adjacency = ring_adjacency(n_sites)
     torch.manual_seed(0)
     net = MaskedConditionalNet(n_sites, hidden_width=32)
-    for parameter in net.parameters():          # adversarial: break zero-init
+    for parameter in net.parameters():  # adversarial: break zero-init
         parameter.data.normal_(0.0, 0.5)
 
     def logit_fn(x):
-        return net(x) + preconditioner_logit_diff(
-            x, adjacency, sigma, n_plus, mode
-        )
+        return net(x) + preconditioner_logit_diff(x, adjacency, sigma, n_plus, mode)
 
     generator = torch.Generator().manual_seed(7)
-    terminals, _ = rollout_budget_masked(
-        logit_fn, 4096, n_sites, n_plus, generator
-    )
-    assert torch.all(terminals.abs() == 1.0)             # fully revealed
+    terminals, _ = rollout_budget_masked(logit_fn, 4096, n_sites, n_plus, generator)
+    assert torch.all(terminals.abs() == 1.0)  # fully revealed
     assert torch.all(((terminals + 1) / 2).sum(dim=1) == n_plus)
 
 
@@ -165,9 +168,9 @@ def test_feasibility_clamp_forces_boundary_draws():
     budget = torch.tensor([0, 3, 1])
     masked_count = torch.tensor([2, 3, 4])
     clamped = feasibility_clamped_p_plus(p_plus, budget, masked_count)
-    assert clamped[0] == 0.0        # exhausted budget: +1 forbidden
-    assert clamped[1] == 1.0        # budget == masked: +1 forced
-    assert clamped[2] == 0.5        # interior: untouched
+    assert clamped[0] == 0.0  # exhausted budget: +1 forbidden
+    assert clamped[1] == 1.0  # budget == masked: +1 forced
+    assert clamped[2] == 0.5  # interior: untouched
 
 
 # ---------------------------------------------------------------------------
@@ -221,15 +224,12 @@ def test_zero_trunk_with_budget_tilt_at_sigma_zero_is_uniform_on_fibre():
     adjacency = ring_adjacency(n_sites)
 
     def logit_fn(x):
-        return preconditioner_logit_diff(
-            x, adjacency, 0.0, n_plus, "budget_tilted"
-        )
+        return preconditioner_logit_diff(x, adjacency, 0.0, n_plus, "budget_tilted")
 
     law = rollout_law_by_dynamic_programming(logit_fn, n_sites, n_plus)
     assert len(law) == comb(n_sites, n_plus)
     for probability in law.values():
-        assert isclose(probability, 1.0 / comb(n_sites, n_plus),
-                       rel_tol=1e-9)
+        assert isclose(probability, 1.0 / comb(n_sites, n_plus), rel_tol=1e-9)
 
 
 def test_sampled_rollout_matches_the_dynamic_programming_law():
@@ -257,9 +257,9 @@ def test_sampled_rollout_matches_the_dynamic_programming_law():
             logit_fn, n_rollouts, n_sites, n_plus, generator
         )
     for state, probability in law.items():
-        matches = torch.all(
-            terminals == torch.tensor(state), dim=1
-        ).float().sum().item()
+        matches = (
+            torch.all(terminals == torch.tensor(state), dim=1).float().sum().item()
+        )
         standard_error = (probability * (1 - probability) / n_rollouts) ** 0.5
         assert abs(matches / n_rollouts - probability) < 5 * standard_error
 
@@ -280,7 +280,7 @@ def test_weighted_estimator_recovers_the_exact_fibre_conditional():
     torch.manual_seed(2)
     net = MaskedConditionalNet(n_sites, hidden_width=16)
     for parameter in net.parameters():
-        parameter.data.normal_(0.0, 0.2)          # mild, keeps ESS healthy
+        parameter.data.normal_(0.0, 0.2)  # mild, keeps ESS healthy
 
     def logit_fn(x):
         return net(x) + preconditioner_logit_diff(
@@ -292,29 +292,25 @@ def test_weighted_estimator_recovers_the_exact_fibre_conditional():
         terminals, rollout_log_prob = rollout_budget_masked(
             logit_fn, 200_000, n_sites, n_plus, generator
         )
-    log_weights = sigma * ring_energy_torch(terminals, adjacency) \
-        - rollout_log_prob
+    log_weights = sigma * ring_energy_torch(terminals, adjacency) - rollout_log_prob
     weights = torch.softmax(log_weights, dim=0)
 
     # exact conditional over the 20 fibre states
     from itertools import combinations
+
     fibre, exact_masses = [], []
     for plus_sites in combinations(range(n_sites), n_plus):
         state = torch.tensor(
             [[+1.0 if i in plus_sites else -1.0 for i in range(n_sites)]]
         )
         fibre.append(state)
-        exact_masses.append(
-            (sigma * ring_energy_torch(state, adjacency)).exp().item()
-        )
+        exact_masses.append((sigma * ring_energy_torch(state, adjacency)).exp().item())
     exact = torch.tensor(exact_masses)
     exact = exact / exact.sum()
 
     weighted_pmf = torch.zeros(len(fibre))
     for index, state in enumerate(fibre):
-        weighted_pmf[index] = weights[
-            torch.all(terminals == state[0], dim=1)
-        ].sum()
+        weighted_pmf[index] = weights[torch.all(terminals == state[0], dim=1)].sum()
     total_variation = 0.5 * (weighted_pmf - exact).abs().sum().item()
     assert total_variation < 0.02
 
@@ -336,9 +332,7 @@ def test_wdce_loss_prefers_the_exact_conditional():
     def exact_logit_fn(x_batch):
         logits = torch.zeros(x_batch.shape[0], n_sites)
         for row, x in enumerate(x_batch):
-            state = tuple(
-                None if spin == 0.0 else int(spin) for spin in x.tolist()
-            )
+            state = tuple(None if spin == 0.0 else int(spin) for spin in x.tolist())
             for site, spin in enumerate(state):
                 if spin is not None:
                     continue
@@ -354,8 +348,7 @@ def test_wdce_loss_prefers_the_exact_conditional():
         terminals, rollout_log_prob = rollout_budget_masked(
             exact_logit_fn, 4096, n_sites, n_plus, generator
         )
-        log_weights = sigma * ring_energy_torch(terminals, adjacency) \
-            - rollout_log_prob
+        log_weights = sigma * ring_energy_torch(terminals, adjacency) - rollout_log_prob
         weights = torch.softmax(log_weights, dim=0)
 
         torch.manual_seed(5)
@@ -368,7 +361,10 @@ def test_wdce_loss_prefers_the_exact_conditional():
         ):
             loss_generator = torch.Generator().manual_seed(41)
             losses[name] = wdce_cross_entropy(
-                logit_fn, terminals, weights, n_replicates=8,
+                logit_fn,
+                terminals,
+                weights,
+                n_replicates=8,
                 generator=loss_generator,
             ).item()
     assert losses["exact"] < losses["perturbed"]
@@ -386,6 +382,7 @@ def test_gated_offset_at_init_is_exactly_v0():
     from discrete_flow_sampler.samplers.budget_masked import (
         GatedBudgetTiltOffset,
     )
+
     n_sites, n_plus = 6, 3
     adjacency = ring_adjacency(n_sites)
     gated = GatedBudgetTiltOffset(adjacency, RING_SIGMA, n_plus)
@@ -406,6 +403,7 @@ def test_gated_rollout_stays_on_fibre():
     from discrete_flow_sampler.samplers.budget_masked import (
         GatedBudgetTiltOffset,
     )
+
     n_sites, n_plus = 16, 8
     adjacency = ring_adjacency(n_sites)
     gated = GatedBudgetTiltOffset(adjacency, 0.223, n_plus)
@@ -441,18 +439,25 @@ def test_context_loss_weight_none_is_the_frozen_protocol():
             logit_fn, 512, n_sites, n_plus, generator
         )
         weights = torch.softmax(
-            sigma * ring_energy_torch(terminals, adjacency)
-            - rollout_log_prob, dim=0,
+            sigma * ring_energy_torch(terminals, adjacency) - rollout_log_prob,
+            dim=0,
         )
         losses = []
-        for context_weight in (None, lambda contexts: torch.full(
-                (contexts.shape[0],), 7.0)):
+        for context_weight in (
+            None,
+            lambda contexts: torch.full((contexts.shape[0],), 7.0),
+        ):
             loss_generator = torch.Generator().manual_seed(17)
-            losses.append(wdce_cross_entropy(
-                logit_fn, terminals, weights, n_replicates=4,
-                generator=loss_generator,
-                context_loss_weight=context_weight,
-            ).item())
+            losses.append(
+                wdce_cross_entropy(
+                    logit_fn,
+                    terminals,
+                    weights,
+                    n_replicates=4,
+                    generator=loss_generator,
+                    context_loss_weight=context_weight,
+                ).item()
+            )
     assert isclose(losses[0], losses[1], rel_tol=1e-6)
 
 
@@ -465,6 +470,7 @@ def test_log_variance_loss_is_near_zero_at_the_exact_conditional():
     from discrete_flow_sampler.samplers.budget_masked import (
         log_variance_loss,
     )
+
     n_sites, n_plus, sigma = 6, 3, RING_SIGMA
     adjacency = ring_adjacency(n_sites)
     neighbours = ring_neighbour_pairs(n_sites)
@@ -472,9 +478,7 @@ def test_log_variance_loss_is_near_zero_at_the_exact_conditional():
     def exact_logit_fn(x_batch):
         logits = torch.zeros(x_batch.shape[0], n_sites)
         for row, x in enumerate(x_batch):
-            state = tuple(
-                None if spin == 0.0 else int(spin) for spin in x.tolist()
-            )
+            state = tuple(None if spin == 0.0 else int(spin) for spin in x.tolist())
             for site, spin in enumerate(state):
                 if spin is not None:
                     continue
@@ -490,14 +494,22 @@ def test_log_variance_loss_is_near_zero_at_the_exact_conditional():
 
     with torch.no_grad():
         exact_loss, _, _ = log_variance_loss(
-            exact_logit_fn, target_log_prob, 1024, n_sites, n_plus,
+            exact_logit_fn,
+            target_log_prob,
+            1024,
+            n_sites,
+            n_plus,
             torch.Generator().manual_seed(51),
         )
         torch.manual_seed(6)
         perturbation = torch.randn(1, n_sites)
         perturbed_loss, _, _ = log_variance_loss(
-            lambda x: exact_logit_fn(x) + perturbation, target_log_prob,
-            1024, n_sites, n_plus, torch.Generator().manual_seed(51),
+            lambda x: exact_logit_fn(x) + perturbation,
+            target_log_prob,
+            1024,
+            n_sites,
+            n_plus,
+            torch.Generator().manual_seed(51),
         )
     assert exact_loss.item() < 1e-6
     assert perturbed_loss.item() > 100 * max(exact_loss.item(), 1e-12)
@@ -506,7 +518,11 @@ def test_log_variance_loss_is_near_zero_at_the_exact_conditional():
     for parameter in net.parameters():
         parameter.data.normal_(0.0, 0.2)
     loss, terminals, log_rn = log_variance_loss(
-        lambda x: net(x), target_log_prob, 64, n_sites, n_plus,
+        lambda x: net(x),
+        target_log_prob,
+        64,
+        n_sites,
+        n_plus,
         torch.Generator().manual_seed(53),
     )
     loss.backward()
@@ -519,11 +535,12 @@ def test_ema_shadow_tracks_and_swaps():
     from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
         ExponentialMovingAverage,
     )
+
     parameter = torch.nn.Parameter(torch.ones(3))
     ema = ExponentialMovingAverage([parameter], decay=0.9)
     with torch.no_grad():
-        parameter.mul_(2.0)               # parameter now 2, shadow 1
-    ema.update()                          # shadow = 0.9*1 + 0.1*2 = 1.1
+        parameter.mul_(2.0)  # parameter now 2, shadow 1
+    ema.update()  # shadow = 0.9*1 + 0.1*2 = 1.1
     assert torch.allclose(ema.shadow[0], torch.full((3,), 1.1))
     ema.swap_in()
     assert torch.allclose(parameter.detach(), torch.full((3,), 1.1))
@@ -542,13 +559,12 @@ def test_ema_warmup_forgets_init_where_plain_shadow_cannot():
     from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
         ExponentialMovingAverage,
     )
+
     init_value, trained_value = 1.0, 3.0
     plain_parameter = torch.nn.Parameter(torch.full((3,), init_value))
     warm_parameter = torch.nn.Parameter(torch.full((3,), init_value))
     plain = ExponentialMovingAverage([plain_parameter], decay=0.9999)
-    warm = ExponentialMovingAverage(
-        [warm_parameter], decay=0.9999, warmup=True
-    )
+    warm = ExponentialMovingAverage([warm_parameter], decay=0.9999, warmup=True)
     with torch.no_grad():
         plain_parameter.fill_(trained_value)
         warm_parameter.fill_(trained_value)
@@ -557,14 +573,10 @@ def test_ema_warmup_forgets_init_where_plain_shadow_cannot():
         warm.update()
     # Plain shadow: 0.9999^200 = 0.980 of init survives.
     plain_expected = 0.9999**200 * init_value + (1 - 0.9999**200) * trained_value
-    assert torch.allclose(
-        plain.shadow[0], torch.full((3,), plain_expected), atol=1e-4
-    )
+    assert torch.allclose(plain.shadow[0], torch.full((3,), plain_expected), atol=1e-4)
     # Warmup shadow: init contribution is ~1e-17 — indistinguishable from
     # the trained value.
-    assert torch.allclose(
-        warm.shadow[0], torch.full((3,), trained_value), atol=1e-6
-    )
+    assert torch.allclose(warm.shadow[0], torch.full((3,), trained_value), atol=1e-6)
     # Late time: the schedule caps at the requested decay, so warmup and
     # plain agree asymptotically.
     assert warm.effective_decay(step=10**6) == 0.9999
@@ -617,9 +629,7 @@ def test_unconstrained_oracle_conditionals_give_constant_weights():
         logits = torch.zeros_like(x_masked)
         for row, context in enumerate(x_masked):
             unmasked = context != 0.0
-            consistent = (states[:, unmasked] == context[unmasked]).all(
-                dim=1
-            )
+            consistent = (states[:, unmasked] == context[unmasked]).all(dim=1)
             posterior = torch.softmax(log_p_tilde[consistent], dim=0)
             p_plus = posterior @ (states[consistent] == 1.0).float()
             p_plus = p_plus.clamp(1e-9, 1 - 1e-9)

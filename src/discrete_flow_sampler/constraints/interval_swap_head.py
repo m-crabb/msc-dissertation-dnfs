@@ -111,9 +111,7 @@ def scatter_symmetric_pairs(pair_values: Tensor, d: int) -> Tensor:
     tensor, which is precisely what the lever exists to save.
     """
     rows, cols = triu_pair_indices(d, pair_values.device)
-    out = pair_values.new_zeros(
-        pair_values.shape[0], d, d, pair_values.shape[-1]
-    )
+    out = pair_values.new_zeros(pair_values.shape[0], d, d, pair_values.shape[-1])
     out[:, rows, cols] = pair_values
     out[:, cols, rows] = pair_values
     return out
@@ -136,8 +134,8 @@ def causal_stream_summaries(
     the blindness tests probe the boundary sites specifically to catch it.
     """
     x_idx = ((x + 1) / 2).long()
-    x_emb = backbone.token_embedder(x_idx)                    # (B, d, h)
-    cond_t = backbone.time_embedder(t).unsqueeze(1)           # (B, 1, h)
+    x_emb = backbone.token_embedder(x_idx)  # (B, d, h)
+    cond_t = backbone.time_embedder(t).unsqueeze(1)  # (B, 1, h)
     fwd_x = backbone.fwd_stack(torch.cat([cond_t, x_emb], dim=1))
     bwd_x = backbone.bwd_stack(torch.cat([cond_t, x_emb.flip(1)], dim=1)).flip(1)
     d = x.shape[1]
@@ -219,7 +217,9 @@ class IntervalSwapHead(nn.Module):
         """
         super().__init__()
         if exterior_combiner not in ("mlp", "bilinear"):
-            raise ValueError(f"exterior_combiner must be 'mlp' or 'bilinear'; got {exterior_combiner!r}")
+            raise ValueError(
+                f"exterior_combiner must be 'mlp' or 'bilinear'; got {exterior_combiner!r}"
+            )
         # The bilinear exterior reads the ROW ordering's prefix/suffix only:
         # `_ordering_exterior_rows` is called on the "mlp" branch alone, and
         # `_bilinear_exterior` takes the row summaries. So an extra ordering
@@ -282,8 +282,12 @@ class IntervalSwapHead(nn.Module):
             # untouched; the factor maps mirror the factorised head's.
             self.prefix_norm = nn.LayerNorm(hidden)
             self.suffix_norm = nn.LayerNorm(hidden)
-            self.prefix_factors = nn.Linear(hidden + position_dim, bilinear_rank * hidden)
-            self.suffix_factors = nn.Linear(hidden + position_dim, bilinear_rank * hidden)
+            self.prefix_factors = nn.Linear(
+                hidden + position_dim, bilinear_rank * hidden
+            )
+            self.suffix_factors = nn.Linear(
+                hidden + position_dim, bilinear_rank * hidden
+            )
 
     def _build_pair_readout(self, band_dim: int) -> nn.Sequential:
         """Per-pair MLP; its input carries the exterior summaries only under
@@ -296,7 +300,8 @@ class IntervalSwapHead(nn.Module):
         # being confounded with capacity.
         exterior_dim = (
             2 * hidden * len(self.site_orderings)
-            if self.exterior_combiner == "mlp" else 0
+            if self.exterior_combiner == "mlp"
+            else 0
         )
         return nn.Sequential(
             nn.Linear(exterior_dim + band_dim + 2 * self.position_dim, 2 * hidden),
@@ -330,7 +335,7 @@ class IntervalSwapHead(nn.Module):
                 f"site_orderings must start with 'row' (the flattening "
                 f"itself); got {self.site_orderings!r}"
             )
-        side = lattice_side if lattice_side is not None else round(self.d ** 0.5)
+        side = lattice_side if lattice_side is not None else round(self.d**0.5)
         for name in self.site_orderings[1:]:
             if side * side != self.d:
                 raise ValueError(
@@ -361,21 +366,32 @@ class IntervalSwapHead(nn.Module):
         for name in self.site_orderings[1:]:
             order = getattr(self, f"_order_{name}")
             prefix, suffix = causal_stream_summaries(self.backbone, x[:, order], t)
-            lo, hi = getattr(self, f"_order_lo_{name}"), getattr(self, f"_order_hi_{name}")
+            lo, hi = (
+                getattr(self, f"_order_lo_{name}"),
+                getattr(self, f"_order_hi_{name}"),
+            )
             if pairs is not None:
                 pair_rows, pair_cols = pairs
                 lo, hi = lo[pair_rows, pair_cols], hi[pair_rows, pair_cols]
             rows_out += [prefix[:, lo], suffix[:, hi]]
         return rows_out
 
-    def _bilinear_exterior(self, prefix_summary: Tensor, suffix_summary: Tensor) -> Tensor:
+    def _bilinear_exterior(
+        self, prefix_summary: Tensor, suffix_summary: Tensor
+    ) -> Tensor:
         """sum_r a_r(prefix_i, i) * b_r(suffix_j, j), (B, d, d, h)."""
         batch, d, hidden = prefix_summary.shape
-        position = self.pair_position_embedding(torch.arange(d, device=prefix_summary.device))
+        position = self.pair_position_embedding(
+            torch.arange(d, device=prefix_summary.device)
+        )
         position = position.unsqueeze(0).expand(batch, -1, -1)
         shape = (batch, d, self.bilinear_rank, hidden)
-        a = self.prefix_factors(torch.cat([self.prefix_norm(prefix_summary), position], -1)).view(shape)
-        b = self.suffix_factors(torch.cat([self.suffix_norm(suffix_summary), position], -1)).view(shape)
+        a = self.prefix_factors(
+            torch.cat([self.prefix_norm(prefix_summary), position], -1)
+        ).view(shape)
+        b = self.suffix_factors(
+            torch.cat([self.suffix_norm(suffix_summary), position], -1)
+        ).view(shape)
         return torch.einsum("birh,bjrh->bijh", a, b)
 
     def causal_summaries(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
@@ -449,14 +465,14 @@ class IntervalSwapHead(nn.Module):
         """
         del t
         x_idx = ((x + 1) / 2).long()
-        emb = self.backbone.token_embedder(x_idx)             # (B, d, h)
+        emb = self.backbone.token_embedder(x_idx)  # (B, d, h)
         d = self.d
         if pairs is None:
             site_i = torch.arange(d, device=x.device).view(d, 1)  # over j
             site_j = torch.arange(d, device=x.device).view(1, d)  # over i
             mask_shape = (1, d, d, 1)
         else:
-            site_i, site_j = pairs                            # (P,), (P,)
+            site_i, site_j = pairs  # (P,), (P,)
             mask_shape = (1, -1, 1)
 
         def cumsum_with_zero(features: Tensor) -> Tensor:
@@ -488,7 +504,7 @@ class IntervalSwapHead(nn.Module):
                     (site_j - site_i >= delta + 2).view(mask_shape), pair_sum, 0.0
                 )
             )
-        return torch.cat(families, dim=-1)      # (B, d, d, F) or (B, P, F)
+        return torch.cat(families, dim=-1)  # (B, d, d, F) or (B, P, F)
 
     def hole_free_bond_totals(
         self, x: Tensor, pairs: tuple[Tensor, Tensor] | None = None
@@ -541,14 +557,14 @@ class IntervalSwapHead(nn.Module):
         and the head's exact antisymmetry pins G_ii = 0 for every input.
         """
         x_idx = ((x + 1) / 2).long()
-        emb = self.backbone.token_embedder(x_idx)             # (B, d, h)
+        emb = self.backbone.token_embedder(x_idx)  # (B, d, h)
         d = self.d
         if pairs is None:
             hole_i = torch.arange(d, device=x.device).view(d, 1)
             hole_j = torch.arange(d, device=x.device).view(1, d)
             mask_shape = (1, d, d, 1)
         else:
-            hole_i, hole_j = pairs                            # (P,), (P,)
+            hole_i, hole_j = pairs  # (P,), (P,)
             mask_shape = (1, -1, 1)
 
         families = []
@@ -556,7 +572,7 @@ class IntervalSwapHead(nn.Module):
             n_terms = d - delta
             terms = feature_mlp(
                 torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
-            )                                                 # (B, n_terms, F)
+            )  # (B, n_terms, F)
 
             def term_at(index: Tensor) -> Tensor:
                 """u^delta_index, or exact zero where no such bond exists.
@@ -569,16 +585,16 @@ class IntervalSwapHead(nn.Module):
                 so is pair-shaped already.
                 """
                 inside = ((index >= 0) & (index < n_terms)).unsqueeze(0).unsqueeze(-1)
-                return torch.where(
-                    inside, terms[:, index.clamp(0, n_terms - 1)], 0.0
-                )
+                return torch.where(inside, terms[:, index.clamp(0, n_terms - 1)], 0.0)
 
             total = terms.sum(dim=1)
             total = total.view(x.shape[0], *([1] * (len(mask_shape) - 2)), -1)
             hole_free = (
                 total
-                - term_at(hole_i) - term_at(hole_i - delta)
-                - term_at(hole_j) - term_at(hole_j - delta)
+                - term_at(hole_i)
+                - term_at(hole_i - delta)
+                - term_at(hole_j)
+                - term_at(hole_j - delta)
             )
             # Inclusion-exclusion: when the pair IS a delta-bond, one term was
             # reached by two of the four gathers above. Both signs, so the
@@ -625,7 +641,7 @@ class IntervalSwapHead(nn.Module):
             return self._gathered_pair_context(
                 x, t, prefix_summary, suffix_summary, position
             )
-        band = self.band_summaries(x, t)                      # (B, d, d, F)
+        band = self.band_summaries(x, t)  # (B, d, d, F)
 
         exterior_rows = (
             [
@@ -633,11 +649,13 @@ class IntervalSwapHead(nn.Module):
                 suffix_summary.unsqueeze(1).expand(batch, d, d, hidden),
             ]
             + self._ordering_exterior_rows(x, t, None)
-            if self.exterior_combiner == "mlp" else []
+            if self.exterior_combiner == "mlp"
+            else []
         )
         H = self.pair_readout(
             torch.cat(
-                exterior_rows + [
+                exterior_rows
+                + [
                     band,
                     position.view(1, d, 1, -1).expand(batch, d, d, -1),
                     position.view(1, 1, d, -1).expand(batch, d, d, -1),
@@ -651,9 +669,9 @@ class IntervalSwapHead(nn.Module):
             batch, 1, 1, hidden
         )
         # Label symmetry: the i<j triangle is the definition, mirror it down.
-        upper = torch.triu(
-            torch.ones(d, d, dtype=torch.bool, device=x.device)
-        ).view(1, d, d, 1)
+        upper = torch.triu(torch.ones(d, d, dtype=torch.bool, device=x.device)).view(
+            1, d, d, 1
+        )
         return torch.where(upper, H, H.transpose(1, 2))
 
     def _gathered_pair_context(
@@ -680,11 +698,13 @@ class IntervalSwapHead(nn.Module):
         exterior_rows = (
             [prefix_summary[:, rows], suffix_summary[:, cols]]
             + self._ordering_exterior_rows(x, t, (rows, cols))
-            if self.exterior_combiner == "mlp" else []
+            if self.exterior_combiner == "mlp"
+            else []
         )
         H = self.pair_readout(
             torch.cat(
-                exterior_rows + [
+                exterior_rows
+                + [
                     self.band_summaries(x, t, (rows, cols)),
                     position[rows].unsqueeze(0).expand(batch, -1, -1),
                     position[cols].unsqueeze(0).expand(batch, -1, -1),
@@ -693,12 +713,11 @@ class IntervalSwapHead(nn.Module):
             )
         )
         if self.exterior_combiner == "bilinear":
-            H = H + self._bilinear_exterior(prefix_summary, suffix_summary)[
-                :, rows, cols
-            ]
-        H = self.context_norm(H) + self.backbone.time_embedder(t).view(
-            batch, 1, hidden
-        )
+            H = (
+                H
+                + self._bilinear_exterior(prefix_summary, suffix_summary)[:, rows, cols]
+            )
+        H = self.context_norm(H) + self.backbone.time_embedder(t).view(batch, 1, hidden)
         return scatter_symmetric_pairs(H, d)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
@@ -714,7 +733,7 @@ class IntervalSwapHead(nn.Module):
         provide, and the only one training never touches.
         """
         x_idx = ((x + 1) / 2).long()
-        omega = self.backbone.omega(x_idx)                    # (B, d, h)
+        omega = self.backbone.omega(x_idx)  # (B, d, h)
         token_difference = omega.unsqueeze(2) - omega.unsqueeze(1)
         H = self.compute_pair_context(x, t)
         # mul+sum, NOT einsum: einsum is on the autocast lower-precision

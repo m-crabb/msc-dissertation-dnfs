@@ -34,6 +34,7 @@ Why each metric:
 Run through the local CLI or Modal gate wrapper. Sampling/evaluation uses
 torch.no_grad().
 """
+
 import argparse
 import csv
 import json
@@ -141,9 +142,15 @@ def _pack_spin_keys(states):
 
 
 def within_level_uniformity(
-    sample_states, sample_weights, sample_energies,
-    slice_states, slice_energies,
-    *, min_count=100, n_ref_replicates=20, seed=0,
+    sample_states,
+    sample_weights,
+    sample_energies,
+    slice_states,
+    slice_energies,
+    *,
+    min_count=100,
+    n_ref_replicates=20,
+    seed=0,
 ):
     """Per-energy-level within-level uniformity, the WITHIN-level check.
 
@@ -190,7 +197,7 @@ def within_level_uniformity(
         positions = torch.tensor(
             [key_to_pos[int(k)] for k in sample_keys[level_sample].tolist()]
         )
-        weights = sample_weights[level_sample].float().cpu()   # index_add on cpu
+        weights = sample_weights[level_sample].float().cpu()  # index_add on cpu
         weights = weights / weights.sum()
         p_hat = torch.zeros(g_k).index_add_(0, positions, weights)
         tv_k = 0.5 * (p_hat - 1.0 / g_k).abs().sum().item()
@@ -204,11 +211,17 @@ def within_level_uniformity(
             tv_refs.append(0.5 * (p_ref - 1.0 / g_k).abs().sum().item())
         tv_ref = sum(tv_refs) / len(tv_refs)
 
-        results.append({
-            "energy": float(level_energy), "n_k": n_k, "g_k": g_k,
-            "n_eff_k": n_eff_k,
-            "tv_k": tv_k, "tv_ref": tv_ref, "excess": tv_k - tv_ref,
-        })
+        results.append(
+            {
+                "energy": float(level_energy),
+                "n_k": n_k,
+                "g_k": g_k,
+                "n_eff_k": n_eff_k,
+                "tv_k": tv_k,
+                "tv_ref": tv_ref,
+                "excess": tv_k - tv_ref,
+            }
+        )
     return results
 
 
@@ -340,8 +353,8 @@ def run_gate(head, target, n_samples, n_euler_steps, seed):
         nn_exact = (p_cond * nn_correlation(slice_states, adjacency)).sum().item()
         nn_dnfs = (weights * nn_correlation(samples, adjacency)).sum().item()
         diag_exact = (
-            p_cond * diagonal_correlation(slice_states, target.D)
-        ).sum().item()
+            (p_cond * diagonal_correlation(slice_states, target.D)).sum().item()
+        )
         diag_dnfs = (weights * diagonal_correlation(samples, target.D)).sum().item()
         ess = ess_from_log_weights(log_w).item()
 
@@ -359,11 +372,16 @@ def run_gate(head, target, n_samples, n_euler_steps, seed):
         "seed": seed,
         "n_samples": n_samples,
         "energy_tv": energy_tv,
-        "e_exact": e_exact, "e_dnfs": e_dnfs,
-        "nn_exact": nn_exact, "nn_dnfs": nn_dnfs,
-        "diag_exact": diag_exact, "diag_dnfs": diag_dnfs,
-        "ess": ess, "ess_fraction": ess / n_samples,
-        "free_energy_ref": f_ref, "free_energy_dnfs": f_dnfs,
+        "e_exact": e_exact,
+        "e_dnfs": e_dnfs,
+        "nn_exact": nn_exact,
+        "nn_dnfs": nn_dnfs,
+        "diag_exact": diag_exact,
+        "diag_dnfs": diag_dnfs,
+        "ess": ess,
+        "ess_fraction": ess / n_samples,
+        "free_energy_ref": f_ref,
+        "free_energy_dnfs": f_dnfs,
         "free_energy_bias": f_dnfs - f_ref,
         "antisym_violation": antisym,
         "antisym_pass": antisym < ANTISYM_TOL,
@@ -402,8 +420,7 @@ def _aggregate_rung(per_seed):
     nn_exact = per_seed[0]["nn_exact"]
     diag_exact = per_seed[0]["diag_exact"]
     finite_excess = [
-        m["max_level_excess"] for m in per_seed
-        if math.isfinite(m["max_level_excess"])
+        m["max_level_excess"] for m in per_seed if math.isfinite(m["max_level_excess"])
     ]
     max_excess = max(finite_excess, default=float("nan"))
     tv_mean = tv.mean().item()
@@ -413,18 +430,22 @@ def _aggregate_rung(per_seed):
     pass_nn = abs(nn_mean - nn_exact) <= 2 * nn_std
     pass_diag = abs(diag_mean - diag_exact) <= 2 * diag_std
     pass_within_level = math.isfinite(max_excess) and max_excess <= 0.05
-    rung_pass = all(
-        [pass_energy_tv, pass_E, pass_nn, pass_diag, pass_within_level]
-    )
+    rung_pass = all([pass_energy_tv, pass_E, pass_nn, pass_diag, pass_within_level])
     return {
         "energy_tv_mean": tv_mean,
         "energy_tv_per_seed": tv.tolist(),
-        "e_exact": e_exact, "e_dnfs_mean": e_mean, "e_dnfs_std": e_std,
+        "e_exact": e_exact,
+        "e_dnfs_mean": e_mean,
+        "e_dnfs_std": e_std,
         "e_abs_dev": abs(e_mean - e_exact),
-        "nn_exact": nn_exact, "nn_dnfs_mean": nn_mean, "nn_dnfs_std": nn_std,
+        "nn_exact": nn_exact,
+        "nn_dnfs_mean": nn_mean,
+        "nn_dnfs_std": nn_std,
         "nn_abs_dev": abs(nn_mean - nn_exact),
-        "diag_exact": diag_exact, "diag_dnfs_mean": diag_mean,
-        "diag_dnfs_std": diag_std, "diag_abs_dev": abs(diag_mean - diag_exact),
+        "diag_exact": diag_exact,
+        "diag_dnfs_mean": diag_mean,
+        "diag_dnfs_std": diag_std,
+        "diag_abs_dev": abs(diag_mean - diag_exact),
         "max_level_excess": max_excess,
         "ess_fraction_mean": sum(m["ess_fraction"] for m in per_seed) / len(per_seed),
         "free_energy_bias_mean": (
@@ -432,8 +453,11 @@ def _aggregate_rung(per_seed):
         ),
         "antisym_violation_max": max(m["antisym_violation"] for m in per_seed),
         "clamp_per_seed": [m["clamp"] for m in per_seed],
-        "pass_energy_tv": pass_energy_tv, "pass_E": pass_E, "pass_nn": pass_nn,
-        "pass_diag": pass_diag, "pass_within_level": pass_within_level,
+        "pass_energy_tv": pass_energy_tv,
+        "pass_E": pass_E,
+        "pass_nn": pass_nn,
+        "pass_diag": pass_diag,
+        "pass_within_level": pass_within_level,
         "rung_pass": rung_pass,
         "per_seed": [_seed_summary(m) for m in per_seed],
     }
@@ -451,8 +475,9 @@ def _control_product_bernoulli(results_dir, seeds, n_samples, device):
     per_seed = []
     for seed in seeds:
         run_dir = latest_run_dir(results_dir, cfg_name, seed)
-        print(f"[gate] control product_bernoulli seed {seed}: {run_dir.name}",
-              flush=True)
+        print(
+            f"[gate] control product_bernoulli seed {seed}: {run_dir.name}", flush=True
+        )
         head, target = load_run(run_dir, device)
         d = int(target.d)
         all_states = enumerate_states(d).to(device)
@@ -468,22 +493,25 @@ def _control_product_bernoulli(results_dir, seeds, n_samples, device):
             seed_everything(seed)
             x0 = torch.randint(0, 2, (n_samples, d), device=device).float() * 2 - 1
             ts = torch.linspace(0.0, 1.0, n_euler + 1, device=device)
-            samples = sample_swap_ctmc(head, x0, ts)   # no target -> no log-weights
+            samples = sample_swap_ctmc(head, x0, ts)  # no target -> no log-weights
             composition = ((samples + 1) * 0.5).mean(dim=-1)
             n_plus = ((samples + 1) * 0.5).sum(dim=-1)
             dnfs_hist = slice_energy_hist(
                 samples, torch.ones(n_samples, device=device), target.A, bins
             )
             energy_tv = energy_marginal_tv(dnfs_hist, exact_hist)
-        per_seed.append({
-            "seed": seed,
-            "composition_mean": composition.mean().item(),
-            "composition_std": composition.std(unbiased=False).item(),
-            "fraction_n_plus_target": (
-                n_plus == target.n_plus_target
-            ).float().mean().item(),
-            "energy_tv_unweighted": energy_tv,
-        })
+        per_seed.append(
+            {
+                "seed": seed,
+                "composition_mean": composition.mean().item(),
+                "composition_std": composition.std(unbiased=False).item(),
+                "fraction_n_plus_target": (n_plus == target.n_plus_target)
+                .float()
+                .mean()
+                .item(),
+                "energy_tv_unweighted": energy_tv,
+            }
+        )
 
     def mean(key):
         return sum(row[key] for row in per_seed) / len(per_seed)
@@ -519,8 +547,12 @@ def _control_non_antisym(results_dir, seeds, n_samples, device):
         "antisym_violation_max": max(violations),
         "energy_tv_mean": sum(m["energy_tv"] for m in per_seed) / len(per_seed),
         "per_seed": [
-            {"seed": m["seed"], "antisym_violation": m["antisym_violation"],
-             "antisym_pass": m["antisym_pass"], "energy_tv": m["energy_tv"]}
+            {
+                "seed": m["seed"],
+                "antisym_violation": m["antisym_violation"],
+                "antisym_pass": m["antisym_pass"],
+                "energy_tv": m["energy_tv"],
+            }
             for m in per_seed
         ],
     }
@@ -550,11 +582,23 @@ def _plot_energy_hists(hist_by_rung, out_path):
     for ax, rung in zip(axes[0], rungs):
         per_seed = hist_by_rung[rung]
         centres = per_seed[0]["energy_centres"]
-        ax.step(centres, per_seed[0]["hist_exact"], where="mid",
-                color="k", lw=1.8, label=r"exact $\pi(\cdot|C)$")
+        ax.step(
+            centres,
+            per_seed[0]["hist_exact"],
+            where="mid",
+            color="k",
+            lw=1.8,
+            label=r"exact $\pi(\cdot|C)$",
+        )
         for metrics in per_seed:
-            ax.step(centres, metrics["hist_dnfs"], where="mid",
-                    alpha=0.6, lw=1.0, label=f"DNFS seed {metrics['seed']}")
+            ax.step(
+                centres,
+                metrics["hist_dnfs"],
+                where="mid",
+                alpha=0.6,
+                lw=1.0,
+                label=f"DNFS seed {metrics['seed']}",
+            )
         ax.set_title(rung)
         ax.set_xlabel(r"energy $x^\top A x$")
         ax.set_ylabel("mass")
@@ -573,13 +617,21 @@ def main(argv=None):
     parser.add_argument("--n-samples", type=int, default=5000)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--out", default=None)
-    parser.add_argument("--skip-controls", action="store_true",
-                        help="positive-only pass (ladder rungs, no negative controls)")
-    parser.add_argument("--cells", default=None,
-                        help="comma-separated CONFIGS names to gate instead of "
-                             "the dh ladder RUNGS (e.g. the 4x4 head/backbone twins)")
+    parser.add_argument(
+        "--skip-controls",
+        action="store_true",
+        help="positive-only pass (ladder rungs, no negative controls)",
+    )
+    parser.add_argument(
+        "--cells",
+        default=None,
+        help="comma-separated CONFIGS names to gate instead of "
+        "the dh ladder RUNGS (e.g. the 4x4 head/backbone twins)",
+    )
     args = parser.parse_args(argv)
-    rungs = dict(zip(args.cells.split(","), args.cells.split(","))) if args.cells else RUNGS
+    rungs = (
+        dict(zip(args.cells.split(","), args.cells.split(","))) if args.cells else RUNGS
+    )
 
     results_dir = Path(args.results_dir)
     seeds = [int(s) for s in args.seeds.split(",")]

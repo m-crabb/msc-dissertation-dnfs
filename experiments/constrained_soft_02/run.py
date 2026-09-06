@@ -14,6 +14,7 @@ which works for any run dir because it rebuilds from config.json:
     pixi run -e dev python -m experiments.dnfs_baseline_01.run \\
         --sweep --run-dir results/02_constrained_soft/<run_dir>
 """
+
 import argparse
 
 from experiments.dnfs_baseline_01.run import train
@@ -24,7 +25,9 @@ from .configs import CONFIGS
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--cfg", required=True, choices=list(CONFIGS.keys()),
+        "--cfg",
+        required=True,
+        choices=list(CONFIGS.keys()),
         help="Config key from constrained_soft_02/configs.py CONFIGS",
     )
     parser.add_argument("--seed", type=int, default=42)
@@ -34,9 +37,9 @@ def main():
         "--tag",
         default=None,
         help="Run-dir suffix (default: wall-clock timestamp). A fixed tag "
-             "makes resubmission after preemption reuse the run dir, skip a "
-             "completed run, and resume an unfinished one from its last "
-             "checkpoints/resume.pt outer-cycle boundary",
+        "makes resubmission after preemption reuse the run dir, skip a "
+        "completed run, and resume an unfinished one from its last "
+        "checkpoints/resume.pt outer-cycle boundary",
     )
     args = parser.parse_args()
 

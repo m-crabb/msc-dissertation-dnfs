@@ -8,18 +8,19 @@ at the start of the curriculum and beta/2 at 500 K at its end, the penalty
 and composition settings are the ones the name promises, and the hard head
 emits antisymmetric pair scores of the right shape on the fcc cell.
 """
+
 import pytest
 import torch
-
-from discrete_flow_sampler.targets.cluster_expansion import (
-    ClusterExpansionTarget,
-    FixedCompositionClusterExpansionTarget,
-)
 from experiments.constrained_hard_03.configs import CONFIGS as HARD_CONFIGS
 from experiments.constrained_hard_03.configs import cuau_sigma
 from experiments.constrained_hard_03.run import build_target_and_head
 from experiments.constrained_soft_02.configs import CONFIGS as SOFT_CONFIGS
 from experiments.dnfs_baseline_01.run import _construct_target
+
+from discrete_flow_sampler.targets.cluster_expansion import (
+    ClusterExpansionTarget,
+    FixedCompositionClusterExpansionTarget,
+)
 
 SIGMA_500K = 1.0 / (2.0 * 8.617333262e-5 * 500.0)
 
@@ -36,7 +37,9 @@ def test_free_and_penalised_cells(sites):
     assert target.sigma == pytest.approx(cuau_sigma(1200.0))
     assert free.model.condition_on_composition is False
 
-    soft = SOFT_CONFIGS[f"S2_cuau{sites}_c25_l50_T500_letf_{10 if sites == 16 else 50}k_curr"]
+    soft = SOFT_CONFIGS[
+        f"S2_cuau{sites}_c25_l50_T500_letf_{10 if sites == 16 else 50}k_curr"
+    ]
     target = _construct_target(soft.ising, device="cpu")
     assert soft.ising.composition_penalty_strength == 50.0
     assert soft.ising.target_composition == 0.25
@@ -48,7 +51,9 @@ def test_free_and_penalised_cells(sites):
 
 @pytest.mark.parametrize("sites", [16, 64])
 def test_canonical_cells_build_an_antisymmetric_head(sites):
-    cfg = HARD_CONFIGS[f"H2_cuau{sites}_c25_T500_mask_one_{10 if sites == 16 else 50}k_curr"]
+    cfg = HARD_CONFIGS[
+        f"H2_cuau{sites}_c25_T500_mask_one_{10 if sites == 16 else 50}k_curr"
+    ]
     assert cfg.target_kind == "cluster_expansion"
     assert cfg.head_kind == "mask_one"
     target, head = build_target_and_head(cfg, device="cpu")
@@ -69,4 +74,6 @@ def test_canonical_cells_build_an_antisymmetric_head(sites):
         y[b, i], y[b, j] = x[b, j], x[b, i]
         with torch.no_grad():
             swapped = head(y[b : b + 1], t[b : b + 1])
-        assert swapped[0, i, j].item() == pytest.approx(-scores[b, i, j].item(), abs=1e-5)
+        assert swapped[0, i, j].item() == pytest.approx(
+            -scores[b, i, j].item(), abs=1e-5
+        )

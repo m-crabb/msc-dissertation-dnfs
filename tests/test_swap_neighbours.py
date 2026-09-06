@@ -17,8 +17,8 @@ def test_upper_tri_pairs_are_i_lt_j_and_complete():
 
 def test_gather_pair_scores_picks_upper_triangle():
     G = torch.arange(2 * 3 * 3).reshape(2, 3, 3).float()
-    pairs = upper_tri_pairs(3, "cpu")            # [[0,1],[0,2],[1,2]]
-    got = gather_pair_scores(G, pairs)           # (2, 3)
+    pairs = upper_tri_pairs(3, "cpu")  # [[0,1],[0,2],[1,2]]
+    got = gather_pair_scores(G, pairs)  # (2, 3)
     assert torch.equal(got[0], torch.tensor([G[0, 0, 1], G[0, 0, 2], G[0, 1, 2]]))
 
 
@@ -27,12 +27,12 @@ def test_swap_neighbours_match_reference_loop():
     x = tgt.sample_base(5, device="cpu")
     t = torch.full((5,), 0.4)
     pairs = upper_tri_pairs(16, "cpu")
-    got = _log_p_tilde_at_swap_neighbours(x, t, tgt)     # (5, n_pairs)
+    got = _log_p_tilde_at_swap_neighbours(x, t, tgt)  # (5, n_pairs)
     # reference: build swap2 per pair and evaluate directly
-    ref = torch.stack([
-        tgt.log_p_tilde_t(swap2(x, int(i), int(j)), t)
-        for (i, j) in pairs.tolist()
-    ], dim=1)
+    ref = torch.stack(
+        [tgt.log_p_tilde_t(swap2(x, int(i), int(j)), t) for (i, j) in pairs.tolist()],
+        dim=1,
+    )
     assert torch.allclose(got, ref, atol=1e-6)
 
 
@@ -45,5 +45,5 @@ def test_same_spin_pair_neighbour_equals_x():
     pairs = upper_tri_pairs(16, "cpu")
     for row in range(4):
         for k, (i, j) in enumerate(pairs.tolist()):
-            if x[row, i] == x[row, j]:                    # same-spin swap = identity
+            if x[row, i] == x[row, j]:  # same-spin swap = identity
                 assert torch.allclose(got[row, k], log_p_x[row], atol=1e-6)

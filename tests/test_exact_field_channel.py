@@ -16,21 +16,26 @@ i and j (the equilibrium log-ratio at t=1). What "correct" means:
 4. target.set_sigma propagates (the curriculum moves sigma mid-run);
 5. state_dict round-trips through the wrapper.
 """
+
 import torch
 
 from discrete_flow_sampler.constraints.exact_field_channel import ExactFieldSwapHead
 from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
 from discrete_flow_sampler.constraints.swap_readout import swap2
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 from discrete_flow_sampler.targets.cluster_expansion import (
-    BinaryExpansionSpec, FixedCompositionClusterExpansionTarget)
+    BinaryExpansionSpec,
+    FixedCompositionClusterExpansionTarget,
+)
+from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 
 def _setup(D=4, sigma=0.223, seed=0):
     torch.manual_seed(seed)
     target = FixedCompositionIsingTarget(D=D, sigma=sigma, target_composition=0.5)
-    backbone = LeTFRateMatrix(d=D * D, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
+    backbone = LeTFRateMatrix(
+        d=D * D, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2
+    )
     base = IntervalSwapHead(backbone, pair_offsets=(1, D))
     wrapped = ExactFieldSwapHead(base, target)
     x = target.sample_base(3, "cpu")
@@ -46,7 +51,7 @@ def test_zero_gain_is_bit_identical_to_base():
 def test_channel_matches_brute_force_energy_change_on_every_pair():
     target, _, wrapped, x, _ = _setup()
     d = x.shape[1]
-    channel = wrapped.exact_field(x)                       # (B, d, d), sigma*Delta
+    channel = wrapped.exact_field(x)  # (B, d, d), sigma*Delta
     log_p = target.log_prob(x)
     for i in range(d):
         for j in range(i + 1, d):
@@ -60,7 +65,10 @@ def test_channel_is_antisymmetric_zero_diagonal_and_zero_on_same_spin():
     # atol=0: exact up to the sign of zero (torch.equal would reject -0.0).
     torch.testing.assert_close(channel, -channel.transpose(1, 2), atol=0, rtol=0)
     torch.testing.assert_close(
-        channel.diagonal(dim1=1, dim2=2), torch.zeros_like(channel[:, :, 0]), atol=0, rtol=0
+        channel.diagonal(dim1=1, dim2=2),
+        torch.zeros_like(channel[:, :, 0]),
+        atol=0,
+        rtol=0,
     )
     same_spin = x.unsqueeze(2) == x.unsqueeze(1)
     torch.testing.assert_close(
@@ -85,8 +93,10 @@ def test_state_dict_round_trip_and_backbone_passthrough():
     with torch.no_grad():
         wrapped.gain_constant.fill_(0.3)
     fresh = ExactFieldSwapHead(
-        IntervalSwapHead(LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2),
-                         pair_offsets=(1, 4)),
+        IntervalSwapHead(
+            LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2),
+            pair_offsets=(1, 4),
+        ),
         target,
     )
     fresh.load_state_dict(wrapped.state_dict())
@@ -100,9 +110,12 @@ def test_channel_matches_brute_force_on_cluster_expansion():
     torch.manual_seed(0)
     spec = BinaryExpansionSpec.from_json("data/ce/cuau_fcc_2x2x4.json")
     target = FixedCompositionClusterExpansionTarget(
-        spec, beta=1.0 / (8.617333262e-5 * 500.0), target_composition=0.5)
+        spec, beta=1.0 / (8.617333262e-5 * 500.0), target_composition=0.5
+    )
     backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
-    wrapped = ExactFieldSwapHead(IntervalSwapHead(backbone, pair_offsets=(1, 4)), target)
+    wrapped = ExactFieldSwapHead(
+        IntervalSwapHead(backbone, pair_offsets=(1, 4)), target
+    )
     x = target.sample_base(3, "cpu")
     channel = wrapped.exact_field(x)
     log_p = target.log_prob(x)

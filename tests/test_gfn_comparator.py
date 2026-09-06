@@ -130,9 +130,9 @@ def test_kv_cache_step_features_match_full_encode():
     caches = policy._new_kv_caches(8)
     for site in range(policy.d):
         step_feature = policy._encode_step(token_ids[:, site], site, caches)
-        assert torch.allclose(
-            step_feature, full_features[:, site], atol=1e-5
-        ), f"cached feature diverged from full encode at site {site}"
+        assert torch.allclose(step_feature, full_features[:, site], atol=1e-5), (
+            f"cached feature diverged from full encode at site {site}"
+        )
 
 
 def test_sample_with_and_without_kv_cache_agree():
@@ -195,13 +195,10 @@ def test_prefix_increments_match_bruteforce_partial_energies():
     for prefix_len in range(target.d + 1):
         masked = x.clone()
         masked[:, prefix_len:] = 0.0
-        brute = (
-            torch.einsum("bi,ij,bj->b", masked, target.J, masked)
-            + target.bias * masked.sum(dim=-1)
-        )
-        expected = (
-            torch.zeros(8) if prefix_len == 0 else running[:, prefix_len - 1]
-        )
+        brute = torch.einsum(
+            "bi,ij,bj->b", masked, target.J, masked
+        ) + target.bias * masked.sum(dim=-1)
+        expected = torch.zeros(8) if prefix_len == 0 else running[:, prefix_len - 1]
         assert torch.allclose(expected, brute, atol=1e-4)
 
 
@@ -342,10 +339,8 @@ def test_standalone_flow_residual_depends_only_on_its_prefix():
     x_perturbed = x.clone()
     # Swap two later sites' spins (stays on-slice; changes sites 10 and 14).
     x_perturbed[:, 10], x_perturbed[:, 14] = x[:, 14], x[:, 10]
-    _, residuals_perturbed = policy.site_log_probs_and_flow_residuals(
-        x_perturbed)
-    assert torch.allclose(residuals[:, :11], residuals_perturbed[:, :11],
-                          atol=1e-6)
+    _, residuals_perturbed = policy.site_log_probs_and_flow_residuals(x_perturbed)
+    assert torch.allclose(residuals[:, :11], residuals_perturbed[:, :11], atol=1e-6)
     assert not torch.allclose(residuals[:, 11:], residuals_perturbed[:, 11:])
 
 

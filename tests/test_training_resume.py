@@ -30,21 +30,21 @@ The contract these tests pin:
    checkpoints only every `resume_every_outer` cycles; resume must drop the
    rows past the checkpoint so every step appears exactly once.
 """
+
 import csv
 from types import SimpleNamespace
 
 import pytest
 import torch
-
-from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from discrete_flow_sampler.samplers.training import train
-from discrete_flow_sampler.targets.ising import IsingTarget
-
 from experiments.dnfs_baseline_01.configs import (
     CompositionCurriculumStageCfg,
     CurriculumStageCfg,
     LambdaCurriculumStageCfg,
 )
+
+from discrete_flow_sampler.models.letf import LeTFRateMatrix
+from discrete_flow_sampler.samplers.training import train
+from discrete_flow_sampler.targets.ising import IsingTarget
 
 # n_steps=12 at 2 inner steps per outer => outer cycles begin at steps
 # 0, 2, 4, 6, 8, 10. The interruption lands at the step-6 boundary, which
@@ -85,14 +85,21 @@ def _die_after(n_checkpoints: int):
         calls["n"] += 1
         if calls["n"] >= n_checkpoints:
             raise _Preempted
+
     return hook
 
 
 def _cfgs(*, seed=0, resume_every_outer=1, n_steps=N_STEPS):
     train_cfg = SimpleNamespace(
-        n_steps=n_steps, inner_steps_per_outer=INNER_PER_OUTER,
-        batch_size=8, outer_batch_size=4, replay_buffer_cycles=2,
-        lr=1e-3, seed=seed, grad_clip_max_norm=500.0, warmup_steps=0,
+        n_steps=n_steps,
+        inner_steps_per_outer=INNER_PER_OUTER,
+        batch_size=8,
+        outer_batch_size=4,
+        replay_buffer_cycles=2,
+        lr=1e-3,
+        seed=seed,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
         resume_every_outer=resume_every_outer,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=3)
@@ -105,7 +112,11 @@ def _cfgs(*, seed=0, resume_every_outer=1, n_steps=N_STEPS):
 def _model(target, *, conditioned, init_seed):
     torch.manual_seed(init_seed)
     return LeTFRateMatrix(
-        d=target.d, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2,
+        d=target.d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=1,
+        n_heads=2,
         condition_on_composition=conditioned,
     )
 
@@ -116,7 +127,9 @@ def _specialist_target():
 
 def _soft_target():
     return IsingTarget(
-        D=2, sigma=0.1, target_composition=0.5,
+        D=2,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=5.0,
     )
 
@@ -126,8 +139,12 @@ def _run_specialist(run_dir, *, init_seed, on_checkpoint=None, **cfg_kw):
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(**cfg_kw)
     train(
         model=_model(target, conditioned=False, init_seed=init_seed),
-        target=target, train_cfg=train_cfg, ctmc_cfg=ctmc_cfg,
-        eval_cfg=eval_cfg, output_dir=run_dir, use_wandb=False,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=run_dir,
+        use_wandb=False,
         estimator_mode="control_variate",
         sigma_curriculum=SIGMA_STAGES,
         on_checkpoint=on_checkpoint,
@@ -139,13 +156,18 @@ def _run_amortised(run_dir, *, init_seed, on_checkpoint=None, **cfg_kw):
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(**cfg_kw)
     train(
         model=_model(target, conditioned=True, init_seed=init_seed),
-        target=target, train_cfg=train_cfg, ctmc_cfg=ctmc_cfg,
-        eval_cfg=eval_cfg, output_dir=run_dir, use_wandb=False,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=run_dir,
+        use_wandb=False,
         estimator_mode="control_variate",
         sigma_curriculum=SIGMA_STAGES,
         lambda_curriculum=LAMBDA_STAGES,
         composition_curriculum=COMPOSITION_STAGES,
-        composition_centre=0.5, composition_half_width=0.05,
+        composition_centre=0.5,
+        composition_half_width=0.05,
         on_checkpoint=on_checkpoint,
     )
 
@@ -238,11 +260,15 @@ def test_arming_resume_does_not_perturb_an_uninterrupted_run(tmp_path):
 
     every_writes, rare_writes = [], []
     _run_amortised(
-        every_cycle_dir, init_seed=0, resume_every_outer=1,
+        every_cycle_dir,
+        init_seed=0,
+        resume_every_outer=1,
         on_checkpoint=lambda: every_writes.append(1),
     )
     _run_amortised(
-        rarely_dir, init_seed=0, resume_every_outer=10_000,
+        rarely_dir,
+        init_seed=0,
+        resume_every_outer=10_000,
         on_checkpoint=lambda: rare_writes.append(1),
     )
 
@@ -291,17 +317,13 @@ def test_resume_past_n_steps_writes_final_without_training(tmp_path):
     # records step == n_steps.
     with pytest.raises(_Preempted):
         _run_specialist(run_dir, init_seed=0, on_checkpoint=_die_after(6))
-    resume_state = torch.load(
-        run_dir / "checkpoints" / "resume.pt", weights_only=True
-    )
+    resume_state = torch.load(run_dir / "checkpoints" / "resume.pt", weights_only=True)
     assert resume_state["step"] == N_STEPS
     assert not (run_dir / "checkpoints" / "final.pt").exists()
 
     _run_specialist(run_dir, init_seed=999)
 
     assert [int(row["step"]) for row in _rows(run_dir)] == list(range(N_STEPS))
-    final_state = torch.load(
-        run_dir / "checkpoints" / "final.pt", weights_only=True
-    )
+    final_state = torch.load(run_dir / "checkpoints" / "final.pt", weights_only=True)
     for key, tensor in resume_state["model"].items():
         assert torch.equal(final_state[key], tensor), key

@@ -105,7 +105,11 @@ D = LATTICE_SIDE * LATTICE_SIDE
 def _backbone(d=D, seed=42):
     torch.manual_seed(seed)
     return LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
 
@@ -113,9 +117,14 @@ def _backbone(d=D, seed=42):
 def _head(separable, **kw):
     torch.manual_seed(0)
     return MaskedAttentionSwapHead(
-        _backbone(), pair_offsets=(1, LATTICE_SIDE), band_feature_dim=6,
-        position_dim=6, attention_dim=6, lattice_side=LATTICE_SIDE,
-        separable_band_scores=separable, **kw,
+        _backbone(),
+        pair_offsets=(1, LATTICE_SIDE),
+        band_feature_dim=6,
+        position_dim=6,
+        attention_dim=6,
+        lattice_side=LATTICE_SIDE,
+        separable_band_scores=separable,
+        **kw,
     ).eval()
 
 
@@ -140,8 +149,10 @@ HEAD_CASES = {
     # principle orthogonal" is what a test is for. A separable band feeding a
     # wider readout is the shape that ships.
     "interval_two_sweeps": {"site_orderings": ("row", "col")},
-    "lattice_two_sweeps": {"attention_window": "lattice",
-                           "site_orderings": ("row", "col")},
+    "lattice_two_sweeps": {
+        "attention_window": "lattice",
+        "site_orderings": ("row", "col"),
+    },
 }
 
 
@@ -172,8 +183,7 @@ def _train_scale(head, gain=3.0):
     query/key projections reproduces the hard case without depending on a
     results directory that is not in the repo."""
     with torch.no_grad():
-        for projection in (*head.band_query_projections,
-                           *head.band_key_projections):
+        for projection in (*head.band_query_projections, *head.band_key_projections):
             projection.weight.mul_(gain)
             projection.bias.mul_(gain)
     return head
@@ -236,7 +246,9 @@ def test_separable_matches_dense_under_bf16_autocast(case):
 
 @torch.no_grad()
 @pytest.mark.parametrize("window", ["interval", "lattice"])
-@pytest.mark.parametrize("offsets", [(0,), (0, 1), (-LATTICE_SIDE, -1, 0, 1, LATTICE_SIDE)])
+@pytest.mark.parametrize(
+    "offsets", [(0,), (0, 1), (-LATTICE_SIDE, -1, 0, 1, LATTICE_SIDE)]
+)
 def test_visibility_mask_is_separable(window, offsets):
     """CLAIM 1: visible(i, j, k) = u(i, k) AND w(j, k).
 
@@ -263,7 +275,7 @@ def test_excluded_terms_carry_exactly_zero_weight():
     x, t = _state(), torch.rand(2)
     band = head.band_summaries(x, t)
     flipped = x.clone()
-    flipped[:, 3] *= -1        # move a hole's token value
+    flipped[:, 3] *= -1  # move a hole's token value
     flipped[:, 11] *= -1
     moved = head.band_summaries(flipped, t)
     assert torch.equal(band[:, 3, 11], moved[:, 3, 11])
@@ -284,8 +296,10 @@ def test_empty_bands_are_exactly_zero_and_finite():
     band = head.band_summaries(_state(), torch.rand(2))
     assert torch.isfinite(band).all()
     adjacent = torch.arange(D - 1)
-    assert torch.equal(band[:, adjacent, adjacent + 1], torch.zeros_like(
-        band[:, adjacent, adjacent + 1]))
+    assert torch.equal(
+        band[:, adjacent, adjacent + 1],
+        torch.zeros_like(band[:, adjacent, adjacent + 1]),
+    )
 
 
 def test_gradients_are_finite_with_empty_bands_present():
@@ -397,6 +411,7 @@ def test_floor_rung_cells_compute_the_dense_function(arm):
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
     cfg = CONFIGS[f"H2_d64_c50_s010_letf_{arm}_50k_w2"]
@@ -409,7 +424,8 @@ def test_floor_rung_cells_compute_the_dense_function(arm):
     def built(separable):
         torch.manual_seed(0)
         return build_swap_head(
-            replace(cfg, separable_band_scores=separable), _backbone(),
+            replace(cfg, separable_band_scores=separable),
+            _backbone(),
             target=target,
         ).eval()
 
@@ -462,8 +478,7 @@ def test_floor_anchor_is_the_floor_ma_cell_plus_one_field():
 
     anchor = CONFIGS["H2_d64_c50_s010_letf_masep_50k_w2"]
     dense = CONFIGS["H2_d64_c50_s010_letf_ma_50k_w2"]
-    assert anchor == replace(
-        dense, name=anchor.name, separable_band_scores=True)
+    assert anchor == replace(dense, name=anchor.name, separable_band_scores=True)
 
 
 def test_d256_floor_anchor_is_the_archived_ma_cell_plus_one_field():
@@ -478,10 +493,8 @@ def test_d256_floor_anchor_is_the_archived_ma_cell_plus_one_field():
 
     anchor = CONFIGS["H2_d256_c50_s010_letf_masep_50k_b512_ne128_cv2_w3"]
     dense = CONFIGS["H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"]
-    assert anchor == replace(
-        dense, name=anchor.name, separable_band_scores=True)
-    assert "H2_d256_c50_s220_letf_masep_100k_curr_b512_ne128_cv2_w3" \
-        not in CONFIGS
+    assert anchor == replace(dense, name=anchor.name, separable_band_scores=True)
+    assert "H2_d256_c50_s220_letf_masep_100k_curr_b512_ne128_cv2_w3" not in CONFIGS
 
 
 def test_d256_ladder_rung_keeps_the_parents_gather():
@@ -515,8 +528,6 @@ def test_config_flag_reaches_the_head():
 
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
-    cfg = replace(
-        CONFIGS["H2_d16_c50_s010_letf_ma_10k"], separable_band_scores=True
-    )
+    cfg = replace(CONFIGS["H2_d16_c50_s010_letf_ma_10k"], separable_band_scores=True)
     head = build_swap_head(cfg, _backbone())
     assert head.separable_band_scores is True

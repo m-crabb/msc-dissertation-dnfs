@@ -84,6 +84,7 @@ and that capture FALLS with lattice size.
 
 Run:  pixi run -e default python warm_base_t_grid.py [--side 8] [--steps 6000]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -92,14 +93,13 @@ import time
 from pathlib import Path
 
 import numpy as np
-
+from warm_base_offline_table import load_d64, load_d256
 from warm_base_reference import (
     BlockOccupancyBase,
     UniformSliceBase,
     quadratic_form,
     torus_adjacency,
 )
-from warm_base_offline_table import load_d256, load_d64
 
 
 def torus_neighbours(lattice_side: int) -> np.ndarray:
@@ -112,8 +112,10 @@ def torus_neighbours(lattice_side: int) -> np.ndarray:
     rows, cols = np.divmod(np.arange(d), lattice_side)
     shifts = [(0, 1), (0, -1), (1, 0), (-1, 0)]
     return np.stack(
-        [((rows + dr) % lattice_side) * lattice_side + (cols + dc) % lattice_side
-         for dr, dc in shifts],
+        [
+            ((rows + dr) % lattice_side) * lattice_side + (cols + dc) % lattice_side
+            for dr, dc in shifts
+        ],
         axis=1,
     )
 
@@ -134,8 +136,14 @@ class AnnealedKawasakiChain:
     full `log_density` call on the proposed batch.
     """
 
-    def __init__(self, base, lattice_side: int, sigma: float,
-                 n_chains: int, rng: np.random.Generator) -> None:
+    def __init__(
+        self,
+        base,
+        lattice_side: int,
+        sigma: float,
+        n_chains: int,
+        rng: np.random.Generator,
+    ) -> None:
         self.base = base
         self.lattice_side = lattice_side
         self.d = lattice_side * lattice_side
@@ -177,8 +185,7 @@ class AnnealedKawasakiChain:
         field_down = self.field[rows, site_down].astype(np.int32)
         adjacent = self.adjacency[site_up, site_down].astype(np.int32)
         delta_quadratic = (
-            2 * spin_delta * (field_up - field_down)
-            - 2 * adjacent * spin_delta ** 2
+            2 * spin_delta * (field_up - field_down) - 2 * adjacent * spin_delta**2
         )
         delta_log_target = t * self.sigma * delta_quadratic
 
@@ -205,21 +212,32 @@ class AnnealedKawasakiChain:
         self.spins[moved, down_moved] = 1
         # h_k += (b - a) (A_ki - A_kj); np.add.at because i and j may share
         # neighbours, in which case the two updates must both land.
-        np.add.at(self.field,
-                  (moved[:, None], self.neighbours[up_moved]), spin_delta)
-        np.add.at(self.field,
-                  (moved[:, None], self.neighbours[down_moved]), -spin_delta)
-        self.log_eta = np.where(accept, proposed_log_eta, self.log_eta) \
-            if not self.is_uniform_base else self.log_eta
+        np.add.at(self.field, (moved[:, None], self.neighbours[up_moved]), spin_delta)
+        np.add.at(
+            self.field, (moved[:, None], self.neighbours[down_moved]), -spin_delta
+        )
+        self.log_eta = (
+            np.where(accept, proposed_log_eta, self.log_eta)
+            if not self.is_uniform_base
+            else self.log_eta
+        )
 
     def drive(self) -> np.ndarray:
         """D(x) = log rho(x) - log eta(x) for the current ensemble."""
         return self.sigma * quadratic_form(self.spins, self.adjacency) - self.log_eta
 
 
-def run_t_grid(base, lattice_side: int, sigma: float, t_grid: np.ndarray,
-               n_chains: int, n_steps: int, burn_in: int, thin: int,
-               seed: int) -> list[dict]:
+def run_t_grid(
+    base,
+    lattice_side: int,
+    sigma: float,
+    t_grid: np.ndarray,
+    n_chains: int,
+    n_steps: int,
+    burn_in: int,
+    thin: int,
+    seed: int,
+) -> list[dict]:
     rng = np.random.default_rng(seed)
     out = []
     for t in t_grid:
@@ -230,21 +248,26 @@ def run_t_grid(base, lattice_side: int, sigma: float, t_grid: np.ndarray,
             if step_index >= burn_in and (step_index - burn_in) % thin == 0:
                 drives.append(chain.drive())
         samples = np.concatenate(drives)
-        out.append({
-            "t": float(t),
-            "c_t": float(samples.mean()),
-            "var_D": float(samples.var()),
-            "n_samples": int(samples.size),
-            "accept_rate": chain.n_accepted / max(chain.n_proposed, 1),
-        })
-        print(f"    t={t:4.2f}  c_t={samples.mean():12.3f}  "
-              f"Var[D]={samples.var():10.3f}  acc={out[-1]['accept_rate']:.3f}",
-              flush=True)
+        out.append(
+            {
+                "t": float(t),
+                "c_t": float(samples.mean()),
+                "var_D": float(samples.var()),
+                "n_samples": int(samples.size),
+                "accept_rate": chain.n_accepted / max(chain.n_proposed, 1),
+            }
+        )
+        print(
+            f"    t={t:4.2f}  c_t={samples.mean():12.3f}  "
+            f"Var[D]={samples.var():10.3f}  acc={out[-1]['accept_rate']:.3f}",
+            flush=True,
+        )
     return out
 
 
-def conditional_ceiling(spins: np.ndarray, lattice_side: int,
-                        max_states: int, rng: np.random.Generator) -> dict:
+def conditional_ceiling(
+    spins: np.ndarray, lattice_side: int, max_states: int, rng: np.random.Generator
+) -> dict:
     """Distribution of Delta S over ALL valid (up, down) pairs, per state.
 
     Delta S = (b - a)(h_i - h_j) - A_ij (b - a)^2 with (b - a) = -2 for an
@@ -262,8 +285,9 @@ def conditional_ceiling(spins: np.ndarray, lattice_side: int,
         up = np.flatnonzero(state > 0)
         down = np.flatnonzero(state < 0)
         # (b - a) = -2 for every (up, down) pair.
-        delta_s = -2 * (h[up][:, None] - h[down][None, :]) \
-            - 4 * adjacency[np.ix_(up, down)]
+        delta_s = (
+            -2 * (h[up][:, None] - h[down][None, :]) - 4 * adjacency[np.ix_(up, down)]
+        )
         per_state_max.append(delta_s.max())
         per_state_mean.append(delta_s.mean())
         pooled.append(delta_s.ravel())
@@ -281,8 +305,9 @@ def conditional_ceiling(spins: np.ndarray, lattice_side: int,
     }
 
 
-def summarise(name: str, grid: list[dict], var_at_one: float,
-              delta_c_endpoint: float) -> dict:
+def summarise(
+    name: str, grid: list[dict], var_at_one: float, delta_c_endpoint: float
+) -> dict:
     t = np.array([row["t"] for row in grid])
     var = np.array([row["var_D"] for row in grid])
     trapezoid = getattr(np, "trapezoid", None) or np.trapz
@@ -292,10 +317,12 @@ def summarise(name: str, grid: list[dict], var_at_one: float,
         "integral_trapezoid": integral,
         "delta_c_endpoint": delta_c_endpoint,
         "integral_over_endpoint": integral / delta_c_endpoint
-        if delta_c_endpoint else None,
+        if delta_c_endpoint
+        else None,
         "var_at_t1": var_at_one,
         "mean_var_over_var_at_t1": float(var.mean() / var_at_one)
-        if var_at_one else None,
+        if var_at_one
+        else None,
         "front_loading_ratio": integral / var_at_one if var_at_one else None,
         "grid": grid,
     }
@@ -321,13 +348,14 @@ def main() -> None:
     else:
         reference = load_d256()
     n_up = int((reference[0] > 0).sum())
-    print(f"reference: {reference.shape[0]} draws, D={args.side}, N_A={n_up}, "
-          f"sigma={args.sigma}")
+    print(
+        f"reference: {reference.shape[0]} draws, D={args.side}, N_A={n_up}, "
+        f"sigma={args.sigma}"
+    )
 
     bases = [
         ("uniform", UniformSliceBase(args.side, n_up)),
-        ("B(2,w) K=4", BlockOccupancyBase.fit(reference, args.side, 2,
-                                              n_offsets=4)),
+        ("B(2,w) K=4", BlockOccupancyBase.fit(reference, args.side, 2, n_offsets=4)),
     ]
     t_grid = np.linspace(0.0, 1.0, args.t_points)
     adjacency = torus_adjacency(args.side)
@@ -341,26 +369,40 @@ def main() -> None:
         rng = np.random.default_rng(args.seed + 1)
         base_draws = base.sample(min(20000, reference.shape[0]), rng)
         drive_at_one = log_rho_ref - log_eta_ref
-        drive_at_zero = (args.sigma * quadratic_form(base_draws, adjacency)
-                         - base.log_density(base_draws))
+        drive_at_zero = args.sigma * quadratic_form(
+            base_draws, adjacency
+        ) - base.log_density(base_draws)
         delta_c = float(drive_at_one.mean() - drive_at_zero.mean())
         var_at_one = float(drive_at_one.var())
-        print(f"    endpoint Delta c = {delta_c:.3f}, "
-              f"Var_p1[D] = {var_at_one:.3f}")
+        print(f"    endpoint Delta c = {delta_c:.3f}, Var_p1[D] = {var_at_one:.3f}")
 
-        grid = run_t_grid(base, args.side, args.sigma, t_grid, args.chains,
-                          args.steps, args.burn_in, args.thin, args.seed)
+        grid = run_t_grid(
+            base,
+            args.side,
+            args.sigma,
+            t_grid,
+            args.chains,
+            args.steps,
+            args.burn_in,
+            args.thin,
+            args.seed,
+        )
         summary = summarise(name, grid, var_at_one, delta_c)
         ceiling_rng = np.random.default_rng(args.seed + 2)
         summary["conditional_ceiling_at_t1"] = conditional_ceiling(
-            reference, args.side, args.ceiling_states, ceiling_rng)
+            reference, args.side, args.ceiling_states, ceiling_rng
+        )
         results["bases"].append(summary)
 
-        print(f"    trapezoid int Var dt = {summary['integral_trapezoid']:.3f} "
-              f"vs endpoint {delta_c:.3f} "
-              f"(ratio {summary['integral_over_endpoint']:.3f})")
-        print(f"    FRONT-LOADING  int Var dt / Var_p1[D] = "
-              f"{summary['front_loading_ratio']:.3f}")
+        print(
+            f"    trapezoid int Var dt = {summary['integral_trapezoid']:.3f} "
+            f"vs endpoint {delta_c:.3f} "
+            f"(ratio {summary['integral_over_endpoint']:.3f})"
+        )
+        print(
+            f"    FRONT-LOADING  int Var dt / Var_p1[D] = "
+            f"{summary['front_loading_ratio']:.3f}"
+        )
 
     print(f"\nelapsed {time.time() - started:.1f}s")
     if args.json_out:

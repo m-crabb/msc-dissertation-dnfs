@@ -23,6 +23,7 @@ implementations. What correct looks like:
    that would fail loudly if the supercell atom order stopped being readable
    as a row-major torus flattening.
 """
+
 import numpy as np
 import pytest
 
@@ -51,8 +52,8 @@ d_SMALL = D_SMALL * D_SMALL
 def test_local_snapshot_runner_preserves_composition_on_every_snapshot():
     rng = np.random.default_rng(0)
     x = init_random_at_composition(d_SMALL, 0.5, rng)
-    n_steps = 500 * d_SMALL                    # 500 sweeps
-    thin = d_SMALL                             # snapshot every sweep
+    n_steps = 500 * d_SMALL  # 500 sweeps
+    thin = d_SMALL  # snapshot every sweep
     snapshots, x_final, n_accept = run_local_swap_chain_snapshots(
         x, D_SMALL, 0.223, n_steps, 7, thin
     )
@@ -133,8 +134,8 @@ def test_split_half_rhat_odd_length_drops_middle_sample():
 def test_run_canonical_probe_tiny_run():
     sigma = 0.10
     initial = init_phase_separated(D_SMALL, side=0)
-    snapshot_interval = 10 * d_SMALL          # 10 sweeps between snapshots
-    n_proposals = 20 * snapshot_interval      # exactly 20 snapshots
+    snapshot_interval = 10 * d_SMALL  # 10 sweeps between snapshots
+    n_proposals = 20 * snapshot_interval  # exactly 20 snapshots
     result = run_canonical_probe(
         D=D_SMALL,
         sigma=sigma,

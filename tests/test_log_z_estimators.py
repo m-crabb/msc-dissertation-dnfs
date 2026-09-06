@@ -18,6 +18,7 @@ D=2 (16-state Ising) is small enough for exact enumeration of p_t, so
 unbiasedness is checked against the analytic ground truth
 `∂_t log Z_t = E_{p_t}[∂_t log p̃_t(X)]`.
 """
+
 import pytest
 import torch
 
@@ -44,7 +45,7 @@ def _exact_dt_log_Zt(target: IsingTarget, t_value: float) -> float:
 def _draw_exact_pt_batch(target, t_value, n_samples):
     """Draw an exact multinomial batch from p_t for a small enumerable target."""
     n_sites = target.D * target.D
-    n_states = 2 ** n_sites
+    n_states = 2**n_sites
     states = enumerate_states(n_sites).float()
     log_p_tilde = target.log_p_tilde_t(states, torch.full((n_states,), t_value))
     p_t = torch.softmax(log_p_tilde, dim=0)
@@ -68,7 +69,11 @@ def test_compute_c_t_grid_shapes():
 
     for mode in ("naive_mc", "control_variate"):
         c_t_grid, integrand = compute_c_t_grid(
-            t_grid, x_traj, target, model, mode=mode,
+            t_grid,
+            x_traj,
+            target,
+            model,
+            mode=mode,
         )
         assert c_t_grid.shape == (n_grid,), (
             f"mode={mode}: expected (T,), got {tuple(c_t_grid.shape)}"
@@ -95,7 +100,11 @@ def test_compute_c_t_grid_naive_mc_unbiased_on_d2():
 
     model = MLPRateMatrix(d=n_sites, hidden_dim=32, n_layers=2)
     c_t_grid, _ = compute_c_t_grid(
-        t_grid, x_traj, target, model, mode="naive_mc",
+        t_grid,
+        x_traj,
+        target,
+        model,
+        mode="naive_mc",
     )
     truth = _exact_dt_log_Zt(target, t_value)
 
@@ -126,13 +135,16 @@ def test_compute_c_t_grid_control_variate_unbiased_on_d2():
 
     model = MLPRateMatrix(d=n_sites, hidden_dim=32, n_layers=2)
     c_t_grid, _ = compute_c_t_grid(
-        t_grid, x_traj, target, model, mode="control_variate",
+        t_grid,
+        x_traj,
+        target,
+        model,
+        mode="control_variate",
     )
     truth = _exact_dt_log_Zt(target, t_value)
 
     assert abs(c_t_grid[0].item() - truth) < 5e-2, (
-        f"control_variate c_t biased: c_t={c_t_grid[0].item():.4f}, "
-        f"truth={truth:.4f}"
+        f"control_variate c_t biased: c_t={c_t_grid[0].item():.4f}, truth={truth:.4f}"
     )
 
 
@@ -155,7 +167,11 @@ def test_compute_c_t_grid_outputs_are_detached():
 
     for mode in ("naive_mc", "control_variate"):
         c_t_grid, integrand = compute_c_t_grid(
-            t_grid, x_traj, target, model, mode=mode,
+            t_grid,
+            x_traj,
+            target,
+            model,
+            mode=mode,
         )
         assert not c_t_grid.requires_grad, (
             f"mode={mode}: c_t_grid must be detached from autograd graph"
@@ -205,9 +221,7 @@ def test_control_variate_reduces_variance_vs_naive_mc():
     for _ in range(n_train_steps):
         t_step = torch.rand(1).item()
         time_grid = torch.linspace(0.0, t_step, n_euler_steps)
-        x_init = (
-            torch.randint(0, 2, (train_batch_size, n_sites)).float() * 2 - 1
-        )
+        x_init = torch.randint(0, 2, (train_batch_size, n_sites)).float() * 2 - 1
         with torch.no_grad():
             x_train = sample_ctmc(model, x_init, time_grid)
         # Single-slot c_t under naive_mc: the integrand is purely target,
@@ -216,12 +230,20 @@ def test_control_variate_reduces_variance_vs_naive_mc():
         t_grid_step = torch.tensor([t_step])
         x_traj_step = x_train.unsqueeze(0)
         c_t_grid, _ = compute_c_t_grid(
-            t_grid_step, x_traj_step, target, model, mode="naive_mc",
+            t_grid_step,
+            x_traj_step,
+            target,
+            model,
+            mode="naive_mc",
         )
         c_t_per_state = c_t_grid[0].expand(train_batch_size)  # (B,)
         t_batch_train = torch.full((train_batch_size,), t_step)
         loss_val = kolmogorov_loss(
-            x_train, t_batch_train, c_t_per_state, model, target,
+            x_train,
+            t_batch_train,
+            c_t_per_state,
+            model,
+            target,
         )
         optimiser.zero_grad()
         loss_val.backward()
@@ -230,7 +252,7 @@ def test_control_variate_reduces_variance_vs_naive_mc():
 
     # Variance comparison at the trained R_t. K replicates, each is a
     # single-time-slot c_t computation.
-    n_states = 2 ** n_sites
+    n_states = 2**n_sites
     states = enumerate_states(n_sites).float()
     log_p_tilde = target.log_p_tilde_t(states, torch.full((n_states,), t_value))
     p_t = torch.softmax(log_p_tilde, dim=0)
@@ -240,16 +262,26 @@ def test_control_variate_reduces_variance_vs_naive_mc():
     for replicate in range(n_replicates):
         torch.manual_seed(replicate + 100)
         sample_idx = torch.multinomial(
-            p_t, num_samples=n_samples, replacement=True,
+            p_t,
+            num_samples=n_samples,
+            replacement=True,
         )
         x_batch = states[sample_idx]
         t_grid_one = torch.tensor([t_value])
         x_traj_one = x_batch.unsqueeze(0)
         naive_c_t, _ = compute_c_t_grid(
-            t_grid_one, x_traj_one, target, model, mode="naive_mc",
+            t_grid_one,
+            x_traj_one,
+            target,
+            model,
+            mode="naive_mc",
         )
         cv_c_t, _ = compute_c_t_grid(
-            t_grid_one, x_traj_one, target, model, mode="control_variate",
+            t_grid_one,
+            x_traj_one,
+            target,
+            model,
+            mode="control_variate",
         )
         naive_estimates.append(naive_c_t[0].item())
         cv_estimates.append(cv_c_t[0].item())

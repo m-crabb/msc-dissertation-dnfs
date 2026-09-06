@@ -23,6 +23,7 @@ seed) make it measurable:
 Output: one row per (lambda, seed) + a per-lambda summary, written to
 results/02_constrained_soft/analysis/reject_off_soft_acceptance_d100.csv.
 """
+
 from __future__ import annotations
 
 import csv
@@ -54,27 +55,19 @@ def gaussian_bin_mass(penalty_strength: float) -> float:
 
 
 def one_cell(penalty_strength: int, seed: int) -> dict | None:
-    pattern = (
-        f"S2_d10_c05_l{penalty_strength}_letf_ne64_seed{seed}_*/eval"
-    )
+    pattern = f"S2_d10_c05_l{penalty_strength}_letf_ne64_seed{seed}_*/eval"
     matches = glob.glob(str(RESULTS_ROOT / pattern))
     if not matches:
         return None
     eval_dir = Path(matches[0])
-    samples = torch.load(
-        eval_dir / "samples.pt", map_location="cpu", weights_only=True
-    )
+    samples = torch.load(eval_dir / "samples.pt", map_location="cpu", weights_only=True)
     log_weights = torch.load(
         eval_dir / "log_weights.pt", map_location="cpu", weights_only=True
     )
     composition = (samples == 1).float().mean(dim=1)
-    on_slice = torch.isclose(
-        composition, torch.tensor(TARGET_COMPOSITION), atol=1e-6
-    )
+    on_slice = torch.isclose(composition, torch.tensor(TARGET_COMPOSITION), atol=1e-6)
     weights = torch.softmax(log_weights, dim=0)
-    ess_fraction = float(
-        1.0 / (weights.pow(2).sum() * len(weights))
-    )
+    ess_fraction = float(1.0 / (weights.pow(2).sum() * len(weights)))
     metrics_path = eval_dir / "metrics.json"
     if metrics_path.exists():
         recorded = json.loads(metrics_path.read_text()).get("ess_fraction")
@@ -106,20 +99,20 @@ def main() -> None:
         writer.writerows(rows)
 
     print(f"wrote {OUT_PATH} ({len(rows)} cells)\n")
-    print("lambda | analytic | raw acceptance (all seeds) | "
-          "weighted slice mass (ESS-gated seeds)")
+    print(
+        "lambda | analytic | raw acceptance (all seeds) | "
+        "weighted slice mass (ESS-gated seeds)"
+    )
     for penalty_strength in LAMBDAS:
         cell_rows = [r for r in rows if r["lambda"] == penalty_strength]
         if not cell_rows:
             continue
         raw = [r["raw_acceptance"] for r in cell_rows]
-        gated = [
-            r["weighted_slice_mass"] for r in cell_rows
-            if r["clears_ess_floor"]
-        ]
+        gated = [r["weighted_slice_mass"] for r in cell_rows if r["clears_ess_floor"]]
         gated_txt = (
             f"{min(gated):.3f}-{max(gated):.3f} (n={len(gated)})"
-            if gated else "no seed clears the floor"
+            if gated
+            else "no seed clears the floor"
         )
         print(
             f"l={penalty_strength:>3} | "

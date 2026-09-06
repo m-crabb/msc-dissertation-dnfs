@@ -87,9 +87,9 @@ def ising_energy_eval_flops(n_sites: int) -> int:
     return ISING_ENERGY_FLOPS_PER_SITE * n_sites
 
 
-def neural_sampling_flops_per_sample(per_forward_flops: int,
-                                     n_euler_steps: int,
-                                     n_sites: int) -> int:
+def neural_sampling_flops_per_sample(
+    per_forward_flops: int, n_euler_steps: int, n_sites: int
+) -> int:
     """Price of ONE raw weighted sample from the trained sampler.
 
     Each Euler step is one rate-matrix forward (the flip route emits all d
@@ -100,8 +100,7 @@ def neural_sampling_flops_per_sample(per_forward_flops: int,
     return n_euler_steps * (per_forward_flops + ising_energy_eval_flops(n_sites))
 
 
-def per_effective_sample(flops_per_raw_sample: float,
-                         ess_fraction: float) -> float:
+def per_effective_sample(flops_per_raw_sample: float, ess_fraction: float) -> float:
     """Convert a raw-sample price to the independent-equivalent price."""
     if not 0.0 < ess_fraction <= 1.0:
         raise ValueError(f"ESS fraction must be in (0, 1], got {ess_fraction}")
@@ -161,8 +160,9 @@ def kawasaki_run_flops(n_trials: int) -> int:
     return 2 * GIBBS_FLOPS_PER_SITE_UPDATE * n_trials
 
 
-def chain_per_effective_sample(total_flops: float, n_records: int,
-                               tau_int: float) -> float:
+def chain_per_effective_sample(
+    total_flops: float, n_records: int, tau_int: float
+) -> float:
     """Chain price per independent-equivalent record.
 
     Burn-in belongs in total_flops (it is paid before the first usable
@@ -253,15 +253,15 @@ def training_run_flops(
     only the update term carries a backward.
     """
     counts = training_forward_counts(
-        n_steps, inner_steps_per_outer, n_euler_steps,
+        n_steps,
+        inner_steps_per_outer,
+        n_euler_steps,
         c_t_from_rollout=c_t_from_rollout,
     )
     rollout = counts["rollout_forwards"] + counts["c_t_grid_forwards"]
-    return (
-        rollout * rollout_forward_flops
-        + counts["update_forwards"] * update_forward_flops
-        * (1.0 + backward_multiplier)
-    )
+    return rollout * rollout_forward_flops + counts[
+        "update_forwards"
+    ] * update_forward_flops * (1.0 + backward_multiplier)
 
 
 def diagnostic_eval_flops(
@@ -295,9 +295,7 @@ def diagnostic_eval_flops(
     if not eval_every:
         return 0.0
     n_evals = n_steps // eval_every
-    per_eval = n_euler_steps * update_forward_flops * (
-        n_eval_draws / update_batch_size
-    )
+    per_eval = n_euler_steps * update_forward_flops * (n_eval_draws / update_batch_size)
     return n_evals * per_eval
 
 
@@ -346,8 +344,7 @@ def fit_flop_scaling(outer_cycles, total_flops) -> dict:
     """
     if len(outer_cycles) < 3:
         raise ValueError(
-            f"need at least three horizons to test linearity, got "
-            f"{len(outer_cycles)}"
+            f"need at least three horizons to test linearity, got {len(outer_cycles)}"
         )
     n = len(outer_cycles)
     mean_x = sum(outer_cycles) / n

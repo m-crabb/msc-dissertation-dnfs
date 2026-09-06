@@ -28,6 +28,7 @@ Reads the Wave-2 runs (tag 20260825-hard-w2) for the three printed arms;
 the two held factorised sigma_c cells are omitted on purpose -- this is a
 print exhibit and they are held from print.
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -42,7 +43,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from discrete_flow_sampler.diagnostics.metrics import (
-    conditional_pmf_at_composition, enumerate_states, exact_log_probs)
+    conditional_pmf_at_composition,
+    enumerate_states,
+    exact_log_probs,
+)
 
 L = 4
 D_SITES = L * L
@@ -102,8 +106,7 @@ def panel_series(results_dir=None):
     for sigma_label, panel_title in SIGMA_PANELS:
         cfg_any = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_mo_10k_w2"]
         target, slice_states, log_p_cond = exact_reference(cfg_any)
-        key_to_logp = dict(zip(state_keys(slice_states).tolist(),
-                               log_p_cond.tolist()))
+        key_to_logp = dict(zip(state_keys(slice_states).tolist(), log_p_cond.tolist()))
         lims = (log_p_cond.min().item() - 0.5, log_p_cond.max().item() + 0.5)
 
         series = []
@@ -112,62 +115,91 @@ def panel_series(results_dir=None):
             xs, ys = [], []
             for seed in SEEDS:
                 run_dir = results_dir / f"{cfg.name}_seed{seed}_{TAG}"
-                samples = torch.load(run_dir / "eval" / "samples.pt",
-                                     weights_only=True).float()
-                log_w = torch.load(run_dir / "eval" / "log_weights.pt",
-                                   weights_only=True)
-                xs.append(torch.tensor([key_to_logp[k] for k in
-                                        state_keys(samples).tolist()]))
+                samples = torch.load(
+                    run_dir / "eval" / "samples.pt", weights_only=True
+                ).float()
+                log_w = torch.load(
+                    run_dir / "eval" / "log_weights.pt", weights_only=True
+                )
+                xs.append(
+                    torch.tensor([key_to_logp[k] for k in state_keys(samples).tolist()])
+                )
                 ys.append(target.log_prob(samples) - log_w)
             x, y = torch.cat(xs), torch.cat(ys)
             offset = (y - x).median()
-            print(f"[scatter] {sigma_label} {arm}: median offset "
-                  f"{offset:.3f}, residual sd after removal "
-                  f"{(y - x - offset).std():.3f}")
+            print(
+                f"[scatter] {sigma_label} {arm}: median offset "
+                f"{offset:.3f}, residual sd after removal "
+                f"{(y - x - offset).std():.3f}"
+            )
             series.append((arm_label, colour, x, y - offset))
         for arm, (arm_label, colour) in GFN_ARM_STYLE.items():
             objective = arm.removeprefix("gfn_")
             xs, ys = [], []
             for seed in SEEDS:
-                run_dir = (results_dir /
-                           f"GFN_d16_c50_{sigma_label}_{objective}_10k_par"
-                           f"_seed{seed}_{GFN_TAG}")
-                samples = torch.load(run_dir / "eval" / "samples.pt",
-                                     weights_only=True).float()[:GFN_DRAWS]
-                log_w = torch.load(run_dir / "eval" / "log_weights.pt",
-                                   weights_only=True)[:GFN_DRAWS]
-                xs.append(torch.tensor([key_to_logp[k] for k in
-                                        state_keys(samples).tolist()]))
+                run_dir = (
+                    results_dir / f"GFN_d16_c50_{sigma_label}_{objective}_10k_par"
+                    f"_seed{seed}_{GFN_TAG}"
+                )
+                samples = torch.load(
+                    run_dir / "eval" / "samples.pt", weights_only=True
+                ).float()[:GFN_DRAWS]
+                log_w = torch.load(
+                    run_dir / "eval" / "log_weights.pt", weights_only=True
+                )[:GFN_DRAWS]
+                xs.append(
+                    torch.tensor([key_to_logp[k] for k in state_keys(samples).tolist()])
+                )
                 ys.append(target.log_prob(samples) - log_w)
             x, y = torch.cat(xs), torch.cat(ys)
             offset = (y - x).median()
-            print(f"[scatter] {sigma_label} {arm}: median offset "
-                  f"{offset:.3f} (expected ~0: normalised policy), "
-                  f"residual sd {(y - x - offset).std():.3f}")
+            print(
+                f"[scatter] {sigma_label} {arm}: median offset "
+                f"{offset:.3f} (expected ~0: normalised policy), "
+                f"residual sd {(y - x - offset).std():.3f}"
+            )
             series.append((arm_label, colour, x, y - offset))
-        panels.append({"title": panel_title, "lims": lims, "series": series,
-                       "xlabel": r"exact $\log \pi_{\mathrm{cond}}(x)$"})
+        panels.append(
+            {
+                "title": panel_title,
+                "lims": lims,
+                "series": series,
+                "xlabel": r"exact $\log \pi_{\mathrm{cond}}(x)$",
+            }
+        )
     return panels
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results-dir", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard")
-    parser.add_argument("--out", type=Path, required=True,
-                        help="output PNG path (the Overleaf assets file)")
+    parser.add_argument(
+        "--results-dir", type=Path, default=REPO_ROOT / "results" / "03_hard"
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="output PNG path (the Overleaf assets file)",
+    )
     args = parser.parse_args(argv)
 
     # Style annex: in-figure labels 9pt, annotations 8pt.
-    plt.rcParams.update({"font.size": 9, "axes.labelsize": 9,
-                         "xtick.labelsize": 8, "ytick.labelsize": 8,
-                         "legend.fontsize": 8})
+    plt.rcParams.update(
+        {
+            "font.size": 9,
+            "axes.labelsize": 9,
+            "xtick.labelsize": 8,
+            "ytick.labelsize": 8,
+            "legend.fontsize": 8,
+        }
+    )
     fig, axes = plt.subplots(1, 2, figsize=(4.54, 2.5), sharey=False)
 
     for ax, panel in zip(axes, panel_series(args.results_dir)):
         for label, colour, x, y in panel["series"]:
-            ax.scatter(x, y, s=4, alpha=0.25, lw=0, color=colour,
-                       label=label, rasterized=True)
+            ax.scatter(
+                x, y, s=4, alpha=0.25, lw=0, color=colour, label=label, rasterized=True
+            )
         ax.plot(panel["lims"], panel["lims"], color="black", lw=0.8, zorder=0)
         ax.set_xlim(panel["lims"])
         ax.set_ylim(panel["lims"])

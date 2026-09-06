@@ -12,6 +12,7 @@ The load-bearing tests are:
     Ising cross-check exists.
   * `test_swap_sampler_runs_unchanged_on_potts` — the extension's whole premise.
 """
+
 import math
 
 import pytest
@@ -181,9 +182,7 @@ def test_closed_form_swap_ratio_matches_generic_oracle(n_states):
     pairs = upper_tri_pairs(potts.d, states.device)
 
     closed_form = potts.swap_log_ratio(states, t, pairs)
-    oracle = super(FixedCompositionPottsTarget, potts).swap_log_ratio(
-        states, t, pairs
-    )
+    oracle = super(FixedCompositionPottsTarget, potts).swap_log_ratio(states, t, pairs)
 
     assert torch.allclose(closed_form, oracle, atol=1e-4)
 
@@ -284,9 +283,7 @@ def test_swap_sampler_runs_unchanged_on_potts():
     the hard constraint holds for S species for free.
     """
     torch.manual_seed(7)
-    potts = FixedCompositionPottsTarget(
-        D=2, sigma=0.3, composition=(0.5, 0.25, 0.25)
-    )
+    potts = FixedCompositionPottsTarget(D=2, sigma=0.3, composition=(0.5, 0.25, 0.25))
     backbone = LeTFRateMatrix(
         d=potts.d, vocab_size=potts.n_states, hidden_dim=16, n_layers=2, n_heads=2
     )

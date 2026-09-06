@@ -16,6 +16,7 @@ Single-slice targets must stay byte-identical: the archived specialist
 numbers are pinned at the batch-blocking 1e-5 class and their EMA resume
 state is a (T,) grid.
 """
+
 from pathlib import Path
 
 import pytest
@@ -51,20 +52,20 @@ def _tiny_head():
 
 def _mixture_target():
     # d=16: slices n_plus=8 (12,870 states) and n_plus=4 (1,820 states).
-    return MixtureCompositionIsingTarget(
-        D=4, sigma=0.3, compositions=(0.5, 0.25))
+    return MixtureCompositionIsingTarget(D=4, sigma=0.3, compositions=(0.5, 0.25))
 
 
 # --------------------------------------------------------------------------
 # Slice bookkeeping
 # --------------------------------------------------------------------------
 
+
 def test_slice_index_reads_the_registered_count_off_each_row():
     target = _mixture_target()
     x = torch.full((3, 16), -1.0)
-    x[0, :8] = 1.0          # slice 0 (composition 0.5)
-    x[1, :4] = 1.0          # slice 1 (composition 0.25)
-    x[2, 3:11] = 1.0        # slice 0 again, different sites
+    x[0, :8] = 1.0  # slice 0 (composition 0.5)
+    x[1, :4] = 1.0  # slice 1 (composition 0.25)
+    x[2, 3:11] = 1.0  # slice 0 again, different sites
     assert slice_index_of(target, x).tolist() == [0, 1, 0]
     assert n_slices(target) == 2
 
@@ -92,7 +93,7 @@ def test_mean_per_slice_falls_back_to_the_pooled_mean_on_an_empty_slice():
     ~1e-12 at M=128) must not poison the grid with NaN; the pooled slot
     mean is the least-wrong finite value and the next cycle redraws."""
     values = torch.randn(4, 10)
-    slice_idx = torch.zeros(10, dtype=torch.long)       # slice 1 never drawn
+    slice_idx = torch.zeros(10, dtype=torch.long)  # slice 1 never drawn
     got = mean_per_slice(values, slice_idx, 2)
     assert torch.allclose(got[:, 0], values.mean(dim=-1))
     assert torch.allclose(got[:, 1], values.mean(dim=-1))
@@ -108,6 +109,7 @@ def test_single_slice_reduction_is_bitwise_the_plain_mean():
 # --------------------------------------------------------------------------
 # The estimator on the mixture: exact per-slice normaliser derivatives
 # --------------------------------------------------------------------------
+
 
 def _exact_slice_conditional(target, states, t):
     """p_t^{(C)} over the enumerated states of ONE slice at time t."""
@@ -134,23 +136,23 @@ def test_c_t_grid_on_a_mixture_recovers_each_slice_normaliser_derivative():
         rows, exact_at_t = [], []
         for states in slices:
             p_t = _exact_slice_conditional(target, states, t)
-            dt_log = target.dt_log_p_tilde_t(
-                states, torch.full((states.shape[0],), t))
+            dt_log = target.dt_log_p_tilde_t(states, torch.full((states.shape[0],), t))
             exact_at_t.append((p_t * dt_log).sum())
             draw = torch.multinomial(p_t, rows_per_slice, replacement=True)
             rows.append(states[draw])
         x_traj.append(torch.cat(rows))
         exact.append(torch.stack(exact_at_t))
-    x_traj = torch.stack(x_traj)                          # (T, 2M, 16)
-    exact = torch.stack(exact)                            # (T, 2)
+    x_traj = torch.stack(x_traj)  # (T, 2M, 16)
+    exact = torch.stack(exact)  # (T, 2)
 
     c_t_grid, integrand = compute_c_t_grid_swap(
-        t_grid, x_traj, target, head=None, mode="naive_mc")
+        t_grid, x_traj, target, head=None, mode="naive_mc"
+    )
     assert c_t_grid.shape == (3, 2) and integrand.shape == (3, 2 * rows_per_slice)
 
     monte_carlo_tol = 0.08
     assert torch.allclose(c_t_grid, exact, atol=monte_carlo_tol), (c_t_grid, exact)
-    pooled = integrand.mean(dim=-1)                       # the pre-fix grid
+    pooled = integrand.mean(dim=-1)  # the pre-fix grid
     slice_gap = (exact[:, 0] - exact[:, 1]).abs()
     assert (slice_gap > 4 * monte_carlo_tol).all(), slice_gap
     assert ((pooled[:, None] - exact).abs() > 2 * monte_carlo_tol).all()
@@ -173,11 +175,20 @@ def test_c_t_grid_shape_is_unchanged_for_a_single_slice_target():
 # The trainer: every replay row gets ITS slice's baseline
 # --------------------------------------------------------------------------
 
+
 def _tiny_cfgs(**train_extra):
-    train_cfg = _Cfg(n_steps=4, batch_size=48, outer_batch_size=48,
-                     inner_steps_per_outer=2, lr=1e-3, seed=0,
-                     replay_buffer_cycles=1, grad_clip_max_norm=500.0,
-                     warmup_steps=0, **train_extra)
+    train_cfg = _Cfg(
+        n_steps=4,
+        batch_size=48,
+        outer_batch_size=48,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=1,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        **train_extra,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=4)
     eval_cfg = _Cfg(eval_every=100, n_eval_samples=8)
     return train_cfg, ctmc_cfg, eval_cfg
@@ -189,8 +200,9 @@ def _capture_loss_calls(monkeypatch):
     original = swap_training.loss_swap_backward_microbatched
 
     def recording(x, t, dt_log_Zt, head, target, **kw):
-        calls.append((x.detach().clone(), t.detach().clone(),
-                      dt_log_Zt.detach().clone()))
+        calls.append(
+            (x.detach().clone(), t.detach().clone(), dt_log_Zt.detach().clone())
+        )
         return original(x, t, dt_log_Zt, head, target, **kw)
 
     monkeypatch.setattr(swap_training, "loss_swap_backward_microbatched", recording)
@@ -212,15 +224,24 @@ def _same_time_pairs(x, t, c_t):
 
 @pytest.mark.parametrize("c_t_from_rollout", [False, True])
 def test_train_swap_hands_each_row_its_own_slice_baseline(
-        tmp_path, monkeypatch, c_t_from_rollout):
+    tmp_path, monkeypatch, c_t_from_rollout
+):
     """Both grid paths the camort cells use: the standalone estimator and
     the rollout-integrand reuse (c_t_from_rollout). Rows at one time slot on one slice
     share a baseline; rows at one time slot on different slices do not."""
     torch.manual_seed(0)
     calls = _capture_loss_calls(monkeypatch)
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(c_t_from_rollout=c_t_from_rollout)
-    train_swap(_tiny_head(), _mixture_target(), train_cfg, ctmc_cfg, eval_cfg,
-               Path(tmp_path), use_wandb=False, estimator_mode="control_variate")
+    train_swap(
+        _tiny_head(),
+        _mixture_target(),
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
+    )
     assert calls
     same_slice, cross_slice = [], []
     for x, t, c_t in calls:
@@ -230,17 +251,26 @@ def test_train_swap_hands_each_row_its_own_slice_baseline(
         cross_slice += cross
     assert same_slice and cross_slice, "batch never collided in a slot"
     assert max(same_slice) == 0.0
-    assert min(cross_slice) > 0.1        # ~2 nats from the base constant alone
+    assert min(cross_slice) > 0.1  # ~2 nats from the base constant alone
 
 
 def test_train_swap_specialist_rows_at_one_slot_share_one_baseline(
-        tmp_path, monkeypatch):
+    tmp_path, monkeypatch
+):
     torch.manual_seed(0)
     calls = _capture_loss_calls(monkeypatch)
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
     target = FixedCompositionIsingTarget(D=4, sigma=0.3, target_composition=0.5)
-    train_swap(_tiny_head(), target, train_cfg, ctmc_cfg, eval_cfg,
-               Path(tmp_path), use_wandb=False, estimator_mode="control_variate")
+    train_swap(
+        _tiny_head(),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
+    )
     same_slice, cross_slice = [], []
     for x, t, c_t in calls:
         same, cross = _same_time_pairs(x, t, c_t)

@@ -23,6 +23,7 @@ Harness mirrors tests/test_c_t_batch.py: tiny 4x4 (d=16) mask-one head,
 bare config bags, two outer cycles, spies on the buffer append and the
 c_t grid call.
 """
+
 import csv
 
 import torch
@@ -69,31 +70,43 @@ def test_buffer_rows_reflect_outer_batch_not_batch_size_or_c_t_batch(
 
     def c_t_spy(t_grid, x_traj, target, head, *, mode, chunk_rows=None):
         captured["c_t_widths"].append(x_traj.shape[1])
-        return real_c_t(t_grid, x_traj, target, head, mode=mode,
-                        chunk_rows=chunk_rows)
+        return real_c_t(t_grid, x_traj, target, head, mode=mode, chunk_rows=chunk_rows)
 
     monkeypatch.setattr(swap_training, "_append_replay_buffer", append_spy)
     monkeypatch.setattr(swap_training, "compute_c_t_grid_swap", c_t_spy)
 
     torch.manual_seed(0)
     head = LeTFMaskOneSwapHead(
-        LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2,
-                       n_heads=2)
+        LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
     )
-    target = FixedCompositionIsingTarget(D=4, sigma=0.1,
-                                         target_composition=0.5)
-    train_cfg = _Cfg(n_steps=4, batch_size=INNER_BATCH,
-                     outer_batch_size=OUTER_BATCH, c_t_batch=C_T_BATCH,
-                     inner_steps_per_outer=2, lr=1e-3, seed=0,
-                     replay_buffer_cycles=REPLAY_CYCLES,
-                     grad_clip_max_norm=500.0, warmup_steps=0,
-                     resume_every_outer=1)
+    target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
+    train_cfg = _Cfg(
+        n_steps=4,
+        batch_size=INNER_BATCH,
+        outer_batch_size=OUTER_BATCH,
+        c_t_batch=C_T_BATCH,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=REPLAY_CYCLES,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        resume_every_outer=1,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=N_EULER_STEPS)
     eval_cfg = _Cfg(eval_every=4, n_eval_samples=8)
 
     run_dir = tmp_path / "run"
-    train_swap(head, target, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-               use_wandb=False, estimator_mode="naive_mc")
+    train_swap(
+        head,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        run_dir,
+        use_wandb=False,
+        estimator_mode="naive_mc",
+    )
 
     # Two outer cycles (n_steps=4 at 2 inner steps per cycle).
     # The buffer receives outer_batch-wide chunks, never the gradient

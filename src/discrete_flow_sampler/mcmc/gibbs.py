@@ -54,9 +54,13 @@ def gibbs_sample(
     distribution.
     """
     if x_init is None:
-        spins = torch.randint(
-            0, 2, (n_chains, target.d), generator=generator, device=target.device
-        ).float() * 2 - 1
+        spins = (
+            torch.randint(
+                0, 2, (n_chains, target.d), generator=generator, device=target.device
+            ).float()
+            * 2
+            - 1
+        )
     else:
         spins = x_init.to(device=target.device).float()
 
@@ -76,8 +80,8 @@ def gibbs_sample(
     for sweep_idx in range(n_sweeps):
         site_order = torch.randperm(target.d, generator=generator, device=target.device)
         for site in site_order.tolist():
-            local_field = spins @ target.J[:, site]                       # Σ_j J_ij x_j, shape (n_chains,)
-            log_odds_plus = 4 * local_field + 2 * target.bias              # log p(+1) - log p(-1)
+            local_field = spins @ target.J[:, site]  # Σ_j J_ij x_j, shape (n_chains,)
+            log_odds_plus = 4 * local_field + 2 * target.bias  # log p(+1) - log p(-1)
             if penalty_active:
                 # S = #{+1 among sites ≠ i}. With x ∈ {−1,+1} and d−1 other
                 # sites: S = ((d−1) + Σ_{j≠i} x_j) / 2. Penalty contribution to
@@ -90,9 +94,14 @@ def gibbs_sample(
                     + 1.0 / target.d
                 )
             prob_plus = torch.sigmoid(log_odds_plus)
-            uniform_draws = torch.rand(n_chains, generator=generator, device=target.device)
+            uniform_draws = torch.rand(
+                n_chains, generator=generator, device=target.device
+            )
             spins[:, site] = (uniform_draws < prob_plus).to(spins.dtype) * 2 - 1
-        if record_energy_every is not None and (sweep_idx + 1) % record_energy_every == 0:
+        if (
+            record_energy_every is not None
+            and (sweep_idx + 1) % record_energy_every == 0
+        ):
             energy_trace.append(target.log_prob(spins).detach())
 
     if record_energy_every is None:

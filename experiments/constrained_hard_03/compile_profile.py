@@ -23,6 +23,7 @@ Run on Modal:
     pixi run -e dev modal run -m \
         experiments.constrained_hard_03.modal_app::compile_profile
 """
+
 import time
 
 import torch
@@ -58,15 +59,19 @@ def _profile_region(label: str, fn, warmups: int = 2, actives: int = 3):
         torch.cuda.synchronize()
     wall_s = (time.perf_counter() - started) / actives
     peak_gb = torch.cuda.max_memory_allocated() / 1024**3
-    print(f"\n===== region: {label} — {wall_s * 1e3:.1f} ms/iter, "
-          f"peak {peak_gb:.2f} GB =====")
-    print(prof.key_averages().table(
-        sort_by="cuda_time_total", row_limit=TABLE_ROWS
-    ))
+    print(
+        f"\n===== region: {label} — {wall_s * 1e3:.1f} ms/iter, "
+        f"peak {peak_gb:.2f} GB ====="
+    )
+    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=TABLE_ROWS))
 
 
-def run_profile(cfg_name: str = THP2_CELL, microbatch: int = 128,
-                rollout_batch: int = 512, rollout_steps: int = 16):
+def run_profile(
+    cfg_name: str = THP2_CELL,
+    microbatch: int = 128,
+    rollout_batch: int = 512,
+    rollout_steps: int = 16,
+):
     from experiments.constrained_hard_03.configs import (
         CONFIGS,
         optimised_recipe,
@@ -74,8 +79,10 @@ def run_profile(cfg_name: str = THP2_CELL, microbatch: int = 128,
     from experiments.constrained_hard_03.run import build_target_and_head
 
     device = "cuda"
-    print(f"[compile_profile] cfg={cfg_name} "
-          f"device={torch.cuda.get_device_name(0)} torch={torch.__version__}")
+    print(
+        f"[compile_profile] cfg={cfg_name} "
+        f"device={torch.cuda.get_device_name(0)} torch={torch.__version__}"
+    )
     cfg = optimised_recipe(CONFIGS[cfg_name])  # compile_head=True
     target, head = build_target_and_head(cfg, device)
     head.eval()
@@ -92,9 +99,10 @@ def run_profile(cfg_name: str = THP2_CELL, microbatch: int = 128,
     # so thinning probabilities — and thus matching-round counts — match
     # a real rollout rather than a coarsened one.
     production_dt = 1.0 / (cfg.ctmc.n_euler_steps - 1)
-    ts_slice = torch.arange(
-        rollout_steps + 1, device=device, dtype=torch.float32
-    ) * production_dt
+    ts_slice = (
+        torch.arange(rollout_steps + 1, device=device, dtype=torch.float32)
+        * production_dt
+    )
 
     with torch.no_grad():
         scores_roll = gather_pair_scores(head(x_roll, t_roll), pairs)
@@ -110,7 +118,9 @@ def run_profile(cfg_name: str = THP2_CELL, microbatch: int = 128,
     @torch.no_grad()
     def region_rollout_slice():
         sample_swap_ctmc(
-            head, x_roll, ts_slice,
+            head,
+            x_roll,
+            ts_slice,
             multi_event=cfg.ctmc.use_matching_step,
         )
 
@@ -121,8 +131,8 @@ def run_profile(cfg_name: str = THP2_CELL, microbatch: int = 128,
     _profile_region(f"head forward B={microbatch}", region_head_forward)
     _profile_region(f"loss_swap fwd+bwd B={microbatch}", region_loss_update)
     _profile_region(
-        f"rollout slice b={rollout_batch} x {rollout_steps} steps "
-        f"(production dt)", region_rollout_slice,
+        f"rollout slice b={rollout_batch} x {rollout_steps} steps (production dt)",
+        region_rollout_slice,
     )
     _profile_region(f"xi chain B={rollout_batch}", region_xi_chain)
 

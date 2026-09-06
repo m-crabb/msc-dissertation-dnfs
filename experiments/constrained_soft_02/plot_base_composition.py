@@ -38,31 +38,42 @@ artefacts; both were checked 2026-08-29 against the pmf this script builds.
 
 Output: assets/soft_base_composition.png under --out-dir.
 """
+
 import argparse
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import binom
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    ANALYTIC_GUIDE, NEURAL_COMPARATOR_HUE, REFERENCE_INK, SAMPLER_HUE,
-    style_axes, use_house_style,
+    ANALYTIC_GUIDE,
+    NEURAL_COMPARATOR_HUE,
+    REFERENCE_INK,
+    SAMPLER_HUE,
+    style_axes,
+    use_house_style,
 )
 
 
 def _neighbour_field(spins, side):
     """Sum of the four torus neighbours, (chains, d)."""
     grid = spins.reshape(-1, side, side)
-    field = (np.roll(grid, 1, 1) + np.roll(grid, -1, 1)
-             + np.roll(grid, 1, 2) + np.roll(grid, -1, 2))
+    field = (
+        np.roll(grid, 1, 1)
+        + np.roll(grid, -1, 1)
+        + np.roll(grid, 1, 2)
+        + np.roll(grid, -1, 2)
+    )
     return field.reshape(spins.shape)
 
 
-def soft_target_composition_marginal(d, sigma, c_target, penalty, rng,
-                                     n_chains=256, n_sweeps=4000, burn_in=1000):
+def soft_target_composition_marginal(
+    d, sigma, c_target, penalty, rng, n_chains=256, n_sweeps=4000, burn_in=1000
+):
     """Composition marginal of exp(sigma x^T A x - penalty d (c - c_t)^2) by
     Metropolis single-flip chains, histogrammed over chains and sweeps.
 
@@ -73,7 +84,7 @@ def soft_target_composition_marginal(d, sigma, c_target, penalty, rng,
     (The naive slice estimator Z_slice(N) = C(d,N) E_unif[exp(sigma x^T A x)]
     is heavy-tailed -- one rare ordered draw dominates -- and was replaced
     by this, 2026-08-23.)"""
-    side = int(round(d ** 0.5))
+    side = int(round(d**0.5))
     spins = rng.choice([-1, 1], size=(n_chains, d)).astype(np.int8)
     n_up = (spins > 0).sum(1)
     rows = np.arange(n_chains)
@@ -83,10 +94,12 @@ def soft_target_composition_marginal(d, sigma, c_target, penalty, rng,
             site = rng.integers(d, size=n_chains)
             field = _neighbour_field(spins, side)[rows, site]
             old = spins[rows, site]
-            delta_quadratic = -2.0 * old * field                 # change in x^T A x / 2 * 2
-            new_up = n_up - old                                   # -1 -> +1 adds one up-spin
+            delta_quadratic = -2.0 * old * field  # change in x^T A x / 2 * 2
+            new_up = n_up - old  # -1 -> +1 adds one up-spin
             c_old, c_new = n_up / d, new_up / d
-            delta_penalty = penalty * d * ((c_new - c_target) ** 2 - (c_old - c_target) ** 2)
+            delta_penalty = (
+                penalty * d * ((c_new - c_target) ** 2 - (c_old - c_target) ** 2)
+            )
             log_accept = 2.0 * sigma * delta_quadratic - delta_penalty
             accept = np.log(rng.random(n_chains)) < log_accept
             spins[rows[accept], site[accept]] = -old[accept]
@@ -103,23 +116,42 @@ def soft_panel(ax, d=100, sigma=0.10, c_target=0.80, penalty=50.0, seed=0):
     matched = binom.pmf(np.arange(d + 1), d, c_target)
     target = soft_target_composition_marginal(d, sigma, c_target, penalty, rng)
     ising_only = soft_target_composition_marginal(d, sigma, c_target, 0.0, rng)
-    ax.plot(compositions, ising_only, color=ANALYTIC_GUIDE, lw=1.2, ls="--",
-            label="Ising, no penalty")
+    ax.plot(
+        compositions,
+        ising_only,
+        color=ANALYTIC_GUIDE,
+        lw=1.2,
+        ls="--",
+        label="Ising, no penalty",
+    )
     ax.plot(compositions, uniform, color=SAMPLER_HUE, lw=1.6, label="uniform base")
-    ax.plot(compositions, matched, color=NEURAL_COMPARATOR_HUE, lw=1.6, label="matched base")
+    ax.plot(
+        compositions, matched, color=NEURAL_COMPARATOR_HUE, lw=1.6, label="matched base"
+    )
     ax.plot(compositions, target, color=REFERENCE_INK, lw=1.6, label="soft target")
     ax.axvline(c_target, color=ANALYTIC_GUIDE, lw=0.8, ls="--")
     ax.set_xlabel("composition $c(x)$")
     ax.set_ylabel("probability")
     ax.set_xlim(0.3, 1.0)
-    return {"ising": ising_only, "uniform": uniform, "matched": matched, "target": target}
+    return {
+        "ising": ising_only,
+        "uniform": uniform,
+        "matched": matched,
+        "target": target,
+    }
 
 
 def _finish(ax):
     style_axes(ax)
-    ax.set_ylim(0, ax.get_ylim()[1] * 1.6)   # headroom for the legend
-    ax.legend(frameon=False, loc="upper center", ncol=2, fontsize=7.5,
-              handlelength=1.4, columnspacing=1.0)
+    ax.set_ylim(0, ax.get_ylim()[1] * 1.6)  # headroom for the legend
+    ax.legend(
+        frameon=False,
+        loc="upper center",
+        ncol=2,
+        fontsize=7.5,
+        handlelength=1.4,
+        columnspacing=1.0,
+    )
     ax.figure.tight_layout()
 
 
@@ -144,8 +176,10 @@ def main():
     # file -- the ink curve peaking left of c_t is the physics, not a bug.
     c = np.arange(101) / 100
     for name, p in soft.items():
-        print(f"soft {name:8s} mean c {np.sum(c * p):.3f}  "
-              f"mode c {c[p.argmax()]:.2f} (p {p.max():.4f})")
+        print(
+            f"soft {name:8s} mean c {np.sum(c * p):.3f}  "
+            f"mode c {c[p.argmax()]:.2f} (p {p.max():.4f})"
+        )
 
 
 if __name__ == "__main__":

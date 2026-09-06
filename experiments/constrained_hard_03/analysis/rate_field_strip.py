@@ -23,6 +23,7 @@ Colour follows the job: the rate is a magnitude (one hue, light -> dark, the sam
 the channel is signed (two poles about a neutral mid-grey); the state uses the house spin
 colours. Runs on CPU in seconds at 8x8 (one head forward per displayed time, plus the rollout).
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -31,23 +32,31 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-from discrete_flow_sampler.diagnostics.figure_style import (
-    CLASSICAL_HUE, FONT_SIZE_ANNOTATION, FULL_WIDTH_IN, GRID,
-    SAMPLER_HUE, SAVEFIG_DPI, SPIN_CMAP, use_house_style)
-from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
-from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
-from experiments.constrained_hard_03.gate_4x4 import load_run
-from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from experiments.constrained_hard_03.gate_4x4 import load_run
+from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
+
+from discrete_flow_sampler.diagnostics.figure_style import (
+    CLASSICAL_HUE,
+    FONT_SIZE_ANNOTATION,
+    FULL_WIDTH_IN,
+    GRID,
+    SAMPLER_HUE,
+    SAVEFIG_DPI,
+    SPIN_CMAP,
+    use_house_style,
+)
+from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
+from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 
 
 def channel_for_anchor(x, anchor, A, sigma):
     """sigma * Delta_aj for every j: the exact-field channel's score at unit gain."""
     field = x @ A
-    h_a = field[anchor] - A[anchor] * x            # anchor's field with partner j removed
-    h_j = field - A[anchor] * x[anchor]            # partner's field with the anchor removed
+    h_a = field[anchor] - A[anchor] * x  # anchor's field with partner j removed
+    h_j = field - A[anchor] * x[anchor]  # partner's field with the anchor removed
     delta = 2.0 * (x - x[anchor]) * (h_a - h_j)
     delta[anchor] = 0.0
     return sigma * delta
@@ -62,15 +71,23 @@ def plot_strip(columns, side, anchor, out):
     """
     use_house_style()
     rate_cmap = LinearSegmentedColormap.from_list("rate", ["#f4f4f1", SAMPLER_HUE])
-    diverging = LinearSegmentedColormap.from_list("channel", [CLASSICAL_HUE, "#e6e5df", SAMPLER_HUE])
+    diverging = LinearSegmentedColormap.from_list(
+        "channel", [CLASSICAL_HUE, "#e6e5df", SAMPLER_HUE]
+    )
     rate_max = max(float(np.asarray(c["rate"]).max()) for c in columns)
     chan_max = max(float(np.abs(np.asarray(c["channel"])).max()) for c in columns)
     n = len(columns)
     fig = plt.figure(figsize=(FULL_WIDTH_IN, 3.65))
     grid = fig.add_gridspec(
-        3, n + 1, width_ratios=[1] * n + [0.055],
-        left=0.13, right=0.92, bottom=0.04, top=0.93,
-        wspace=0.10, hspace=0.15,
+        3,
+        n + 1,
+        width_ratios=[1] * n + [0.055],
+        left=0.13,
+        right=0.92,
+        bottom=0.04,
+        top=0.93,
+        wspace=0.10,
+        hspace=0.15,
     )
     row_labels = ["Configuration", "Learned\nswap rate", "Closed-form\nlog ratio"]
     anchor_row, anchor_col = divmod(anchor, side)
@@ -79,23 +96,44 @@ def plot_strip(columns, side, anchor, out):
             ax = fig.add_subplot(grid[row, col])
             field = np.asarray(values[key]).reshape(side, side)
             if row == 0:
-                im = ax.imshow(field, cmap=SPIN_CMAP, vmin=-1, vmax=1, interpolation="nearest")
+                im = ax.imshow(
+                    field, cmap=SPIN_CMAP, vmin=-1, vmax=1, interpolation="nearest"
+                )
             elif row == 1:
-                im = ax.imshow(field, cmap=rate_cmap, vmin=0, vmax=max(rate_max, 1e-12), interpolation="nearest")
+                im = ax.imshow(
+                    field,
+                    cmap=rate_cmap,
+                    vmin=0,
+                    vmax=max(rate_max, 1e-12),
+                    interpolation="nearest",
+                )
             else:
                 limit = max(chan_max, 1e-12)
-                im = ax.imshow(field, cmap=diverging, norm=TwoSlopeNorm(0, -limit, limit), interpolation="nearest")
+                im = ax.imshow(
+                    field,
+                    cmap=diverging,
+                    norm=TwoSlopeNorm(0, -limit, limit),
+                    interpolation="nearest",
+                )
             for colour, width in [("white", 2.4), ("#1a1a19", 1.2)]:
-                ax.add_patch(plt.Rectangle(
-                    (anchor_col - 0.5, anchor_row - 0.5), 1, 1,
-                    fill=False, lw=width, edgecolor=colour,
-                ))
+                ax.add_patch(
+                    plt.Rectangle(
+                        (anchor_col - 0.5, anchor_row - 0.5),
+                        1,
+                        1,
+                        fill=False,
+                        lw=width,
+                        edgecolor=colour,
+                    )
+                )
             ax.set_xticks([])
             ax.set_yticks([])
             for spine in ax.spines.values():
                 spine.set_edgecolor(GRID)
             if col == 0:
-                ax.set_ylabel(row_labels[row], fontsize=FONT_SIZE_ANNOTATION, labelpad=8)
+                ax.set_ylabel(
+                    row_labels[row], fontsize=FONT_SIZE_ANNOTATION, labelpad=8
+                )
             if row == 0:
                 ax.set_title(f"$t = {values['t']:.2f}$", fontsize=FONT_SIZE_ANNOTATION)
         if row:
@@ -109,11 +147,20 @@ def plot_strip(columns, side, anchor, out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_dir", type=Path, nargs="?")
-    parser.add_argument("--recorded", type=Path,
-                        help="render a saved figure archive without sampling a checkpoint")
-    parser.add_argument("--anchor", type=int, default=None,
-                        help="anchor site index (default: the centre site)")
-    parser.add_argument("--times", type=float, nargs="+", default=[0.0, 0.25, 0.5, 0.75, 1.0])
+    parser.add_argument(
+        "--recorded",
+        type=Path,
+        help="render a saved figure archive without sampling a checkpoint",
+    )
+    parser.add_argument(
+        "--anchor",
+        type=int,
+        default=None,
+        help="anchor site index (default: the centre site)",
+    )
+    parser.add_argument(
+        "--times", type=float, nargs="+", default=[0.0, 0.25, 0.5, 0.75, 1.0]
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=Path, default=Path("rate_field_strip.png"))
     args = parser.parse_args()
@@ -122,9 +169,16 @@ def main():
             parser.error("choose a run directory or --recorded, not both")
         with np.load(args.recorded, allow_pickle=False) as data:
             metadata = json.loads(str(data["metadata"]))
-            columns = [dict(t=t, x=x, rate=rate, channel=channel)
-                       for t, x, rate, channel in zip(
-                           data["times"], data["states"], data["rates"], data["channels"], strict=True)]
+            columns = [
+                dict(t=t, x=x, rate=rate, channel=channel)
+                for t, x, rate, channel in zip(
+                    data["times"],
+                    data["states"],
+                    data["rates"],
+                    data["channels"],
+                    strict=True,
+                )
+            ]
         plot_strip(columns, metadata["side"], metadata["anchor"], args.out)
         print(f"saved {args.out} from {args.recorded}")
         return
@@ -144,8 +198,14 @@ def main():
     ts = torch.linspace(0.0, 1.0, n_euler + 1)
     x0 = target.sample_base(1, "cpu").float()
     with torch.no_grad():
-        trajectory = sample_swap_ctmc(head, x0, ts, return_all_states=True, target=target,
-                                      multi_event=bool(cfg["ctmc"].get("use_matching_step", False)))
+        trajectory = sample_swap_ctmc(
+            head,
+            x0,
+            ts,
+            return_all_states=True,
+            target=target,
+            multi_event=bool(cfg["ctmc"].get("use_matching_step", False)),
+        )
     pairs = upper_tri_pairs(d, "cpu")
     columns = []
     for t_value in args.times:
@@ -161,7 +221,9 @@ def main():
         rate[anchor] = 0.0
         total_rate = torch.relu(G[pairs[:, 0], pairs[:, 1]]).sum().item()
         channel = channel_for_anchor(x, anchor, A, sigma)
-        columns.append(dict(t=ts[k].item(), x=x, rate=rate, channel=channel, total_rate=total_rate))
+        columns.append(
+            dict(t=ts[k].item(), x=x, rate=rate, channel=channel, total_rate=total_rate)
+        )
 
     plot_strip(columns, side, anchor, args.out)
 
@@ -169,12 +231,16 @@ def main():
     x_end, rate_end = columns[-1]["x"], columns[-1]["rate"]
     adjacent = A[anchor] > 0
     unlike = x_end != x_end[anchor]
-    print(f"anchor {anchor} (row {anchor // side}, col {anchor % side}); Lambda along the strip: "
-          + ", ".join(f"{c['total_rate']:.1f}" for c in columns))
-    print(f"t=1: rate on the anchor's {int((adjacent & unlike).sum())} unlike neighbours "
-          f"{rate_end[adjacent].sum():.3f} vs {int((~adjacent & unlike).sum())} unlike distant sites "
-          f"{rate_end[~adjacent].sum():.3f}; corr(rate, relu(channel)) = "
-          f"{np.corrcoef(rate_end.numpy(), torch.relu(columns[-1]['channel']).numpy())[0, 1]:.2f}")
+    print(
+        f"anchor {anchor} (row {anchor // side}, col {anchor % side}); Lambda along the strip: "
+        + ", ".join(f"{c['total_rate']:.1f}" for c in columns)
+    )
+    print(
+        f"t=1: rate on the anchor's {int((adjacent & unlike).sum())} unlike neighbours "
+        f"{rate_end[adjacent].sum():.3f} vs {int((~adjacent & unlike).sum())} unlike distant sites "
+        f"{rate_end[~adjacent].sum():.3f}; corr(rate, relu(channel)) = "
+        f"{np.corrcoef(rate_end.numpy(), torch.relu(columns[-1]['channel']).numpy())[0, 1]:.2f}"
+    )
     print(f"saved {args.out}")
 
 

@@ -8,17 +8,16 @@ so GFN rows are drop-in comparable for the hard-chapter table scripts.
 """
 
 import json
+from dataclasses import replace
 
 import torch
-
 from experiments.constrained_hard_03.gfn_configs import (
     GFN_CONFIGS,
     GFN_OBJECTIVES,
 )
 from experiments.constrained_hard_03.run_gfn import train_gfn
-from discrete_flow_sampler.targets.ising import SIGMA_C
 
-from dataclasses import replace
+from discrete_flow_sampler.targets.ising import SIGMA_C
 
 
 def test_registry_keys_match_cell_names_and_objectives():
@@ -49,8 +48,7 @@ def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
     # moves at most ~lr/step, so log Z (init 0, exact slice value 10.81 at
     # sigma_c) arithmetically could not converge inside 10k steps —
     # measured tail slope +7e-4/step.
-    parity = {n: c for n, c in GFN_CONFIGS.items()
-              if n.endswith("_par") and c.D == 4}
+    parity = {n: c for n, c in GFN_CONFIGS.items() if n.endswith("_par") and c.D == 4}
     assert len(parity) == 4
     for name, cell in parity.items():
         assert cell.hidden_dim == 64
@@ -78,8 +76,7 @@ def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
     # field here would make the whole grid unreadable as a sweep.
     from dataclasses import fields
 
-    sweep = {n: c for n, c in GFN_CONFIGS.items()
-             if n.endswith("_swp") and c.D == 4}
+    sweep = {n: c for n, c in GFN_CONFIGS.items() if n.endswith("_swp") and c.D == 4}
     assert len(sweep) == 16
     for name, cell in sweep.items():
         parent = GFN_CONFIGS[f"GFN_d16_c50_s220_{cell.objective}_10k_par"]
@@ -90,7 +87,9 @@ def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
                 f"{name}.{field.name} drifted from its _par parent"
             )
         assert (cell.learning_rate, cell.epsilon) != (
-            parent.learning_rate, parent.epsilon)
+            parent.learning_rate,
+            parent.epsilon,
+        )
 
 
 def test_compile_policy_off_at_d16_on_at_d64_and_above():
@@ -104,7 +103,9 @@ def test_compile_policy_off_at_d16_on_at_d64_and_above():
 
 def test_build_optimiser_splits_log_z_group():
     from experiments.constrained_hard_03.run_gfn import (
-        build_optimiser, build_target_and_policy)
+        build_optimiser,
+        build_target_and_policy,
+    )
 
     cfg = _tiny_cell("tb")
     _, policy = build_target_and_policy(cfg, "cpu")
@@ -137,13 +138,14 @@ def test_log_z_carries_no_weight_decay_and_reaches_the_d256_scale():
     it must be able to reach the 256-site scale."""
     import torch
     from experiments.constrained_hard_03.run_gfn import (
-        build_optimiser, build_target_and_policy)
+        build_optimiser,
+        build_target_and_policy,
+    )
 
     cfg = replace(_tiny_cell("tb"), log_z_learning_rate=0.1)
     _, policy = build_target_and_policy(cfg, "cpu")
     optimiser = build_optimiser(cfg, policy)
-    log_z_group = next(g for g in optimiser.param_groups
-                       if g["name"] == "log_z")
+    log_z_group = next(g for g in optimiser.param_groups if g["name"] == "log_z")
     assert log_z_group["weight_decay"] == 0.0
 
     # A constant unit gradient pushing log Z up for 3000 steps at lr 0.1:
@@ -225,9 +227,7 @@ def test_train_gfn_writes_house_artefact_set(tmp_path):
         )
 
         samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True)
-        log_weights = torch.load(
-            run_dir / "eval" / "log_weights.pt", weights_only=True
-        )
+        log_weights = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
         assert samples.shape == (64, 4)
         assert log_weights.shape == (64,)
         # Feasibility by construction: every eval draw on the slice.
@@ -259,8 +259,7 @@ def test_d64_cells_carry_the_house_recipe_levers():
             # House ladder sigmas with the final coupling repeated to give
             # it the wave-2 recipe's 20k plateau under equal step shares.
             assert len(cell.sigma_stages) == 10
-            assert cell.sigma_stages[:6] == (
-                0.100, 0.140, 0.170, 0.190, 0.205, 0.215)
+            assert cell.sigma_stages[:6] == (0.100, 0.140, 0.170, 0.190, 0.205, 0.215)
             assert all(s == SIGMA_C for s in cell.sigma_stages[6:])
         else:
             assert cell.sigma_stages == ()  # s010 trains flat, like w2
@@ -283,7 +282,10 @@ def test_d64_cells_carry_the_house_recipe_levers():
 
 def test_warmup_ramps_network_group_but_never_log_z(tmp_path):
     from experiments.constrained_hard_03.run_gfn import (
-        apply_lr_warmup, build_optimiser, build_target_and_policy)
+        apply_lr_warmup,
+        build_optimiser,
+        build_target_and_policy,
+    )
 
     cfg = replace(_tiny_cell("tb"), log_z_learning_rate=0.1, warmup_steps=100)
     _, policy = build_target_and_policy(cfg, "cpu")
@@ -296,7 +298,9 @@ def test_warmup_ramps_network_group_but_never_log_z(tmp_path):
 
     apply_lr_warmup(optimiser, cfg, step=100)
     assert {g["name"]: g["lr"] for g in optimiser.param_groups} == {
-        "network": cfg.learning_rate, "log_z": 0.1}
+        "network": cfg.learning_rate,
+        "log_z": 0.1,
+    }
 
     # warmup off (every archived d16 cell): a no-op at any step.
     flat_cfg = replace(cfg, warmup_steps=0)
@@ -310,13 +314,9 @@ def test_ema_dual_eval_and_resume_state(tmp_path):
     # the shadow (with its update counter) rides resume.pt so preemption
     # cannot re-create the init-contamination failure.
     cfg = replace(_tiny_cell("tb"), ema_decay=0.9999, eval_every=10)
-    run_dir = train_gfn(
-        cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="wire"
-    )
+    run_dir = train_gfn(cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="wire")
     assert (run_dir / "checkpoints" / "final_ema.pt").exists()
-    resume = torch.load(
-        run_dir / "checkpoints" / "resume.pt", weights_only=True
-    )
+    resume = torch.load(run_dir / "checkpoints" / "resume.pt", weights_only=True)
     assert resume["ema"] is not None and resume["ema"]["updates"] > 0
     for subdir in ("eval", "eval_ema"):
         metrics = json.loads((run_dir / subdir / "metrics.json").read_text())
@@ -325,19 +325,19 @@ def test_ema_dual_eval_and_resume_state(tmp_path):
     # eval_every armed the frozen-ESS column: finite at logged eval steps.
     log_rows = (run_dir / "training_log.csv").read_text().strip().splitlines()
     header = log_rows[0].split(",")
-    frozen = [dict(zip(header, r.split(",")))["ess_frozen"]
-              for r in log_rows[1:]]
+    frozen = [dict(zip(header, r.split(",")))["ess_frozen"] for r in log_rows[1:]]
     assert any(value != "nan" for value in frozen)
     # EMA off: no shadow artefacts, resume carries an explicit None.
     flat_dir = train_gfn(
-        replace(_tiny_cell("fldb")), seed=42,
-        output_dir=tmp_path, use_wandb=False, tag="wire",
+        replace(_tiny_cell("fldb")),
+        seed=42,
+        output_dir=tmp_path,
+        use_wandb=False,
+        tag="wire",
     )
     assert not (flat_dir / "eval_ema").exists()
     assert not (flat_dir / "checkpoints" / "final_ema.pt").exists()
-    resume_flat = torch.load(
-        flat_dir / "checkpoints" / "resume.pt", weights_only=True
-    )
+    resume_flat = torch.load(flat_dir / "checkpoints" / "resume.pt", weights_only=True)
     assert resume_flat["ema"] is None
 
 
@@ -346,22 +346,16 @@ def test_bf16_eval_autocast_completes_with_finite_metrics(tmp_path):
     # gate is that eval under autocast still lands on the manifold (the
     # assert inside final_eval_gfn) and produces finite weights.
     cfg = replace(_tiny_cell("fldb"), eval_autocast_bf16=True)
-    run_dir = train_gfn(
-        cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="wire"
-    )
+    run_dir = train_gfn(cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="wire")
     metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
     assert 0.0 < metrics["ess_fraction"] <= 1.0
-    log_weights = torch.load(
-        run_dir / "eval" / "log_weights.pt", weights_only=True
-    )
+    log_weights = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
     assert torch.isfinite(log_weights).all()
 
 
 def test_completed_run_short_circuits(tmp_path):
     cfg = _tiny_cell("tb")
-    run_dir = train_gfn(
-        cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="wire"
-    )
+    run_dir = train_gfn(cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="wire")
     metrics_before = (run_dir / "eval" / "metrics.json").read_text()
     rerun_dir = train_gfn(
         cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="wire"
@@ -379,7 +373,9 @@ def test_build_optimiser_splits_flow_head_group():
     that must raise, not silently train nothing at the fast lr."""
     import pytest
     from experiments.constrained_hard_03.run_gfn import (
-        build_optimiser, build_target_and_policy)
+        build_optimiser,
+        build_target_and_policy,
+    )
 
     cfg = replace(_tiny_cell("fldb"), flow_head_learning_rate=1e-2)
     _, policy = build_target_and_policy(cfg, "cpu")
@@ -392,8 +388,9 @@ def test_build_optimiser_splits_flow_head_group():
     network_params = {id(p) for p in groups["network"]["params"]}
     assert not (network_params & flow_params)
     # Every parameter is in exactly one group.
-    assert (len(groups["network"]["params"]) + len(flow_params)
-            == len(list(policy.parameters())))
+    assert len(groups["network"]["params"]) + len(flow_params) == len(
+        list(policy.parameters())
+    )
 
     tb_cfg = replace(_tiny_cell("tb"), flow_head_learning_rate=1e-2)
     _, tb_policy = build_target_and_policy(tb_cfg, "cpu")
@@ -406,10 +403,12 @@ def test_warmup_never_touches_the_flow_head_group():
     the normaliser, and re-throttling it for the ramp would re-create a
     mild version of the failure at the start of every run."""
     from experiments.constrained_hard_03.run_gfn import (
-        apply_lr_warmup, build_optimiser, build_target_and_policy)
+        apply_lr_warmup,
+        build_optimiser,
+        build_target_and_policy,
+    )
 
-    cfg = replace(_tiny_cell("fldb"), flow_head_learning_rate=1e-2,
-                  warmup_steps=100)
+    cfg = replace(_tiny_cell("fldb"), flow_head_learning_rate=1e-2, warmup_steps=100)
     _, policy = build_target_and_policy(cfg, "cpu")
     optimiser = build_optimiser(cfg, policy)
     apply_lr_warmup(optimiser, cfg, step=0)
@@ -432,8 +431,7 @@ def test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever():
         diff = {
             field: (a, b)
             for field, (a, b) in (
-                (f, (asdict(centre)[f], asdict(cell)[f]))
-                for f in asdict(centre)
+                (f, (asdict(centre)[f], asdict(cell)[f])) for f in asdict(centre)
             )
             if a != b
         }
@@ -539,9 +537,7 @@ def test_d256_cells_are_d64_twins_plus_declared_levers():
         ):
             steps = "50k" if sigma_label == "s010" else "100k"
             d64 = GFN_CONFIGS[f"GFN_d64_c50_{sigma_label}_{objective}_50k_par"]
-            d256 = GFN_CONFIGS[
-                f"GFN_d256_c50_{sigma_label}_{objective}_{steps}_par"
-            ]
+            d256 = GFN_CONFIGS[f"GFN_d256_c50_{sigma_label}_{objective}_{steps}_par"]
             assert d256.D == 16
             assert d256.hidden_dim == 68
             assert d256.compile_policy is True
@@ -594,7 +590,8 @@ def test_d400_cells_are_d256_twins_plus_lattice_and_resize():
             d400 = GFN_CONFIGS[f"GFN_d400_c50_{sigma_label}_{objective}_{steps}_par"]
             assert d400.D == 20 and d400.hidden_dim == 72
             diff = {
-                field for field in asdict(d256)
+                field
+                for field in asdict(d256)
                 if asdict(d256)[field] != asdict(d400)[field]
             }
             assert diff == {"name", "D", "hidden_dim"}, diff

@@ -12,32 +12,52 @@ stage_4_d10_budget seeds (identical architecture/budget/settings, no penalty).
 The full Var[delta_I] / lambda^2 Var[delta_P] decomposition is NOT logged, so
 this is the two-trace version: total integrand variance, soft vs unconstrained.
 """
+
 import argparse
 from pathlib import Path
 
-from discrete_flow_sampler.diagnostics.figure_style import (
-    SAMPLER_HUE, NEURAL_COMPARATOR_HUE, use_house_style)
 import matplotlib.pyplot as plt
 import pandas as pd
+
+from discrete_flow_sampler.diagnostics.figure_style import (
+    NEURAL_COMPARATOR_HUE,
+    SAMPLER_HUE,
+    use_house_style,
+)
 
 LOG_CADENCE_STEPS = 500  # var_estimator_integrand only refreshes at eval cadence
 
 
 def variance_trace(run_dir: Path) -> pd.DataFrame:
-    log = pd.read_csv(run_dir / "training_log.csv",
-                      usecols=["step", "var_estimator_integrand"])
+    log = pd.read_csv(
+        run_dir / "training_log.csv", usecols=["step", "var_estimator_integrand"]
+    )
     return log[log.step % LOG_CADENCE_STEPS == 0]
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--soft_runs", required=True, nargs="+", type=Path,
-                        help="S2_d10_c05_l50_letf_ne64 run dirs (seeds 42-45)")
-    parser.add_argument("--baseline_runs", required=True, nargs="+", type=Path,
-                        help="matched stage_4_d10_budget run dirs (seeds 42-45)")
-    parser.add_argument("--healthy_soft_seed", default="seed44",
-                        help="substring naming the soft seed that trained")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--soft_runs",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="S2_d10_c05_l50_letf_ne64 run dirs (seeds 42-45)",
+    )
+    parser.add_argument(
+        "--baseline_runs",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="matched stage_4_d10_budget run dirs (seeds 42-45)",
+    )
+    parser.add_argument(
+        "--healthy_soft_seed",
+        default="seed44",
+        help="substring naming the soft seed that trained",
+    )
     parser.add_argument("--out", type=Path, default=Path("penalty_variance_traces.png"))
     args = parser.parse_args()
 
@@ -46,31 +66,62 @@ def main() -> None:
 
     for run_dir in args.baseline_runs:
         trace = variance_trace(run_dir)
-        ax.plot(trace.step, trace.var_estimator_integrand, color=NEURAL_COMPARATOR_HUE, lw=1.0,
-                alpha=0.8)
+        ax.plot(
+            trace.step,
+            trace.var_estimator_integrand,
+            color=NEURAL_COMPARATOR_HUE,
+            lw=1.0,
+            alpha=0.8,
+        )
     for run_dir in args.soft_runs:
         trace = variance_trace(run_dir)
         healthy = args.healthy_soft_seed in run_dir.name
-        ax.plot(trace.step, trace.var_estimator_integrand,
-                color=SAMPLER_HUE, lw=1.6 if healthy else 0.9,
-                alpha=1.0 if healthy else 0.55)
+        ax.plot(
+            trace.step,
+            trace.var_estimator_integrand,
+            color=SAMPLER_HUE,
+            lw=1.6 if healthy else 0.9,
+            alpha=1.0 if healthy else 0.55,
+        )
         if healthy:
             final = trace.iloc[-1]
-            ax.annotate("the one soft seed that trains",
-                        xy=(final.step, final.var_estimator_integrand),
-                        xytext=(0.38, 0.20), textcoords="axes fraction",
-                        fontsize=9, color=SAMPLER_HUE,
-                        arrowprops={"arrowstyle": "->", "color": SAMPLER_HUE, "lw": 1.0})
+            ax.annotate(
+                "the one soft seed that trains",
+                xy=(final.step, final.var_estimator_integrand),
+                xytext=(0.38, 0.20),
+                textcoords="axes fraction",
+                fontsize=9,
+                color=SAMPLER_HUE,
+                arrowprops={"arrowstyle": "->", "color": SAMPLER_HUE, "lw": 1.0},
+            )
 
     # Proxy artists so the legend has one entry per group, not per seed.
-    ax.plot([], [], color=SAMPLER_HUE, lw=0.9, alpha=0.55, label=r"soft, $\lambda=50$ (stuck seeds)")
-    ax.plot([], [], color=SAMPLER_HUE, lw=1.6, label=r"soft, $\lambda=50$ (healthy seed)")
-    ax.plot([], [], color=NEURAL_COMPARATOR_HUE, lw=1.0, label="unconstrained, matched config")
+    ax.plot(
+        [],
+        [],
+        color=SAMPLER_HUE,
+        lw=0.9,
+        alpha=0.55,
+        label=r"soft, $\lambda=50$ (stuck seeds)",
+    )
+    ax.plot(
+        [], [], color=SAMPLER_HUE, lw=1.6, label=r"soft, $\lambda=50$ (healthy seed)"
+    )
+    ax.plot(
+        [],
+        [],
+        color=NEURAL_COMPARATOR_HUE,
+        lw=1.0,
+        label="unconstrained, matched config",
+    )
     ax.set_yscale("log")
     ax.set_xlabel("training step")
     ax.set_ylabel("estimator-integrand variance")
-    ax.set_title(r"$10\times10$, $\sigma=0.1$: the penalty's variance injection,"
-                 " per seed", fontsize=10)
+    ax.set_title(
+        r"$10\times10$, $\sigma=0.1$: the penalty's variance injection,"
+        " per seed",
+        fontsize=10,
+    )
     ax.legend(fontsize=8, framealpha=0.9)
 
     fig.tight_layout()

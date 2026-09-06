@@ -47,6 +47,7 @@ On the Modal A100-80GB (see modal_app.bench_cell):
         experiments.constrained_hard_03.modal_app::bench_cell \\
         --argv "--cfg H2_cuau64_c25_T500_mask_one_50k_curr"
 """
+
 import argparse
 import statistics
 import tempfile
@@ -55,6 +56,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import torch
+from experiments.constrained_hard_03.configs import CONFIGS
+from experiments.constrained_hard_03.run import build_target_and_head
 
 from discrete_flow_sampler.ema import ExponentialMovingAverage
 from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
@@ -69,8 +72,6 @@ from discrete_flow_sampler.samplers.swap_training import (
     _swap_rate_diagnostics,
     train_swap,
 )
-from experiments.constrained_hard_03.configs import CONFIGS
-from experiments.constrained_hard_03.run import build_target_and_head
 
 
 def _timed(fn, repeats: int, device: torch.device) -> float:
@@ -106,8 +107,12 @@ def _phase_runners(cfg, target, head, device):
     x_initial = target.sample_base(batch, device=device)
     with torch.no_grad():
         x_traj = sample_swap_ctmc(
-            head, x_initial, t_grid, return_all_states=True,
-            multi_event=multi_event, target=target,
+            head,
+            x_initial,
+            t_grid,
+            return_all_states=True,
+            multi_event=multi_event,
+            target=target,
         )
     x_traj_flat = x_traj.reshape(n_grid * batch, target.d)
     t_flat = t_grid.repeat_interleave(batch)
@@ -123,13 +128,21 @@ def _phase_runners(cfg, target, head, device):
     def rollout():
         with torch.no_grad():
             sample_swap_ctmc(
-                head, target.sample_base(batch, device=device), t_grid,
-                return_all_states=True, multi_event=multi_event, target=target,
+                head,
+                target.sample_base(batch, device=device),
+                t_grid,
+                return_all_states=True,
+                multi_event=multi_event,
+                target=target,
             )
 
     def c_t_grid():
         compute_c_t_grid_swap(
-            t_grid, x_traj, target, head, mode=cfg.estimator,
+            t_grid,
+            x_traj,
+            target,
+            head,
+            mode=cfg.estimator,
             chunk_rows=cfg.train.c_t_grid_chunk_rows,
         )
 
@@ -140,31 +153,41 @@ def _phase_runners(cfg, target, head, device):
     def inner_step():
         optimiser.zero_grad()
         loss_swap_backward_microbatched(
-            x_sample, t_sample, c_t_sample, head, target,
+            x_sample,
+            t_sample,
+            c_t_sample,
+            head,
+            target,
             microbatch_size=cfg.train.loss_microbatch_size,
         )
-        torch.nn.utils.clip_grad_norm_(
-            head.parameters(), cfg.train.grad_clip_max_norm
-        )
+        torch.nn.utils.clip_grad_norm_(head.parameters(), cfg.train.grad_clip_max_norm)
         optimiser.step()
         ema.update()
 
     eval_autocast = dict(
-        device_type=device.type, dtype=torch.bfloat16,
+        device_type=device.type,
+        dtype=torch.bfloat16,
         enabled=cfg.eval.eval_autocast_bf16,
     )
 
     def eval_slice():
         with torch.no_grad(), torch.autocast(**eval_autocast):
             sample_swap_ctmc(
-                head, target.sample_base(eval_chunk, device=device), t_grid,
-                return_log_weights=True, target=target, multi_event=multi_event,
+                head,
+                target.sample_base(eval_chunk, device=device),
+                t_grid,
+                return_log_weights=True,
+                target=target,
+                multi_event=multi_event,
             )
 
     def rate_diag():
         with torch.no_grad():
             _swap_rate_diagnostics(
-                head, x_sample, t_sample, step_dt=1.0 / max(n_grid - 1, 1),
+                head,
+                x_sample,
+                t_sample,
+                step_dt=1.0 / max(n_grid - 1, 1),
                 target=target,
             )
 
@@ -191,6 +214,7 @@ def _phase_runners(cfg, target, head, device):
         f"head_forward (B={eval_chunk})": head_forward,
     }
     if hasattr(target, "spec"):
+
         def swap_energy_change():
             with torch.no_grad():
                 target.spec.swap_energy_change(x_probe)
@@ -208,9 +232,7 @@ def _project(cfg, phase_s: dict, args) -> None:
     """
     inner_per_outer = cfg.train.inner_steps_per_outer
     eval_every = cfg.eval.eval_every
-    n_train_eval = (
-        cfg.eval.n_eval_samples_training or cfg.eval.n_eval_samples
-    )
+    n_train_eval = cfg.eval.n_eval_samples_training or cfg.eval.n_eval_samples
     eval_chunk = cfg.eval.eval_sample_chunk or n_train_eval
 
     def named(prefix):
@@ -234,9 +256,7 @@ def _project(cfg, phase_s: dict, args) -> None:
         # The eval BLOCK still fires when n_eval is 0 only if eval_every
         # divides the step; scenario (c) means the block is skipped whole,
         # so its rate diagnostics and checkpoint write go with it.
-        eval_s = (
-            evals * (n_chunks * slice_s + eval_fixed_s) if n_eval else 0.0
-        )
+        eval_s = evals * (n_chunks * slice_s + eval_fixed_s) if n_eval else 0.0
         total = 1000 * inner_s + cycles * cycle_s + eval_s
         per_1000[label] = total
         print(
@@ -265,16 +285,20 @@ def main(argv=None):
     parser.add_argument("--eval-autocast-bf16", action="store_true")
     parser.add_argument("--anchor-chunk", type=int, default=None)
     parser.add_argument(
-        "--c-t-grid-chunk-rows", type=int, default=None,
+        "--c-t-grid-chunk-rows",
+        type=int,
+        default=None,
         help="flatten the c_t grid into row-chunks of this size instead of "
-             "the per-slot sequential loop (gradient-free, parity-tested).",
+        "the per-slot sequential loop (gradient-free, parity-tested).",
     )
     parser.add_argument("--remaining-steps", type=int, default=41_000)
     parser.add_argument("--gpu-cost-per-hour", type=float, default=2.50)
     parser.add_argument(
-        "--trainer-steps", type=int, default=0,
+        "--trainer-steps",
+        type=int,
+        default=0,
         help="also run train_swap itself for this many logged steps and "
-             "report measured s/step (the end-to-end check on (1)).",
+        "report measured s/step (the end-to-end check on (1)).",
     )
     args = parser.parse_args(argv)
 
@@ -296,9 +320,7 @@ def main(argv=None):
     if args.batch is not None:
         cfg = replace(cfg, train=replace(cfg.train, batch_size=args.batch))
     if args.eval_chunk is not None:
-        cfg = replace(
-            cfg, eval=replace(cfg.eval, eval_sample_chunk=args.eval_chunk)
-        )
+        cfg = replace(cfg, eval=replace(cfg.eval, eval_sample_chunk=args.eval_chunk))
 
     torch.manual_seed(cfg.train.seed)
     target, head = build_target_and_head(cfg, str(device))
@@ -325,18 +347,21 @@ def main(argv=None):
 
     if args.trainer_steps:
         with tempfile.TemporaryDirectory() as scratch:
-            short = replace(
-                cfg, train=replace(cfg.train, n_steps=args.trainer_steps)
-            )
+            short = replace(cfg, train=replace(cfg.train, n_steps=args.trainer_steps))
             torch.manual_seed(short.train.seed)
             target, head = build_target_and_head(short, str(device))
             if device.type == "cuda":
                 torch.cuda.synchronize()
             start = time.perf_counter()
             train_swap(
-                head, target, short.train, short.ctmc, short.eval,
+                head,
+                target,
+                short.train,
+                short.ctmc,
+                short.eval,
                 Path(scratch),
-                use_wandb=False, estimator_mode=short.estimator,
+                use_wandb=False,
+                estimator_mode=short.estimator,
                 sigma_curriculum=(
                     short.curriculum.stages if short.curriculum else None
                 ),

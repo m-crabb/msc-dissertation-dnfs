@@ -18,10 +18,6 @@ double-counted adjacency); these tests pin every link against the exact
 
 import numpy as np
 import pytest
-
-from discrete_flow_sampler.diagnostics.metrics import enumerate_states, exact_log_probs
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-from discrete_flow_sampler.diagnostics.metrics import conditional_pmf_at_composition
 from experiments.constrained_hard_03.gate_4x4 import on_slice_free_energy_reference
 from experiments.constrained_hard_03.slice_ti import (
     composite_simpson,
@@ -30,6 +26,13 @@ from experiments.constrained_hard_03.slice_ti import (
     slice_ti_free_energy_per_site,
     uniform_slice_mean_energy,
 )
+
+from discrete_flow_sampler.diagnostics.metrics import (
+    conditional_pmf_at_composition,
+    enumerate_states,
+    exact_log_probs,
+)
+from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 
 def _slice_setup(lattice_side, sigma):
@@ -56,9 +59,7 @@ def test_simpson_exact_on_cubics():
     # Composite Simpson integrates cubics exactly regardless of interval count.
     grid = np.linspace(0.0, 0.223, 17)
     values = 3.0 * grid**3 - 2.0 * grid**2 + grid - 5.0
-    exact = (
-        3.0 / 4.0 * 0.223**4 - 2.0 / 3.0 * 0.223**3 + 0.223**2 / 2.0 - 5.0 * 0.223
-    )
+    exact = 3.0 / 4.0 * 0.223**4 - 2.0 / 3.0 * 0.223**3 + 0.223**2 / 2.0 - 5.0 * 0.223
     assert composite_simpson(grid, values) == pytest.approx(exact, abs=1e-12)
 
 
@@ -75,10 +76,7 @@ def test_quadrature_error_matches_monte_carlo():
     ses = np.linspace(0.02, 0.08, 9)
     base = np.sin(grid * 30.0)
     draws = np.array(
-        [
-            composite_simpson(grid, base + rng.normal(0.0, ses))
-            for _ in range(20000)
-        ]
+        [composite_simpson(grid, base + rng.normal(0.0, ses)) for _ in range(20000)]
     )
     assert quadrature_error(grid, ses) == pytest.approx(draws.std(), rel=0.05)
 
@@ -120,9 +118,7 @@ def test_ti_on_exact_integrand_recovers_enumeration_reference(sigma_target):
             for s in grid
         ]
     )
-    f_ti = slice_ti_free_energy_per_site(
-        grid, integrand, lattice_side=4, n_plus=8
-    )
+    f_ti = slice_ti_free_energy_per_site(grid, integrand, lattice_side=4, n_plus=8)
     target, slice_states, _ = _slice_setup(4, sigma_target)
     f_ref = float(on_slice_free_energy_reference(target, slice_states))
     assert f_ti == pytest.approx(f_ref, abs=2e-4)

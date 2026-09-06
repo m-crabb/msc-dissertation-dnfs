@@ -48,6 +48,7 @@ wraps the existing `train_swap` call: the trainer is untouched and archived
 runs stay byte-identical. The cost is that the counter's interception
 slows the loop, which is exactly why this runs at short horizons.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,6 +58,8 @@ from dataclasses import replace
 from pathlib import Path
 
 import torch
+from experiments.constrained_hard_03.configs import CONFIGS
+from experiments.constrained_hard_03.run import build_target_and_head
 from torch.utils.flop_counter import FlopCounterMode
 
 from discrete_flow_sampler.diagnostics.flops import (
@@ -68,9 +71,6 @@ from discrete_flow_sampler.diagnostics.flops import (
     valid_measurement_horizons,
 )
 from discrete_flow_sampler.samplers.swap_training import train_swap
-
-from experiments.constrained_hard_03.configs import CONFIGS
-from experiments.constrained_hard_03.run import build_target_and_head
 
 
 def curriculum_within(curriculum, horizon: int):
@@ -141,7 +141,8 @@ def derived_flops(cfg, head, target, device: str, n_steps: int) -> dict:
     return {
         "rollout_batch": outer_batch,
         "sampling_flops_per_eval_draw_set": (
-            cfg.ctmc.n_euler_steps * update_flops
+            cfg.ctmc.n_euler_steps
+            * update_flops
             * ((cfg.eval.n_eval_samples or 5000) / cfg.train.batch_size)
         ),
         "update_batch": cfg.train.batch_size,
@@ -164,7 +165,9 @@ def main(argv: list[str] | None = None):
     parser.add_argument("--cfg", required=True, choices=list(CONFIGS.keys()))
     parser.add_argument("--n-horizons", type=int, default=3)
     parser.add_argument(
-        "--horizon-scale", type=int, default=1,
+        "--horizon-scale",
+        type=int,
+        default=1,
         help="multiply every horizon; raise if the fixed prefix dominates",
     )
     parser.add_argument("--scratch", type=Path, default=Path("results/flop_probe"))
@@ -240,8 +243,13 @@ def main(argv: list[str] | None = None):
         "one_eval_draw_set_flops": one_eval_draw_set,
         "training_proper_in_eval_draw_sets": training_proper / one_eval_draw_set,
     }
-    print(json.dumps({k: v for k, v in payload.items() if k != "derived_detail"},
-                     indent=2, default=str))
+    print(
+        json.dumps(
+            {k: v for k, v in payload.items() if k != "derived_detail"},
+            indent=2,
+            default=str,
+        )
+    )
     print(
         f"[flops] residual {fit['max_relative_residual']:.2%} "
         f"| measured/accounted {payload['measured_over_accounted']:.3f} "

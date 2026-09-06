@@ -46,7 +46,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-
 from experiments.dnfs_baseline_01.run import composition_sweep
 
 # The claim band exactly: half-width 0.20 about 0.5 is what the run was
@@ -56,8 +55,14 @@ CLAIM_BAND = (0.30, 0.40, 0.50, 0.60, 0.70)
 # Final-coverage-stage checkpoints (half-width 0.20 begins at step 36k) plus
 # two earlier ones for context. `final.pt` is the step-50k state; there is no
 # step_050000.pt.
-FINAL_STAGE = ("step_037500.pt", "step_040000.pt", "step_042500.pt",
-               "step_045000.pt", "step_047500.pt", "final.pt")
+FINAL_STAGE = (
+    "step_037500.pt",
+    "step_040000.pt",
+    "step_042500.pt",
+    "step_045000.pt",
+    "step_047500.pt",
+    "final.pt",
+)
 EARLIER = ("step_027500.pt", "step_032500.pt")
 
 
@@ -76,14 +81,18 @@ def obedience_slope(rows: list[dict]) -> tuple[float, float]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--out", default=None,
-                        help="JSON path; defaults to <run-dir>/eval/"
-                             "obedience_vs_training.json")
+    parser.add_argument(
+        "--out",
+        default=None,
+        help="JSON path; defaults to <run-dir>/eval/obedience_vs_training.json",
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
-    out_path = Path(args.out) if args.out else (
-        run_dir / "eval" / "obedience_vs_training.json"
+    out_path = (
+        Path(args.out)
+        if args.out
+        else (run_dir / "eval" / "obedience_vs_training.json")
     )
 
     results = []
@@ -92,7 +101,10 @@ def main() -> None:
             print(f"skip {checkpoint}: absent")
             continue
         rows = composition_sweep(
-            run_dir, CLAIM_BAND, checkpoint=checkpoint, save=False,
+            run_dir,
+            CLAIM_BAND,
+            checkpoint=checkpoint,
+            save=False,
         )
         slope, intercept = obedience_slope(rows)
         # Delivered span is the honest companion to the slope: a model pinned
@@ -106,42 +118,54 @@ def main() -> None:
             "delivered_span": max(delivered) - min(delivered),
             "delivered_min": min(delivered),
             "delivered_max": max(delivered),
-            "ess_at_c05": next(r["ess_fraction"] for r in rows
-                               if abs(r["composition"] - 0.5) < 1e-9),
+            "ess_at_c05": next(
+                r["ess_fraction"] for r in rows if abs(r["composition"] - 0.5) < 1e-9
+            ),
             "rows": rows,
         }
         results.append(record)
-        print(f"{checkpoint:>18}  slope {slope:6.3f}  span "
-              f"{record['delivered_span']:.4f}  "
-              f"[{min(delivered):.3f}, {max(delivered):.3f}]  "
-              f"ESS@0.5 {record['ess_at_c05']:.4f}")
+        print(
+            f"{checkpoint:>18}  slope {slope:6.3f}  span "
+            f"{record['delivered_span']:.4f}  "
+            f"[{min(delivered):.3f}, {max(delivered):.3f}]  "
+            f"ESS@0.5 {record['ess_at_c05']:.4f}"
+        )
 
     final_stage = [r for r in results if r["final_stage"]]
     summary = {"n_final_stage": len(final_stage)}
     if len(final_stage) >= 3:
-        steps = np.array([
-            50000 if r["checkpoint"] == "final.pt"
-            else int(r["checkpoint"].split("_")[1].split(".")[0])
-            for r in final_stage
-        ])
+        steps = np.array(
+            [
+                50000
+                if r["checkpoint"] == "final.pt"
+                else int(r["checkpoint"].split("_")[1].split(".")[0])
+                for r in final_stage
+            ]
+        )
         for key in ("slope", "delivered_span"):
             values = np.array([r[key] for r in final_stage])
             trend = float(np.polyfit(steps, values, 1)[0]) * 10000
             summary[f"{key}_per_10k"] = trend
             summary[f"{key}_mean"] = float(values.mean())
             summary[f"{key}_range"] = [float(values.min()), float(values.max())]
-        print(f"\nfinal-stage trend: slope {summary['slope_per_10k']:+.4f} "
-              f"per 10k steps (mean {summary['slope_mean']:.3f}, "
-              f"range {summary['slope_range'][0]:.3f}-"
-              f"{summary['slope_range'][1]:.3f})")
-        print(f"final-stage trend: span  {summary['delivered_span_per_10k']:+.4f}"
-              f" per 10k steps (mean {summary['delivered_span_mean']:.4f})")
+        print(
+            f"\nfinal-stage trend: slope {summary['slope_per_10k']:+.4f} "
+            f"per 10k steps (mean {summary['slope_mean']:.3f}, "
+            f"range {summary['slope_range'][0]:.3f}-"
+            f"{summary['slope_range'][1]:.3f})"
+        )
+        print(
+            f"final-stage trend: span  {summary['delivered_span_per_10k']:+.4f}"
+            f" per 10k steps (mean {summary['delivered_span_mean']:.4f})"
+        )
 
     out_path.parent.mkdir(exist_ok=True)
-    out_path.write_text(json.dumps(
-        {"run_dir": str(run_dir), "summary": summary, "checkpoints": results},
-        indent=2,
-    ))
+    out_path.write_text(
+        json.dumps(
+            {"run_dir": str(run_dir), "summary": summary, "checkpoints": results},
+            indent=2,
+        )
+    )
     print(f"\nwrote {out_path}")
 
 

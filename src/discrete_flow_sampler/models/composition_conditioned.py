@@ -8,6 +8,7 @@ This is not an `nn.Module`: optimisers and checkpoints use the underlying
 model, preserving parameter names without a wrapper's `state_dict` prefix
 and keeping eval-script checkpoint compatibility.
 """
+
 from torch import Tensor
 
 from discrete_flow_sampler.composition import expand_b_major

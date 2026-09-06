@@ -53,10 +53,9 @@ def _exact_moments(D: int, sigma: float):
 
 def _pair_sum(samples: torch.Tensor, D: int) -> torch.Tensor:
     grid = samples.reshape(-1, D, D)
-    return (
-        (grid * grid.roll(1, dims=1)).sum(dim=(1, 2))
-        + (grid * grid.roll(1, dims=2)).sum(dim=(1, 2))
-    )
+    return (grid * grid.roll(1, dims=1)).sum(dim=(1, 2)) + (
+        grid * grid.roll(1, dims=2)
+    ).sum(dim=(1, 2))
 
 
 def test_energy_and_magnetisation_match_enumeration_3x3():

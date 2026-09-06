@@ -140,9 +140,7 @@ def exact_log_probs(target, states: Tensor) -> Tensor:
     return log_p_unnorm - log_Z
 
 
-def free_energy_lb_estimate(
-    log_weights: Tensor, sigma: float, D: int
-) -> Tensor:
+def free_energy_lb_estimate(log_weights: Tensor, sigma: float, D: int) -> Tensor:
     """Per-site free-energy lower-bound estimate F/D from CTMC IS weights.
 
     Implements paper Eq. 37 (Appendix D.1). The free energy of the Ising
@@ -304,9 +302,7 @@ def conditional_pmf_at_composition(
     return slice_states, log_pi_slice - log_Z_slice
 
 
-def z2_asymmetry_from_samples(
-    samples: Tensor, log_weights: Tensor
-) -> dict[str, float]:
+def z2_asymmetry_from_samples(samples: Tensor, log_weights: Tensor) -> dict[str, float]:
     """Z_2 symmetry-breaking diagnostic for IS-weighted DNFS samples.
 
     For a Z_2-symmetric target (Ising with bias=0 at c_target=0.5),
@@ -437,12 +433,9 @@ def split_half_gelman_rubin(chains) -> float:
     half = n_samples // 2
     if half < 2:
         raise ValueError(
-            "split-half R-hat needs at least 4 samples per chain; got "
-            f"{n_samples}"
+            f"split-half R-hat needs at least 4 samples per chain; got {n_samples}"
         )
-    halves = np.concatenate(
-        [chains[:, :half], chains[:, n_samples - half:]], axis=0
-    )
+    halves = np.concatenate([chains[:, :half], chains[:, n_samples - half :]], axis=0)
     return gelman_rubin(halves)
 
 
@@ -500,7 +493,7 @@ def half_magnetisation_order_parameter(x: Tensor, D: int) -> Tensor:
     """
     grid = x.float().reshape(*x.shape[:-1], D, D)
     m_left = grid[..., :, : D // 2].mean(dim=(-2, -1))
-    m_right = grid[..., :, D // 2:].mean(dim=(-2, -1))
+    m_right = grid[..., :, D // 2 :].mean(dim=(-2, -1))
     return 0.5 * (m_left - m_right)
 
 
@@ -559,6 +552,7 @@ def gradient_noise_scale_components(
 # against unweighted reference configurations. Spins are +-1, x is (N, L*L)
 # row-major over an L x L lattice.
 
+
 def _weighted_site_means(x: Tensor, weights: Tensor) -> Tensor:
     """E_w[x_i] for every site, shape (d,)."""
     return torch.einsum("n,nd->d", weights, x.float())
@@ -579,8 +573,13 @@ def _reference_weights_or_uniform(reference: Tensor, reference_weights) -> Tenso
     return torch.full((reference.shape[0],), 1.0 / reference.shape[0])
 
 
-def magnetisation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int,
-                                reference_weights: Tensor | None = None) -> float:
+def magnetisation_profile_error(
+    x: Tensor,
+    weights: Tensor,
+    reference: Tensor,
+    L: int,
+    reference_weights: Tensor | None = None,
+) -> float:
     """dMag of MDNS Eq. (26): mean absolute error of the row/column magnetisations.
 
     M_row(k) = sum_{i in row k} E[x_i] (a SUM over the L sites of the row, not a
@@ -609,15 +608,22 @@ def _row_pair_correlations(x: Tensor, weights: Tensor, L: int) -> tuple[Tensor, 
     x = x.float()
     means = _weighted_site_means(x, weights)
     second_moment = torch.einsum("n,ni,nj->ij", weights, x, x)
-    connected = (second_moment - torch.outer(means, means)).view(L, L, L, L)  # (k, c, l, c')
+    connected = (second_moment - torch.outer(means, means)).view(
+        L, L, L, L
+    )  # (k, c, l, c')
     same_col = torch.eye(L)
-    row_corr = torch.einsum("kclc,cc->kl", connected, same_col)   # i=(k,c), j=(l,c)
-    col_corr = torch.einsum("rkrl,rr->kl", connected, same_col)   # i=(r,k), j=(r,l)
+    row_corr = torch.einsum("kclc,cc->kl", connected, same_col)  # i=(k,c), j=(l,c)
+    col_corr = torch.einsum("rkrl,rr->kl", connected, same_col)  # i=(r,k), j=(r,l)
     return row_corr, col_corr
 
 
-def correlation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: int,
-                              reference_weights: Tensor | None = None) -> float:
+def correlation_profile_error(
+    x: Tensor,
+    weights: Tensor,
+    reference: Tensor,
+    L: int,
+    reference_weights: Tensor | None = None,
+) -> float:
     """dCorr of MDNS Eq. (28): (1/L^2) sum_{k,l} |C_row - C_row_pi| + |C_col - C_col_pi|.
 
     The (k,l) sum runs over all L^2 ordered row pairs including k = l (where the
@@ -631,9 +637,13 @@ def correlation_profile_error(x: Tensor, weights: Tensor, reference: Tensor, L: 
     return (((row_s - row_r).abs().sum() + (col_s - col_r).abs().sum()) / L**2).item()
 
 
-def energy_wasserstein2(sampler_energy: Tensor, weights: Tensor, reference_energy: Tensor,
-                        n_quantiles: int = 20_000,
-                        reference_weights: Tensor | None = None) -> float:
+def energy_wasserstein2(
+    sampler_energy: Tensor,
+    weights: Tensor,
+    reference_energy: Tensor,
+    n_quantiles: int = 20_000,
+    reference_weights: Tensor | None = None,
+) -> float:
     """1-D Wasserstein-2 between a weighted and an unweighted scalar distribution.
 
     W2^2 = int_0^1 (F^{-1}(u) - G^{-1}(u))^2 du, the closed form in one
@@ -643,6 +653,7 @@ def energy_wasserstein2(sampler_energy: Tensor, weights: Tensor, reference_energ
     is charged by the shift rather than by loss of overlap. Pass energies per
     site so cells compare across lattice sizes (DASBS uses total energy).
     """
+
     def quantile_function(values: Tensor, w: Tensor) -> Tensor:
         order = torch.argsort(values)
         cdf = torch.cumsum(w[order], 0)
@@ -650,5 +661,7 @@ def energy_wasserstein2(sampler_energy: Tensor, weights: Tensor, reference_energ
         return values[order][torch.searchsorted(cdf, u).clamp(max=values.numel() - 1)]
 
     uniform = _reference_weights_or_uniform(reference_energy, reference_weights)
-    gap = quantile_function(sampler_energy, weights) - quantile_function(reference_energy, uniform)
+    gap = quantile_function(sampler_energy, weights) - quantile_function(
+        reference_energy, uniform
+    )
     return gap.pow(2).mean().sqrt().item()

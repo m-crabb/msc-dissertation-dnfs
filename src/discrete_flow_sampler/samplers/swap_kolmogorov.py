@@ -7,6 +7,7 @@ the SAME tensor via the readout's exact antisymmetry
 Same-spin pairs vanish for free (G_swap = 0, y_ij = x), so summing all i<j is
 correct without masking.
 """
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -21,17 +22,18 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
 def residual_swap(x: Tensor, t: Tensor, dt_log_Zt, head, target) -> Tensor:
     """Per-state swap Kolmogorov residual δ_t(x) (Eq. 10, swap form). (B,)."""
     pairs = upper_tri_pairs(x.shape[1], x.device)
-    G_edge = gather_pair_scores(head(x, t), pairs)          # (B, P), i<j
+    G_edge = gather_pair_scores(head(x, t), pairs)  # (B, P), i<j
     G_plus = F.relu(G_edge)
     neg_G_plus = F.relu(-G_edge)
     log_ratio = target.swap_log_ratio(x, t, pairs).clamp(max=SWAP_LOG_RATIO_CLAMP)
-    site_terms = (G_plus - neg_G_plus * log_ratio.exp()).sum(dim=-1)   # (B,)
+    site_terms = (G_plus - neg_G_plus * log_ratio.exp()).sum(dim=-1)  # (B,)
     dt_log_pt_x = target.dt_log_p_tilde_t(x, t) - dt_log_Zt
     return dt_log_pt_x + site_terms
 
 
-def loss_swap(x: Tensor, t: Tensor, dt_log_Zt, head, target, *,
-              return_residual: bool = False):
+def loss_swap(
+    x: Tensor, t: Tensor, dt_log_Zt, head, target, *, return_residual: bool = False
+):
     """Mean-squared swap residual over the batch. Scalar.
 
     `return_residual=True` additionally hands back the SANITISED per-state
@@ -46,7 +48,12 @@ def loss_swap(x: Tensor, t: Tensor, dt_log_Zt, head, target, *,
 
 
 def loss_swap_backward_microbatched(
-    x: Tensor, t: Tensor, dt_log_Zt, head, target, *,
+    x: Tensor,
+    t: Tensor,
+    dt_log_Zt,
+    head,
+    target,
+    *,
     microbatch_size: int | None,
     slice_grad_sqnorms_out: list | None = None,
 ) -> tuple[Tensor, Tensor]:
@@ -96,9 +103,7 @@ def loss_swap_backward_microbatched(
     """
     batch_size = x.shape[0]
     if microbatch_size is None or microbatch_size >= batch_size:
-        loss, residual = loss_swap(
-            x, t, dt_log_Zt, head, target, return_residual=True
-        )
+        loss, residual = loss_swap(x, t, dt_log_Zt, head, target, return_residual=True)
         loss.backward()
         return loss.detach(), residual.detach()
 
@@ -129,9 +134,7 @@ def loss_swap_backward_microbatched(
                     continue
                 grad_now = param.grad.detach()
                 previous = previous_grads[param_index]
-                increment = (
-                    grad_now if previous is None else grad_now - previous
-                )
+                increment = grad_now if previous is None else grad_now - previous
                 increment_sqnorm += float(increment.pow(2).sum())
                 previous_grads[param_index] = grad_now.clone()
             slice_grad_sqnorms_out.append(

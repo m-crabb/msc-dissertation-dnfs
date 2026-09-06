@@ -73,22 +73,34 @@ reference uncertainty and was not comparable to the table's iid floor.
 Reference uncertainty is now reported separately in the tables. Neither
 proximity to this mean nor a smaller error establishes equivalence.
 """
+
 import argparse
 import json
 import sys
 from pathlib import Path
 
-from discrete_flow_sampler.diagnostics.figure_style import (
-    CLASSICAL_HUE, FIGSIZE_FULL_2X2, FONT_SIZE_ANNOTATION, FONT_SIZE_LABEL,
-    REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI, parameter_ramp, seed_band,
-    style_axes, use_house_style)
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 import numpy as np
 import torch
+from matplotlib.ticker import MaxNLocator
 
+from discrete_flow_sampler.diagnostics.figure_style import (
+    CLASSICAL_HUE,
+    FIGSIZE_FULL_2X2,
+    FONT_SIZE_ANNOTATION,
+    FONT_SIZE_LABEL,
+    REFERENCE_INK,
+    SAMPLER_HUE,
+    SAVEFIG_DPI,
+    parameter_ramp,
+    seed_band,
+    style_axes,
+    use_house_style,
+)
 from discrete_flow_sampler.diagnostics.metrics import (
-    half_magnetisation_order_parameter, marginal_tvd)
+    half_magnetisation_order_parameter,
+    marginal_tvd,
+)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -110,6 +122,7 @@ HEAD_LABEL = {
 
 
 # --- supports, and the pmfs built on them --------------------------------
+
 
 def phi_support(lattice_edge):
     """The d/2 + 1 values phi can take on the c = 0.5 slice.
@@ -167,8 +180,9 @@ def energy_pmf(states, lattice_edge, weights=None):
     """Weighted pmf on the exact energy levels, with an aliasing guard."""
     d = lattice_edge * lattice_edge
     level = (bare_energy(states, lattice_edge) + 2.0 * d) / 4.0
-    assert (level - level.round()).abs().max() < 1e-2, \
+    assert (level - level.round()).abs().max() < 1e-2, (
         "state energies off the exact-level support"
+    )
     index = level.round().long().clamp(0, d)
     if weights is None:
         weights = torch.full((len(states),), 1.0 / len(states))
@@ -176,6 +190,7 @@ def energy_pmf(states, lattice_edge, weights=None):
 
 
 # --- references ----------------------------------------------------------
+
 
 def split_pooled_into_chains(pooled, n_chains):
     """Recover chain blocks from the d256 reference's single pooled tensor.
@@ -187,26 +202,30 @@ def split_pooled_into_chains(pooled, n_chains):
     bootstrap replicate and silently understate the floor.
     """
     block = len(pooled) // n_chains
-    return [pooled[i * block:(i + 1) * block] for i in range(n_chains)]
+    return [pooled[i * block : (i + 1) * block] for i in range(n_chains)]
 
 
 def load_reference(lattice_edge, sigma_key, burn_in_fraction=0.2):
     """Reference chains for this rung and coupling, one tensor per chain."""
     if lattice_edge == 8:
         tag = {"s010": "s100", "s220": "s220"}[sigma_key]
-        paths = sorted((REPO_ROOT / "results" / "03_hard" / "kawasaki_w2")
-                       .glob(f"kawasaki_D8_{tag}_seed*.npz"))
+        paths = sorted(
+            (REPO_ROOT / "results" / "03_hard" / "kawasaki_w2").glob(
+                f"kawasaki_D8_{tag}_seed*.npz"
+            )
+        )
         if not paths:
             raise FileNotFoundError(f"no D8 {tag} reference chains")
         chains = [torch.from_numpy(np.load(p)["spins"]).float() for p in paths]
-        return [c[int(len(c) * burn_in_fraction):] for c in chains]
+        return [c[int(len(c) * burn_in_fraction) :] for c in chains]
 
     directory = REPO_ROOT / "results" / f"kawasaki_ref_d256_{sigma_key}"
     provenance = json.loads((directory / "provenance.json").read_text())
     stated = provenance["sigma"]
     assert abs(stated - SIGMA[sigma_key]) < 1e-9, (
         f"{directory.name} is at sigma={stated}, not {SIGMA[sigma_key]} -- "
-        "couplings must never be mixed in one panel")
+        "couplings must never be mixed in one panel"
+    )
     pooled = torch.load(directory / "samples.pt", weights_only=True).float()
     # already burnt in and thinned by the generator; no further burn-in
     return split_pooled_into_chains(pooled, provenance["n_chains"])
@@ -225,22 +244,28 @@ def _floor(chains, n_draws, n_replicates, seed, pmf_of):
     distances = []
     for _ in range(n_replicates):
         rows = torch.randint(len(pool), (n_draws,), generator=generator)
-        distances.append(marginal_tvd(torch.from_numpy(pmf_of(pool[rows])),
-                                      torch.from_numpy(reference)))
+        distances.append(
+            marginal_tvd(
+                torch.from_numpy(pmf_of(pool[rows])), torch.from_numpy(reference)
+            )
+        )
     return float(np.mean(distances))
 
 
 def phi_floor(chains, lattice_edge, n_draws, n_replicates=64, seed=0):
-    return _floor(chains, n_draws, n_replicates, seed,
-                  lambda x: phi_pmf(x, lattice_edge))
+    return _floor(
+        chains, n_draws, n_replicates, seed, lambda x: phi_pmf(x, lattice_edge)
+    )
 
 
 def energy_floor(chains, lattice_edge, n_draws, n_replicates=64, seed=0):
-    return _floor(chains, n_draws, n_replicates, seed,
-                  lambda x: energy_pmf(x, lattice_edge))
+    return _floor(
+        chains, n_draws, n_replicates, seed, lambda x: energy_pmf(x, lattice_edge)
+    )
 
 
 # --- the neural cells ----------------------------------------------------
+
 
 def is_tripwire_truncated(run_dir):
     """True if the cold-CV inversion tripwire halted this run early.
@@ -281,13 +306,18 @@ def load_cells(results_dir, lattice_edge, sigma_key, head, eval_subdir):
         if is_tripwire_truncated(run_dir):
             dropped.append(run_dir.name)
             continue
-        samples = torch.load(run_dir / eval_subdir / "samples.pt",
-                             weights_only=True).float()
-        log_w = torch.load(run_dir / eval_subdir / "log_weights.pt",
-                           weights_only=True)
-        runs.append({"name": run_dir.name, "samples": samples,
-                     "weights": torch.softmax(log_w, dim=0),
-                     "metrics": json.loads(metrics_path.read_text())})
+        samples = torch.load(
+            run_dir / eval_subdir / "samples.pt", weights_only=True
+        ).float()
+        log_w = torch.load(run_dir / eval_subdir / "log_weights.pt", weights_only=True)
+        runs.append(
+            {
+                "name": run_dir.name,
+                "samples": samples,
+                "weights": torch.softmax(log_w, dim=0),
+                "metrics": json.loads(metrics_path.read_text()),
+            }
+        )
     for name in dropped:
         print(f"dropped (cv-inversion tripwire halt): {name}", file=sys.stderr)
     return runs
@@ -302,8 +332,7 @@ def _occupied_limits(support, *pmfs, pad_fraction=0.04):
     reference AND sampler so a head with a fatter tail is not cropped into
     looking like the reference.
     """
-    occupied = np.nonzero(np.sum([np.asarray(p) for p in pmfs], axis=0)
-                          > 1e-9)[0]
+    occupied = np.nonzero(np.sum([np.asarray(p) for p in pmfs], axis=0) > 1e-9)[0]
     low, high = support[occupied.min()], support[occupied.max()]
     pad = pad_fraction * (high - low)
     return low - pad, high + pad
@@ -327,23 +356,42 @@ def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
     head would tell a reader who has learned the palette that the
     factorised head is a classical chain.
     """
-    ax.plot(support, reference_pmf, color=REFERENCE_INK, linewidth=1.3,
-            zorder=5, label="Kawasaki reference (certified)")
+    ax.plot(
+        support,
+        reference_pmf,
+        color=REFERENCE_INK,
+        linewidth=1.3,
+        zorder=5,
+        label="Kawasaki reference (certified)",
+    )
     # darkest = best head, so the ramp orders the way the legend does
     hues = parameter_ramp(SAMPLER_HUE, len(per_head))[::-1]
     for index, (label, pmfs) in enumerate(per_head):
         if not pmfs:
             continue
         mean_pmf = np.mean(pmfs, axis=0)
-        tvd = np.mean([marginal_tvd(torch.from_numpy(p),
-                                    torch.from_numpy(reference_pmf))
-                       for p in pmfs])
-        ax.plot(support, mean_pmf, color=hues[index], linewidth=1.5,
-                dashes=HEAD_DASHES[index % len(HEAD_DASHES)], zorder=4 - index,
-                label=f"{label} ({tvd:.3f}, {len(pmfs)} seeds)")
-    ax.annotate(f"floor {np.mean(floors):.3f}", xy=(0.03, 0.93),
-                xycoords="axes fraction", fontsize=FONT_SIZE_ANNOTATION,
-                color=REFERENCE_INK)
+        tvd = np.mean(
+            [
+                marginal_tvd(torch.from_numpy(p), torch.from_numpy(reference_pmf))
+                for p in pmfs
+            ]
+        )
+        ax.plot(
+            support,
+            mean_pmf,
+            color=hues[index],
+            linewidth=1.5,
+            dashes=HEAD_DASHES[index % len(HEAD_DASHES)],
+            zorder=4 - index,
+            label=f"{label} ({tvd:.3f}, {len(pmfs)} seeds)",
+        )
+    ax.annotate(
+        f"floor {np.mean(floors):.3f}",
+        xy=(0.03, 0.93),
+        xycoords="axes fraction",
+        fontsize=FONT_SIZE_ANNOTATION,
+        color=REFERENCE_INK,
+    )
     every = [p for _, pmfs in per_head for p in pmfs] + [reference_pmf]
     ax.set_xlim(*_occupied_limits(support, *every))
     ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
@@ -354,26 +402,41 @@ def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
 def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None):
     """`title`: when given (the row layout), the TVD/floor read goes into the panel
     title after it instead of an in-axes annotation, which collides at row height."""
-    ax.plot(support, reference_pmf, color=REFERENCE_INK, linewidth=1.3,
-            zorder=4, label="Kawasaki reference (certified)")
+    ax.plot(
+        support,
+        reference_pmf,
+        color=REFERENCE_INK,
+        linewidth=1.3,
+        zorder=4,
+        label="Kawasaki reference (certified)",
+    )
     if len(seed_pmfs):
         # DNFS spelled out: matplotlib has no glossary, so a \gls{} would
         # print verbatim into the figure.
         seed_band(ax, support, seed_pmfs, hue, "DNFS")
-        tvds = [marginal_tvd(torch.from_numpy(p),
-                             torch.from_numpy(reference_pmf))
-                for p in seed_pmfs]
+        tvds = [
+            marginal_tvd(torch.from_numpy(p), torch.from_numpy(reference_pmf))
+            for p in seed_pmfs
+        ]
         read = f"TVD {np.mean(tvds):.3f}, floor {floor:.3f}"
         if title is not None:
             ax.set_title(f"{title}\n{read}", fontsize=FONT_SIZE_ANNOTATION, loc="left")
         else:
-            ax.annotate(f"TVD {np.mean(tvds):.3f}   floor {floor:.3f}",
-                        xy=(0.03, 0.93), xycoords="axes fraction",
-                        fontsize=FONT_SIZE_ANNOTATION, color=REFERENCE_INK)
+            ax.annotate(
+                f"TVD {np.mean(tvds):.3f}   floor {floor:.3f}",
+                xy=(0.03, 0.93),
+                xycoords="axes fraction",
+                fontsize=FONT_SIZE_ANNOTATION,
+                color=REFERENCE_INK,
+            )
     else:
-        ax.annotate("no cell at this coupling", xy=(0.03, 0.93),
-                    xycoords="axes fraction", fontsize=FONT_SIZE_ANNOTATION,
-                    color=CLASSICAL_HUE)
+        ax.annotate(
+            "no cell at this coupling",
+            xy=(0.03, 0.93),
+            xycoords="axes fraction",
+            fontsize=FONT_SIZE_ANNOTATION,
+            color=CLASSICAL_HUE,
+        )
     ax.set_xlim(*_occupied_limits(support, reference_pmf, *seed_pmfs))
     # Cap tick density: the default locator puts six labels on the narrow
     # sigma_c energy window and they run together at print width.
@@ -382,8 +445,16 @@ def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None
     style_axes(ax)
 
 
-def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
-          n_replicates, layout="2x2", couplings=("s010", "s220")):
+def build(
+    results_dir,
+    lattice_edge,
+    heads,
+    eval_subdir,
+    out_path,
+    n_replicates,
+    layout="2x2",
+    couplings=("s010", "s220"),
+):
     """One results cell. `heads` is a list; >1 switches to the all-head form.
     `layout="row"` lays the four panels out in one full-width row (half the page
     height of the 2x2, decided 2026-09-03 for the float budget); panel order is
@@ -394,7 +465,9 @@ def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
     if layout == "row":
         n_couplings = len(couplings)
         width = FIGSIZE_FULL_2X2[0] * (1.0 if n_couplings == 2 else 0.62)
-        figure, flat = plt.subplots(1, 2 * n_couplings, figsize=(width, 2.5), gridspec_kw=dict(wspace=0.45))
+        figure, flat = plt.subplots(
+            1, 2 * n_couplings, figsize=(width, 2.5), gridspec_kw=dict(wspace=0.45)
+        )
         axes = {(r, c): flat[2 * r + c] for r in range(n_couplings) for c in range(2)}
     else:
         assert len(couplings) == 2, "the 2x2 layout needs both couplings"
@@ -406,10 +479,13 @@ def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
     for row, sigma_key in enumerate(couplings):
         chains = load_reference(lattice_edge, sigma_key)
         pool = torch.cat(chains)
-        per_head = [(HEAD_LABEL.get(h, h),
-                     load_cells(results_dir, lattice_edge, sigma_key, h,
-                                eval_subdir))
-                    for h in heads]
+        per_head = [
+            (
+                HEAD_LABEL.get(h, h),
+                load_cells(results_dir, lattice_edge, sigma_key, h, eval_subdir),
+            )
+            for h in heads
+        ]
         n_draws = next((len(c[0]["samples"]) for _, c in per_head if c), 5000)
         energy_ref = energy_pmf(pool, lattice_edge)
         phi_ref = phi_pmf(pool, lattice_edge)
@@ -421,75 +497,140 @@ def build(results_dir, lattice_edge, heads, eval_subdir, out_path,
         if len(heads) == 1:
             cells = per_head[0][1]
             panel_title = SIGMA_LABEL[sigma_key] if layout == "row" else None
-            _panel(axes[row, 0], energy_axis, energy_ref,
-                   [energy_pmf(c["samples"], lattice_edge, c["weights"])
-                    for c in cells], e_floor, "$E/d$", SAMPLER_HUE, panel_title)
-            _panel(axes[row, 1], phi_axis, phi_ref,
-                   [phi_pmf(c["samples"], lattice_edge, c["weights"])
-                    for c in cells], p_floor,
-                   r"$\phi = (m_\mathrm{left} - m_\mathrm{right})/2$",
-                   SAMPLER_HUE, panel_title)
+            _panel(
+                axes[row, 0],
+                energy_axis,
+                energy_ref,
+                [energy_pmf(c["samples"], lattice_edge, c["weights"]) for c in cells],
+                e_floor,
+                "$E/d$",
+                SAMPLER_HUE,
+                panel_title,
+            )
+            _panel(
+                axes[row, 1],
+                phi_axis,
+                phi_ref,
+                [phi_pmf(c["samples"], lattice_edge, c["weights"]) for c in cells],
+                p_floor,
+                r"$\phi = (m_\mathrm{left} - m_\mathrm{right})/2$",
+                SAMPLER_HUE,
+                panel_title,
+            )
         else:
             _multi_head_panel(
-                axes[row, 0], energy_axis, energy_ref,
-                [(label, [energy_pmf(c["samples"], lattice_edge, c["weights"])
-                          for c in cells]) for label, cells in per_head],
-                [e_floor], "$E/d$")
+                axes[row, 0],
+                energy_axis,
+                energy_ref,
+                [
+                    (
+                        label,
+                        [
+                            energy_pmf(c["samples"], lattice_edge, c["weights"])
+                            for c in cells
+                        ],
+                    )
+                    for label, cells in per_head
+                ],
+                [e_floor],
+                "$E/d$",
+            )
             _multi_head_panel(
-                axes[row, 1], phi_axis, phi_ref,
-                [(label, [phi_pmf(c["samples"], lattice_edge, c["weights"])
-                          for c in cells]) for label, cells in per_head],
+                axes[row, 1],
+                phi_axis,
+                phi_ref,
+                [
+                    (
+                        label,
+                        [
+                            phi_pmf(c["samples"], lattice_edge, c["weights"])
+                            for c in cells
+                        ],
+                    )
+                    for label, cells in per_head
+                ],
                 [p_floor],
-                r"$\phi = (m_\mathrm{left} - m_\mathrm{right})/2$")
+                r"$\phi = (m_\mathrm{left} - m_\mathrm{right})/2$",
+            )
 
         if layout == "row":
             if row == 0:
                 axes[row, 0].set_ylabel("probability mass", fontsize=FONT_SIZE_LABEL)
         else:
-            axes[row, 0].set_ylabel(f"{SIGMA_LABEL[sigma_key]}\nprobability mass",
-                                    fontsize=FONT_SIZE_LABEL)
+            axes[row, 0].set_ylabel(
+                f"{SIGMA_LABEL[sigma_key]}\nprobability mass", fontsize=FONT_SIZE_LABEL
+            )
         summary[sigma_key] = {
             "n_draws": n_draws,
-            "energy_floor": round(e_floor, 4), "phi_floor": round(p_floor, 4),
-            "heads": {label: [c["name"] for c in cells]
-                      for label, cells in per_head}}
+            "energy_floor": round(e_floor, 4),
+            "phi_floor": round(p_floor, 4),
+            "heads": {label: [c["name"] for c in cells] for label, cells in per_head},
+        }
 
     # One figure-level legend under the panels: per-axes legends collide with
     # the TVD annotations, and all four panels carry the same curves.
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    figure.legend(handles, labels, fontsize=FONT_SIZE_ANNOTATION,
-                  frameon=False, loc="lower center",
-                  ncol=4 if layout == "row" else 2,
-                  bbox_to_anchor=(0.5, -0.16 if layout == "row" else (-0.10 if len(heads) > 1 else -0.02)))
+    figure.legend(
+        handles,
+        labels,
+        fontsize=FONT_SIZE_ANNOTATION,
+        frameon=False,
+        loc="lower center",
+        ncol=4 if layout == "row" else 2,
+        bbox_to_anchor=(
+            0.5,
+            -0.16 if layout == "row" else (-0.10 if len(heads) > 1 else -0.02),
+        ),
+    )
     figure.tight_layout()
     figure.savefig(out_path, dpi=SAVEFIG_DPI, bbox_inches="tight")
-    print(json.dumps({"figure": str(out_path), "lattice_edge": lattice_edge,
-                      "heads": heads, "eval": eval_subdir, **summary},
-                     indent=2))
+    print(
+        json.dumps(
+            {
+                "figure": str(out_path),
+                "lattice_edge": lattice_edge,
+                "heads": heads,
+                "eval": eval_subdir,
+                **summary,
+            },
+            indent=2,
+        )
+    )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--lattice-edge", type=int, choices=(8, 16),
-                        required=True)
-    parser.add_argument("--heads", default="thp",
-                        help="comma-separated run-dir head tokens, best "
-                             "first; more than one switches to the all-head "
-                             "form (mean lines, no seed bands)")
-    parser.add_argument("--eval-subdir", default="eval_ema",
-                        choices=("eval", "eval_ema"))
-    parser.add_argument("--results-dir",
-                        default=str(REPO_ROOT / "results" / "03_hard"))
+    parser.add_argument("--lattice-edge", type=int, choices=(8, 16), required=True)
+    parser.add_argument(
+        "--heads",
+        default="thp",
+        help="comma-separated run-dir head tokens, best "
+        "first; more than one switches to the all-head "
+        "form (mean lines, no seed bands)",
+    )
+    parser.add_argument(
+        "--eval-subdir", default="eval_ema", choices=("eval", "eval_ema")
+    )
+    parser.add_argument("--results-dir", default=str(REPO_ROOT / "results" / "03_hard"))
     parser.add_argument("--n-replicates", type=int, default=64)
     parser.add_argument("--out", required=True)
     parser.add_argument("--layout", choices=("2x2", "row"), default="2x2")
-    parser.add_argument("--couplings", default="s010,s220",
-                        help="comma-separated coupling keys; 's220' alone gives the critical-only cell")
+    parser.add_argument(
+        "--couplings",
+        default="s010,s220",
+        help="comma-separated coupling keys; 's220' alone gives the critical-only cell",
+    )
     args = parser.parse_args()
-    build(args.results_dir, args.lattice_edge,
-          [h.strip() for h in args.heads.split(",") if h.strip()],
-          args.eval_subdir, Path(args.out), args.n_replicates, args.layout,
-          tuple(k.strip() for k in args.couplings.split(",") if k.strip()))
+    build(
+        args.results_dir,
+        args.lattice_edge,
+        [h.strip() for h in args.heads.split(",") if h.strip()],
+        args.eval_subdir,
+        Path(args.out),
+        args.n_replicates,
+        args.layout,
+        tuple(k.strip() for k in args.couplings.split(",") if k.strip()),
+    )
 
 
 if __name__ == "__main__":

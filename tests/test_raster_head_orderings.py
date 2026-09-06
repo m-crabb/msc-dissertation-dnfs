@@ -78,7 +78,11 @@ BLIND_ATOL = 1e-6
 def _backbone(seed=42):
     torch.manual_seed(seed)
     return LeTFRateMatrix(
-        d=D, vocab_size=2, hidden_dim=HIDDEN, n_layers=2, n_heads=2,
+        d=D,
+        vocab_size=2,
+        hidden_dim=HIDDEN,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
 
@@ -86,17 +90,27 @@ def _backbone(seed=42):
 def _interval(orderings=("row",), **kw):
     torch.manual_seed(0)
     return IntervalSwapHead(
-        _backbone(), pair_offsets=(1, LATTICE_SIDE), band_feature_dim=6,
-        position_dim=5, lattice_side=LATTICE_SIDE, site_orderings=orderings, **kw,
+        _backbone(),
+        pair_offsets=(1, LATTICE_SIDE),
+        band_feature_dim=6,
+        position_dim=5,
+        lattice_side=LATTICE_SIDE,
+        site_orderings=orderings,
+        **kw,
     ).eval()
 
 
 def _masked_attention(orderings=("row",), **kw):
     torch.manual_seed(0)
     return MaskedAttentionSwapHead(
-        _backbone(), pair_offsets=(1, LATTICE_SIDE), band_feature_dim=6,
-        position_dim=5, attention_dim=6, lattice_side=LATTICE_SIDE,
-        site_orderings=orderings, **kw,
+        _backbone(),
+        pair_offsets=(1, LATTICE_SIDE),
+        band_feature_dim=6,
+        position_dim=5,
+        attention_dim=6,
+        lattice_side=LATTICE_SIDE,
+        site_orderings=orderings,
+        **kw,
     ).eval()
 
 
@@ -131,8 +145,11 @@ def test_extra_orderings_stay_blind(head_kind, orderings):
             moved[:, i] *= -1
             moved[:, j] *= -1
             drift = (
-                head.compute_pair_context(moved, t)[:, i, j] - H[:, i, j]
-            ).abs().max().item()
+                (head.compute_pair_context(moved, t)[:, i, j] - H[:, i, j])
+                .abs()
+                .max()
+                .item()
+            )
             assert drift < BLIND_ATOL, (
                 f"{head_kind} {orderings}: H_{i},{j} moved by {drift:.2e}"
             )
@@ -253,9 +270,7 @@ def test_config_flag_reaches_the_raster_heads():
 
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
-    cfg = replace(
-        CONFIGS["H2_d16_c50_s010_letf_ma_10k"], site_orderings=("row", "col")
-    )
+    cfg = replace(CONFIGS["H2_d16_c50_s010_letf_ma_10k"], site_orderings=("row", "col"))
     head = build_swap_head(cfg, _backbone())
     assert head.site_orderings == ("row", "col")
 

@@ -2,16 +2,17 @@
 deterministic inputs, phi's exact symmetry through the enumerated moments,
 and the pass-row counter's mask_one vs masked_attention ratio.
 """
+
 import numpy as np
 import pytest
 import torch
-
 from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 from experiments.constrained_hard_03.demo_4x4 import (
     BackbonePassRowCounter,
     exact_moments,
     n_eff_observable,
 )
+
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
@@ -39,12 +40,11 @@ def test_exact_phi_mean_is_zero_by_symmetry():
 
 def _tiny_head(head_kind):
     cfg_key = (
-        "H2_d16_c50_s010_letf_ma_10k" if head_kind == "masked_attention"
+        "H2_d16_c50_s010_letf_ma_10k"
+        if head_kind == "masked_attention"
         else "H2_d16_c50_s010_letf_mo_10k"
     )
-    backbone = LeTFRateMatrix(
-        d=16, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4
-    )
+    backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4)
     return build_swap_head(CONFIGS[cfg_key], backbone), backbone
 
 

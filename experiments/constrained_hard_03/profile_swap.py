@@ -27,6 +27,7 @@ On the Modal L4 (see modal_app.bench):
     pixi run -e dev modal run -m experiments.constrained_hard_03.modal_app::bench \\
         --argv "--mode eval --d 64 --batch 256 --n-euler-steps 128"
 """
+
 import argparse
 import json
 import logging
@@ -62,13 +63,17 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
     sample_swap_ctmc,
 )
 from discrete_flow_sampler.samplers.swap_kolmogorov import (
-    loss_swap, loss_swap_backward_microbatched)
-from discrete_flow_sampler.targets.ising import (
-    SIGMA_C, FixedCompositionIsingTarget)
+    loss_swap,
+    loss_swap_backward_microbatched,
+)
+from discrete_flow_sampler.targets.ising import SIGMA_C, FixedCompositionIsingTarget
 
 
 def build_head_and_target(
-    d: int, device: torch.device, anchor_chunk: int | None, use_sdpa: bool = False,
+    d: int,
+    device: torch.device,
+    anchor_chunk: int | None,
+    use_sdpa: bool = False,
     head_kind: str = "mask_one",
     site_orderings: tuple[str, ...] = ("row",),
     exterior_combiner: str = "mlp",
@@ -101,38 +106,56 @@ def build_head_and_target(
         D=side, sigma=SIGMA_C, target_composition=0.5, device=device
     )
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4,
+        d=d,
+        vocab_size=2,
+        hidden_dim=32,
+        n_layers=2,
+        n_heads=4,
         use_sdpa_readout=use_sdpa,
     ).to(device)
     if head_kind == "interval":
         head = IntervalSwapHead(
-            backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
+            backbone,
+            pair_offsets=(1, side),
+            exterior_combiner=exterior_combiner,
             gather_triu_pairs=gather_triu_pairs,
-            site_orderings=site_orderings, lattice_side=side,
+            site_orderings=site_orderings,
+            lattice_side=side,
         ).to(device)
     elif head_kind == "masked_attention":
         head = MaskedAttentionSwapHead(
-            backbone, pair_offsets=(1, side), exterior_combiner=exterior_combiner,
+            backbone,
+            pair_offsets=(1, side),
+            exterior_combiner=exterior_combiner,
             gather_triu_pairs=gather_triu_pairs,
             separable_band_scores=separable_band_scores,
-            site_orderings=site_orderings, lattice_side=side,
+            site_orderings=site_orderings,
+            lattice_side=side,
         ).to(device)
     elif head_kind == "stencil":
         head = MaskedAttentionSwapHead(
-            backbone, pair_offsets=(1, side), use_stencil=True, lattice_side=side,
+            backbone,
+            pair_offsets=(1, side),
+            use_stencil=True,
+            lattice_side=side,
             gather_triu_pairs=gather_triu_pairs,
             separable_band_scores=separable_band_scores,
         ).to(device)
     elif head_kind == "factorised":
         head = FactorisedSwapHead(
-            backbone, site_orderings=site_orderings, lattice_side=side,
-            interior_band=interior_band, gather_triu_pairs=gather_triu_pairs,
+            backbone,
+            site_orderings=site_orderings,
+            lattice_side=side,
+            interior_band=interior_band,
+            gather_triu_pairs=gather_triu_pairs,
         ).to(device)
     elif head_kind == "naive":
         head = DoublyHollowSwapHead(backbone).to(device)
     elif head_kind == "two_hole_patch":
         head = TwoHolePatchSwapHead(
-            backbone, lattice_side=side, patch_radius=patch_radius,
+            backbone,
+            lattice_side=side,
+            patch_radius=patch_radius,
         ).to(device)
     else:
         head = LeTFMaskOneSwapHead(backbone, anchor_chunk_size=anchor_chunk)
@@ -158,8 +181,9 @@ def _timed(fn, repeats: int, device: torch.device, warmup: int = 1) -> list[floa
     return times
 
 
-def _report(name: str, times: list[float], device: torch.device,
-            baseline_bytes: int = 0) -> None:
+def _report(
+    name: str, times: list[float], device: torch.device, baseline_bytes: int = 0
+) -> None:
     """`baseline_bytes` is what was already resident when the peak counter was
     reset, and is subtracted so the column reports this configuration's own
     transient cost.
@@ -179,22 +203,35 @@ def _report(name: str, times: list[float], device: torch.device,
     """
     peak_gb = (
         (torch.cuda.max_memory_allocated() - baseline_bytes) / 1e9
-        if device.type == "cuda" else 0.0
+        if device.type == "cuda"
+        else 0.0
     )
     print(
         f"{name:24s} median {statistics.median(times):9.4f}s  "
         f"min {min(times):9.4f}s  peak_mem {peak_gb:6.2f} GB"
     )
-    print("BENCH_JSON " + json.dumps({
-        "name": name, "seconds": times,
-        "median_seconds": statistics.median(times),
-        "peak_additional_gb": peak_gb,
-        "peak_total_gb": (torch.cuda.max_memory_allocated() / 1e9
-                          if device.type == "cuda" else None),
-        "device": (torch.cuda.get_device_name(device)
-                   if device.type == "cuda" else str(device)),
-        "torch": torch.__version__,
-    }))
+    print(
+        "BENCH_JSON "
+        + json.dumps(
+            {
+                "name": name,
+                "seconds": times,
+                "median_seconds": statistics.median(times),
+                "peak_additional_gb": peak_gb,
+                "peak_total_gb": (
+                    torch.cuda.max_memory_allocated() / 1e9
+                    if device.type == "cuda"
+                    else None
+                ),
+                "device": (
+                    torch.cuda.get_device_name(device)
+                    if device.type == "cuda"
+                    else str(device)
+                ),
+                "torch": torch.__version__,
+            }
+        )
+    )
 
 
 def _profile_once(fn, device: torch.device) -> None:
@@ -229,7 +266,8 @@ def _runners(args, head, target, device: torch.device) -> dict:
         c_t = torch.zeros(batch, device=device)
 
         train_autocast_kwargs = dict(
-            device_type=device.type, dtype=torch.bfloat16,
+            device_type=device.type,
+            dtype=torch.bfloat16,
             enabled=args.train_autocast_bf16,
         )
 
@@ -247,19 +285,23 @@ def _runners(args, head, target, device: torch.device) -> dict:
             optimiser.zero_grad()
             with torch.autocast(**train_autocast_kwargs):
                 loss_swap_backward_microbatched(
-                    x, t, c_t, head, target,
+                    x,
+                    t,
+                    c_t,
+                    head,
+                    target,
                     microbatch_size=args.loss_microbatch,
                 )
             optimiser.step()
 
         if args.loss_microbatch is None:
             return {"train_step": run_train_step}
-        return {f"train_step_mb{args.loss_microbatch}":
-                run_train_step_microbatched}
+        return {f"train_step_mb{args.loss_microbatch}": run_train_step_microbatched}
 
     if args.mode == "eval":
         autocast_kwargs = dict(
-            device_type=device.type, dtype=torch.bfloat16,
+            device_type=device.type,
+            dtype=torch.bfloat16,
             enabled=args.eval_autocast_bf16,
         )
 
@@ -267,7 +309,11 @@ def _runners(args, head, target, device: torch.device) -> dict:
             x0 = target.sample_base(batch, device=device)
             with torch.autocast(**autocast_kwargs):
                 sample_swap_ctmc(
-                    head, x0, ts, return_log_weights=True, target=target,
+                    head,
+                    x0,
+                    ts,
+                    return_log_weights=True,
+                    target=target,
                     multi_event=args.multi_event,
                 )
 
@@ -282,11 +328,15 @@ def _runners(args, head, target, device: torch.device) -> dict:
             x0 = target.sample_base(batch, device=device)
             with torch.autocast(**autocast_kwargs):
                 x_final, log_w = sample_swap_ctmc(
-                    head, x0, ts, return_log_weights=True, target=target,
+                    head,
+                    x0,
+                    ts,
+                    return_log_weights=True,
+                    target=target,
                     multi_event=args.multi_event,
                 )
             ess_frac = ess_from_log_weights(log_w).item() / batch
-            composition = ((x_final > 0).float().mean(dim=1))
+            composition = (x_final > 0).float().mean(dim=1)
             print(
                 f"eval_quality: ess_frac {ess_frac:.4f}  "
                 f"composition mean {composition.mean():.4f} "
@@ -294,8 +344,7 @@ def _runners(args, head, target, device: torch.device) -> dict:
                 f"log_w mean {log_w.mean():.4f} std {log_w.std():.4f}"
             )
 
-        return {"eval_slice": run_eval_slice,
-                "_quality": eval_quality_diagnostics}
+        return {"eval_slice": run_eval_slice, "_quality": eval_quality_diagnostics}
 
     def run_matching_step():
         try:
@@ -395,14 +444,15 @@ def _run_gfn_bench(args, device: torch.device) -> None:
         build_target_and_policy,
     )
 
-    side = int(round(args.d ** 0.5))
+    side = int(round(args.d**0.5))
     if side * side != args.d:
         raise ValueError(f"--d must be a square lattice site count, got {args.d}")
     # Prefer the size-native parity cell; otherwise re-realise the d64
     # `_par` recipe at this lattice and report the fallback. Capacity is
     # measured per rung, so adding a native cell changes the benchmark.
     native = [
-        name for name in GFN_CONFIGS
+        name
+        for name in GFN_CONFIGS
         if name.startswith(f"GFN_d{args.d}_c50_s220_{args.gfn_objective}_")
         and name.endswith("_par")
     ]
@@ -411,16 +461,20 @@ def _run_gfn_bench(args, device: torch.device) -> None:
     else:
         cfg = dataclass_replace(
             GFN_CONFIGS[f"GFN_d64_c50_s220_{args.gfn_objective}_50k_par"],
-            D=side, batch_size=args.batch,
+            D=side,
+            batch_size=args.batch,
         )
         if args.d != 64:
-            print(f"no registered GFN d{args.d} parity cell: pricing the "
-                  f"d64 `_par` recipe re-realised at D={side} — re-bench if "
-                  f"a size-native cell lands at different capacity")
+            print(
+                f"no registered GFN d{args.d} parity cell: pricing the "
+                f"d64 `_par` recipe re-realised at D={side} — re-bench if "
+                f"a size-native cell lands at different capacity"
+            )
     torch.manual_seed(42)
     target, policy = build_target_and_policy(cfg, str(device))
 
     if args.mode == "gfn_rollout":
+
         def runner():
             with torch.no_grad():
                 policy.sample(args.batch)
@@ -452,13 +506,17 @@ def _run_gfn_bench(args, device: torch.device) -> None:
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats()
         baseline_bytes = torch.cuda.max_memory_allocated()
-    print(f"mode={args.mode} d={args.d} batch={args.batch} "
-          f"compile={args.compile} warmup={args.warmup} repeats={args.repeats} "
-          f"gfn_objective={cfg.objective} hidden={cfg.hidden_dim}")
+    print(
+        f"mode={args.mode} d={args.d} batch={args.batch} "
+        f"compile={args.compile} warmup={args.warmup} repeats={args.repeats} "
+        f"gfn_objective={cfg.objective} hidden={cfg.hidden_dim}"
+    )
     times = _timed(runner, args.repeats, device, warmup=args.warmup)
     _report(
         f"{args.mode}_{args.gfn_objective}_d{args.d}_B{args.batch}",
-        times, device, baseline_bytes,
+        times,
+        device,
+        baseline_bytes,
     )
     if args.profile:
         _profile_once(runner, device)
@@ -467,48 +525,74 @@ def _run_gfn_bench(args, device: torch.device) -> None:
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--mode", required=True,
-        choices=("head", "train_step", "eval", "components",
-                 "gfn_rollout", "gfn_train_step", "gfn_update"),
+        "--mode",
+        required=True,
+        choices=(
+            "head",
+            "train_step",
+            "eval",
+            "components",
+            "gfn_rollout",
+            "gfn_train_step",
+            "gfn_update",
+        ),
     )
     parser.add_argument(
-        "--gfn-objective", default="tb", choices=("tb", "fldb"),
+        "--gfn-objective",
+        default="tb",
+        choices=("tb", "fldb"),
         help="gfn_* modes only: which comparator arm's registry recipe to "
-             "price (costs differ only by the fldb flow head's linear).",
+        "price (costs differ only by the fldb flow head's linear).",
     )
     parser.add_argument("--d", type=int, default=64, help="site count (D*D)")
     parser.add_argument(
-        "--head-kind", default="mask_one",
-        choices=("mask_one", "interval", "masked_attention", "stencil",
-                 "factorised", "naive", "two_hole_patch"),
+        "--head-kind",
+        default="mask_one",
+        choices=(
+            "mask_one",
+            "interval",
+            "masked_attention",
+            "stencil",
+            "factorised",
+            "naive",
+            "two_hole_patch",
+        ),
     )
     parser.add_argument(
-        "--patch-radius", type=int, default=1,
+        "--patch-radius",
+        type=int,
+        default=1,
         help="two_hole_patch only: hollow window radius R (2R+1 <= D).",
     )
     parser.add_argument(
-        "--site-orderings", default="row",
+        "--site-orderings",
+        default="row",
         help="comma-separated causal stream orderings. Each extra ordering "
-             "is a full extra backbone pass and adds no modules, so this is "
-             "the sweep axis of the ladder: 'row' is the one-sweep arm and "
-             "'row,col' the two-sweep one (`ivmo2` / `mamo2`). Honoured by "
-             "the interval, masked_attention and factorised heads; ignored by "
-             "mask_one, naive and two_hole_patch, which have no causal streams.",
+        "is a full extra backbone pass and adds no modules, so this is "
+        "the sweep axis of the ladder: 'row' is the one-sweep arm and "
+        "'row,col' the two-sweep one (`ivmo2` / `mamo2`). Honoured by "
+        "the interval, masked_attention and factorised heads; ignored by "
+        "mask_one, naive and two_hole_patch, which have no causal streams.",
     )
     parser.add_argument(
-        "--exterior-combiner", default="mlp", choices=("mlp", "bilinear"),
+        "--exterior-combiner",
+        default="mlp",
+        choices=("mlp", "bilinear"),
         help="interval / masked_attention only: 'bilinear' is the literal "
-             "mab / ivb cell (only [P,S] moved into a rank-8 product).",
+        "mab / ivb cell (only [P,S] moved into a rank-8 product).",
     )
     parser.add_argument(
-        "--interior-band", default=None, choices=(None, "prefix", "attention"),
+        "--interior-band",
+        default=None,
+        choices=(None, "prefix", "attention"),
         help="factorised only: the fib / fatt / fimo2 interior mechanism.",
     )
     parser.add_argument(
-        "--gather-triu-pairs", action="store_true",
+        "--gather-triu-pairs",
+        action="store_true",
         help="interval / masked_attention / factorised only: run the per-pair "
-             "nonlinear work on the d(d-1)/2 unordered pairs instead of the "
-             "d^2 grid (the D=16 memory lever). No-op for the other heads.",
+        "nonlinear work on the d(d-1)/2 unordered pairs instead of the "
+        "d^2 grid (the D=16 memory lever). No-op for the other heads.",
     )
     parser.add_argument("--batch", type=int, default=128)
     parser.add_argument("--anchor-chunk", type=int, default=None)
@@ -517,14 +601,17 @@ def main(argv=None):
     parser.add_argument("--eval-autocast-bf16", action="store_true")
     parser.add_argument("--sdpa", action="store_true")
     parser.add_argument(
-        "--rope-patch-size", type=int, default=None,
+        "--rope-patch-size",
+        type=int,
+        default=None,
         help="swap the leTF backbone for the periodic-RoPE / patch-key one at "
-             "this patch size (1 or 2 = the rope1/rope2 cells). None = leTF, "
-             "every archived row. A drop-in LeTFRateMatrix subclass, so the "
-             "position code is the only variable and any head composes.",
+        "this patch size (1 or 2 = the rope1/rope2 cells). None = leTF, "
+        "every archived row. A drop-in LeTFRateMatrix subclass, so the "
+        "position code is the only variable and any head composes.",
     )
     parser.add_argument(
-        "--separable-band-scores", action="store_true",
+        "--separable-band-scores",
+        action="store_true",
         help=(
             "compute the masked-attention band without its (B, d^2, n) score "
             "tensor -- an EXACT rewrite of the same function, so this prices "
@@ -533,27 +620,31 @@ def main(argv=None):
     )
     parser.add_argument("--compile", action="store_true")
     parser.add_argument(
-        "--train-autocast-bf16", action="store_true",
+        "--train-autocast-bf16",
+        action="store_true",
         help="train_step only: run the loss forward/backward under a "
-             "bf16 autocast. Unlike --tf32 this halves the BYTES of the "
-             "(B, d, d, f) pair slab, which is what a bandwidth-bound "
-             "step is actually waiting on. Exploratory: the production "
-             "trainer autocasts the EVAL only.",
+        "bf16 autocast. Unlike --tf32 this halves the BYTES of the "
+        "(B, d, d, f) pair slab, which is what a bandwidth-bound "
+        "step is actually waiting on. Exploratory: the production "
+        "trainer autocasts the EVAL only.",
     )
     parser.add_argument(
-        "--loss-microbatch", type=int, default=None,
+        "--loss-microbatch",
+        type=int,
+        default=None,
         help="train_step only: slice the backward over this many rows "
-             "at a time (the production `loss_microbatch_size`). This is "
-             "gradient accumulation and it is gradient-EXACT, so it "
-             "trades wall clock for peak memory and moves no number. "
-             "None = the single-shot backward.",
+        "at a time (the production `loss_microbatch_size`). This is "
+        "gradient accumulation and it is gradient-EXACT, so it "
+        "trades wall clock for peak memory and moves no number. "
+        "None = the single-shot backward.",
     )
     parser.add_argument(
-        "--tf32", action="store_true",
+        "--tf32",
+        action="store_true",
         help="run fp32 matmuls in TF32 (10-bit mantissa inputs, fp32 "
-             "accumulate). Reports the exactness of the TARGET's x @ A "
-             "alongside, because that matmul carries the closed-form "
-             "swap log-ratio and therefore the importance weights.",
+        "accumulate). Reports the exactness of the TARGET's x @ A "
+        "alongside, because that matmul carries the closed-form "
+        "swap log-ratio and therefore the importance weights.",
     )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
@@ -570,7 +661,10 @@ def main(argv=None):
         _run_gfn_bench(args, device)
         return
     head, target = build_head_and_target(
-        args.d, device, args.anchor_chunk, use_sdpa=args.sdpa,
+        args.d,
+        device,
+        args.anchor_chunk,
+        use_sdpa=args.sdpa,
         head_kind=args.head_kind,
         site_orderings=tuple(args.site_orderings.split(",")),
         exterior_combiner=args.exterior_combiner,
@@ -631,8 +725,12 @@ def main(argv=None):
             if device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats()
                 baseline = torch.cuda.memory_allocated()
-            _report(name, _timed(fn, args.repeats, device, warmup=args.warmup),
-                    device, baseline)
+            _report(
+                name,
+                _timed(fn, args.repeats, device, warmup=args.warmup),
+                device,
+                baseline,
+            )
         if compile_watch is not None and compile_watch.gave_up:
             print(
                 "  *** COMPILE ABANDONED: dynamo hit its recompile limit, so "

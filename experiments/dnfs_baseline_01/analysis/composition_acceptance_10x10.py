@@ -35,6 +35,7 @@ Caveat for the caption: the sigma_c cells rest on 50-90 kept draws pooled
 over four seeds, so their spread is dominated by counting noise and the
 row-to-row ordering at sigma_c should not be over-read.
 """
+
 import argparse
 import json
 import math
@@ -54,8 +55,11 @@ N_SITES = 100  # D=10 -> d = 100
 SEEDS = (42, 43, 44, 45)
 COUPLINGS = {  # label -> (run-dir glob, sigma, LaTeX column header)
     "s010": ("stage_4_d10_budget_seed{seed}_*", 0.1, r"$\sigma=0.1$"),
-    "sc": ("stage_4_d10_critical_paper_curriculum_sc_seed{seed}_*",
-           0.220343, r"$\sigma_c$"),
+    "sc": (
+        "stage_4_d10_critical_paper_curriculum_sc_seed{seed}_*",
+        0.220343,
+        r"$\sigma_c$",
+    ),
 }
 COMPOSITIONS = (0.50, 0.45, 0.40, 0.35, 0.30, 0.25)
 TABLE_COMPOSITIONS = (0.50, 0.40, 0.30)
@@ -64,20 +68,25 @@ TABLE_COMPOSITIONS = (0.50, 0.40, 0.30)
 def uniform_acceptance(n_plus):
     """The no-model line: a uniform sampler lands on c = n_plus/d with
     probability C(d, n_plus) / 2^d (0.080 at d = 100, c = 1/2)."""
-    return math.comb(N_SITES, n_plus) / 2 ** N_SITES
+    return math.comb(N_SITES, n_plus) / 2**N_SITES
 
 
 def seed_acceptance(run_dir, n_plus):
     """Raw and weighted acceptance of one seed's eval on the c-manifold."""
     _kept_samples, kept_log_w, n_drawn = kept_draws(run_dir, n_plus)
-    all_log_w = torch.load(run_dir / "eval" / "log_weights.pt",
-                           weights_only=True)
+    all_log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
     # normalised-weight mass on the slice = exp(lse(kept) - lse(all))
-    weighted = (torch.logsumexp(kept_log_w, 0)
-                - torch.logsumexp(all_log_w, 0)).exp().item() \
-        if kept_log_w.numel() else 0.0
-    return {"n_kept": int(kept_log_w.numel()), "n_drawn": n_drawn,
-            "raw": kept_log_w.numel() / n_drawn, "weighted": weighted}
+    weighted = (
+        (torch.logsumexp(kept_log_w, 0) - torch.logsumexp(all_log_w, 0)).exp().item()
+        if kept_log_w.numel()
+        else 0.0
+    )
+    return {
+        "n_kept": int(kept_log_w.numel()),
+        "n_drawn": n_drawn,
+        "raw": kept_log_w.numel() / n_drawn,
+        "weighted": weighted,
+    }
 
 
 def composition_cell(run_dirs, n_plus):
@@ -90,7 +99,9 @@ def composition_cell(run_dirs, n_plus):
     n_kept = sum(row["n_kept"] for row in per_seed)
     n_drawn = sum(row["n_drawn"] for row in per_seed)
     return {
-        "n_plus": n_plus, "n_kept": n_kept, "n_drawn": n_drawn,
+        "n_plus": n_plus,
+        "n_kept": n_kept,
+        "n_drawn": n_drawn,
         "n_kept_per_seed": [row["n_kept"] for row in per_seed],
         "pooled_acceptance": n_kept / n_drawn,
         "raw_acceptance": (float(raw.mean()), float(raw.std())),
@@ -104,51 +115,67 @@ def latex_rows(table):
 
     def pair(cell):
         mean, sd = cell["raw_acceptance"]
-        return (f"${100 * mean:.2f} \\pm {100 * sd:.2f}\\%$ & "
-                f"${cell['overhead']:.0f}\\times$")
+        return (
+            f"${100 * mean:.2f} \\pm {100 * sd:.2f}\\%$ & "
+            f"${cell['overhead']:.0f}\\times$"
+        )
 
     lines = []
     for composition in TABLE_COMPOSITIONS:
         key = f"{composition:.2f}"
-        lines.append(f"        {composition:.2f} & "
-                     + " & ".join(pair(table[label][key]) for label in COUPLINGS)
-                     + r" \\")
+        lines.append(
+            f"        {composition:.2f} & "
+            + " & ".join(pair(table[label][key]) for label in COUPLINGS)
+            + r" \\"
+        )
     uniform = table["uniform"]["0.50"]
     lines.append(r"        \midrule")
-    lines.append(f"        uniform draws, $c=0.5$ & \\multicolumn{{4}}{{c}}"
-                 f"{{${100 * uniform:.2f}\\%$, ${1 / uniform:.0f}\\times$}} \\\\")
+    lines.append(
+        f"        uniform draws, $c=0.5$ & \\multicolumn{{4}}{{c}}"
+        f"{{${100 * uniform:.2f}\\%$, ${1 / uniform:.0f}\\times$}} \\\\"
+    )
     return "\n".join(lines)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results", type=Path, default=RESULTS)
-    parser.add_argument("--out", type=Path,
-                        default=RESULTS / "composition_acceptance_10x10.json")
+    parser.add_argument(
+        "--out", type=Path, default=RESULTS / "composition_acceptance_10x10.json"
+    )
     args = parser.parse_args(argv)
 
-    table = {"uniform": {f"{c:.2f}": uniform_acceptance(round(c * N_SITES))
-                         for c in COMPOSITIONS}}
+    table = {
+        "uniform": {
+            f"{c:.2f}": uniform_acceptance(round(c * N_SITES)) for c in COMPOSITIONS
+        }
+    }
     for label, (glob, sigma, _header) in COUPLINGS.items():
-        run_dirs = [sorted(args.results.glob(glob.format(seed=seed)))[0]
-                    for seed in SEEDS]
+        run_dirs = [
+            sorted(args.results.glob(glob.format(seed=seed)))[0] for seed in SEEDS
+        ]
         table[label] = {"sigma": sigma, "runs": [d.name for d in run_dirs]}
         for composition in COMPOSITIONS:
             table[label][f"{composition:.2f}"] = composition_cell(
-                run_dirs, round(composition * N_SITES))
+                run_dirs, round(composition * N_SITES)
+            )
     args.out.write_text(json.dumps(table, indent=2))
 
-    print(f"{'coupling':8} {'c':>5} {'pooled':>8} {'raw mean+-SD':>17} "
-          f"{'weighted mean+-SD':>19} {'kept':>6} {'overhead':>9} {'uniform':>8}")
+    print(
+        f"{'coupling':8} {'c':>5} {'pooled':>8} {'raw mean+-SD':>17} "
+        f"{'weighted mean+-SD':>19} {'kept':>6} {'overhead':>9} {'uniform':>8}"
+    )
     for label in COUPLINGS:
         for composition in COMPOSITIONS:
             key = f"{composition:.2f}"
             cell = table[label][key]
             raw, weighted = cell["raw_acceptance"], cell["weighted_acceptance"]
-            print(f"{label:8} {composition:5.2f} {cell['pooled_acceptance']:8.4f} "
-                  f"{raw[0]:8.4f} +- {raw[1]:.4f} "
-                  f"{weighted[0]:10.4f} +- {weighted[1]:.4f} {cell['n_kept']:6d} "
-                  f"{cell['overhead']:8.0f}x {table['uniform'][key]:8.4f}")
+            print(
+                f"{label:8} {composition:5.2f} {cell['pooled_acceptance']:8.4f} "
+                f"{raw[0]:8.4f} +- {raw[1]:.4f} "
+                f"{weighted[0]:10.4f} +- {weighted[1]:.4f} {cell['n_kept']:6d} "
+                f"{cell['overhead']:8.0f}x {table['uniform'][key]:8.4f}"
+            )
     print("\nLaTeX rows (columns: c, acc sigma=0.1, overhead, acc sigma_c, overhead):")
     print(latex_rows(table))
     print(f"\nsaved {args.out}")

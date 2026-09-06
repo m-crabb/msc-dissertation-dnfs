@@ -13,6 +13,7 @@ These pin "what correct looks like" for LeMLPRateMatrix:
        all-zero off-diagonal weights);
     7) is_locally_equivariant flag.
 """
+
 import pytest
 import torch
 
@@ -54,9 +55,7 @@ def test_self_slot_is_zero(model):
     x_idx = ((x + 1) / 2).long()
     G = model(x, t)
     self_slot = G.gather(-1, x_idx.unsqueeze(-1)).squeeze(-1)
-    torch.testing.assert_close(
-        self_slot, torch.zeros_like(self_slot), atol=0, rtol=0
-    )
+    torch.testing.assert_close(self_slot, torch.zeros_like(self_slot), atol=0, rtol=0)
 
 
 def test_local_equivariance(model):
@@ -106,9 +105,7 @@ def test_x_dependence_at_other_sites(model):
         # different seeds; the property being tested is only that the
         # hollow MLP isn't degenerate (all-zero off-diagonal weights).
         other_sites = [i for i in range(8) if i != j]
-        max_diff = max(
-            (G_a[0, i] - G_b[0, i]).abs().max().item() for i in other_sites
-        )
+        max_diff = max((G_a[0, i] - G_b[0, i]).abs().max().item() for i in other_sites)
         assert max_diff > 1e-6, (
             f"Flipping x_{j} did not change the output at any other site — "
             "hollow MLP appears to ignore other-site inputs."

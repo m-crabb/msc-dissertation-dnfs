@@ -10,6 +10,7 @@ swapped for the swap-move one: `FixedCompositionIsingTarget` +
 run to a minutes-scale end-to-end check (the doubly-hollow head costs O(d^2)
 masked body passes per forward, so full eval batches are slow on CPU).
 """
+
 import argparse
 import json
 import time
@@ -46,7 +47,11 @@ from discrete_flow_sampler.targets.ising import (
 from discrete_flow_sampler.targets.potts import FixedCompositionPottsTarget
 
 HEAD_KINDS = (
-    "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention"
+    "doubly_hollow",
+    "mask_one",
+    "non_antisym",
+    "interval",
+    "masked_attention",
 )
 
 
@@ -108,10 +113,14 @@ def build_target_and_head(
         # exported expansion's energy in place of the torus quadratic form;
         # cfg.ising.sigma is beta/2 (see IsingCfg.expansion_json).
         from discrete_flow_sampler.targets.cluster_expansion import (
-            BinaryExpansionSpec, FixedCompositionClusterExpansionTarget,
+            BinaryExpansionSpec,
+            FixedCompositionClusterExpansionTarget,
         )
+
         if cfg.ising.expansion_json is None:
-            raise ValueError("target_kind 'cluster_expansion' needs ising.expansion_json")
+            raise ValueError(
+                "target_kind 'cluster_expansion' needs ising.expansion_json"
+            )
         spec = BinaryExpansionSpec.from_json(cfg.ising.expansion_json)
         if cfg.composition_mixture is not None:
             # Amortisation on the alloy: the same slice mixture as the Ising
@@ -119,16 +128,21 @@ def build_target_and_head(
             from discrete_flow_sampler.targets.cluster_expansion import (
                 MixtureCompositionClusterExpansionTarget,
             )
+
             target = MixtureCompositionClusterExpansionTarget(
-                spec, beta=2.0 * cfg.ising.sigma,
+                spec,
+                beta=2.0 * cfg.ising.sigma,
                 compositions=tuple(cfg.composition_mixture),
-                bias=cfg.ising.bias, device=device,
+                bias=cfg.ising.bias,
+                device=device,
             )
         else:
             target = FixedCompositionClusterExpansionTarget(
-                spec, beta=2.0 * cfg.ising.sigma,
+                spec,
+                beta=2.0 * cfg.ising.sigma,
                 target_composition=cfg.ising.target_composition,
-                bias=cfg.ising.bias, device=device,
+                bias=cfg.ising.bias,
+                device=device,
             )
     elif cfg.composition_mixture is not None:
         # Amortisation route: mixture of slices in the base, everything
@@ -209,33 +223,45 @@ def _chunked_eval_draw(
             x_initial = target.sample_base(min(chunk, remaining), device=device)
             if smc_tau is None:
                 slice_samples, slice_log_weights = sample_swap_ctmc(
-                    head, x_initial, ts, return_log_weights=True, target=target,
-                    multi_event=multi_event, matching_stats=transport_stats,
+                    head,
+                    x_initial,
+                    ts,
+                    return_log_weights=True,
+                    target=target,
+                    multi_event=multi_event,
+                    matching_stats=transport_stats,
                 )
             else:
                 slice_samples, final_segment_log_weights, stats = sample_swap_ctmc(
-                    head, x_initial, ts, return_log_weights=True, target=target,
-                    multi_event=multi_event, matching_stats=transport_stats,
+                    head,
+                    x_initial,
+                    ts,
+                    return_log_weights=True,
+                    target=target,
+                    multi_event=multi_event,
+                    matching_stats=transport_stats,
                     resampling=ResamplingConfig(ess_threshold_fraction=smc_tau),
                 )
-                slice_log_weights = (
-                    stats.log_z_increment + final_segment_log_weights
-                )
+                slice_log_weights = stats.log_z_increment + final_segment_log_weights
                 final_segment_ess = ess_from_log_weights(final_segment_log_weights)
-                chunk_stats.append({
-                    "chunk_size": int(x_initial.shape[0]),
-                    "n_resample_events": stats.n_events,
-                    "event_steps": stats.event_steps,
-                    "log_z_increment": float(stats.log_z_increment.item()),
-                    "final_segment_ess_fraction": float(
-                        final_segment_ess.item() / x_initial.shape[0]
-                    ),
-                })
+                chunk_stats.append(
+                    {
+                        "chunk_size": int(x_initial.shape[0]),
+                        "n_resample_events": stats.n_events,
+                        "event_steps": stats.event_steps,
+                        "log_z_increment": float(stats.log_z_increment.item()),
+                        "final_segment_ess_fraction": float(
+                            final_segment_ess.item() / x_initial.shape[0]
+                        ),
+                    }
+                )
             sample_slices.append(slice_samples)
             log_weight_slices.append(slice_log_weights)
             remaining -= x_initial.shape[0]
     return (
-        torch.cat(sample_slices), torch.cat(log_weight_slices), chunk_stats,
+        torch.cat(sample_slices),
+        torch.cat(log_weight_slices),
+        chunk_stats,
         transport_stats,
     )
 
@@ -259,13 +285,17 @@ def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
     if cfg.target_kind == "potts":
         return {}
     return composition_observables(
-        samples, target_composition=cfg.ising.target_composition,
+        samples,
+        target_composition=cfg.ising.target_composition,
     )
 
 
 def _eval_output_dir(
-    run_dir: Path, cfg: HardStageCfg, multi_event: bool,
-    eval_dir_suffix: str = "", replicate_seed: int | None = None,
+    run_dir: Path,
+    cfg: HardStageCfg,
+    multi_event: bool,
+    eval_dir_suffix: str = "",
+    replicate_seed: int | None = None,
     smc_tau: float | None = None,
 ) -> Path:
     """Keep every draw's selection in its path and refuse archived evidence.
@@ -275,16 +305,17 @@ def _eval_output_dir(
     Recovery must use an empty destination after preserving the partial draw.
     """
     prefix = "eval" if smc_tau is None else f"eval_smc_tau{smc_tau:g}"
-    step_suffix = "" if multi_event == cfg.ctmc.use_matching_step else (
-        "_multi_event" if multi_event else "_one_event"
+    step_suffix = (
+        ""
+        if multi_event == cfg.ctmc.use_matching_step
+        else ("_multi_event" if multi_event else "_one_event")
     )
-    replicate_suffix = (
-        "" if replicate_seed is None else f"_replicate_s{replicate_seed}"
-    )
+    replicate_suffix = "" if replicate_seed is None else f"_replicate_s{replicate_seed}"
     eval_dir = run_dir / f"{prefix}{step_suffix}{replicate_suffix}{eval_dir_suffix}"
-    if any((eval_dir / name).exists() for name in (
-        "samples.pt", "log_weights.pt", "metrics.json"
-    )):
+    if any(
+        (eval_dir / name).exists()
+        for name in ("samples.pt", "log_weights.pt", "metrics.json")
+    ):
         raise FileExistsError(
             f"refusing to overwrite existing eval artefacts in {eval_dir}"
         )
@@ -292,8 +323,12 @@ def _eval_output_dir(
 
 
 def final_eval(
-    head, target, cfg: HardStageCfg, run_dir: Path,
-    multi_event: bool | None = None, replicate_seed: int | None = None,
+    head,
+    target,
+    cfg: HardStageCfg,
+    run_dir: Path,
+    multi_event: bool | None = None,
+    replicate_seed: int | None = None,
     eval_dir_suffix: str = "",
 ) -> dict:
     """End-of-run eval: (samples, IS log-weights) over the full t = 0 -> 1
@@ -385,9 +420,7 @@ def final_eval_smc(
     so sweeps never clobber each other."""
     if multi_event is None:
         multi_event = cfg.ctmc.use_matching_step
-    eval_dir = _eval_output_dir(
-        run_dir, cfg, multi_event, eval_dir_suffix, smc_tau=tau
-    )
+    eval_dir = _eval_output_dir(run_dir, cfg, multi_event, eval_dir_suffix, smc_tau=tau)
     eval_samples, pooled_log_weights, chunk_stats, _ = _chunked_eval_draw(
         head, target, cfg, multi_event=multi_event, smc_tau=tau
     )
@@ -403,9 +436,7 @@ def final_eval_smc(
         "ess": float(ess_from_log_weights(pooled_log_weights).item()),
         "log_z_estimate": float(log_mean_exp(pooled_log_weights).item()),
         "n_resample_events": sum(c["n_resample_events"] for c in chunk_stats),
-        "n_unique_samples": int(
-            torch.unique(eval_samples, dim=0).shape[0]
-        ),
+        "n_unique_samples": int(torch.unique(eval_samples, dim=0).shape[0]),
         "chunk_stats": chunk_stats,
         "head_kind": cfg.head_kind,
         "multi_event": multi_event,
@@ -464,6 +495,7 @@ def train(
 
     if use_wandb:
         import wandb
+
         # Reuse the first attempt's wandb run on resume so the curve stays a
         # single run (steps already logged past the checkpoint are dropped by
         # wandb's monotonic-step rule -- the same rows the log truncation
@@ -503,8 +535,10 @@ def train(
         # state; the original parent is no longer needed or loaded here.
         transfer = torch.load(init_from, map_location=device, weights_only=True)
         missing, unexpected = head.load_state_dict(transfer, strict=False)
-        print(f"[init_from] {init_from}: loaded {len(transfer)} keys, "
-              f"missing {sorted(missing)}, unexpected {sorted(unexpected)}")
+        print(
+            f"[init_from] {init_from}: loaded {len(transfer)} keys, "
+            f"missing {sorted(missing)}, unexpected {sorted(unexpected)}"
+        )
         if unexpected:
             raise ValueError(f"init_from has keys the model lacks: {unexpected}")
         (run_dir / "init_from.txt").write_text(
@@ -543,13 +577,9 @@ def train(
     final_ema_path = run_dir / "checkpoints" / "final_ema.pt"
     if final_ema_path.exists():
         head.load_state_dict(
-            torch.load(
-                final_ema_path, map_location=target.device, weights_only=True
-            )
+            torch.load(final_ema_path, map_location=target.device, weights_only=True)
         )
-        ema_metrics = final_eval(
-            head, target, cfg, run_dir, eval_dir_suffix="_ema"
-        )
+        ema_metrics = final_eval(head, target, cfg, run_dir, eval_dir_suffix="_ema")
 
     if use_wandb:
         wandb.log(
@@ -637,8 +667,10 @@ def _eval_checkpoint_and_suffix(
 
 
 def eval_only(
-    run_dir: str | Path, multi_event: bool | None = None,
-    smc_tau: float | None = None, replicate_seed: int | None = None,
+    run_dir: str | Path,
+    multi_event: bool | None = None,
+    smc_tau: float | None = None,
+    replicate_seed: int | None = None,
     n_euler_override: int | None = None,
     use_ema: bool = False,
     stage_best: int | None = None,
@@ -749,9 +781,7 @@ def eval_only(
     # Applied AFTER the drift guard: provenance is checked against the
     # frozen config, and only the sampling grid of THIS draw is moved.
     if n_euler_override is not None:
-        cfg = replace(
-            cfg, ctmc=replace(cfg.ctmc, n_euler_steps=n_euler_override)
-        )
+        cfg = replace(cfg, ctmc=replace(cfg.ctmc, n_euler_steps=n_euler_override))
 
     seed_everything(cfg.train.seed if replicate_seed is None else replicate_seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -765,12 +795,21 @@ def eval_only(
     )
     if smc_tau is not None:
         eval_metrics = final_eval_smc(
-            head, target, cfg, run_dir, tau=smc_tau, multi_event=multi_event,
+            head,
+            target,
+            cfg,
+            run_dir,
+            tau=smc_tau,
+            multi_event=multi_event,
             eval_dir_suffix=eval_dir_suffix,
         )
     else:
         eval_metrics = final_eval(
-            head, target, cfg, run_dir, multi_event=multi_event,
+            head,
+            target,
+            cfg,
+            run_dir,
+            multi_event=multi_event,
             replicate_seed=replicate_seed,
             eval_dir_suffix=eval_dir_suffix,
         )
@@ -886,14 +925,20 @@ def main():
         )
         return
     if args.eval_ne is not None or args.eval_ema:
-        parser.error("--eval-ne/--eval-ema require --eval-only (both move "
-                     "only the draw, so they run against a completed run dir)")
+        parser.error(
+            "--eval-ne/--eval-ema require --eval-only (both move "
+            "only the draw, so they run against a completed run dir)"
+        )
     if args.smc_tau is not None:
-        parser.error("--smc-tau requires --eval-only (SMC is inference-time "
-                     "only; run it against a completed run dir)")
+        parser.error(
+            "--smc-tau requires --eval-only (SMC is inference-time "
+            "only; run it against a completed run dir)"
+        )
     if args.eval_seed is not None:
-        parser.error("--eval-seed requires --eval-only (replicate draws run "
-                     "against a completed run dir's checkpoint)")
+        parser.error(
+            "--eval-seed requires --eval-only (replicate draws run "
+            "against a completed run dir's checkpoint)"
+        )
     if args.cfg is None:
         parser.error("--cfg is required unless --eval-only is given")
 

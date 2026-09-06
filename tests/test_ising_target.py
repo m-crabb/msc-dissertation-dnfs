@@ -45,10 +45,12 @@ def test_bias_breaks_z2_symmetry():
 
 def test_composition_fraction_maps_up_spins():
     target = IsingTarget(D=2, sigma=0.1)
-    x = torch.tensor([
-        [1.0, 1.0, -1.0, -1.0],
-        [1.0, -1.0, -1.0, -1.0],
-    ])
+    x = torch.tensor(
+        [
+            [1.0, 1.0, -1.0, -1.0],
+            [1.0, -1.0, -1.0, -1.0],
+        ]
+    )
     expected = torch.tensor([0.5, 0.25])
     torch.testing.assert_close(target.composition_fraction(x), expected)
 
@@ -147,12 +149,16 @@ def test_set_composition_penalty_strength_matches_fresh_target():
     built at the new λ. Used by λ-annealing curricula to tighten the soft
     composition constraint without rebuilding model or optimizer state."""
     swapped = IsingTarget(
-        D=4, sigma=0.1, target_composition=0.5,
+        D=4,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=10.0,
     )
     swapped.set_composition_penalty_strength(50.0)
     fresh = IsingTarget(
-        D=4, sigma=0.1, target_composition=0.5,
+        D=4,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=50.0,
     )
 
@@ -167,7 +173,9 @@ def test_set_composition_penalty_strength_matches_fresh_target():
 
 def test_set_composition_penalty_strength_rejects_negative():
     target = IsingTarget(
-        D=4, sigma=0.1, target_composition=0.5,
+        D=4,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=10.0,
     )
     with pytest.raises(ValueError):
@@ -216,9 +224,7 @@ def test_log_p_tilde_t_at_zero_equals_base_log_eta_off_centre():
     target = IsingTarget(D=4, sigma=0.1, base_composition=0.8)
     x = torch.randint(0, 2, (8, target.d)).float() * 2 - 1
     t0 = torch.zeros(8)
-    torch.testing.assert_close(
-        target.log_p_tilde_t(x, t0), target.base_log_eta(x)
-    )
+    torch.testing.assert_close(target.log_p_tilde_t(x, t0), target.base_log_eta(x))
 
 
 def test_sample_base_draw_bit_identical_at_p_half():

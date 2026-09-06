@@ -47,19 +47,19 @@ import numpy as np
 from matplotlib.colors import ListedColormap, to_hex, to_rgb
 
 # --- roles (never reassign per figure) -----------------------------------
-REFERENCE_INK = "#1a1a19"          # exact enumeration / certified chain / TI truth
-REFERENCE_FILL = "#4a4943"         # the same role as a large filled area (bars,
-                                   # patches). Ink was specified for LINES: a
-                                   # thin near-black curve reads as reference,
-                                   # but a bar-sized block of it dominates the
-                                   # panel and fights the saturated hues beside
-                                   # it. Use ink for strokes, this for fills.
-SAMPLER_HUE = "#2a78d6"            # our sampler (DNFS / masked attention), every chapter
+REFERENCE_INK = "#1a1a19"  # exact enumeration / certified chain / TI truth
+REFERENCE_FILL = "#4a4943"  # the same role as a large filled area (bars,
+# patches). Ink was specified for LINES: a
+# thin near-black curve reads as reference,
+# but a bar-sized block of it dominates the
+# panel and fights the saturated hues beside
+# it. Use ink for strokes, this for fills.
+SAMPLER_HUE = "#2a78d6"  # our sampler (DNFS / masked attention), every chapter
 NEURAL_COMPARATOR_HUE = "#1baf7a"  # second neural head or matched neural baseline
-CLASSICAL_HUE = "#eda100"          # classical MCMC baseline (Kawasaki nonlocal, Gibbs, VC-SGC)
-CLASSICAL_ALT_HUE = "#8e63c5"      # second classical variant (Kawasaki local)
-HARD_DELTA_HUE = "#c8503c"         # the hard-constraint delta / limit marker
-ANALYTIC_GUIDE = "#6f6e66"         # analytic envelopes and guides (dashed, muted)
+CLASSICAL_HUE = "#eda100"  # classical MCMC baseline (Kawasaki nonlocal, Gibbs, VC-SGC)
+CLASSICAL_ALT_HUE = "#8e63c5"  # second classical variant (Kawasaki local)
+HARD_DELTA_HUE = "#c8503c"  # the hard-constraint delta / limit marker
+ANALYTIC_GUIDE = "#6f6e66"  # analytic envelopes and guides (dashed, muted)
 MUTED = "#6f6e66"
 GRID = "#e6e5df"
 
@@ -82,33 +82,33 @@ SPIN_CMAP = ListedColormap([SPIN_DOWN_COLOUR, SPIN_UP_COLOUR])
 FULL_WIDTH_IN = 6.3
 SINGLE_PANEL_WIDTH_IN = 4.54
 FIGSIZE_FULL_1X2 = (FULL_WIDTH_IN, 2.9)
-FIGSIZE_FULL_1X2_SHORT = (FULL_WIDTH_IN, 2.4)   # 1x2 whose panels carry a few
-                                                # marks, not a dense curve: at
-                                                # 2.9 in they print 7.4 cm tall
-                                                # for two nearly-empty boxes.
-FIGSIZE_FULL_1X4 = (FULL_WIDTH_IN, 2.5)         # four panels in a row. The old
-                                                # 2x2 printed 14.1 cm, half a
-                                                # page; this prints 6.4 cm. An
-                                                # earlier 1x4 attempt set 18 in
-                                                # wide and let LaTeX shrink it,
-                                                # which printed ~3 pt type --
-                                                # the width stays 6.3 in and the
-                                                # panels get narrow instead.
+FIGSIZE_FULL_1X2_SHORT = (FULL_WIDTH_IN, 2.4)  # 1x2 whose panels carry a few
+# marks, not a dense curve: at
+# 2.9 in they print 7.4 cm tall
+# for two nearly-empty boxes.
+FIGSIZE_FULL_1X4 = (FULL_WIDTH_IN, 2.5)  # four panels in a row. The old
+# 2x2 printed 14.1 cm, half a
+# page; this prints 6.4 cm. An
+# earlier 1x4 attempt set 18 in
+# wide and let LaTeX shrink it,
+# which printed ~3 pt type --
+# the width stays 6.3 in and the
+# panels get narrow instead.
 FIGSIZE_FULL_2X2 = (FULL_WIDTH_IN, 5.6)
 FIGSIZE_FULL_WIDE_SINGLE = (FULL_WIDTH_IN, 2.6)  # one panel at full width, legend
-                                                 # OUTSIDE the axes (below): a
-                                                 # six-entry legend inside a 6.3 in
-                                                 # panel covers the peak it is
-                                                 # meant to explain.
+# OUTSIDE the axes (below): a
+# six-entry legend inside a 6.3 in
+# panel covers the peak it is
+# meant to explain.
 FIGSIZE_SINGLE = (SINGLE_PANEL_WIDTH_IN, 3.2)
 FIGSIZE_SINGLE_2X2 = (SINGLE_PANEL_WIDTH_IN, 3.8)  # four panels as a 2x2 at
-                                                   # 0.72\textwidth: the 1x4 at
-                                                   # full width left ~0.63 in of
-                                                   # data axis per panel (60% of
-                                                   # the canvas went to labels);
-                                                   # this trades +3.3 cm of print
-                                                   # height for ~2.6x the data
-                                                   # area at unchanged type size.
+# 0.72\textwidth: the 1x4 at
+# full width left ~0.63 in of
+# data axis per panel (60% of
+# the canvas went to labels);
+# this trades +3.3 cm of print
+# height for ~2.6x the data
+# area at unchanged type size.
 
 FONT_SIZE_TITLE = 9
 FONT_SIZE_LABEL = 9
@@ -166,14 +166,15 @@ def parameter_ramp(hue, n_levels, lightest=0.55):
     if n_levels == 1:
         return [hue]
     blend_fractions = np.linspace(lightest, 0.0, n_levels)
-    return [to_hex(base + (np.ones(3) - base) * fraction)
-            for fraction in blend_fractions]
+    return [
+        to_hex(base + (np.ones(3) - base) * fraction) for fraction in blend_fractions
+    ]
 
 
-BAND_ALPHA = 0.18   # one alpha for every shaded interval in the thesis: two
-                    # bands of different roles may overlap, and at 0.18 the
-                    # overlap (0.33 effective) still reads as a third shade
-                    # rather than as an opaque block hiding the curve under it.
+BAND_ALPHA = 0.18  # one alpha for every shaded interval in the thesis: two
+# bands of different roles may overlap, and at 0.18 the
+# overlap (0.33 effective) still reads as a third shade
+# rather than as an opaque block hiding the curve under it.
 
 
 def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None):
@@ -188,8 +189,16 @@ def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None):
     categorical or one-experiment-per-abscissa positions use
     ``point_errorbars`` instead; see the module docstring.
     """
-    return ax.fill_between(x, lower, upper, color=hue, alpha=BAND_ALPHA,
-                           linewidth=0, zorder=zorder, label=label)
+    return ax.fill_between(
+        x,
+        lower,
+        upper,
+        color=hue,
+        alpha=BAND_ALPHA,
+        linewidth=0,
+        zorder=zorder,
+        label=label,
+    )
 
 
 def seed_band(ax, x, per_seed_values, hue, label):
@@ -200,18 +209,35 @@ def seed_band(ax, x, per_seed_values, hue, label):
     per_seed_values = np.asarray(per_seed_values)
     n_seeds = per_seed_values.shape[0]
     mean = per_seed_values.mean(axis=0)
-    uncertainty_band(ax, x, per_seed_values.min(axis=0),
-                     per_seed_values.max(axis=0), hue)
-    ax.plot(x, mean, color=hue, linewidth=1.6, zorder=3,
-            label=f"{label} (mean, band = min-max over {n_seeds} seeds)")
+    uncertainty_band(
+        ax, x, per_seed_values.min(axis=0), per_seed_values.max(axis=0), hue
+    )
+    ax.plot(
+        x,
+        mean,
+        color=hue,
+        linewidth=1.6,
+        zorder=3,
+        label=f"{label} (mean, band = min-max over {n_seeds} seeds)",
+    )
 
 
 def point_errorbars(ax, x, y, yerr, hue, label, marker="o"):
     """Discrete capped error bars for point estimates (replicate spread or
     a stated interval; state which in the legend label)."""
-    ax.errorbar(x, y, yerr=yerr, color=hue, label=label, marker=marker,
-                markersize=4, linestyle="none", capsize=2.5, linewidth=1.2,
-                zorder=3)
+    ax.errorbar(
+        x,
+        y,
+        yerr=yerr,
+        color=hue,
+        label=label,
+        marker=marker,
+        markersize=4,
+        linestyle="none",
+        capsize=2.5,
+        linewidth=1.2,
+        zorder=3,
+    )
 
 
 def per_seed_traces(ax, x, per_seed_values, hue, label, highlight_index=None):
@@ -221,8 +247,12 @@ def per_seed_traces(ax, x, per_seed_values, hue, label, highlight_index=None):
     per_seed_values = np.asarray(per_seed_values)
     for index, trace in enumerate(per_seed_values):
         is_highlighted = index == highlight_index
-        ax.plot(x, trace, color=hue,
-                linewidth=1.6 if is_highlighted else 0.9,
-                alpha=1.0 if is_highlighted else 0.55,
-                zorder=3 if is_highlighted else 2,
-                label=label if index == 0 else None)
+        ax.plot(
+            x,
+            trace,
+            color=hue,
+            linewidth=1.6 if is_highlighted else 0.9,
+            alpha=1.0 if is_highlighted else 0.55,
+            zorder=3 if is_highlighted else 2,
+            label=label if index == 0 else None,
+        )

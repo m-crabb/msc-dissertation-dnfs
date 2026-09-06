@@ -37,6 +37,7 @@ Per-site energy follows the chapter's convention E/d = -log p~(x) /
 (2 sigma d). Neural cells aggregate mean +- SD over the three seeds; the
 chain row over its seed pool.
 """
+
 import argparse
 import json
 import sys
@@ -48,15 +49,24 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
+from experiments.constrained_hard_03.analysis.house_table_8x8 import flop_billing_config
+
 from discrete_flow_sampler.diagnostics.flops import (
-    chain_per_effective_sample, kawasaki_run_flops, measured_forward_flops,
-    neural_sampling_flops_per_sample, per_effective_sample)
-from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-    flop_billing_config)
+    chain_per_effective_sample,
+    kawasaki_run_flops,
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+)
 from discrete_flow_sampler.diagnostics.metrics import (
-    conditional_pmf_at_composition, correlation_profile_error,
-    energy_wasserstein2, enumerate_states, exact_log_probs, integrated_autocorr,
-    magnetisation_profile_error)
+    conditional_pmf_at_composition,
+    correlation_profile_error,
+    energy_wasserstein2,
+    enumerate_states,
+    exact_log_probs,
+    integrated_autocorr,
+    magnetisation_profile_error,
+)
 
 L = 4
 D_SITES = L * L
@@ -88,8 +98,10 @@ ARM_PROVENANCE = {
     # wave-2 cell, so the suffix stays w2.
     "dh": ("w2", "20260829-dh-oracle-d16"),
     "mal": ("win", "20260828-win-gate"),
-    **{arm: ("w2", "20260828-rasterord-d16")
-       for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")},
+    **{
+        arm: ("w2", "20260828-rasterord-d16")
+        for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")
+    },
 }
 SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
@@ -143,33 +155,45 @@ def neural_cell(run_dir, target, ref_states, ref_probs, per_forward, n_euler):
     return {
         "ESS": ess,
         "dMag": magnetisation_profile_error(
-            samples, weights, ref_states, L, reference_weights=ref_probs),
+            samples, weights, ref_states, L, reference_weights=ref_probs
+        ),
         "dCorr": correlation_profile_error(
-            samples, weights, ref_states, L, reference_weights=ref_probs),
+            samples, weights, ref_states, L, reference_weights=ref_probs
+        ),
         "EW2": energy_wasserstein2(
-            energy_per_site(target, samples), weights,
-            energy_per_site(target, ref_states), reference_weights=ref_probs),
+            energy_per_site(target, samples),
+            weights,
+            energy_per_site(target, ref_states),
+            reference_weights=ref_probs,
+        ),
         "FLOP/es": per_effective_sample(flops_raw, ess),
     }
 
 
 def gfn_cell(run_dir, target, ref_states, ref_probs, flops_per_raw_sample):
     """One GFN seed on the first GFN_DRAWS draws of its stored eval."""
-    samples = torch.load(run_dir / "eval" / "samples.pt",
-                         weights_only=True).float()[:GFN_DRAWS]
-    log_w = torch.load(run_dir / "eval" / "log_weights.pt",
-                       weights_only=True)[:GFN_DRAWS]
+    samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()[
+        :GFN_DRAWS
+    ]
+    log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)[
+        :GFN_DRAWS
+    ]
     weights = torch.softmax(log_w, dim=0)
     ess = (1.0 / (weights**2).sum() / GFN_DRAWS).item()
     return {
         "ESS": ess,
         "dMag": magnetisation_profile_error(
-            samples, weights, ref_states, L, reference_weights=ref_probs),
+            samples, weights, ref_states, L, reference_weights=ref_probs
+        ),
         "dCorr": correlation_profile_error(
-            samples, weights, ref_states, L, reference_weights=ref_probs),
+            samples, weights, ref_states, L, reference_weights=ref_probs
+        ),
         "EW2": energy_wasserstein2(
-            energy_per_site(target, samples), weights,
-            energy_per_site(target, ref_states), reference_weights=ref_probs),
+            energy_per_site(target, samples),
+            weights,
+            energy_per_site(target, ref_states),
+            reference_weights=ref_probs,
+        ),
         "FLOP/es": per_effective_sample(flops_per_raw_sample, ess),
     }
 
@@ -180,8 +204,9 @@ def gfn_cell(run_dir, target, ref_states, ref_probs, flops_per_raw_sample):
 KAWASAKI_TAG = {"s010": "s100", "s220": "s220"}
 
 
-def kawasaki_cell(kawasaki_dir, sigma_label, target, ref_states, ref_probs,
-                  burn_in_fraction):
+def kawasaki_cell(
+    kawasaki_dir, sigma_label, target, ref_states, ref_probs, burn_in_fraction
+):
     """One chain = one 'seed' of the MCMC row; mean +- SD over the pool."""
     rows = []
     npz_tag = KAWASAKI_TAG[sigma_label]
@@ -193,24 +218,30 @@ def kawasaki_cell(kawasaki_dir, sigma_label, target, ref_states, ref_probs,
         uniform = torch.full((kept.shape[0],), 1.0 / kept.shape[0])
         energies = energy_per_site(target, kept)
         tau = max(1.0, integrated_autocorr(energies.numpy()))
-        rows.append({
-            "dMag": magnetisation_profile_error(
-                kept, uniform, ref_states, L, reference_weights=ref_probs),
-            "dCorr": correlation_profile_error(
-                kept, uniform, ref_states, L, reference_weights=ref_probs),
-            "EW2": energy_wasserstein2(
-                energies, uniform, energy_per_site(target, ref_states),
-                reference_weights=ref_probs),
-            "FLOP/es": chain_per_effective_sample(
-                kawasaki_run_flops(int(chain["n_trial_steps"])),
-                kept.shape[0], tau),
-            "tau_int_snapshots": tau,
-        })
+        rows.append(
+            {
+                "dMag": magnetisation_profile_error(
+                    kept, uniform, ref_states, L, reference_weights=ref_probs
+                ),
+                "dCorr": correlation_profile_error(
+                    kept, uniform, ref_states, L, reference_weights=ref_probs
+                ),
+                "EW2": energy_wasserstein2(
+                    energies,
+                    uniform,
+                    energy_per_site(target, ref_states),
+                    reference_weights=ref_probs,
+                ),
+                "FLOP/es": chain_per_effective_sample(
+                    kawasaki_run_flops(int(chain["n_trial_steps"])), kept.shape[0], tau
+                ),
+                "tau_int_snapshots": tau,
+            }
+        )
     return rows
 
 
-def sampling_floor(target, ref_states, ref_probs, n_draws, n_bootstrap=200,
-                   seed=0):
+def sampling_floor(target, ref_states, ref_probs, n_draws, n_bootstrap=200, seed=0):
     """The error a PERFECT sampler would still show at the neural cells'
     draw count: n_draws exact multinomial draws from the enumerated
     conditional, scored against it, averaged over bootstrap replicates.
@@ -221,22 +252,30 @@ def sampling_floor(target, ref_states, ref_probs, n_draws, n_bootstrap=200,
     generator = torch.Generator().manual_seed(seed)
     replicates = []
     for _ in range(n_bootstrap):
-        idx = torch.multinomial(ref_probs, n_draws, replacement=True,
-                                generator=generator)
+        idx = torch.multinomial(
+            ref_probs, n_draws, replacement=True, generator=generator
+        )
         draws = ref_states[idx]
         uniform = torch.full((n_draws,), 1.0 / n_draws)
-        replicates.append({
-            "dMag": magnetisation_profile_error(
-                draws, uniform, ref_states, L, reference_weights=ref_probs),
-            "dCorr": correlation_profile_error(
-                draws, uniform, ref_states, L, reference_weights=ref_probs),
-            "EW2": energy_wasserstein2(
-                energy_per_site(target, draws), uniform,
-                energy_per_site(target, ref_states),
-                reference_weights=ref_probs),
-        })
-    return {k: (sum(r[k] for r in replicates) / n_bootstrap, 0.0)
-            for k in replicates[0]}
+        replicates.append(
+            {
+                "dMag": magnetisation_profile_error(
+                    draws, uniform, ref_states, L, reference_weights=ref_probs
+                ),
+                "dCorr": correlation_profile_error(
+                    draws, uniform, ref_states, L, reference_weights=ref_probs
+                ),
+                "EW2": energy_wasserstein2(
+                    energy_per_site(target, draws),
+                    uniform,
+                    energy_per_site(target, ref_states),
+                    reference_weights=ref_probs,
+                ),
+            }
+        )
+    return {
+        k: (sum(r[k] for r in replicates) / n_bootstrap, 0.0) for k in replicates[0]
+    }
 
 
 def aggregate(rows):
@@ -254,13 +293,18 @@ def fmt(mean, sd, sci=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results-dir", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard")
-    parser.add_argument("--kawasaki-dir", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard" / "kawasaki_w2")
+    parser.add_argument(
+        "--results-dir", type=Path, default=REPO_ROOT / "results" / "03_hard"
+    )
+    parser.add_argument(
+        "--kawasaki-dir",
+        type=Path,
+        default=REPO_ROOT / "results" / "03_hard" / "kawasaki_w2",
+    )
     parser.add_argument("--burn-in-fraction", type=float, default=0.2)
-    parser.add_argument("--out", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard" / "w2_4x4_house")
+    parser.add_argument(
+        "--out", type=Path, default=REPO_ROOT / "results" / "03_hard" / "w2_4x4_house"
+    )
     args = parser.parse_args(argv)
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -292,11 +336,17 @@ def main(argv=None):
             per_forward = measured_forward_flops(head, (example_x, example_t))
             rows = []
             for seed in SEEDS:
-                run_dir = (args.results_dir /
-                           f"{cfg.name}_seed{seed}_{tag}")
-                rows.append(neural_cell(
-                    run_dir, target, ref_states, ref_probs, per_forward,
-                    cfg.ctmc.n_euler_steps))
+                run_dir = args.results_dir / f"{cfg.name}_seed{seed}_{tag}"
+                rows.append(
+                    neural_cell(
+                        run_dir,
+                        target,
+                        ref_states,
+                        ref_probs,
+                        per_forward,
+                        cfg.ctmc.n_euler_steps,
+                    )
+                )
             cell = aggregate(rows)
             cell["held"] = (arm, sigma_label) in HELD
             # Derive the eager caption marker from the recipe's compile constraint.
@@ -306,26 +356,25 @@ def main(argv=None):
 
         for gfn_arm, _label in GFN_ARMS.items():
             from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
-            from experiments.constrained_hard_03.run_gfn import (
-                build_target_and_policy)
-            from discrete_flow_sampler.diagnostics.flops import (
-                ising_energy_eval_flops)
+            from experiments.constrained_hard_03.run_gfn import build_target_and_policy
+
+            from discrete_flow_sampler.diagnostics.flops import ising_energy_eval_flops
 
             objective = gfn_arm.removeprefix("gfn_")
-            gfn_cfg = GFN_CONFIGS[
-                f"GFN_d16_c50_{sigma_label}_{objective}_10k_par"]
+            gfn_cfg = GFN_CONFIGS[f"GFN_d16_c50_{sigma_label}_{objective}_10k_par"]
             _, policy = build_target_and_policy(gfn_cfg, "cpu")
             # Bill the sampler as implemented: FlopCounterMode around one
             # draw of policy.sample (d sequential prefix re-encodes), plus
             # the IS-weight target eval.
-            flops_per_raw = (measured_forward_flops(policy.sample, (1,))
-                             + ising_energy_eval_flops(D_SITES))
+            flops_per_raw = measured_forward_flops(
+                policy.sample, (1,)
+            ) + ising_energy_eval_flops(D_SITES)
             rows = []
             for seed in SEEDS:
-                run_dir = (args.results_dir /
-                           f"{gfn_cfg.name}_seed{seed}_{GFN_TAG}")
-                rows.append(gfn_cell(run_dir, target, ref_states, ref_probs,
-                                     flops_per_raw))
+                run_dir = args.results_dir / f"{gfn_cfg.name}_seed{seed}_{GFN_TAG}"
+                rows.append(
+                    gfn_cell(run_dir, target, ref_states, ref_probs, flops_per_raw)
+                )
             cell = aggregate(rows)
             cell["per_sample_flops"] = flops_per_raw
             cell["n_draws"] = GFN_DRAWS
@@ -333,8 +382,13 @@ def main(argv=None):
 
         if args.kawasaki_dir.exists():
             chain_rows = kawasaki_cell(
-                args.kawasaki_dir, sigma_label, target, ref_states, ref_probs,
-                args.burn_in_fraction)
+                args.kawasaki_dir,
+                sigma_label,
+                target,
+                ref_states,
+                ref_probs,
+                args.burn_in_fraction,
+            )
             if chain_rows:
                 cell = aggregate(chain_rows)
                 cell["n_chains"] = len(chain_rows)
@@ -343,17 +397,22 @@ def main(argv=None):
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "house_table_4x4.json").write_text(json.dumps(table, indent=2))
 
-    print(f"{'row':38} {'ESS':>14} {'dMag':>16} {'dCorr':>16} "
-          f"{'EW2':>16} {'FLOP/es':>14}")
-    print(f"{'exact enumeration (reference)':38} {'/':>14} {'0':>16} "
-          f"{'0':>16} {'0':>16} {'--':>14}")
+    print(
+        f"{'row':38} {'ESS':>14} {'dMag':>16} {'dCorr':>16} {'EW2':>16} {'FLOP/es':>14}"
+    )
+    print(
+        f"{'exact enumeration (reference)':38} {'/':>14} {'0':>16} "
+        f"{'0':>16} {'0':>16} {'--':>14}"
+    )
     for key, cell in table.items():
         held = "  [HELD]" if cell.get("held") else ""
         ess = fmt(*cell["ESS"]) if "ESS" in cell else "/"
         flops = fmt(*cell["FLOP/es"], sci=True) if "FLOP/es" in cell else "--"
-        print(f"{key:38} {ess:>14} {fmt(*cell['dMag']):>16} "
-              f"{fmt(*cell['dCorr']):>16} {fmt(*cell['EW2']):>16} "
-              f"{flops:>14}{held}")
+        print(
+            f"{key:38} {ess:>14} {fmt(*cell['dMag']):>16} "
+            f"{fmt(*cell['dCorr']):>16} {fmt(*cell['EW2']):>16} "
+            f"{flops:>14}{held}"
+        )
 
 
 if __name__ == "__main__":

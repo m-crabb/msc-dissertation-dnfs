@@ -7,6 +7,7 @@ Compares low-dim marginals only (composition: 101 support points; log p̃:
 ~40 bins) — informative at N=5000 but finite-sample floored; full 2^100 TVD
 is meaningless.
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -14,11 +15,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 
-from discrete_flow_sampler.targets.ising import IsingTarget
 from discrete_flow_sampler.diagnostics.metrics import (
     composition_fraction_up as composition,
+)
+from discrete_flow_sampler.diagnostics.metrics import (
     marginal_tvd,
 )
+from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
@@ -27,8 +30,11 @@ N_SITES = 100  # D=10 ⇒ d = 100
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--run", default="S2_d10_c03_l50_seed42",
-                        help="Run dir under results/02_constrained_soft/ to evaluate.")
+    parser.add_argument(
+        "--run",
+        default="S2_d10_c03_l50_seed42",
+        help="Run dir under results/02_constrained_soft/ to evaluate.",
+    )
     args = parser.parse_args()
     run_dir = RESULTS / args.run
 
@@ -40,7 +46,9 @@ def main() -> None:
     ref_samples = ref["samples"].float()
 
     target = IsingTarget(
-        D=cfg["D"], sigma=cfg["sigma"], bias=cfg["bias"],
+        D=cfg["D"],
+        sigma=cfg["sigma"],
+        bias=cfg["bias"],
         target_composition=cfg["target_composition"],
         composition_penalty_strength=cfg["composition_penalty_strength"],
     )
@@ -103,43 +111,59 @@ def main() -> None:
     print(f"  run                        : {args.run}")
     print(f"  Gibbs ref   mean c+        : {ref_mean_c:.4f}")
     print(f"  DNFS IS-wtd mean c+        : {dnfs_mean_c:.4f}")
-    print(f"  stored unweighted mean     : {stored['composition_mean']:.4f}  (proposal Q)")
+    print(
+        f"  stored unweighted mean     : {stored['composition_mean']:.4f}  (proposal Q)"
+    )
     print(f"  composition bias (ref-DNFS): {ref_mean_c - dnfs_mean_c:+.4f}")
     print(f"  composition marginal TVD   : {marginal_tvd(dnfs_c_pmf, ref_c_pmf):.4f}")
     print(f"  log p̃ marginal TVD         : {marginal_tvd(dnfs_e_pmf, ref_e_pmf):.4f}")
     print(f"  base log-prob marginal TVD : {marginal_tvd(dnfs_eb_pmf, ref_eb_pmf):.4f}")
-    print(f"  per-site p(+1) max |dev|   : {(site_p_dnfs - site_p_ref).abs().max().item():.4f}")
-    print(f"  per-site p(+1) RMS dev     : {(site_p_dnfs - site_p_ref).pow(2).mean().sqrt().item():.4f}")
-    print(f"  context: ess_fraction={stored['ess_fraction']:.3f} "
-          f"F/D={stored['free_energy_per_site']:.3f} "
-          f"(no exact ref at d=10; Gibbs is an empirical reference)")
+    print(
+        f"  per-site p(+1) max |dev|   : {(site_p_dnfs - site_p_ref).abs().max().item():.4f}"
+    )
+    print(
+        f"  per-site p(+1) RMS dev     : {(site_p_dnfs - site_p_ref).pow(2).mean().sqrt().item():.4f}"
+    )
+    print(
+        f"  context: ess_fraction={stored['ess_fraction']:.3f} "
+        f"F/D={stored['free_energy_per_site']:.3f} "
+        f"(no exact ref at d=10; Gibbs is an empirical reference)"
+    )
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 9))
     axes[0, 0].plot(support_c, ref_c_pmf, label="Gibbs ref")
     axes[0, 0].plot(support_c, dnfs_c_pmf, label="DNFS IS-weighted")
-    axes[0, 0].axvline(cfg["target_composition"], ls="--", c="k", lw=1, label="c_target")
-    axes[0, 0].set_xlabel(r"composition $c_+$"); axes[0, 0].set_ylabel("probability")
+    axes[0, 0].axvline(
+        cfg["target_composition"], ls="--", c="k", lw=1, label="c_target"
+    )
+    axes[0, 0].set_xlabel(r"composition $c_+$")
+    axes[0, 0].set_ylabel("probability")
     axes[0, 0].set_xlim(0.2, 0.4)
-    axes[0, 0].set_title("composition marginal"); axes[0, 0].legend()
+    axes[0, 0].set_title("composition marginal")
+    axes[0, 0].legend()
 
     ec = 0.5 * (e_edges[:-1] + e_edges[1:])
     axes[0, 1].plot(ec, ref_e_pmf, label="Gibbs ref")
     axes[0, 1].plot(ec, dnfs_e_pmf, label="DNFS IS-weighted")
     axes[0, 1].set_xlabel(r"$\log \tilde p(x)$ (constrained)")
     axes[0, 1].set_ylabel("probability")
-    axes[0, 1].set_title("constrained log-density marginal"); axes[0, 1].legend()
+    axes[0, 1].set_title("constrained log-density marginal")
+    axes[0, 1].legend()
 
     ebc = 0.5 * (eb_edges[:-1] + eb_edges[1:])
     axes[1, 0].plot(ebc, ref_eb_pmf, label="Gibbs ref")
     axes[1, 0].plot(ebc, dnfs_eb_pmf, label="DNFS IS-weighted")
     axes[1, 0].set_xlabel(r"base $\log p_{\rm Ising}(x)$ (penalty stripped)")
     axes[1, 0].set_ylabel("probability")
-    axes[1, 0].set_title("pure-Ising log-density marginal"); axes[1, 0].legend()
+    axes[1, 0].set_title("pure-Ising log-density marginal")
+    axes[1, 0].legend()
 
     site_axis = torch.arange(N_SITES)
     axes[1, 1].plot(site_axis, site_p_ref, label="Gibbs ref", lw=1)
     axes[1, 1].plot(site_axis, site_p_dnfs, label="DNFS IS-weighted", lw=1)
-    axes[1, 1].axhline(cfg["target_composition"], ls="--", c="k", lw=1, label="c_target")
+    axes[1, 1].axhline(
+        cfg["target_composition"], ls="--", c="k", lw=1, label="c_target"
+    )
     axes[1, 1].set_xlabel("site index $i$")
     axes[1, 1].set_ylabel(r"$P(x_i = +1)$")
     axes[1, 1].set_title("per-site +1 probability (translation-symmetry check)")

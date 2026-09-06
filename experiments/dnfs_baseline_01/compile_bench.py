@@ -17,6 +17,7 @@ Run on Modal:
     pixi run -e dev modal run -m \
         experiments.dnfs_baseline_01.modal_app::compile_bench
 """
+
 import statistics
 import tempfile
 import time
@@ -25,9 +26,9 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-
 from experiments.dnfs_baseline_01.configs import CONFIGS
 from experiments.dnfs_baseline_01.run import _build_model, train
+
 from discrete_flow_sampler.samplers.ctmc import sample_ctmc
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -45,14 +46,13 @@ def _short_cfg(cfg_name: str, n_steps: int):
 
 def _median_tail_step_seconds(run_root: Path, tail: int) -> float:
     log_path = next(run_root.rglob("training_log.csv"))
-    step_seconds = (
-        pd.read_csv(log_path)["wall_clock_step_s"].dropna().tail(tail)
-    )
+    step_seconds = pd.read_csv(log_path)["wall_clock_step_s"].dropna().tail(tail)
     return float(step_seconds.median())
 
 
-def _time_rollout(model, target, n_euler_steps: int, batch_size: int,
-                  device, repeats: int = 3) -> float:
+def _time_rollout(
+    model, target, n_euler_steps: int, batch_size: int, device, repeats: int = 3
+) -> float:
     t_grid = torch.linspace(0.0, 1.0, n_euler_steps, device=device)
     timings = []
     with torch.no_grad():
@@ -61,8 +61,7 @@ def _time_rollout(model, target, n_euler_steps: int, batch_size: int,
             if device == "cuda":
                 torch.cuda.synchronize()
             started = time.perf_counter()
-            sample_ctmc(model, x0, t_grid, return_all_states=True,
-                        target=target)
+            sample_ctmc(model, x0, t_grid, return_all_states=True, target=target)
             if device == "cuda":
                 torch.cuda.synchronize()
             if repeat > 0:
@@ -70,57 +69,59 @@ def _time_rollout(model, target, n_euler_steps: int, batch_size: int,
     return statistics.median(timings)
 
 
-def run_bench(cfg_name: str = "stage_4_d10", n_steps: int = 400,
-              tail: int = 200) -> dict:
+def run_bench(
+    cfg_name: str = "stage_4_d10", n_steps: int = 400, tail: int = 200
+) -> dict:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    device_name = (
-        torch.cuda.get_device_name(0) if device == "cuda" else "cpu"
-    )
+    device_name = torch.cuda.get_device_name(0) if device == "cuda" else "cpu"
     print(f"[compile_bench] cfg={cfg_name} device={device_name}")
 
     short = _short_cfg(cfg_name, n_steps)
     arms = {
         "eager": short,
-        "compiled": replace(
-            short, model=replace(short.model, compile_model=True)
-        ),
+        "compiled": replace(short, model=replace(short.model, compile_model=True)),
     }
 
     results: dict = {"cfg": cfg_name, "device": device_name}
     for label, arm_cfg in arms.items():
         run_root = Path(tempfile.mkdtemp(prefix=f"compile_bench_{label}_"))
-        train(arm_cfg, seed=arm_cfg.train.seed, output_dir=run_root,
-              use_wandb=False, tag=f"bench_{label}")
+        train(
+            arm_cfg,
+            seed=arm_cfg.train.seed,
+            output_dir=run_root,
+            use_wandb=False,
+            tag=f"bench_{label}",
+        )
         update_s = _median_tail_step_seconds(run_root, tail)
 
         target = IsingTarget(
-            D=arm_cfg.ising.D, sigma=arm_cfg.ising.sigma,
-            bias=arm_cfg.ising.bias, device=device,
+            D=arm_cfg.ising.D,
+            sigma=arm_cfg.ising.sigma,
+            bias=arm_cfg.ising.bias,
+            device=device,
         )
         model = _build_model(arm_cfg, target)
-        batch_size = (
-            arm_cfg.train.outer_batch_size or arm_cfg.train.batch_size
-        )
+        batch_size = arm_cfg.train.outer_batch_size or arm_cfg.train.batch_size
         rollout_s = _time_rollout(
             model, target, arm_cfg.ctmc.n_euler_steps, batch_size, device
         )
-        results[label] = {
-            "update_s_median": update_s, "rollout_s_median": rollout_s
-        }
-        print(f"[compile_bench] {label}: update {update_s * 1e3:.1f} ms, "
-              f"rollout {rollout_s:.2f} s")
+        results[label] = {"update_s_median": update_s, "rollout_s_median": rollout_s}
+        print(
+            f"[compile_bench] {label}: update {update_s * 1e3:.1f} ms, "
+            f"rollout {rollout_s:.2f} s"
+        )
 
     results["update_ratio"] = (
-        results["eager"]["update_s_median"]
-        / results["compiled"]["update_s_median"]
+        results["eager"]["update_s_median"] / results["compiled"]["update_s_median"]
     )
     results["rollout_ratio"] = (
-        results["eager"]["rollout_s_median"]
-        / results["compiled"]["rollout_s_median"]
+        results["eager"]["rollout_s_median"] / results["compiled"]["rollout_s_median"]
     )
-    print(f"[compile_bench] compile speedup: "
-          f"updates {results['update_ratio']:.2f}x, "
-          f"rollout {results['rollout_ratio']:.2f}x")
+    print(
+        f"[compile_bench] compile speedup: "
+        f"updates {results['update_ratio']:.2f}x, "
+        f"rollout {results['rollout_ratio']:.2f}x"
+    )
     return results
 
 

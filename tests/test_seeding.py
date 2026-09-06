@@ -76,10 +76,8 @@ def test_top_level_train_seeds_let_model_initialisation(monkeypatch, tmp_path):
     same_seed_a, same_seed_b, different_seed = captured_states
     assert same_seed_a.keys() == same_seed_b.keys()
     assert all(
-        torch.equal(same_seed_a[name], same_seed_b[name])
-        for name in same_seed_a
+        torch.equal(same_seed_a[name], same_seed_b[name]) for name in same_seed_a
     )
     assert any(
-        not torch.equal(same_seed_a[name], different_seed[name])
-        for name in same_seed_a
+        not torch.equal(same_seed_a[name], different_seed[name]) for name in same_seed_a
     )

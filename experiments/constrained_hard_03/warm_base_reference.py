@@ -70,6 +70,7 @@ Everything here is done in the log domain with logsumexp.  Z_w at d = 256 is a
 sum over the compositions of 128 into 64 parts each <= 4; the linear-domain
 value overflows float64 long before the DP finishes.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -109,8 +110,8 @@ def nn_correlation(spins: np.ndarray, A: np.ndarray) -> np.ndarray:
 def quadratic_form(spins: np.ndarray, A: np.ndarray) -> np.ndarray:
     """x^T A x -- the sigma-free part of log rho(x) = sigma * x^T A x."""
     x = spins.astype(np.float64)
-    return ((x @ A) * x).sum(axis=1)   # BLAS matmul, not einsum: 400k x 256 is
-                                       # 2 GFLOP and einsum would not use BLAS
+    return ((x @ A) * x).sum(axis=1)  # BLAS matmul, not einsum: 400k x 256 is
+    # 2 GFLOP and einsum would not use BLAS
 
 
 def log_binom(n: int, k: np.ndarray | int) -> np.ndarray:
@@ -147,8 +148,8 @@ class BlockOccupancyBase:
         self.block_side = block_side
         self.d = lattice_side * lattice_side
         self.n_up = n_up
-        self.tile_sites = block_side * block_side              # s
-        self.n_tiles = self.d // self.tile_sites               # B
+        self.tile_sites = block_side * block_side  # s
+        self.n_tiles = self.d // self.tile_sites  # B
         self.epsilon = epsilon
 
         full_orbit = self._offset_list(block_side)
@@ -156,9 +157,10 @@ class BlockOccupancyBase:
         self.offsets = full_orbit[: self.n_offsets]
 
         self.log_weights = self._prepare_weights(weights)
-        self.log_tile_multiplicity = log_binom(self.tile_sites,
-                                               np.arange(self.tile_sites + 1))
-        self.forward_dp = self._build_dp()                     # (B+1, N_A+1)
+        self.log_tile_multiplicity = log_binom(
+            self.tile_sites, np.arange(self.tile_sites + 1)
+        )
+        self.forward_dp = self._build_dp()  # (B+1, N_A+1)
         self.log_normaliser = self.forward_dp[self.n_tiles, self.n_up]
         if not np.isfinite(self.log_normaliser):
             raise ValueError("Z_w is zero: no occupancy vector reaches N_A")
@@ -166,11 +168,13 @@ class BlockOccupancyBase:
         # site -> tile map and its inverse, one per offset
         self.tile_of_site = np.stack(
             [self._tile_map(dr, dc) for dr, dc in self.offsets]
-        )                                                       # (K, d)
+        )  # (K, d)
         self.sites_of_tile = np.stack(
-            [np.argsort(m, kind="stable").reshape(self.n_tiles, self.tile_sites)
-             for m in self.tile_of_site]
-        )                                                       # (K, B, s)
+            [
+                np.argsort(m, kind="stable").reshape(self.n_tiles, self.tile_sites)
+                for m in self.tile_of_site
+            ]
+        )  # (K, B, s)
 
     # ---------------- construction helpers ----------------
 
@@ -189,7 +193,7 @@ class BlockOccupancyBase:
             raise ValueError(f"weights must have shape ({self.tile_sites + 1},)")
         if (w < 0).any():
             raise ValueError("weights must be non-negative")
-        w = 0.5 * (w + w[::-1])                      # Z2: w(m) = w(s - m)
+        w = 0.5 * (w + w[::-1])  # Z2: w(m) = w(s - m)
         w = w / w.sum()
         w = (1.0 - self.epsilon) * w + self.epsilon / (self.tile_sites + 1)
         return np.log(w)
@@ -229,7 +233,7 @@ class BlockOccupancyBase:
 
     def tile_occupancies(self, spins: np.ndarray, offset_index: int) -> np.ndarray:
         """m_t(x) for every tile, shape (N, B)."""
-        up = (spins > 0)
+        up = spins > 0
         return up[:, self.sites_of_tile[offset_index]].sum(axis=2)
 
     def log_density_single(self, spins: np.ndarray, offset_index: int) -> np.ndarray:
@@ -273,15 +277,16 @@ class BlockOccupancyBase:
                 spins[rows] = self._sample_one_tiling(rows.size, k, rng)
         return spins
 
-    def _sample_one_tiling(self, n_samples: int, offset_index: int,
-                           rng: np.random.Generator) -> np.ndarray:
+    def _sample_one_tiling(
+        self, n_samples: int, offset_index: int, rng: np.random.Generator
+    ) -> np.ndarray:
         s, B, N = self.tile_sites, self.n_tiles, self.n_up
         occupancy = np.empty((n_samples, B), dtype=np.int64)
         remaining = np.full(n_samples, N, dtype=np.int64)
         m_grid = np.arange(s + 1)
 
         for t in range(B, 0, -1):
-            back = remaining[:, None] - m_grid[None, :]         # (n, s+1)
+            back = remaining[:, None] - m_grid[None, :]  # (n, s+1)
             feasible = back >= 0
             logits = np.where(
                 feasible,
@@ -300,7 +305,7 @@ class BlockOccupancyBase:
         is_up = rank_within_tile < occupancy[:, :, None]
 
         spins = np.empty((n_samples, self.d), dtype=np.int8)
-        sites = self.sites_of_tile[offset_index]                # (B, s)
+        sites = self.sites_of_tile[offset_index]  # (B, s)
         spins[:, sites.reshape(-1)] = np.where(
             is_up.reshape(n_samples, -1), 1, -1
         ).astype(np.int8)
@@ -316,7 +321,7 @@ class BlockOccupancyBase:
         block_side: int,
         n_offsets: int | None = None,
         epsilon: float = 1e-3,
-    ) -> "BlockOccupancyBase":
+    ) -> BlockOccupancyBase:
         """Moment-match w to the target's own tile-occupancy marginal, pooled
         over the FULL K = b^2 offset orbit (so the fitted w is
         translation-symmetric by construction even for the K = 1 ablation).
@@ -328,14 +333,26 @@ class BlockOccupancyBase:
         """
         n_up = int((spins[0] > 0).sum())
         s = block_side * block_side
-        scaffold = cls(lattice_side, block_side, n_up,
-                       weights=np.ones(s + 1), n_offsets=None, epsilon=epsilon)
+        scaffold = cls(
+            lattice_side,
+            block_side,
+            n_up,
+            weights=np.ones(s + 1),
+            n_offsets=None,
+            epsilon=epsilon,
+        )
         counts = np.zeros(s + 1)
         for k in range(scaffold.n_offsets):
             m = scaffold.tile_occupancies(spins, k)
             counts += np.bincount(m.reshape(-1), minlength=s + 1)
-        return cls(lattice_side, block_side, n_up, weights=counts,
-                   n_offsets=n_offsets, epsilon=epsilon)
+        return cls(
+            lattice_side,
+            block_side,
+            n_up,
+            weights=counts,
+            n_offsets=n_offsets,
+            epsilon=epsilon,
+        )
 
 
 class UniformSliceBase:

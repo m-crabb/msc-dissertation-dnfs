@@ -12,8 +12,8 @@ The trainer saves those as RAW weights only (swap_training saves
 `head.state_dict()`, not the EMA shadow), so the EMA pairing must be
 refused rather than quietly reading `final_ema.pt`.
 """
-import pytest
 
+import pytest
 from experiments.constrained_hard_03.run import _eval_checkpoint_and_suffix
 
 
@@ -22,7 +22,10 @@ def test_default_reads_final_into_the_canonical_dir():
 
 
 def test_ema_and_grid_override_compose():
-    assert _eval_checkpoint_and_suffix(True, 512, None) == ("final_ema.pt", "_ema_ne512")
+    assert _eval_checkpoint_and_suffix(True, 512, None) == (
+        "final_ema.pt",
+        "_ema_ne512",
+    )
 
 
 def test_stage_best_names_its_checkpoint_and_its_own_dir():

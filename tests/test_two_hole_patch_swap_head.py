@@ -24,11 +24,11 @@ implementation cannot fake:
 import pytest
 import torch
 
+from discrete_flow_sampler.constraints.swap_readout import swap2
 from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
     TwoHolePatchSwapHead,
     torus_neighbour_offsets,
 )
-from discrete_flow_sampler.constraints.swap_readout import swap2
 from discrete_flow_sampler.diagnostics.metrics import enumerate_states
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
@@ -45,10 +45,16 @@ def _head(lattice_side=4, seed=42, hidden_dim=8, patch_radius=1, feature_dim=6):
     torch.manual_seed(seed)
     d = lattice_side * lattice_side
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=1, n_heads=2,
+        d=d,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=1,
+        n_heads=2,
     )
     head = TwoHolePatchSwapHead(
-        backbone, lattice_side=lattice_side, patch_radius=patch_radius,
+        backbone,
+        lattice_side=lattice_side,
+        patch_radius=patch_radius,
         feature_dim=feature_dim,
     )
     head.eval()
@@ -123,7 +129,7 @@ def test_pair_context_sensitive_near_and_far():
     head = _head(lattice_side=8, patch_radius=1)
     x = _state(64)
     t = torch.rand(1)
-    i, j = 0, 9            # (0,0) and (1,1): diagonal neighbours
+    i, j = 0, 9  # (0,0) and (1,1): diagonal neighbours
     base = head.compute_pair_context(x, t)[:, i, j, :]
     for site, region in ((1, "neighbour of i"), (36, "far site (4,4)")):
         drift = _drift(head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base)
@@ -143,8 +149,7 @@ def test_blindness_probe_has_teeth():
 
 
 @torch.no_grad()
-@pytest.mark.parametrize("lattice_side,patch_radius",
-                         [(4, 1), (8, 1), (8, 2), (8, 3)])
+@pytest.mark.parametrize("lattice_side,patch_radius", [(4, 1), (8, 1), (8, 2), (8, 3)])
 def test_vectorised_context_matches_per_pair_reference(lattice_side, patch_radius):
     """The scatter/gather assembly must equal a slow reference that builds
     each pair's context by hand: zero the partner inside the other hole's
@@ -161,8 +166,7 @@ def test_vectorised_context_matches_per_pair_reference(lattice_side, patch_radiu
 
 
 @torch.no_grad()
-@pytest.mark.parametrize("lattice_side,patch_radius",
-                         [(4, 1), (8, 1), (8, 2), (8, 3)])
+@pytest.mark.parametrize("lattice_side,patch_radius", [(4, 1), (8, 1), (8, 2), (8, 3)])
 def test_antisymmetric_at_init(lattice_side, patch_radius):
     head = _head(lattice_side=lattice_side, patch_radius=patch_radius)
     d = lattice_side * lattice_side
@@ -189,8 +193,7 @@ def test_trivial_swap_vanishes_and_index_antisymmetry_exact():
 
 
 @torch.no_grad()
-@pytest.mark.parametrize("lattice_side,patch_radius",
-                         [(4, 1), (8, 1), (8, 2), (8, 3)])
+@pytest.mark.parametrize("lattice_side,patch_radius", [(4, 1), (8, 1), (8, 2), (8, 3)])
 def test_pair_output_translation_equivariant_on_torus(lattice_side, patch_radius):
     """The PHYSICAL rate of the unordered pair, G[min, max], must satisfy
     G(roll x)(roll i, roll j) == G(x)(i, j) for every lattice shift: nothing
@@ -278,7 +281,9 @@ def test_head_parameters_receive_grad_and_causal_stacks_dead():
     stacks = list(head.backbone.fwd_stack.parameters()) + list(
         head.backbone.bwd_stack.parameters()
     )
-    assert all(p.grad is None for p in stacks), "leTF stacks live: this head is ordering-free"
+    assert all(p.grad is None for p in stacks), (
+        "leTF stacks live: this head is ordering-free"
+    )
 
 
 @torch.no_grad()
@@ -315,7 +320,9 @@ def test_build_swap_head_wires_lattice_side_and_exact_field_wrapper():
 
     cfg = replace(
         CONFIGS["H2_d64_c50_s223_letf_fimo2_50k_curr"],
-        head_kind="two_hole_patch", patch_radius=2, exact_field_channel=True,
+        head_kind="two_hole_patch",
+        patch_radius=2,
+        exact_field_channel=True,
     )
     target = FixedCompositionIsingTarget(D=8, sigma=0.223, target_composition=0.5)
     backbone = LeTFRateMatrix(d=64, vocab_size=2, hidden_dim=32, n_layers=2, n_heads=4)
@@ -340,10 +347,16 @@ def test_d64_thp_cell_mirrors_fimo2_rung_except_head_kind():
     cell = CONFIGS["H2_d64_c50_s223_letf_thp_50k_curr"]
     twin = CONFIGS["H2_d64_c50_s223_letf_fimo2_50k_curr"]
     assert cell.head_kind == "two_hole_patch"
-    assert replace(
-        cell, name=twin.name, head_kind=twin.head_kind,
-        interior_band=twin.interior_band, site_orderings=twin.site_orderings,
-    ) == twin
+    assert (
+        replace(
+            cell,
+            name=twin.name,
+            head_kind=twin.head_kind,
+            interior_band=twin.interior_band,
+            site_orderings=twin.site_orderings,
+        )
+        == twin
+    )
     _, head = build_target_and_head(cell, torch.device("cpu"))
     assert isinstance(head, TwoHolePatchSwapHead)
     assert head.patch_radius == 1 and head.lattice_side == 8

@@ -38,6 +38,7 @@ backend).
 Run:
     pixi run -e dev python -m experiments.constrained_soft_02.compile_gate
 """
+
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -45,8 +46,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-
 from experiments.dnfs_baseline_01.run import _build_model, train
+
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.seeding import seed_everything
 from discrete_flow_sampler.targets.ising import IsingTarget
@@ -56,9 +57,9 @@ from .configs import CONFIGS
 GATE_CFG = CONFIGS["S2_d4_c05_l50_letf_house_gate"]
 EAGER_CFG = CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"]
 RELATIVE_TOLERANCE = 1e-5
-GATE_TRAIN_STEPS = 300          # 3 outer cycles: rollout + replay both exercised
+GATE_TRAIN_STEPS = 300  # 3 outer cycles: rollout + replay both exercised
 GATE_OUTPUT_DIR = "results/02_constrained_soft"
-GATE_TAG = "gate0e"             # fixed tag: a rerun resumes/skips, never forks
+GATE_TAG = "gate0e"  # fixed tag: a rerun resumes/skips, never forks
 
 # The structurally-zero gradient (the hard compile gate's pair_mlp.2.bias
 # case, re-derived here for this architecture): a key
@@ -87,7 +88,10 @@ HEALTH_DECLINE_FACTOR = 4.0
 def _gate_target(device):
     cfg = GATE_CFG.ising
     return IsingTarget(
-        D=cfg.D, sigma=cfg.sigma, bias=cfg.bias, device=device,
+        D=cfg.D,
+        sigma=cfg.sigma,
+        bias=cfg.bias,
+        device=device,
         target_composition=cfg.target_composition,
         composition_penalty_strength=cfg.composition_penalty_strength,
         base_composition=cfg.base_composition,
@@ -109,8 +113,10 @@ def run_single_batch_parity(device) -> tuple[bool, list[str]]:
         loss_value.backward()
         losses.append(loss_value.detach())
         grads.append(
-            {name: None if p.grad is None else p.grad.detach().clone()
-             for name, p in model.named_parameters()}
+            {
+                name: None if p.grad is None else p.grad.detach().clone()
+                for name, p in model.named_parameters()
+            }
         )
 
     failures = []
@@ -133,19 +139,18 @@ def run_single_batch_parity(device) -> tuple[bool, list[str]]:
         if eager_grad is None:
             continue
         if name.endswith(STRUCTURAL_ZERO_SUFFIXES):
-            for label, grad in (("eager", eager_grad),
-                                ("compiled", compiled_grad)):
+            for label, grad in (("eager", eager_grad), ("compiled", compiled_grad)):
                 if grad.abs().max() > STRUCTURAL_ZERO_ABSOLUTE_TOLERANCE:
                     failures.append(
                         f"{name} ({label}): structural zero violated, "
-                        f"|grad|_max = {grad.abs().max().item():.3e}")
+                        f"|grad|_max = {grad.abs().max().item():.3e}"
+                    )
             continue
         gap = (eager_grad - compiled_grad).norm().item()
         norm = eager_grad.norm().item()
         if gap > RELATIVE_TOLERANCE * max(norm, 1e-12):
             failures.append(f"{name}: |grad gap| {gap:.3e} vs norm {norm:.3e}")
-    print(f"[gate] single-batch loss gap {loss_gap:.3e} "
-          f"(loss scale {loss_scale:.3e})")
+    print(f"[gate] single-batch loss gap {loss_gap:.3e} (loss scale {loss_scale:.3e})")
     return not failures, failures
 
 
@@ -157,8 +162,11 @@ def run_train_pair() -> tuple[bool, str]:
     run_dirs = {}
     for cfg in (GATE_CFG, EAGER_CFG):
         run_dirs[cfg.name] = train(
-            _short_cfg(cfg), seed=42, output_dir=GATE_OUTPUT_DIR,
-            use_wandb=False, tag=GATE_TAG,
+            _short_cfg(cfg),
+            seed=42,
+            output_dir=GATE_OUTPUT_DIR,
+            use_wandb=False,
+            tag=GATE_TAG,
         )
     traces = {
         name: pd.read_csv(Path(run_dir) / "training_log.csv")
@@ -178,7 +186,8 @@ def run_train_pair() -> tuple[bool, str]:
         for name, trace in (("compiled", compiled), ("eager", eager))
     }
     healthy = finite and all(
-        ratio >= HEALTH_DECLINE_FACTOR for ratio in declines.values())
+        ratio >= HEALTH_DECLINE_FACTOR for ratio in declines.values()
+    )
 
     summary = (
         f"pre-amplification (first {PRE_AMPLIFICATION_STEPS} steps) max "
@@ -196,15 +205,13 @@ def main() -> int:
     print(f"[gate] device = {device}")
 
     parity_pass, failures = run_single_batch_parity(device)
-    print(f"[gate] part 1 single-batch parity: "
-          f"{'PASS' if parity_pass else 'FAIL'}")
+    print(f"[gate] part 1 single-batch parity: {'PASS' if parity_pass else 'FAIL'}")
     for failure in failures:
         print(f"[gate]   {failure}")
 
     pair_pass, summary = run_train_pair()
     print(f"[gate] part 2 {summary}")
-    print(f"[gate] part 2 matched-seed train pair: "
-          f"{'PASS' if pair_pass else 'FAIL'}")
+    print(f"[gate] part 2 matched-seed train pair: {'PASS' if pair_pass else 'FAIL'}")
 
     gate_pass = parity_pass and pair_pass
     print(f"[gate] GATE {'PASSED' if gate_pass else 'FAILED'}")

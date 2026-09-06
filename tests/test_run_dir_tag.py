@@ -15,6 +15,7 @@ separate contract with its own file, `tests/test_training_resume.py` — but
 the two compose, and the tag is what makes the resume reachable at all: a
 retry that mints a fresh dir never sees the previous attempt's checkpoint.
 """
+
 import sys
 
 from experiments.dnfs_baseline_01.configs import CONFIGS as BASELINE_CONFIGS
@@ -29,9 +30,7 @@ def test_fixed_tag_short_circuits_completed_run(tmp_path):
     finished.mkdir(parents=True)
     (finished / "metrics.json").write_text("{}")
 
-    run_dir = train(
-        cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="sometag"
-    )
+    run_dir = train(cfg, seed=42, output_dir=tmp_path, use_wandb=False, tag="sometag")
 
     assert run_dir == tmp_path / "stage_0_d4_seed42_sometag"
     # The short-circuit must fire before config.json is rewritten: on a
@@ -49,8 +48,14 @@ def test_baseline_cli_passes_tag_through(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run.py", "--cfg", "stage_4_d8_critical_paper_curriculum",
-         "--tag", "20260812-walkback", "--no-wandb"],
+        [
+            "run.py",
+            "--cfg",
+            "stage_4_d8_critical_paper_curriculum",
+            "--tag",
+            "20260812-walkback",
+            "--no-wandb",
+        ],
     )
     baseline_run.main()
     assert seen["tag"] == "20260812-walkback"
@@ -62,14 +67,18 @@ def test_soft_cli_passes_tag_through(monkeypatch):
     import experiments.constrained_soft_02.run as soft_run
 
     seen = {}
-    monkeypatch.setattr(
-        soft_run, "train", lambda cfg, **kwargs: seen.update(kwargs)
-    )
+    monkeypatch.setattr(soft_run, "train", lambda cfg, **kwargs: seen.update(kwargs))
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run.py", "--cfg", "S2_d8_c05_l50_letf_ne64",
-         "--tag", "20260812-walkback", "--no-wandb"],
+        [
+            "run.py",
+            "--cfg",
+            "S2_d8_c05_l50_letf_ne64",
+            "--tag",
+            "20260812-walkback",
+            "--no-wandb",
+        ],
     )
     soft_run.main()
     assert seen["tag"] == "20260812-walkback"

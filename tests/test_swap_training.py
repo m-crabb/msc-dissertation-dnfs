@@ -21,10 +21,17 @@ def _tiny_head():
 
 
 def _tiny_cfgs():
-    train_cfg = _Cfg(n_steps=4, batch_size=8, outer_batch_size=8,
-                      inner_steps_per_outer=2, lr=1e-3, seed=0,
-                      replay_buffer_cycles=1, grad_clip_max_norm=500.0,
-                      warmup_steps=0)
+    train_cfg = _Cfg(
+        n_steps=4,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=1,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=8)
     eval_cfg = _Cfg(eval_every=2, n_eval_samples=16)
     return train_cfg, ctmc_cfg, eval_cfg
@@ -40,8 +47,16 @@ def test_train_swap_smoke_runs_and_stays_on_manifold(tmp_path):
     tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     head = _tiny_head()
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
-    train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-               use_wandb=False, estimator_mode="control_variate")
+    train_swap(
+        head,
+        tgt,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
+    )
     assert (Path(tmp_path) / "training_log.csv").exists()
     assert (Path(tmp_path) / "checkpoints" / "final.pt").exists()
 
@@ -54,13 +69,23 @@ def test_train_swap_logs_swap_rate_diagnostics_and_preserves_composition(tmp_pat
     tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     head = _tiny_head()
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
-    train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-               use_wandb=False, estimator_mode="control_variate")
+    train_swap(
+        head,
+        tgt,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
+    )
 
     rows = _read_csv_rows(Path(tmp_path) / "training_log.csv")
     diagnostic_columns = {
-        "rate_pair_mean", "rate_pair_p99",
-        "lambda_dt_clipped_frac", "log_ratio_clamp_frac",
+        "rate_pair_mean",
+        "rate_pair_p99",
+        "lambda_dt_clipped_frac",
+        "log_ratio_clamp_frac",
     }
     assert diagnostic_columns.issubset(rows[0].keys())
 
@@ -105,8 +130,16 @@ def test_train_swap_use_matching_step_threads_through_sampler(tmp_path, monkeypa
     head = _tiny_head()
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
     ctmc_cfg.use_matching_step = True
-    train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-               use_wandb=False, estimator_mode="control_variate")
+    train_swap(
+        head,
+        tgt,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
+    )
 
     assert recorded_multi_event, "training never simulated a trajectory"
     assert all(recorded_multi_event), (
@@ -117,9 +150,16 @@ def test_train_swap_use_matching_step_threads_through_sampler(tmp_path, monkeypa
     recorded_multi_event.clear()
     tgt_default = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg2, ctmc_cfg2, eval_cfg2 = _tiny_cfgs()
-    train_swap(_tiny_head(), tgt_default, train_cfg2, ctmc_cfg2, eval_cfg2,
-               Path(tmp_path) / "default", use_wandb=False,
-               estimator_mode="control_variate")
+    train_swap(
+        _tiny_head(),
+        tgt_default,
+        train_cfg2,
+        ctmc_cfg2,
+        eval_cfg2,
+        Path(tmp_path) / "default",
+        use_wandb=False,
+        estimator_mode="control_variate",
+    )
     assert recorded_multi_event and not any(recorded_multi_event)
 
 
@@ -141,8 +181,16 @@ def test_train_swap_eval_sample_chunk_bounds_head_batch(tmp_path):
         lambda module, args: head_batches.append(args[0].shape[0])
     )
     try:
-        train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-                   use_wandb=False, estimator_mode="control_variate")
+        train_swap(
+            head,
+            tgt,
+            train_cfg,
+            ctmc_cfg,
+            eval_cfg,
+            Path(tmp_path),
+            use_wandb=False,
+            estimator_mode="control_variate",
+        )
     finally:
         hook.remove()
 
@@ -183,8 +231,16 @@ def test_train_swap_in_training_eval_draw_size(tmp_path):
         tgt.sample_base = recording_sample_base
         run_dir = Path(tmp_path) / f"draw_{training_draw}"
         run_dir.mkdir()
-        train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-                   use_wandb=False, estimator_mode="control_variate")
+        train_swap(
+            head,
+            tgt,
+            train_cfg,
+            ctmc_cfg,
+            eval_cfg,
+            run_dir,
+            use_wandb=False,
+            estimator_mode="control_variate",
+        )
 
         assert expected_eval_draw in draw_sizes, (
             f"n_eval_samples_training={training_draw}: no eval draw of "
@@ -223,8 +279,16 @@ def test_train_swap_eval_autocast_bf16_flag(tmp_path):
         run_dir = Path(tmp_path) / f"autocast_{flag_on}"
         run_dir.mkdir()
         try:
-            train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-                       use_wandb=False, estimator_mode="control_variate")
+            train_swap(
+                head,
+                tgt,
+                train_cfg,
+                ctmc_cfg,
+                eval_cfg,
+                run_dir,
+                use_wandb=False,
+                estimator_mode="control_variate",
+            )
         finally:
             hook.remove()
 
@@ -246,8 +310,16 @@ def test_train_swap_logs_c_t_offset_rms(tmp_path):
     tgt = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     head = _tiny_head()
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
-    train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-               use_wandb=False, estimator_mode="control_variate")
+    train_swap(
+        head,
+        tgt,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
+    )
 
     rows = _read_csv_rows(Path(tmp_path) / "training_log.csv")
     assert "c_t_offset_rms" in rows[0]
@@ -273,8 +345,16 @@ def test_train_swap_logs_grad_sqnorm_slice_mean(tmp_path):
             train_cfg.loss_microbatch_size = 4  # batch 8 -> two full slices
         run_dir = Path(tmp_path) / f"microbatch_{microbatch_on}"
         run_dir.mkdir()
-        train_swap(head, tgt, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-                   use_wandb=False, estimator_mode="control_variate")
+        train_swap(
+            head,
+            tgt,
+            train_cfg,
+            ctmc_cfg,
+            eval_cfg,
+            run_dir,
+            use_wandb=False,
+            estimator_mode="control_variate",
+        )
 
         rows = _read_csv_rows(run_dir / "training_log.csv")
         assert "grad_sqnorm_slice_mean" in rows[0]

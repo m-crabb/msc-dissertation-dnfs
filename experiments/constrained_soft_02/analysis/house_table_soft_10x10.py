@@ -50,6 +50,7 @@ that made the unconstrained baseline row run-long, and the run-long
 reference with its actually-spent FLOP/es already carries the cost story
 (reference-not-rival). sigma_c is not run in this chapter.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -59,10 +60,17 @@ import numpy as np
 import torch
 
 from discrete_flow_sampler.diagnostics.flops import (
-    chain_per_effective_sample, measured_forward_flops,
-    neural_sampling_flops_per_sample, per_effective_sample, vcsgc_run_flops)
+    chain_per_effective_sample,
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+    vcsgc_run_flops,
+)
 from discrete_flow_sampler.diagnostics.metrics import (
-    correlation_profile_error, energy_wasserstein2, magnetisation_profile_error)
+    correlation_profile_error,
+    energy_wasserstein2,
+    magnetisation_profile_error,
+)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -112,7 +120,9 @@ def observable_errors(x, weights, reference):
     return {
         "dMag": magnetisation_profile_error(x, weights, reference, L),
         "dCorr": correlation_profile_error(x, weights, reference, L),
-        "EW2": energy_wasserstein2(energy_per_site(x), weights, energy_per_site(reference)),
+        "EW2": energy_wasserstein2(
+            energy_per_site(x), weights, energy_per_site(reference)
+        ),
     }
 
 
@@ -125,25 +135,35 @@ def load_vcsgc_reference(penalty_strength, c_target):
     """
     frames, wall_seconds, chains = [], 0.0, 0
     total_trials, tau_ints = 0, []
-    for run_dir in sorted(VCSGC_RESULTS.glob(f"D{L}_s{SIGMA}_l{penalty_strength:.1f}_c{c_target:.2f}_seed*")):
+    for run_dir in sorted(
+        VCSGC_RESULTS.glob(
+            f"D{L}_s{SIGMA}_l{penalty_strength:.1f}_c{c_target:.2f}_seed*"
+        )
+    ):
         spins = torch.from_numpy(np.load(run_dir / "spins.npy")).float()
         potential = torch.from_numpy(np.load(run_dir / "potential.npy")).float()
         # mchammer's CE energy is -log p~(x) on the validated embedding; a
         # scrambled atom order would break this equality and every profile.
-        assert torch.allclose(-TARGET.base_log_prob(spins), potential, atol=1e-3), run_dir
+        assert torch.allclose(-TARGET.base_log_prob(spins), potential, atol=1e-3), (
+            run_dir
+        )
         frames.append(spins)
         summary = json.loads((run_dir / "summary.json").read_text())
         wall_seconds += summary["wall_seconds_run"]
         total_trials += summary["n_steps"]
-        tau_ints.append(max(obs["tau_int_frames"]
-                            for obs in summary["observables"].values()))
+        tau_ints.append(
+            max(obs["tau_int_frames"] for obs in summary["observables"].values())
+        )
         chains += 1
     if not frames:
-        raise FileNotFoundError(f"no VC-SGC reference with spins.npy for lambda={penalty_strength} c={c_target}")
+        raise FileNotFoundError(
+            f"no VC-SGC reference with spins.npy for lambda={penalty_strength} c={c_target}"
+        )
     pooled = torch.cat(frames)
     tau_int = max(sum(tau_ints) / len(tau_ints), 1.0)
     flops_per_es = chain_per_effective_sample(
-        vcsgc_run_flops(total_trials), pooled.shape[0], tau_int)
+        vcsgc_run_flops(total_trials), pooled.shape[0], tau_int
+    )
     return pooled, chains, wall_seconds, flops_per_es
 
 
@@ -188,17 +208,22 @@ def score_runs(run_glob, reference):
         if not (eval_dir / "samples.pt").exists():
             continue
         x = torch.load(eval_dir / "samples.pt", weights_only=True).float()
-        weights = torch.softmax(torch.load(eval_dir / "log_weights.pt", weights_only=True), 0)
+        weights = torch.softmax(
+            torch.load(eval_dir / "log_weights.pt", weights_only=True), 0
+        )
         metrics = json.loads((eval_dir / "metrics.json").read_text())
         if per_forward is None:  # one architecture per cell; measured once
             per_forward = specialist_flops_per_forward(run_dir)
-        n_euler = json.loads((run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
+        n_euler = json.loads((run_dir / "config.json").read_text())["ctmc"][
+            "n_euler_steps"
+        ]
         per_seed[run_dir.name] = {
             "ESS": metrics["ess_fraction"],
             **observable_errors(x, weights, reference),
             "FLOPes": per_effective_sample(
                 neural_sampling_flops_per_sample(per_forward, n_euler, TARGET.d),
-                metrics["ess_fraction"]),
+                metrics["ess_fraction"],
+            ),
         }
     return per_seed
 
@@ -213,27 +238,44 @@ def summarise(per_seed):
     passing = {n: s for n, s in per_seed.items() if s["ESS"] >= ESS_FLOOR}
     return {
         "all": {k: mean_sd([s[k] for s in per_seed.values()]) for k in keys},
-        "floor": {k: mean_sd([s[k] for s in passing.values()]) for k in keys} if passing else None,
-        "n_pass": len(passing), "n_total": len(per_seed),
+        "floor": {k: mean_sd([s[k] for s in passing.values()]) for k in keys}
+        if passing
+        else None,
+        "n_pass": len(passing),
+        "n_total": len(per_seed),
     }
 
 
 def main():
     table = {}
     for (penalty_strength, c_target), run_glob in CELLS.items():
-        reference, n_chains, wall_seconds, ref_flops_per_es = \
-            load_vcsgc_reference(penalty_strength, c_target)
+        reference, n_chains, wall_seconds, ref_flops_per_es = load_vcsgc_reference(
+            penalty_strength, c_target
+        )
         floor = reference_floor(reference)
-        cell = {"reference_floor": floor, "reference_chains": n_chains,
-                "reference_frames": reference.shape[0],
-                "reference_wall_seconds": wall_seconds,
-                "reference_flops_per_es": ref_flops_per_es}
-        families = {"specialist": run_glob, **{
-            "fixed_lambda": g for (lam, c), g in FIXED_LAMBDA_CELLS.items()
-            if (lam, c) == (penalty_strength, c_target)}}
-        print(f"\n== lambda={penalty_strength} c={c_target} ({n_chains} reference chains, {reference.shape[0]} frames)")
-        print("  reference floor:", {k: f"{v:.2e}" for k, v in floor.items()},
-              f" reference FLOP/es: {ref_flops_per_es:.2g}")
+        cell = {
+            "reference_floor": floor,
+            "reference_chains": n_chains,
+            "reference_frames": reference.shape[0],
+            "reference_wall_seconds": wall_seconds,
+            "reference_flops_per_es": ref_flops_per_es,
+        }
+        families = {
+            "specialist": run_glob,
+            **{
+                "fixed_lambda": g
+                for (lam, c), g in FIXED_LAMBDA_CELLS.items()
+                if (lam, c) == (penalty_strength, c_target)
+            },
+        }
+        print(
+            f"\n== lambda={penalty_strength} c={c_target} ({n_chains} reference chains, {reference.shape[0]} frames)"
+        )
+        print(
+            "  reference floor:",
+            {k: f"{v:.2e}" for k, v in floor.items()},
+            f" reference FLOP/es: {ref_flops_per_es:.2g}",
+        )
         for family, glob in families.items():
             per_seed = score_runs(glob, reference)
             if not per_seed:
@@ -242,12 +284,20 @@ def main():
             summary = summarise(per_seed)
             cell[family] = {"per_seed": per_seed, **summary}
             for name, s in per_seed.items():
-                print(f"  [{family}] {name}: " + " ".join(f"{k}={v:.4g}" for k, v in s.items()))
+                print(
+                    f"  [{family}] {name}: "
+                    + " ".join(f"{k}={v:.4g}" for k, v in s.items())
+                )
             for rule in ("all", "floor"):
                 if summary[rule]:
-                    print(f"  [{family}] {rule:5s} mean +- SD "
-                          f"({summary['n_pass']}/{summary['n_total']} clear {ESS_FLOOR}):",
-                          {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in summary[rule].items()})
+                    print(
+                        f"  [{family}] {rule:5s} mean +- SD "
+                        f"({summary['n_pass']}/{summary['n_total']} clear {ESS_FLOOR}):",
+                        {
+                            k: f"{m:.4g} +- {sd:.2g}"
+                            for k, (m, sd) in summary[rule].items()
+                        },
+                    )
         table[f"lambda{penalty_strength}_c{c_target:.2f}"] = cell
 
     out = SOFT_RESULTS / "house_table_soft_10x10.json"

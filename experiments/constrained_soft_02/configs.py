@@ -12,7 +12,6 @@ Cell-name format: `S<alphabet>_d<dim>_c<c_target_x100>_l<lambda>`.
 
 from dataclasses import replace
 
-from discrete_flow_sampler.targets.ising import SIGMA_C
 from experiments.dnfs_baseline_01.configs import (
     CompositionCfg,
     CompositionCurriculumStageCfg,
@@ -27,6 +26,8 @@ from experiments.dnfs_baseline_01.configs import (
     StageCfg,
     TrainCfg,
 )
+
+from discrete_flow_sampler.targets.ising import SIGMA_C
 
 CONFIGS: dict[str, StageCfg] = {
     "S2_d4_c03_l50_letf": StageCfg(
@@ -156,7 +157,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -207,7 +212,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -251,7 +260,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -293,7 +306,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -362,7 +379,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -431,13 +452,21 @@ CONFIGS: dict[str, StageCfg] = {
             composition_penalty_strength=50.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
-            seed=42, grad_clip_max_norm=50.0,
+            n_steps=50_000,
+            batch_size=128,
+            replay_buffer_cycles=8,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
         ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -475,13 +504,21 @@ CONFIGS: dict[str, StageCfg] = {
             composition_penalty_strength=50.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
-            seed=42, grad_clip_max_norm=100.0,
+            n_steps=50_000,
+            batch_size=128,
+            replay_buffer_cycles=8,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=100.0,
         ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -547,7 +584,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -589,13 +630,21 @@ CONFIGS: dict[str, StageCfg] = {
             composition_penalty_strength=50.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
-            seed=42, grad_clip_max_norm=50.0,
+            n_steps=50_000,
+            batch_size=128,
+            replay_buffer_cycles=8,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
         ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -631,13 +680,21 @@ CONFIGS: dict[str, StageCfg] = {
             composition_penalty_strength=50.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3,
-            seed=42, grad_clip_max_norm=50.0,
+            n_steps=50_000,
+            batch_size=128,
+            replay_buffer_cycles=8,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
         ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=64,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
         ),
         estimator="control_variate",
         lambda_curriculum=LambdaCurriculumCfg(
@@ -1287,7 +1344,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1365,7 +1426,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1425,7 +1490,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1483,7 +1552,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1536,7 +1609,11 @@ CONFIGS: dict[str, StageCfg] = {
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1554,7 +1631,8 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
         composition=CompositionCfg(
-            centre=0.5, values=(0.3, 0.5, 0.55, 0.6, 0.65, 0.8),
+            centre=0.5,
+            values=(0.3, 0.5, 0.55, 0.6, 0.65, 0.8),
         ),
         wandb_project="dnfs-constraints",
     ),
@@ -1598,18 +1676,30 @@ CONFIGS: dict[str, StageCfg] = {
     "S2_d10_camort_offset_clip50_lam10": StageCfg(
         name="S2_d10_camort_offset_clip50_lam10",
         ising=IsingCfg(
-            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
             composition_penalty_strength=10.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, outer_batch_size=256,
-            replay_buffer_cycles=4, lr=1e-3, seed=42,
-            grad_clip_max_norm=50.0, warmup_steps=2000,
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
+            warmup_steps=2000,
         ),
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1620,7 +1710,8 @@ CONFIGS: dict[str, StageCfg] = {
         # survivable, so a fixed λ is the cleaner single-variable change.
         lambda_curriculum=None,
         composition=CompositionCfg(
-            centre=0.5, half_width=0.05,
+            centre=0.5,
+            half_width=0.05,
             curriculum=(
                 CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
                 CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
@@ -1651,19 +1742,31 @@ CONFIGS: dict[str, StageCfg] = {
     "S2_d10_camort_offset_clip50_lam10_hw20": StageCfg(
         name="S2_d10_camort_offset_clip50_lam10_hw20",
         ising=IsingCfg(
-            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
             composition_penalty_strength=10.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, outer_batch_size=256,
-            replay_buffer_cycles=4, lr=1e-3, seed=42,
-            grad_clip_max_norm=50.0, warmup_steps=2000,
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
+            warmup_steps=2000,
             checkpoint_every=2_500,
         ),
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1671,7 +1774,8 @@ CONFIGS: dict[str, StageCfg] = {
         # fixed keeps the staircase the only moving schedule.
         lambda_curriculum=None,
         composition=CompositionCfg(
-            centre=0.5, half_width=0.05,
+            centre=0.5,
+            half_width=0.05,
             curriculum=(
                 CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
                 CompositionCurriculumStageCfg(start_step=20_000, half_width=0.10),
@@ -1684,18 +1788,30 @@ CONFIGS: dict[str, StageCfg] = {
     "S2_d10_camort_offset_clip50_lam25": StageCfg(
         name="S2_d10_camort_offset_clip50_lam25",
         ising=IsingCfg(
-            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
             composition_penalty_strength=25.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, outer_batch_size=256,
-            replay_buffer_cycles=4, lr=1e-3, seed=42,
-            grad_clip_max_norm=50.0, warmup_steps=2000,
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
+            warmup_steps=2000,
         ),
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1712,7 +1828,8 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
         composition=CompositionCfg(
-            centre=0.5, half_width=0.05,
+            centre=0.5,
+            half_width=0.05,
             curriculum=(
                 CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
                 CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
@@ -1726,18 +1843,31 @@ CONFIGS: dict[str, StageCfg] = {
     "S2_d10_camort_offset_clip50_clamp20": StageCfg(
         name="S2_d10_camort_offset_clip50_clamp20",
         ising=IsingCfg(
-            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
-            composition_penalty_strength=50.0, log_ratio_clamp=20.0,
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+            log_ratio_clamp=20.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, outer_batch_size=256,
-            replay_buffer_cycles=4, lr=1e-3, seed=42,
-            grad_clip_max_norm=50.0, warmup_steps=2000,
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
+            warmup_steps=2000,
         ),
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1755,7 +1885,8 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
         composition=CompositionCfg(
-            centre=0.5, half_width=0.05,
+            centre=0.5,
+            half_width=0.05,
             curriculum=(
                 CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
                 CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
@@ -1771,18 +1902,31 @@ CONFIGS: dict[str, StageCfg] = {
     "S2_d10_camort_offset_clip50_clamp50": StageCfg(
         name="S2_d10_camort_offset_clip50_clamp50",
         ising=IsingCfg(
-            D=10, sigma=0.1, bias=0.0, target_composition=0.5,
-            composition_penalty_strength=50.0, log_ratio_clamp=50.0,
+            D=10,
+            sigma=0.1,
+            bias=0.0,
+            target_composition=0.5,
+            composition_penalty_strength=50.0,
+            log_ratio_clamp=50.0,
         ),
         train=TrainCfg(
-            n_steps=50_000, batch_size=128, outer_batch_size=256,
-            replay_buffer_cycles=4, lr=1e-3, seed=42,
-            grad_clip_max_norm=50.0, warmup_steps=2000,
+            n_steps=50_000,
+            batch_size=128,
+            outer_batch_size=256,
+            replay_buffer_cycles=4,
+            lr=1e-3,
+            seed=42,
+            grad_clip_max_norm=50.0,
+            warmup_steps=2000,
         ),
         ctmc=CTMCCfg(n_euler_steps=128),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2,
+            kind="let",
+            hidden_dim=128,
+            n_layers=3,
+            n_heads=4,
+            vocab_size=2,
             condition_on_composition=True,
         ),
         estimator="control_variate",
@@ -1800,7 +1944,8 @@ CONFIGS: dict[str, StageCfg] = {
             )
         ),
         composition=CompositionCfg(
-            centre=0.5, half_width=0.05,
+            centre=0.5,
+            half_width=0.05,
             curriculum=(
                 CompositionCurriculumStageCfg(start_step=0, half_width=0.05),
                 CompositionCurriculumStageCfg(start_step=10_000, half_width=0.15),
@@ -1891,7 +2036,8 @@ _FC_NE128_BASE = CONFIGS["S2_d10_c05_l50_letf_ne128_anneal"]
 for _c, _c_tag in ((0.30, "c030"), (0.55, "c055"), (0.60, "c060"), (0.65, "c065")):
     _window_name = f"S2_d10_{_c_tag}_l50_letf_ne128_anneal"
     CONFIGS[_window_name] = replace(
-        _FC_NE128_BASE, name=_window_name,
+        _FC_NE128_BASE,
+        name=_window_name,
         ising=replace(_FC_NE128_BASE.ising, target_composition=_c),
     )
 
@@ -1911,16 +2057,20 @@ _AMORT_SPECIALIST_BASE = CONFIGS["S2_d4_c05_50k_l50_letf_anneal_offset_clip50"]
 for _c, _c_tag in ((0.30, "c03"), (0.70, "c07"), (0.80, "c08")):
     _twin_name = f"S2_d4_{_c_tag}_50k_l50_letf_anneal_offset_clip50"
     CONFIGS[_twin_name] = replace(
-        _AMORT_SPECIALIST_BASE, name=_twin_name,
+        _AMORT_SPECIALIST_BASE,
+        name=_twin_name,
         ising=replace(_AMORT_SPECIALIST_BASE.ising, target_composition=_c),
     )
 
 _FLAT_WINDOW_BASE = CONFIGS["S2_d4_camort_50k_l50_letf_anneal_offset_clip50"]
 _flat_window_name = f"{_FLAT_WINDOW_BASE.name}_flatw30"
 CONFIGS[_flat_window_name] = replace(
-    _FLAT_WINDOW_BASE, name=_flat_window_name,
+    _FLAT_WINDOW_BASE,
+    name=_flat_window_name,
     composition=replace(
-        _FLAT_WINDOW_BASE.composition, half_width=0.30, curriculum=None,
+        _FLAT_WINDOW_BASE.composition,
+        half_width=0.30,
+        curriculum=None,
     ),
 )
 
@@ -1944,7 +2094,8 @@ LAMBDA_SWEEP_PARENTS = tuple(
 for _parent_name in LAMBDA_SWEEP_PARENTS:
     _parent = CONFIGS[_parent_name]
     CONFIGS[f"{_parent_name}_efc"] = replace(
-        _parent, name=f"{_parent_name}_efc",
+        _parent,
+        name=f"{_parent_name}_efc",
         model=replace(_parent.model, exact_field_channel=True),
     )
 
@@ -1973,8 +2124,7 @@ def soft_house_recipe(cell: StageCfg) -> StageCfg:
     """
     return replace(
         cell,
-        model=replace(
-            cell.model, exact_field_channel=True, compile_model=True),
+        model=replace(cell.model, exact_field_channel=True, compile_model=True),
         train=replace(cell.train, c_t_from_rollout=True),
         ema_decay=0.9999,
     )
@@ -1992,13 +2142,15 @@ _D8_HOUSE_PARENT = CONFIGS["S2_d8_c03_l50_letf_ne128"]
 for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
     for _sigma, _sigma_suffix in ((0.1, ""), (SIGMA_C, "_sc")):
         _house_name = f"S2_d8_{_c_tag}_l50_letf_ne128_house{_sigma_suffix}"
-        CONFIGS[_house_name] = soft_house_recipe(replace(
-            _D8_HOUSE_PARENT,
-            name=_house_name,
-            ising=replace(
-                _D8_HOUSE_PARENT.ising,
-                sigma=_sigma, target_composition=_c_target),
-        ))
+        CONFIGS[_house_name] = soft_house_recipe(
+            replace(
+                _D8_HOUSE_PARENT,
+                name=_house_name,
+                ising=replace(
+                    _D8_HOUSE_PARENT.ising, sigma=_sigma, target_composition=_c_target
+                ),
+            )
+        )
 
 # The channel control: house recipe MINUS the channel, critical coupling,
 # centre composition only. If this fails where _house_sc trains, the
@@ -2024,14 +2176,17 @@ _NOCHAN_SC = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"]
 CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"] = replace(
     _NOCHAN_SC,
     name="S2_d8_c0500_l50_letf_ne128_house_sc_anneal",
-    lambda_curriculum=LambdaCurriculumCfg(stages=(
-        LambdaCurriculumStageCfg(start_step=0,
-                                 composition_penalty_strength=10.0),
-        LambdaCurriculumStageCfg(start_step=10_000,
-                                 composition_penalty_strength=25.0),
-        LambdaCurriculumStageCfg(start_step=20_000,
-                                 composition_penalty_strength=50.0),
-    )),
+    lambda_curriculum=LambdaCurriculumCfg(
+        stages=(
+            LambdaCurriculumStageCfg(start_step=0, composition_penalty_strength=10.0),
+            LambdaCurriculumStageCfg(
+                start_step=10_000, composition_penalty_strength=25.0
+            ),
+            LambdaCurriculumStageCfg(
+                start_step=20_000, composition_penalty_strength=50.0
+            ),
+        )
+    ),
 )
 
 # Single-size completion: the chapter's motivating exhibits move fully to
@@ -2061,15 +2216,12 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_nochan"] = replace(
 )
 for _lam, _lam_tag in ((10.0, "l10"), (100.0, "l100")):
     for _sigma_suffix in ("", "_sc"):
-        _lam_parent = CONFIGS[
-            f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
-        _lam_name = (
-            f"S2_d8_c0500_{_lam_tag}_letf_ne128_house{_sigma_suffix}")
+        _lam_parent = CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
+        _lam_name = f"S2_d8_c0500_{_lam_tag}_letf_ne128_house{_sigma_suffix}"
         CONFIGS[_lam_name] = replace(
             _lam_parent,
             name=_lam_name,
-            ising=replace(
-                _lam_parent.ising, composition_penalty_strength=_lam),
+            ising=replace(_lam_parent.ising, composition_penalty_strength=_lam),
         )
 
 # Matched-base twins: base_composition = c* at the OFF-CENTRE
@@ -2090,8 +2242,7 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
     if _c_target == 0.50:
         continue
     for _sigma_suffix in ("", "_sc"):
-        _house_twin = CONFIGS[
-            f"S2_d8_{_c_tag}_l50_letf_ne128_house{_sigma_suffix}"]
+        _house_twin = CONFIGS[f"S2_d8_{_c_tag}_l50_letf_ne128_house{_sigma_suffix}"]
         _mb_name = f"S2_d8_{_c_tag}_l50_letf_ne128_house_mb{_sigma_suffix}"
         CONFIGS[_mb_name] = replace(
             _house_twin,
@@ -2105,11 +2256,13 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
 # comparator used, rerun here because compile x leTF x sigma_c is untested
 # and compile has diverged silently on this codebase before.
 _D4_GATE_PARENT = CONFIGS["S2_d4_c05_l50_letf"]
-CONFIGS["S2_d4_c05_l50_letf_house_gate"] = soft_house_recipe(replace(
-    _D4_GATE_PARENT, name="S2_d4_c05_l50_letf_house_gate"))
+CONFIGS["S2_d4_c05_l50_letf_house_gate"] = soft_house_recipe(
+    replace(_D4_GATE_PARENT, name="S2_d4_c05_l50_letf_house_gate")
+)
 _D4_GATE = CONFIGS["S2_d4_c05_l50_letf_house_gate"]
 CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"] = replace(
-    _D4_GATE, name="S2_d4_c05_l50_letf_house_gate_eager",
+    _D4_GATE,
+    name="S2_d4_c05_l50_letf_house_gate_eager",
     model=replace(_D4_GATE.model, compile_model=False),
 )
 
@@ -2121,9 +2274,11 @@ CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"] = replace(
 # trains 4/4 the whole offset/clip confound family collapses out of the
 # chapter. The channel reads each row's own conditioned composition via
 # the per-row c* path, so the amortised widening window keeps its meaning.
-CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
-    CONFIGS["S2_d4_camort_50k_l50_letf"],
-    name="S2_d4_camort_50k_l50_letf_house"))
+CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(
+    replace(
+        CONFIGS["S2_d4_camort_50k_l50_letf"], name="S2_d4_camort_50k_l50_letf_house"
+    )
+)
 
 # Matched-base amortisation.
 # Design mirrors hard camort's shape where soft's flip dynamics permit it:
@@ -2139,8 +2294,7 @@ CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(replace(
 # the request rides the conditioning scalar; zero-init means it costs
 # nothing if the matched base has absorbed its job. Exactly three levers
 # off the house centre cell, pinned by test_matched_base_amortisation.
-_CAMORT_SPINE = CompositionCfg(
-    centre=0.5, half_width=0.0, values=(0.25, 0.375, 0.5))
+_CAMORT_SPINE = CompositionCfg(centre=0.5, half_width=0.0, values=(0.25, 0.375, 0.5))
 # The d8 cells draw uniform over EVERY realisable composition in
 # [0.25, 0.5] — the "quantised continuum", 17 values at 1/64 steps.
 # The D=4 cell exposed the cost of sparse
@@ -2154,23 +2308,24 @@ _CAMORT_SPINE = CompositionCfg(
 # smoothness shares it). The D=4 cell below keeps its archived 3-value
 # spine.
 _CAMORT_D8_DRAWS = CompositionCfg(
-    centre=0.5, half_width=0.0,
-    values=tuple(sites / 64 for sites in range(16, 33)))
+    centre=0.5, half_width=0.0, values=tuple(sites / 64 for sites in range(16, 33))
+)
 # The hard d64 sigma ladder, stage tuple copied verbatim (final stage at the
 # exact sigma_c). Shared by the camort ladder twin below and the specialist
 # ladder twin after the loop, so the two differ by amortisation alone.
-_SOFT_SIGMA_LADDER_SC = CurriculumCfg(stages=(
-    CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
-    CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
-    CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
-    CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
-    CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
-    CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
-    CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
-))
+_SOFT_SIGMA_LADDER_SC = CurriculumCfg(
+    stages=(
+        CurriculumStageCfg(start_step=0, sigma=0.100, lr=1e-3),
+        CurriculumStageCfg(start_step=5_000, sigma=0.140, lr=1e-3),
+        CurriculumStageCfg(start_step=10_000, sigma=0.170, lr=1e-3),
+        CurriculumStageCfg(start_step=15_000, sigma=0.190, lr=1e-3),
+        CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+        CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+        CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
+    )
+)
 for _sigma_suffix in ("", "_sc"):
-    _camort_parent = CONFIGS[
-        f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
+    _camort_parent = CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{_sigma_suffix}"]
     _camort_name = f"S2_d8_camort_l50_letf_ne128_house{_sigma_suffix}"
     CONFIGS[_camort_name] = replace(
         _camort_parent,
@@ -2207,8 +2362,7 @@ for _sigma_suffix in ("", "_sc"):
     # collapsed cell. ONE lever separates them: the draw set back to the
     # D=4 spine (per-value exposure 1/3 instead of 1/17),
     # both couplings so sigma=0.1 keeps a should-stay-healthy control.
-    _spine3_name = (
-        f"S2_d8_camort_spine3_l50_letf_ne128_house{_sigma_suffix}")
+    _spine3_name = f"S2_d8_camort_spine3_l50_letf_ne128_house{_sigma_suffix}"
     CONFIGS[_spine3_name] = replace(
         CONFIGS[_camort_name],
         name=_spine3_name,
@@ -2275,9 +2429,7 @@ CONFIGS[_spine3_cgain_name] = replace(
 # comparison then measures what the composition path does after its exactly
 # inert step zero, including whether global clipping throttles the trunk.
 _pairgrad_specialist_name = "S2_d8_c0500_pairgrad_l50_letf_ne128_house_sc"
-_pairgrad_specialist_parent = CONFIGS[
-    "S2_d8_c0500_l50_letf_ne128_house_sc"
-]
+_pairgrad_specialist_parent = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"]
 CONFIGS[_pairgrad_specialist_name] = replace(
     _pairgrad_specialist_parent,
     name=_pairgrad_specialist_name,
@@ -2287,12 +2439,8 @@ CONFIGS[_pairgrad_specialist_name] = replace(
     ),
 )
 
-_pairgrad_spine1_name = (
-    "S2_d8_camort_spine1_pairgrad_l50_letf_ne128_house_sc"
-)
-_pairgrad_spine1_parent = CONFIGS[
-    "S2_d8_camort_spine1_l50_letf_ne128_house_sc"
-]
+_pairgrad_spine1_name = "S2_d8_camort_spine1_pairgrad_l50_letf_ne128_house_sc"
+_pairgrad_spine1_parent = CONFIGS["S2_d8_camort_spine1_l50_letf_ne128_house_sc"]
 CONFIGS[_pairgrad_spine1_name] = replace(
     _pairgrad_spine1_parent,
     name=_pairgrad_spine1_name,
@@ -2325,18 +2473,20 @@ CONFIGS["S2_d4_camort_mb_50k_l50_letf_house"] = replace(
 # obedience reference slope 0.976 was measured on the OLD request grid
 # and must be re-derived by enumeration before any new slope is quoted
 # against it.
-_D4_SPECIALIST_HOUSE_BASE = soft_house_recipe(replace(
-    CONFIGS["S2_d4_c05_l50_letf"],
-    name="S2_d4_c0500_50k_l50_letf_house",
-    train=replace(CONFIGS["S2_d4_c05_l50_letf"].train, n_steps=50_000),
-))
+_D4_SPECIALIST_HOUSE_BASE = soft_house_recipe(
+    replace(
+        CONFIGS["S2_d4_c05_l50_letf"],
+        name="S2_d4_c0500_50k_l50_letf_house",
+        train=replace(CONFIGS["S2_d4_c05_l50_letf"].train, n_steps=50_000),
+    )
+)
 CONFIGS["S2_d4_c0500_50k_l50_letf_house"] = _D4_SPECIALIST_HOUSE_BASE
 for _c_target, _c_tag in ((0.25, "c0250"), (0.375, "c0375")):
     _twin_name = f"S2_d4_{_c_tag}_50k_l50_letf_house"
     CONFIGS[_twin_name] = replace(
-        _D4_SPECIALIST_HOUSE_BASE, name=_twin_name,
-        ising=replace(
-            _D4_SPECIALIST_HOUSE_BASE.ising, target_composition=_c_target),
+        _D4_SPECIALIST_HOUSE_BASE,
+        name=_twin_name,
+        ising=replace(_D4_SPECIALIST_HOUSE_BASE.ising, target_composition=_c_target),
     )
 
 # The 4x4 house TABLE family at the cross-chapter 4x4 budget: the
@@ -2350,7 +2500,8 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
         _budget_parent = CONFIGS[f"S2_d4_{_c_tag}_50k_l50_letf_house"]
         _d4_10k_name = f"S2_d4_{_c_tag}_10k_l50_letf_house{_sigma_suffix}"
         CONFIGS[_d4_10k_name] = replace(
-            _budget_parent, name=_d4_10k_name,
+            _budget_parent,
+            name=_d4_10k_name,
             train=replace(_budget_parent.train, n_steps=10_000),
             ising=replace(_budget_parent.ising, sigma=_sigma),
         )
@@ -2375,11 +2526,13 @@ for _sigma_suffix in ("", "_sc"):
 # Null control on the house recipe: conditioning path ON, window width
 # ZERO, so vs the c0500 specialist above the only differences are the
 # machinery itself (model flag + the zero-width composition config).
-CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(replace(
-    CONFIGS["S2_d4_cnull_l50_letf"],
-    name="S2_d4_cnull_50k_l50_letf_house",
-    train=replace(CONFIGS["S2_d4_cnull_l50_letf"].train, n_steps=50_000),
-))
+CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(
+    replace(
+        CONFIGS["S2_d4_cnull_l50_letf"],
+        name="S2_d4_cnull_50k_l50_letf_house",
+        train=replace(CONFIGS["S2_d4_cnull_l50_letf"].train, n_steps=50_000),
+    )
+)
 
 
 # ---------------------------------------------------------------------------
@@ -2407,21 +2560,25 @@ _CUAU_TEMPERATURE_LADDER_K = (1200.0, 800.0, 600.0, 500.0)
 
 def _cuau_curriculum(n_steps: int) -> CurriculumCfg:
     stage = n_steps // 4
-    return CurriculumCfg(stages=tuple(
-        CurriculumStageCfg(
-            start_step=k * stage, sigma=cuau_sigma(T),
-            lr=1e-3 if k < 2 else 3e-4,
+    return CurriculumCfg(
+        stages=tuple(
+            CurriculumStageCfg(
+                start_step=k * stage,
+                sigma=cuau_sigma(T),
+                lr=1e-3 if k < 2 else 3e-4,
+            )
+            for k, T in enumerate(_CUAU_TEMPERATURE_LADDER_K)
         )
-        for k, T in enumerate(_CUAU_TEMPERATURE_LADDER_K)
-    ))
+    )
 
 
 _CUAU16_PARENT = CONFIGS["S2_d4_cnull_l50_letf"]
 _CUAU64_PARENT = CONFIGS["S2_d8_c03_l50_letf_ne128"]
 
 
-def _cuau_flip_cell(name, *, sites: int, composition: float | None,
-                    penalty: float, n_steps: int) -> StageCfg:
+def _cuau_flip_cell(
+    name, *, sites: int, composition: float | None, penalty: float, n_steps: int
+) -> StageCfg:
     parent = _CUAU16_PARENT if sites == 16 else _CUAU64_PARENT
     return replace(
         parent,
@@ -2435,8 +2592,9 @@ def _cuau_flip_cell(name, *, sites: int, composition: float | None,
             expansion_json=f"data/ce/cuau_fcc_{'2x2x4' if sites == 16 else '4x4x4'}.json",
         ),
         train=replace(parent.train, n_steps=n_steps),
-        model=replace(parent.model, condition_on_composition=False,
-                      exact_field_channel=False),
+        model=replace(
+            parent.model, condition_on_composition=False, exact_field_channel=False
+        ),
         composition=None,
         curriculum=_cuau_curriculum(n_steps),
         ema_decay=0.9999,
@@ -2446,7 +2604,8 @@ def _cuau_flip_cell(name, *, sites: int, composition: float | None,
 for _sites, _steps in ((16, 10_000), (64, 50_000)):
     _free = f"A1_cuau{_sites}_T500_letf_{_steps // 1000}k_curr"
     CONFIGS[_free] = _cuau_flip_cell(
-        _free, sites=_sites, composition=None, penalty=0.0, n_steps=_steps)
+        _free, sites=_sites, composition=None, penalty=0.0, n_steps=_steps
+    )
     for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
         # The penalty lambda*d*(c-c*)^2 carries no beta, so lambda sets a
         # composition SD of 1/sqrt(2 lambda d): lambda=50 is the 8x8 house
@@ -2456,10 +2615,13 @@ for _sites, _steps in ((16, 10_000), (64, 50_000)):
         # the 16-site twin's value.
         _penalties = (50.0, 10.0) if _sites == 16 else (50.0,)
         for _penalty in _penalties:
-            _soft = (f"S2_cuau{_sites}_{_c_tag}_l{int(_penalty)}_T500_letf_"
-                     f"{_steps // 1000}k_curr")
+            _soft = (
+                f"S2_cuau{_sites}_{_c_tag}_l{int(_penalty)}_T500_letf_"
+                f"{_steps // 1000}k_curr"
+            )
             CONFIGS[_soft] = _cuau_flip_cell(
-                _soft, sites=_sites, composition=_c, penalty=_penalty, n_steps=_steps)
+                _soft, sites=_sites, composition=_c, penalty=_penalty, n_steps=_steps
+            )
 
 
 # Soft c=0.5 at lambda=10 trains at 1200 K (train ESS ~1400/5000) and then
@@ -2468,11 +2630,16 @@ for _sites, _steps in ((16, 10_000), (64, 50_000)):
 # gets the same schedule.
 _SOFT_C50_L10 = CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_curr"]
 CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"] = replace(
-    _SOFT_C50_L10, name="S2_cuau16_c50_l10_T500_letf_10k_lowlr",
-    curriculum=CurriculumCfg(stages=tuple(
-        CurriculumStageCfg(start_step=k * 2500, sigma=cuau_sigma(T), lr=lr)
-        for k, (T, lr) in enumerate(((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)))
-    )),
+    _SOFT_C50_L10,
+    name="S2_cuau16_c50_l10_T500_letf_10k_lowlr",
+    curriculum=CurriculumCfg(
+        stages=tuple(
+            CurriculumStageCfg(start_step=k * 2500, sigma=cuau_sigma(T), lr=lr)
+            for k, (T, lr) in enumerate(
+                ((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4))
+            )
+        )
+    ),
 )
 
 
@@ -2484,12 +2651,20 @@ CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"] = replace(
 # these at a quarter of the 8x8 recipe (10k, ne50, four stages).
 def _cuau_house_curriculum(n_steps, n_stages=7, T_hot=1200.0, T_cold=500.0):
     beta_hot, beta_cold = 1.0 / T_hot, 1.0 / T_cold
-    temps = [1.0 / (beta_hot + k * (beta_cold - beta_hot) / (n_stages - 1)) for k in range(n_stages)]
-    return CurriculumCfg(stages=tuple(
-        CurriculumStageCfg(start_step=round(k * n_steps / n_stages / 100) * 100,
-                           sigma=cuau_sigma(T), lr=1e-3 if k == 0 else 1e-4)
-        for k, T in enumerate(temps)
-    ))
+    temps = [
+        1.0 / (beta_hot + k * (beta_cold - beta_hot) / (n_stages - 1))
+        for k in range(n_stages)
+    ]
+    return CurriculumCfg(
+        stages=tuple(
+            CurriculumStageCfg(
+                start_step=round(k * n_steps / n_stages / 100) * 100,
+                sigma=cuau_sigma(T),
+                lr=1e-3 if k == 0 else 1e-4,
+            )
+            for k, T in enumerate(temps)
+        )
+    )
 
 
 for _parent_name, _house_name in (
@@ -2499,7 +2674,8 @@ for _parent_name, _house_name in (
 ):
     _parent = CONFIGS[_parent_name]
     CONFIGS[_house_name] = replace(
-        _parent, name=_house_name,
+        _parent,
+        name=_house_name,
         train=replace(_parent.train, n_steps=50_000),
         ctmc=replace(_parent.ctmc, n_euler_steps=128),
         curriculum=_cuau_house_curriculum(50_000),
@@ -2508,8 +2684,11 @@ for _parent_name, _house_name in (
 # 64-site cells onto the same ladder and lr cut (their definition above
 # carries the four-stage ladder with lr 1e-3 at the 800 K step); the soft
 # 64-site penalty stays at the 8x8 house lambda=50.
-for _name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_curr",
-              "S2_cuau64_c50_l50_T500_letf_50k_curr"):
+for _name in (
+    "A1_cuau64_T500_letf_50k_curr",
+    "S2_cuau64_c25_l50_T500_letf_50k_curr",
+    "S2_cuau64_c50_l50_T500_letf_50k_curr",
+):
     CONFIGS[_name] = replace(CONFIGS[_name], curriculum=_cuau_house_curriculum(50_000))
 
 # 64-site flip-channel twins: at 16 sites the soft house
@@ -2517,11 +2696,15 @@ for _name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_c
 # 1200 -> 800 K step) and the free cell read level with and without it, so the
 # 64-site soft cells carry the channel and the free cell runs both as the
 # channel's control at the production size.
-for _parent_name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_letf_50k_curr",
-                     "S2_cuau64_c50_l50_T500_letf_50k_curr"):
+for _parent_name in (
+    "A1_cuau64_T500_letf_50k_curr",
+    "S2_cuau64_c25_l50_T500_letf_50k_curr",
+    "S2_cuau64_c50_l50_T500_letf_50k_curr",
+):
     _parent = CONFIGS[_parent_name]
     CONFIGS[f"{_parent_name}_efc"] = replace(
-        _parent, name=f"{_parent_name}_efc",
+        _parent,
+        name=f"{_parent_name}_efc",
         model=replace(_parent.model, exact_field_channel=True),
     )
 
@@ -2533,17 +2716,19 @@ for _parent_name in ("A1_cuau64_T500_letf_50k_curr", "S2_cuau64_c25_l50_T500_let
 # 1200 -> 680 K at the house lr cut), the hard grid cells' schedule exactly.
 _A1_64 = CONFIGS["A1_cuau64_T500_letf_50k_curr"]
 CONFIGS["A1_cuau64_T1200_letf_10k"] = replace(
-    _A1_64, name="A1_cuau64_T1200_letf_10k",
+    _A1_64,
+    name="A1_cuau64_T1200_letf_10k",
     train=replace(_A1_64.train, n_steps=10_000),
-    curriculum=CurriculumCfg(stages=(
-        CurriculumStageCfg(start_step=0, sigma=cuau_sigma(1200.0), lr=1e-3),)),
+    curriculum=CurriculumCfg(
+        stages=(CurriculumStageCfg(start_step=0, sigma=cuau_sigma(1200.0), lr=1e-3),)
+    ),
 )
 CONFIGS["A1_cuau64_T680_letf_30k_l4"] = replace(
-    _A1_64, name="A1_cuau64_T680_letf_30k_l4",
+    _A1_64,
+    name="A1_cuau64_T680_letf_30k_l4",
     train=replace(_A1_64.train, n_steps=30_000),
     curriculum=_cuau_house_curriculum(30_000, n_stages=4, T_cold=680.0),
 )
-
 
 
 # 16-site free cells on MetaDNS's temperature grid: the house free
@@ -2552,17 +2737,19 @@ CONFIGS["A1_cuau64_T680_letf_30k_l4"] = replace(
 # marginals come from enumeration, so these panels need no chain.
 _A1_16_HOUSE = CONFIGS["A1_cuau16_T500_letf_50k_house"]
 CONFIGS["A1_cuau16_T1200_letf_10k"] = replace(
-    _A1_16_HOUSE, name="A1_cuau16_T1200_letf_10k",
+    _A1_16_HOUSE,
+    name="A1_cuau16_T1200_letf_10k",
     train=replace(_A1_16_HOUSE.train, n_steps=10_000),
-    curriculum=CurriculumCfg(stages=(
-        CurriculumStageCfg(start_step=0, sigma=cuau_sigma(1200.0), lr=1e-3),)),
+    curriculum=CurriculumCfg(
+        stages=(CurriculumStageCfg(start_step=0, sigma=cuau_sigma(1200.0), lr=1e-3),)
+    ),
 )
 CONFIGS["A1_cuau16_T680_letf_30k_l4"] = replace(
-    _A1_16_HOUSE, name="A1_cuau16_T680_letf_30k_l4",
+    _A1_16_HOUSE,
+    name="A1_cuau16_T680_letf_30k_l4",
     train=replace(_A1_16_HOUSE.train, n_steps=30_000),
     curriculum=_cuau_house_curriculum(30_000, n_stages=4, T_cold=680.0),
 )
-
 
 
 # Free-ensemble 16-site cell with the lr cut: the A1 `_10k_curr` cell kept
@@ -2572,11 +2759,16 @@ CONFIGS["A1_cuau16_T680_letf_30k_l4"] = replace(
 # like-for-like comparison and gets every lever the slices got.
 _A1_16 = CONFIGS["A1_cuau16_T500_letf_10k_curr"]
 CONFIGS["A1_cuau16_T500_letf_10k_lowlr"] = replace(
-    _A1_16, name="A1_cuau16_T500_letf_10k_lowlr",
-    curriculum=CurriculumCfg(stages=tuple(
-        CurriculumStageCfg(start_step=k * 2500, sigma=cuau_sigma(T), lr=lr)
-        for k, (T, lr) in enumerate(((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)))
-    )),
+    _A1_16,
+    name="A1_cuau16_T500_letf_10k_lowlr",
+    curriculum=CurriculumCfg(
+        stages=tuple(
+            CurriculumStageCfg(start_step=k * 2500, sigma=cuau_sigma(T), lr=lr)
+            for k, (T, lr) in enumerate(
+                ((1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4))
+            )
+        )
+    ),
 )
 
 
@@ -2586,15 +2778,19 @@ CONFIGS["A1_cuau16_T500_letf_10k_lowlr"] = replace(
 # Ising `_efc` twins are from theirs.
 _S2_C25_L10 = CONFIGS["S2_cuau16_c25_l10_T500_letf_10k_curr"]
 CONFIGS["S2_cuau16_c25_l10_T500_letf_10k_lowlr"] = replace(
-    _S2_C25_L10, name="S2_cuau16_c25_l10_T500_letf_10k_lowlr",
+    _S2_C25_L10,
+    name="S2_cuau16_c25_l10_T500_letf_10k_lowlr",
     curriculum=CONFIGS["S2_cuau16_c50_l10_T500_letf_10k_lowlr"].curriculum,
 )
-for _parent_name in ("A1_cuau16_T500_letf_10k_lowlr",
-                     "S2_cuau16_c25_l10_T500_letf_10k_lowlr",
-                     "S2_cuau16_c50_l10_T500_letf_10k_lowlr"):
+for _parent_name in (
+    "A1_cuau16_T500_letf_10k_lowlr",
+    "S2_cuau16_c25_l10_T500_letf_10k_lowlr",
+    "S2_cuau16_c50_l10_T500_letf_10k_lowlr",
+):
     _parent = CONFIGS[_parent_name]
     CONFIGS[f"{_parent_name}_efc"] = replace(
-        _parent, name=f"{_parent_name}_efc",
+        _parent,
+        name=f"{_parent_name}_efc",
         model=replace(_parent.model, exact_field_channel=True),
     )
 
@@ -2602,11 +2798,14 @@ for _parent_name in ("A1_cuau16_T500_letf_10k_lowlr",
 # flip channel pays on free (+0.1-0.17 at 10k) and soft (c25 0.86, c50 0.47),
 # and the 50k house recipe carried hard c=0.5 to 0.86-0.89 without one, so the
 # 16-site table is completed on house + channel for the flip rungs.
-for _parent_name in ("A1_cuau16_T500_letf_50k_house",
-                     "S2_cuau16_c25_l10_T500_letf_50k_house",
-                     "S2_cuau16_c50_l10_T500_letf_50k_house"):
+for _parent_name in (
+    "A1_cuau16_T500_letf_50k_house",
+    "S2_cuau16_c25_l10_T500_letf_50k_house",
+    "S2_cuau16_c50_l10_T500_letf_50k_house",
+):
     _parent = CONFIGS[_parent_name]
     CONFIGS[f"{_parent_name}_efc"] = replace(
-        _parent, name=f"{_parent_name}_efc",
+        _parent,
+        name=f"{_parent_name}_efc",
         model=replace(_parent.model, exact_field_channel=True),
     )

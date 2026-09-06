@@ -13,15 +13,24 @@ What correct looks like, fixed before the implementation:
   and without the log gives bit-identical output (the certified pools are
   recounted, never rebuilt).
 """
+
 import pytest
 import torch
 from torch import nn
 
 from discrete_flow_sampler.diagnostics.flops import (
-    GIBBS_FLOPS_PER_SITE_UPDATE, chain_per_effective_sample, gibbs_run_flops,
-    ising_energy_eval_flops, measured_forward_flops,
-    kawasaki_run_flops, neural_sampling_flops_per_sample, per_effective_sample,
-    sgc_run_flops, vcsgc_run_flops, wolff_run_flops)
+    GIBBS_FLOPS_PER_SITE_UPDATE,
+    chain_per_effective_sample,
+    gibbs_run_flops,
+    ising_energy_eval_flops,
+    kawasaki_run_flops,
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+    sgc_run_flops,
+    vcsgc_run_flops,
+    wolff_run_flops,
+)
 from discrete_flow_sampler.mcmc.wolff import wolff_sample
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -59,7 +68,8 @@ def test_measured_forward_flops_runs_on_the_letf_rate_matrix():
 def test_neural_sampling_bill_composes_forwards_and_weight_evals():
     per_forward = 1_000_000
     bill = neural_sampling_flops_per_sample(
-        per_forward_flops=per_forward, n_euler_steps=64, n_sites=100)
+        per_forward_flops=per_forward, n_euler_steps=64, n_sites=100
+    )
     assert bill == 64 * (per_forward + ising_energy_eval_flops(100))
     # the weight-eval term must be counted but negligible (< 1% here)
     assert 64 * ising_energy_eval_flops(100) < 0.01 * 64 * per_forward
@@ -75,8 +85,10 @@ def test_per_effective_sample_divides_by_ess_and_guards_range():
 
 def test_chain_bill_divides_by_effective_records():
     # 100 records at tau_int=2 -> 50 effective samples
-    assert chain_per_effective_sample(
-        total_flops=10_000, n_records=100, tau_int=2.0) == 200
+    assert (
+        chain_per_effective_sample(total_flops=10_000, n_records=100, tau_int=2.0)
+        == 200
+    )
 
 
 def test_gibbs_and_wolff_bills_scale_with_their_work_units():
@@ -90,8 +102,11 @@ def test_vcsgc_bill_is_gibbs_class_and_scales_with_trials():
     # It must price strictly above a bare Gibbs site update and stay within
     # its class (below 2x), and the bill is linear in trials.
     assert vcsgc_run_flops(n_trials=1000) == 1000 * vcsgc_run_flops(1)
-    assert GIBBS_FLOPS_PER_SITE_UPDATE < vcsgc_run_flops(1) \
+    assert (
+        GIBBS_FLOPS_PER_SITE_UPDATE
+        < vcsgc_run_flops(1)
         <= 2 * GIBBS_FLOPS_PER_SITE_UPDATE
+    )
 
 
 def test_sgc_bill_is_a_bare_gibbs_site_update_and_scales_with_trials():
@@ -113,17 +128,27 @@ def test_kawasaki_bill_is_two_site_gibbs_class_and_scales_with_trials():
     # adjacency correction and swap bookkeeping are O(1) riders, not a
     # third field evaluation). Linear in trials like every chain bill.
     assert kawasaki_run_flops(n_trials=1000) == 1000 * kawasaki_run_flops(1)
-    assert 2 * GIBBS_FLOPS_PER_SITE_UPDATE <= kawasaki_run_flops(1) \
+    assert (
+        2 * GIBBS_FLOPS_PER_SITE_UPDATE
+        <= kawasaki_run_flops(1)
         < 3 * GIBBS_FLOPS_PER_SITE_UPDATE
+    )
 
 
 def test_wolff_cluster_log_does_not_perturb_the_chain():
     target = IsingTarget(D=3, sigma=0.2, bias=0.0)
-    plain = wolff_sample(target, n_samples=5, clusters_per_sample=3,
-                         burn_in_clusters=10, seed=7)
+    plain = wolff_sample(
+        target, n_samples=5, clusters_per_sample=3, burn_in_clusters=10, seed=7
+    )
     log: list[int] = []
-    logged = wolff_sample(target, n_samples=5, clusters_per_sample=3,
-                          burn_in_clusters=10, seed=7, cluster_size_log=log)
+    logged = wolff_sample(
+        target,
+        n_samples=5,
+        clusters_per_sample=3,
+        burn_in_clusters=10,
+        seed=7,
+        cluster_size_log=log,
+    )
     assert torch.equal(plain, logged)
     # burn-in included: the realistic price starts at the first cluster
     assert len(log) == 10 + 5 * 3

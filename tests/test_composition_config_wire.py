@@ -6,9 +6,9 @@ would be rejected at train time, but only after the job is queued), curriculum
 stages that do not land on outer-cycle boundaries, and a control cell whose
 value set has drifted away from the specialists it is meant to be compared to.
 """
-from dataclasses import replace
 
 import math
+from dataclasses import replace
 
 import pytest
 import torch
@@ -66,15 +66,9 @@ D10_STAIRCASE_CELL = "S2_d10_camort_offset_clip50_lam10_hw20"
 # surviving recipe in exactly {optimiser, clip}, so like the arms above it
 # joins only the conditioning and specialist guards.
 D10_STADAMW_CELL = "S2_d10_camort_offset_cyc8_stadamw"
-COMPOSITION_GAIN_CELL = (
-    "S2_d8_camort_spine3_cgain_l50_letf_ne128_house_sc"
-)
-PAIRED_SPINE1_CELL = (
-    "S2_d8_camort_spine1_pairgrad_l50_letf_ne128_house_sc"
-)
-PAIRED_SPECIALIST_CELL = (
-    "S2_d8_c0500_pairgrad_l50_letf_ne128_house_sc"
-)
+COMPOSITION_GAIN_CELL = "S2_d8_camort_spine3_cgain_l50_letf_ne128_house_sc"
+PAIRED_SPINE1_CELL = "S2_d8_camort_spine1_pairgrad_l50_letf_ne128_house_sc"
+PAIRED_SPECIALIST_CELL = "S2_d8_c0500_pairgrad_l50_letf_ne128_house_sc"
 D10_AMORTISED_CELLS = (
     D10_BASE_AMORTISED_CELL,
     "S2_d10_cgrid_l50_letf_ne128_anneal",
@@ -86,14 +80,24 @@ D10_AMORTISED_CELLS = (
 # precisely to depart from that recipe. They are still amortised cells, so
 # they join AMORTISED_CELLS for the conditioning and specialist guards.
 AMORTISED_CELLS = (
-    VALIDATION_CELL, NARROW_WINDOW_CELL, NULL_CONTROL_CELL, BUDGET_TWIN_CELL,
-    ANNEALED_TWIN_CELL, OFFSET_ANNEAL_CELL, *CLIP_CELLS, *D10_AMORTISED_CELLS,
-    *D10_SATURATION_CELLS, D10_STAIRCASE_CELL, D10_STADAMW_CELL,
-    FINAL_RECIPE_NULL_CELL, FLAT_WINDOW_CELL,
+    VALIDATION_CELL,
+    NARROW_WINDOW_CELL,
+    NULL_CONTROL_CELL,
+    BUDGET_TWIN_CELL,
+    ANNEALED_TWIN_CELL,
+    OFFSET_ANNEAL_CELL,
+    *CLIP_CELLS,
+    *D10_AMORTISED_CELLS,
+    *D10_SATURATION_CELLS,
+    D10_STAIRCASE_CELL,
+    D10_STADAMW_CELL,
+    FINAL_RECIPE_NULL_CELL,
+    FLAT_WINDOW_CELL,
     # House pair: the conditioned cell and its zero-width null
     # on the house recipe (fixed lambda + channel; tests/
     # test_soft_house_configs.py pins their declared-diff sets).
-    "S2_d4_camort_50k_l50_letf_house", "S2_d4_cnull_50k_l50_letf_house",
+    "S2_d4_camort_50k_l50_letf_house",
+    "S2_d4_cnull_50k_l50_letf_house",
     # Matched-base cells:
     # spine-values draw, no staircase, base matched per cycle. Their own
     # lever pins live in tests/test_matched_base_amortisation.py.
@@ -102,7 +106,6 @@ AMORTISED_CELLS = (
     # at both couplings.
     "S2_d4_camort_10k_l50_letf_house",
     "S2_d4_camort_10k_l50_letf_house_sc",
-
     "S2_d8_camort_l50_letf_ne128_house",
     "S2_d8_camort_l50_letf_ne128_house_sc",
     # Draw-set ablation twins: the 17-value draw back to the gate's
@@ -158,11 +161,14 @@ def test_composition_gain_arm_is_one_lever_over_critical_spine3():
     arm = CONFIGS[COMPOSITION_GAIN_CELL]
 
     assert arm.model.exact_field_composition_gain is True
-    assert replace(
-        arm,
-        name=parent.name,
-        model=replace(arm.model, exact_field_composition_gain=False),
-    ) == parent
+    assert (
+        replace(
+            arm,
+            name=parent.name,
+            model=replace(arm.model, exact_field_composition_gain=False),
+        )
+        == parent
+    )
 
     target = IsingTarget(
         D=arm.ising.D,
@@ -191,11 +197,14 @@ def test_pairgrad_arms_add_diagnostics_only_to_their_parents():
         arm = CONFIGS[arm_name]
         parent = CONFIGS[parent_name]
         assert arm.train.log_gradient_group_norms is True
-        assert replace(
-            arm,
-            name=parent.name,
-            train=replace(arm.train, log_gradient_group_norms=False),
-        ) == parent
+        assert (
+            replace(
+                arm,
+                name=parent.name,
+                train=replace(arm.train, log_gradient_group_norms=False),
+            )
+            == parent
+        )
 
 
 def test_pairgrad_specialist_and_spine1_share_every_initial_tensor():
@@ -213,9 +222,7 @@ def test_pairgrad_specialist_and_spine1_share_every_initial_tensor():
         torch.manual_seed(42)
         # Compilation has no state-dict effect, but is irrelevant to this
         # construction invariant and expensive to repeat in a unit test.
-        eager_cfg = replace(
-            cfg, model=replace(cfg.model, compile_model=False)
-        )
+        eager_cfg = replace(cfg, model=replace(cfg.model, compile_model=False))
         model = _build_model(eager_cfg, target)
         return model.state_dict(), torch.get_rng_state().clone()
 
@@ -244,35 +251,28 @@ def test_pairgrad_step_zero_loss_and_shared_gradients_are_exact():
             D=2,
             sigma=cfg.ising.sigma,
             target_composition=0.5,
-            composition_penalty_strength=(
-                cfg.ising.composition_penalty_strength
-            ),
+            composition_penalty_strength=(cfg.ising.composition_penalty_strength),
             base_matches_composition=cfg.ising.base_matches_composition,
         )
         torch.manual_seed(42)
-        eager_cfg = replace(
-            cfg, model=replace(cfg.model, compile_model=False)
-        )
+        eager_cfg = replace(cfg, model=replace(cfg.model, compile_model=False))
         return _build_model(eager_cfg, target), target
 
     specialist, specialist_target = build(specialist_cfg)
     spine1, spine1_target = build(spine1_cfg)
     generator = torch.Generator().manual_seed(7)
-    x = torch.randint(
-        0, 2, (6, specialist_target.d), generator=generator
-    ).float() * 2 - 1
+    x = (
+        torch.randint(0, 2, (6, specialist_target.d), generator=generator).float() * 2
+        - 1
+    )
     t = torch.rand(6, generator=generator)
     c_t = torch.randn(6, generator=generator)
     c = torch.full((6,), 0.5)
 
-    specialist_loss = kolmogorov_loss(
-        x, t, c_t, specialist, specialist_target
-    )
+    specialist_loss = kolmogorov_loss(x, t, c_t, specialist, specialist_target)
     bound_spine1 = CompositionConditioned(spine1, c)
     with spine1_target.composition_batch(c):
-        spine1_loss = kolmogorov_loss(
-            x, t, c_t, bound_spine1, spine1_target
-        )
+        spine1_loss = kolmogorov_loss(x, t, c_t, bound_spine1, spine1_target)
     assert torch.equal(specialist_loss, spine1_loss)
 
     specialist_loss.backward()
@@ -327,7 +327,9 @@ def test_narrow_window_cell_differs_only_in_the_window():
     # 0.30 and 0.80 fall outside the narrow training range on purpose: those
     # sweep rows measure extrapolation, and reading them as interpolation
     # would credit the model with coverage it never trained on.
-    narrow_edge = narrow.composition.centre - narrow.composition.curriculum[-1].half_width
+    narrow_edge = (
+        narrow.composition.centre - narrow.composition.curriculum[-1].half_width
+    )
     assert narrow_edge > 0.30
 
 
@@ -342,20 +344,21 @@ def test_budget_twin_varies_only_the_training_budget():
     twin = CONFIGS[BUDGET_TWIN_CELL]
 
     assert twin.train.n_steps == 5 * wide.train.n_steps
-    assert replace(
-        twin,
-        name=wide.name,
-        train=replace(twin.train, n_steps=wide.train.n_steps),
-        composition=wide.composition,
-    ) == wide
+    assert (
+        replace(
+            twin,
+            name=wide.name,
+            train=replace(twin.train, n_steps=wide.train.n_steps),
+            composition=wide.composition,
+        )
+        == wide
+    )
     # Same widths, same fractions of the run.
     assert [s.half_width for s in twin.composition.curriculum] == [
         s.half_width for s in wide.composition.curriculum
     ]
-    assert [s.start_step / twin.train.n_steps
-            for s in twin.composition.curriculum] == [
-        s.start_step / wide.train.n_steps
-        for s in wide.composition.curriculum
+    assert [s.start_step / twin.train.n_steps for s in twin.composition.curriculum] == [
+        s.start_step / wide.train.n_steps for s in wide.composition.curriculum
     ]
 
 
@@ -399,9 +402,8 @@ def test_offset_anneal_finishes_its_ramp_before_the_window_widens():
     annealed = CONFIGS[ANNEALED_TWIN_CELL]
     offset = CONFIGS[OFFSET_ANNEAL_CELL]
 
-    assert (
-        replace(offset, name=annealed.name, lambda_curriculum=None)
-        == replace(annealed, lambda_curriculum=None)
+    assert replace(offset, name=annealed.name, lambda_curriculum=None) == replace(
+        annealed, lambda_curriculum=None
     )
     stages = offset.lambda_curriculum.stages
     assert [s.composition_penalty_strength for s in stages] == [
@@ -443,14 +445,17 @@ def test_clip_cells_vary_only_the_gradient_clip(cell_name, max_norm):
 
     assert clipped.train.grad_clip_max_norm == max_norm
     assert offset.train.grad_clip_max_norm > max_norm
-    assert replace(
-        clipped,
-        name=offset.name,
-        train=replace(
-            clipped.train,
-            grad_clip_max_norm=offset.train.grad_clip_max_norm,
-        ),
-    ) == offset
+    assert (
+        replace(
+            clipped,
+            name=offset.name,
+            train=replace(
+                clipped.train,
+                grad_clip_max_norm=offset.train.grad_clip_max_norm,
+            ),
+        )
+        == offset
+    )
 
 
 def test_deep_buffer_cell_varies_only_the_replay_buffer_depth():
@@ -476,14 +481,17 @@ def test_deep_buffer_cell_varies_only_the_replay_buffer_depth():
     deep = CONFIGS[D10_DEEP_BUFFER_CELL]
 
     assert deep.train.replay_buffer_cycles == 2 * transfer.train.replay_buffer_cycles
-    assert replace(
-        deep,
-        name=transfer.name,
-        train=replace(
-            deep.train,
-            replay_buffer_cycles=transfer.train.replay_buffer_cycles,
-        ),
-    ) == transfer
+    assert (
+        replace(
+            deep,
+            name=transfer.name,
+            train=replace(
+                deep.train,
+                replay_buffer_cycles=transfer.train.replay_buffer_cycles,
+            ),
+        )
+        == transfer
+    )
 
 
 def test_d10_transfer_cell_carries_exactly_the_two_d4_fixes():
@@ -512,22 +520,28 @@ def test_d10_transfer_cell_carries_exactly_the_two_d4_fixes():
     assert [s.composition_penalty_strength for s in stages] == [
         s.composition_penalty_strength for s in parent.lambda_curriculum.stages
     ]
-    assert max(s.start_step for s in stages) < transfer.composition.curriculum[1].start_step
+    assert (
+        max(s.start_step for s in stages)
+        < transfer.composition.curriculum[1].start_step
+    )
     assert (
         stages[-1].composition_penalty_strength
         == transfer.ising.composition_penalty_strength
     )
 
     # Nothing else moved.
-    assert replace(
-        transfer,
-        name=parent.name,
-        train=replace(
-            transfer.train,
-            grad_clip_max_norm=parent.train.grad_clip_max_norm,
-        ),
-        lambda_curriculum=parent.lambda_curriculum,
-    ) == parent
+    assert (
+        replace(
+            transfer,
+            name=parent.name,
+            train=replace(
+                transfer.train,
+                grad_clip_max_norm=parent.train.grad_clip_max_norm,
+            ),
+            lambda_curriculum=parent.lambda_curriculum,
+        )
+        == parent
+    )
 
 
 def test_null_control_is_the_specialist_reached_through_the_amortised_path():
@@ -569,8 +583,7 @@ def test_amortised_cell_inherits_the_surviving_recipe(cell_name):
     assert cfg.ctmc.n_euler_steps == 128
     assert cfg.lambda_curriculum is not None
     strengths = [
-        stage.composition_penalty_strength
-        for stage in cfg.lambda_curriculum.stages
+        stage.composition_penalty_strength for stage in cfg.lambda_curriculum.stages
     ]
     assert strengths == [10.0, 25.0, 50.0]
 
@@ -638,6 +651,7 @@ def test_saturation_arms_raise_delta_star_above_the_control(cell_name):
     against a measured error of 0.078 — i.e. already saturating. An arm that
     did not raise Del* above the control would not be testing anything.
     """
+
     def delta_star(cfg):
         return cfg.ising.log_ratio_clamp / (
             2.0 * cfg.ising.composition_penalty_strength
@@ -683,13 +697,9 @@ def test_staircase_cell_caps_and_paces_the_widening():
     starts = [stage.start_step for stage in stages]
     assert max(widths) == pytest.approx(0.20)
     assert all(
-        later - earlier <= 0.05 + 1e-9
-        for earlier, later in zip(widths, widths[1:])
+        later - earlier <= 0.05 + 1e-9 for earlier, later in zip(widths, widths[1:])
     )
-    assert all(
-        later - earlier >= 8_000
-        for earlier, later in zip(starts, starts[1:])
-    )
+    assert all(later - earlier >= 8_000 for earlier, later in zip(starts, starts[1:]))
     assert starts[1] >= 20_000
     assert cfg.lambda_curriculum is None
     assert cfg.ising.composition_penalty_strength == 10.0
@@ -722,7 +732,12 @@ def test_final_recipe_machinery_pair_differs_only_in_conditioning():
     assert specialist_cfg.composition is None
 
     for shared_field in (
-        "ising", "train", "ctmc", "eval", "estimator", "lambda_curriculum"
+        "ising",
+        "train",
+        "ctmc",
+        "eval",
+        "estimator",
+        "lambda_curriculum",
     ):
         assert getattr(null_cfg, shared_field) == (
             getattr(specialist_cfg, shared_field)

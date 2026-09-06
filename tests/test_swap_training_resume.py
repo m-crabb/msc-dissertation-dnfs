@@ -19,18 +19,18 @@ The contract these tests pin:
    last checkpoint; resume must truncate them so every step appears exactly
    once.
 """
+
 import csv
 from pathlib import Path
 
 import pytest
 import torch
+from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 from discrete_flow_sampler.constraints.swap_readout import DoublyHollowSwapHead
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-
-from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 
 class _Cfg:
@@ -52,10 +52,18 @@ def _head(init_seed: int) -> DoublyHollowSwapHead:
 
 
 def _cfgs(n_steps: int):
-    train_cfg = _Cfg(n_steps=n_steps, batch_size=8, outer_batch_size=8,
-                     inner_steps_per_outer=2, lr=1e-3, seed=0,
-                     replay_buffer_cycles=2, grad_clip_max_norm=500.0,
-                     warmup_steps=0, resume_every_outer=1)
+    train_cfg = _Cfg(
+        n_steps=n_steps,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=2,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        resume_every_outer=1,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=8)
     eval_cfg = _Cfg(eval_every=2, n_eval_samples=16)
     return train_cfg, ctmc_cfg, eval_cfg
@@ -64,9 +72,18 @@ def _cfgs(n_steps: int):
 def _run(run_dir: Path, n_steps: int, head, ema_decay: float = 0.0) -> None:
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(n_steps)
-    train_swap(head, target, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-               use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM, ema_decay=ema_decay)
+    train_swap(
+        head,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        run_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=TWO_STAGE_CURRICULUM,
+        ema_decay=ema_decay,
+    )
 
 
 def _log_rows(run_dir: Path) -> list[dict]:
@@ -124,15 +141,12 @@ def test_resumed_ema_shadow_is_bit_exact_with_uninterrupted(tmp_path):
     uninterrupted_dir = tmp_path / "uninterrupted"
     interrupted_dir = tmp_path / "interrupted"
 
-    _run(uninterrupted_dir, n_steps=8, head=_head(init_seed=0),
-         ema_decay=0.9999)
+    _run(uninterrupted_dir, n_steps=8, head=_head(init_seed=0), ema_decay=0.9999)
 
-    _run(interrupted_dir, n_steps=4, head=_head(init_seed=0),
-         ema_decay=0.9999)
+    _run(interrupted_dir, n_steps=4, head=_head(init_seed=0), ema_decay=0.9999)
     (interrupted_dir / "checkpoints" / "final.pt").unlink()
     (interrupted_dir / "checkpoints" / "final_ema.pt").unlink()
-    _run(interrupted_dir, n_steps=8, head=_head(init_seed=999),
-         ema_decay=0.9999)
+    _run(interrupted_dir, n_steps=8, head=_head(init_seed=999), ema_decay=0.9999)
 
     reference_ema = torch.load(
         uninterrupted_dir / "checkpoints" / "final_ema.pt", weights_only=True
@@ -148,26 +162,19 @@ def test_resumed_ema_shadow_is_bit_exact_with_uninterrupted(tmp_path):
     final_raw = torch.load(
         uninterrupted_dir / "checkpoints" / "final.pt", weights_only=True
     )
-    assert any(
-        not torch.equal(final_raw[key], reference_ema[key])
-        for key in final_raw
-    )
+    assert any(not torch.equal(final_raw[key], reference_ema[key]) for key in final_raw)
 
 
 def test_retry_on_completed_run_is_noop(tmp_path):
     run_dir = tmp_path / "run"
     _run(run_dir, n_steps=4, head=_head(init_seed=0))
     rows_before = _log_rows(run_dir)
-    final_before = torch.load(
-        run_dir / "checkpoints" / "final.pt", weights_only=True
-    )
+    final_before = torch.load(run_dir / "checkpoints" / "final.pt", weights_only=True)
 
     _run(run_dir, n_steps=4, head=_head(init_seed=999))
 
     assert _log_rows(run_dir) == rows_before
-    final_after = torch.load(
-        run_dir / "checkpoints" / "final.pt", weights_only=True
-    )
+    final_after = torch.load(run_dir / "checkpoints" / "final.pt", weights_only=True)
     for key in final_before:
         assert torch.equal(final_before[key], final_after[key]), key
 

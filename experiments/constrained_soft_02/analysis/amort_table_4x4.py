@@ -49,6 +49,7 @@ Delivered composition and ESS print as seed mean +- SD over seeds 42-45,
 every seed included (the table's declared convention: every seed trained,
 not the survivors).
 """
+
 import argparse
 import json
 import sys
@@ -58,10 +59,13 @@ from types import SimpleNamespace
 import torch
 
 from discrete_flow_sampler.diagnostics.flops import (
-    chain_per_effective_sample, measured_forward_flops,
-    neural_sampling_flops_per_sample, per_effective_sample, vcsgc_run_flops)
-from discrete_flow_sampler.models.composition_conditioned import (
-    CompositionConditioned)
+    chain_per_effective_sample,
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+    vcsgc_run_flops,
+)
+from discrete_flow_sampler.models.composition_conditioned import CompositionConditioned
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -117,8 +121,8 @@ def forward_flops(run_dir: Path) -> int:
 def flops_per_es(run_dir: Path, per_forward: int, ess_fraction: float) -> float:
     n_euler = json.loads((run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
     return per_effective_sample(
-        neural_sampling_flops_per_sample(per_forward, n_euler, N_SITES),
-        ess_fraction)
+        neural_sampling_flops_per_sample(per_forward, n_euler, N_SITES), ess_fraction
+    )
 
 
 def reference_flops_per_es(c_target: float) -> float:
@@ -132,11 +136,11 @@ def reference_flops_per_es(c_target: float) -> float:
         summary = json.loads((run_dir / "summary.json").read_text())
         total_trials += summary["n_steps"]
         n_frames += summary["observables"]["composition"]["n_frames"]
-        tau_ints.append(max(obs["tau_int_frames"]
-                            for obs in summary["observables"].values()))
+        tau_ints.append(
+            max(obs["tau_int_frames"] for obs in summary["observables"].values())
+        )
     tau_int = max(sum(tau_ints) / len(tau_ints), 1.0)
-    return chain_per_effective_sample(
-        vcsgc_run_flops(total_trials), n_frames, tau_int)
+    return chain_per_effective_sample(vcsgc_run_flops(total_trials), n_frames, tau_int)
 
 
 def mean_sd(values: list[float]) -> tuple[float, float]:
@@ -146,8 +150,7 @@ def mean_sd(values: list[float]) -> tuple[float, float]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eval_dir", choices=["eval", "eval_ema"],
-                        default="eval")
+    parser.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval")
     args = parser.parse_args()
     eval_dir = args.eval_dir
 
@@ -160,14 +163,17 @@ def main() -> None:
         delivered, ess, cost = [], [], []
         for run_dir in amort_dirs:
             sweep = json.loads(
-                (run_dir / eval_dir / "composition_sweep.json").read_text())
+                (run_dir / eval_dir / "composition_sweep.json").read_text()
+            )
             row = next(r for r in sweep if abs(r["composition"] - c) < 1e-9)
             delivered.append(row["composition_mean"])
             ess.append(row["ess_fraction"])
             cost.append(flops_per_es(run_dir, amort_forward, row["ess_fraction"]))
         table[(c, "conditioned")] = {
-            "delivered": mean_sd(delivered), "ess": mean_sd(ess),
-            "flops_per_es": mean_sd(cost)}
+            "delivered": mean_sd(delivered),
+            "ess": mean_sd(ess),
+            "flops_per_es": mean_sd(cost),
+        }
 
     # --- specialist rows (trained at c, or the Z2 mirror of the 1-c twin) --
     for c in REQUESTED:
@@ -179,29 +185,33 @@ def main() -> None:
             run_dir = latest_run_dir(cell, seed, eval_dir)
             if per_forward is None:
                 per_forward = forward_flops(run_dir)
-            metrics = json.loads(
-                (run_dir / eval_dir / "metrics.json").read_text())
+            metrics = json.loads((run_dir / eval_dir / "metrics.json").read_text())
             raw_delivered = metrics["composition_mean"]
-            delivered.append(1.0 - raw_delivered if trained_c != c
-                             else raw_delivered)
+            delivered.append(1.0 - raw_delivered if trained_c != c else raw_delivered)
             ess.append(metrics["ess_fraction"])
-            cost.append(flops_per_es(run_dir, per_forward,
-                                     metrics["ess_fraction"]))
+            cost.append(flops_per_es(run_dir, per_forward, metrics["ess_fraction"]))
         table[(c, "specialist")] = {
-            "delivered": mean_sd(delivered), "ess": mean_sd(ess),
+            "delivered": mean_sd(delivered),
+            "ess": mean_sd(ess),
             "flops_per_es": mean_sd(cost),
-            **({"mirror_of": trained_c} if trained_c != c else {})}
+            **({"mirror_of": trained_c} if trained_c != c else {}),
+        }
 
     # --- null row (machinery control, c = 0.50 only) ------------------------
     delivered, ess = [], []
     for seed in SEEDS:
         metrics = json.loads(
-            (latest_run_dir(NULL_CELL, seed, eval_dir)
-             / eval_dir / "metrics.json").read_text())
+            (
+                latest_run_dir(NULL_CELL, seed, eval_dir) / eval_dir / "metrics.json"
+            ).read_text()
+        )
         delivered.append(metrics["composition_mean"])
         ess.append(metrics["ess_fraction"])
-    table[(0.50, "null")] = {"delivered": mean_sd(delivered),
-                             "ess": mean_sd(ess), "flops_per_es": None}
+    table[(0.50, "null")] = {
+        "delivered": mean_sd(delivered),
+        "ess": mean_sd(ess),
+        "flops_per_es": None,
+    }
 
     # --- print in table order ----------------------------------------------
     print(f"eval dir: {eval_dir}")
@@ -216,15 +226,19 @@ def main() -> None:
             (dm, ds), (em, es) = row["delivered"], row["ess"]
             cost = row["flops_per_es"]
             cost_str = f"{cost[0]:.2g} +- {cost[1]:.1g}" if cost else "--"
-            mirror = (f"   (mirror of c={row['mirror_of']:.3f})"
-                      if "mirror_of" in row else "")
-            print(f"  {sampler:11s} delivered {dm:.3f} +- {ds:.3f}   "
-                  f"ESS {em:.2f} +- {es:.2f}   FLOP/es {cost_str}{mirror}")
+            mirror = (
+                f"   (mirror of c={row['mirror_of']:.3f})" if "mirror_of" in row else ""
+            )
+            print(
+                f"  {sampler:11s} delivered {dm:.3f} +- {ds:.3f}   "
+                f"ESS {em:.2f} +- {es:.2f}   FLOP/es {cost_str}{mirror}"
+            )
 
     suffix = "_ema" if eval_dir == "eval_ema" else ""
     out = RESULTS / f"amort_table_4x4{suffix}.json"
-    out.write_text(json.dumps(
-        {f"c{c:.3f}_{s}": v for (c, s), v in table.items()}, indent=2))
+    out.write_text(
+        json.dumps({f"c{c:.3f}_{s}": v for (c, s), v in table.items()}, indent=2)
+    )
     print(f"\nwrote {out}")
 
 

@@ -1,4 +1,4 @@
-"""Ising target distribution. Paper Eq. (11): p(x) ∝ exp(x^T J x + b · Σx). """
+"""Ising target distribution. Paper Eq. (11): p(x) ∝ exp(x^T J x + b · Σx)."""
 
 import math
 from contextlib import contextmanager
@@ -72,9 +72,7 @@ class IsingTarget:
         adjacency: Tensor | None = None,
     ):
         if log_ratio_clamp <= 0.0:
-            raise ValueError(
-                "log_ratio_clamp must be positive, got " f"{log_ratio_clamp}"
-            )
+            raise ValueError(f"log_ratio_clamp must be positive, got {log_ratio_clamp}")
         if not 0.0 < base_composition < 1.0:
             raise ValueError(
                 "base_composition must be in the open interval (0, 1), "
@@ -82,8 +80,7 @@ class IsingTarget:
             )
         if target_composition is not None and not 0.0 <= target_composition <= 1.0:
             raise ValueError(
-                "target_composition must be in [0, 1], "
-                f"got {target_composition}"
+                f"target_composition must be in [0, 1], got {target_composition}"
             )
         if composition_penalty_strength < 0.0:
             raise ValueError(
@@ -128,9 +125,9 @@ class IsingTarget:
 
         for r in range(self.D if adjacency is None else 0):
             for c in range(self.D):
-                i = r * self.D + c                          # (r, c)             -> flat
-                right = r * self.D + (c + 1) % self.D       # (r, (c+1) % D)     -> flat
-                down = ((r + 1) % self.D) * self.D + c      # ((r+1) % D, c)     -> flat
+                i = r * self.D + c  # (r, c)             -> flat
+                right = r * self.D + (c + 1) % self.D  # (r, (c+1) % D)     -> flat
+                down = ((r + 1) % self.D) * self.D + c  # ((r+1) % D, c)     -> flat
                 A[i, right] = 1.0
                 A[i, down] = 1.0
 
@@ -138,7 +135,7 @@ class IsingTarget:
         # adjacency is already symmetric
         if adjacency is None:
             A = A + A.T
-        self.A = A                    # kept for `set_sigma` rescaling
+        self.A = A  # kept for `set_sigma` rescaling
         self.J = self.sigma * A
 
     def set_sigma(self, sigma: float) -> None:
@@ -158,8 +155,7 @@ class IsingTarget:
         """
         if strength < 0.0:
             raise ValueError(
-                "composition_penalty_strength must be non-negative, "
-                f"got {strength}"
+                f"composition_penalty_strength must be non-negative, got {strength}"
             )
         if strength > 0.0 and self.target_composition is None:
             raise ValueError(
@@ -216,20 +212,19 @@ class IsingTarget:
         byte-identical to a uniform base.
         """
         if self.base_matches_composition:
-            p = self._matched_base_p(x.shape[0]).to(
-                device=x.device, dtype=x.dtype
-            )
+            p = self._matched_base_p(x.shape[0]).to(device=x.device, dtype=x.dtype)
             n_plus = ((x + 1.0) * 0.5).sum(dim=-1)
             return n_plus * p.log() + (self.d - n_plus) * (1.0 - p).log()
         if self.base_composition == 0.5:
             return torch.full(
-                (x.shape[0],), -self.d * math.log(2),
-                device=x.device, dtype=x.dtype,
+                (x.shape[0],),
+                -self.d * math.log(2),
+                device=x.device,
+                dtype=x.dtype,
             )
         n_plus = ((x + 1.0) * 0.5).sum(dim=-1)
-        return (
-            n_plus * math.log(self.base_composition)
-            + (self.d - n_plus) * math.log(1.0 - self.base_composition)
+        return n_plus * math.log(self.base_composition) + (self.d - n_plus) * math.log(
+            1.0 - self.base_composition
         )
 
     def sample_base(self, n: int, device) -> Tensor:
@@ -244,20 +239,15 @@ class IsingTarget:
         if self.base_matches_composition:
             p = self._matched_base_p(n)
             if bool((p == 0.5).all()):
-                return (
-                    torch.randint(0, 2, (n, self.d), device=device).float()
-                    * 2 - 1
-                )
+                return torch.randint(0, 2, (n, self.d), device=device).float() * 2 - 1
             return (
-                (torch.rand(n, self.d, device=device)
-                 < p.to(device).unsqueeze(-1)).float() * 2 - 1
-            )
+                torch.rand(n, self.d, device=device) < p.to(device).unsqueeze(-1)
+            ).float() * 2 - 1
         if self.base_composition == 0.5:
             return torch.randint(0, 2, (n, self.d), device=device).float() * 2 - 1
         return (
-            (torch.rand(n, self.d, device=device) < self.base_composition)
-            .float() * 2 - 1
-        )
+            torch.rand(n, self.d, device=device) < self.base_composition
+        ).float() * 2 - 1
 
     def base_flip_log_ratio(self, x: Tensor) -> Tensor:
         """log base(flip_i x) - log base(x) for every site, shape (B, d).
@@ -296,7 +286,7 @@ class IsingTarget:
         Note: omits the log-partition-function constant log Z; this is the
         un-normalised log p.
         """
-        return (x @ self.J * x).sum(dim=-1)  + (self.bias * x.sum(dim=1))
+        return (x @ self.J * x).sum(dim=-1) + (self.bias * x.sum(dim=1))
 
     @contextmanager
     def composition_batch(self, composition: Tensor):
@@ -500,7 +490,10 @@ class FixedCompositionIsingTarget(IsingTarget):
                 f"{n_plus_float} is not integral; no exact fixed-N slice exists."
             )
         super().__init__(
-            D, sigma, bias=bias, device=device,
+            D,
+            sigma,
+            bias=bias,
+            device=device,
             target_composition=target_composition,
             composition_penalty_strength=0.0,
         )
@@ -527,8 +520,10 @@ class FixedCompositionIsingTarget(IsingTarget):
     def base_log_eta(self, x):
         """Constant log-density -log C(d, N_A) on the slice, shape (B,)."""
         return torch.full(
-            (x.shape[0],), -self._log_slice_size,
-            device=x.device, dtype=x.dtype,
+            (x.shape[0],),
+            -self._log_slice_size,
+            device=x.device,
+            dtype=x.dtype,
         )
 
     def assert_on_manifold(self, x):
@@ -555,9 +550,9 @@ class FixedCompositionIsingTarget(IsingTarget):
         (x_i = x_j ⇒ diff = 0) give 0 for free. Cost O(B·d² + B·P), with no
         (B, P, d) neighbour materialisation.
         """
-        h = x @ self.A                                    # (B, d) neighbour sums
+        h = x @ self.A  # (B, d) neighbour sums
         site_i, site_j, adjacent = self._pair_columns(pairs)  # (P,) each
-        diff = x[:, site_j] - x[:, site_i]                # (B, P)
+        diff = x[:, site_j] - x[:, site_i]  # (B, P)
         delta_quadratic = (
             2.0 * diff * (h[:, site_i] - h[:, site_j]) - 2.0 * diff * diff * adjacent
         )
@@ -631,7 +626,10 @@ class MixtureCompositionIsingTarget(FixedCompositionIsingTarget):
         if not compositions:
             raise ValueError("compositions must name at least one slice")
         super().__init__(
-            D, sigma, target_composition=compositions[0], bias=bias,
+            D,
+            sigma,
+            target_composition=compositions[0],
+            bias=bias,
             device=device,
         )
         register_composition_grid(self, compositions)
@@ -640,10 +638,8 @@ class MixtureCompositionIsingTarget(FixedCompositionIsingTarget):
         """Uniform slice choice per element, then uniform on that slice:
         the first n_plus[i] columns of a per-row random permutation are a
         uniform random subset of that size."""
-        slice_index = torch.randint(
-            len(self.n_plus_values), (n,), device=device)
-        counts = torch.tensor(
-            self.n_plus_values, device=device)[slice_index]     # (n,)
+        slice_index = torch.randint(len(self.n_plus_values), (n,), device=device)
+        counts = torch.tensor(self.n_plus_values, device=device)[slice_index]  # (n,)
         permuted_sites = torch.rand(n, self.d, device=device).argsort(dim=1)
         rank = torch.arange(self.d, device=device).expand(n, -1)
         values = torch.where(rank < counts[:, None], 1.0, -1.0)
@@ -662,8 +658,7 @@ class MixtureCompositionIsingTarget(FixedCompositionIsingTarget):
         """Raise AssertionError if any row's n_plus is outside the
         registered slice set."""
         n_plus = ((x + 1) * 0.5).sum(dim=-1)
-        allowed = torch.tensor(
-            self.n_plus_values, device=x.device, dtype=n_plus.dtype)
+        allowed = torch.tensor(self.n_plus_values, device=x.device, dtype=n_plus.dtype)
         on_a_slice = (n_plus[:, None] == allowed[None, :]).any(dim=1)
         if not on_a_slice.all():
             bad = n_plus[~on_a_slice]

@@ -30,17 +30,22 @@ DEFAULT_ARMS = "fab8,fab16,fbil,fglo"
 SIGMA_TAGS = ["s010", "s223"]
 
 REPORT_COLUMNS = [
-    "energy_tv", "ess_fraction", "max_level_excess",
-    "antisym_violation", "free_energy_bias",
+    "energy_tv",
+    "ess_fraction",
+    "max_level_excess",
+    "antisym_violation",
+    "free_energy_bias",
 ]
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", default="results/03_hard")
-    parser.add_argument("--arms", default=DEFAULT_ARMS,
-                        help="comma-separated arm tags (e.g. fmp40 for the "
-                             "matched-param pass alone)")
+    parser.add_argument(
+        "--arms",
+        default=DEFAULT_ARMS,
+        help="comma-separated arm tags (e.g. fmp40 for the matched-param pass alone)",
+    )
     parser.add_argument("--seeds", default="42,43,44")
     parser.add_argument("--n-samples", type=int, default=5000)
     parser.add_argument("--device", default="cpu")
@@ -55,16 +60,19 @@ def main(argv=None):
             n_euler_steps = CONFIGS[cfg_name].ctmc.n_euler_steps
             for seed in seeds:
                 run_dir = latest_run_dir(args.results_dir, cfg_name, seed)
-                print(f"[facgate-eval] {cfg_name} seed {seed}: {run_dir.name}",
-                      flush=True)
-                head, target = load_run(run_dir, args.device)
-                metrics = run_gate(
-                    head, target, args.n_samples, n_euler_steps, seed
+                print(
+                    f"[facgate-eval] {cfg_name} seed {seed}: {run_dir.name}", flush=True
                 )
+                head, target = load_run(run_dir, args.device)
+                metrics = run_gate(head, target, args.n_samples, n_euler_steps, seed)
                 row = {
-                    "cell": cfg_name, "arm": arm, "sigma_tag": sigma_tag,
-                    "seed": seed, "run_dir": run_dir.name,
-                    "device": args.device, "n_samples": args.n_samples,
+                    "cell": cfg_name,
+                    "arm": arm,
+                    "sigma_tag": sigma_tag,
+                    "seed": seed,
+                    "run_dir": run_dir.name,
+                    "device": args.device,
+                    "n_samples": args.n_samples,
                 }
                 row.update({c: float(metrics[c]) for c in REPORT_COLUMNS})
                 rows.append(row)

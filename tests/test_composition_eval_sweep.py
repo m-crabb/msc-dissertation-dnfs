@@ -19,6 +19,7 @@ _target` pins that by checking the exact enumeration moves with c.
 The in-loop ESS probe is pinned to the window centre, so it tracks training
 health only; every per-composition claim has to come from this sweep.
 """
+
 import json
 
 import pytest
@@ -56,25 +57,35 @@ def _tiny_cfg(name, *, conditioned=True, centre=0.5, target_composition=0.5):
     return StageCfg(
         name=name,
         ising=IsingCfg(
-            D=2, sigma=0.1, bias=0.0,
+            D=2,
+            sigma=0.1,
+            bias=0.0,
             target_composition=target_composition,
             composition_penalty_strength=5.0,
         ),
         train=TrainCfg(
-            n_steps=4, batch_size=8, outer_batch_size=4,
-            inner_steps_per_outer=2, replay_buffer_cycles=2,
-            lr=1e-3, seed=0, warmup_steps=0,
+            n_steps=4,
+            batch_size=8,
+            outer_batch_size=4,
+            inner_steps_per_outer=2,
+            replay_buffer_cycles=2,
+            lr=1e-3,
+            seed=0,
+            warmup_steps=0,
         ),
         ctmc=CTMCCfg(n_euler_steps=8),
         eval=EvalCfg(eval_every=2, n_eval_samples=16),
         model=ModelCfg(
-            kind="let", hidden_dim=8, n_layers=1, n_heads=2, vocab_size=2,
+            kind="let",
+            hidden_dim=8,
+            n_layers=1,
+            n_heads=2,
+            vocab_size=2,
             condition_on_composition=conditioned,
         ),
         estimator="control_variate",
         composition=(
-            CompositionCfg(centre=centre, half_width=0.1)
-            if conditioned else None
+            CompositionCfg(centre=centre, half_width=0.1) if conditioned else None
         ),
     )
 
@@ -100,16 +111,16 @@ def test_binding_reaches_both_the_model_and_the_density():
     always got.
     """
     target = IsingTarget(
-        D=2, sigma=0.1, target_composition=0.5,
+        D=2,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=5.0,
     )
     x = target.sample_base(4, device="cpu")
 
     wrap, binding = _composition_binding(target, 0.8, "cpu")
     with binding:
-        torch.testing.assert_close(
-            target._row_composition(x), torch.full((4,), 0.8)
-        )
+        torch.testing.assert_close(target._row_composition(x), torch.full((4,), 0.8))
     sentinel = object()
     assert wrap(sentinel).composition.item() == pytest.approx(0.8)
     # Restored on exit: no eval can leak a binding into the next one.
@@ -201,9 +212,7 @@ def test_sweep_rows_carry_a_cost_axis(amortised_run):
     assert row["eval_device"] in ("cpu", "cuda")
     # 8 Euler steps × 16 samples ÷ ESS, and ESS ≤ 16, so cost ≥ 8 per
     # effective sample — i.e. never cheaper than one pass per good sample.
-    assert row["nfe_per_effective_sample"] == pytest.approx(
-        8 * 16 / row["ess"]
-    )
+    assert row["nfe_per_effective_sample"] == pytest.approx(8 * 16 / row["ess"])
     assert row["nfe_per_effective_sample"] >= 8.0
 
 
@@ -235,14 +244,11 @@ def test_sweep_reseeds_per_composition_for_common_random_numbers(amortised_run):
     composition inside one sweep is the sharpest check — the two rows must be
     bit-identical.
     """
-    rows = composition_sweep(
-        amortised_run, compositions=(0.50, 0.30, 0.50), save=False
-    )
+    rows = composition_sweep(amortised_run, compositions=(0.50, 0.30, 0.50), save=False)
     # Everything except the clock: `eval_draw_seconds` measures the machine,
     # not the draw, so it is the one field a reproducible sweep may differ on.
     statistics = [
-        {k: v for k, v in row.items() if k != "eval_draw_seconds"}
-        for row in rows
+        {k: v for k, v in row.items() if k != "eval_draw_seconds"} for row in rows
     ]
 
     assert statistics[0] == statistics[2]
@@ -255,7 +261,9 @@ def test_sweep_refuses_an_unconditioned_run(tmp_path):
     torch.manual_seed(0)
     run_dir = train(
         _tiny_cfg("tiny_specialist", conditioned=False),
-        seed=0, output_dir=tmp_path, use_wandb=False,
+        seed=0,
+        output_dir=tmp_path,
+        use_wandb=False,
     )
 
     with pytest.raises(ValueError, match="composition conditioning"):
@@ -293,7 +301,9 @@ def test_eval_only_reports_the_composition_the_samples_were_drawn_at(tmp_path):
     torch.manual_seed(0)
     run_dir = train(
         _tiny_cfg("tiny_offcentre", centre=0.6, target_composition=0.5),
-        seed=0, output_dir=tmp_path, use_wandb=False,
+        seed=0,
+        output_dir=tmp_path,
+        use_wandb=False,
     )
 
     metrics = eval_only(run_dir)
@@ -366,7 +376,9 @@ def test_eval_only_redraw_with_grid_override_leaves_eval_frozen(tmp_path):
     torch.manual_seed(0)
     run_dir = train(
         _tiny_cfg("tiny_grid_override", conditioned=False),
-        seed=0, output_dir=tmp_path, use_wandb=False,
+        seed=0,
+        output_dir=tmp_path,
+        use_wandb=False,
     )
     frozen_bytes = {
         name: (run_dir / "eval" / name).read_bytes()
@@ -381,8 +393,7 @@ def test_eval_only_redraw_with_grid_override_leaves_eval_frozen(tmp_path):
         assert (override_dir / name).exists()
     assert metrics["n_euler_steps"] == 16
     assert (
-        json.loads((override_dir / "metrics.json").read_text())["n_euler_steps"]
-        == 16
+        json.loads((override_dir / "metrics.json").read_text())["n_euler_steps"] == 16
     )
     assert metrics["redraw_seed"] == 7
 
@@ -409,9 +420,9 @@ def test_sweep_saves_the_frames_behind_each_row(amortised_run):
     for row in rows:
         frame_dir = frames_root / f"c{row['composition']:.4f}"
         samples = torch.load(frame_dir / "samples.pt", weights_only=True)
-        log_weights = torch.load(
-            frame_dir / "log_weights.pt", weights_only=True)
+        log_weights = torch.load(frame_dir / "log_weights.pt", weights_only=True)
         assert samples.shape == (row["n_eval_samples"], 4)
         assert log_weights.shape == (row["n_eval_samples"],)
         assert ess_from_log_weights(log_weights).item() == pytest.approx(
-            row["ess"], rel=1e-5)
+            row["ess"], rel=1e-5
+        )

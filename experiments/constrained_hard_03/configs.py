@@ -42,28 +42,28 @@ from experiments.dnfs_baseline_01.configs import (
 )
 from torch import Tensor
 
+from discrete_flow_sampler.constraints.exact_field_channel import ExactFieldSwapHead
 from discrete_flow_sampler.constraints.factorised_swap_head import (
     FactorisedSwapHead,
 )
 from discrete_flow_sampler.constraints.grouped_anchor_swap_head import (
     GroupedAnchorSwapHead,
 )
-from discrete_flow_sampler.constraints.exact_field_channel import ExactFieldSwapHead
 from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
 )
-from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
-    TwoHolePatchSwapHead,
-    bravais_patch_geometry,
-)
-from discrete_flow_sampler.targets.ising import SIGMA_C
 from discrete_flow_sampler.constraints.swap_readout import (
     DoublyHollowSwapHead,
     LeTFMaskOneSwapHead,
     _masked_body,
 )
+from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
+    TwoHolePatchSwapHead,
+    bravais_patch_geometry,
+)
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
+from discrete_flow_sampler.targets.ising import SIGMA_C
 
 
 @dataclass(frozen=True)
@@ -88,8 +88,14 @@ class HardStageCfg(StageCfg):
     """
 
     head_kind: Literal[
-        "doubly_hollow", "mask_one", "non_antisym", "interval", "masked_attention",
-        "grouped_anchor", "factorised", "two_hole_patch",
+        "doubly_hollow",
+        "mask_one",
+        "non_antisym",
+        "interval",
+        "masked_attention",
+        "grouped_anchor",
+        "factorised",
+        "two_hole_patch",
     ] = "doubly_hollow"
     # Anchor-batch chunk for the mask_one head's vectorised forward; None =
     # unchunked. d=256 needs this: the stacked d-anchor-copies pass would
@@ -389,11 +395,14 @@ def build_swap_head(
             # The expansion's supercell is not a square torus: build the
             # window and pooled balls from its translation group instead.
             geometry = bravais_patch_geometry(
-                target.spec.positions, target.spec.cell,
+                target.spec.positions,
+                target.spec.cell,
                 patch_shells=cfg.patch_shells or 1,
             )
             head = TwoHolePatchSwapHead(
-                backbone, geometry=geometry, feature_dim=cfg.patch_feature_dim or 32,
+                backbone,
+                geometry=geometry,
+                feature_dim=cfg.patch_feature_dim or 32,
             )
         else:
             head = TwoHolePatchSwapHead(
@@ -467,27 +476,39 @@ def _hard_cell(
     return HardStageCfg(
         name=name,
         ising=IsingCfg(
-            D=D, sigma=sigma, bias=0.0,
+            D=D,
+            sigma=sigma,
+            bias=0.0,
             target_composition=None if is_potts else 0.5,
             composition_penalty_strength=0.0,
         ),
         train=TrainCfg(
-            n_steps=n_steps, batch_size=128, replay_buffer_cycles=8,
-            lr=1e-3, seed=42, warmup_steps=500,
+            n_steps=n_steps,
+            batch_size=128,
+            replay_buffer_cycles=8,
+            lr=1e-3,
+            seed=42,
+            warmup_steps=500,
             grad_clip_max_norm=grad_clip_max_norm,
-            optimiser=optimiser, rewarmup_on_stage=rewarmup_on_stage,
+            optimiser=optimiser,
+            rewarmup_on_stage=rewarmup_on_stage,
         ),
         ctmc=CTMCCfg(
-            n_euler_steps=n_euler_steps, use_matching_step=use_matching_step,
+            n_euler_steps=n_euler_steps,
+            use_matching_step=use_matching_step,
         ),
         eval=EvalCfg(
-            eval_every=eval_every, n_eval_samples=n_eval_samples,
+            eval_every=eval_every,
+            n_eval_samples=n_eval_samples,
             eval_sample_chunk=eval_sample_chunk,
             n_eval_samples_training=n_eval_samples_training,
             eval_autocast_bf16=eval_autocast_bf16,
         ),
         model=ModelCfg(
-            kind="letf", hidden_dim=32, n_layers=2, n_heads=4,
+            kind="letf",
+            hidden_dim=32,
+            n_layers=2,
+            n_heads=4,
             vocab_size=len(potts_composition) if is_potts else 2,
             use_sdpa_readout=use_sdpa_readout,
         ),
@@ -539,10 +560,17 @@ def _d64_curriculum_cell(
     fixed-step warmup ramp, never normalised by the total), so a longer cell's
     first 50k steps are schedule-identical to the 50k cell's."""
     cell = _hard_cell(
-        name, sigma=0.223, head_kind=head_kind,
-        D=8, n_steps=n_steps, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=256, n_eval_samples_training=512,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.223,
+        head_kind=head_kind,
+        D=8,
+        n_steps=n_steps,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=256,
+        n_eval_samples_training=512,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         curriculum=_D64_SIGMA_LADDER,
     )
     return replace(cell, **head_knobs)
@@ -595,10 +623,17 @@ def _d144_curriculum_cell(
     this convention is the thermodynamic-limit value (ln(1+sqrt 2)/2) and is
     already shared by the 4x4, 8x8 and 16x16 rungs."""
     cell = _hard_cell(
-        name, sigma=0.223, head_kind=head_kind,
-        D=12, n_steps=n_steps, n_euler_steps=288, n_eval_samples=5000,
-        eval_sample_chunk=512, n_eval_samples_training=512,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.223,
+        head_kind=head_kind,
+        D=12,
+        n_steps=n_steps,
+        n_euler_steps=288,
+        n_eval_samples=5000,
+        eval_sample_chunk=512,
+        n_eval_samples_training=512,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
     )
@@ -713,9 +748,7 @@ def _d64_fmo2_loop_cell(
     return cell
 
 
-def _d256_fmo2_warm_cell(
-    name: str, n_euler_steps: int = 128
-) -> HardStageCfg:
+def _d256_fmo2_warm_cell(name: str, n_euler_steps: int = 128) -> HardStageCfg:
     """16x16 factorised rung continued from a trained 8x8 factorised model
     (`--init-from` a cross-volume transfer built by the warm-start script,
     which resamples the positional tables bicubically on the torus and keeps
@@ -756,15 +789,24 @@ def _d256_fmo2_warm_cell(
     the transfer itself, and if only the coarse arm ran the resolution
     question would stay where the sweep left it."""
     cell = _hard_cell(
-        name, sigma=0.223, head_kind="factorised",
-        D=16, n_steps=20_000, n_euler_steps=n_euler_steps,
+        name,
+        sigma=0.223,
+        head_kind="factorised",
+        D=16,
+        n_steps=20_000,
+        n_euler_steps=n_euler_steps,
         n_eval_samples=5000,
-        eval_sample_chunk=512, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        eval_sample_chunk=512,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
     )
     return replace(
-        cell, ema_decay=0.9999, site_orderings=("row", "col"),
+        cell,
+        ema_decay=0.9999,
+        site_orderings=("row", "col"),
         train=replace(cell.train, lr=3e-4),
     )
 
@@ -790,9 +832,7 @@ def _d64_m2_ctema4_cell(name: str) -> HardStageCfg:
     dual-eval EMA instrument is deliberately NOT ridden — the no-regression
     comparison is raw-vs-archived-twin, so the twin stays pure."""
     cell = _d64_curriculum_cell(name, "masked_attention")
-    return replace(
-        cell, train=replace(cell.train, c_t_ema_halflife_cycles=4.0)
-    )
+    return replace(cell, train=replace(cell.train, c_t_ema_halflife_cycles=4.0))
 
 
 def _d64_naive_twin_cell(name: str) -> HardStageCfg:
@@ -858,10 +898,18 @@ def _d256_smoke12k_naive_ctb512_cell(name: str) -> HardStageCfg:
     by test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields; the
     arg-for-arg copy of the naive arm is guarded by that pin)."""
     cell = _hard_cell(
-        name, sigma=0.223, head_kind="masked_attention",
-        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.223,
+        head_kind="masked_attention",
+        D=16,
+        n_steps=12_000,
+        n_euler_steps=128,
+        n_eval_samples=1000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_SMOKE12K_SIGMA_LADDER,
         estimator="naive_mc",
@@ -877,19 +925,28 @@ def _d256_cv2_cell(name: str) -> HardStageCfg:
     final 3e-4 so the optimiser regime continues rather than restarts, and
     the dual-eval EMA instrument riding as on every new hard run."""
     cell = _hard_cell(
-        name, sigma=0.223, head_kind="masked_attention",
-        D=16, n_steps=20_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.223,
+        head_kind="masked_attention",
+        D=16,
+        n_steps=20_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
     )
-    return replace(
-        cell, ema_decay=0.9999, train=replace(cell.train, lr=3e-4)
-    )
+    return replace(cell, ema_decay=0.9999, train=replace(cell.train, lr=3e-4))
 
 
 def _d256_scr5k_cell(
-    name: str, head_kind: str, *, eval_sample_chunk: int,
+    name: str,
+    head_kind: str,
+    *,
+    eval_sample_chunk: int,
     n_euler_steps: int = 128,
 ) -> HardStageCfg:
     """One arm of the 16x16 stage-1 screen: flat sigma=0.10, 5,000 steps,
@@ -932,12 +989,18 @@ def _d256_scr5k_cell(
     1.0); no curriculum (sigma constant means no buffer clears, no EMA
     resets, no lr steps)."""
     return _hard_cell(
-        name, sigma=0.10, head_kind=head_kind,
-        D=16, n_steps=5_000, n_euler_steps=n_euler_steps,
+        name,
+        sigma=0.10,
+        head_kind=head_kind,
+        D=16,
+        n_steps=5_000,
+        n_euler_steps=n_euler_steps,
         n_eval_samples=1000,
-        eval_sample_chunk=eval_sample_chunk, n_eval_samples_training=256,
+        eval_sample_chunk=eval_sample_chunk,
+        n_eval_samples_training=256,
         eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         estimator="naive_mc",
     )
@@ -965,19 +1028,18 @@ def _scr5k_fmo2_with(
     rather than silently produce an arm that is not the declared twin."""
     model_field_names = {"hidden_dim", "n_layers"}
     train_field_names = {
-        "lr", "grad_clip_max_norm", "batch_size", "loss_microbatch_size",
+        "lr",
+        "grad_clip_max_norm",
+        "batch_size",
+        "loss_microbatch_size",
         "c_t_batch",
     }
     unknown = set(overrides) - model_field_names - train_field_names
     if unknown:
         raise ValueError(f"unknown screen-arm override(s): {sorted(unknown)}")
     cell = _scr5k_fmo2_cell(name)
-    model_overrides = {
-        k: v for k, v in overrides.items() if k in model_field_names
-    }
-    train_overrides = {
-        k: v for k, v in overrides.items() if k in train_field_names
-    }
+    model_overrides = {k: v for k, v in overrides.items() if k in model_field_names}
+    train_overrides = {k: v for k, v in overrides.items() if k in train_field_names}
     if n_euler_steps != 128:
         cell = replace(cell, ctmc=replace(cell.ctmc, n_euler_steps=n_euler_steps))
     if model_overrides:
@@ -1028,9 +1090,7 @@ def _scr5k_ma_clip60k_cell(name: str) -> HardStageCfg:
     pair-count heuristic and the expected ranges are at the cell's entry
     below."""
     cell = _d256_scr5k_cell(name, "masked_attention", eval_sample_chunk=128)
-    return replace(
-        cell, train=replace(cell.train, grad_clip_max_norm=60_000.0)
-    )
+    return replace(cell, train=replace(cell.train, grad_clip_max_norm=60_000.0))
 
 
 def _scr5k_mo_cell(name: str) -> HardStageCfg:
@@ -1057,8 +1117,12 @@ def _scr5k_mo_cell(name: str) -> HardStageCfg:
 
 
 def _d256_fmo2_ladder_cell(
-    name: str, *, estimator: str, n_euler_steps: int = 128,
-    batch_size: int = 128, loss_microbatch_size: int | None = None,
+    name: str,
+    *,
+    estimator: str,
+    n_euler_steps: int = 128,
+    batch_size: int = 128,
+    loss_microbatch_size: int | None = None,
 ) -> HardStageCfg:
     """The 16x16 fmo2 sigma-ladder shape: the archived MA naive-rescue
     recipe with the factorised family's conventions riding (EMA shadow,
@@ -1067,11 +1131,18 @@ def _d256_fmo2_ladder_cell(
     recipe cells (their rationale and expected ranges are at the cell
     entries below)."""
     cell = _hard_cell(
-        name, sigma=0.223, head_kind="factorised",
-        D=16, n_steps=50_000, n_euler_steps=n_euler_steps,
-        n_eval_samples=5000, eval_sample_chunk=512,
-        n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.223,
+        head_kind="factorised",
+        D=16,
+        n_steps=50_000,
+        n_euler_steps=n_euler_steps,
+        n_eval_samples=5000,
+        eval_sample_chunk=512,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
         estimator=estimator,
@@ -1120,10 +1191,18 @@ def _d144_ma_bracket_cell(name: str) -> HardStageCfg:
     a 256-draw eval cannot read below 1/256 and this rung is expected to
     land between 0.85 and 0.01)."""
     return _hard_cell(
-        name, sigma=0.223, head_kind="masked_attention",
-        D=12, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=128, n_eval_samples_training=512, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.223,
+        head_kind="masked_attention",
+        D=12,
+        n_steps=50_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=128,
+        n_eval_samples_training=512,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
         estimator="naive_mc",
@@ -1156,17 +1235,23 @@ def _d256_clip2000_cont_cell(name: str) -> HardStageCfg:
     estimator at this same juncture, which is why it cannot serve as this
     arm's control. Eval chunk 64 -> 128, eval-only."""
     cell = _hard_cell(
-        name, sigma=0.223, head_kind="masked_attention",
-        D=16, n_steps=10_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=128, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.223,
+        head_kind="masked_attention",
+        D=16,
+        n_steps=10_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=128,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         estimator="naive_mc",
         grad_clip_max_norm=2_000.0,
     )
-    return replace(
-        cell, ema_decay=0.9999, train=replace(cell.train, lr=3e-4)
-    )
+    return replace(cell, ema_decay=0.9999, train=replace(cell.train, lr=3e-4))
 
 
 CONFIGS: dict[str, HardStageCfg] = {
@@ -1183,22 +1268,33 @@ CONFIGS: dict[str, HardStageCfg] = {
     # than needing a re-pick later. doubly_hollow because at d=9 the O(d^2)
     # correctness gate is free, and nothing has ever been trained on Potts.
     "H3_d9_c33_s503_letf_dh": _hard_cell(
-        "H3_d9_c33_s503_letf_dh", sigma=0.5025, head_kind="doubly_hollow",
-        D=3, potts_composition=(1 / 3, 1 / 3, 1 / 3),
+        "H3_d9_c33_s503_letf_dh",
+        sigma=0.5025,
+        head_kind="doubly_hollow",
+        D=3,
+        potts_composition=(1 / 3, 1 / 3, 1 / 3),
     ),
     "H2_d16_c50_s010_letf_dh": _hard_cell(
-        "H2_d16_c50_s010_letf_dh", sigma=0.10, head_kind="doubly_hollow",
+        "H2_d16_c50_s010_letf_dh",
+        sigma=0.10,
+        head_kind="doubly_hollow",
     ),
     "H2_d16_c50_s223_letf_dh": _hard_cell(
-        "H2_d16_c50_s223_letf_dh", sigma=0.223, head_kind="doubly_hollow",
+        "H2_d16_c50_s223_letf_dh",
+        sigma=0.223,
+        head_kind="doubly_hollow",
     ),
     "H2_d16_c50_s040_letf_dh": _hard_cell(
-        "H2_d16_c50_s040_letf_dh", sigma=0.40, head_kind="doubly_hollow",
+        "H2_d16_c50_s040_letf_dh",
+        sigma=0.40,
+        head_kind="doubly_hollow",
     ),
     # Antisymmetry negative control: same sigma as the floor rung,
     # NonAntisymSwapHead instead of DoublyHollowSwapHead, same loss.
     "H2_d16_c50_s010_letf_na": _hard_cell(
-        "H2_d16_c50_s010_letf_na", sigma=0.10, head_kind="non_antisym",
+        "H2_d16_c50_s010_letf_na",
+        sigma=0.10,
+        head_kind="non_antisym",
     ),
     # 4x4 demo cells: 10k-step MA/MO twins of the 2k
     # dh ladder at the floor and critical rungs. Only head_kind and n_steps
@@ -1206,20 +1302,28 @@ CONFIGS: dict[str, HardStageCfg] = {
     # test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields); no
     # curriculum -- the 2k sigma_c dh cell already trains cold.
     "H2_d16_c50_s010_letf_ma_10k": _hard_cell(
-        "H2_d16_c50_s010_letf_ma_10k", sigma=0.10,
-        head_kind="masked_attention", n_steps=10_000,
+        "H2_d16_c50_s010_letf_ma_10k",
+        sigma=0.10,
+        head_kind="masked_attention",
+        n_steps=10_000,
     ),
     "H2_d16_c50_s223_letf_ma_10k": _hard_cell(
-        "H2_d16_c50_s223_letf_ma_10k", sigma=0.223,
-        head_kind="masked_attention", n_steps=10_000,
+        "H2_d16_c50_s223_letf_ma_10k",
+        sigma=0.223,
+        head_kind="masked_attention",
+        n_steps=10_000,
     ),
     "H2_d16_c50_s010_letf_mo_10k": _hard_cell(
-        "H2_d16_c50_s010_letf_mo_10k", sigma=0.10,
-        head_kind="mask_one", n_steps=10_000,
+        "H2_d16_c50_s010_letf_mo_10k",
+        sigma=0.10,
+        head_kind="mask_one",
+        n_steps=10_000,
     ),
     "H2_d16_c50_s223_letf_mo_10k": _hard_cell(
-        "H2_d16_c50_s223_letf_mo_10k", sigma=0.223,
-        head_kind="mask_one", n_steps=10_000,
+        "H2_d16_c50_s223_letf_mo_10k",
+        sigma=0.223,
+        head_kind="mask_one",
+        n_steps=10_000,
     ),
     # Factorised-head 4x4 gate cells: 10k twins of the MA demo
     # cells above -- only head_kind and the declared factorised knobs differ
@@ -1229,52 +1333,68 @@ CONFIGS: dict[str, HardStageCfg] = {
     # bilinear-only (no interval-interior coverage), fglo = global-only (no
     # deep exterior).
     "H2_d16_c50_s010_letf_fab8_10k": _hard_cell(
-        "H2_d16_c50_s010_letf_fab8_10k", sigma=0.10,
-        head_kind="factorised", n_steps=10_000,
+        "H2_d16_c50_s010_letf_fab8_10k",
+        sigma=0.10,
+        head_kind="factorised",
+        n_steps=10_000,
     ),
     "H2_d16_c50_s223_letf_fab8_10k": _hard_cell(
-        "H2_d16_c50_s223_letf_fab8_10k", sigma=0.223,
-        head_kind="factorised", n_steps=10_000,
+        "H2_d16_c50_s223_letf_fab8_10k",
+        sigma=0.223,
+        head_kind="factorised",
+        n_steps=10_000,
     ),
     "H2_d16_c50_s010_letf_fab16_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s010_letf_fab16_10k", sigma=0.10,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s010_letf_fab16_10k",
+            sigma=0.10,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         bilinear_rank=16,
     ),
     "H2_d16_c50_s223_letf_fab16_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s223_letf_fab16_10k", sigma=0.223,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s223_letf_fab16_10k",
+            sigma=0.223,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         bilinear_rank=16,
     ),
     "H2_d16_c50_s010_letf_fbil_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s010_letf_fbil_10k", sigma=0.10,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s010_letf_fbil_10k",
+            sigma=0.10,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         use_global=False,
     ),
     "H2_d16_c50_s223_letf_fbil_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s223_letf_fbil_10k", sigma=0.223,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s223_letf_fbil_10k",
+            sigma=0.223,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         use_global=False,
     ),
     "H2_d16_c50_s010_letf_fglo_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s010_letf_fglo_10k", sigma=0.10,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s010_letf_fglo_10k",
+            sigma=0.10,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         use_bilinear=False,
     ),
     "H2_d16_c50_s223_letf_fglo_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s223_letf_fglo_10k", sigma=0.223,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s223_letf_fglo_10k",
+            sigma=0.223,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         use_bilinear=False,
     ),
@@ -1286,15 +1406,19 @@ CONFIGS: dict[str, HardStageCfg] = {
     # read.
     "H2_d16_c50_s010_letf_fmp40_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s010_letf_fmp40_10k", sigma=0.10,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s010_letf_fmp40_10k",
+            sigma=0.10,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         factor_dim=40,
     ),
     "H2_d16_c50_s223_letf_fmp40_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s223_letf_fmp40_10k", sigma=0.223,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s223_letf_fmp40_10k",
+            sigma=0.223,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         factor_dim=40,
     ),
@@ -1308,15 +1432,19 @@ CONFIGS: dict[str, HardStageCfg] = {
     # expected here even if the mechanism is right.
     "H2_d16_c50_s010_letf_fmo2_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s010_letf_fmo2_10k", sigma=0.10,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s010_letf_fmo2_10k",
+            sigma=0.10,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         site_orderings=("row", "col"),
     ),
     "H2_d16_c50_s223_letf_fmo2_10k": replace(
         _hard_cell(
-            "H2_d16_c50_s223_letf_fmo2_10k", sigma=0.223,
-            head_kind="factorised", n_steps=10_000,
+            "H2_d16_c50_s223_letf_fmo2_10k",
+            sigma=0.223,
+            head_kind="factorised",
+            n_steps=10_000,
         ),
         site_orderings=("row", "col"),
     ),
@@ -1337,8 +1465,10 @@ CONFIGS: dict[str, HardStageCfg] = {
     **{
         f"H2_d16_c50_{sigma_label}_letf_{arm}_10k": replace(
             _hard_cell(
-                f"H2_d16_c50_{sigma_label}_letf_{arm}_10k", sigma=sigma,
-                head_kind="factorised", n_steps=10_000,
+                f"H2_d16_c50_{sigma_label}_letf_{arm}_10k",
+                sigma=sigma,
+                head_kind="factorised",
+                n_steps=10_000,
             ),
             **knobs,
         )
@@ -1352,8 +1482,10 @@ CONFIGS: dict[str, HardStageCfg] = {
     },
     **{
         f"H2_d16_c50_{sigma_label}_letf_iv_10k": _hard_cell(
-            f"H2_d16_c50_{sigma_label}_letf_iv_10k", sigma=sigma,
-            head_kind="interval", n_steps=10_000,
+            f"H2_d16_c50_{sigma_label}_letf_iv_10k",
+            sigma=sigma,
+            head_kind="interval",
+            n_steps=10_000,
         )
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
     },
@@ -1366,8 +1498,10 @@ CONFIGS: dict[str, HardStageCfg] = {
     **{
         f"H2_d16_c50_{sigma_label}_letf_{arm}_10k": replace(
             _hard_cell(
-                f"H2_d16_c50_{sigma_label}_letf_{arm}_10k", sigma=sigma,
-                head_kind=head_kind, n_steps=10_000,
+                f"H2_d16_c50_{sigma_label}_letf_{arm}_10k",
+                sigma=sigma,
+                head_kind=head_kind,
+                n_steps=10_000,
             ),
             exterior_combiner="bilinear",
         )
@@ -1384,15 +1518,21 @@ CONFIGS: dict[str, HardStageCfg] = {
     **{
         f"H2_d16_c50_{sigma_label}_letf_{arm}ef_10k": replace(
             _hard_cell(
-                f"H2_d16_c50_{sigma_label}_letf_{arm}ef_10k", sigma=sigma,
-                head_kind=head_kind, n_steps=10_000,
+                f"H2_d16_c50_{sigma_label}_letf_{arm}ef_10k",
+                sigma=sigma,
+                head_kind=head_kind,
+                n_steps=10_000,
             ),
-            exact_field_channel=True, **knobs,
+            exact_field_channel=True,
+            **knobs,
         )
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
         for arm, head_kind, knobs in (
-            ("fimo2", "factorised",
-             {"interior_band": "prefix", "site_orderings": ("row", "col")}),
+            (
+                "fimo2",
+                "factorised",
+                {"interior_band": "prefix", "site_orderings": ("row", "col")},
+            ),
             ("mab", "masked_attention", {"exterior_combiner": "bilinear"}),
         )
     },
@@ -1408,15 +1548,19 @@ CONFIGS: dict[str, HardStageCfg] = {
     **{
         f"H2_d16_c50_{sigma_label}_rope{patch_size}_fimo2_10k": (
             lambda _cell, _p: replace(
-                _cell, model=replace(_cell.model, kind="rope_vit", patch_size=_p),
+                _cell,
+                model=replace(_cell.model, kind="rope_vit", patch_size=_p),
             )
         )(
             replace(
                 _hard_cell(
                     f"H2_d16_c50_{sigma_label}_rope{patch_size}_fimo2_10k",
-                    sigma=sigma, head_kind="factorised", n_steps=10_000,
+                    sigma=sigma,
+                    head_kind="factorised",
+                    n_steps=10_000,
                 ),
-                interior_band="prefix", site_orderings=("row", "col"),
+                interior_band="prefix",
+                site_orderings=("row", "col"),
             ),
             patch_size,
         )
@@ -1432,8 +1576,10 @@ CONFIGS: dict[str, HardStageCfg] = {
     # translation-equivariant in a single pass.
     **{
         f"H2_d16_c50_{sigma_label}_letf_thp_10k": _hard_cell(
-            f"H2_d16_c50_{sigma_label}_letf_thp_10k", sigma=sigma,
-            head_kind="two_hole_patch", n_steps=10_000,
+            f"H2_d16_c50_{sigma_label}_letf_thp_10k",
+            sigma=sigma,
+            head_kind="two_hole_patch",
+            n_steps=10_000,
         )
         for sigma_label, sigma in (("s010", 0.10), ("s223", 0.223))
     },
@@ -1449,10 +1595,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     # the budget, cold at sigma_c, isolates the budget variable before
     # committing to the 3-seed curriculum protocol.
     "H2_d64_c50_s223_letf_mo_25k": _hard_cell(
-        "H2_d64_c50_s223_letf_mo_25k", sigma=0.223, head_kind="mask_one",
-        D=8, n_steps=25_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=256, n_eval_samples_training=512,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        "H2_d64_c50_s223_letf_mo_25k",
+        sigma=0.223,
+        head_kind="mask_one",
+        D=8,
+        n_steps=25_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=256,
+        n_eval_samples_training=512,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
     ),
     # Curriculum + budget rung: the 25k cold probe lifted the
     # final ESS frac 0.001 -> 0.12 with the loss STILL descending, so budget
@@ -1463,7 +1616,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # sigma=0.205, 40% of the budget on the final plateau). Final sigma is the
     # hard cells' 0.223, matching the D=4 reference chain and the 25k probe.
     "H2_d64_c50_s223_letf_mo_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_mo_50k_curr", head_kind="mask_one",
+        "H2_d64_c50_s223_letf_mo_50k_curr",
+        head_kind="mask_one",
     ),
     # Masked-attention twin of the 50k curriculum rung: every knob
     # identical, ONLY head_kind differs. Serves three purposes at once:
@@ -1474,7 +1628,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # (iii) retrains the 8x8 mixing-probe trend point so the probe's
     # network-pass currency is single-architecture across sizes.
     "H2_d64_c50_s223_letf_ma_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ma_50k_curr", head_kind="masked_attention",
+        "H2_d64_c50_s223_letf_ma_50k_curr",
+        head_kind="masked_attention",
     ),
     # Factorised-head d64 scaling rung: does the 4x4 read
     # transfer — the ~0.057 expressivity price AND the one-pass
@@ -1485,7 +1640,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # the raw eval). Seed 42 (the d64 ladder's standing seed).
     "H2_d64_c50_s223_letf_fab8_50k_curr": replace(
         _d64_curriculum_cell(
-            "H2_d64_c50_s223_letf_fab8_50k_curr", head_kind="factorised",
+            "H2_d64_c50_s223_letf_fab8_50k_curr",
+            head_kind="factorised",
         ),
         ema_decay=0.9999,
     ),
@@ -1501,168 +1657,179 @@ CONFIGS: dict[str, HardStageCfg] = {
     # between the two ranges, binding excluded (CI upper < 0.60). Rank 16
     # buys +0.05 raw over fab8 (~19% of the 0.27 gap), under the meaningful
     # bar.
-        "H2_d64_c50_s223_letf_fab16_50k_curr": replace(
-            _d64_curriculum_cell(
-                "H2_d64_c50_s223_letf_fab16_50k_curr", head_kind="factorised",
-            ),
-            ema_decay=0.9999,
-            bilinear_rank=16,
+    "H2_d64_c50_s223_letf_fab16_50k_curr": replace(
+        _d64_curriculum_cell(
+            "H2_d64_c50_s223_letf_fab16_50k_curr",
+            head_kind="factorised",
         ),
-        # Multi-order streams at scale: fab8 d64
-        # rung + the column-major causal stream (site_orderings=("row","col")),
-        # seed 42, single-variable twin of the fab8 rung (pinned by
-        # test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings). The 4x4
-        # read (0.883/0.938/0.879 vs the 0.911 no-regression bar) is
-        # inconclusive for size-dependent interior mechanisms rather than a
-        # refutation: 4x4 interiors are <= 14 sites (no-regression is an
-        # insensitive read there), the motivating forensic (field correlation
-        # decaying with pair gap) was measured at d64, and the mean is -0.012
-        # with one seed at the 0.938 strong bar. Expected: MEANINGFUL raw
-        # >= 0.60 (closes >= 1/3 of the 0.27 gap to MA 0.781 — the same bar
-        # fab16 faced); STRONG raw >= 0.70; NEGATIVE raw <= 0.55 -> the extra
-        # ordering refuted at scale too and an interior band is the only
-        # live interior repair.
-        "H2_d64_c50_s223_letf_fmo2_50k_curr": replace(
-            _d64_curriculum_cell(
-                "H2_d64_c50_s223_letf_fmo2_50k_curr", head_kind="factorised",
-            ),
-            ema_decay=0.9999,
-            site_orderings=("row", "col"),
+        ema_decay=0.9999,
+        bilinear_rank=16,
+    ),
+    # Multi-order streams at scale: fab8 d64
+    # rung + the column-major causal stream (site_orderings=("row","col")),
+    # seed 42, single-variable twin of the fab8 rung (pinned by
+    # test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings). The 4x4
+    # read (0.883/0.938/0.879 vs the 0.911 no-regression bar) is
+    # inconclusive for size-dependent interior mechanisms rather than a
+    # refutation: 4x4 interiors are <= 14 sites (no-regression is an
+    # insensitive read there), the motivating forensic (field correlation
+    # decaying with pair gap) was measured at d64, and the mean is -0.012
+    # with one seed at the 0.938 strong bar. Expected: MEANINGFUL raw
+    # >= 0.60 (closes >= 1/3 of the 0.27 gap to MA 0.781 — the same bar
+    # fab16 faced); STRONG raw >= 0.70; NEGATIVE raw <= 0.55 -> the extra
+    # ordering refuted at scale too and an interior band is the only
+    # live interior repair.
+    "H2_d64_c50_s223_letf_fmo2_50k_curr": replace(
+        _d64_curriculum_cell(
+            "H2_d64_c50_s223_letf_fmo2_50k_curr",
+            head_kind="factorised",
         ),
-        # Exterior-vs-interior separation rungs: twins of the
-        # fmo2 rung above (EMA instrument kept) with an interior band on the
-        # per-pair path -- see the 4x4 block for the arm table. Expected
-        # ranges against fmo2 0.745 raw and the MA twin 0.781:
-        # STRONG >= 0.78 raw, MEANINGFUL >= 0.76, NULL <= 0.745. fatt's twin
-        # is MA itself (same interior, bilinear exterior): MA-parity there
-        # means the factorisation costs nothing, and fab-class memory is
-        # the whole gain; fib's twin is the interval rung (0.646).
-        **{
-            f"H2_d64_c50_s223_letf_{arm}_50k_curr": replace(
-                _d64_curriculum_cell(
-                    f"H2_d64_c50_s223_letf_{arm}_50k_curr", head_kind="factorised",
-                ),
-                ema_decay=0.9999,
-                **knobs,
-            )
-            for arm, knobs in {
-                "fib": {"interior_band": "prefix"},
-                "fatt": {"interior_band": "attention"},
-                "fimo2": {"interior_band": "prefix", "site_orderings": ("row", "col")},
-            }.items()
-        },
-        # Exact-field channel rungs: the fimo2 rung above
-        # and the mab literal cell with exact_field_channel=True, nothing
-        # else changed. Expected ranges (raw eval ESS/N, seed 42,
-        # EMA read alongside): fimo2ef vs fimo2 0.750 raw / 0.830 EMA --
-        # STRONG >= 0.78 (MA parity), MEANINGFUL >= 0.765, NULL <= 0.750;
-        # mabef vs mab 0.769 / 0.834 -- STRONG >= 0.80, MEANINGFUL >= 0.785,
-        # NULL <= 0.769. Single seed: the FP-non-determinism caveat applies
-        # to any call inside ~0.02 of a range edge. The learned gain (a, b)
-        # is read off checkpoints/final.pt after the run.
-        "H2_d64_c50_s223_letf_fimo2ef_50k_curr": replace(
+        ema_decay=0.9999,
+        site_orderings=("row", "col"),
+    ),
+    # Exterior-vs-interior separation rungs: twins of the
+    # fmo2 rung above (EMA instrument kept) with an interior band on the
+    # per-pair path -- see the 4x4 block for the arm table. Expected
+    # ranges against fmo2 0.745 raw and the MA twin 0.781:
+    # STRONG >= 0.78 raw, MEANINGFUL >= 0.76, NULL <= 0.745. fatt's twin
+    # is MA itself (same interior, bilinear exterior): MA-parity there
+    # means the factorisation costs nothing, and fab-class memory is
+    # the whole gain; fib's twin is the interval rung (0.646).
+    **{
+        f"H2_d64_c50_s223_letf_{arm}_50k_curr": replace(
             _d64_curriculum_cell(
-                "H2_d64_c50_s223_letf_fimo2ef_50k_curr", head_kind="factorised",
-            ),
-            ema_decay=0.9999, exact_field_channel=True,
-            interior_band="prefix", site_orderings=("row", "col"),
-        ),
-        "H2_d64_c50_s223_letf_mabef_50k_curr": replace(
-            _d64_curriculum_cell(
-                "H2_d64_c50_s223_letf_mabef_50k_curr", head_kind="masked_attention",
-            ),
-            ema_decay=0.9999, exact_field_channel=True,
-            exterior_combiner="bilinear",
-        ),
-        # Periodic-RoPE / patch-key backbone twins of the fimo2 rung
-        # (models/rope_vit.py). ONE variable each
-        # versus fimo2: the backbone's free absolute position tables are
-        # replaced by rotary phases 2*pi*m/L (torus-periodic, signed
-        # offsets), and at p=2 the causal stacks' far keys are pooled 2x2
-        # patches (keys per query 1+16+16 instead of 65). The head is
-        # unchanged and still carries its own absolute site-position
-        # embedding, so this tests the BACKBONE's position code only.
-        # Expected ranges (seed 42, EMA eval; primary =
-        # Var[log w]/site, bootstrap CI, ESS/N alongside) against the fimo2
-        # rung's EMA Var/site 0.00281 (0.00271, 0.00292), raw 0.00389
-        # (0.00373, 0.00406), EMA ESS/N 0.830, raw 0.750:
-        #   LIFT       iff EMA Var/site CI separated BELOW (0.00271, 0.00292);
-        #   NULL       iff the CIs overlap;
-        #   REGRESSION iff separated ABOVE.
-        **{
-            f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr": (
-                lambda _cell, _p: replace(
-                    _cell, model=replace(_cell.model, kind="rope_vit", patch_size=_p),
-                )
-            )(
-                replace(
-                    _d64_curriculum_cell(
-                        f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr",
-                        head_kind="factorised",
-                    ),
-                    ema_decay=0.9999,
-                    interior_band="prefix", site_orderings=("row", "col"),
-                ),
-                patch_size,
-            )
-            for patch_size in (1, 2)
-        },
-        # Two-hole patch head twin of the fimo2 rung. ONE
-        # variable versus fimo2: head_kind (R=1, feature_dim 32; the leTF
-        # stacks are built but never run). At 4x4 the head reached
-        # sigma_c ESS 0.997/0.993/0.988 (fimo2 twins 0.924/0.925/0.903) at
-        # ~10 ms/step versus ~28, so this is the rung that asks whether
-        # blindness-by-locality survives the non-local remainder at d=64.
-        # Expected ranges (seed 42, EMA eval; primary = Var[log
-        # w]/site bootstrap CI, ESS/N alongside) against the fimo2 rung's
-        # EMA Var/site 0.00281 (0.00271, 0.00292), EMA ESS/N 0.830:
-        #   STRONG     iff EMA Var/site CI separated BELOW (0.00271, 0.00292)
-        #              AND EMA ESS/N >= 0.84;
-        #   PASS       iff the CIs overlap and EMA ESS/N in [0.80, 0.84);
-        #   NULL       iff EMA ESS/N < 0.70 or the CI is separated ABOVE;
-        #   in between = PARTIAL, reported as such.
-        "H2_d64_c50_s223_letf_thp_50k_curr": replace(
-            _d64_curriculum_cell(
-                "H2_d64_c50_s223_letf_thp_50k_curr", head_kind="two_hole_patch",
-            ),
-            ema_decay=0.9999,
-        ),
-        # Scaling slate. The fmo2 rung above cleared its expected range at
-        # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
-        # attention twin) and the cost bench priced it at 4.7x faster and
-        # 5.7x smaller than that twin at 16x16, so the head is no longer what
-        # limits volume. What limits it is unlocated: every c_t lever is
-        # measured at or under 1.19x, a 2.9x cut in estimator-integrand
-        # variance moved 16x16 eval variance by 3%, and 20k further steps
-        # moved it by 3% more — against the 7.9x a usable 16x16 needs. These
-        # four cells attack the three axes that remain untested, one variable
-        # each.
-        #
-        # 1. VOLUME. 8x8 works, 16x16 does not, nothing between has run.
-        "H2_d144_c50_s223_letf_fmo2_50k_curr": replace(
-            _d144_curriculum_cell(
-                "H2_d144_c50_s223_letf_fmo2_50k_curr",
+                f"H2_d64_c50_s223_letf_{arm}_50k_curr",
                 head_kind="factorised",
             ),
             ema_decay=0.9999,
-            site_orderings=("row", "col"),
+            **knobs,
+        )
+        for arm, knobs in {
+            "fib": {"interior_band": "prefix"},
+            "fatt": {"interior_band": "attention"},
+            "fimo2": {"interior_band": "prefix", "site_orderings": ("row", "col")},
+        }.items()
+    },
+    # Exact-field channel rungs: the fimo2 rung above
+    # and the mab literal cell with exact_field_channel=True, nothing
+    # else changed. Expected ranges (raw eval ESS/N, seed 42,
+    # EMA read alongside): fimo2ef vs fimo2 0.750 raw / 0.830 EMA --
+    # STRONG >= 0.78 (MA parity), MEANINGFUL >= 0.765, NULL <= 0.750;
+    # mabef vs mab 0.769 / 0.834 -- STRONG >= 0.80, MEANINGFUL >= 0.785,
+    # NULL <= 0.769. Single seed: the FP-non-determinism caveat applies
+    # to any call inside ~0.02 of a range edge. The learned gain (a, b)
+    # is read off checkpoints/final.pt after the run.
+    "H2_d64_c50_s223_letf_fimo2ef_50k_curr": replace(
+        _d64_curriculum_cell(
+            "H2_d64_c50_s223_letf_fimo2ef_50k_curr",
+            head_kind="factorised",
         ),
-        # 2. CAPACITY. hidden_dim has been 32 at every volume ever run.
-        "H2_d64_c50_s223_letf_fmo2_h128_50k_curr": _d64_fmo2_h128_cell(
-            "H2_d64_c50_s223_letf_fmo2_h128_50k_curr",
+        ema_decay=0.9999,
+        exact_field_channel=True,
+        interior_band="prefix",
+        site_orderings=("row", "col"),
+    ),
+    "H2_d64_c50_s223_letf_mabef_50k_curr": replace(
+        _d64_curriculum_cell(
+            "H2_d64_c50_s223_letf_mabef_50k_curr",
+            head_kind="masked_attention",
         ),
-        # 3. TRANSFER x RESOLUTION, as a two-arm pair one variable apart.
-        "H2_d256_c50_s223_letf_fmo2_20k_sc_warm": _d256_fmo2_warm_cell(
-            "H2_d256_c50_s223_letf_fmo2_20k_sc_warm",
+        ema_decay=0.9999,
+        exact_field_channel=True,
+        exterior_combiner="bilinear",
+    ),
+    # Periodic-RoPE / patch-key backbone twins of the fimo2 rung
+    # (models/rope_vit.py). ONE variable each
+    # versus fimo2: the backbone's free absolute position tables are
+    # replaced by rotary phases 2*pi*m/L (torus-periodic, signed
+    # offsets), and at p=2 the causal stacks' far keys are pooled 2x2
+    # patches (keys per query 1+16+16 instead of 65). The head is
+    # unchanged and still carries its own absolute site-position
+    # embedding, so this tests the BACKBONE's position code only.
+    # Expected ranges (seed 42, EMA eval; primary =
+    # Var[log w]/site, bootstrap CI, ESS/N alongside) against the fimo2
+    # rung's EMA Var/site 0.00281 (0.00271, 0.00292), raw 0.00389
+    # (0.00373, 0.00406), EMA ESS/N 0.830, raw 0.750:
+    #   LIFT       iff EMA Var/site CI separated BELOW (0.00271, 0.00292);
+    #   NULL       iff the CIs overlap;
+    #   REGRESSION iff separated ABOVE.
+    **{
+        f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr": (
+            lambda _cell, _p: replace(
+                _cell,
+                model=replace(_cell.model, kind="rope_vit", patch_size=_p),
+            )
+        )(
+            replace(
+                _d64_curriculum_cell(
+                    f"H2_d64_c50_s223_rope{patch_size}_fimo2_50k_curr",
+                    head_kind="factorised",
+                ),
+                ema_decay=0.9999,
+                interior_band="prefix",
+                site_orderings=("row", "col"),
+            ),
+            patch_size,
+        )
+        for patch_size in (1, 2)
+    },
+    # Two-hole patch head twin of the fimo2 rung. ONE
+    # variable versus fimo2: head_kind (R=1, feature_dim 32; the leTF
+    # stacks are built but never run). At 4x4 the head reached
+    # sigma_c ESS 0.997/0.993/0.988 (fimo2 twins 0.924/0.925/0.903) at
+    # ~10 ms/step versus ~28, so this is the rung that asks whether
+    # blindness-by-locality survives the non-local remainder at d=64.
+    # Expected ranges (seed 42, EMA eval; primary = Var[log
+    # w]/site bootstrap CI, ESS/N alongside) against the fimo2 rung's
+    # EMA Var/site 0.00281 (0.00271, 0.00292), EMA ESS/N 0.830:
+    #   STRONG     iff EMA Var/site CI separated BELOW (0.00271, 0.00292)
+    #              AND EMA ESS/N >= 0.84;
+    #   PASS       iff the CIs overlap and EMA ESS/N in [0.80, 0.84);
+    #   NULL       iff EMA ESS/N < 0.70 or the CI is separated ABOVE;
+    #   in between = PARTIAL, reported as such.
+    "H2_d64_c50_s223_letf_thp_50k_curr": replace(
+        _d64_curriculum_cell(
+            "H2_d64_c50_s223_letf_thp_50k_curr",
+            head_kind="two_hole_patch",
         ),
-        # CANCELLED: never ran. Its question ("does training at the finer grid beat
-        # re-rolling finer?") was answered by the b512+ne512 recipe pair
-        # (trained at ne512: endpoint NULL) and the eval-only grid sweep;
-        # the builder docstring's "live hope" framing above predates both.
-        "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512": _d256_fmo2_warm_cell(
-            "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512",
-            n_euler_steps=512,
+        ema_decay=0.9999,
+    ),
+    # Scaling slate. The fmo2 rung above cleared its expected range at
+    # 8x8 (raw 0.745 / EMA 0.810, per-site variance BELOW the masked-
+    # attention twin) and the cost bench priced it at 4.7x faster and
+    # 5.7x smaller than that twin at 16x16, so the head is no longer what
+    # limits volume. What limits it is unlocated: every c_t lever is
+    # measured at or under 1.19x, a 2.9x cut in estimator-integrand
+    # variance moved 16x16 eval variance by 3%, and 20k further steps
+    # moved it by 3% more — against the 7.9x a usable 16x16 needs. These
+    # four cells attack the three axes that remain untested, one variable
+    # each.
+    #
+    # 1. VOLUME. 8x8 works, 16x16 does not, nothing between has run.
+    "H2_d144_c50_s223_letf_fmo2_50k_curr": replace(
+        _d144_curriculum_cell(
+            "H2_d144_c50_s223_letf_fmo2_50k_curr",
+            head_kind="factorised",
         ),
+        ema_decay=0.9999,
+        site_orderings=("row", "col"),
+    ),
+    # 2. CAPACITY. hidden_dim has been 32 at every volume ever run.
+    "H2_d64_c50_s223_letf_fmo2_h128_50k_curr": _d64_fmo2_h128_cell(
+        "H2_d64_c50_s223_letf_fmo2_h128_50k_curr",
+    ),
+    # 3. TRANSFER x RESOLUTION, as a two-arm pair one variable apart.
+    "H2_d256_c50_s223_letf_fmo2_20k_sc_warm": _d256_fmo2_warm_cell(
+        "H2_d256_c50_s223_letf_fmo2_20k_sc_warm",
+    ),
+    # CANCELLED: never ran. Its question ("does training at the finer grid beat
+    # re-rolling finer?") was answered by the b512+ne512 recipe pair
+    # (trained at ne512: endpoint NULL) and the eval-only grid sweep;
+    # the builder docstring's "live hope" framing above predates both.
+    "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512": _d256_fmo2_warm_cell(
+        "H2_d256_c50_s223_letf_fmo2_20k_sc_warm_ne512",
+        n_euler_steps=512,
+    ),
     # --- 16x16 stage-1 screen: flat sigma=0.10,
     # 5k steps, naive c_t, one variable per arm, read on stage-tail FVU
     # (expected ranges in the _d256_scr5k_cell docstring).
@@ -1675,7 +1842,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     # variation ever run produced a negative attributable to the un-retuned
     # lr rather than to capacity.
     "H2_d256_scr5k_ma": _d256_scr5k_cell(
-        "H2_d256_scr5k_ma", "masked_attention", eval_sample_chunk=128,
+        "H2_d256_scr5k_ma",
+        "masked_attention",
+        eval_sample_chunk=128,
     ),
     "H2_d256_scr5k_ma_h128_lr03": _scr5k_ma_h128_lr03_cell(
         "H2_d256_scr5k_ma_h128_lr03",
@@ -1731,29 +1900,39 @@ CONFIGS: dict[str, HardStageCfg] = {
     ),
     "H2_d256_scr5k_fmo2": _scr5k_fmo2_cell("H2_d256_scr5k_fmo2"),
     "H2_d256_scr5k_fmo2_h128": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_h128", hidden_dim=128,
+        "H2_d256_scr5k_fmo2_h128",
+        hidden_dim=128,
     ),
     "H2_d256_scr5k_fmo2_h128_lr03": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_h128_lr03", hidden_dim=128, lr=3e-4,
+        "H2_d256_scr5k_fmo2_h128_lr03",
+        hidden_dim=128,
+        lr=3e-4,
     ),
     "H2_d256_scr5k_fmo2_lr03": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_lr03", lr=3e-4,
+        "H2_d256_scr5k_fmo2_lr03",
+        lr=3e-4,
     ),
     "H2_d256_scr5k_fmo2_L3": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_L3", n_layers=3,
+        "H2_d256_scr5k_fmo2_L3",
+        n_layers=3,
     ),
     "H2_d256_scr5k_fmo2_L3_lr03": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_L3_lr03", n_layers=3, lr=3e-4,
+        "H2_d256_scr5k_fmo2_L3_lr03",
+        n_layers=3,
+        lr=3e-4,
     ),
     "H2_d256_scr5k_fmo2_clip2000": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_clip2000", grad_clip_max_norm=2_000.0,
+        "H2_d256_scr5k_fmo2_clip2000",
+        grad_clip_max_norm=2_000.0,
     ),
     "H2_d256_scr5k_fmo2_ne512_b512": _scr5k_fmo2_with(
         # n_grid also sets c_t slots, buffer size and the loss's t-support,
         # and inner_batch/n_grid is the per-slot gradient density — so grid
         # and batch move together to hold density at 1.0, or the arm tests
         # starvation rather than resolution.
-        "H2_d256_scr5k_fmo2_ne512_b512", n_euler_steps=512, batch_size=512,
+        "H2_d256_scr5k_fmo2_ne512_b512",
+        n_euler_steps=512,
+        batch_size=512,
     ),
     # --- screen phase 2: two arms, one
     # variable each against the SAME base pair (0.0364/0.0442).
@@ -1778,7 +1957,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     # ~0.029 => the grid was the mover and the instruments misled;
     # in between => split, both levers real. Plus the B_crit readout.
     "H2_d256_scr5k_fmo2_b512": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_b512", batch_size=512, loss_microbatch_size=128,
+        "H2_d256_scr5k_fmo2_b512",
+        batch_size=512,
+        loss_microbatch_size=128,
     ),
     # cv: the published control-variate estimator, cold, on the factorised
     # head — never run at this size (the historical "CV inverts cold at
@@ -1820,7 +2001,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # one: a comparable 5k d256 screen measured 18 minutes end-to-end
     # against a three-day queue wait.
     "H2_d256_scr5k_fmo2_ctb512": _scr5k_fmo2_with(
-        "H2_d256_scr5k_fmo2_ctb512", c_t_batch=512,
+        "H2_d256_scr5k_fmo2_ctb512",
+        c_t_batch=512,
     ),
     "H2_d256_scr20k_fmo2": replace(
         # The horizon control, and the first flat-subcritical 16x16 run of
@@ -1831,8 +2013,7 @@ CONFIGS: dict[str, HardStageCfg] = {
         # toward 0.03 after 5k and every scr5k null gets re-read; if it
         # stays at ~0.119 for 4x the horizon, the 5k screen read holds.
         _scr5k_fmo2_cell("H2_d256_scr20k_fmo2"),
-        train=replace(_scr5k_fmo2_cell("H2_d256_scr20k_fmo2").train,
-                      n_steps=20_000),
+        train=replace(_scr5k_fmo2_cell("H2_d256_scr20k_fmo2").train, n_steps=20_000),
     ),
     "H2_d256_scr5k_mo": _scr5k_mo_cell("H2_d256_scr5k_mo"),
     # --- 12x12 volume bracket of the archived failure (replaces the fmo2
@@ -1852,7 +2033,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # Separates "shared band content is the bottleneck" (lands in the MA
     # band ~0.75-0.78) from "the MA aggregator is" (lands well above it).
     "H2_d64_c50_s223_letf_iv_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_iv_50k_curr", head_kind="interval",
+        "H2_d64_c50_s223_letf_iv_50k_curr",
+        head_kind="interval",
     ),
     # Literal factorisation test at d64: the MA / interval rungs
     # with exterior_combiner="bilinear" and the dual-eval EMA instrument
@@ -1860,20 +2042,25 @@ CONFIGS: dict[str, HardStageCfg] = {
     # >= 0.76 raw, COSTS < 0.74; ivb vs interval 0.646 -- PARITY >= 0.63.
     **{
         f"H2_d64_c50_s223_letf_{arm}_50k_curr": _d64_curriculum_cell(
-            f"H2_d64_c50_s223_letf_{arm}_50k_curr", head_kind=head_kind,
-            exterior_combiner="bilinear", ema_decay=0.9999,
+            f"H2_d64_c50_s223_letf_{arm}_50k_curr",
+            head_kind=head_kind,
+            exterior_combiner="bilinear",
+            ema_decay=0.9999,
         )
         for arm, head_kind in (("mab", "masked_attention"), ("ivb", "interval"))
     },
     # H-width: double the band feature and attention widths, nothing else.
     "H2_d64_c50_s223_letf_ma_wide_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ma_wide_50k_curr", head_kind="masked_attention",
-        band_feature_dim=32, attention_dim=64,
+        "H2_d64_c50_s223_letf_ma_wide_50k_curr",
+        head_kind="masked_attention",
+        band_feature_dim=32,
+        attention_dim=64,
     ),
     # H-offsets: band also sees offset-2 / offset-2D bond families (second-
     # neighbour row/column pairs), beyond the energy's (1, D).
     "H2_d64_c50_s223_letf_ma_offs_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ma_offs_50k_curr", head_kind="masked_attention",
+        "H2_d64_c50_s223_letf_ma_offs_50k_curr",
+        head_kind="masked_attention",
         pair_offsets=(1, 2, 8, 16),
     ),
     # Round-2 stencil family: the reported MA head + the 5-point
@@ -1882,7 +2069,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # use_stencil is the ONLY change vs ma_50k_curr -- the probe of whether a
     # richer 2D-local band content lifts the ~0.78 H-shared ceiling.
     "H2_d64_c50_s223_letf_ma_stencil_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ma_stencil_50k_curr", head_kind="masked_attention",
+        "H2_d64_c50_s223_letf_ma_stencil_50k_curr",
+        head_kind="masked_attention",
         use_stencil=True,
     ),
     # Horizon extension. The stencil rung's logs show
@@ -1898,12 +2086,15 @@ CONFIGS: dict[str, HardStageCfg] = {
     # control for whether the stencil's +0.024 survives a converged horizon
     # (MA's loss is falling FASTER at the cutoff, so it may close some gap).
     "H2_d64_c50_s223_letf_ma_100k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ma_100k_curr", head_kind="masked_attention",
+        "H2_d64_c50_s223_letf_ma_100k_curr",
+        head_kind="masked_attention",
         n_steps=100_000,
     ),
     "H2_d64_c50_s223_letf_ma_stencil_100k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ma_stencil_100k_curr", head_kind="masked_attention",
-        n_steps=100_000, use_stencil=True,
+        "H2_d64_c50_s223_letf_ma_stencil_100k_curr",
+        head_kind="masked_attention",
+        n_steps=100_000,
+        use_stencil=True,
     ),
     # The missing twin. The horizon check found the 50k cutoff lands
     # mid-descent for the one-pass heads -- but the SAME check on mo_50k_curr's
@@ -1920,7 +2111,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # so the 50k seed-42 mask_one point it implies is a second thing this run
     # buys back.
     "H2_d64_c50_s223_letf_mo_100k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_mo_100k_curr", head_kind="mask_one",
+        "H2_d64_c50_s223_letf_mo_100k_curr",
+        head_kind="mask_one",
         n_steps=100_000,
     ),
     # Mixing-probe floor cell (sigma=0.10, 8x8) — the probe's control operating
@@ -1933,10 +2125,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     # the scout, 5000-draw final eval, seed 42 = the d64 ladder seed) so the
     # probe's floor-vs-headline contrast isolates sigma.
     "H2_d64_c50_s010_letf_ma_50k": _hard_cell(
-        "H2_d64_c50_s010_letf_ma_50k", sigma=0.10, head_kind="masked_attention",
-        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=256, n_eval_samples_training=512,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        "H2_d64_c50_s010_letf_ma_50k",
+        sigma=0.10,
+        head_kind="masked_attention",
+        D=8,
+        n_steps=50_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=256,
+        n_eval_samples_training=512,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
     ),
     # The 16x16 rung — the last training rung.
     # The reported masked-attention head on the
@@ -1953,11 +2152,18 @@ CONFIGS: dict[str, HardStageCfg] = {
     # 256 -> 64 to bound the eval batch at 4x the sites. The final eval keeps
     # the 5000-draw protocol the probe and the d64 ladder report on.
     "H2_d256_c50_s223_letf_ma_50k_curr": _hard_cell(
-        "H2_d256_c50_s223_letf_ma_50k_curr", sigma=0.223,
+        "H2_d256_c50_s223_letf_ma_50k_curr",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=50_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
     ),
@@ -1967,11 +2173,18 @@ CONFIGS: dict[str, HardStageCfg] = {
     # showing a converging loss. Everything except the estimator is
     # identical to the diverged twin, so the comparison isolates the CV.
     "H2_d256_c50_s223_letf_ma_50k_curr_naive": _hard_cell(
-        "H2_d256_c50_s223_letf_ma_50k_curr_naive", sigma=0.223,
+        "H2_d256_c50_s223_letf_ma_50k_curr_naive",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=50_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
         estimator="naive_mc",
@@ -1998,7 +2211,8 @@ CONFIGS: dict[str, HardStageCfg] = {
     # not transfer to ESS across sigma (~70x at matched FVU ~0.12), so
     # ~0.02 is the realistic target scale, not the subcritical 0.5-0.9.
     "H2_d256_c50_s223_letf_fmo2_50k_curr_naive": _d256_fmo2_ladder_cell(
-        "H2_d256_c50_s223_letf_fmo2_50k_curr_naive", estimator="naive_mc",
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_naive",
+        estimator="naive_mc",
     ),
     # The RECIPE runs: the composed best-effort sampler at 16x16, a
     # demonstration arm, not a screen arm — attribution lives in the chain (archived MA
@@ -2024,12 +2238,13 @@ CONFIGS: dict[str, HardStageCfg] = {
     # the single-lever warm-CV read — the composition added nothing);
     # < 0.02 = NULL. Read Var/site + n_unique + top-weight mass alongside,
     # per the d144 lesson.
-    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive":
-        _d256_fmo2_ladder_cell(
-            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive",
-            estimator="naive_mc", n_euler_steps=512, batch_size=512,
-            loss_microbatch_size=128,
-        ),
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive": _d256_fmo2_ladder_cell(
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive",
+        estimator="naive_mc",
+        n_euler_steps=512,
+        batch_size=512,
+        loss_microbatch_size=128,
+    ),
     # No microbatch on the cv variant: when this cell was defined the
     # concern was a batch-coupled control variate breaking the per-row
     # decomposition silently, so the CV recipe kept the single backward
@@ -2039,11 +2254,12 @@ CONFIGS: dict[str, HardStageCfg] = {
     # is gradient-exact for ARBITRARY per-row c_t, estimator included;
     # see the ne128-family block below. The archived run stays as it ran;
     # new CV cells microbatch freely.)
-    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv":
-        _d256_fmo2_ladder_cell(
-            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv",
-            estimator="control_variate", n_euler_steps=512, batch_size=512,
-        ),
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv": _d256_fmo2_ladder_cell(
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_cv",
+        estimator="control_variate",
+        n_euler_steps=512,
+        batch_size=512,
+    ),
     # CV continuation of the recipe (the recipe pair read NULL / grazing
     # PARTIAL against the expected ranges above): the cv2 pattern — flat
     # sigma_c, 20k steps, lr pinned to the ladder's final 3e-4 — applied to
@@ -2266,14 +2482,14 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2": (
         lambda _cell: replace(
             _cell,
-            train=replace(
-                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
-            ),
+            train=replace(_cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000),
         )
     )(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2",
-            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            estimator="control_variate",
+            n_euler_steps=128,
+            batch_size=512,
             loss_microbatch_size=128,
         )
     ),
@@ -2302,15 +2518,15 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2_ef": (
         lambda _cell: replace(
             _cell,
-            train=replace(
-                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
-            ),
+            train=replace(_cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000),
             exact_field_channel=True,
         )
     )(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2_ef",
-            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            estimator="control_variate",
+            n_euler_steps=128,
+            batch_size=512,
             loss_microbatch_size=128,
         )
     ),
@@ -2375,7 +2591,9 @@ CONFIGS: dict[str, HardStageCfg] = {
     )(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_h128L3_50k_curr_b512_ne128_naive",
-            estimator="naive_mc", n_euler_steps=128, batch_size=512,
+            estimator="naive_mc",
+            n_euler_steps=128,
+            batch_size=512,
             loss_microbatch_size=128,
         )
     ),
@@ -2402,15 +2620,16 @@ CONFIGS: dict[str, HardStageCfg] = {
             curriculum=replace(
                 _cell.curriculum,
                 stages=tuple(
-                    replace(stage, lr=3e-4)
-                    for stage in _cell.curriculum.stages
+                    replace(stage, lr=3e-4) for stage in _cell.curriculum.stages
                 ),
             ),
         )
     )(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_50k_curr_b512_ne128_naive",
-            estimator="naive_mc", n_euler_steps=128, batch_size=512,
+            estimator="naive_mc",
+            n_euler_steps=128,
+            batch_size=512,
             loss_microbatch_size=128,
         )
     ),
@@ -2436,7 +2655,9 @@ CONFIGS: dict[str, HardStageCfg] = {
             _cell,
             model=replace(_cell.model, hidden_dim=128, n_layers=3),
             train=replace(
-                _cell.train, batch_size=512, loss_microbatch_size=128,
+                _cell.train,
+                batch_size=512,
+                loss_microbatch_size=128,
                 halt_on_cv_inversion_after=2000,
             ),
         )
@@ -2468,14 +2689,14 @@ CONFIGS: dict[str, HardStageCfg] = {
         lambda _cell: replace(
             _cell,
             model=replace(_cell.model, hidden_dim=128, n_layers=3),
-            train=replace(
-                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
-            ),
+            train=replace(_cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000),
         )
     )(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_h128L3_70k_curr_b512_ne128_cv2",
-            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            estimator="control_variate",
+            n_euler_steps=128,
+            batch_size=512,
             loss_microbatch_size=128,
         )
     ),
@@ -2507,21 +2728,20 @@ CONFIGS: dict[str, HardStageCfg] = {
         lambda _cell: replace(
             _cell,
             model=replace(_cell.model, hidden_dim=128, n_layers=3),
-            train=replace(
-                _cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000
-            ),
+            train=replace(_cell.train, n_steps=70_000, halt_on_cv_inversion_after=5000),
             curriculum=replace(
                 _cell.curriculum,
                 stages=tuple(
-                    replace(stage, lr=3e-4)
-                    for stage in _cell.curriculum.stages
+                    replace(stage, lr=3e-4) for stage in _cell.curriculum.stages
                 ),
             ),
         )
     )(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_h128L3_lr03_70k_curr_b512_ne128_cv2",
-            estimator="control_variate", n_euler_steps=128, batch_size=512,
+            estimator="control_variate",
+            n_euler_steps=128,
+            batch_size=512,
             loss_microbatch_size=128,
         )
     ),
@@ -2555,13 +2775,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2",
-            estimator="naive_mc", n_euler_steps=512, batch_size=512,
+            estimator="naive_mc",
+            n_euler_steps=512,
+            batch_size=512,
             loss_microbatch_size=128,
         ),
         train=replace(
             _d256_fmo2_ladder_cell(
                 "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_buf2",
-                estimator="naive_mc", n_euler_steps=512, batch_size=512,
+                estimator="naive_mc",
+                n_euler_steps=512,
+                batch_size=512,
                 loss_microbatch_size=128,
             ).train,
             replay_buffer_cycles=2,
@@ -2598,12 +2822,13 @@ CONFIGS: dict[str, HardStageCfg] = {
     # sigma_c tail (the premise under test; the ne128 anchor reads p99
     # 0.84 with clipped_frac 0), stage-tail FVU per rung, n_unique and
     # top-weight mass.
-    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive":
-        _d256_fmo2_ladder_cell(
-            "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive",
-            estimator="naive_mc", n_euler_steps=128, batch_size=512,
-            loss_microbatch_size=128,
-        ),
+    "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive": _d256_fmo2_ladder_cell(
+        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne128_naive",
+        estimator="naive_mc",
+        n_euler_steps=128,
+        batch_size=512,
+        loss_microbatch_size=128,
+    ),
     # Retention-depth arm: the recipe cell
     # verbatim with replay_buffer_cycles 8 -> 16 the ONLY change --
     # retention 4096 -> 8192 trajectories at UNCHANGED freshness, since
@@ -2628,13 +2853,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16",
-            estimator="naive_mc", n_euler_steps=512, batch_size=512,
+            estimator="naive_mc",
+            n_euler_steps=512,
+            batch_size=512,
             loss_microbatch_size=128,
         ),
         train=replace(
             _d256_fmo2_ladder_cell(
                 "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_cyc16",
-                estimator="naive_mc", n_euler_steps=512, batch_size=512,
+                estimator="naive_mc",
+                n_euler_steps=512,
+                batch_size=512,
                 loss_microbatch_size=128,
             ).train,
             replay_buffer_cycles=16,
@@ -2733,8 +2962,7 @@ CONFIGS: dict[str, HardStageCfg] = {
             curriculum=replace(
                 _cell.curriculum,
                 stages=tuple(
-                    replace(stage, lr=3e-4)
-                    for stage in _cell.curriculum.stages
+                    replace(stage, lr=3e-4) for stage in _cell.curriculum.stages
                 ),
             ),
         )
@@ -3181,13 +3409,17 @@ CONFIGS: dict[str, HardStageCfg] = {
     "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw": replace(
         _d256_fmo2_ladder_cell(
             "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw",
-            estimator="naive_mc", n_euler_steps=512, batch_size=512,
+            estimator="naive_mc",
+            n_euler_steps=512,
+            batch_size=512,
             loss_microbatch_size=128,
         ),
         train=replace(
             _d256_fmo2_ladder_cell(
                 "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw",
-                estimator="naive_mc", n_euler_steps=512, batch_size=512,
+                estimator="naive_mc",
+                n_euler_steps=512,
+                batch_size=512,
                 loss_microbatch_size=128,
             ).train,
             rewarmup_on_stage=True,
@@ -3230,11 +3462,18 @@ CONFIGS: dict[str, HardStageCfg] = {
     # near-exactly retrace the clip=500 trajectory. Kept as the record of a
     # rejected arm; the smoke12k ladder below replaces it. Do not launch.
     "H2_d256_c50_s223_letf_ma_50k_curr_clip50": _hard_cell(
-        "H2_d256_c50_s223_letf_ma_50k_curr_clip50", sigma=0.223,
+        "H2_d256_c50_s223_letf_ma_50k_curr_clip50",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=50_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_D64_SIGMA_LADDER,
         grad_clip_max_norm=50.0,
@@ -3259,11 +3498,18 @@ CONFIGS: dict[str, HardStageCfg] = {
         # raising the threshold above the working-regime norm; under AdamW
         # this is also exactly the per-pair-normalised-loss arm (the two
         # differ by a constant the optimiser erases).
-        "H2_d256_smoke12k_unclip", sigma=0.223,
+        "H2_d256_smoke12k_unclip",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=12_000,
+        n_euler_steps=128,
+        n_eval_samples=1000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_SMOKE12K_SIGMA_LADDER,
         grad_clip_max_norm=20_000.0,
@@ -3273,11 +3519,18 @@ CONFIGS: dict[str, HardStageCfg] = {
         # d=256: integrand/naive variance ratio 2.3x at rung 0 -> ~70x late,
         # vs an 8-30x REDUCTION at d64) by estimating c_t naively. Also the
         # cheapest arm (~0.7x: skips the c_t head pass).
-        "H2_d256_smoke12k_naive", sigma=0.223,
+        "H2_d256_smoke12k_naive",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=12_000,
+        n_euler_steps=128,
+        n_eval_samples=1000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_SMOKE12K_SIGMA_LADDER,
         estimator="naive_mc",
@@ -3290,11 +3543,18 @@ CONFIGS: dict[str, HardStageCfg] = {
         # the d256 init loss is the head's own coherent pair-sum noise.
         # Recipe otherwise UNCHANGED (clip 500) -- if this arm alone
         # escapes, initialisation was the story.
-        "H2_d256_smoke12k_warm", sigma=0.223,
+        "H2_d256_smoke12k_warm",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=12_000,
+        n_euler_steps=128,
+        n_eval_samples=1000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_SMOKE12K_SIGMA_LADDER,
     ),
@@ -3304,11 +3564,18 @@ CONFIGS: dict[str, HardStageCfg] = {
         # update" the soft chapter's clip forensics recommend.
         # Raw-gradient clip effectively disabled so the update
         # clipping is the only bounding mechanism (one variable per arm).
-        "H2_d256_smoke12k_stadamw", sigma=0.223,
+        "H2_d256_smoke12k_stadamw",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=12_000,
+        n_euler_steps=128,
+        n_eval_samples=1000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_SMOKE12K_SIGMA_LADDER,
         grad_clip_max_norm=1e9,
@@ -3320,11 +3587,18 @@ CONFIGS: dict[str, HardStageCfg] = {
         # cleared + target jumped, no ramp); warmup was the only mechanism
         # that ever carried it through a transient. Clip left at the
         # inherited 500 to isolate the transition variable.
-        "H2_d256_smoke12k_rewarmup", sigma=0.223,
+        "H2_d256_smoke12k_rewarmup",
+        sigma=0.223,
         head_kind="masked_attention",
-        D=16, n_steps=12_000, n_euler_steps=128, n_eval_samples=1000,
-        eval_sample_chunk=64, n_eval_samples_training=256, eval_every=500,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        D=16,
+        n_steps=12_000,
+        n_euler_steps=128,
+        n_eval_samples=1000,
+        eval_sample_chunk=64,
+        n_eval_samples_training=256,
+        eval_every=500,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
         use_matching_step=True,
         curriculum=_SMOKE12K_SIGMA_LADDER,
         rewarmup_on_stage=True,
@@ -3413,14 +3687,16 @@ CONFIGS: dict[str, HardStageCfg] = {
     # ga8: the headline. k=8 masks 12.5% of sites per pass at 1/8 of mask_one's
     # body cost, keeping FULL depth and global mixing over the rest.
     "H2_d64_c50_s223_letf_ga8_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ga8_50k_curr", head_kind="grouped_anchor",
+        "H2_d64_c50_s223_letf_ga8_50k_curr",
+        head_kind="grouped_anchor",
         n_groups=8,
     ),
     # ga16: the cost/quality dial. Halves the masked fraction to 6.25% for 2x
     # the passes -- with ga8 it gives the slope of quality against k, which is
     # what extrapolates to the D=16 choice of k.
     "H2_d64_c50_s223_letf_ga16_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ga16_50k_curr", head_kind="grouped_anchor",
+        "H2_d64_c50_s223_letf_ga16_50k_curr",
+        head_kind="grouped_anchor",
         n_groups=16,
     ),
     # ga8_contig: the shape control. Identical k, identical cost, but the
@@ -3428,12 +3704,18 @@ CONFIGS: dict[str, HardStageCfg] = {
     # diagonal -- the direct test of "dispersed >> line-shaped", which is a
     # prediction of the construction rather than an assumption in it.
     "H2_d64_c50_s223_letf_ga8_contig_50k_curr": _d64_curriculum_cell(
-        "H2_d64_c50_s223_letf_ga8_contig_50k_curr", head_kind="grouped_anchor",
-        n_groups=8, grouping="contiguous",
+        "H2_d64_c50_s223_letf_ga8_contig_50k_curr",
+        head_kind="grouped_anchor",
+        n_groups=8,
+        grouping="contiguous",
     ),
     "H2_d64_c50_s223_letf_mo": _hard_cell(
-        "H2_d64_c50_s223_letf_mo", sigma=0.223, head_kind="mask_one",
-        D=8, n_euler_steps=128, n_eval_samples=5000,
+        "H2_d64_c50_s223_letf_mo",
+        sigma=0.223,
+        head_kind="mask_one",
+        D=8,
+        n_euler_steps=128,
+        n_eval_samples=5000,
         # 256 samples x 64 anchor copies = 16k-row stacked passes under
         # no_grad -- a few GB transient on the L4, vs ~22 GB unchunked.
         eval_sample_chunk=256,
@@ -3466,20 +3748,27 @@ CONFIGS: dict[str, HardStageCfg] = {
 #   PASS   iff EMA ESS/N in (0.381, 0.430] (beats its parent);
 #   NULL   iff EMA ESS/N <= 0.381.
 _ARM_B = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
-CONFIGS.update({
-    "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2": replace(
-        _ARM_B, name="H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2",
-        head_kind="two_hole_patch",
-    ),
-    "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef": replace(
-        _ARM_B, name="H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef",
-        head_kind="two_hole_patch", exact_field_channel=True,
-    ),
-    "H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2": replace(
-        _ARM_B, name="H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2",
-        head_kind="two_hole_patch", patch_radius=2,
-    ),
-})
+CONFIGS.update(
+    {
+        "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2": replace(
+            _ARM_B,
+            name="H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2",
+            head_kind="two_hole_patch",
+        ),
+        "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef": replace(
+            _ARM_B,
+            name="H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef",
+            head_kind="two_hole_patch",
+            exact_field_channel=True,
+        ),
+        "H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2": replace(
+            _ARM_B,
+            name="H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2",
+            head_kind="two_hole_patch",
+            patch_radius=2,
+        ),
+    }
+)
 
 # Wave-2 house-table fill: the 4x4 and 8x8 rungs of the hard eval tables
 # rebuilt FRESH at single provenance — four arms (mo = the
@@ -3513,8 +3802,10 @@ _WAVE2_ARM_KNOBS: dict[str, dict] = {
     "mo": {"head_kind": "mask_one"},
     "ma": {"head_kind": "masked_attention"},
     "fimo2ef": {
-        "head_kind": "factorised", "exact_field_channel": True,
-        "interior_band": "prefix", "site_orderings": ("row", "col"),
+        "head_kind": "factorised",
+        "exact_field_channel": True,
+        "interior_band": "prefix",
+        "site_orderings": ("row", "col"),
     },
     # Fifth arm: ef on the GLOBAL
     # interior chassis — the archived fmo2 (two orderings, no interior_band)
@@ -3532,16 +3823,16 @@ _WAVE2_ARM_KNOBS: dict[str, dict] = {
     # the plain parent; a NULL is itself informative (the global term would
     # then already carry the field, against the results-paragraph claim).
     "fmo2ef": {
-        "head_kind": "factorised", "exact_field_channel": True,
+        "head_kind": "factorised",
+        "exact_field_channel": True,
         "site_orderings": ("row", "col"),
     },
     "thp": {"head_kind": "two_hole_patch"},
 }
 
 _D64_SIGMA_LADDER_SC = CurriculumCfg(
-    stages=_D64_SIGMA_LADDER.stages[:-1] + (
-        replace(_D64_SIGMA_LADDER.stages[-1], sigma=SIGMA_C),
-    )
+    stages=_D64_SIGMA_LADDER.stages[:-1]
+    + (replace(_D64_SIGMA_LADDER.stages[-1], sigma=SIGMA_C),)
 )
 
 
@@ -3562,7 +3853,10 @@ def _wave2_d16_cell(arm: str, sigma_label: str, sigma: float) -> HardStageCfg:
     knobs = dict({**_WAVE2_ARM_KNOBS, **_D16_ONLY_ARM_KNOBS}[arm])
     name = f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_w2"
     cell = _hard_cell(
-        name, sigma=sigma, head_kind=knobs.pop("head_kind"), n_steps=10_000,
+        name,
+        sigma=sigma,
+        head_kind=knobs.pop("head_kind"),
+        n_steps=10_000,
     )
     return optimised_recipe(replace(cell, **knobs))
 
@@ -3585,26 +3879,35 @@ def _wave2_d64_floor_cell(arm: str) -> HardStageCfg:
     knobs = dict(_WAVE2_ARM_KNOBS[arm])
     name = f"H2_d64_c50_s010_letf_{arm}_50k_w2"
     cell = _hard_cell(
-        name, sigma=0.10, head_kind=knobs.pop("head_kind"),
-        D=8, n_steps=50_000, n_euler_steps=128, n_eval_samples=5000,
-        eval_sample_chunk=256, n_eval_samples_training=512,
-        use_sdpa_readout=True, eval_autocast_bf16=True,
+        name,
+        sigma=0.10,
+        head_kind=knobs.pop("head_kind"),
+        D=8,
+        n_steps=50_000,
+        n_euler_steps=128,
+        n_eval_samples=5000,
+        eval_sample_chunk=256,
+        n_eval_samples_training=512,
+        use_sdpa_readout=True,
+        eval_autocast_bf16=True,
     )
     return optimised_recipe(replace(cell, ema_decay=0.9999, **knobs))
 
 
-CONFIGS.update({
-    **{
-        cell.name: cell
-        for arm in _WAVE2_ARM_KNOBS
-        for cell in (
-            _wave2_d16_cell(arm, "s010", 0.10),
-            _wave2_d16_cell(arm, "s220", SIGMA_C),
-            _wave2_d64_critical_cell(arm),
-            _wave2_d64_floor_cell(arm),
-        )
-    },
-})
+CONFIGS.update(
+    {
+        **{
+            cell.name: cell
+            for arm in _WAVE2_ARM_KNOBS
+            for cell in (
+                _wave2_d16_cell(arm, "s010", 0.10),
+                _wave2_d16_cell(arm, "s220", SIGMA_C),
+                _wave2_d64_critical_cell(arm),
+                _wave2_d64_floor_cell(arm),
+            )
+        },
+    }
+)
 
 # Composition-amortisation cell: the thp sigma_c cell with the mixture
 # grid as the ONLY moved field (pinned by
@@ -3614,25 +3917,27 @@ CONFIGS.update({
 # zero-shot null read side by side. Read per-slice via
 # probe_zero_shot_transfer on the trained checkpoints, never on the
 # in-training mixture eval (which mixes slices and is diagnostic only).
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(
-            _wave2_d64_critical_cell("thp"),
-            name="H2_d64_camort_s220_letf_thp_50k_curr",
-            composition_mixture=(0.5, 0.46875, 0.4375, 0.375, 0.3125),
-        ),
-        # D=4 gate twin: the fractions that are integral at d=16
-        # (n+ = 8/7/6/5; 0.46875*16 = 7.5 has no slice). Read per-slice
-        # against exact enumeration by
-        # gate_camort_4x4.py.
-        replace(
-            _wave2_d16_cell("thp", "s220", SIGMA_C),
-            name="H2_d16_camort_s220_letf_thp_10k",
-            composition_mixture=(0.5, 0.4375, 0.375, 0.3125),
-        ),
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                _wave2_d64_critical_cell("thp"),
+                name="H2_d64_camort_s220_letf_thp_50k_curr",
+                composition_mixture=(0.5, 0.46875, 0.4375, 0.375, 0.3125),
+            ),
+            # D=4 gate twin: the fractions that are integral at d=16
+            # (n+ = 8/7/6/5; 0.46875*16 = 7.5 has no slice). Read per-slice
+            # against exact enumeration by
+            # gate_camort_4x4.py.
+            replace(
+                _wave2_d16_cell("thp", "s220", SIGMA_C),
+                name="H2_d16_camort_s220_letf_thp_10k",
+                composition_mixture=(0.5, 0.4375, 0.375, 0.3125),
+            ),
+        )
+    }
+)
 
 # The oracle row of the 4x4 eval table, on the SAME w2 recipe and
 # the same exact SIGMA_C as every other row of that table so the row is
@@ -3658,14 +3963,16 @@ CONFIGS.update({
 # different head, run the only way that head can be run" rather than a
 # single-variable twin. Compiled and eager forwards agree to ~1e-5 relative,
 # well inside the seed spread the fidelity columns carry.
-CONFIGS.update({
-    cell.name: replace(cell, compile_head=False)
-    for arm in _D16_ONLY_ARM_KNOBS
-    for cell in (
-        _wave2_d16_cell(arm, "s010", 0.10),
-        _wave2_d16_cell(arm, "s220", SIGMA_C),
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: replace(cell, compile_head=False)
+        for arm in _D16_ONLY_ARM_KNOBS
+        for cell in (
+            _wave2_d16_cell(arm, "s010", 0.10),
+            _wave2_d16_cell(arm, "s220", SIGMA_C),
+        )
+    }
+)
 
 # Sigma-vs-recipe twins. The w2 fimo2ef sigma_c cells
 # landed raw ESS 0.637/0.794/0.831 (seeds 44/43/42) against the archived
@@ -3689,19 +3996,21 @@ CONFIGS.update({
 # the optimised bundle's factorised verification. Seeds 42-44, Modal (4x4 is
 # launch-bound), tag 20260826-hold-fimo2ef.
 _W2_FIMO2EF_SC = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_w2"]
-CONFIGS.update({
-    "H2_d16_c50_s223_letf_fimo2ef_10k_w2sig": replace(
-        _W2_FIMO2EF_SC,
-        name="H2_d16_c50_s223_letf_fimo2ef_10k_w2sig",
-        ising=replace(_W2_FIMO2EF_SC.ising, sigma=0.223),
-    ),
-    "H2_d16_c50_s220_letf_fimo2ef_10k_eager": replace(
-        _W2_FIMO2EF_SC,
-        name="H2_d16_c50_s220_letf_fimo2ef_10k_eager",
-        compile_head=False,
-        train=replace(_W2_FIMO2EF_SC.train, c_t_from_rollout=False),
-    ),
-})
+CONFIGS.update(
+    {
+        "H2_d16_c50_s223_letf_fimo2ef_10k_w2sig": replace(
+            _W2_FIMO2EF_SC,
+            name="H2_d16_c50_s223_letf_fimo2ef_10k_w2sig",
+            ising=replace(_W2_FIMO2EF_SC.ising, sigma=0.223),
+        ),
+        "H2_d16_c50_s220_letf_fimo2ef_10k_eager": replace(
+            _W2_FIMO2EF_SC,
+            name="H2_d16_c50_s220_letf_fimo2ef_10k_eager",
+            compile_head=False,
+            train=replace(_W2_FIMO2EF_SC.train, c_t_from_rollout=False),
+        ),
+    }
+)
 
 # Round 2. Round 1 localised the depression
 # to the recipe x exact-sigma_c x ef corner (interaction -0.132; both-on
@@ -3720,18 +4029,20 @@ CONFIGS.update({
 #   factorised chassis itself, and the optimised recipe's factorised
 #   verification reopens. Seeds 42-44, Modal, same fixed tag
 #   20260826-hold-fimo2ef.
-CONFIGS.update({
-    "H2_d16_c50_s220_letf_fimo2ef_10k_cmpl": replace(
-        _W2_FIMO2EF_SC,
-        name="H2_d16_c50_s220_letf_fimo2ef_10k_cmpl",
-        train=replace(_W2_FIMO2EF_SC.train, c_t_from_rollout=False),
-    ),
-    "H2_d16_c50_s220_letf_fimo2_10k_w2rec": replace(
-        _W2_FIMO2EF_SC,
-        name="H2_d16_c50_s220_letf_fimo2_10k_w2rec",
-        exact_field_channel=False,
-    ),
-})
+CONFIGS.update(
+    {
+        "H2_d16_c50_s220_letf_fimo2ef_10k_cmpl": replace(
+            _W2_FIMO2EF_SC,
+            name="H2_d16_c50_s220_letf_fimo2ef_10k_cmpl",
+            train=replace(_W2_FIMO2EF_SC.train, c_t_from_rollout=False),
+        ),
+        "H2_d16_c50_s220_letf_fimo2_10k_w2rec": replace(
+            _W2_FIMO2EF_SC,
+            name="H2_d16_c50_s220_letf_fimo2_10k_w2rec",
+            exact_field_channel=False,
+        ),
+    }
+)
 
 
 # Eager factorised cells: factorised arms at exact
@@ -3762,23 +4073,33 @@ CONFIGS.update({
 _W2_FMO2EF_SC = CONFIGS["H2_d16_c50_s220_letf_fmo2ef_10k_w2"]
 _W2_D64_FIMO2EF_SC = CONFIGS["H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2"]
 _W2_D64_FMO2EF_SC = CONFIGS["H2_d64_c50_s220_letf_fmo2ef_50k_curr_w2"]
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(_W2_FIMO2EF_SC,
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                _W2_FIMO2EF_SC,
                 name="H2_d16_c50_s220_letf_fimo2ef_10k_w2e",
-                compile_head=False),
-        replace(_W2_FMO2EF_SC,
+                compile_head=False,
+            ),
+            replace(
+                _W2_FMO2EF_SC,
                 name="H2_d16_c50_s220_letf_fmo2ef_10k_w2e",
-                compile_head=False),
-        replace(_W2_D64_FIMO2EF_SC,
+                compile_head=False,
+            ),
+            replace(
+                _W2_D64_FIMO2EF_SC,
                 name="H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2e",
-                compile_head=False),
-        replace(_W2_D64_FMO2EF_SC,
+                compile_head=False,
+            ),
+            replace(
+                _W2_D64_FMO2EF_SC,
                 name="H2_d64_c50_s220_letf_fmo2ef_50k_curr_w2e",
-                compile_head=False),
-    )
-})
+                compile_head=False,
+            ),
+        )
+    }
+)
 
 
 # ---- 16x16 house-table fill at exact sigma_c ----------
@@ -3932,8 +4253,10 @@ _D256_HOUSE_ARM_KNOBS: dict[str, dict] = {
     "thp": {"head_kind": "two_hole_patch"},
     "thp2": {"head_kind": "two_hole_patch", "patch_radius": 2},
     "fimo2ef": {
-        "head_kind": "factorised", "exact_field_channel": True,
-        "interior_band": "prefix", "site_orderings": ("row", "col"),
+        "head_kind": "factorised",
+        "exact_field_channel": True,
+        "interior_band": "prefix",
+        "site_orderings": ("row", "col"),
         "gather_triu_pairs": True,
     },
     # site_orderings PINNED, and declared rather than applied silently.
@@ -3944,7 +4267,8 @@ _D256_HOUSE_ARM_KNOBS: dict[str, dict] = {
     # two-ordering heads they were never trained as. Declaring it keeps the
     # cells transforms of _ARM_B that the census test can still verify.
     "ma": {
-        "head_kind": "masked_attention", "gather_triu_pairs": True,
+        "head_kind": "masked_attention",
+        "gather_triu_pairs": True,
         "site_orderings": ("row",),
     },
 }
@@ -3953,7 +4277,10 @@ _D256_HOUSE_ARM_KNOBS: dict[str, dict] = {
 # arms (single-shot is 40% faster and fits at 24.9 GB), 128 on the two
 # pair-slab arms, where the noise-scale instrument rides.
 _D256_HOUSE_MICROBATCH: dict[str, int | None] = {
-    "thp": None, "thp2": None, "fimo2ef": 128, "ma": 128,
+    "thp": None,
+    "thp2": None,
+    "fimo2ef": 128,
+    "ma": 128,
 }
 
 # Eval-only, ma alone: the archived d256 masked-attention chunk.
@@ -3961,7 +4288,11 @@ _D256_HOUSE_EVAL_CHUNK: dict[str, int] = {"ma": 128}
 
 
 def _d256_house_cell(
-    arm: str, name: str, *, sigma: float, n_steps: int,
+    arm: str,
+    name: str,
+    *,
+    sigma: float,
+    n_steps: int,
     curriculum: CurriculumCfg | None,
 ) -> HardStageCfg:
     """One house-table cell: _ARM_B with the arm's head knobs, the coupling
@@ -4011,7 +4342,9 @@ def _d256_house_critical_cell(arm: str) -> HardStageCfg:
     cell = _d256_house_cell(
         arm,
         f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3",
-        sigma=SIGMA_C, n_steps=100_000, curriculum=_D64_SIGMA_LADDER_SC,
+        sigma=SIGMA_C,
+        n_steps=100_000,
+        curriculum=_D64_SIGMA_LADDER_SC,
     )
     is_factorised = _D256_HOUSE_ARM_KNOBS[arm]["head_kind"] == "factorised"
     return replace(cell, compile_head=not is_factorised)
@@ -4025,17 +4358,21 @@ def _d256_house_floor_cell(arm: str) -> HardStageCfg:
     return _d256_house_cell(
         arm,
         f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3",
-        sigma=0.10, n_steps=50_000, curriculum=None,
+        sigma=0.10,
+        n_steps=50_000,
+        curriculum=None,
     )
 
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        *(_d256_house_critical_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
-        *(_d256_house_floor_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            *(_d256_house_critical_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
+            *(_d256_house_floor_cell(arm) for arm in _D256_HOUSE_ARM_KNOBS),
+        )
+    }
+)
 
 # d256 camort CONFIRMATION: the thp2 sigma_c cell + the mixture knob, one
 # lever, SAME fractions as the d64 camort grid (n+/256 = 128/120/112/96/80,
@@ -4368,19 +4705,21 @@ def _d576_critical_bf16_cell(arm: str) -> HardStageCfg:
 # (ema_decay 0.9999), so those rungs report raw AND EMA where the gate cells
 # report raw only.
 _MAL_TWINS: dict[str, str] = {
-    "H2_d16_c50_s010_letf_ma_10k_w2":      "H2_d16_c50_s010_letf_mal_10k_win",
-    "H2_d16_c50_s220_letf_ma_10k_w2":      "H2_d16_c50_s220_letf_mal_10k_win",
-    "H2_d64_c50_s010_letf_ma_50k_w2":      "H2_d64_c50_s010_letf_mal_50k_win",
+    "H2_d16_c50_s010_letf_ma_10k_w2": "H2_d16_c50_s010_letf_mal_10k_win",
+    "H2_d16_c50_s220_letf_ma_10k_w2": "H2_d16_c50_s220_letf_mal_10k_win",
+    "H2_d64_c50_s010_letf_ma_50k_w2": "H2_d64_c50_s010_letf_mal_50k_win",
     "H2_d64_c50_s220_letf_ma_50k_curr_w2": "H2_d64_c50_s220_letf_mal_50k_curr_win",
 }
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(CONFIGS[parent], name=name, attention_window="lattice")
-        for parent, name in _MAL_TWINS.items()
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(CONFIGS[parent], name=name, attention_window="lattice")
+            for parent, name in _MAL_TWINS.items()
+        )
+    }
+)
 
 
 # --- Relative pair position code (`mar`) ---------------------
@@ -4405,19 +4744,21 @@ CONFIGS.update({
 # identical memory) and was a quality null -- the layer it fixed is not the
 # one the pair context reads.
 _MAR_TWINS: dict[str, str] = {
-    "H2_d16_c50_s010_letf_ma_10k_w2":      "H2_d16_c50_s010_letf_mar_10k_rel",
-    "H2_d16_c50_s220_letf_ma_10k_w2":      "H2_d16_c50_s220_letf_mar_10k_rel",
-    "H2_d64_c50_s010_letf_ma_50k_w2":      "H2_d64_c50_s010_letf_mar_50k_rel",
+    "H2_d16_c50_s010_letf_ma_10k_w2": "H2_d16_c50_s010_letf_mar_10k_rel",
+    "H2_d16_c50_s220_letf_ma_10k_w2": "H2_d16_c50_s220_letf_mar_10k_rel",
+    "H2_d64_c50_s010_letf_ma_50k_w2": "H2_d64_c50_s010_letf_mar_50k_rel",
     "H2_d64_c50_s220_letf_ma_50k_curr_w2": "H2_d64_c50_s220_letf_mar_50k_curr_rel",
 }
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(CONFIGS[parent], name=name, pair_position_mode="relative")
-        for parent, name in _MAR_TWINS.items()
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(CONFIGS[parent], name=name, pair_position_mode="relative")
+            for parent, name in _MAR_TWINS.items()
+        )
+    }
+)
 
 
 # --- Periodic-RoPE backbone under the masked-attention head ---
@@ -4504,18 +4845,23 @@ _MAROPE_TWINS: dict[str, int] = {
     for patch_size in (1, 2)
 }
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(
-            CONFIGS[_MAROPE_PARENT], name=name,
-            model=replace(
-                CONFIGS[_MAROPE_PARENT].model, kind="rope_vit", patch_size=patch_size,
-            ),
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                CONFIGS[_MAROPE_PARENT],
+                name=name,
+                model=replace(
+                    CONFIGS[_MAROPE_PARENT].model,
+                    kind="rope_vit",
+                    patch_size=patch_size,
+                ),
+            )
+            for name, patch_size in _MAROPE_TWINS.items()
         )
-        for name, patch_size in _MAROPE_TWINS.items()
-    )
-})
+    }
+)
 
 
 # --- Bonds in the global term (4x4 gate) --------------
@@ -4587,18 +4933,20 @@ _ARM_B_ARMS: dict[str, dict] = {
     "fimo2efw_10k_wide": {"global_feature_dim": _ARM_B_MATCHED_GLOBAL_DIM},
 }
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(
-            CONFIGS[parent],
-            name=f"H2_d16_c50_{sigma_label}_letf_{arm}",
-            **knobs,
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                CONFIGS[parent],
+                name=f"H2_d16_c50_{sigma_label}_letf_{arm}",
+                **knobs,
+            )
+            for sigma_label, parent in _ARM_B_PARENTS.items()
+            for arm, knobs in _ARM_B_ARMS.items()
         )
-        for sigma_label, parent in _ARM_B_PARENTS.items()
-        for arm, knobs in _ARM_B_ARMS.items()
-    )
-})
+    }
+)
 
 
 # --- Bonds in the global term at the 8x8 rung: the DISCRIMINATING scale ---
@@ -4651,7 +4999,8 @@ _ARM_B_D64_ARMS: dict[str, dict] = {
     "fimo2efb_50k_curr_bond": {"global_bond_features": True},
     # bond1o: the arm the gate flagged -- bonds, second ordering retired.
     "fiefb_50k_curr_bond1o": {
-        "global_bond_features": True, "site_orderings": ("row",),
+        "global_bond_features": True,
+        "site_orderings": ("row",),
     },
     # 1o: the control that isolates it -- second ordering retired, NO bonds.
     "fief_50k_curr_1o": {"site_orderings": ("row",)},
@@ -4665,13 +5014,17 @@ _ARM_B_D64_ARMS: dict[str, dict] = {
 # not disfavoured. Run the control for whichever arm lifts here, before
 # anyone believes the lift.
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(CONFIGS[_ARM_B_D64_PARENT], name=f"H2_d64_c50_s220_letf_{arm}", **knobs)
-        for arm, knobs in _ARM_B_D64_ARMS.items()
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                CONFIGS[_ARM_B_D64_PARENT], name=f"H2_d64_c50_s220_letf_{arm}", **knobs
+            )
+            for arm, knobs in _ARM_B_D64_ARMS.items()
+        )
+    }
+)
 
 
 # BAND-ONLY INTERIOR: the interior cell a band without its own readout could
@@ -4681,7 +5034,7 @@ CONFIGS.update({
 # because it had no readout of its own. So every band-carrying head also
 # carried a global term, and the only interior mechanism ever measured in
 # ISOLATION at 16x16 is the learned one.
-    #
+#
 # WHAT IT ASKS. `fbil` -- bilinear exterior, NO global -- was seed-unstable
 # at the 4x4 gate, and the reading is "the global term
 # stabilises". That was measured with NO interior mechanism at all. If the
@@ -4689,26 +5042,31 @@ CONFIGS.update({
 # global term is not special: it is one of two interchangeable interior
 # suppliers. NOT a cost question -- both are O(1) per pair (one cumsum plus
 # two gathers against one lattice sum plus four gathers).
-    #
+#
 # Same chassis, seeds and venue as the four cells above, so it drops
 # straight into their comparison; the baseline reads 0.8373 +- 0.0236 raw
 # / 0.8848 +- 0.0055 EMA on this rung.
 _BAND_ONLY_D64_ARMS = {
     "fimo2e_50k_curr_noglobal": {"use_global": False},
-# And the one-ordering twin, so the ordering axis is crossed with it
-# exactly as the 1o arm crosses it with the baseline.
+    # And the one-ordering twin, so the ordering axis is crossed with it
+    # exactly as the 1o arm crosses it with the baseline.
     "fie_50k_curr_noglobal1o": {
-        "use_global": False, "site_orderings": ("row",),
+        "use_global": False,
+        "site_orderings": ("row",),
     },
 }
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(CONFIGS[_ARM_B_D64_PARENT], name=f"H2_d64_c50_s220_letf_{arm}", **knobs)
-        for arm, knobs in _BAND_ONLY_D64_ARMS.items()
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                CONFIGS[_ARM_B_D64_PARENT], name=f"H2_d64_c50_s220_letf_{arm}", **knobs
+            )
+            for arm, knobs in _BAND_ONLY_D64_ARMS.items()
+        )
+    }
+)
 
 
 # SEPARABLE-SCORES TRAJECTORY CHECK. `separable_band_scores` computes the
@@ -4749,16 +5107,19 @@ _ARM_C_SEED_CHECK_ARMS = {
     "masep_50k_curr_w2": {"separable_band_scores": True},
 }
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(
-            CONFIGS["H2_d64_c50_s220_letf_ma_50k_curr_w2"],
-            name=f"H2_d64_c50_s220_letf_{arm}", **knobs,
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                CONFIGS["H2_d64_c50_s220_letf_ma_50k_curr_w2"],
+                name=f"H2_d64_c50_s220_letf_{arm}",
+                **knobs,
+            )
+            for arm, knobs in _ARM_C_SEED_CHECK_ARMS.items()
         )
-        for arm, knobs in _ARM_C_SEED_CHECK_ARMS.items()
-    )
-})
+    }
+)
 
 
 # UNFACTORISED ORDERINGS, 8x8 at exact sigma_c.
@@ -4804,14 +5165,17 @@ CONFIGS.update({
 _RASTER_LADDER_ARMS = {
     "mamo2": {"site_orderings": ("row", "col")},
     "mamo2ef": {
-        "site_orderings": ("row", "col"), "exact_field_channel": True,
+        "site_orderings": ("row", "col"),
+        "exact_field_channel": True,
     },
     "iv": {"head_kind": "interval"},
     "ivmo2": {
-        "head_kind": "interval", "site_orderings": ("row", "col"),
+        "head_kind": "interval",
+        "site_orderings": ("row", "col"),
     },
     "ivmo2ef": {
-        "head_kind": "interval", "site_orderings": ("row", "col"),
+        "head_kind": "interval",
+        "site_orderings": ("row", "col"),
         "exact_field_channel": True,
     },
 }
@@ -4855,10 +5219,8 @@ _RASTER_LADDER_PARENTS = {
     # spent reproducing a known failure. The floor `ma` anchor is retrained
     # (`masep` cell below): its archived row is a two-seed mean with a
     # degenerate seed excluded, so it is repaired rather than reused.
-    "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3":
-        "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3",
-    "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3":
-        "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3",
+    "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3": "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3",
+    "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3",
 }
 
 # THE FLOOR RUNG RUNS SEPARABLE, and every new
@@ -4918,18 +5280,19 @@ def _raster_ladder_cell(arm: str, arm_knobs: dict, pattern: str):
     rung_knobs = {
         knob: value
         for knob, value in _RASTER_LADDER_RUNG_KNOBS.get(pattern, {}).items()
-        if head_kind == "masked_attention"
-        or knob not in _ATTENTION_ONLY_RUNG_KNOBS
+        if head_kind == "masked_attention" or knob not in _ATTENTION_ONLY_RUNG_KNOBS
     }
     return replace(parent, name=pattern.format(arm=arm), **arm_knobs, **rung_knobs)
 
 
-CONFIGS.update({
-    cell.name: cell
-    for arm, arm_knobs in _RASTER_LADDER_ARMS.items()
-    for pattern in _RASTER_LADDER_PARENTS
-    for cell in (_raster_ladder_cell(arm, arm_knobs, pattern),)
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for arm, arm_knobs in _RASTER_LADDER_ARMS.items()
+        for pattern in _RASTER_LADDER_PARENTS
+        for cell in (_raster_ladder_cell(arm, arm_knobs, pattern),)
+    }
+)
 
 # The floor rung's separable `ma` anchor, so the chain there reads one field
 # per step within one contraction order. Same one-variable idiom as the
@@ -4941,33 +5304,37 @@ CONFIGS.update({
 # and it trained dense with the gather on. Its sigma_c sibling is NOT
 # retrained -- the printed three-seed failure is the same function under an
 # exact rewrite, so it anchors the sigma_c chain as it stands.
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(
-            CONFIGS["H2_d64_c50_s010_letf_ma_50k_w2"],
-            name="H2_d64_c50_s010_letf_masep_50k_w2",
-            separable_band_scores=True,
-        ),
-        replace(
-            CONFIGS["H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"],
-            name="H2_d256_c50_s010_letf_masep_50k_b512_ne128_cv2_w3",
-            separable_band_scores=True,
-        ),
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                CONFIGS["H2_d64_c50_s010_letf_ma_50k_w2"],
+                name="H2_d64_c50_s010_letf_masep_50k_w2",
+                separable_band_scores=True,
+            ),
+            replace(
+                CONFIGS["H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"],
+                name="H2_d256_c50_s010_letf_masep_50k_b512_ne128_cv2_w3",
+                separable_band_scores=True,
+            ),
+        )
+    }
+)
 
 
-CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        *(_d400_radius_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
-        *(_d400_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
-        *(_d400_critical_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
-        *(_d400_critical_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
-        *(_d576_critical_bf16_cell(arm) for arm in _D576_RADIUS_ARM_KNOBS),
-    )
-})
+CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            *(_d400_radius_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+            *(_d400_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+            *(_d400_critical_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+            *(_d400_critical_bf16_cell(arm) for arm in _D400_RADIUS_ARM_KNOBS),
+            *(_d576_critical_bf16_cell(arm) for arm in _D576_RADIUS_ARM_KNOBS),
+        )
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -4996,30 +5363,48 @@ def _cuau_curriculum(n_steps: int) -> CurriculumCfg:
     """Four equal stages cooling to 500 K; lr eases at the last two, as the
     Ising sigma ladder does approaching sigma_c."""
     stage = n_steps // 4
-    return CurriculumCfg(stages=tuple(
-        CurriculumStageCfg(
-            start_step=k * stage, sigma=cuau_sigma(T),
-            lr=1e-3 if k < 2 else 3e-4,
+    return CurriculumCfg(
+        stages=tuple(
+            CurriculumStageCfg(
+                start_step=k * stage,
+                sigma=cuau_sigma(T),
+                lr=1e-3 if k < 2 else 3e-4,
+            )
+            for k, T in enumerate(_CUAU_TEMPERATURE_LADDER_K)
         )
-        for k, T in enumerate(_CUAU_TEMPERATURE_LADDER_K)
-    ))
+    )
 
 
-def _cuau_hard_cell(name, *, sites: int, composition: float, n_steps: int,
-                    n_euler_steps: int, n_eval_samples: int,
-                    eval_sample_chunk: int | None, hidden_dim: int,
-                    n_layers: int) -> HardStageCfg:
+def _cuau_hard_cell(
+    name,
+    *,
+    sites: int,
+    composition: float,
+    n_steps: int,
+    n_euler_steps: int,
+    n_eval_samples: int,
+    eval_sample_chunk: int | None,
+    hidden_dim: int,
+    n_layers: int,
+) -> HardStageCfg:
     side = {16: 4, 64: 8}[sites]  # D is a label here: d comes from the file
     cell = _hard_cell(
-        name, cuau_sigma(_CUAU_TEMPERATURE_LADDER_K[0]), "mask_one",
-        D=side, n_steps=n_steps, n_euler_steps=n_euler_steps,
-        n_eval_samples=n_eval_samples, eval_sample_chunk=eval_sample_chunk,
-        eval_every=500, curriculum=_cuau_curriculum(n_steps),
+        name,
+        cuau_sigma(_CUAU_TEMPERATURE_LADDER_K[0]),
+        "mask_one",
+        D=side,
+        n_steps=n_steps,
+        n_euler_steps=n_euler_steps,
+        n_eval_samples=n_eval_samples,
+        eval_sample_chunk=eval_sample_chunk,
+        eval_every=500,
+        curriculum=_cuau_curriculum(n_steps),
     )
     return replace(
         cell,
         ising=replace(
-            cell.ising, target_composition=composition,
+            cell.ising,
+            target_composition=composition,
             expansion_json=f"data/ce/cuau_fcc_{'2x2x4' if sites == 16 else '4x4x4'}.json",
         ),
         model=replace(cell.model, hidden_dim=hidden_dim, n_layers=n_layers),
@@ -5034,9 +5419,15 @@ for _sites, _steps, _ne, _n_eval, _chunk, _hidden, _layers in (
     for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
         _name = f"H2_cuau{_sites}_{_c_tag}_T500_mask_one_{_steps // 1000}k_curr"
         CONFIGS[_name] = _cuau_hard_cell(
-            _name, sites=_sites, composition=_c, n_steps=_steps,
-            n_euler_steps=_ne, n_eval_samples=_n_eval, eval_sample_chunk=_chunk,
-            hidden_dim=_hidden, n_layers=_layers,
+            _name,
+            sites=_sites,
+            composition=_c,
+            n_steps=_steps,
+            n_euler_steps=_ne,
+            n_eval_samples=_n_eval,
+            eval_sample_chunk=_chunk,
+            hidden_dim=_hidden,
+            n_layers=_layers,
         )
 
 
@@ -5055,25 +5446,60 @@ for _sites, _steps, _ne, _n_eval, _chunk, _hidden, _layers in (
 def _cuau_ladder(temps_lrs, n_steps):
     n_stage = len(temps_lrs)
     boundaries = [round(k * n_steps / n_stage / 100) * 100 for k in range(n_stage)]
-    return CurriculumCfg(stages=tuple(
-        CurriculumStageCfg(start_step=start, sigma=cuau_sigma(T), lr=lr)
-        for start, (T, lr) in zip(boundaries, temps_lrs)
-    ))
+    return CurriculumCfg(
+        stages=tuple(
+            CurriculumStageCfg(start_step=start, sigma=cuau_sigma(T), lr=lr)
+            for start, (T, lr) in zip(boundaries, temps_lrs)
+        )
+    )
 
 
 _CUAU16_C50_CONTROL = CONFIGS["H2_cuau16_c50_T500_mask_one_10k_curr"]
 _HOUSE_LADDER = [(1200.0, 1e-3), (800.0, 1e-3), (600.0, 3e-4), (500.0, 3e-4)]
 for _variant, _curriculum, _train_overrides, _ising_overrides in (
     ("rewarm", _cuau_ladder(_HOUSE_LADDER, 10_000), dict(rewarmup_on_stage=True), {}),
-    ("lowlr", _cuau_ladder([(1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)], 10_000), {}, {}),
-    ("keepreplay", _cuau_ladder(_HOUSE_LADDER, 10_000), dict(flush_replay_on_stage=False), {}),
-    ("ladder6", _cuau_ladder([(1200.0, 1e-3), (1000.0, 1e-3), (900.0, 1e-3), (800.0, 1e-3),
-                              (600.0, 3e-4), (500.0, 3e-4)], 10_000), {}, {}),
-    ("direct500", _cuau_ladder([(500.0, 1e-4)], 10_000), dict(lr=1e-4), dict(sigma=cuau_sigma(500.0))),
+    (
+        "lowlr",
+        _cuau_ladder(
+            [(1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)], 10_000
+        ),
+        {},
+        {},
+    ),
+    (
+        "keepreplay",
+        _cuau_ladder(_HOUSE_LADDER, 10_000),
+        dict(flush_replay_on_stage=False),
+        {},
+    ),
+    (
+        "ladder6",
+        _cuau_ladder(
+            [
+                (1200.0, 1e-3),
+                (1000.0, 1e-3),
+                (900.0, 1e-3),
+                (800.0, 1e-3),
+                (600.0, 3e-4),
+                (500.0, 3e-4),
+            ],
+            10_000,
+        ),
+        {},
+        {},
+    ),
+    (
+        "direct500",
+        _cuau_ladder([(500.0, 1e-4)], 10_000),
+        dict(lr=1e-4),
+        dict(sigma=cuau_sigma(500.0)),
+    ),
 ):
     _name = f"H2_cuau16_c50_T500_mask_one_10k_{_variant}"
     CONFIGS[_name] = replace(
-        _CUAU16_C50_CONTROL, name=_name, curriculum=_curriculum,
+        _CUAU16_C50_CONTROL,
+        name=_name,
+        curriculum=_curriculum,
         train=replace(_CUAU16_C50_CONTROL.train, **_train_overrides),
         ising=replace(_CUAU16_C50_CONTROL.ising, **_ising_overrides),
     )
@@ -5085,15 +5511,23 @@ for _variant, _curriculum, _train_overrides, _ising_overrides in (
 # identity flow. Two combinations: the low lr on a doubled budget, and the
 # low lr on the six-stage ladder.
 _LOWLR_LADDER = [(1200.0, 1e-3), (800.0, 1e-4), (600.0, 1e-4), (500.0, 1e-4)]
-_LOWLR_LADDER6 = [(1200.0, 1e-3), (1000.0, 1e-4), (900.0, 1e-4), (800.0, 1e-4),
-                  (600.0, 1e-4), (500.0, 1e-4)]
+_LOWLR_LADDER6 = [
+    (1200.0, 1e-3),
+    (1000.0, 1e-4),
+    (900.0, 1e-4),
+    (800.0, 1e-4),
+    (600.0, 1e-4),
+    (500.0, 1e-4),
+]
 for _variant, _ladder, _n_steps in (
     ("lowlr", _LOWLR_LADDER, 20_000),
     ("ladder6lowlr", _LOWLR_LADDER6, 10_000),
 ):
     _name = f"H2_cuau16_c50_T500_mask_one_{_n_steps // 1000}k_{_variant}"
     CONFIGS[_name] = replace(
-        _CUAU16_C50_CONTROL, name=_name, curriculum=_cuau_ladder(_ladder, _n_steps),
+        _CUAU16_C50_CONTROL,
+        name=_name,
+        curriculum=_cuau_ladder(_ladder, _n_steps),
         train=replace(_CUAU16_C50_CONTROL.train, n_steps=_n_steps),
     )
 
@@ -5106,9 +5540,14 @@ for _variant, _ladder, _n_steps in (
 # 1200 K to 500 K, so the 1200 -> 800 K ordering step is crossed in two
 # stages), and -- the desk-check finding -- lr 1e-4 from the first step
 # down, since lr 1e-3 there shrinks every swap rate to the identity flow.
-def _cuau_house_ladder(n_stages=7, T_hot=1200.0, T_cold=500.0, lr_hot=1e-3, lr_cold=1e-4):
+def _cuau_house_ladder(
+    n_stages=7, T_hot=1200.0, T_cold=500.0, lr_hot=1e-3, lr_cold=1e-4
+):
     beta_hot, beta_cold = 1.0 / T_hot, 1.0 / T_cold
-    temps = [1.0 / (beta_hot + k * (beta_cold - beta_hot) / (n_stages - 1)) for k in range(n_stages)]
+    temps = [
+        1.0 / (beta_hot + k * (beta_cold - beta_hot) / (n_stages - 1))
+        for k in range(n_stages)
+    ]
     return [(T, lr_hot if k == 0 else lr_cold) for k, T in enumerate(temps)]
 
 
@@ -5116,7 +5555,9 @@ for _c, _c_tag in ((0.25, "c25"), (0.5, "c50")):
     _control = CONFIGS[f"H2_cuau16_{_c_tag}_T500_mask_one_10k_curr"]
     _name = f"H2_cuau16_{_c_tag}_T500_mask_one_50k_house"
     CONFIGS[_name] = replace(
-        _control, name=_name, ema_decay=0.9999,
+        _control,
+        name=_name,
+        ema_decay=0.9999,
         curriculum=_cuau_ladder(_cuau_house_ladder(), 50_000),
         train=replace(_control.train, n_steps=50_000),
         ctmc=replace(_control.ctmc, n_euler_steps=128),
@@ -5133,7 +5574,9 @@ for _c, _c_tag in ((0.3125, "c31"), (0.375, "c38"), (0.4375, "c44")):
     _parent = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]
     _name = f"H2_cuau16_{_c_tag}_T500_mask_one_50k_house"
     CONFIGS[_name] = replace(
-        _parent, name=_name, ising=replace(_parent.ising, target_composition=_c),
+        _parent,
+        name=_name,
+        ising=replace(_parent.ising, target_composition=_c),
     )
 
 
@@ -5145,7 +5588,8 @@ for _c, _c_tag in ((0.3125, "c31"), (0.375, "c38"), (0.4375, "c44")):
 # control -- the alloy twin of the Ising amortisation cells.
 _CUAU16_HOUSE = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]
 CONFIGS["H2_cuau16_camort_T500_mask_one_50k_house"] = replace(
-    _CUAU16_HOUSE, name="H2_cuau16_camort_T500_mask_one_50k_house",
+    _CUAU16_HOUSE,
+    name="H2_cuau16_camort_T500_mask_one_50k_house",
     composition_mixture=(0.5, 0.4375, 0.375, 0.3125, 0.25),
 )
 
@@ -5156,7 +5600,8 @@ CONFIGS["H2_cuau16_camort_T500_mask_one_50k_house"] = replace(
 for _c_tag in ("c25", "c50"):
     _name = f"H2_cuau64_{_c_tag}_T500_mask_one_50k_curr"
     CONFIGS[_name] = replace(
-        CONFIGS[_name], ema_decay=0.9999,
+        CONFIGS[_name],
+        ema_decay=0.9999,
         curriculum=_cuau_ladder(_cuau_house_ladder(), 50_000),
     )
 
@@ -5178,7 +5623,10 @@ for _c_tag in ("c25", "c50"):
     _parent = CONFIGS[f"H2_cuau64_{_c_tag}_T500_mask_one_50k_curr"]
     _name = f"H2_cuau64_{_c_tag}_T500_thp_50k_curr"
     CONFIGS[_name] = replace(
-        _parent, name=_name, head_kind="two_hole_patch", patch_shells=2,
+        _parent,
+        name=_name,
+        head_kind="two_hole_patch",
+        patch_shells=2,
         eval=replace(_parent.eval, n_eval_samples_training=256),
     )
 
@@ -5195,7 +5643,9 @@ for _c_tag in ("c25", "c50"):
 #   ne256      4d Euler steps instead of the house 2d (finer path, more
 #              events per trajectory);
 #   l14_ne256  both, the ceiling arm.
-_THP64_PARENTS = {c: CONFIGS[f"H2_cuau64_{c}_T500_thp_50k_curr"] for c in ("c25", "c50")}
+_THP64_PARENTS = {
+    c: CONFIGS[f"H2_cuau64_{c}_T500_thp_50k_curr"] for c in ("c25", "c50")
+}
 for _c_tag, _variant, _n_stages, _n_steps, _n_euler in (
     ("c50", "50k_l14", 14, 50_000, 128),
     ("c50", "100k_l14", 14, 100_000, 128),
@@ -5206,7 +5656,8 @@ for _c_tag, _variant, _n_stages, _n_steps, _n_euler in (
     _parent = _THP64_PARENTS[_c_tag]
     _name = f"H2_cuau64_{_c_tag}_T500_thp_{_variant}"
     CONFIGS[_name] = replace(
-        _parent, name=_name,
+        _parent,
+        name=_name,
         curriculum=_cuau_ladder(_cuau_house_ladder(n_stages=_n_stages), _n_steps),
         train=replace(_parent.train, n_steps=_n_steps),
         ctmc=replace(_parent.ctmc, n_euler_steps=_n_euler),
@@ -5230,7 +5681,9 @@ for _c_tag in ("c25", "c50"):
     ):
         _name = f"H2_cuau64_{_c_tag}_{_variant}"
         CONFIGS[_name] = replace(
-            _parent, name=_name, curriculum=_cuau_ladder(_ladder, _n_steps),
+            _parent,
+            name=_name,
+            curriculum=_cuau_ladder(_ladder, _n_steps),
             train=replace(_parent.train, n_steps=_n_steps),
         )
 
@@ -5242,11 +5695,13 @@ for _c_tag in ("c25", "c50"):
 # rollouts (inner 100 -> 20) or four times the rollout width (outer 512).
 _LOWLR_10K = CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr"]
 CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr_inner20"] = replace(
-    _LOWLR_10K, name="H2_cuau16_c50_T500_mask_one_10k_lowlr_inner20",
+    _LOWLR_10K,
+    name="H2_cuau16_c50_T500_mask_one_10k_lowlr_inner20",
     train=replace(_LOWLR_10K.train, inner_steps_per_outer=20),
 )
 CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512"] = replace(
-    _LOWLR_10K, name="H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512",
+    _LOWLR_10K,
+    name="H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512",
     train=replace(_LOWLR_10K.train, outer_batch_size=512),
 )
 
@@ -5254,8 +5709,11 @@ CONFIGS["H2_cuau16_c50_T500_mask_one_10k_lowlr_ob512"] = replace(
 # Exact-field channel twins on the hard alloy cells: the swap channel
 # now reads the target's own swap log-ratio (-beta Delta E_swap on an
 # expansion), one declared change from the c=0.5 recipe cells.
-for _parent_name in ("H2_cuau16_c50_T500_mask_one_20k_lowlr",
-                     "H2_cuau16_c50_T500_mask_one_50k_house"):
+for _parent_name in (
+    "H2_cuau16_c50_T500_mask_one_20k_lowlr",
+    "H2_cuau16_c50_T500_mask_one_50k_house",
+):
     _parent = CONFIGS[_parent_name]
     CONFIGS[f"{_parent_name}_ef"] = replace(
-        _parent, name=f"{_parent_name}_ef", exact_field_channel=True)
+        _parent, name=f"{_parent_name}_ef", exact_field_channel=True
+    )

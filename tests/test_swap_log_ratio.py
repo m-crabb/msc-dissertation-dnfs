@@ -11,6 +11,7 @@ both sides. Closed form:
 exact on the fixed-N slice because base_log_eta is constant there (the (1−t)
 term cancels) and bias·Σx is swap-invariant.
 """
+
 import pytest
 import torch
 
@@ -33,9 +34,9 @@ def _oracle_log_ratio(x, t, target):
 # (D, sigma, c, batch) — four numerically-verified cells.
 CLOSED_FORM_CELLS = [
     (4, 0.1, 0.5, 32),
-    (4, 0.3, 0.375, 32),     # Z2-broken composition
-    (8, 0.223, 0.5, 16),     # near-critical, probe scale
-    (16, 0.1, 0.5, 4),       # paper scale
+    (4, 0.3, 0.375, 32),  # Z2-broken composition
+    (8, 0.223, 0.5, 16),  # near-critical, probe scale
+    (16, 0.1, 0.5, 4),  # paper scale
 ]
 
 

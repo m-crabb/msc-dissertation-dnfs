@@ -24,10 +24,10 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     pixi run -e dev modal run --detach -m \\
         experiments.dnfs_baseline_01.modal_app::batch --scale all
 """
+
 import os
 
 import modal
-
 from experiments.dnfs_baseline_01.configs import CONFIGS
 
 PROJECT_DIR = "/repo"
@@ -137,8 +137,8 @@ def train_remote(cfg_name: str, seed: int = 42):
     # /repo is the mount point of `add_local_dir`. Inserting it onto sys.path
     # lets `experiments.dnfs_baseline_01.run` import resolve correctly.
     sys.path.insert(0, "/repo")
-    from experiments.dnfs_baseline_01.run import train
     from experiments.dnfs_baseline_01.configs import CONFIGS
+    from experiments.dnfs_baseline_01.run import train
 
     train(CONFIGS[cfg_name], seed=seed, output_dir="/results")
     # commit() makes the artefacts visible to subsequent `modal volume get`
@@ -164,8 +164,8 @@ def train_remote_l4(cfg_name: str, seed: int = 42):
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.dnfs_baseline_01.run import train
     from experiments.dnfs_baseline_01.configs import CONFIGS
+    from experiments.dnfs_baseline_01.run import train
 
     train(CONFIGS[cfg_name], seed=seed, output_dir="/results")
     volume.commit()
@@ -183,7 +183,9 @@ def train_remote_l4(cfg_name: str, seed: int = 42):
     timeout=2 * 60 * 60,
 )
 def eval_remote(
-    run_dir_name: str, redraw: bool = False, redraw_seed: int = 0,
+    run_dir_name: str,
+    redraw: bool = False,
+    redraw_seed: int = 0,
     n_euler_override: int = 0,
 ):
     """Re-run the end-of-run eval for a run dir already on the volume.
@@ -213,7 +215,9 @@ def eval_remote(
     from experiments.dnfs_baseline_01.run import eval_only
 
     metrics = eval_only(
-        Path("/results") / run_dir_name, redraw=redraw, redraw_seed=redraw_seed,
+        Path("/results") / run_dir_name,
+        redraw=redraw,
+        redraw_seed=redraw_seed,
         n_euler_override=n_euler_override,
     )
     print(f"[eval_remote] {run_dir_name}: {json.dumps(metrics, indent=2)}")
@@ -221,8 +225,9 @@ def eval_remote(
 
 
 @app.function(gpu="A100", timeout=2 * 60 * 60)
-def compile_bench_remote(cfg_name: str = "stage_4_d10", n_steps: int = 400,
-                         tail: int = 200):
+def compile_bench_remote(
+    cfg_name: str = "stage_4_d10", n_steps: int = 400, tail: int = 200
+):
     """Same-container eager-vs-compiled bench of the flip-route trainer
     (method in compile_bench.py — both arms in one container so the ratio
     is same-device by construction)."""
@@ -232,11 +237,9 @@ def compile_bench_remote(cfg_name: str = "stage_4_d10", n_steps: int = 400,
 
 
 @app.local_entrypoint()
-def compile_bench(cfg_name: str = "stage_4_d10", n_steps: int = 400,
-                  tail: int = 200):
+def compile_bench(cfg_name: str = "stage_4_d10", n_steps: int = 400, tail: int = 200):
     """Blocking local CLI entry for the compile bench."""
-    compile_bench_remote.remote(cfg_name=cfg_name, n_steps=n_steps,
-                                tail=tail)
+    compile_bench_remote.remote(cfg_name=cfg_name, n_steps=n_steps, tail=tail)
 
 
 @app.local_entrypoint()
@@ -288,7 +291,9 @@ def batch_configs(configs: str = "", seed: int = 42):
 
 @app.local_entrypoint()
 def batch_eval(
-    run_dirs: str = "", redraw: bool = False, redraw_seed: int = 0,
+    run_dirs: str = "",
+    redraw: bool = False,
+    redraw_seed: int = 0,
     n_euler_override: int = 0,
 ):
     """Spawn one eval per comma-separated run dir, in parallel.
@@ -301,7 +306,9 @@ def batch_eval(
     dirs = [d.strip() for d in run_dirs.split(",") if d.strip()]
     for run_dir in dirs:
         eval_remote.spawn(
-            run_dir_name=run_dir, redraw=redraw, redraw_seed=redraw_seed,
+            run_dir_name=run_dir,
+            redraw=redraw,
+            redraw_seed=redraw_seed,
             n_euler_override=n_euler_override,
         )
     print(f"spawned {len(dirs)} evals at ne{n_euler_override or 'native'}: {dirs}")

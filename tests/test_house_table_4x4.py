@@ -45,8 +45,7 @@ def test_gate_provenance_is_arm_keyed_because_one_campaign_ran_both():
     map to match. That would encode a two-campaign split that never
     happened at this rung.
     """
-    from experiments.constrained_hard_03.analysis.house_table_4x4 import (
-        ARM_PROVENANCE)
+    from experiments.constrained_hard_03.analysis.house_table_4x4 import ARM_PROVENANCE
 
     for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"):
         assert ARM_PROVENANCE[arm] == ("w2", "20260828-rasterord-d16")
@@ -62,7 +61,10 @@ def test_every_registered_arm_names_a_real_config():
     per-coupling CELL_NAME template there) and both rules can drift.
     """
     from experiments.constrained_hard_03.analysis.house_table_4x4 import (
-        ARMS, ARM_PROVENANCE, SIGMA_LABELS)
+        ARM_PROVENANCE,
+        ARMS,
+        SIGMA_LABELS,
+    )
     from experiments.constrained_hard_03.configs import CONFIGS
 
     # The eager-refill branch left with the factorised arms: the
@@ -87,7 +89,9 @@ def test_oracle_is_enrolled_with_its_own_campaign_tag():
     CONFIG is a wave-2 cell; only the campaign tag is its own.
     """
     from experiments.constrained_hard_03.analysis.house_table_4x4 import (
-        ARMS, ARM_PROVENANCE)
+        ARM_PROVENANCE,
+        ARMS,
+    )
 
     assert "dh" in ARMS
     assert ARM_PROVENANCE["dh"] == ("w2", "20260829-dh-oracle-d16")

@@ -37,6 +37,7 @@ eval's shadow-weight draw, archived pre-EMA cells keep the default):
                   S2_d8_c0500_l50_letf_ne128_house \
         --seeds 42 43 44 45 --ess_floor 0.30 --eval_dir eval_ema
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -68,19 +69,38 @@ def _load_record(run_dir: Path, eval_dir: str = "eval") -> dict:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--results_dir", type=Path, default=Path("results/02_constrained_soft"))
-    p.add_argument("--configs", nargs="+", required=True,
-                   help="config-name stems (without _seed..); one per composition window")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--results_dir", type=Path, default=Path("results/02_constrained_soft")
+    )
+    p.add_argument(
+        "--configs",
+        nargs="+",
+        required=True,
+        help="config-name stems (without _seed..); one per composition window",
+    )
     p.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44, 45])
-    p.add_argument("--ess_floor", type=float, default=0.30,
-                   help="per-seed ESS-fraction floor for entering the F(c) average")
-    p.add_argument("--plot", type=Path, default=None,
-                   help="optional output path for the F(c) + bias figure")
-    p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
-                   help="which frozen eval to score: raw weights or the "
-                        "dual eval's EMA shadow draw")
+    p.add_argument(
+        "--ess_floor",
+        type=float,
+        default=0.30,
+        help="per-seed ESS-fraction floor for entering the F(c) average",
+    )
+    p.add_argument(
+        "--plot",
+        type=Path,
+        default=None,
+        help="optional output path for the F(c) + bias figure",
+    )
+    p.add_argument(
+        "--eval_dir",
+        choices=["eval", "eval_ema"],
+        default="eval",
+        help="which frozen eval to score: raw weights or the "
+        "dual eval's EMA shadow draw",
+    )
     args = p.parse_args()
 
     # --- collect every available run ------------------------------------
@@ -102,11 +122,15 @@ def main() -> None:
     sigmas = sorted({r["sigma"] for r in records})
     lambdas = sorted({r["lambda"] for r in records})
     Ds = sorted({r["D"] for r in records})
-    print(f"=== F(c) curve : D={Ds} sigma={sigmas} lambda={lambdas} "
-          f"n_euler={n_euler} ess_floor={args.ess_floor} ===")
+    print(
+        f"=== F(c) curve : D={Ds} sigma={sigmas} lambda={lambdas} "
+        f"n_euler={n_euler} ess_floor={args.ess_floor} ==="
+    )
     if len(n_euler) > 1:
-        print(f"[warn] mixed n_euler {n_euler}: F-estimate discretisation bias "
-              f"differs across windows, so the curve mixes integrators.")
+        print(
+            f"[warn] mixed n_euler {n_euler}: F-estimate discretisation bias "
+            f"differs across windows, so the curve mixes integrators."
+        )
 
     # --- group by composition, ESS-gate, aggregate ---------------------
     by_c: dict[float, list[dict]] = {}
@@ -127,21 +151,31 @@ def main() -> None:
         excluded = [r for r in rows if r["ess_frac"] < args.ess_floor]
         if gated:
             Fs = np.array([r["F_per_site"] for r in gated])
-            F_mean, F_sd = float(Fs.mean()), float(Fs.std(ddof=1) if len(Fs) > 1 else 0.0)
+            F_mean, F_sd = (
+                float(Fs.mean()),
+                float(Fs.std(ddof=1) if len(Fs) > 1 else 0.0),
+            )
         else:
             F_mean = F_sd = float("nan")
         ess_lo = min(r["ess_frac"] for r in rows)
         ess_hi = max(r["ess_frac"] for r in rows)
-        F_exact = next((r["F_per_site_exact"] for r in rows
-                        if r["F_per_site_exact"] is not None), None)
-        bias_mean = (float(np.mean([r["F_per_site_bias"] for r in gated]))
-                     if gated and gated[0]["F_per_site_bias"] is not None else None)
+        F_exact = next(
+            (r["F_per_site_exact"] for r in rows if r["F_per_site_exact"] is not None),
+            None,
+        )
+        bias_mean = (
+            float(np.mean([r["F_per_site_bias"] for r in gated]))
+            if gated and gated[0]["F_per_site_bias"] is not None
+            else None
+        )
 
-        line = (f"{c_t:>6.3f} {len(gated):>2}/{len(rows):<3} "
-                f"{F_mean:>11.4f} +/- {F_sd:<6.4f} {ess_lo:>6.3f}-{ess_hi:<6.3f}")
+        line = (
+            f"{c_t:>6.3f} {len(gated):>2}/{len(rows):<3} "
+            f"{F_mean:>11.4f} +/- {F_sd:<6.4f} {ess_lo:>6.3f}-{ess_hi:<6.3f}"
+        )
         if has_exact:
-            line += (f" {F_exact:>13.4f}" if F_exact is not None else f" {'-':>13}")
-            line += (f" {bias_mean:>+12.4f}" if bias_mean is not None else f" {'-':>12}")
+            line += f" {F_exact:>13.4f}" if F_exact is not None else f" {'-':>13}"
+            line += f" {bias_mean:>+12.4f}" if bias_mean is not None else f" {'-':>12}"
         seed_of = lambda r: r["name"].split("_seed")[1].split("_")[0]
         line += "  " + ",".join(f"{seed_of(r)}:{r['ess_frac']:.2f}" for r in excluded)
         print(line)
@@ -149,14 +183,21 @@ def main() -> None:
 
     # --- Z_2 symmetry check : F(c) vs F(1-c) ----------------------------
     cset = {c for c, *_ in curve}
-    pairs = sorted({(min(c, 1 - c), max(c, 1 - c)) for c in cset
-                    if round(1 - c, 4) in cset and abs(c - 0.5) > 1e-6})
+    pairs = sorted(
+        {
+            (min(c, 1 - c), max(c, 1 - c))
+            for c in cset
+            if round(1 - c, 4) in cset and abs(c - 0.5) > 1e-6
+        }
+    )
     if pairs:
         print("\n--- Z_2 check  F(c) vs F(1-c) (no field => should match) ---")
         Fmap = {c: F for c, F, *_ in curve}
         for lo, hi in pairs:
-            print(f"  F({lo:.3f})={Fmap[lo]:+.4f}  F({hi:.3f})={Fmap[hi]:+.4f}  "
-                  f"|gap|={abs(Fmap[lo] - Fmap[hi]):.4f}")
+            print(
+                f"  F({lo:.3f})={Fmap[lo]:+.4f}  F({hi:.3f})={Fmap[hi]:+.4f}  "
+                f"|gap|={abs(Fmap[lo] - Fmap[hi]):.4f}"
+            )
 
     if args.plot is not None:
         _plot(curve, has_exact, n_euler, args.plot)
@@ -175,9 +216,17 @@ def _plot(curve, has_exact, n_euler, out: Path) -> None:
     import numpy as np
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        FIGSIZE_FULL_1X2, HARD_DELTA_HUE, MUTED, REFERENCE_INK, SAMPLER_HUE,
-        SAVEFIG_DPI, SINGLE_PANEL_WIDTH_IN, style_axes, uncertainty_band,
-        use_house_style)
+        FIGSIZE_FULL_1X2,
+        HARD_DELTA_HUE,
+        MUTED,
+        REFERENCE_INK,
+        SAMPLER_HUE,
+        SAVEFIG_DPI,
+        SINGLE_PANEL_WIDTH_IN,
+        style_axes,
+        uncertainty_band,
+        use_house_style,
+    )
 
     use_house_style()
     cs = [c for c, *_ in curve]
@@ -188,13 +237,30 @@ def _plot(curve, has_exact, n_euler, out: Path) -> None:
     fig, axes = plt.subplots(1, ncol, figsize=figsize, squeeze=False)
     ax = axes[0][0]
     uncertainty_band(ax, cs, F - sd, F + sd, SAMPLER_HUE)
-    ax.plot(cs, F, marker="o", ms=4, color=SAMPLER_HUE, lw=1.4, zorder=3,
-            label="DNFS soft (IS est., band = seed sd)")
+    ax.plot(
+        cs,
+        F,
+        marker="o",
+        ms=4,
+        color=SAMPLER_HUE,
+        lw=1.4,
+        zorder=3,
+        label="DNFS soft (IS est., band = seed sd)",
+    )
     if has_exact:
         Fe = [fe for *_, _, fe, _ in curve]
         if all(v is not None for v in Fe):
-            ax.plot(cs, Fe, "--", marker="s", ms=4, color=REFERENCE_INK, lw=1.4,
-                    zorder=4, label="exact enumeration")
+            ax.plot(
+                cs,
+                Fe,
+                "--",
+                marker="s",
+                ms=4,
+                color=REFERENCE_INK,
+                lw=1.4,
+                zorder=4,
+                label="exact enumeration",
+            )
     ax.set_xlabel("composition $c$")
     ax.set_ylabel("$F/d$")
     ax.set_title(f"F(c), n_euler={n_euler}")

@@ -27,6 +27,7 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     pixi run -e dev modal run -m \\
         experiments.constrained_hard_03.modal_app::gate
 """
+
 import os
 import time
 
@@ -244,8 +245,11 @@ def train_remote(
     timeout=4 * 60 * 60,
 )
 def gate_remote(
-    seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False,
-    cells: str = "", out: str = "/results/gate_4x4",
+    seeds: str = "42,43,44",
+    n_samples: int = 5000,
+    skip_controls: bool = False,
+    cells: str = "",
+    out: str = "/results/gate_4x4",
 ):
     """Run the 4x4 exact-enumeration pass/fail gate against the trained run
     dirs already on the volume; writes verdict.json + plot to /results/gate_4x4."""
@@ -255,11 +259,16 @@ def gate_remote(
     from experiments.constrained_hard_03.gate_4x4 import main as gate_main
 
     argv = [
-        "--results-dir", "/results",
-        "--device", "cuda",
-        "--out", out,
-        "--seeds", seeds,
-        "--n-samples", str(n_samples),
+        "--results-dir",
+        "/results",
+        "--device",
+        "cuda",
+        "--out",
+        out,
+        "--seeds",
+        seeds,
+        "--n-samples",
+        str(n_samples),
     ]
     if skip_controls:
         argv.append("--skip-controls")
@@ -270,8 +279,7 @@ def gate_remote(
 
 
 @app.function(gpu="L4", volumes={"/results": volume}, timeout=2 * 60 * 60)
-def demo_remote(seeds: str = "42,43,44", n_samples: int = 5000,
-                n_replicates: int = 5):
+def demo_remote(seeds: str = "42,43,44", n_samples: int = 5000, n_replicates: int = 5):
     """GPU stage of the 4x4 demo analysis (2026-07-08): gate fidelity +
     neural replicate estimates for the 10k MA/MO cells; writes
     /results/demo_4x4/neural_estimates.json. L4 suffices at d=16."""
@@ -280,12 +288,23 @@ def demo_remote(seeds: str = "42,43,44", n_samples: int = 5000,
     sys.path.insert(0, "/repo")
     from experiments.constrained_hard_03.demo_4x4 import main as demo_main
 
-    demo_main([
-        "gpu", "--results-dir", "/results", "--device", "cuda",
-        "--seeds", seeds, "--n-samples", str(n_samples),
-        "--n-replicates", str(n_replicates),
-        "--out", "/results/demo_4x4",
-    ])
+    demo_main(
+        [
+            "gpu",
+            "--results-dir",
+            "/results",
+            "--device",
+            "cuda",
+            "--seeds",
+            seeds,
+            "--n-samples",
+            str(n_samples),
+            "--n-replicates",
+            str(n_replicates),
+            "--out",
+            "/results/demo_4x4",
+        ]
+    )
     volume.commit()
 
 
@@ -298,11 +317,21 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
     sys.path.insert(0, "/repo")
     from experiments.constrained_hard_03.demo_4x4 import main as demo_main
 
-    demo_main([
-        "phi", "--results-dir", "/results", "--device", "cuda",
-        "--seeds", seeds, "--n-samples", str(n_samples),
-        "--out", "/results/demo_4x4",
-    ])
+    demo_main(
+        [
+            "phi",
+            "--results-dir",
+            "/results",
+            "--device",
+            "cuda",
+            "--seeds",
+            seeds,
+            "--n-samples",
+            str(n_samples),
+            "--out",
+            "/results/demo_4x4",
+        ]
+    )
     volume.commit()
 
 
@@ -339,8 +368,12 @@ def _resolve_multi_event_trit(multi_event: int):
     timeout=6 * 60 * 60,
 )
 def eval_remote(
-    run_dir_name: str, multi_event: int = -1, smc_tau: float = 0.0,
-    n_euler_override: int = 0, stage_best: int = -1, use_ema: bool = False,
+    run_dir_name: str,
+    multi_event: int = -1,
+    smc_tau: float = 0.0,
+    n_euler_override: int = 0,
+    stage_best: int = -1,
+    use_ema: bool = False,
 ):
     """Re-run the end-of-run eval for a run dir already on the volume
     (recovery for trainings whose final eval died, e.g. the 2026-07-06
@@ -416,9 +449,7 @@ def transport_decomposition_remote(run_dir_name: str, n_samples: int = 0):
     run_dir = Path("/results") / run_dir_name
     result = decompose_run(run_dir, n_samples=n_samples or None)
     print(json.dumps(result, indent=2))
-    (run_dir / "transport_decomposition.json").write_text(
-        json.dumps(result, indent=2)
-    )
+    (run_dir / "transport_decomposition.json").write_text(json.dumps(result, indent=2))
     volume.commit()
 
 
@@ -507,9 +538,15 @@ def bench_remote(argv: str = "", isolate: bool = True):
     env = {**os.environ, "PYTHONPATH": PROJECT_DIR}
     for one in configs:
         subprocess.run(
-            [sys.executable, "-m", "experiments.constrained_hard_03.profile_swap",
-             *one],
-            cwd=PROJECT_DIR, env=env, check=True,
+            [
+                sys.executable,
+                "-m",
+                "experiments.constrained_hard_03.profile_swap",
+                *one,
+            ],
+            cwd=PROJECT_DIR,
+            env=env,
+            check=True,
         )
         print(flush=True)
 
@@ -541,9 +578,15 @@ def bench_cell_remote(argv: str = ""):
     env = {**os.environ, "PYTHONPATH": PROJECT_DIR, "PYTHONUNBUFFERED": "1"}
     for one in argv.split(";"):
         subprocess.run(
-            [sys.executable, "-m",
-             "experiments.constrained_hard_03.bench_cell_step", *one.split()],
-            cwd=PROJECT_DIR, env=env, check=True,
+            [
+                sys.executable,
+                "-m",
+                "experiments.constrained_hard_03.bench_cell_step",
+                *one.split(),
+            ],
+            cwd=PROJECT_DIR,
+            env=env,
+            check=True,
         )
         print(flush=True)
 
@@ -653,8 +696,7 @@ def zero_shot_transfer(
     # than the probe's correctness. Measured 2026-08-27: symmetric within seed
     # noise.
     stop_times: str = (
-        "0.125984252,0.251968504,0.456692913,0.598425197,"
-        "0.748031496,0.874015748,1.0"
+        "0.125984252,0.251968504,0.456692913,0.598425197,0.748031496,0.874015748,1.0"
     ),
     n_samples: int = 5000,
     n_euler_steps: int = 128,
@@ -699,23 +741,32 @@ def main(cfg_name: str, seed: int = 42, head_kind: str = "", smoke: bool = False
     _validate_cfg_name(cfg_name)
     resolved_head_kind = _resolve_head_kind(head_kind)
     train_remote.remote(
-        cfg_name=cfg_name, seed=seed, head_kind=resolved_head_kind, smoke=smoke,
+        cfg_name=cfg_name,
+        seed=seed,
+        head_kind=resolved_head_kind,
+        smoke=smoke,
         tag=time.strftime("%Y%m%d-%H%M%S"),
     )
 
 
 @app.local_entrypoint()
 def gate(
-    seeds: str = "42,43,44", n_samples: int = 5000, skip_controls: bool = False,
-    cells: str = "", out: str = "/results/gate_4x4",
+    seeds: str = "42,43,44",
+    n_samples: int = 5000,
+    skip_controls: bool = False,
+    cells: str = "",
+    out: str = "/results/gate_4x4",
 ):
     """Local CLI entry for the gate: blocking `.remote()` so the per-run
     progress prints stream back to the local terminal. `cells` = comma-
     separated CONFIGS names to gate instead of the dh ladder (pass `out` too
     so the ladder's verdict.json is not overwritten)."""
     gate_remote.remote(
-        seeds=seeds, n_samples=n_samples, skip_controls=skip_controls,
-        cells=cells, out=out,
+        seeds=seeds,
+        n_samples=n_samples,
+        skip_controls=skip_controls,
+        cells=cells,
+        out=out,
     )
 
 
@@ -732,11 +783,20 @@ def residue_probe_remote(run_dirs: str, n_states: int = 256):
         main as probe_main,
     )
 
-    probe_main([
-        "--results-dir", "/results", "--run-dirs", run_dirs,
-        "--device", "cuda", "--n-states", str(n_states),
-        "--out", "/results/compile_residue_probe/report.json",
-    ])
+    probe_main(
+        [
+            "--results-dir",
+            "/results",
+            "--run-dirs",
+            run_dirs,
+            "--device",
+            "cuda",
+            "--n-states",
+            str(n_states),
+            "--out",
+            "/results/compile_residue_probe/report.json",
+        ]
+    )
     volume.commit()
 
 
@@ -763,8 +823,12 @@ def compile_gate():
 
 
 @app.function(gpu="A100-80GB", timeout=60 * 60)
-def compile_profile_remote(cfg_name: str = "", microbatch: int = 128,
-                           rollout_batch: int = 512, rollout_steps: int = 16):
+def compile_profile_remote(
+    cfg_name: str = "",
+    microbatch: int = 128,
+    rollout_batch: int = 512,
+    rollout_steps: int = 16,
+):
     """Post-compile region profile of the production swap stack (method and
     region list in compile_profile.py). Prints tables; nothing on the
     volume."""
@@ -773,17 +837,27 @@ def compile_profile_remote(cfg_name: str = "", microbatch: int = 128,
         run_profile,
     )
 
-    run_profile(cfg_name=cfg_name or THP2_CELL, microbatch=microbatch,
-                rollout_batch=rollout_batch, rollout_steps=rollout_steps)
+    run_profile(
+        cfg_name=cfg_name or THP2_CELL,
+        microbatch=microbatch,
+        rollout_batch=rollout_batch,
+        rollout_steps=rollout_steps,
+    )
 
 
 @app.local_entrypoint()
-def compile_profile(cfg_name: str = "", microbatch: int = 128,
-                    rollout_batch: int = 512, rollout_steps: int = 16):
+def compile_profile(
+    cfg_name: str = "",
+    microbatch: int = 128,
+    rollout_batch: int = 512,
+    rollout_steps: int = 16,
+):
     """Blocking local CLI entry for the post-compile profile."""
     compile_profile_remote.remote(
-        cfg_name=cfg_name, microbatch=microbatch,
-        rollout_batch=rollout_batch, rollout_steps=rollout_steps,
+        cfg_name=cfg_name,
+        microbatch=microbatch,
+        rollout_batch=rollout_batch,
+        rollout_steps=rollout_steps,
     )
 
 
@@ -791,9 +865,7 @@ def compile_profile(cfg_name: str = "", microbatch: int = 128,
 def demo(seeds: str = "42,43,44", n_samples: int = 5000, n_replicates: int = 5):
     """Blocking local CLI entry for the 4x4 demo GPU stage (per-cell progress
     prints stream back to the local terminal)."""
-    demo_remote.remote(
-        seeds=seeds, n_samples=n_samples, n_replicates=n_replicates
-    )
+    demo_remote.remote(seeds=seeds, n_samples=n_samples, n_replicates=n_replicates)
 
 
 @app.local_entrypoint()
@@ -804,7 +876,9 @@ def phihist(seeds: str = "42,43,44", n_samples: int = 5000):
 
 @app.local_entrypoint()
 def evalonly(
-    run_dirs: str, multi_event: int = -1, smc_tau: float = 0.0,
+    run_dirs: str,
+    multi_event: int = -1,
+    smc_tau: float = 0.0,
     n_euler_override: int = 0,
 ):
     """Spawn eval-only recovery over comma-separated run dir names on the
@@ -820,7 +894,9 @@ def evalonly(
     names = [n.strip() for n in run_dirs.split(",") if n.strip()]
     for name in names:
         eval_remote.spawn(
-            run_dir_name=name, multi_event=multi_event, smc_tau=smc_tau,
+            run_dir_name=name,
+            multi_event=multi_event,
+            smc_tau=smc_tau,
             n_euler_override=n_euler_override,
         )
     print(

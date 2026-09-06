@@ -10,6 +10,7 @@ be traced to the exact configuration that produced it.
     python -m experiments.constrained_hard_03.analysis.parse_bench_log \
         <log> <out.json>
 """
+
 import json
 import re
 import sys
@@ -30,9 +31,15 @@ def parse(lines):
             rows.append(current)
             continue
         timing = TIMING.match(line.strip())
-        if (timing and timing.group(1).startswith("gfn_")
-                and (current is None or not current["mode"].startswith("gfn_")
-                     or current["timings"])):
+        if (
+            timing
+            and timing.group(1).startswith("gfn_")
+            and (
+                current is None
+                or not current["mode"].startswith("gfn_")
+                or current["timings"]
+            )
+        ):
             # Archived GFN logs have no header; new logs retain the explicit
             # configuration header, including the update-only timing scope.
             current = {"mode": timing.group(1).strip(), "timings": {}}

@@ -17,6 +17,7 @@ Example:
     pixi run -e dev python -m experiments.constrained_hard_03.kawasaki_4x4 \
         --sigmas 0.10 0.223 --n-trial-steps 200000
 """
+
 import argparse
 import time
 from pathlib import Path
@@ -46,8 +47,9 @@ def spins_from_symbols(symbols, index_map: np.ndarray) -> np.ndarray:
     return spins
 
 
-def run_chain(D: int, sigma: float, seed: int, n_trial_steps: int,
-              snapshot_interval: int):
+def run_chain(
+    D: int, sigma: float, seed: int, n_trial_steps: int, snapshot_interval: int
+):
     """One CanonicalEnsemble chain at 50/50 occupancy; returns
     (spins, mctrials, wall_seconds_setup, wall_seconds_run) with spins
     (S, D*D) in the target's site order. Wall-clock is recorded because the
@@ -64,8 +66,11 @@ def run_chain(D: int, sigma: float, seed: int, n_trial_steps: int,
     supercell.set_chemical_symbols(symbols)
     calculator = ClusterExpansionCalculator(supercell, ce)
     ensemble = CanonicalEnsemble(
-        structure=supercell, calculator=calculator,
-        temperature=1.0, boltzmann_constant=1.0, random_seed=seed,
+        structure=supercell,
+        calculator=calculator,
+        temperature=1.0,
+        boltzmann_constant=1.0,
+        random_seed=seed,
         ensemble_data_write_interval=snapshot_interval,
         trajectory_write_interval=snapshot_interval,
         dc_filename=None,
@@ -75,10 +80,12 @@ def run_chain(D: int, sigma: float, seed: int, n_trial_steps: int,
     wall_seconds_run = time.perf_counter() - run_start
     mctrials, trajectory = ensemble.data_container.get("mctrial", "trajectory")
     index_map = site_index_map(supercell, D)
-    spins = np.stack([
-        spins_from_symbols(atoms.get_chemical_symbols(), index_map)
-        for atoms in trajectory
-    ])
+    spins = np.stack(
+        [
+            spins_from_symbols(atoms.get_chemical_symbols(), index_map)
+            for atoms in trajectory
+        ]
+    )
     wall_seconds_setup = run_start - setup_start
     return spins, np.asarray(mctrials), wall_seconds_setup, wall_seconds_run
 
@@ -87,8 +94,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--D", type=int, default=4)
     parser.add_argument("--sigmas", type=float, nargs="+", default=[0.10, 0.223])
-    parser.add_argument("--seeds", type=int, nargs="+",
-                        default=list(range(1000, 1015)))
+    parser.add_argument("--seeds", type=int, nargs="+", default=list(range(1000, 1015)))
     parser.add_argument("--n-trial-steps", type=int, default=200_000)
     parser.add_argument("--snapshot-interval", type=int, default=20)
     parser.add_argument("--out", default="results/03_hard/demo_4x4/kawasaki")
@@ -104,14 +110,21 @@ def main(argv=None):
             )
             np.savez(
                 out_dir / f"kawasaki_D{args.D}_{sigma_tag}_seed{seed}.npz",
-                spins=spins, mctrial=mctrials,
+                spins=spins,
+                mctrial=mctrials,
                 n_trial_steps=args.n_trial_steps,
                 snapshot_interval=args.snapshot_interval,
-                sigma=sigma, seed=seed, D=args.D,
-                wall_seconds_setup=wall_setup, wall_seconds_run=wall_run,
+                sigma=sigma,
+                seed=seed,
+                D=args.D,
+                wall_seconds_setup=wall_setup,
+                wall_seconds_run=wall_run,
             )
-            print(f"[kawasaki] {sigma_tag} seed {seed}: {len(spins)} snapshots "
-                  f"({wall_run:.1f}s run)", flush=True)
+            print(
+                f"[kawasaki] {sigma_tag} seed {seed}: {len(spins)} snapshots "
+                f"({wall_run:.1f}s run)",
+                flush=True,
+            )
 
 
 if __name__ == "__main__":

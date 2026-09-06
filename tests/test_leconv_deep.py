@@ -12,6 +12,7 @@ data-dependent-weight stacking trick.
    stacking is the new architectural mechanism.
 3. Translation equivariance — verified at depth>1.
 """
+
 import torch
 
 from discrete_flow_sampler.models.leconv_deep import LeConvDeepRateMatrix
@@ -85,8 +86,7 @@ def test_compute_body_hollow_at_depth():
         H2 = model.compute_body(x2, t)
         diff = (H1[0, i, :] - H2[0, i, :]).abs().max().item()
         assert diff < 1e-6, (
-            f"Hollow violated at depth=2, i={i}: "
-            f"||H1[i] - H2[i]||_inf = {diff:.2e}"
+            f"Hollow violated at depth=2, i={i}: ||H1[i] - H2[i]||_inf = {diff:.2e}"
         )
 
 
@@ -109,9 +109,7 @@ def test_translation_equivariant_body_at_depth():
 
         H_grid_rolled = torch.roll(H_grid, shifts=(dr, dc), dims=(-2, -1))
         diff = (H_grid_rolled - H_shifted_grid).abs().max().item()
-        assert diff < 1e-5, (
-            f"Translation violated at depth=2, ({dr},{dc}): {diff:.2e}"
-        )
+        assert diff < 1e-5, f"Translation violated at depth=2, ({dr},{dc}): {diff:.2e}"
 
 
 def test_accepts_both_spin_and_index_input():
@@ -202,8 +200,10 @@ def test_varied_kernel_schedule_runs():
     """
     D, vocab_size = 10, 2
     model = _make_model(
-        D=D, vocab_size=vocab_size,
-        kernel_schedule=(3, 5, 7, 9, 15), hidden_dim=16,
+        D=D,
+        vocab_size=vocab_size,
+        kernel_schedule=(3, 5, 7, 9, 15),
+        hidden_dim=16,
     )
     x = torch.randint(0, vocab_size, (2, D * D))
     t = torch.rand(2)

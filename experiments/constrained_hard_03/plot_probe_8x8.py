@@ -60,6 +60,7 @@ Hues fixed per sampler entity (validated colourblind-safe, worst adjacent
 CVD dE 22.4, light surface): neural #2a78d6 (house masked-attention hue),
 kawasaki nonlocal #eda100 (house kawasaki hue), kawasaki local #8e63c5.
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -70,8 +71,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 from experiments.constrained_hard_03.probe_analysis_8x8 import (
     LATTICE_SIDE,
     OPERATING_POINTS,
@@ -81,14 +80,22 @@ from experiments.constrained_hard_03.probe_analysis_8x8 import (
     tv_noise_floor,
 )
 
+from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
 torch.set_num_threads(2)  # the 16x16 reference chain owns the Mac's cores
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    REFERENCE_INK as INK, SAMPLER_HUE as NEURAL_HUE,
-    CLASSICAL_HUE as KAWASAKI_NONLOCAL_HUE, CLASSICAL_ALT_HUE as KAWASAKI_LOCAL_HUE, MUTED)
+    CLASSICAL_ALT_HUE as KAWASAKI_LOCAL_HUE,
+)
+from discrete_flow_sampler.diagnostics.figure_style import (
+    CLASSICAL_HUE as KAWASAKI_NONLOCAL_HUE,
+)
+from discrete_flow_sampler.diagnostics.figure_style import MUTED
+from discrete_flow_sampler.diagnostics.figure_style import REFERENCE_INK as INK
+from discrete_flow_sampler.diagnostics.figure_style import SAMPLER_HUE as NEURAL_HUE
 
 SWEEPS_PER_CHAIN = 1_000_000
-NEURAL_SECONDS_PER_REPLICATE = 92.4          # A30; mtime-delta method, see module docstring
+NEURAL_SECONDS_PER_REPLICATE = 92.4  # A30; mtime-delta method, see module docstring
 NEURAL_TRAINING_SECONDS = {"sc": 2.6 * 3600, "s010": 1.8 * 3600}
 POINT_TITLES = {"sc": r"$\sigma_c = 0.223$", "s010": r"$\sigma = 0.10$"}
 RUN_DIR_DEFAULTS = {
@@ -114,9 +121,7 @@ def _style_axis(ax):
 
 def chain_wall_seconds(probe_root, point, variant):
     """Per-chain MC-loop wall seconds from meta.json, in chain order."""
-    chain_dirs = sorted(
-        (probe_root / "competitor" / point / variant).glob("chain_*")
-    )
+    chain_dirs = sorted((probe_root / "competitor" / point / variant).glob("chain_*"))
     return [
         json.loads((d / "meta.json").read_text())["wall_seconds_run"]
         for d in chain_dirs
@@ -155,9 +160,9 @@ def plot_cost_quality(analysis, probe_root, out_path, summary_rows):
             ("local", KAWASAKI_LOCAL_HUE, "kawasaki local (numba)"),
             ("nonlocal", KAWASAKI_NONLOCAL_HUE, "kawasaki non-local (mchammer)"),
         ]
-        neural_n_eff = (
-            result["neural"]["n_eff_per_pass"]["observables"]["energy"]["n_eff"]
-        )
+        neural_n_eff = result["neural"]["n_eff_per_pass"]["observables"]["energy"][
+            "n_eff"
+        ]
         neural_rate = neural_n_eff / NEURAL_SECONDS_PER_REPLICATE
         gaps = []
         for variant, hue, label in variant_specs:
@@ -165,55 +170,89 @@ def plot_cost_quality(analysis, probe_root, out_path, summary_rows):
             walls = chain_wall_seconds(probe_root, point, variant)
             x, y = chain_accumulation(rows, walls)
             positive = y > 0
-            ax.plot(x[positive], y[positive], color=hue, linewidth=1.6,
-                    zorder=3, label=label)
+            ax.plot(
+                x[positive],
+                y[positive],
+                color=hue,
+                linewidth=1.6,
+                zorder=3,
+                label=label,
+            )
             gaps.append((variant, (y[-1] / x[-1]) / neural_rate))
-            summary_rows.append({
-                "point": point, "sampler": f"kawasaki_{variant}",
-                "wall_seconds_total": float(x[-1]),
-                "n_eff_energy_total": float(y[-1]),
-                "seconds_per_effective_sample": float(x[-1] / y[-1]),
-                "n_eff_per_second": float(y[-1] / x[-1]),
-            })
+            summary_rows.append(
+                {
+                    "point": point,
+                    "sampler": f"kawasaki_{variant}",
+                    "wall_seconds_total": float(x[-1]),
+                    "n_eff_energy_total": float(y[-1]),
+                    "seconds_per_effective_sample": float(x[-1] / y[-1]),
+                    "n_eff_per_second": float(y[-1] / x[-1]),
+                }
+            )
 
         replicate_index = np.arange(1, 9)
         sampling_x = replicate_index * NEURAL_SECONDS_PER_REPLICATE
         sampling_y = replicate_index * neural_n_eff
-        ax.plot(sampling_x, sampling_y, color=NEURAL_HUE, linewidth=1.6,
-                marker="o", markersize=3.5, zorder=4,
-                label="neural swap-CTMC (sampling)")
+        ax.plot(
+            sampling_x,
+            sampling_y,
+            color=NEURAL_HUE,
+            linewidth=1.6,
+            marker="o",
+            markersize=3.5,
+            zorder=4,
+            label="neural swap-CTMC (sampling)",
+        )
         training = NEURAL_TRAINING_SECONDS[point]
-        ax.plot(sampling_x + training, sampling_y, color=NEURAL_HUE,
-                linewidth=1.4, linestyle=":", marker="o", markersize=3,
-                zorder=4, label="neural incl. one-off training")
-        summary_rows.append({
-            "point": point, "sampler": "neural_ma",
-            "wall_seconds_total": float(sampling_x[-1]),
-            "n_eff_energy_total": float(sampling_y[-1]),
-            "seconds_per_effective_sample": float(
-                NEURAL_SECONDS_PER_REPLICATE / neural_n_eff
-            ),
-            "n_eff_per_second": float(neural_rate),
-            "training_seconds_one_off": float(training),
-        })
+        ax.plot(
+            sampling_x + training,
+            sampling_y,
+            color=NEURAL_HUE,
+            linewidth=1.4,
+            linestyle=":",
+            marker="o",
+            markersize=3,
+            zorder=4,
+            label="neural incl. one-off training",
+        )
+        summary_rows.append(
+            {
+                "point": point,
+                "sampler": "neural_ma",
+                "wall_seconds_total": float(sampling_x[-1]),
+                "n_eff_energy_total": float(sampling_y[-1]),
+                "seconds_per_effective_sample": float(
+                    NEURAL_SECONDS_PER_REPLICATE / neural_n_eff
+                ),
+                "n_eff_per_second": float(neural_rate),
+                "training_seconds_one_off": float(training),
+            }
+        )
 
         # The gap reported when no break-even crossing occurs in range:
         # post-burn-in rates are constant, so the rate
         # ratio holds at every wall-clock beyond the chain's burn-in.
         gap_text = "chain lead at equal wall-clock:\n" + "\n".join(
-            f"  {variant}: {gap:,.0f}x" if gap >= 100 else
-            f"  {variant}: {gap:.1f}x" for variant, gap in gaps
+            f"  {variant}: {gap:,.0f}x" if gap >= 100 else f"  {variant}: {gap:.1f}x"
+            for variant, gap in gaps
         )
-        ax.text(0.97, 0.05, gap_text, transform=ax.transAxes, fontsize=7,
-                color=MUTED, ha="right", va="bottom")
+        ax.text(
+            0.97,
+            0.05,
+            gap_text,
+            transform=ax.transAxes,
+            fontsize=7,
+            color=MUTED,
+            ha="right",
+            va="bottom",
+        )
 
         ax.set_xscale("log")
         ax.set_yscale("log")
         ax.set_title(POINT_TITLES[point], fontsize=9, color=INK)
         ax.set_xlabel("cumulative wall-clock (s)", fontsize=8, color=MUTED)
         _style_axis(ax)
-    axes[0].set_ylabel(r"cumulative $N_{\rm eff}$(energy)", fontsize=8,
-                       color=MUTED)
+    axes[0].set_ylabel(r"cumulative $N_{\rm eff}$(energy)", fontsize=8, color=MUTED)
     axes[0].legend(fontsize=7, frameon=False, loc="upper left")
     # The report caption supplies the figure description.
     fig.tight_layout()
@@ -237,17 +276,16 @@ def pooled_neural_energy(run_dir, target):
     energies, weights = [], []
     replicate_dirs = sorted(Path(run_dir).glob("eval_replicate_s*"))
     for replicate_dir in replicate_dirs:
-        samples = torch.load(replicate_dir / "samples.pt",
-                             map_location="cpu", weights_only=True)
-        log_w = torch.load(replicate_dir / "log_weights.pt",
-                           map_location="cpu", weights_only=True)
-        energies.append(
-            observable_values("energy", samples.float(), target).numpy()
+        samples = torch.load(
+            replicate_dir / "samples.pt", map_location="cpu", weights_only=True
         )
+        log_w = torch.load(
+            replicate_dir / "log_weights.pt", map_location="cpu", weights_only=True
+        )
+        energies.append(observable_values("energy", samples.float(), target).numpy())
         weights.append(torch.softmax(log_w, dim=0).numpy())
     n_replicates = len(replicate_dirs)
-    return (np.concatenate(energies),
-            np.concatenate(weights) / n_replicates)
+    return (np.concatenate(energies), np.concatenate(weights) / n_replicates)
 
 
 def reference_energies(probe_root, point, target):
@@ -259,7 +297,7 @@ def reference_energies(probe_root, point, target):
         spins = np.load(chain_dir / "snapshots.npz")["spins"]
         states = torch.from_numpy(spins.astype(np.float32))
         trace = observable_values("energy", states, target).numpy()
-        pooled.append(trace[trace.size // 2:])
+        pooled.append(trace[trace.size // 2 :])
     return np.concatenate(pooled)
 
 
@@ -279,50 +317,57 @@ def energy_panel_data(point, run_dir, probe_root, coverage):
     with n/tau_int(energy) effective size; floors are seeded for
     reproducible figures."""
     target = FixedCompositionIsingTarget(
-        D=LATTICE_SIDE, sigma=OPERATING_POINTS[point],
-        target_composition=0.5, bias=0.0, device="cpu",
+        D=LATTICE_SIDE,
+        sigma=OPERATING_POINTS[point],
+        target_composition=0.5,
+        bias=0.0,
+        device="cpu",
     )
     neural_vals, neural_w = pooled_neural_energy(run_dir, target)
     ref_vals = reference_energies(probe_root, point, target)
     kaw_rows = kawasaki_chain_rows(probe_root, point, "nonlocal", target)
     kaw_traces, kaw_n_eff = [], 0.0
     for chain_dir, row in zip(
-        sorted((probe_root / "competitor" / point / "nonlocal")
-               .glob("chain_*")),
+        sorted((probe_root / "competitor" / point / "nonlocal").glob("chain_*")),
         kaw_rows,
     ):
         spins = np.load(chain_dir / "snapshots.npz")["spins"]
         states = torch.from_numpy(spins.astype(np.float32))
         trace = observable_values("energy", states, target).numpy()
-        kept = np.arange(1, trace.size + 1) * (
-            SWEEPS_PER_CHAIN // trace.size
-        ) > row["burn_in_sweeps"]
+        kept = (
+            np.arange(1, trace.size + 1) * (SWEEPS_PER_CHAIN // trace.size)
+            > row["burn_in_sweeps"]
+        )
         kaw_traces.append(trace[kept])
-        kaw_n_eff += kept.sum() * (SWEEPS_PER_CHAIN // trace.size) / (
-            2.0 * row["tau_int_batch_means_sweeps"]
+        kaw_n_eff += (
+            kept.sum()
+            * (SWEEPS_PER_CHAIN // trace.size)
+            / (2.0 * row["tau_int_batch_means_sweeps"])
         )
     kaw_vals = np.concatenate(kaw_traces)
 
-    levels = np.unique(np.rint(np.concatenate(
-        [ref_vals, neural_vals, kaw_vals]
-    )))
-    ref_hist = mass_on_levels(ref_vals, np.full(ref_vals.size,
-                                                1.0 / ref_vals.size), levels)
+    levels = np.unique(np.rint(np.concatenate([ref_vals, neural_vals, kaw_vals])))
+    ref_hist = mass_on_levels(
+        ref_vals, np.full(ref_vals.size, 1.0 / ref_vals.size), levels
+    )
     neural_hist = mass_on_levels(neural_vals, neural_w, levels)
-    kaw_hist = mass_on_levels(kaw_vals, np.full(kaw_vals.size,
-                                                1.0 / kaw_vals.size), levels)
+    kaw_hist = mass_on_levels(
+        kaw_vals, np.full(kaw_vals.size, 1.0 / kaw_vals.size), levels
+    )
 
     rng = np.random.default_rng(NOISE_FLOOR_SEED)
     neural_tv = total_variation(neural_hist, ref_hist)
     kaw_tv = total_variation(kaw_hist, ref_hist)
-    neural_floor = tv_noise_floor(
-        ref_hist, coverage["neural_effective_draws"], rng
-    )
+    neural_floor = tv_noise_floor(ref_hist, coverage["neural_effective_draws"], rng)
     kaw_floor = tv_noise_floor(ref_hist, kaw_n_eff, rng)
     return {
-        "levels": levels, "ref_hist": ref_hist, "neural_hist": neural_hist,
-        "neural_tv": neural_tv, "neural_floor": neural_floor,
-        "kaw_tv": kaw_tv, "kaw_floor": kaw_floor,
+        "levels": levels,
+        "ref_hist": ref_hist,
+        "neural_hist": neural_hist,
+        "neural_tv": neural_tv,
+        "neural_floor": neural_floor,
+        "kaw_tv": kaw_tv,
+        "kaw_floor": kaw_floor,
         "kaw_n_eff_energy": float(kaw_n_eff),
     }
 
@@ -334,46 +379,84 @@ def _tv_annotation(ax, neural_tv, neural_floor, kaw_tv, kaw_floor, y):
     neural_excess = max(0.0, neural_tv - neural_floor)
     kaw_excess = max(0.0, kaw_tv - kaw_floor)
     ax.text(
-        0.03, y,
+        0.03,
+        y,
         f"TV(neural) = {neural_tv:.4f} (floor {neural_floor:.4f})\n"
         f"TV(kawasaki) = {kaw_tv:.4f} (floor {kaw_floor:.4f})\n"
         f"excess: {neural_excess:.4f} / {kaw_excess:.4f}",
-        transform=ax.transAxes, fontsize=7, color=MUTED,
-        ha="left", va="top",
+        transform=ax.transAxes,
+        fontsize=7,
+        color=MUTED,
+        ha="left",
+        va="top",
     )
 
 
-def plot_fidelity_coverage(analysis, point, run_dir, probe_root, out_path,
-                           summary_rows):
+def plot_fidelity_coverage(
+    analysis, point, run_dir, probe_root, out_path, summary_rows
+):
     coverage = analysis["results"][point]["neural"]["coverage"]
     energy = energy_panel_data(point, run_dir, probe_root, coverage)
 
     fig, (ax_energy, ax_phi) = plt.subplots(1, 2, figsize=(9.5, 3.9))
 
-    ax_energy.step(energy["levels"], energy["ref_hist"], where="mid",
-                   color=INK, linewidth=1.8, zorder=3,
-                   label=r"reference chains ($\hat R \leq 1.01$)")
-    ax_energy.step(energy["levels"], energy["neural_hist"], where="mid",
-                   color=NEURAL_HUE, linewidth=1.2, alpha=0.9, zorder=4,
-                   label="neural, IS-weighted (8 replicates pooled)")
-    _tv_annotation(ax_energy, energy["neural_tv"], energy["neural_floor"],
-                   energy["kaw_tv"], energy["kaw_floor"], y=0.74)
-    ax_energy.set_xlabel(r"slice energy $x^\top A x$", fontsize=8,
-                         color=MUTED)
+    ax_energy.step(
+        energy["levels"],
+        energy["ref_hist"],
+        where="mid",
+        color=INK,
+        linewidth=1.8,
+        zorder=3,
+        label=r"reference chains ($\hat R \leq 1.01$)",
+    )
+    ax_energy.step(
+        energy["levels"],
+        energy["neural_hist"],
+        where="mid",
+        color=NEURAL_HUE,
+        linewidth=1.2,
+        alpha=0.9,
+        zorder=4,
+        label="neural, IS-weighted (8 replicates pooled)",
+    )
+    _tv_annotation(
+        ax_energy,
+        energy["neural_tv"],
+        energy["neural_floor"],
+        energy["kaw_tv"],
+        energy["kaw_floor"],
+        y=0.74,
+    )
+    ax_energy.set_xlabel(r"slice energy $x^\top A x$", fontsize=8, color=MUTED)
     ax_energy.set_ylabel("probability mass", fontsize=8, color=MUTED)
-    ax_energy.set_title(f"energy marginal  ({POINT_TITLES[point]})",
-                        fontsize=9, color=INK)
+    ax_energy.set_title(
+        f"energy marginal  ({POINT_TITLES[point]})", fontsize=9, color=INK
+    )
     _style_axis(ax_energy)
     ax_energy.legend(fontsize=7, frameon=False, loc="upper left")
 
     support = np.asarray(coverage["phi_support"], dtype=float)
     reference = np.asarray(coverage["reference_phi_hist"], dtype=float)
     neural = np.asarray(coverage["neural_phi_hist"], dtype=float)
-    ax_phi.plot(support, reference / reference.sum(), color=INK,
-                linewidth=1.8, marker="o", markersize=3.5, zorder=3)
-    ax_phi.plot(support, neural / neural.sum(), color=NEURAL_HUE,
-                linewidth=1.4, marker="o", markersize=3, alpha=0.9,
-                zorder=4)
+    ax_phi.plot(
+        support,
+        reference / reference.sum(),
+        color=INK,
+        linewidth=1.8,
+        marker="o",
+        markersize=3.5,
+        zorder=3,
+    )
+    ax_phi.plot(
+        support,
+        neural / neural.sum(),
+        color=NEURAL_HUE,
+        linewidth=1.4,
+        marker="o",
+        markersize=3,
+        alpha=0.9,
+        zorder=4,
+    )
     _tv_annotation(
         ax_phi,
         coverage["neural_phi_tv_vs_reference"],
@@ -382,23 +465,24 @@ def plot_fidelity_coverage(analysis, point, run_dir, probe_root, out_path,
         coverage["kawasaki_tv_noise_floor_95"],
         y=0.96,
     )
-    ax_phi.set_xlabel(r"mode order parameter $\phi$", fontsize=8,
-                      color=MUTED)
-    ax_phi.set_title(f"mode coverage  ({POINT_TITLES[point]})", fontsize=9,
-                     color=INK)
+    ax_phi.set_xlabel(r"mode order parameter $\phi$", fontsize=8, color=MUTED)
+    ax_phi.set_title(f"mode coverage  ({POINT_TITLES[point]})", fontsize=9, color=INK)
     _style_axis(ax_phi)
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=180)
     plt.close(fig)
-    summary_rows.append({
-        "point": point, "figure": out_path.name,
-        "energy_tv_neural": energy["neural_tv"],
-        "energy_tv_floor_neural": energy["neural_floor"],
-        "energy_tv_kawasaki": energy["kaw_tv"],
-        "energy_tv_floor_kawasaki": energy["kaw_floor"],
-        "energy_levels": int(energy["levels"].size),
-    })
+    summary_rows.append(
+        {
+            "point": point,
+            "figure": out_path.name,
+            "energy_tv_neural": energy["neural_tv"],
+            "energy_tv_floor_neural": energy["neural_floor"],
+            "energy_tv_kawasaki": energy["kaw_tv"],
+            "energy_tv_floor_kawasaki": energy["kaw_floor"],
+            "energy_levels": int(energy["levels"].size),
+        }
+    )
 
 
 def endpoint_sanity(analysis):
@@ -411,19 +495,24 @@ def endpoint_sanity(analysis):
             block = analysis["results"][point]["kawasaki"][variant]
             table_n_eff = block["n_eff"]["observables"]["energy"]["n_eff"]
             rows = block["chains"]
-            tau_form = np.mean([
-                (SWEEPS_PER_CHAIN - r["burn_in_sweeps"])
-                / (2.0 * r["tau_int_batch_means_sweeps"]) for r in rows
-            ])
-            print(f"[plot] {point}/{variant}: tau-form N_eff/chain "
-                  f"{tau_form:,.0f} vs frozen Var/MSE {table_n_eff:,.0f} "
-                  f"(ratio {table_n_eff / tau_form:.2f})", flush=True)
+            tau_form = np.mean(
+                [
+                    (SWEEPS_PER_CHAIN - r["burn_in_sweeps"])
+                    / (2.0 * r["tau_int_batch_means_sweeps"])
+                    for r in rows
+                ]
+            )
+            print(
+                f"[plot] {point}/{variant}: tau-form N_eff/chain "
+                f"{tau_form:,.0f} vs frozen Var/MSE {table_n_eff:,.0f} "
+                f"(ratio {table_n_eff / tau_form:.2f})",
+                flush=True,
+            )
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--headline-dir",
-                        default="results/03_hard/probe_8x8_headline")
+    parser.add_argument("--headline-dir", default="results/03_hard/probe_8x8_headline")
     parser.add_argument("--probe-root", default="results/kawasaki_probe")
     parser.add_argument("--sc-run-dir", default=RUN_DIR_DEFAULTS["sc"])
     parser.add_argument("--s010-run-dir", default=RUN_DIR_DEFAULTS["s010"])
@@ -432,31 +521,38 @@ def main(argv=None):
     probe_root = Path(args.probe_root)
     figures_dir = headline_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
-    analysis = json.loads(
-        (headline_dir / "probe_8x8_headline.json").read_text()
-    )
+    analysis = json.loads((headline_dir / "probe_8x8_headline.json").read_text())
     endpoint_sanity(analysis)
     summary_rows = []
-    plot_cost_quality(analysis, probe_root,
-                      figures_dir / "cost_quality_crossover.png",
-                      summary_rows)
+    plot_cost_quality(
+        analysis, probe_root, figures_dir / "cost_quality_crossover.png", summary_rows
+    )
     fidelity_rows = []
-    for point, run_dir in (("sc", args.sc_run_dir),
-                           ("s010", args.s010_run_dir)):
+    for point, run_dir in (("sc", args.sc_run_dir), ("s010", args.s010_run_dir)):
         plot_fidelity_coverage(
-            analysis, point, run_dir, probe_root,
-            figures_dir / f"fidelity_coverage_{point}.png", fidelity_rows,
+            analysis,
+            point,
+            run_dir,
+            probe_root,
+            figures_dir / f"fidelity_coverage_{point}.png",
+            fidelity_rows,
         )
     summary_path = headline_dir / "cost_quality_summary.json"
-    summary_path.write_text(json.dumps({
-        "neural_seconds_per_replicate": NEURAL_SECONDS_PER_REPLICATE,
-        "neural_training_seconds": NEURAL_TRAINING_SECONDS,
-        "wall_clock_provenance": "see plot_probe_8x8.py module docstring",
-        "cost_quality_rows": summary_rows,
-        "fidelity_rows": fidelity_rows,
-    }, indent=2))
-    print(f"[plot] wrote 3 figures to {figures_dir} and "
-          f"{summary_path.name}", flush=True)
+    summary_path.write_text(
+        json.dumps(
+            {
+                "neural_seconds_per_replicate": NEURAL_SECONDS_PER_REPLICATE,
+                "neural_training_seconds": NEURAL_TRAINING_SECONDS,
+                "wall_clock_provenance": "see plot_probe_8x8.py module docstring",
+                "cost_quality_rows": summary_rows,
+                "fidelity_rows": fidelity_rows,
+            },
+            indent=2,
+        )
+    )
+    print(
+        f"[plot] wrote 3 figures to {figures_dir} and {summary_path.name}", flush=True
+    )
 
 
 if __name__ == "__main__":

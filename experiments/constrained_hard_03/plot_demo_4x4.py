@@ -15,6 +15,7 @@ Hues are fixed per sampler entity (never re-assigned by panel):
 masked_attention #2a78d6, mask_one #1baf7a, Kawasaki #eda100; palette
 validated colourblind-safe (worst adjacent CVD dE 47.2, light surface).
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -24,8 +25,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from discrete_flow_sampler.diagnostics.figure_style import CLASSICAL_HUE as KAWASAKI_HUE
 from discrete_flow_sampler.diagnostics.figure_style import (
-    REFERENCE_INK as INK, SAMPLER_HUE, NEURAL_COMPARATOR_HUE, CLASSICAL_HUE as KAWASAKI_HUE, MUTED)
+    MUTED,
+    NEURAL_COMPARATOR_HUE,
+    SAMPLER_HUE,
+)
+from discrete_flow_sampler.diagnostics.figure_style import REFERENCE_INK as INK
+
 HEAD_HUES = {"masked_attention": SAMPLER_HUE, "mask_one": NEURAL_COMPARATOR_HUE}
 OBSERVABLE_LABELS = {
     "energy": "energy",
@@ -49,17 +56,28 @@ def plot_energy_marginals(neural, out_path):
     for ax, cell in zip(axes.flat, neural):
         hue = HEAD_HUES[cell["head_kind"]]
         first = cell["fidelity"][0]
-        ax.step(first["energy_centres"], first["hist_exact"], where="mid",
-                color=INK, linewidth=1.8, zorder=3,
-                label=r"exact $\pi(\cdot\,|\,C)$")
-        for fidelity in cell["fidelity"]:
-            ax.step(fidelity["energy_centres"], fidelity["hist_dnfs"],
-                    where="mid", color=hue, linewidth=1.1, alpha=0.6,
-                    zorder=2, label=f"seed {fidelity['seed']}")
-        sigma_label = f"$\\sigma$ = {cell['sigma']}"
-        ax.set_title(
-            f"{cell['head_kind']}  ({sigma_label})", fontsize=9, color=INK
+        ax.step(
+            first["energy_centres"],
+            first["hist_exact"],
+            where="mid",
+            color=INK,
+            linewidth=1.8,
+            zorder=3,
+            label=r"exact $\pi(\cdot\,|\,C)$",
         )
+        for fidelity in cell["fidelity"]:
+            ax.step(
+                fidelity["energy_centres"],
+                fidelity["hist_dnfs"],
+                where="mid",
+                color=hue,
+                linewidth=1.1,
+                alpha=0.6,
+                zorder=2,
+                label=f"seed {fidelity['seed']}",
+            )
+        sigma_label = f"$\\sigma$ = {cell['sigma']}"
+        ax.set_title(f"{cell['head_kind']}  ({sigma_label})", fontsize=9, color=INK)
         ax.set_xlabel(r"slice energy $x^\top A x$", fontsize=8, color=MUTED)
         _style_axis(ax)
     axes[0, 0].set_ylabel("probability mass", fontsize=8, color=MUTED)
@@ -85,15 +103,19 @@ def plot_neff_per_compute(table, out_path):
     for row, sigma in enumerate(sorted({r["sigma"] for r in table})):
         for col, currency in enumerate(("backbone_rows", "energy_evals")):
             ax = axes[row, col]
-            samplers = sorted({
-                (r["sampler"], r["head_kind"]) for r in table
-                if r["sigma"] == sigma and r["currency"] == currency
-            })
+            samplers = sorted(
+                {
+                    (r["sampler"], r["head_kind"])
+                    for r in table
+                    if r["sigma"] == sigma and r["currency"] == currency
+                }
+            )
             width = 0.8 / len(samplers)
             for k, (sampler, head_kind) in enumerate(samplers):
                 hue = HEAD_HUES.get(head_kind, KAWASAKI_HUE)
                 rows = {
-                    r["observable"]: r for r in table
+                    r["observable"]: r
+                    for r in table
                     if r["sampler"] == sampler and r["sigma"] == sigma
                 }
                 values = [rows[o]["n_eff_per_1e6"] for o in observables]
@@ -106,29 +128,39 @@ def plot_neff_per_compute(table, out_path):
                     for i in range(len(observables))
                 ]
                 label = head_kind if currency == "backbone_rows" else "kawasaki"
-                ax.bar(positions, values, width * 0.92, color=hue, zorder=2,
-                       label=label)
+                ax.bar(
+                    positions, values, width * 0.92, color=hue, zorder=2, label=label
+                )
                 # Bars on bars: x here is the categorical observable list,
                 # not a continuous axis, so there is nothing for a shaded
                 # band to be shaded along.
-                ax.errorbar(positions, values, yerr=errors, fmt="none",
-                            ecolor=INK, elinewidth=0.9, capsize=2, zorder=3)
+                ax.errorbar(
+                    positions,
+                    values,
+                    yerr=errors,
+                    fmt="none",
+                    ecolor=INK,
+                    elinewidth=0.9,
+                    capsize=2,
+                    zorder=3,
+                )
             ax.set_xticks(range(len(observables)))
-            ax.set_xticklabels(
-                [OBSERVABLE_LABELS[o] for o in observables], fontsize=8
-            )
+            ax.set_xticklabels([OBSERVABLE_LABELS[o] for o in observables], fontsize=8)
             _style_axis(ax)
             if row == 0:
                 ax.set_title(currency_titles[currency], fontsize=9, color=INK)
             if col == 0:
                 ax.set_ylabel(
                     f"$\\sigma$ = {sigma}\n$N_{{\\rm eff}}(O)$ per $10^6$ units",
-                    fontsize=9, color=INK,
+                    fontsize=9,
+                    color=INK,
                 )
             ax.legend(fontsize=7, frameon=False)
     fig.suptitle(
         "N_eff(O) per compute, 4x4 demo -- currencies are NOT comparable "
-        "across columns (frozen two-currency rule)", fontsize=10, color=INK,
+        "across columns (frozen two-currency rule)",
+        fontsize=10,
+        color=INK,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(out_path, dpi=180)
@@ -146,6 +178,7 @@ def plot_phi_coverage(phi_hists, kawasaki_dir, out_path):
         kawasaki_phi_mass,
         phi_support,
     )
+
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
     sigmas = sorted({cell["sigma"] for cell in phi_hists})
@@ -155,18 +188,41 @@ def plot_phi_coverage(phi_hists, kawasaki_dir, out_path):
         target = FixedCompositionIsingTarget(
             D=4, sigma=sigma, target_composition=0.5, bias=0.0, device="cpu"
         )
-        ax.plot(support, exact_phi_pmf(target), color=INK, linewidth=1.8,
-                marker="o", markersize=4, zorder=4, label=r"exact $\pi(\phi)$")
+        ax.plot(
+            support,
+            exact_phi_pmf(target),
+            color=INK,
+            linewidth=1.8,
+            marker="o",
+            markersize=4,
+            zorder=4,
+            label=r"exact $\pi(\phi)$",
+        )
         for cell in phi_hists:
             if abs(cell["sigma"] - sigma) > 1e-9:
                 continue
-            ax.plot(cell["phi_support"], cell["phi_mass"],
-                    color=HEAD_HUES[cell["head_kind"]], linewidth=1.4,
-                    marker="o", markersize=3.5, alpha=0.85, zorder=3,
-                    label=cell["head_kind"])
-        ax.plot(support, kawasaki_phi_mass(kawasaki_dir, sigma, target, 20_000),
-                color=KAWASAKI_HUE, linewidth=1.4, marker="o", markersize=3.5,
-                alpha=0.85, zorder=2, label="kawasaki")
+            ax.plot(
+                cell["phi_support"],
+                cell["phi_mass"],
+                color=HEAD_HUES[cell["head_kind"]],
+                linewidth=1.4,
+                marker="o",
+                markersize=3.5,
+                alpha=0.85,
+                zorder=3,
+                label=cell["head_kind"],
+            )
+        ax.plot(
+            support,
+            kawasaki_phi_mass(kawasaki_dir, sigma, target, 20_000),
+            color=KAWASAKI_HUE,
+            linewidth=1.4,
+            marker="o",
+            markersize=3.5,
+            alpha=0.85,
+            zorder=2,
+            label="kawasaki",
+        )
         ax.set_title(f"$\\sigma$ = {sigma}", fontsize=9, color=INK)
         ax.set_xlabel(r"mode order parameter $\phi$", fontsize=8, color=MUTED)
         _style_axis(ax)
@@ -174,7 +230,9 @@ def plot_phi_coverage(phi_hists, kawasaki_dir, out_path):
     axes[0].legend(fontsize=7, frameon=False)
     fig.suptitle(
         "Mode coverage at the enumerable size: full distribution of $\\phi$ "
-        "vs exact enumeration", fontsize=10, color=INK,
+        "vs exact enumeration",
+        fontsize=10,
+        color=INK,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(out_path, dpi=180)
@@ -196,7 +254,8 @@ def main(argv=None):
     phi_json = demo_dir / "phi_hists.json"
     if phi_json.exists():
         plot_phi_coverage(
-            json.loads(phi_json.read_text()), demo_dir / "kawasaki",
+            json.loads(phi_json.read_text()),
+            demo_dir / "kawasaki",
             figures_dir / "phi_coverage.png",
         )
         n_figures = 3

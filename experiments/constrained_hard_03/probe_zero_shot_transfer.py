@@ -64,6 +64,7 @@ summation order (pinned by `test_running_weights_match_a_truncated_run`).
 The composition axis cannot be collapsed the same way: a different slice means a
 different base draw, so it genuinely needs its own pass.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -302,10 +303,15 @@ def transfer_grid(
                 "n_samples": states.shape[0],
             }
             row.update(weighted_diagnostics(log_w, states, cpu_target))
-            row.update(slice_free_energy_per_site(
-                float(log_w.mean()), row["stop_time"], sigma, D * D,
-                target._log_slice_size,
-            ))
+            row.update(
+                slice_free_energy_per_site(
+                    float(log_w.mean()),
+                    row["stop_time"],
+                    sigma,
+                    D * D,
+                    target._log_slice_size,
+                )
+            )
             rows.append(row)
     return rows
 
@@ -406,7 +412,9 @@ def main():
     # silently ran one-event would miss the t*=1 anchor against the published
     # ESS and the gap would read as failed transfer rather than a wrong step.
     parser.add_argument(
-        "--multi-event", default=None, choices=("on", "off"),
+        "--multi-event",
+        default=None,
+        choices=("on", "off"),
         help="default: the cell's own canonical step (cfg.ctmc.use_matching_step)",
     )
     parser.add_argument("--out", type=Path, default=None)

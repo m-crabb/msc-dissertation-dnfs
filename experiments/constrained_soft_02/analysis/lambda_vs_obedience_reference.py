@@ -75,15 +75,23 @@ def exact_delivered(D: int, sigma: float, strength: float, c_req: float) -> floa
 
 
 def mchammer_delivered(
-    D: int, sigma: float, strength: float, c_req: float,
-    n_steps: int, seeds: tuple[int, ...],
+    D: int,
+    sigma: float,
+    strength: float,
+    c_req: float,
+    n_steps: int,
+    seeds: tuple[int, ...],
 ) -> float:
     """Mean delivered composition over VC-SGC chains (seed-averaged)."""
     means = []
     for seed in seeds:
         summary = run_vcsgc(
-            D=D, sigma=sigma, penalty_strength=strength,
-            target_composition=c_req, n_steps=n_steps, seed=seed,
+            D=D,
+            sigma=sigma,
+            penalty_strength=strength,
+            target_composition=c_req,
+            n_steps=n_steps,
+            seed=seed,
         )
         means.append(summary["observables"]["composition"]["mean"])
     return float(np.mean(means))
@@ -133,31 +141,40 @@ def main() -> None:
         if not args.exact_only:
             mchammer_by_c = {
                 c: mchammer_delivered(
-                    args.D, args.sigma, strength, c,
-                    args.n_steps, tuple(args.seeds),
+                    args.D,
+                    args.sigma,
+                    strength,
+                    c,
+                    args.n_steps,
+                    tuple(args.seeds),
                 )
                 for c in all_compositions
             }
         for grid_name, grid in grids:
-            rows.append({
-                "lambda": strength,
-                "grid": grid_name,
-                "exact_slope": round(
-                    fitted_slope(list(grid), [exact_by_c[c] for c in grid]), 4
-                ),
-                "mchammer_slope": None if mchammer_by_c is None else round(
-                    fitted_slope(list(grid), [mchammer_by_c[c] for c in grid]), 4
-                ),
-            })
+            rows.append(
+                {
+                    "lambda": strength,
+                    "grid": grid_name,
+                    "exact_slope": round(
+                        fitted_slope(list(grid), [exact_by_c[c] for c in grid]), 4
+                    ),
+                    "mchammer_slope": None
+                    if mchammer_by_c is None
+                    else round(
+                        fitted_slope(list(grid), [mchammer_by_c[c] for c in grid]), 4
+                    ),
+                }
+            )
         print(
             f"lambda={strength:5.1f}  "
             + "  ".join(
                 f"{r['grid']}: exact {r['exact_slope']:.4f}"
                 + (
                     f" mchammer {r['mchammer_slope']:.4f}"
-                    if r["mchammer_slope"] is not None else ""
+                    if r["mchammer_slope"] is not None
+                    else ""
                 )
-                for r in rows[-len(grids):]
+                for r in rows[-len(grids) :]
             )
         )
         first_row_this_lambda = rows[-len(grids)]
@@ -170,10 +187,18 @@ def main() -> None:
             }
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.with_suffix(".json").write_text(json.dumps({
-        "D": args.D, "sigma": args.sigma, "n_steps": args.n_steps,
-        "seeds": args.seeds, "rows": rows,
-    }, indent=2))
+    args.out.with_suffix(".json").write_text(
+        json.dumps(
+            {
+                "D": args.D,
+                "sigma": args.sigma,
+                "n_steps": args.n_steps,
+                "seeds": args.seeds,
+                "rows": rows,
+            },
+            indent=2,
+        )
+    )
     with args.out.with_suffix(".csv").open("w", newline="") as handle:
         writer = csv.DictWriter(
             handle, fieldnames=["lambda", "grid", "exact_slope", "mchammer_slope"]

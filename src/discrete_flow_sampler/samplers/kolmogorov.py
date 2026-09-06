@@ -46,6 +46,7 @@ Implementation notes
   (B*d, d) batched call. This is exactly the cost cliff that motivates
   the locally equivariant Transformer in Stage 3.
 """
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -175,7 +176,7 @@ def residual_lenet(
 
     # G_t shape (B, D, S). The τ = x_i slot is already 0 by the leMLP scatter.
     G_t = model(x, t)
-    G_plus     = F.relu(G_t)
+    G_plus = F.relu(G_t)
     neg_G_plus = F.relu(-G_t)
 
     log_p_neighbours = _log_p_tilde_at_neighbours(x, t, target, vocab_size)

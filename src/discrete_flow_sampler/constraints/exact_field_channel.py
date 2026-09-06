@@ -42,6 +42,7 @@ channel is given the same convention by the same mirror, so the sum is
 exactly index-antisymmetric with a zero diagonal. sigma and A are
 read LIVE from the target so the sigma-curriculum propagates.
 """
+
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -78,7 +79,7 @@ class ExactFieldSwapHead(nn.Module):
         return upper - upper.transpose(1, 2)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        gain = self.gain_constant + self.gain_slope * t         # (B,)
+        gain = self.gain_constant + self.gain_slope * t  # (B,)
         return self.head(x, t) + gain[:, None, None] * self.exact_field(x)
 
 
@@ -196,8 +197,9 @@ class ExactFieldFlipModel(nn.Module):
         d = x.shape[-1]
         lam = target.composition_penalty_strength
         c_star = (
-            target.target_composition if composition is None
-            else composition.unsqueeze(-1)                      # (B, 1)
+            target.target_composition
+            if composition is None
+            else composition.unsqueeze(-1)  # (B, 1)
         )
         # No penalty or c*: use the bare energy log-ratio, avoiding
         # undefined penalty arithmetic when c* is None.
@@ -207,8 +209,7 @@ class ExactFieldFlipModel(nn.Module):
         # Target-supplied energy term: Ising -4 sigma x_i h_i or cluster
         # expansion -beta Delta E_i, for binary targets.
         return target.base_flip_log_ratio(x) + x * (
-            2.0 * lam * (c_hollow - c_star)
-            + lam / d
+            2.0 * lam * (c_hollow - c_star) + lam / d
         )
 
     def forward(self, x: Tensor, t: Tensor, c: Tensor | None = None) -> Tensor:
@@ -218,16 +219,14 @@ class ExactFieldFlipModel(nn.Module):
                 "composition-conditioned gain is enabled"
             )
         G = self.model(x, t) if c is None else self.model(x, t, c)
-        gain = self.gain_constant + self.gain_slope * t          # (B,)
+        gain = self.gain_constant + self.gain_slope * t  # (B,)
         if self.composition_conditioned_gain:
             centred_c = c - float(self.target.target_composition)
             gain = gain + centred_c * (
-                self.composition_gain_constant
-                + self.composition_gain_slope * t
+                self.composition_gain_constant + self.composition_gain_slope * t
             )
         contribution = gain.unsqueeze(1) * self.exact_field(x, composition=c)
         # Only the flip slot moves; the current token's slot stays exactly
         # zero (the convention G.sum(-1) == flip score relies on).
         flip_slot = (1 - ((x + 1) / 2)).long().unsqueeze(-1)
-        return G.scatter_add(
-            -1, flip_slot, contribution.unsqueeze(-1).to(G.dtype))
+        return G.scatter_add(-1, flip_slot, contribution.unsqueeze(-1).to(G.dtype))

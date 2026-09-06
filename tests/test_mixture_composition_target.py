@@ -14,6 +14,7 @@ rests on three algebraic facts this file pins:
     and unswapped states share a slice and the base constant cancels
     pairwise exactly as it does for the single-slice target.
 """
+
 import math
 
 import pytest
@@ -30,8 +31,7 @@ COMPOSITIONS = (0.5, 0.375, 0.25)
 
 
 def _mixture(D=4, sigma=0.1, compositions=COMPOSITIONS):
-    return MixtureCompositionIsingTarget(
-        D=D, sigma=sigma, compositions=compositions)
+    return MixtureCompositionIsingTarget(D=D, sigma=sigma, compositions=compositions)
 
 
 def _n_plus(x):
@@ -57,8 +57,7 @@ def test_base_log_eta_is_the_per_row_slice_constant():
     x = tgt.sample_base(300, device="cpu")
     eta = tgt.base_log_eta(x)
     for c in COMPOSITIONS:
-        single = FixedCompositionIsingTarget(
-            D=4, sigma=0.1, target_composition=c)
+        single = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=c)
         rows = _n_plus(x) == single.n_plus_target
         assert rows.any()
         expected = single.base_log_eta(x[rows])
@@ -74,8 +73,7 @@ def test_swap_log_ratio_matches_the_single_slice_target_per_row():
     t = torch.full((64,), 0.7)
     got = tgt.swap_log_ratio(x, t, pairs)
     for c in COMPOSITIONS:
-        single = FixedCompositionIsingTarget(
-            D=4, sigma=0.1, target_composition=c)
+        single = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=c)
         rows = _n_plus(x) == single.n_plus_target
         expected = single.swap_log_ratio(x[rows], t[rows], pairs)
         assert torch.allclose(got[rows], expected, atol=1e-6)
@@ -114,12 +112,11 @@ def test_single_composition_mixture_degenerates_to_the_fixed_target():
     base support, same constants -- the degenerate case that keeps the two
     classes honest against each other."""
     mix = _mixture(compositions=(0.5,))
-    single = FixedCompositionIsingTarget(D=4, sigma=0.1,
-                                         target_composition=0.5)
+    single = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     x = mix.sample_base(128, device="cpu")
     assert torch.all(_n_plus(x) == 8)
     assert torch.allclose(mix.base_log_eta(x), single.base_log_eta(x))
     # base_log_eta returns x.dtype (float32), so exactness is fp32-level.
     assert math.isclose(
-        mix.base_log_eta(x)[0].item(), -single._log_slice_size,
-        rel_tol=1e-6)
+        mix.base_log_eta(x)[0].item(), -single._log_slice_size, rel_tol=1e-6
+    )

@@ -181,9 +181,7 @@ class LeTFMaskOneSwapHead(nn.Module):
     test oracle.
     """
 
-    def __init__(
-        self, backbone: LeTFRateMatrix, anchor_chunk_size: int | None = None
-    ):
+    def __init__(self, backbone: LeTFRateMatrix, anchor_chunk_size: int | None = None):
         super().__init__()
         self.backbone = backbone
         self.d = backbone.d

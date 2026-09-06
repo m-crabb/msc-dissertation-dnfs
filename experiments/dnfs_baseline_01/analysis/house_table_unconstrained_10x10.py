@@ -39,6 +39,7 @@ The retrains clear their expected floors 4/4 in every family (final fp32
 Never mix couplings in one comparison: sigma_c runs pair with the sigma_c
 pool, legacy with legacy.
 """
+
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -47,34 +48,48 @@ import numpy as np
 import torch
 
 from discrete_flow_sampler.diagnostics.flops import (
-    chain_per_effective_sample, measured_forward_flops,
-    neural_sampling_flops_per_sample, per_effective_sample, sgc_run_flops)
+    chain_per_effective_sample,
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+    sgc_run_flops,
+)
 from discrete_flow_sampler.diagnostics.metrics import (
-    correlation_profile_error, energy_wasserstein2, integrated_autocorr,
-    magnetisation_profile_error)
+    correlation_profile_error,
+    energy_wasserstein2,
+    integrated_autocorr,
+    magnetisation_profile_error,
+)
 from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 # Support experiments-package imports when invoked by file path.
 import sys
+
 sys.path.insert(0, str(REPO_ROOT))
 RESULTS = REPO_ROOT / "results" / "01_baseline"
 L = 10
 OPERATING_POINTS = {
-    "sigma_0.1": dict(sigma=0.1, runs="stage_4_d10_budget_seed4*",
-                      reference="wolff_ref_d10_sigma0.1.pt"),
+    "sigma_0.1": dict(
+        sigma=0.1,
+        runs="stage_4_d10_budget_seed4*",
+        reference="wolff_ref_d10_sigma0.1.pt",
+    ),
     "sigma_c": dict(
         sigma=SIGMA_C,
         runs="stage_4_d10_critical_paper_curriculum_sc_seed4*_20260824-wave1-sc",
-        reference="wolff_ref_d10_sigma0.220343.pt"),
+        reference="wolff_ref_d10_sigma0.220343.pt",
+    ),
 }
 N_BOOTSTRAP = 200
 # --sgc: the practitioner row, one dir per independent chain (scripts/
 # mchammer_baselines.py sgc --record-spins). Dir names carry sigma at full
 # repr, hence the long sigma_c glob.
 SGC_RUNS = REPO_ROOT / "results" / "mchammer_sgc"
-SGC_CHAINS = {"sigma_0.1": "D10_s0.1_c00.50_seed4*",
-              "sigma_c": f"D10_s{SIGMA_C!r}_c00.50_seed4*"}
+SGC_CHAINS = {
+    "sigma_0.1": "D10_s0.1_c00.50_seed4*",
+    "sigma_c": f"D10_s{SIGMA_C!r}_c00.50_seed4*",
+}
 
 
 def observable_errors(x, weights, reference, target):
@@ -82,7 +97,9 @@ def observable_errors(x, weights, reference, target):
     return {
         "dMag": magnetisation_profile_error(x, weights, reference, L),
         "dCorr": correlation_profile_error(x, weights, reference, L),
-        "EW2": energy_wasserstein2(energy_per_site(x), weights, energy_per_site(reference)),
+        "EW2": energy_wasserstein2(
+            energy_per_site(x), weights, energy_per_site(reference)
+        ),
     }
 
 
@@ -112,8 +129,8 @@ def family_flops_per_forward(run_dir: Path, target: IsingTarget) -> int:
     from the dispatch-level counter; compilation changes scheduling, not
     the mathematics) at batch 1 -- the counter is batch-linear, test-pinned.
     """
-    from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
     from experiments.dnfs_baseline_01.configs import ModelCfg
+    from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
 
     cfg_dict = json.loads((run_dir / "config.json").read_text())
     model_cfg = _sub_config(ModelCfg, {**cfg_dict["model"], "compile_model": False})
@@ -129,18 +146,24 @@ def slowest_observable_tau_int(by_chain: torch.Tensor, target: IsingTarget) -> f
     n_records, n_chains, _ = by_chain.shape
     series = {
         "m": by_chain.mean(dim=2).T,
-        "E": (-target.log_prob(by_chain.reshape(-1, target.d))
-              .view(n_records, n_chains) / (2 * target.sigma)).T,
+        "E": (
+            -target.log_prob(by_chain.reshape(-1, target.d)).view(n_records, n_chains)
+            / (2 * target.sigma)
+        ).T,
     }
     return max(
-        float(torch.tensor([integrated_autocorr(chain.numpy())
-                            for chain in per_chain]).mean())
+        float(
+            torch.tensor(
+                [integrated_autocorr(chain.numpy()) for chain in per_chain]
+            ).mean()
+        )
         for per_chain in series.values()
     )
 
 
-def reference_flops_per_es(reference: torch.Tensor, n_chains: int,
-                           target: IsingTarget, sidecar_path: Path) -> float | None:
+def reference_flops_per_es(
+    reference: torch.Tensor, n_chains: int, target: IsingTarget, sidecar_path: Path
+) -> float | None:
     """Reference-row cost cell: the recounted pool build divided by its
     effective record count, tau_int taken as the larger of the energy and
     magnetisation reads (the slowest tabled observable, in record units)."""
@@ -149,9 +172,12 @@ def reference_flops_per_es(reference: torch.Tensor, n_chains: int,
         return None
     sidecar = json.loads(sidecar_path.read_text())
     n_records = reference.shape[0] // n_chains
-    tau_int = slowest_observable_tau_int(reference.view(n_records, n_chains, -1), target)
+    tau_int = slowest_observable_tau_int(
+        reference.view(n_records, n_chains, -1), target
+    )
     return chain_per_effective_sample(
-        sidecar["total_flops"], sidecar["n_records_pooled"], max(tau_int, 1.0))
+        sidecar["total_flops"], sidecar["n_records_pooled"], max(tau_int, 1.0)
+    )
 
 
 def score_sgc_row():
@@ -174,7 +200,9 @@ def score_sgc_row():
     """
     table = {}
     for point, spec in OPERATING_POINTS.items():
-        reference = torch.load(RESULTS / spec["reference"], weights_only=False)["samples"].float()
+        reference = torch.load(RESULTS / spec["reference"], weights_only=False)[
+            "samples"
+        ].float()
         target = IsingTarget(D=L, sigma=spec["sigma"], bias=0.0)
         per_chain, frames_by_chain = {}, []
         for chain_dir in sorted(SGC_RUNS.glob(SGC_CHAINS[point])):
@@ -186,7 +214,10 @@ def score_sgc_row():
                 **observable_errors(frames, uniform, reference, target),
                 "tau_int_frames": tau_int,
                 "FLOPes": chain_per_effective_sample(
-                    sgc_run_flops(summary["n_steps"]), frames.shape[0], max(tau_int, 1.0)),
+                    sgc_run_flops(summary["n_steps"]),
+                    frames.shape[0],
+                    max(tau_int, 1.0),
+                ),
             }
             frames_by_chain.append(frames)
 
@@ -196,22 +227,39 @@ def score_sgc_row():
         pooled_tau_int = slowest_observable_tau_int(pooled, target)
         n_chains, n_trials = len(per_chain), summary["n_steps"]
         pooled_flops_per_es = chain_per_effective_sample(
-            n_chains * sgc_run_flops(n_trials), pooled.shape[0] * n_chains,
-            max(pooled_tau_int, 1.0))
+            n_chains * sgc_run_flops(n_trials),
+            pooled.shape[0] * n_chains,
+            max(pooled_tau_int, 1.0),
+        )
 
-        aggregate = {k: mean_sd([c[k] for c in per_chain.values()]) for k in next(iter(per_chain.values()))}
-        table[point] = {"sigma": spec["sigma"], "n_chains": n_chains,
-                        "n_trials_per_chain": n_trials, "n_frames_per_chain": pooled.shape[0],
-                        "sgc_per_chain": per_chain, "sgc_mean_sd": aggregate,
-                        "sgc_pooled_tau_int_frames": pooled_tau_int,
-                        "sgc_pooled_flops_per_es": pooled_flops_per_es}
+        aggregate = {
+            k: mean_sd([c[k] for c in per_chain.values()])
+            for k in next(iter(per_chain.values()))
+        }
+        table[point] = {
+            "sigma": spec["sigma"],
+            "n_chains": n_chains,
+            "n_trials_per_chain": n_trials,
+            "n_frames_per_chain": pooled.shape[0],
+            "sgc_per_chain": per_chain,
+            "sgc_mean_sd": aggregate,
+            "sgc_pooled_tau_int_frames": pooled_tau_int,
+            "sgc_pooled_flops_per_es": pooled_flops_per_es,
+        }
 
-        print(f"\n== {point} (sigma={spec['sigma']}, {n_chains} SGC chains, "
-              f"{n_trials:.0e} trials, {pooled.shape[0]} frames each)")
+        print(
+            f"\n== {point} (sigma={spec['sigma']}, {n_chains} SGC chains, "
+            f"{n_trials:.0e} trials, {pooled.shape[0]} frames each)"
+        )
         for name, c in per_chain.items():
             print(f"  {name}: " + " ".join(f"{k}={v:.4g}" for k, v in c.items()))
-        print("  SGC mean +- SD:", {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in aggregate.items()})
-        print(f"  pooled tau_int {pooled_tau_int:.4g} frames -> FLOP/es {pooled_flops_per_es:.2g}")
+        print(
+            "  SGC mean +- SD:",
+            {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in aggregate.items()},
+        )
+        print(
+            f"  pooled tau_int {pooled_tau_int:.4g} frames -> FLOP/es {pooled_flops_per_es:.2g}"
+        )
 
     out = RESULTS / "house_table_unconstrained_10x10_sgc.json"
     out.write_text(json.dumps(table, indent=2))
@@ -227,40 +275,60 @@ def main():
         floor = reference_floor(reference, n_chains, target)
 
         ref_flops_per_es = reference_flops_per_es(
-            reference, n_chains, target,
-            Path(str(RESULTS / spec["reference"]) + ".flops.json"))
+            reference,
+            n_chains,
+            target,
+            Path(str(RESULTS / spec["reference"]) + ".flops.json"),
+        )
 
         per_seed, per_forward = {}, None
         for run_dir in sorted(RESULTS.glob(spec["runs"])):
             x = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
-            weights = torch.softmax(torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True), 0)
+            weights = torch.softmax(
+                torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True), 0
+            )
             metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
             if per_forward is None:  # one architecture per family
                 per_forward = family_flops_per_forward(run_dir, target)
-            n_euler = json.loads((run_dir / "config.json").read_text())["ctmc"]["n_euler_steps"]
+            n_euler = json.loads((run_dir / "config.json").read_text())["ctmc"][
+                "n_euler_steps"
+            ]
             per_seed[run_dir.name] = {
                 "ESS": metrics["ess_fraction"],
                 **observable_errors(x, weights, reference, target),
                 "FLOPes": per_effective_sample(
                     neural_sampling_flops_per_sample(per_forward, n_euler, target.d),
-                    metrics["ess_fraction"]),
+                    metrics["ess_fraction"],
+                ),
             }
 
-        summary = {k: mean_sd([s[k] for s in per_seed.values()]) for k in next(iter(per_seed.values()))}
-        table[point] = {"sigma": spec["sigma"], "reference_floor": floor,
-                        "reference_gelman_rubin_m": ref["gelman_rubin_m"],
-                        "reference_flops_per_es": ref_flops_per_es,
-                        "dnfs_flops_per_forward": per_forward,
-                        "dnfs_per_seed": per_seed, "dnfs_mean_sd": summary}
+        summary = {
+            k: mean_sd([s[k] for s in per_seed.values()])
+            for k in next(iter(per_seed.values()))
+        }
+        table[point] = {
+            "sigma": spec["sigma"],
+            "reference_floor": floor,
+            "reference_gelman_rubin_m": ref["gelman_rubin_m"],
+            "reference_flops_per_es": ref_flops_per_es,
+            "dnfs_flops_per_forward": per_forward,
+            "dnfs_per_seed": per_seed,
+            "dnfs_mean_sd": summary,
+        }
 
         print(f"\n== {point} (sigma={spec['sigma']}, {len(per_seed)} seeds)")
         print("  reference floor:", {k: f"{v:.2e}" for k, v in floor.items()})
-        print(f"  reference FLOP/es: "
-              f"{'(recount sidecar missing)' if ref_flops_per_es is None else f'{ref_flops_per_es:.2g}'}"
-              f"   DNFS forward: {per_forward:.3g} FLOPs")
+        print(
+            f"  reference FLOP/es: "
+            f"{'(recount sidecar missing)' if ref_flops_per_es is None else f'{ref_flops_per_es:.2g}'}"
+            f"   DNFS forward: {per_forward:.3g} FLOPs"
+        )
         for name, s in per_seed.items():
             print(f"  {name}: " + " ".join(f"{k}={v:.4g}" for k, v in s.items()))
-        print("  DNFS mean +- SD:", {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in summary.items()})
+        print(
+            "  DNFS mean +- SD:",
+            {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in summary.items()},
+        )
 
     out = RESULTS / "house_table_unconstrained_10x10.json"
     out.write_text(json.dumps(table, indent=2))

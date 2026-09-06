@@ -36,6 +36,7 @@ computation is a single matmul); adjacency is IsingTarget's symmetric 0/1
 matrix (each undirected edge in both directions), giving the single-site
 tilt E(+1) - E(-1) = 4*(A x)_i on the x^T A x energy.
 """
+
 import torch
 from torch import Tensor, nn
 from torch.nn.functional import logsigmoid, softplus
@@ -148,9 +149,7 @@ def preconditioner_logit_diff(
     logit = budget_logit[:, None] + energy_term
     # boundary rows: the delta must not be diluted by the energy field
     boundary = ~interior
-    logit[boundary] = budget_logit[boundary][:, None].expand(
-        -1, x_masked.shape[1]
-    )
+    logit[boundary] = budget_logit[boundary][:, None].expand(-1, x_masked.shape[1])
     return logit
 
 
@@ -175,8 +174,7 @@ def budget_tilt_components(
         torch.zeros_like(budget, dtype=x_masked.dtype),
     )
     masked_indicator = (x_masked == 0.0).float()
-    field = x_masked @ adjacency \
-        + urn_mean[:, None] * (masked_indicator @ adjacency)
+    field = x_masked @ adjacency + urn_mean[:, None] * (masked_indicator @ adjacency)
     budget_logit = torch.where(
         interior,
         torch.log(budget.clamp(min=1).float())
@@ -222,8 +220,7 @@ class GatedBudgetTiltOffset(nn.Module):
         budget_logit, energy_term, interior = budget_tilt_components(
             x_masked, self.adjacency, self.sigma, self.n_plus_target
         )
-        gated = (self.gate_budget * budget_logit[:, None]
-                 + self.gate_field * energy_term)
+        gated = self.gate_budget * budget_logit[:, None] + self.gate_field * energy_term
         boundary_delta = budget_logit[:, None].expand(-1, x_masked.shape[1])
         return torch.where(interior[:, None], gated, boundary_delta)
 
@@ -247,8 +244,7 @@ def feasibility_clamped_p_plus(
     boundary contexts.
     """
     p_plus = torch.where(budget <= 0, torch.zeros_like(p_plus), p_plus)
-    return torch.where(budget >= masked_count, torch.ones_like(p_plus),
-                       p_plus)
+    return torch.where(budget >= masked_count, torch.ones_like(p_plus), p_plus)
 
 
 def rollout_budget_masked(
@@ -302,7 +298,7 @@ def rollout_budget_masked(
     themselves are constants either way: this is the paper's v = u-bar
     convention (gradient-free sampling measure), not a REINFORCE term.
     """
-    device = generator.device        # CPU and CUDA generators both carry it
+    device = generator.device  # CPU and CUDA generators both carry it
     x_masked = torch.zeros(n_rollouts, n_sites, device=device)
     rollout_log_prob = torch.zeros(n_rollouts, device=device)
     rows = torch.arange(n_rollouts, device=device)
@@ -317,28 +313,20 @@ def rollout_budget_masked(
         if n_plus_target is None:
             p_plus = torch.sigmoid(logit)
         else:
-            masked_count, budget = masked_count_and_budget(
-                x_masked, n_plus_target
-            )
+            masked_count, budget = masked_count_and_budget(x_masked, n_plus_target)
             p_plus = feasibility_clamped_p_plus(
                 torch.sigmoid(logit), budget, masked_count
             )
-        draw_plus = (
-            torch.rand(n_rollouts, generator=generator, device=device)
-            < p_plus
-        )
+        draw_plus = torch.rand(n_rollouts, generator=generator, device=device) < p_plus
         # log q via logsigmoid for saturation safety; clamped rows are
         # forced draws with q = 1, i.e. log q = 0 (constrained only —
         # the unconstrained reference never clamps, so every draw counts)
-        log_q = torch.where(draw_plus, logsigmoid(logit),
-                            logsigmoid(-logit))
+        log_q = torch.where(draw_plus, logsigmoid(logit), logsigmoid(-logit))
         if n_plus_target is None:
             rollout_log_prob += log_q
         else:
             interior = (budget > 0) & (budget < masked_count)
-            rollout_log_prob += torch.where(
-                interior, log_q, torch.zeros_like(log_q)
-            )
+            rollout_log_prob += torch.where(interior, log_q, torch.zeros_like(log_q))
         x_masked[rows, site] = torch.where(draw_plus, 1.0, -1.0)
     return x_masked, rollout_log_prob
 
@@ -386,23 +374,24 @@ def wdce_cross_entropy(
     the corrupted context to make that mistake impossible.
     """
     n_terminals, n_sites = terminals.shape
-    device = terminals.device        # generator must live on the same device
+    device = terminals.device  # generator must live on the same device
     replicated = terminals.repeat_interleave(n_replicates, dim=0)
     corruption_level = torch.rand(
         n_terminals * n_replicates, 1, generator=generator, device=device
     )
     corruption_mask = (
         torch.rand(
-            n_terminals * n_replicates, n_sites, generator=generator,
+            n_terminals * n_replicates,
+            n_sites,
+            generator=generator,
             device=device,
-        ) < corruption_level
+        )
+        < corruption_level
     )
     corrupted = replicated.masked_fill(corruption_mask, 0.0)
 
     logit = logit_diff_fn(corrupted)
-    site_nll = torch.where(
-        replicated == 1.0, softplus(-logit), softplus(logit)
-    )
+    site_nll = torch.where(replicated == 1.0, softplus(-logit), softplus(logit))
     per_replicate = (site_nll * corruption_mask.float()).sum(dim=1)
     if context_loss_weight is not None:
         with torch.no_grad():

@@ -52,8 +52,9 @@ def xi_t_swap_from_scores(
     return target.dt_log_p_tilde_t(x, t) + outflow - inflow
 
 
-def _euler_step_swap(head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor,
-                     stats: dict | None = None):
+def _euler_step_swap(
+    head, state: Tensor, t_per_batch: Tensor, step_dt: Tensor, stats: dict | None = None
+):
     """One-event swap Euler step. Returns (new_state, pair_scores) (B, n_pairs).
 
     Single global categorical over the i<j pairs plus a stay slot: at most one
@@ -166,9 +167,7 @@ def _apply_swaps(state: Tensor, accepted: Tensor, pairs: Tensor) -> Tensor:
     site_i = pairs[:, 0].unsqueeze(0).expand(batch_size, -1)
     site_j = pairs[:, 1].unsqueeze(0).expand(batch_size, -1)
     dummy = torch.full_like(site_i, d)
-    perm = (
-        torch.arange(d + 1, device=state.device).expand(batch_size, d + 1).clone()
-    )
+    perm = torch.arange(d + 1, device=state.device).expand(batch_size, d + 1).clone()
     perm.scatter_(
         1, torch.where(accepted, site_i, dummy), torch.where(accepted, site_j, dummy)
     )
@@ -178,8 +177,9 @@ def _apply_swaps(state: Tensor, accepted: Tensor, pairs: Tensor) -> Tensor:
     return state.gather(1, perm[:, :d])
 
 
-def _euler_step_swap_matching(head, state: Tensor, t_per_batch: Tensor, step_dt,
-                              stats: dict | None = None):
+def _euler_step_swap_matching(
+    head, state: Tensor, t_per_batch: Tensor, step_dt, stats: dict | None = None
+):
     """Multi-event swap Euler step: fire a vertex-disjoint matching of pairs.
 
     Thin every pair by its firing probability rate·dt, then keep a random
@@ -339,9 +339,7 @@ def sample_swap_ctmc(
         )
         trajectory[0] = state
     cv_integrand = (
-        torch.empty(
-            (len(ts), batch_size), dtype=state.dtype, device=state.device
-        )
+        torch.empty((len(ts), batch_size), dtype=state.dtype, device=state.device)
         if return_cv_integrand
         else None
     )
@@ -355,9 +353,7 @@ def sample_swap_ctmc(
     )
 
     if multi_event:
-        step_fn = functools.partial(
-            _euler_step_swap_matching, stats=matching_stats
-        )
+        step_fn = functools.partial(_euler_step_swap_matching, stats=matching_stats)
     else:
         step_fn = functools.partial(_euler_step_swap, stats=matching_stats)
     pairs = upper_tri_pairs(d, x0.device)
@@ -386,9 +382,7 @@ def sample_swap_ctmc(
                 state, log_weights, resampling.ess_threshold_fraction
             )
             if fired:
-                smc_stats.log_z_increment = (
-                    smc_stats.log_z_increment + log_z_increment
-                )
+                smc_stats.log_z_increment = smc_stats.log_z_increment + log_z_increment
                 smc_stats.n_events += 1
                 smc_stats.event_steps.append(step)
         # Recorded after the checkpoint so the slice is the ensemble that
@@ -416,7 +410,6 @@ def sample_swap_ctmc(
     return state
 
 
-
 def n_slices(target) -> int:
     """Number of fixed-composition slices the target mixes over (1 without
     a registered grid, i.e. every specialist target)."""
@@ -435,10 +428,12 @@ def slice_index_of(target, x: Tensor) -> Tensor:
     if not counts or len(counts) == 1:
         return torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
     n_plus = ((x + 1.0) * 0.5).sum(dim=-1).long()
-    count_to_slice = torch.full((x.shape[1] + 1,), -1, dtype=torch.long,
-                                device=x.device)
+    count_to_slice = torch.full(
+        (x.shape[1] + 1,), -1, dtype=torch.long, device=x.device
+    )
     count_to_slice[torch.tensor(counts, device=x.device)] = torch.arange(
-        len(counts), device=x.device)
+        len(counts), device=x.device
+    )
     slice_idx = count_to_slice[n_plus]
     if (slice_idx < 0).any():
         raise AssertionError(
@@ -489,8 +484,9 @@ def reduce_c_t_grid(integrand_per_t: Tensor, x_rows: Tensor, target) -> Tensor:
     return mean_per_slice(integrand_per_t, slice_index_of(target, x_rows), n_slice)
 
 
-def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
-                          mode, chunk_rows: int | None = None):
+def compute_c_t_grid_swap(
+    t_grid: Tensor, x_traj: Tensor, target, head, *, mode, chunk_rows: int | None = None
+):
     """Per-time-slot c_t for the swap loss (mirror of compute_c_t_grid).
 
     mode='naive_mc'        -> c_t = mean_m ∂_t log p̃_t(x_t^{(m)})
@@ -524,14 +520,10 @@ def compute_c_t_grid_swap(t_grid: Tensor, x_traj: Tensor, target, head, *,
     )
     if chunk_rows is not None:
         if isinstance(chunk_rows, bool) or int(chunk_rows) != chunk_rows:
-            raise TypeError(
-                f"chunk_rows must be an int or None, got {chunk_rows!r}"
-            )
+            raise TypeError(f"chunk_rows must be an int or None, got {chunk_rows!r}")
         chunk_rows = int(chunk_rows)
         if chunk_rows < 1:
-            raise ValueError(
-                f"chunk_rows must be >= 1 when set, got {chunk_rows}"
-            )
+            raise ValueError(f"chunk_rows must be >= 1 when set, got {chunk_rows}")
         # Row (k, m) of the flattened layout is grid slot k, rollout row m:
         # reshape is row-major over (n_grid, outer_batch), so the matching
         # time is t_grid[k] repeated outer_batch times.

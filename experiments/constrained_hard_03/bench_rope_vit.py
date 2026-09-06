@@ -15,7 +15,9 @@ import torch
 from torch.utils.flop_counter import FlopCounterMode
 
 from discrete_flow_sampler.constraints.factorised_swap_head import FactorisedSwapHead
-from discrete_flow_sampler.constraints.two_hole_patch_swap_head import TwoHolePatchSwapHead
+from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
+    TwoHolePatchSwapHead,
+)
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.models.rope_vit import RoPEViTRateMatrix
 
@@ -26,9 +28,9 @@ def _analytic_attention_gflops(backbone, lattice_side, n_layers=2, hidden=32):
     1 + pL + d / p^2 (cond + near window + far patches). Counted by hand
     because the FLOP counter does not see nn.MultiheadAttention's fused
     kernel, so the counted column below excludes attention for leTF only."""
-    d = lattice_side ** 2
+    d = lattice_side**2
     if isinstance(backbone, RoPEViTRateMatrix):
-        keys = 1 + backbone.patch_size * lattice_side + d // backbone.patch_size ** 2
+        keys = 1 + backbone.patch_size * lattice_side + d // backbone.patch_size**2
     else:
         keys = 1 + d
     return n_layers * 4 * d * keys * hidden / 1e9
@@ -36,8 +38,11 @@ def _analytic_attention_gflops(backbone, lattice_side, n_layers=2, hidden=32):
 
 def _fimo2(backbone, lattice_side):
     return FactorisedSwapHead(
-        backbone, interior_band="prefix", site_orderings=("row", "col"),
-        pair_offsets=(1, lattice_side), lattice_side=lattice_side,
+        backbone,
+        interior_band="prefix",
+        site_orderings=("row", "col"),
+        pair_offsets=(1, lattice_side),
+        lattice_side=lattice_side,
     ).eval()
 
 
@@ -56,9 +61,13 @@ def _arms(lattice_side):
             rope = RoPEViTRateMatrix(patch_size=patch_size, **common)
             yield f"rope_p{patch_size}", rope, _fimo2(rope, lattice_side)
     torch.manual_seed(0)
-    yield "thp_R1", letf, TwoHolePatchSwapHead(
-        letf, lattice_side=lattice_side, patch_radius=1, feature_dim=32
-    ).eval()
+    yield (
+        "thp_R1",
+        letf,
+        TwoHolePatchSwapHead(
+            letf, lattice_side=lattice_side, patch_radius=1, feature_dim=32
+        ).eval(),
+    )
 
 
 @torch.no_grad()
@@ -67,8 +76,12 @@ def bench(lattice_side: int, batch: int, repeats: int):
     torch.manual_seed(1)
     x = (torch.randint(0, 2, (batch, d)) * 2 - 1).float()
     t = torch.rand(batch)
-    print(f"\n=== {lattice_side}x{lattice_side} (d={d}), batch {batch}, CPU threads {torch.get_num_threads()} ===")
-    print(f"{'arm':10s} {'backbone params':>16s} {'head total':>11s} {'stack GFLOP/sample':>19s} {'head GFLOP/sample':>18s} {'attn GFLOP analytic':>20s} {'ms/sample':>10s}")
+    print(
+        f"\n=== {lattice_side}x{lattice_side} (d={d}), batch {batch}, CPU threads {torch.get_num_threads()} ==="
+    )
+    print(
+        f"{'arm':10s} {'backbone params':>16s} {'head total':>11s} {'stack GFLOP/sample':>19s} {'head GFLOP/sample':>18s} {'attn GFLOP analytic':>20s} {'ms/sample':>10s}"
+    )
     for name, backbone, head in _arms(lattice_side):
         backbone_params = sum(p.numel() for p in backbone.parameters())
         total_params = sum(p.numel() for p in head.parameters())

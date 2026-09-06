@@ -38,13 +38,13 @@ this suite, not exact equality — the refactor is allowed to change
 reduction ORDER (e.g. batching an eval loop differently), and is not
 allowed to change the quantity.
 """
+
 import tempfile
 from pathlib import Path
 
+import experiments.constrained_hard_03.mdns_budget_gate_4x4 as gate
 import pytest
 import torch
-
-import experiments.constrained_hard_03.mdns_budget_gate_4x4 as gate
 
 # Tiny budget. Chosen so the whole slate runs in a few seconds on CPU while
 # still touching every branch of the eval path.
@@ -123,9 +123,15 @@ def slate():
     try:
         with tempfile.TemporaryDirectory() as tmp:
             yield gate.run_slate(
-                sigma=SIGMA, seeds=[SEED], arms=["a", "b", "u"], steps=STEPS,
-                results_root=Path(tmp), tag="pin", device="cpu",
-                eval_rollouts=EVAL_ROLLOUTS, eval_contexts=EVAL_CONTEXTS,
+                sigma=SIGMA,
+                seeds=[SEED],
+                arms=["a", "b", "u"],
+                steps=STEPS,
+                results_root=Path(tmp),
+                tag="pin",
+                device="cpu",
+                eval_rollouts=EVAL_ROLLOUTS,
+                eval_contexts=EVAL_CONTEXTS,
                 objective="lv",
             )
     finally:
@@ -148,8 +154,7 @@ def test_4x4_metrics_are_unchanged(slate, key):
         if isinstance(expected, int) and not isinstance(expected, bool):
             assert actual == expected, f"{key}.{field}"
         else:
-            assert actual == pytest.approx(expected, rel=1e-5), \
-                f"{key}.{field}"
+            assert actual == pytest.approx(expected, rel=1e-5), f"{key}.{field}"
 
 
 @pytest.mark.parametrize("key", ["a_seed42", "b_seed42"])
@@ -169,12 +174,18 @@ def test_free_arm_reports_the_free_space_instrument_set(slate):
     fibre instruments. Pinned because the size refactor touches exactly
     the branch that chooses between the two dicts."""
     report = _report(slate, "u_seed42")
-    for field in ("log_z_estimate", "log_z_exact", "log_z_abs_error",
-                  "composition_mean", "composition_std"):
+    for field in (
+        "log_z_estimate",
+        "log_z_exact",
+        "log_z_abs_error",
+        "composition_mean",
+        "composition_std",
+    ):
         assert field in report
     for field in ("off_fibre_count", "free_energy_model", "within_level"):
-        assert field not in report, \
+        assert field not in report, (
             f"fibre instrument {field!r} is undefined off the slice"
+        )
 
 
 def test_exact_slice_reference_agrees_with_slice_ti(slate):
@@ -195,14 +206,25 @@ def test_driver_is_deterministic():
         for _ in range(2):
             with tempfile.TemporaryDirectory() as tmp:
                 slate = gate.run_slate(
-                    sigma=SIGMA, seeds=[SEED], arms=["a"], steps=STEPS,
-                    results_root=Path(tmp), tag="det", device="cpu",
-                    eval_rollouts=EVAL_ROLLOUTS, eval_contexts=EVAL_CONTEXTS,
+                    sigma=SIGMA,
+                    seeds=[SEED],
+                    arms=["a"],
+                    steps=STEPS,
+                    results_root=Path(tmp),
+                    tag="det",
+                    device="cpu",
+                    eval_rollouts=EVAL_ROLLOUTS,
+                    eval_contexts=EVAL_CONTEXTS,
                     objective="lv",
                 )
             runs.append(_report(slate, "a_seed42"))
-        for field in ("ess_fraction", "energy_tv", "final_loss",
-                      "free_energy_model", "trained_conditional_kl"):
+        for field in (
+            "ess_fraction",
+            "energy_tv",
+            "final_loss",
+            "free_energy_model",
+            "trained_conditional_kl",
+        ):
             assert runs[0][field] == runs[1][field], f"{field} is not stable"
     finally:
         gate.TRAIN_ROLLOUTS_PER_STEP, gate.EVAL_BATCH = original
@@ -220,7 +242,7 @@ def test_torch_default_dtype_is_untouched(slate):
 
 
 PROBE_ROOT = Path("results/kawasaki_probe")
-SLICE_TI_8X8_SC = -1.90410      # slice_ti.py run8x8, +/- 0.00005
+SLICE_TI_8X8_SC = -1.90410  # slice_ti.py run8x8, +/- 0.00005
 
 
 @pytest.fixture
@@ -264,8 +286,12 @@ def test_no_stale_n_plus_default_survives_a_rebind():
     64-site lattice. Assert the defaults are gone rather than trusting a
     comment."""
     import inspect
-    for function in (gate.train_arm, gate.evaluate_arm,
-                     gate.conditional_kl_and_late_error):
+
+    for function in (
+        gate.train_arm,
+        gate.evaluate_arm,
+        gate.conditional_kl_and_late_error,
+    ):
         parameter = inspect.signature(function).parameters["n_plus_target"]
         assert parameter.default is inspect.Parameter.empty, (
             f"{function.__name__} still defaults n_plus_target — it would "
@@ -273,8 +299,9 @@ def test_no_stale_n_plus_default_survives_a_rebind():
         )
 
 
-@pytest.mark.skipif(not PROBE_ROOT.exists(),
-                    reason="certified probe chains not present locally")
+@pytest.mark.skipif(
+    not PROBE_ROOT.exists(), reason="certified probe chains not present locally"
+)
 def test_chain_reference_matches_the_probes_own_energy_convention(lattice_8x8):
     """The chain reference is only a valid stand-in for enumeration if it
     measures energy the way `slice_energy_hist` does. The driver's reader
@@ -284,29 +311,33 @@ def test_chain_reference_matches_the_probes_own_energy_convention(lattice_8x8):
     from experiments.constrained_hard_03.plot_probe_8x8 import (
         reference_energies,
     )
+
     from discrete_flow_sampler.targets.ising import (
         FixedCompositionIsingTarget,
     )
-    target = FixedCompositionIsingTarget(
-        D=8, sigma=0.223, target_composition=0.5
-    )
+
+    target = FixedCompositionIsingTarget(D=8, sigma=0.223, target_composition=0.5)
     ours = gate.chain_reference_energies(PROBE_ROOT, "sc", target.A.cpu())
     theirs = torch.from_numpy(reference_energies(PROBE_ROOT, "sc", target))
     assert ours.shape == theirs.shape
     assert torch.equal(ours, theirs)
 
 
-@pytest.mark.skipif(not PROBE_ROOT.exists(),
-                    reason="certified probe chains not present locally")
-def test_chain_referenced_space_drops_the_enumeration_only_instruments(
-        lattice_8x8):
+@pytest.mark.skipif(
+    not PROBE_ROOT.exists(), reason="certified probe chains not present locally"
+)
+def test_chain_referenced_space_drops_the_enumeration_only_instruments(lattice_8x8):
     """The 8x8 reference block must supply a normalised energy histogram
     and the TI free-energy constant, and must report the absence of the
     enumerated slice as None — not as an empty tensor that downstream code
     would treat as a real (and empty) population."""
     space = gate.build_space(
-        constrained=True, sigma=0.223, device="cpu", eval_contexts=8,
-        probe_root=PROBE_ROOT, probe_point="sc",
+        constrained=True,
+        sigma=0.223,
+        device="cpu",
+        eval_contexts=8,
+        probe_root=PROBE_ROOT,
+        probe_point="sc",
         free_energy_ref=SLICE_TI_8X8_SC,
     )
     assert space["states"] is None
@@ -321,35 +352,47 @@ def test_chain_referenced_space_drops_the_enumeration_only_instruments(
     assert (mass >= 0).all()
 
 
-@pytest.mark.skipif(not PROBE_ROOT.exists(),
-                    reason="certified probe chains not present locally")
+@pytest.mark.skipif(
+    not PROBE_ROOT.exists(), reason="certified probe chains not present locally"
+)
 def test_chain_reference_is_refused_for_the_unconstrained_arm(lattice_8x8):
     """The chains sample the fixed-composition fibre; there is no chain
     counterpart for the free-space control, and silently handing it a
     fibre reference would score it against the wrong population."""
     with pytest.raises(ValueError, match="fixed-composition"):
         gate.build_space(
-            constrained=False, sigma=0.223, device="cpu", eval_contexts=8,
-            probe_root=PROBE_ROOT, probe_point="sc",
+            constrained=False,
+            sigma=0.223,
+            device="cpu",
+            eval_contexts=8,
+            probe_root=PROBE_ROOT,
+            probe_point="sc",
             free_energy_ref=SLICE_TI_8X8_SC,
         )
 
 
-@pytest.mark.skipif(not PROBE_ROOT.exists(),
-                    reason="certified probe chains not present locally")
+@pytest.mark.skipif(
+    not PROBE_ROOT.exists(), reason="certified probe chains not present locally"
+)
 def test_chain_regime_requires_a_free_energy_reference(lattice_8x8):
     """Without the TI constant the free-energy bias would be computed
     against nothing; fail loudly at build time rather than reporting a
     bias against an implicit zero."""
     with pytest.raises(ValueError, match="free-energy reference"):
         gate.build_space(
-            constrained=True, sigma=0.223, device="cpu", eval_contexts=8,
-            probe_root=PROBE_ROOT, probe_point="sc", free_energy_ref=None,
+            constrained=True,
+            sigma=0.223,
+            device="cpu",
+            eval_contexts=8,
+            probe_root=PROBE_ROOT,
+            probe_point="sc",
+            free_energy_ref=None,
         )
 
 
-@pytest.mark.skipif(not PROBE_ROOT.exists(),
-                    reason="certified probe chains not present locally")
+@pytest.mark.skipif(
+    not PROBE_ROOT.exists(), reason="certified probe chains not present locally"
+)
 def test_8x8_eval_runs_end_to_end_and_stays_on_the_fibre(lattice_8x8):
     """The plumbing check: an untrained 8x8 model must
     evaluate against the chain reference and return the fibre instruments
@@ -360,8 +403,12 @@ def test_8x8_eval_runs_end_to_end_and_stays_on_the_fibre(lattice_8x8):
     gate.EVAL_BATCH = 64
     try:
         space = gate.build_space(
-            constrained=True, sigma=0.223, device="cpu", eval_contexts=8,
-            probe_root=PROBE_ROOT, probe_point="sc",
+            constrained=True,
+            sigma=0.223,
+            device="cpu",
+            eval_contexts=8,
+            probe_root=PROBE_ROOT,
+            probe_point="sc",
             free_energy_ref=SLICE_TI_8X8_SC,
         )
         target = space["target"]
@@ -370,9 +417,17 @@ def test_8x8_eval_runs_end_to_end_and_stays_on_the_fibre(lattice_8x8):
         logit_fn, _ = gate.make_logit_fn(net, target.A, 0.223, "budget_tilted")
         with tempfile.TemporaryDirectory() as tmp:
             metrics = gate.evaluate_arm(
-                logit_fn, target, space["states"], space["log_p"],
-                space["exact_hist"], space["bins"], 0.223, "cpu",
-                Path(tmp), 128, n_plus_target=space["n_plus_target"],
+                logit_fn,
+                target,
+                space["states"],
+                space["log_p"],
+                space["exact_hist"],
+                space["bins"],
+                0.223,
+                "cpu",
+                Path(tmp),
+                128,
+                n_plus_target=space["n_plus_target"],
                 save_artefacts=False,
                 free_energy_ref=space["free_energy_ref"],
             )
@@ -387,5 +442,6 @@ def test_8x8_eval_runs_end_to_end_and_stays_on_the_fibre(lattice_8x8):
         metrics["free_energy_model"] - SLICE_TI_8X8_SC
     )
     for dropped in ("within_level", "max_level_excess"):
-        assert dropped not in metrics, \
+        assert dropped not in metrics, (
             f"{dropped} needs the enumerated slice and must be omitted"
+        )

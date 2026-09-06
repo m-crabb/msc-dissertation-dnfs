@@ -24,6 +24,7 @@ Why this beats the static K-summand `LeConvRateMatrix` at criticality:
     size cannot represent multi-scale structure. LEAPS Figure 7 ablation
     confirms: depth-5 LEC > depth-3 LEC > LEA at the same parameter budget.
 """
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -87,8 +88,8 @@ class LeConvDeepRateMatrix(nn.Module):
         self.omega = nn.Embedding(vocab_size, hidden_dim)
         self.time_embedder = TimestepEmbedder(hidden_dim)
 
-        nn.init.kaiming_uniform_(self.token_embedder.weight, a=5 ** 0.5)
-        nn.init.kaiming_uniform_(self.omega.weight, a=5 ** 0.5)
+        nn.init.kaiming_uniform_(self.token_embedder.weight, a=5**0.5)
+        nn.init.kaiming_uniform_(self.omega.weight, a=5**0.5)
 
         # h_0: spatially uniform learned constant, shifted by the time
         # embedding in compute_body. The spatial uniformity makes layer 1's
@@ -102,17 +103,18 @@ class LeConvDeepRateMatrix(nn.Module):
         # hidden_dim -> k_l² channels per site. The output, reshaped to
         # (k_l, k_l) at each site, IS the position-conditional kernel for
         # that layer.
-        self.A = nn.ModuleList([
-            nn.Conv2d(hidden_dim, k * k, kernel_size=1, bias=True)
-            for k in self.kernel_schedule
-        ])
+        self.A = nn.ModuleList(
+            [
+                nn.Conv2d(hidden_dim, k * k, kernel_size=1, bias=True)
+                for k in self.kernel_schedule
+            ]
+        )
         if use_global_context:
             self.global_context_proj = nn.Conv2d(hidden_dim, hidden_dim, kernel_size=1)
         # Post-σ offset c_l (LEAPS Section 9: W_l = σ(A_l h + b_l) + c_l).
-        self.c = nn.ParameterList([
-            nn.Parameter(torch.zeros(k * k))
-            for k in self.kernel_schedule
-        ])
+        self.c = nn.ParameterList(
+            [nn.Parameter(torch.zeros(k * k)) for k in self.kernel_schedule]
+        )
 
         # Hollow masks (zero center, ones elsewhere) per layer — preserves
         # Definition 3 by zeroing the kernel weight at the diagonal.
@@ -163,8 +165,8 @@ class LeConvDeepRateMatrix(nn.Module):
                 self._leave_one_out_global_context(x_emb)
             )
 
-        cond_t = self.time_embedder(t)                            # (B, h)
-        x_in = x_emb + cond_t[:, :, None, None]                   # (B, h, D, D)
+        cond_t = self.time_embedder(t)  # (B, h)
+        x_in = x_emb + cond_t[:, :, None, None]  # (B, h, D, D)
 
         # h_0(t): spatially uniform and time-conditioned. This preserves
         # hollow-ness and translation equivariance because cond_t has no

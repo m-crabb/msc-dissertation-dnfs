@@ -40,6 +40,7 @@ Spin convention:
     spins). Internally we map to {0, 1} indices via idx = (x + 1) / 2 for
     embedding lookups; we never change the external contract.
 """
+
 import math
 
 import torch
@@ -90,10 +91,12 @@ class TimestepEmbedder(nn.Module):
             * torch.arange(start=0, end=half, dtype=torch.float32)
             / half
         ).to(device=t.device)
-        args = t[:, None].float() * freqs[None]          # (B, half)
+        args = t[:, None].float() * freqs[None]  # (B, half)
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)  # (B, dim)
         if dim % 2:
-            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+            embedding = torch.cat(
+                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
+            )
         return embedding
 
     def forward(self, t: Tensor) -> Tensor:
@@ -175,7 +178,9 @@ class LeMLPRateMatrix(nn.Module):
         # Activation applied element-wise inside each summand.
         _acts = {"gelu": nn.GELU(), "relu": nn.ReLU(), "silu": nn.SiLU()}
         if activation not in _acts:
-            raise ValueError(f"activation must be one of {list(_acts)}, got {activation!r}")
+            raise ValueError(
+                f"activation must be one of {list(_acts)}, got {activation!r}"
+            )
         self.activation = _acts[activation]
 
         # Sinusoidal time embedder — output shape (B, h) broadcast to (B, 1, h).
@@ -199,34 +204,34 @@ class LeMLPRateMatrix(nn.Module):
                G[b, i, x_i[b]] = 0 exactly (self-slot zeroed by scatter).
         """
         # Step 1 — convert spins to 0/1 embedding indices.
-        x_idx = ((x + 1) / 2).long()                    # (B, D), values in {0, 1}
+        x_idx = ((x + 1) / 2).long()  # (B, D), values in {0, 1}
 
         # Step 2 — embed each site's current token.
-        x_emb = self.token_embedder(x_idx)               # (B, D, h)
+        x_emb = self.token_embedder(x_idx)  # (B, D, h)
 
         # Step 3 — hollow MLP with K summands.
         #   W_raw is (K, D, D); multiplying by hollow_mask zeroes the diagonal
         #   so site i's row reads only from other sites (Definition 3).
-        W = self.W_raw * self.hollow_mask                # (K, D, D)
+        W = self.W_raw * self.hollow_mask  # (K, D, D)
         # einsum "kdj,bjh->kbdh": for each summand k and site d, aggregate the
         # weighted embeddings of *all other* sites j (diagonal is 0).
         # b: batch, d: target site, j: source site, h: embedding dim.
         pre = torch.einsum("kdj,bjh->kbdh", W, x_emb) + self.b[:, None, None, :]
         # (K, B, D, h) -> activation -> sum over K -> (B, D, h)
-        H = self.activation(pre).sum(dim=0)              # (B, D, h)
+        H = self.activation(pre).sum(dim=0)  # (B, D, h)
 
         # Step 4 — add time conditioning (broadcast over sites).
-        H = H + self.time_embedder(t)[:, None, :]        # (B, D, h)
+        H = H + self.time_embedder(t)[:, None, :]  # (B, D, h)
 
         # Step 5 — Prop. 2 readout: G(τ, i | x) = <H_i, ω_τ - ω_{x_i}>.
         #   omega_all : (S, h)  — all token embeddings
         #   omega_xi  : (B, D, h) — embedding of the current token at each site
-        omega_all = self.omega.weight                    # (S, h)
-        omega_xi = self.omega(x_idx)                     # (B, D, h)
+        omega_all = self.omega.weight  # (S, h)
+        omega_xi = self.omega(x_idx)  # (B, D, h)
         # diff[b, d, s, h] = omega_all[s, h] - omega_xi[b, d, h]
         diff = omega_all[None, None, :, :] - omega_xi[:, :, None, :]  # (B, D, S, h)
         # Contract over hidden dim h to get (B, D, S) rates.
-        G = torch.einsum("bdh,bdsh->bds", H, diff)      # (B, D, S)
+        G = torch.einsum("bdh,bdsh->bds", H, diff)  # (B, D, S)
 
         # Guard against fp rounding in the inner product: the τ=x_i slot is
         # (ω_{x_i} - ω_{x_i})^T H_i = 0 algebraically, but float32 arithmetic

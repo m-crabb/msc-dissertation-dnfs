@@ -34,6 +34,7 @@ Failure modes these tests exist to catch:
    spine draw, matched base) — a stray lever puts an undeclared change
    under every specialist-vs-amortised claim in the merged house table.
 """
+
 import json
 import math
 from dataclasses import asdict
@@ -59,13 +60,12 @@ def _matched_target(D=4, **kwargs):
 
 
 def _brute_force_log_eta(x, p_per_row):
-    site_p = torch.where(
-        x > 0, p_per_row.unsqueeze(-1), 1.0 - p_per_row.unsqueeze(-1)
-    )
+    site_p = torch.where(x > 0, p_per_row.unsqueeze(-1), 1.0 - p_per_row.unsqueeze(-1))
     return site_p.log().sum(dim=-1)
 
 
 # -- 1. per-row base density ------------------------------------------------
+
 
 def test_base_log_eta_per_row_matches_brute_force_mixed_c():
     target = _matched_target(D=2)
@@ -103,6 +103,7 @@ def test_base_log_eta_normalises_per_row():
 
 # -- 2. draw/path agreement (the de9db7c bug class) -------------------------
 
+
 def test_sample_base_matched_mean_tracks_bound_composition():
     target = _matched_target(D=10, target_composition=0.5)
     n = 20_000
@@ -124,31 +125,29 @@ def test_path_t0_equals_matched_base_on_its_own_draws():
     with target.composition_batch(composition):
         x = target.sample_base(n, device="cpu")
         t0 = torch.zeros(n)
-        torch.testing.assert_close(
-            target.log_p_tilde_t(x, t0), target.base_log_eta(x)
-        )
+        torch.testing.assert_close(target.log_p_tilde_t(x, t0), target.base_log_eta(x))
 
 
 def test_path_t1_equals_penalised_target_per_row():
     target = _matched_target(D=4, target_composition=0.5)
     composition = torch.tensor([0.25, 0.5])
-    x = torch.stack(
-        [torch.ones(16) * -1.0, torch.ones(16)]
-    )
+    x = torch.stack([torch.ones(16) * -1.0, torch.ones(16)])
     with target.composition_batch(composition):
         t1 = torch.ones(2)
-        torch.testing.assert_close(
-            target.log_p_tilde_t(x, t1), target.log_prob(x)
-        )
+        torch.testing.assert_close(target.log_p_tilde_t(x, t1), target.log_prob(x))
 
 
 # -- 3. archived behaviour + centre anchor ----------------------------------
 
+
 def test_flag_off_ignores_binding_and_matches_static_base():
     plain = IsingTarget(D=4, sigma=0.1, base_composition=0.5)
     bound = IsingTarget(
-        D=4, sigma=0.1, base_composition=0.5,
-        target_composition=0.25, composition_penalty_strength=50.0,
+        D=4,
+        sigma=0.1,
+        base_composition=0.5,
+        target_composition=0.25,
+        composition_penalty_strength=50.0,
     )
     x = torch.tensor([[1.0] * 16, [-1.0] * 16])
     with bound.composition_batch(torch.tensor([0.25, 0.25])):
@@ -180,6 +179,7 @@ def test_flag_requires_a_composition_to_match():
 
 # -- 4. analytic Kolmogorov pin ---------------------------------------------
 
+
 class _ZeroRateModel:
     def __call__(self, x, t):
         return torch.zeros_like(x).float()
@@ -192,8 +192,11 @@ def test_residual_zero_when_target_is_the_matched_base():
     # Kolmogorov with dt_log_Zt = that constant's negation.
     c = 0.25
     target = IsingTarget(
-        D=2, sigma=0.0, bias=0.5 * math.log(c / (1 - c)),
-        target_composition=c, base_matches_composition=True,
+        D=2,
+        sigma=0.0,
+        bias=0.5 * math.log(c / (1 - c)),
+        target_composition=c,
+        base_matches_composition=True,
     )
     x = torch.tensor([[1.0, -1.0, 1.0, -1.0], [-1.0, -1.0, 1.0, -1.0]])
     t = torch.tensor([0.3, 0.8])
@@ -214,31 +217,23 @@ def test_d8_camort_cell_is_three_declared_levers_off_house_centre(
 ):
     from experiments.constrained_soft_02.configs import CONFIGS
 
-    parent = asdict(
-        CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{sigma_suffix}"]
-    )
-    cell = asdict(
-        CONFIGS[f"S2_d8_camort_l50_letf_ne128_house{sigma_suffix}"]
-    )
+    parent = asdict(CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{sigma_suffix}"])
+    cell = asdict(CONFIGS[f"S2_d8_camort_l50_letf_ne128_house{sigma_suffix}"])
     top = {key for key in parent if parent[key] != cell[key]}
     assert top == CAMORT_LEVER_FIELDS_TOP, top
     ising_diff = {
-        key for key in parent["ising"]
-        if parent["ising"][key] != cell["ising"][key]
+        key for key in parent["ising"] if parent["ising"][key] != cell["ising"][key]
     }
     assert ising_diff == {"base_matches_composition"}, ising_diff
     assert cell["ising"]["base_matches_composition"] is True
     model_diff = {
-        key for key in parent["model"]
-        if parent["model"][key] != cell["model"][key]
+        key for key in parent["model"] if parent["model"][key] != cell["model"][key]
     }
     assert model_diff == {"condition_on_composition"}, model_diff
     # The quantised continuum: every
     # realisable composition in [0.25, 0.5] at d=64, uniform draw.
-    assert cell["composition"]["values"] == tuple(
-        sites / 64 for sites in range(16, 33))
-    assert all(
-        (c * 64) == int(c * 64) for c in cell["composition"]["values"])
+    assert cell["composition"]["values"] == tuple(sites / 64 for sites in range(16, 33))
+    assert all((c * 64) == int(c * 64) for c in cell["composition"]["values"])
     assert cell["composition"]["centre"] == 0.5
     assert cell["composition"]["half_width"] == 0.0
     assert cell["composition"]["curriculum"] is None
@@ -256,16 +251,13 @@ def test_d8_camort_spine3_is_one_lever_off_the_17_value_cell(sigma_suffix):
     else byte-identical to the 17-value cell, both couplings."""
     from experiments.constrained_soft_02.configs import CONFIGS
 
-    parent = asdict(
-        CONFIGS[f"S2_d8_camort_l50_letf_ne128_house{sigma_suffix}"]
-    )
-    cell = asdict(
-        CONFIGS[f"S2_d8_camort_spine3_l50_letf_ne128_house{sigma_suffix}"]
-    )
+    parent = asdict(CONFIGS[f"S2_d8_camort_l50_letf_ne128_house{sigma_suffix}"])
+    cell = asdict(CONFIGS[f"S2_d8_camort_spine3_l50_letf_ne128_house{sigma_suffix}"])
     top = {key for key in parent if parent[key] != cell[key]}
     assert top == {"name", "composition"}, top
     composition_diff = {
-        key for key in parent["composition"]
+        key
+        for key in parent["composition"]
         if parent["composition"][key] != cell["composition"][key]
     }
     assert composition_diff == {"values"}, composition_diff
@@ -287,7 +279,8 @@ def test_d8_camort_spine1_is_one_lever_off_spine3_sc():
     top = {key for key in parent if parent[key] != cell[key]}
     assert top == {"name", "composition"}, top
     composition_diff = {
-        key for key in parent["composition"]
+        key
+        for key in parent["composition"]
         if parent["composition"][key] != cell["composition"][key]
     }
     assert composition_diff == {"values"}, composition_diff
@@ -309,8 +302,7 @@ def test_d8_camort_spine3_rb1_is_one_lever_off_spine3_sc():
     top = {key for key in parent if parent[key] != cell[key]}
     assert top == {"name", "train"}, top
     train_diff = {
-        key for key in parent["train"]
-        if parent["train"][key] != cell["train"][key]
+        key for key in parent["train"] if parent["train"][key] != cell["train"][key]
     }
     assert train_diff == {"replay_buffer_cycles"}, train_diff
     assert cell["train"]["replay_buffer_cycles"] == 1
@@ -327,7 +319,7 @@ def test_d4_camort_mb_gate_cell_spine_and_matched_base():
     assert cell.composition.curriculum is None
     # Every spine c is an integer site count at d=16 (4/6/8 sites).
     for c in cell.composition.values:
-        assert (c * cell.ising.D ** 2) == int(c * cell.ising.D ** 2)
+        assert (c * cell.ising.D**2) == int(c * cell.ising.D**2)
 
 
 def test_d4_gate_differs_from_wave3_camort_in_declared_set_only():
@@ -338,27 +330,29 @@ def test_d4_gate_differs_from_wave3_camort_in_declared_set_only():
     top = {key for key in parent if parent[key] != cell[key]}
     assert top == {"name", "ising", "composition"}, top
     ising_diff = {
-        key for key in parent["ising"]
-        if parent["ising"][key] != cell["ising"][key]
+        key for key in parent["ising"] if parent["ising"][key] != cell["ising"][key]
     }
     assert ising_diff == {"base_matches_composition"}, ising_diff
 
 
 # -- wire: one construction helper serves train AND rebuild-eval ------------
 
+
 def test_construct_target_forwards_matched_base_flag():
     from experiments.dnfs_baseline_01.configs import IsingCfg
     from experiments.dnfs_baseline_01.run import _construct_target
 
     cfg = IsingCfg(
-        D=2, target_composition=0.5, composition_penalty_strength=50.0,
+        D=2,
+        target_composition=0.5,
+        composition_penalty_strength=50.0,
         base_matches_composition=True,
     )
     target = _construct_target(cfg, device="cpu")
     assert target.base_matches_composition is True
-    assert _construct_target(
-        IsingCfg(D=2), device="cpu"
-    ).base_matches_composition is False
+    assert (
+        _construct_target(IsingCfg(D=2), device="cpu").base_matches_composition is False
+    )
 
 
 def test_rebuild_from_run_dir_forwards_matched_base_flag(tmp_path):

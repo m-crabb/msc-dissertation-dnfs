@@ -39,9 +39,7 @@ D_SMALL = 4
 
 def _random_spins(n_configs: int, d: int, seed: int = 0) -> torch.Tensor:
     generator = torch.Generator().manual_seed(seed)
-    return (
-        torch.randint(0, 2, (n_configs, d), generator=generator).float() * 2.0 - 1.0
-    )
+    return torch.randint(0, 2, (n_configs, d), generator=generator).float() * 2.0 - 1.0
 
 
 class TestClusterExpansionEmbedding:
@@ -67,9 +65,7 @@ class TestClusterExpansionEmbedding:
 
     def test_spin_symbol_round_trip(self):
         spins = np.array([1.0, -1.0, -1.0, 1.0])
-        assert np.array_equal(
-            atoms_to_spins(spins_to_symbols(spins)), spins
-        )
+        assert np.array_equal(atoms_to_spins(spins_to_symbols(spins)), spins)
 
 
 class TestVcsgcMapping:
@@ -139,9 +135,15 @@ class TestRunners:
         the one-shot run frame for frame, and the spin frames must agree with
         mchammer's own composition trace (the check that atom order is read
         back consistently, as for the canonical probe)."""
-        kwargs = dict(D=D_SMALL, sigma=0.1, penalty_strength=50.0,
-                      target_composition=0.5, n_steps=4000, seed=0,
-                      data_write_interval=10)
+        kwargs = dict(
+            D=D_SMALL,
+            sigma=0.1,
+            penalty_strength=50.0,
+            target_composition=0.5,
+            n_steps=4000,
+            seed=0,
+            data_write_interval=10,
+        )
         plain = run_vcsgc(**kwargs)
         recorded = run_vcsgc(**kwargs, record_spins=True)
         spins = recorded["traces"]["spins"]
@@ -149,9 +151,11 @@ class TestRunners:
         assert spins.shape == (n_frames, D_SMALL * D_SMALL)
         assert spins.dtype == np.int8 and set(np.unique(spins)) <= {-1, 1}
         np.testing.assert_array_equal(
-            recorded["traces"]["composition"], plain["traces"]["composition"])
+            recorded["traces"]["composition"], plain["traces"]["composition"]
+        )
         np.testing.assert_allclose(
-            (spins > 0).mean(axis=1), recorded["traces"]["composition"])
+            (spins > 0).mean(axis=1), recorded["traces"]["composition"]
+        )
         assert "spins" not in plain["traces"]
 
     def test_canonical_fixes_composition_exactly(self):
@@ -215,7 +219,7 @@ class TestSemiGrandCanonical:
         """Boltzmann average of -log p̃ over all 2^(D*D) configurations."""
         target = IsingTarget(D=D, sigma=sigma, bias=0.0)
         n_sites = D * D
-        bits = torch.arange(2 ** n_sites).unsqueeze(1) >> torch.arange(n_sites)
+        bits = torch.arange(2**n_sites).unsqueeze(1) >> torch.arange(n_sites)
         states = (bits & 1).float() * 2.0 - 1.0
         log_p = target.base_log_prob(states)
         weights = torch.softmax(log_p, dim=0)
@@ -247,8 +251,14 @@ class TestSemiGrandCanonical:
         """
         sigma = 0.1
         chains = [
-            run_sgc(D=D_SMALL, sigma=sigma, initial_composition=0.5,
-                    n_steps=200000, seed=seed, data_write_interval=10)
+            run_sgc(
+                D=D_SMALL,
+                sigma=sigma,
+                initial_composition=0.5,
+                n_steps=200000,
+                seed=seed,
+                data_write_interval=10,
+            )
             for seed in (0, 1)
         ]
         pooled = np.concatenate([c["traces"]["potential"] for c in chains])
@@ -264,8 +274,14 @@ class TestSemiGrandCanonical:
         order is read back consistently (as for VC-SGC and the canonical
         probe). Here it also pins the ONE thing the profile observables of
         the house table need and the scalar traces cannot supply."""
-        kwargs = dict(D=D_SMALL, sigma=0.1, initial_composition=0.5,
-                      n_steps=4000, seed=0, data_write_interval=10)
+        kwargs = dict(
+            D=D_SMALL,
+            sigma=0.1,
+            initial_composition=0.5,
+            n_steps=4000,
+            seed=0,
+            data_write_interval=10,
+        )
         plain = run_sgc(**kwargs)
         recorded = run_sgc(**kwargs, record_spins=True)
         spins = recorded["traces"]["spins"]
@@ -273,15 +289,21 @@ class TestSemiGrandCanonical:
         assert spins.shape == (n_frames, D_SMALL * D_SMALL)
         assert spins.dtype == np.int8 and set(np.unique(spins)) <= {-1, 1}
         np.testing.assert_array_equal(
-            recorded["traces"]["composition"], plain["traces"]["composition"])
+            recorded["traces"]["composition"], plain["traces"]["composition"]
+        )
         np.testing.assert_allclose(
-            (spins > 0).mean(axis=1), recorded["traces"]["composition"])
+            (spins > 0).mean(axis=1), recorded["traces"]["composition"]
+        )
         assert "spins" not in plain["traces"]
 
     def test_sgc_reports_the_timing_currency(self):
         summary = run_sgc(
-            D=D_SMALL, sigma=0.1, initial_composition=0.5, n_steps=4000,
-            seed=0, data_write_interval=10,
+            D=D_SMALL,
+            sigma=0.1,
+            initial_composition=0.5,
+            n_steps=4000,
+            seed=0,
+            data_write_interval=10,
         )
         assert TestRunners.TIMING_KEYS <= summary.keys()
         assert summary["wall_seconds_run"] > 0

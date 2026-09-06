@@ -27,11 +27,13 @@ What correct looks like, independent of implementation:
    and consumes no RNG, so there is no resume contract beyond wiring
    (contrast test_c_t_batch.py, where the knob enlarges a base DRAW).
 """
+
 import csv
 from pathlib import Path
 
 import pytest
 import torch
+from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 from discrete_flow_sampler.constraints.swap_readout import (
     LeTFMaskOneSwapHead,
@@ -41,8 +43,6 @@ from discrete_flow_sampler.samplers import swap_ctmc, swap_training
 from discrete_flow_sampler.samplers.swap_ctmc import compute_c_t_grid_swap
 from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-
-from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 
 class _Cfg:
@@ -101,9 +101,7 @@ def test_default_none_runs_the_sequential_loop(monkeypatch):
         return real_naive(self, x, t)
 
     monkeypatch.setattr(swap_ctmc, "compute_xi_t_swap", xi_spy)
-    monkeypatch.setattr(
-        FixedCompositionIsingTarget, "dt_log_p_tilde_t", naive_spy
-    )
+    monkeypatch.setattr(FixedCompositionIsingTarget, "dt_log_p_tilde_t", naive_spy)
 
     compute_c_t_grid_swap(t_grid, x_traj, target, head, mode="control_variate")
     assert seen["xi"] == [OUTER_BATCH] * N_GRID
@@ -154,9 +152,7 @@ def test_chunk_row_cap_respected_and_remainder(monkeypatch):
         return real_naive(self, x, t)
 
     monkeypatch.setattr(swap_ctmc, "compute_xi_t_swap", xi_spy)
-    monkeypatch.setattr(
-        FixedCompositionIsingTarget, "dt_log_p_tilde_t", naive_spy
-    )
+    monkeypatch.setattr(FixedCompositionIsingTarget, "dt_log_p_tilde_t", naive_spy)
 
     compute_c_t_grid_swap(
         t_grid, x_traj, target, head, mode="control_variate", chunk_rows=5
@@ -167,9 +163,7 @@ def test_chunk_row_cap_respected_and_remainder(monkeypatch):
     # xi_t_swap reads dt_log_p_tilde_t internally, so the CV pass also
     # touched the naive spy; reset to isolate the naive-mode pass.
     seen["naive"].clear()
-    compute_c_t_grid_swap(
-        t_grid, x_traj, target, head, mode="naive_mc", chunk_rows=9
-    )
+    compute_c_t_grid_swap(t_grid, x_traj, target, head, mode="naive_mc", chunk_rows=9)
     # cap 9 -> 7 full chunks + 1.
     assert seen["naive"] == [9] * 7 + [1]
 
@@ -179,7 +173,11 @@ def test_chunk_rows_validation(monkeypatch):
     for bad in (0, -3, True, 2.5):
         with pytest.raises((ValueError, TypeError), match="chunk_rows"):
             compute_c_t_grid_swap(
-                t_grid, x_traj, target, head, mode="naive_mc",
+                t_grid,
+                x_traj,
+                target,
+                head,
+                mode="naive_mc",
                 chunk_rows=bad,
             )
     # Cap of 1 is the extreme of the semantics: one call per row.
@@ -190,12 +188,8 @@ def test_chunk_rows_validation(monkeypatch):
         seen.append(x.shape[0])
         return real_naive(self, x, t)
 
-    monkeypatch.setattr(
-        FixedCompositionIsingTarget, "dt_log_p_tilde_t", naive_spy
-    )
-    compute_c_t_grid_swap(
-        t_grid, x_traj, target, head, mode="naive_mc", chunk_rows=1
-    )
+    monkeypatch.setattr(FixedCompositionIsingTarget, "dt_log_p_tilde_t", naive_spy)
+    compute_c_t_grid_swap(t_grid, x_traj, target, head, mode="naive_mc", chunk_rows=1)
     assert seen == [1] * N_ROWS
 
 
@@ -204,11 +198,19 @@ def test_chunk_rows_validation(monkeypatch):
 
 
 def _cfgs(n_steps: int, c_t_grid_chunk_rows, n_eval_samples: int = 16):
-    train_cfg = _Cfg(n_steps=n_steps, batch_size=8, outer_batch_size=8,
-                     inner_steps_per_outer=2, lr=1e-3, seed=0,
-                     replay_buffer_cycles=2, grad_clip_max_norm=500.0,
-                     warmup_steps=0, resume_every_outer=1,
-                     c_t_grid_chunk_rows=c_t_grid_chunk_rows)
+    train_cfg = _Cfg(
+        n_steps=n_steps,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=2,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        resume_every_outer=1,
+        c_t_grid_chunk_rows=c_t_grid_chunk_rows,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=8)
     eval_cfg = _Cfg(eval_every=2, n_eval_samples=n_eval_samples)
     return train_cfg, ctmc_cfg, eval_cfg
@@ -217,9 +219,17 @@ def _cfgs(n_steps: int, c_t_grid_chunk_rows, n_eval_samples: int = 16):
 def _run(run_dir: Path, n_steps: int, head, c_t_grid_chunk_rows) -> None:
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(n_steps, c_t_grid_chunk_rows)
-    train_swap(head, target, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-               use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM)
+    train_swap(
+        head,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        run_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=TWO_STAGE_CURRICULUM,
+    )
 
 
 def _log_rows(run_dir: Path) -> list[dict]:
@@ -233,12 +243,10 @@ def test_trainer_wires_the_knob_every_outer_cycle(tmp_path, monkeypatch):
 
     def c_t_spy(t_grid, x_traj, target, head, *, mode, chunk_rows=None):
         seen.append(chunk_rows)
-        return real_c_t(t_grid, x_traj, target, head, mode=mode,
-                        chunk_rows=chunk_rows)
+        return real_c_t(t_grid, x_traj, target, head, mode=mode, chunk_rows=chunk_rows)
 
     monkeypatch.setattr(swap_training, "compute_c_t_grid_swap", c_t_spy)
-    _run(tmp_path / "run", n_steps=4, head=_head(init_seed=0),
-         c_t_grid_chunk_rows=5)
+    _run(tmp_path / "run", n_steps=4, head=_head(init_seed=0), c_t_grid_chunk_rows=5)
     # n_steps=4 -> two outer cycles, and the knob must arrive at both.
     assert seen == [5, 5]
 
@@ -247,15 +255,22 @@ def test_explicit_none_is_bit_identical_to_unknobbed(tmp_path):
     none_dir = tmp_path / "explicit_none"
     default_dir = tmp_path / "unknobbed"
 
-    _run(none_dir, n_steps=4, head=_head(init_seed=0),
-         c_t_grid_chunk_rows=None)
+    _run(none_dir, n_steps=4, head=_head(init_seed=0), c_t_grid_chunk_rows=None)
 
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(4, None)
     del train_cfg.c_t_grid_chunk_rows  # the getattr-default path
-    train_swap(_head(init_seed=0), target, train_cfg, ctmc_cfg, eval_cfg,
-               default_dir, use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM)
+    train_swap(
+        _head(init_seed=0),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        default_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=TWO_STAGE_CURRICULUM,
+    )
 
     rows_a, rows_b = _log_rows(none_dir), _log_rows(default_dir)
     assert len(rows_a) == len(rows_b) == 4

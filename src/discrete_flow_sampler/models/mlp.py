@@ -39,6 +39,7 @@ Why softplus rather than exp:
     negative scores -> 0 with vanishing gradient) or blow up early. Softplus
     was the paper's choice for the original family.
 """
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

@@ -33,6 +33,7 @@ only through ξ_θ -- this is the uncentred gradient form the paper derives
 in §C.1 (and the only form whose fixed points are the R that satisfy
 Kolmogorov forward exactly, rather than merely making ξ_θ flat in x).
 """
+
 from typing import Literal
 
 import torch
@@ -78,7 +79,8 @@ def compute_c_t_grid(
     n_grid, outer_batch, _ = x_traj.shape
     integrand_per_t = torch.empty(
         (n_grid, outer_batch),
-        dtype=x_traj.dtype, device=x_traj.device,
+        dtype=x_traj.dtype,
+        device=x_traj.device,
     )
 
     # Per-time-slot loop rather than one mega-batched call: keeps peak

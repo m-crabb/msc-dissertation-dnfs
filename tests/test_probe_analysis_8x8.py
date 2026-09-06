@@ -22,7 +22,6 @@ probe analysis adds over the already-tested demo_4x4 machinery:
 
 import numpy as np
 import pytest
-
 from experiments.constrained_hard_03.probe_analysis_8x8 import (
     batch_means_tau_int,
     frozen_verdict,
@@ -32,7 +31,6 @@ from experiments.constrained_hard_03.probe_analysis_8x8 import (
     total_variation,
     tv_noise_floor,
 )
-
 
 # ---------------------------------------------------------------------------
 # batch_means_tau_int
@@ -148,8 +146,7 @@ def test_ratio_f_ci_resolves_large_effects_only():
     # 10x effect: resolvable at R=8; 2x effect: not — the construction's
     # power is exactly what separates the two CI methods
     assert ratio_with_f_ci(5000.0, 1e6, 8, 500.0, 1e6, 8)["excludes_parity"]
-    assert not ratio_with_f_ci(1000.0, 1e6, 8, 500.0, 1e6, 8)[
-        "excludes_parity"]
+    assert not ratio_with_f_ci(1000.0, 1e6, 8, 500.0, 1e6, 8)["excludes_parity"]
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +160,7 @@ def test_tv_noise_floor_rarely_exceeded_by_the_law_itself():
     law = np.ones(33) / 33
     floor = tv_noise_floor(law, 1000, rng)
     exceedances = sum(
-        total_variation(rng.multinomial(1000, law), law) > floor
-        for _ in range(100)
+        total_variation(rng.multinomial(1000, law), law) > floor for _ in range(100)
     )
     assert exceedances <= 15  # ~5% nominal, slack for bootstrap noise
 

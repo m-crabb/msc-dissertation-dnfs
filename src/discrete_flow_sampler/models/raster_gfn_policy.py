@@ -41,9 +41,7 @@ class _CausalBlock(nn.Module):
     def __init__(self, hidden_dim: int, n_heads: int):
         super().__init__()
         self.attention_norm = nn.LayerNorm(hidden_dim)
-        self.attention = nn.MultiheadAttention(
-            hidden_dim, n_heads, batch_first=True
-        )
+        self.attention = nn.MultiheadAttention(hidden_dim, n_heads, batch_first=True)
         self.mlp_norm = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_dim, 4 * hidden_dim),
@@ -198,8 +196,7 @@ class RasterGFNPolicy(nn.Module):
         advancing the per-block caches. Must equal `_encode(...)[:, site]`
         (pinned by test_kv_cache_step_features_match_full_encode)."""
         h = (
-            self.token_embedding(token_ids_step)
-            + self.position_embedding[site]
+            self.token_embedding(token_ids_step) + self.position_embedding[site]
         ).unsqueeze(1)
         for block, cache in zip(self.blocks, caches):
             h = block.forward_step(h, cache)
@@ -264,12 +261,12 @@ class RasterGFNPolicy(nn.Module):
         exactly. All d prefixes of each sample are encoded as a 3-way
         one-hot over sites — (B, d, 3d) — and scored in one MLP batch."""
         batch, d = spins.shape
-        token_ids = (spins > 0).long()                       # (B, d) in {0, 1}
+        token_ids = (spins > 0).long()  # (B, d) in {0, 1}
         site = torch.arange(d, device=spins.device)
-        assigned = site[None, :] < site[:, None]             # (d_prefix, d_site)
+        assigned = site[None, :] < site[:, None]  # (d_prefix, d_site)
         prefix_ids = torch.where(
             assigned[None, :, :], token_ids[:, None, :], 2
-        )                                                    # (B, d, d); 2 = unassigned
+        )  # (B, d, d); 2 = unassigned
         one_hot = torch.nn.functional.one_hot(prefix_ids, 3).float()
         return self.flow_head(one_hot.reshape(batch, d, 3 * d)).squeeze(-1)
 

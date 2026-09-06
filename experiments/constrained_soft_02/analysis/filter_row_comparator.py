@@ -49,6 +49,7 @@ Example:
     python -m experiments.constrained_soft_02.analysis.filter_row_comparator \\
         --D 4 --lam 50 --reference-s-per-eff 0.00100
 """
+
 import argparse
 
 import pandas as pd
@@ -100,9 +101,7 @@ def soft_filter_ess_fraction(
     return first**2 / second
 
 
-def hard_filter_acceptance(
-    marginal: torch.Tensor, *, c_target: float, d: int
-) -> float:
+def hard_filter_acceptance(marginal: torch.Tensor, *, c_target: float, d: int) -> float:
     """Acceptance rate of rejecting every draw off the requested composition.
 
     Zero unless c_target·d is an integer, and that zero is the honest answer
@@ -145,7 +144,9 @@ def soft_target_slice_acceptance(
     d = D * D
     states = enumerate_states(d).float()
     target = IsingTarget(
-        D=D, sigma=sigma, target_composition=c_target,
+        D=D,
+        sigma=sigma,
+        target_composition=c_target,
         composition_penalty_strength=lam,
     )
     probabilities = torch.softmax(target.log_prob(states), dim=0)
@@ -157,33 +158,37 @@ def soft_target_slice_acceptance(
 
 
 def build_filter_rows(
-    *, D: int, sigma: float, lam: float, reference_s_per_eff: float,
+    *,
+    D: int,
+    sigma: float,
+    lam: float,
+    reference_s_per_eff: float,
     compositions=SWEPT_COMPOSITIONS,
 ) -> pd.DataFrame:
     d = D * D
     marginal = unconstrained_composition_marginal(D=D, sigma=sigma)
     rows = []
     for c_target in compositions:
-        soft = soft_filter_ess_fraction(
-            marginal, c_target=c_target, lam=lam, d=d
-        )
+        soft = soft_filter_ess_fraction(marginal, c_target=c_target, lam=lam, d=d)
         hard = hard_filter_acceptance(marginal, c_target=c_target, d=d)
         from_soft = soft_target_slice_acceptance(
             D=D, sigma=sigma, c_target=c_target, lam=lam
         )
-        rows.append({
-            "composition": c_target,
-            "soft_ess_fraction": soft,
-            "soft_cost_multiplier": 1.0 / soft,
-            "soft_s_per_eff": reference_s_per_eff / soft,
-            "hard_acceptance": hard,
-            "hard_cost_multiplier": 1.0 / hard if hard else float("inf"),
-            "from_soft_acceptance": from_soft,
-            "from_soft_cost_multiplier": (
-                1.0 / from_soft if from_soft else float("inf")
-            ),
-            "hard_over_from_soft": hard / from_soft if from_soft else float("nan"),
-        })
+        rows.append(
+            {
+                "composition": c_target,
+                "soft_ess_fraction": soft,
+                "soft_cost_multiplier": 1.0 / soft,
+                "soft_s_per_eff": reference_s_per_eff / soft,
+                "hard_acceptance": hard,
+                "hard_cost_multiplier": 1.0 / hard if hard else float("inf"),
+                "from_soft_acceptance": from_soft,
+                "from_soft_cost_multiplier": (
+                    1.0 / from_soft if from_soft else float("inf")
+                ),
+                "hard_over_from_soft": hard / from_soft if from_soft else float("nan"),
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -193,22 +198,27 @@ def main():
     parser.add_argument("--sigma", type=float, default=0.1)
     parser.add_argument("--lam", type=float, default=50.0)
     parser.add_argument(
-        "--reference-s-per-eff", type=float, default=0.00100,
+        "--reference-s-per-eff",
+        type=float,
+        default=0.00100,
         help="Seconds per effective sample of the sampler being filtered. "
-             "Defaults to the measured DNFS specialist cost at D=4, which is "
-             "charitable to filtering.",
+        "Defaults to the measured DNFS specialist cost at D=4, which is "
+        "charitable to filtering.",
     )
     parser.add_argument(
-        "--achievable", action="store_true",
+        "--achievable",
+        action="store_true",
         help="Sweep the compositions the lattice can actually realise (n/d) "
-             "instead of the DNFS sweep grid. At D=4 the quantum is 1/16, so "
-             "9 of the 10 swept values are unreachable and every rejection "
-             "route reports an honest zero there.",
+        "instead of the DNFS sweep grid. At D=4 the quantum is 1/16, so "
+        "9 of the 10 swept values are unreachable and every rejection "
+        "route reports an honest zero there.",
     )
     parser.add_argument(
-        "--scaling-sides", nargs="+", type=int,
+        "--scaling-sides",
+        nargs="+",
+        type=int,
         help="Also report how the cost of each route grows with lattice size, "
-             "over these lattice sides (enumeration caps d at 20 sites).",
+        "over these lattice sides (enumeration caps d at 20 sites).",
     )
     parser.add_argument("--out", help="Optional CSV path")
     args = parser.parse_args()
@@ -226,11 +236,12 @@ def main():
     print(f"lambda = {args.lam}, reference {args.reference_s_per_eff:.5f} s/eff\n")
 
     compositions = (
-        tuple(n / d for n in range(1, d)) if args.achievable
-        else SWEPT_COMPOSITIONS
+        tuple(n / d for n in range(1, d)) if args.achievable else SWEPT_COMPOSITIONS
     )
     table = build_filter_rows(
-        D=args.D, sigma=args.sigma, lam=args.lam,
+        D=args.D,
+        sigma=args.sigma,
+        lam=args.lam,
         reference_s_per_eff=args.reference_s_per_eff,
         compositions=compositions,
     )

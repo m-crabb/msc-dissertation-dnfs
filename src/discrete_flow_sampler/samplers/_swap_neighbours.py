@@ -5,6 +5,7 @@ pair is represented by its site-index-ordered member (i < j); the swap readout
 head is label-asymmetric, so this ordering is load-bearing for the single-pass
 reverse-rate identity (Eq. 8 / Eq. 10, swap form).
 """
+
 import torch
 from torch import Tensor
 
@@ -28,9 +29,7 @@ def upper_tri_pairs(d: int, device) -> Tensor:
     """
     key = (d, torch.device(device))
     if key not in _PAIRS_CACHE:
-        _PAIRS_CACHE[key] = torch.combinations(
-            torch.arange(d, device=device), r=2
-        )
+        _PAIRS_CACHE[key] = torch.combinations(torch.arange(d, device=device), r=2)
     return _PAIRS_CACHE[key]
 
 
@@ -47,11 +46,11 @@ def _log_p_tilde_at_swap_neighbours(x: Tensor, t: Tensor, target) -> Tensor:
     log p̃_t(x) (downstream log-ratio 0), exactly as a trivial swap should.
     """
     batch_size, d = x.shape
-    pairs = upper_tri_pairs(d, x.device)                  # (P, 2)
+    pairs = upper_tri_pairs(d, x.device)  # (P, 2)
     n_pairs = pairs.shape[0]
     i_col = pairs[:, 0].view(1, n_pairs, 1).expand(batch_size, n_pairs, 1)
     j_col = pairs[:, 1].view(1, n_pairs, 1).expand(batch_size, n_pairs, 1)
-    y = x[:, None, :].expand(batch_size, n_pairs, d).clone()   # (B, P, d)
+    y = x[:, None, :].expand(batch_size, n_pairs, d).clone()  # (B, P, d)
     spin_i = y.gather(2, i_col)
     spin_j = y.gather(2, j_col)
     y.scatter_(2, i_col, spin_j)

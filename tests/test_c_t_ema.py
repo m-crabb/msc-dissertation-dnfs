@@ -34,11 +34,13 @@ What correct looks like, independent of implementation:
    this file that CPU-only runs cannot falsify — it is the resume path of
    every GPU cell that arms the knob.
 """
+
 import csv
 import io
 from pathlib import Path
 
 import torch
+from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 from discrete_flow_sampler.constraints.swap_readout import (
     LeTFMaskOneSwapHead,
@@ -47,8 +49,6 @@ from discrete_flow_sampler.ema import CTGridEMA
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-
-from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 
 class _Cfg:
@@ -74,11 +74,19 @@ def _head(init_seed: int) -> LeTFMaskOneSwapHead:
 
 
 def _cfgs(n_steps: int, c_t_ema_halflife_cycles: float):
-    train_cfg = _Cfg(n_steps=n_steps, batch_size=8, outer_batch_size=8,
-                     inner_steps_per_outer=2, lr=1e-3, seed=0,
-                     replay_buffer_cycles=2, grad_clip_max_norm=500.0,
-                     warmup_steps=0, resume_every_outer=1,
-                     c_t_ema_halflife_cycles=c_t_ema_halflife_cycles)
+    train_cfg = _Cfg(
+        n_steps=n_steps,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=2,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        resume_every_outer=1,
+        c_t_ema_halflife_cycles=c_t_ema_halflife_cycles,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=8)
     eval_cfg = _Cfg(eval_every=2, n_eval_samples=16)
     return train_cfg, ctmc_cfg, eval_cfg
@@ -87,9 +95,17 @@ def _cfgs(n_steps: int, c_t_ema_halflife_cycles: float):
 def _run(run_dir: Path, n_steps: int, head, halflife: float) -> None:
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(n_steps, halflife)
-    train_swap(head, target, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-               use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM)
+    train_swap(
+        head,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        run_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=TWO_STAGE_CURRICULUM,
+    )
 
 
 def _log_rows(run_dir: Path) -> list[dict]:
@@ -141,7 +157,7 @@ def test_step_change_tracks_with_halflife_lag():
     assert out.item() >= 0.5
     for _ in range(12):  # three further halflives
         out = ema.update(torch.ones(1))
-    assert out.item() >= 1.0 - 2.0 ** -4 - 1e-6  # fp rounding around exact
+    assert out.item() >= 1.0 - 2.0**-4 - 1e-6  # fp rounding around exact
 
 
 def test_reset_re_seeds_at_next_cycle():
@@ -186,6 +202,7 @@ def test_state_dict_roundtrip_re_homes_off_cpu():
     device = _accelerator()
     if device is None:
         import pytest
+
         pytest.skip("no accelerator: the CPU path cannot falsify contract 7")
 
     ema = CTGridEMA(n_grid=4, halflife_cycles=4.0)
@@ -219,9 +236,17 @@ def test_off_run_is_bit_identical_to_unknobbed(tmp_path):
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(4, 0.0)
     del train_cfg.c_t_ema_halflife_cycles  # the getattr-default path
-    train_swap(_head(init_seed=0), target, train_cfg, ctmc_cfg, eval_cfg,
-               default_dir, use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM)
+    train_swap(
+        _head(init_seed=0),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        default_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=TWO_STAGE_CURRICULUM,
+    )
 
     knobbed_rows = _log_rows(knobbed_dir)
     default_rows = _log_rows(default_dir)
@@ -247,10 +272,10 @@ def test_ema_run_curriculum_reset_visible_in_log(tmp_path):
     # inner_steps_per_outer=2 -> deltas at even indices are per-cycle;
     # the curriculum transition at step 2 is outer cycle 1.
     cycle = deltas[::2]
-    assert cycle[0] == 0.0                      # cycle 0: first-cycle passthrough
-    assert cycle[1] == 0.0                      # cycle 1: sigma transition reset
-    assert cycle[2] > 0.0                       # cycle 2: smoothing resumed
-    assert all(d == d for d in deltas)          # no NaNs when enabled
+    assert cycle[0] == 0.0  # cycle 0: first-cycle passthrough
+    assert cycle[1] == 0.0  # cycle 1: sigma transition reset
+    assert cycle[2] > 0.0  # cycle 2: smoothing resumed
+    assert all(d == d for d in deltas)  # no NaNs when enabled
     assert all(float(row["loss"]) == float(row["loss"]) for row in rows)
 
 

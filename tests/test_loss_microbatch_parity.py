@@ -16,6 +16,7 @@ identity — the proof the arm stays the twin its pin declares — and pin the
 None path as literally the archived single-backward so the queued fleet is
 untouched by deploying the lever switched off.
 """
+
 import torch
 
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
@@ -32,9 +33,7 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 def _backbone(D, seed):
     torch.manual_seed(seed)
-    return LeTFRateMatrix(
-        d=D * D, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
-    )
+    return LeTFRateMatrix(d=D * D, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
 
 
 def _mask_one_head_and_target(D=4, seed=42):
@@ -51,10 +50,7 @@ def _masked_attention_head_and_target(D=4, seed=42):
 
 
 def _grads(head):
-    return [
-        p.grad.clone() if p.grad is not None else None
-        for p in head.parameters()
-    ]
+    return [p.grad.clone() if p.grad is not None else None for p in head.parameters()]
 
 
 def _batch(tgt, batch_size, seed=7):
@@ -76,9 +72,7 @@ def _full_batch_reference(head, tgt, x, t, c_t):
 def _assert_parity(head_factory, microbatch_size, batch_size):
     head, tgt = head_factory()
     x, t, c_t = _batch(tgt, batch_size)
-    ref_loss, ref_residual, ref_grads = _full_batch_reference(
-        head, tgt, x, t, c_t
-    )
+    ref_loss, ref_residual, ref_grads = _full_batch_reference(head, tgt, x, t, c_t)
 
     head.zero_grad()
     loss, residual = loss_swap_backward_microbatched(
@@ -102,9 +96,7 @@ def test_microbatched_grads_match_full_batch_mask_one():
 
 
 def test_microbatched_grads_match_full_batch_masked_attention():
-    _assert_parity(
-        _masked_attention_head_and_target, microbatch_size=4, batch_size=10
-    )
+    _assert_parity(_masked_attention_head_and_target, microbatch_size=4, batch_size=10)
 
 
 def test_microbatch_none_is_the_single_backward_path_bit_exactly():
@@ -114,9 +106,7 @@ def test_microbatch_none_is_the_single_backward_path_bit_exactly():
     contract there."""
     head, tgt = _mask_one_head_and_target()
     x, t, c_t = _batch(tgt, 8)
-    ref_loss, ref_residual, ref_grads = _full_batch_reference(
-        head, tgt, x, t, c_t
-    )
+    ref_loss, ref_residual, ref_grads = _full_batch_reference(head, tgt, x, t, c_t)
 
     head.zero_grad()
     loss, residual = loss_swap_backward_microbatched(
@@ -136,9 +126,7 @@ def test_microbatch_at_or_above_batch_is_the_single_backward_path():
     ref_loss, _, ref_grads = _full_batch_reference(head, tgt, x, t, c_t)
 
     head.zero_grad()
-    loss, _ = loss_swap_backward_microbatched(
-        x, t, c_t, head, tgt, microbatch_size=64
-    )
+    loss, _ = loss_swap_backward_microbatched(x, t, c_t, head, tgt, microbatch_size=64)
     assert torch.equal(loss, ref_loss)
     for got, want in zip(_grads(head), ref_grads, strict=True):
         if got is not None:
@@ -154,9 +142,7 @@ def test_microbatch_accepts_scalar_c_t():
     ref_loss, _, ref_grads = _full_batch_reference(head, tgt, x, t, c_t)
 
     head.zero_grad()
-    loss, _ = loss_swap_backward_microbatched(
-        x, t, c_t, head, tgt, microbatch_size=4
-    )
+    loss, _ = loss_swap_backward_microbatched(x, t, c_t, head, tgt, microbatch_size=4)
     assert torch.isclose(loss, ref_loss, rtol=1e-5, atol=1e-7)
     for got, want in zip(_grads(head), ref_grads, strict=True):
         if got is not None:

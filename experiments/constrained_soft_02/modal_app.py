@@ -24,10 +24,10 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
         --cfg-name S2_d8_c0250_l50_letf_ne128_house --seeds "42,43,44,45" \\
         --tag 20260831-softhouse-d64
 """
+
 import time
 
 import modal
-
 from experiments.constrained_soft_02.configs import CONFIGS
 
 PROJECT_DIR = "/repo"
@@ -129,11 +129,14 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.dnfs_baseline_01.run import train
     from experiments.constrained_soft_02.configs import CONFIGS
+    from experiments.dnfs_baseline_01.run import train
 
     train(
-        CONFIGS[cfg_name], seed=seed, output_dir="/results", tag=tag or None,
+        CONFIGS[cfg_name],
+        seed=seed,
+        output_dir="/results",
+        tag=tag or None,
         # A preemption gets no chance to flush, so the resume checkpoint has
         # to be committed to the volume the moment it is written -- otherwise
         # the retry finds nothing and restarts from step 0, which is exactly
@@ -175,10 +178,18 @@ def train_pack_remote(cfg_name: str, seeds: str, tag: str = ""):
     procs = {}
     for seed in seed_list:
         procs[seed] = subprocess.Popen(
-            [sys.executable, "-m", "experiments.constrained_soft_02.run",
-             "--cfg", cfg_name, "--seed", str(seed),
-             "--output-dir", "/results",
-             *(["--tag", tag] if tag else [])],
+            [
+                sys.executable,
+                "-m",
+                "experiments.constrained_soft_02.run",
+                "--cfg",
+                cfg_name,
+                "--seed",
+                str(seed),
+                "--output-dir",
+                "/results",
+                *(["--tag", tag] if tag else []),
+            ],
             cwd=PROJECT_DIR,
         )
     # The subprocess CLI cannot pass on_checkpoint=volume.commit, so the
@@ -189,8 +200,7 @@ def train_pack_remote(cfg_name: str, seeds: str, tag: str = ""):
         time_module.sleep(60)
         volume.commit()
     volume.commit()
-    failed = {seed: p.returncode
-              for seed, p in procs.items() if p.returncode != 0}
+    failed = {seed: p.returncode for seed, p in procs.items() if p.returncode != 0}
     if failed:
         raise RuntimeError(f"packed seeds failed (seed: exit): {failed}")
 
@@ -237,8 +247,7 @@ def redraw_remote(run_dir_name: str, n_euler: int):
     volumes={"/results": volume},
     timeout=60 * 60,
 )
-def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt",
-                 force: bool = False):
+def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt", force: bool = False):
     """Per-composition request-grid sweep of one amortised run dir on the
     volume (run.composition_sweep — the measurement the amortisation claim
     rests on; one CRN-paired eval row per requested c).
@@ -268,8 +277,9 @@ def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt",
 
 
 @app.local_entrypoint()
-def sweep_batch(run_dirs: str, checkpoints: str = "final.pt,final_ema.pt",
-                force: bool = False):
+def sweep_batch(
+    run_dirs: str, checkpoints: str = "final.pt,final_ema.pt", force: bool = False
+):
     """Fan out sweep_remote over run_dirs x checkpoints, one container per
     sweep (both args comma-separated; Modal's CLI takes strings)."""
     names = [s.strip() for s in run_dirs.split(",") if s.strip()]
@@ -301,11 +311,14 @@ def train_gate_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.dnfs_baseline_01.run import train
     from experiments.constrained_soft_02.configs import CONFIGS
+    from experiments.dnfs_baseline_01.run import train
 
     train(
-        CONFIGS[cfg_name], seed=seed, output_dir="/results", tag=tag or None,
+        CONFIGS[cfg_name],
+        seed=seed,
+        output_dir="/results",
+        tag=tag or None,
         on_checkpoint=volume.commit,
     )
     volume.commit()
@@ -328,11 +341,14 @@ def train_diag_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.dnfs_baseline_01.run import train
     from experiments.constrained_soft_02.configs import CONFIGS
+    from experiments.dnfs_baseline_01.run import train
 
     train(
-        CONFIGS[cfg_name], seed=seed, output_dir="/results", tag=tag or None,
+        CONFIGS[cfg_name],
+        seed=seed,
+        output_dir="/results",
+        tag=tag or None,
         on_checkpoint=volume.commit,
     )
     volume.commit()
@@ -346,8 +362,10 @@ def batch_seeds_diag(cfg_name: str, seeds: str = "42", tag: str = ""):
     tag = tag or time.strftime("%Y%m%d-%H%M%S")
     for seed in seed_list:
         train_diag_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
-    print(f"spawned {len(seed_list)} diag jobs for {cfg_name}: "
-          f"seeds={seed_list} tag={tag}")
+    print(
+        f"spawned {len(seed_list)} diag jobs for {cfg_name}: "
+        f"seeds={seed_list} tag={tag}"
+    )
 
 
 @app.local_entrypoint()
@@ -381,7 +399,9 @@ def main(cfg_name: str, seed: int = 42):
     """
     _validate_cfg_name(cfg_name)
     train_remote.remote(
-        cfg_name=cfg_name, seed=seed, tag=time.strftime("%Y%m%d-%H%M%S"),
+        cfg_name=cfg_name,
+        seed=seed,
+        tag=time.strftime("%Y%m%d-%H%M%S"),
     )
 
 
@@ -392,7 +412,9 @@ def batch_seeds(cfg_name: str, seeds: str = "42", tag: str = ""):
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
     for seed in seed_list:
         train_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
-    print(f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list} tag={tag or '<timestamp>'}")
+    print(
+        f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list} tag={tag or '<timestamp>'}"
+    )
 
 
 @app.local_entrypoint()
@@ -400,5 +422,7 @@ def batch_seeds_packed(cfg_name: str, seeds: str = "42", tag: str = ""):
     """One container, all seeds co-resident (see train_pack_remote)."""
     _validate_cfg_name(cfg_name)
     train_pack_remote.spawn(cfg_name=cfg_name, seeds=seeds, tag=tag)
-    print(f"spawned packed container for {cfg_name}: "
-          f"seeds={seeds} tag={tag or '<timestamp>'}")
+    print(
+        f"spawned packed container for {cfg_name}: "
+        f"seeds={seeds} tag={tag or '<timestamp>'}"
+    )

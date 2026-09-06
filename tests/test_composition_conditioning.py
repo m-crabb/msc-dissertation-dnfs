@@ -55,9 +55,7 @@ def _soft_target(D=4, target_composition=0.5):
 
 def _random_spins(batch_size, d, seed=0):
     generator = torch.Generator().manual_seed(seed)
-    return (
-        torch.randint(0, 2, (batch_size, d), generator=generator).float() * 2 - 1
-    )
+    return torch.randint(0, 2, (batch_size, d), generator=generator).float() * 2 - 1
 
 
 def _penalty_by_loop(target, x, compositions):
@@ -74,6 +72,7 @@ def _penalty_by_loop(target, x, compositions):
 # --------------------------------------------------------------------------
 # TARGET — per-row composition
 # --------------------------------------------------------------------------
+
 
 def test_unbound_penalty_is_unchanged_by_the_new_machinery():
     """Regression guard: with nothing bound, every specialist run is untouched.
@@ -199,9 +198,9 @@ def test_neighbour_helper_respects_bound_composition():
     for row, composition, t_row in zip(x, compositions, t):
         target.target_composition = float(composition)
         expected_rows.append(
-            _log_p_tilde_at_neighbours(
-                row[None, :], t_row[None], target, vocab_size=2
-            )[0]
+            _log_p_tilde_at_neighbours(row[None, :], t_row[None], target, vocab_size=2)[
+                0
+            ]
         )
     target.target_composition = original
 
@@ -212,10 +211,15 @@ def test_neighbour_helper_respects_bound_composition():
 # MODEL — c summed into cond_t
 # --------------------------------------------------------------------------
 
+
 def _conditioned_model(d=9, hidden_dim=16, seed=0):
     torch.manual_seed(seed)
     model = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=2, n_heads=2,
+        d=d,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=2,
+        n_heads=2,
         condition_on_composition=True,
     )
     model.eval()
@@ -253,10 +257,15 @@ def test_conditioner_preserves_shared_initialisation_and_rng_stream():
     resume compatibility, but its private initialization must not advance the
     RNG used by any shared tensor or by code after model construction.
     """
+
     def build(conditioned):
         torch.manual_seed(1234)
         model = LeTFRateMatrix(
-            d=9, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2,
+            d=9,
+            vocab_size=2,
+            hidden_dim=16,
+            n_layers=2,
+            n_heads=2,
             condition_on_composition=conditioned,
         )
         return model, torch.get_rng_state().clone()
@@ -294,14 +303,16 @@ def test_unconditioned_checkpoint_warm_starts_a_conditioned_model():
     """
     torch.manual_seed(7)
     plain = LeTFRateMatrix(
-        d=9, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2,
+        d=9,
+        vocab_size=2,
+        hidden_dim=16,
+        n_layers=2,
+        n_heads=2,
     )
     plain.eval()
-    conditioned = _conditioned_model(seed=99)   # deliberately different init
+    conditioned = _conditioned_model(seed=99)  # deliberately different init
 
-    missing, unexpected = conditioned.load_state_dict(
-        plain.state_dict(), strict=False
-    )
+    missing, unexpected = conditioned.load_state_dict(plain.state_dict(), strict=False)
     assert not unexpected, f"unexpected keys when warm-starting: {unexpected}"
     assert all(key.startswith("comp_embedder.") for key in missing), (
         f"only the composition embedder may be missing, got {missing}"
@@ -309,9 +320,7 @@ def test_unconditioned_checkpoint_warm_starts_a_conditioned_model():
 
     x = _random_spins(4, 9, seed=6)
     t = torch.rand(4)
-    torch.testing.assert_close(
-        conditioned(x, t, torch.full((4,), 0.65)), plain(x, t)
-    )
+    torch.testing.assert_close(conditioned(x, t, torch.full((4,), 0.65)), plain(x, t))
 
 
 def test_composition_changes_rates_once_the_channel_is_trained():

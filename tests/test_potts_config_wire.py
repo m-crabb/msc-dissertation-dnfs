@@ -18,6 +18,7 @@
    output until an S-vector version lands; a plausible-looking wrong number
    is not.
 """
+
 import json
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -58,8 +59,9 @@ def _tiny_potts_cfg(n_eval_samples=8, eval_sample_chunk=4):
             n_eval_samples=n_eval_samples,
             eval_sample_chunk=eval_sample_chunk,
         ),
-        model=ModelCfg(kind="letf", hidden_dim=16, n_layers=2, n_heads=2,
-                       vocab_size=len(THIRDS)),
+        model=ModelCfg(
+            kind="letf", hidden_dim=16, n_layers=2, n_heads=2, vocab_size=len(THIRDS)
+        ),
         estimator="control_variate",
         head_kind="mask_one",
         target_kind="potts",
@@ -126,7 +128,8 @@ def test_species_count_is_consistent_across_every_cell():
                 # between Cu3Au and CuAu; the amortised cell mixes them.
                 n_sites = 16 if "cuau16" in name else 64
                 assert cfg.ising.target_composition * n_sites == round(
-                    cfg.ising.target_composition * n_sites), name
+                    cfg.ising.target_composition * n_sites
+                ), name
             else:
                 assert cfg.ising.target_composition == 0.5, name
         else:
@@ -156,9 +159,7 @@ def test_legacy_run_dir_backfills_the_new_potts_fields(tmp_path, monkeypatch):
         head_kind="mask_one",
         eval=EvalCfg(eval_every=2, n_eval_samples=4),
     )
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = tmp_path / "legacy_pre_potts"
     (run_dir / "checkpoints").mkdir(parents=True)
     saved = asdict(cfg)

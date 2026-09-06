@@ -5,6 +5,7 @@ on-slice free-energy reference, and the within-level uniformity metric. The
 full gate (`run_gate`/`main`) instantiates the leTF backbone and runs the swap
 CTMC, so it is NOT tested locally -- the controller runs the real gate.
 """
+
 import itertools
 
 import torch
@@ -35,9 +36,7 @@ def test_energy_marginal_tv_detects_shift():
     adj = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
     bins = torch.linspace(-3, 3, 7)
     # xAx=+2
-    up = slice_energy_hist(
-        torch.tensor([[1.0, 1.0]]), torch.tensor([1.0]), adj, bins
-    )
+    up = slice_energy_hist(torch.tensor([[1.0, 1.0]]), torch.tensor([1.0]), adj, bins)
     # xAx=-2
     anti = slice_energy_hist(
         torch.tensor([[1.0, -1.0]]), torch.tensor([1.0]), adj, bins
@@ -67,10 +66,12 @@ def test_on_slice_free_energy_reference_uses_2sigma_d_normalisation():
 def _one_level_slice():
     # Four distinct d=4 configs, all declared to sit at one energy level.
     slice_states = torch.tensor(
-        [[1.0, 1.0, -1.0, -1.0],
-         [1.0, -1.0, 1.0, -1.0],
-         [-1.0, 1.0, -1.0, 1.0],
-         [-1.0, -1.0, 1.0, 1.0]]
+        [
+            [1.0, 1.0, -1.0, -1.0],
+            [1.0, -1.0, 1.0, -1.0],
+            [-1.0, 1.0, -1.0, 1.0],
+            [-1.0, -1.0, 1.0, 1.0],
+        ]
     )
     slice_energies = torch.zeros(4)
     return slice_states, slice_energies
@@ -80,18 +81,23 @@ def test_within_level_uniform_coverage_has_nonpositive_excess():
     # Exactly-uniform coverage: TV_k = 0, so excess = -TV_ref <= 0 (the matched
     # perfect-sampler baseline is subtracted off).
     slice_states, slice_energies = _one_level_slice()
-    samples = slice_states.repeat_interleave(100, dim=0)   # 100 of each -> uniform
+    samples = slice_states.repeat_interleave(100, dim=0)  # 100 of each -> uniform
     weights = torch.ones(samples.shape[0])
     sample_energies = torch.zeros(samples.shape[0])
     levels = within_level_uniformity(
-        samples, weights, sample_energies, slice_states, slice_energies,
-        min_count=4, seed=0,
+        samples,
+        weights,
+        sample_energies,
+        slice_states,
+        slice_energies,
+        min_count=4,
+        seed=0,
     )
     assert len(levels) == 1
     level = levels[0]
     assert level["n_k"] == 400 and level["g_k"] == 4
-    assert abs(level["n_eff_k"] - 400) < 0.1   # equal weights: n_eff_k == n_k
-    assert level["tv_k"] < 1e-5   # exactly uniform up to float32 accumulation
+    assert abs(level["n_eff_k"] - 400) < 0.1  # equal weights: n_eff_k == n_k
+    assert level["tv_k"] < 1e-5  # exactly uniform up to float32 accumulation
     assert level["excess"] <= 1e-5
 
 
@@ -103,8 +109,13 @@ def test_within_level_concentration_shows_large_excess():
     weights = torch.ones(400)
     sample_energies = torch.zeros(400)
     levels = within_level_uniformity(
-        samples, weights, sample_energies, slice_states, slice_energies,
-        min_count=4, seed=0,
+        samples,
+        weights,
+        sample_energies,
+        slice_states,
+        slice_energies,
+        min_count=4,
+        seed=0,
     )
     level = levels[0]
     assert abs(level["tv_k"] - 0.75) < 1e-6
@@ -120,19 +131,24 @@ def test_within_level_skewed_weights_uniform_states_excess_near_zero():
     # baseline (tv_ref ~ 0.04) the excess would be ~0.26 >> the 0.05 gate
     # threshold -- a spurious failure at any low-within-level-ESS rung.
     rows = list(itertools.product([-1.0, 1.0], repeat=6))[:32]
-    slice_states = torch.tensor(rows)                      # g_k = 32 states
+    slice_states = torch.tensor(rows)  # g_k = 32 states
     slice_energies = torch.zeros(32)
-    samples = slice_states.repeat(100, 1)                  # exactly uniform coverage
+    samples = slice_states.repeat(100, 1)  # exactly uniform coverage
     torch.manual_seed(0)
-    weights = torch.exp(2.0 * torch.randn(3200))           # heavy-tailed IS weights
+    weights = torch.exp(2.0 * torch.randn(3200))  # heavy-tailed IS weights
     levels = within_level_uniformity(
-        samples, weights, torch.zeros(3200), slice_states, slice_energies,
-        min_count=4, seed=0,
+        samples,
+        weights,
+        torch.zeros(3200),
+        slice_states,
+        slice_energies,
+        min_count=4,
+        seed=0,
     )
     level = levels[0]
-    assert level["n_eff_k"] < 100                          # skew is visible
-    assert level["tv_k"] > 0.1                             # raw TV floored by skew
-    assert abs(level["excess"]) < 0.05                     # null absorbs the floor
+    assert level["n_eff_k"] < 100  # skew is visible
+    assert level["tv_k"] > 0.1  # raw TV floored by skew
+    assert abs(level["excess"]) < 0.05  # null absorbs the floor
 
 
 def test_within_level_skips_sparse_levels():
@@ -141,7 +157,12 @@ def test_within_level_skips_sparse_levels():
     slice_states, slice_energies = _one_level_slice()
     samples = slice_states[0:1].repeat(3, 1)
     levels = within_level_uniformity(
-        samples, torch.ones(3), torch.zeros(3), slice_states, slice_energies,
-        min_count=100, seed=0,
+        samples,
+        torch.ones(3),
+        torch.zeros(3),
+        slice_states,
+        slice_energies,
+        min_count=100,
+        seed=0,
     )
     assert levels == []

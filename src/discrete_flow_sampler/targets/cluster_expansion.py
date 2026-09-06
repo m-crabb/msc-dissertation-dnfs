@@ -41,6 +41,7 @@ purpose and `index_add_` accumulates it. Slice constant: the fixed-composition
 class reuses the Ising slice methods verbatim, so log C(d, n_plus) enters the
 path weight exactly as it does for Ising.
 """
+
 from __future__ import annotations
 
 import itertools
@@ -75,13 +76,17 @@ class BinaryExpansionSpec:
     _cache: dict = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_json(cls, path: str | Path) -> "BinaryExpansionSpec":
+    def from_json(cls, path: str | Path) -> BinaryExpansionSpec:
         raw = json.loads(Path(path).read_text())
         return cls(
-            n_sites=raw["n_sites"], constant=raw["constant"], terms=raw["terms"],
+            n_sites=raw["n_sites"],
+            constant=raw["constant"],
+            terms=raw["terms"],
             nearest_neighbour_pairs=raw["nearest_neighbour_pairs"],
-            positions=raw.get("positions"), cell=raw.get("cell"),
-            source=raw.get("source", ""), energy_units=raw.get("energy_units", ""),
+            positions=raw.get("positions"),
+            cell=raw.get("cell"),
+            source=raw.get("source", ""),
+            energy_units=raw.get("energy_units", ""),
         )
 
     def _tensors(self, device) -> list[tuple[Tensor, float]]:
@@ -89,8 +94,10 @@ class BinaryExpansionSpec:
         key = str(device)
         if key not in self._cache:
             self._cache[key] = [
-                (torch.tensor(term["tuples"], dtype=torch.long, device=device),
-                 float(term["coefficient"]))
+                (
+                    torch.tensor(term["tuples"], dtype=torch.long, device=device),
+                    float(term["coefficient"]),
+                )
                 for term in self.terms
             ]
         return self._cache[key]
@@ -132,7 +139,11 @@ class BinaryExpansionSpec:
     def swap_energy_change(self, x: Tensor) -> Tensor:
         """Delta E for swapping each unlike pair, (B, d, d), Eq. (3); 0 for like pairs."""
         site = self.site_energies(x)
-        delta = -2.0 * site[:, :, None] - 2.0 * site[:, None, :] + 4.0 * self.pair_energies(x)
+        delta = (
+            -2.0 * site[:, :, None]
+            - 2.0 * site[:, None, :]
+            + 4.0 * self.pair_energies(x)
+        )
         unlike = (x[:, :, None] != x[:, None, :]).to(x.dtype)
         return delta * unlike
 
@@ -167,8 +178,11 @@ class ClusterExpansionTarget(IsingTarget):
         side = math.isqrt(spec.n_sites)
         super().__init__(
             D=side if side * side == spec.n_sites else spec.n_sites,
-            sigma=beta / 2.0, bias=bias, device=device,
-            adjacency=spec.nn_adjacency(device), **ising_kwargs,
+            sigma=beta / 2.0,
+            bias=bias,
+            device=device,
+            adjacency=spec.nn_adjacency(device),
+            **ising_kwargs,
         )
 
     @property
@@ -211,8 +225,12 @@ class FixedCompositionClusterExpansionTarget(ClusterExpansionTarget):
                 f"{n_plus_float} is not integral; no exact fixed-N slice exists."
             )
         super().__init__(
-            spec, beta, bias=bias, device=device,
-            target_composition=target_composition, composition_penalty_strength=0.0,
+            spec,
+            beta,
+            bias=bias,
+            device=device,
+            target_composition=target_composition,
+            composition_penalty_strength=0.0,
         )
         self.n_plus_target = n_plus_target
         self.composition_quantum = self.d
@@ -253,5 +271,7 @@ class MixtureCompositionClusterExpansionTarget(FixedCompositionClusterExpansionT
     def __init__(self, spec, beta, compositions, bias=0.0, device="cpu"):
         if not compositions:
             raise ValueError("compositions must name at least one slice")
-        super().__init__(spec, beta, target_composition=compositions[0], bias=bias, device=device)
+        super().__init__(
+            spec, beta, target_composition=compositions[0], bias=bias, device=device
+        )
         register_composition_grid(self, compositions)

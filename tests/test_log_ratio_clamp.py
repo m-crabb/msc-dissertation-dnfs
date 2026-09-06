@@ -127,7 +127,7 @@ def test_penalty_contribution_to_neighbour_log_ratio(lam, delta):
 
     shift = ratios(_target(lam, c_target, D)) - ratios(_target(0.0, None, D))
 
-    plus_idx = ((x[0] + 1.0) * 0.5).long()          # 1 where site is +1
+    plus_idx = ((x[0] + 1.0) * 0.5).long()  # 1 where site is +1
     # Flipping a +1 site to -1 lowers c; with Delta > 0 that moves toward
     # target, so the penalty falls and the log-ratio RISES by 2*lambda*Delta.
     down_flips = shift[0, plus_idx == 1, 0]
@@ -203,14 +203,18 @@ def test_raising_the_clamp_changes_the_residual_only_where_it_bound():
     an early warning rather than merely correlated with trouble."""
     D, lam = 4, 50.0
     d = D * D
-    model = _ConstantRateModel(d, value=-0.3)   # negative: see class docstring
+    model = _ConstantRateModel(d, value=-0.3)  # negative: see class docstring
     t = torch.ones(4)
 
     # c = 0.5 exactly: Delta = 0, penalty differences vanish, Ising part is
     # O(a few) so no ceiling in [5, 20] can bind.
-    obedient = torch.cat([torch.ones(d // 2), -torch.ones(d // 2)])[None, :].repeat(4, 1)
+    obedient = torch.cat([torch.ones(d // 2), -torch.ones(d // 2)])[None, :].repeat(
+        4, 1
+    )
     r5 = residual_lenet(obedient, t, torch.zeros(()), model, _target(lam, 0.5, D, 5.0))
-    r20 = residual_lenet(obedient, t, torch.zeros(()), model, _target(lam, 0.5, D, 20.0))
+    r20 = residual_lenet(
+        obedient, t, torch.zeros(()), model, _target(lam, 0.5, D, 20.0)
+    )
     assert torch.allclose(r5, r20, atol=1e-5)
 
     # Delta = 0.25, five times Delta* = 0.05: the ceiling is load-bearing, and
@@ -220,9 +224,15 @@ def test_raising_the_clamp_changes_the_residual_only_where_it_bound():
     # astronomically large term. Both regimes are unusable, which is why the
     # deployable fix has to flatten the penalty rather than raise the ceiling.
     n_plus = round(0.75 * d)
-    disobedient = torch.cat([torch.ones(n_plus), -torch.ones(d - n_plus)])[None, :].repeat(4, 1)
-    b5 = residual_lenet(disobedient, t, torch.zeros(()), model, _target(lam, 0.5, D, 5.0))
-    b20 = residual_lenet(disobedient, t, torch.zeros(()), model, _target(lam, 0.5, D, 20.0))
+    disobedient = torch.cat([torch.ones(n_plus), -torch.ones(d - n_plus)])[
+        None, :
+    ].repeat(4, 1)
+    b5 = residual_lenet(
+        disobedient, t, torch.zeros(()), model, _target(lam, 0.5, D, 5.0)
+    )
+    b20 = residual_lenet(
+        disobedient, t, torch.zeros(()), model, _target(lam, 0.5, D, 20.0)
+    )
     assert not torch.allclose(b5, b20, atol=1.0)
     assert b20.abs().max() > 1e3 * b5.abs().max()
 

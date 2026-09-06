@@ -1,4 +1,5 @@
 """Shared neighbour-evaluation helper for Kolmogorov and CTMC modules."""
+
 import torch
 from torch import Tensor
 
@@ -46,13 +47,9 @@ def _log_p_tilde_at_neighbours(
         log_p_neighbours: (B, D, vocab_size) tensor of log p̃_t values.
     """
     batch_size, n_sites = x.shape
-    spin_of_idx = (
-        2.0 * torch.arange(vocab_size, device=x.device, dtype=x.dtype) - 1.0
-    )
+    spin_of_idx = 2.0 * torch.arange(vocab_size, device=x.device, dtype=x.dtype) - 1.0
     neighbours = (
-        x[:, None, None, :]
-        .expand(batch_size, n_sites, vocab_size, n_sites)
-        .clone()
+        x[:, None, None, :].expand(batch_size, n_sites, vocab_size, n_sites).clone()
     )
     site_index = (
         torch.arange(n_sites, device=x.device)
@@ -66,6 +63,4 @@ def _log_p_tilde_at_neighbours(
 
     flat = neighbours.reshape(batch_size * n_sites * vocab_size, n_sites)
     t_per = t.repeat_interleave(n_sites * vocab_size)
-    return target.log_p_tilde_t(flat, t_per).reshape(
-        batch_size, n_sites, vocab_size
-    )
+    return target.log_p_tilde_t(flat, t_per).reshape(batch_size, n_sites, vocab_size)

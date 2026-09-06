@@ -38,6 +38,7 @@ therefore estimates log Z_slice directly and free_energy_lb_estimate
 (paper Eq. 37 convention) applies verbatim, comparable to the DNFS gate's
 on-slice numbers (same estimator, same reference).
 """
+
 import argparse
 import csv
 import json
@@ -46,7 +47,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-
 from experiments.constrained_hard_03.gate_4x4 import (
     _categorical_energy_bins,
     _energy,
@@ -55,6 +55,7 @@ from experiments.constrained_hard_03.gate_4x4 import (
     slice_energy_hist,
     within_level_uniformity,
 )
+
 from discrete_flow_sampler.diagnostics.metrics import (
     conditional_pmf_at_composition,
     enumerate_states,
@@ -64,9 +65,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
 )
 from discrete_flow_sampler.samplers.budget_masked import (
     GatedBudgetTiltOffset,
-    log_variance_loss,
     MaskedConditionalNet,
     feasibility_clamped_p_plus,
+    log_variance_loss,
     masked_count_and_budget,
     preconditioner_logit_diff,
     rollout_budget_masked,
@@ -102,6 +103,8 @@ def configure_lattice(lattice_side):
     LATTICE_SIDE = lattice_side
     N_SITES = lattice_side * lattice_side
     N_PLUS = N_SITES // 2
+
+
 SIGMA = 0.223
 TRAIN_ROLLOUTS_PER_STEP = 256
 CORRUPTION_REPLICATES = 2
@@ -129,14 +132,19 @@ ARMS = {
     "b": ("none", True),
     "c": ("unconstrained", True),
     "a2": ("budget_tilted_gated", True),  # forensics arm: V0 with
-                                          # learnable scales (init 1.0)
-    "u": ("unconstrained", False),        # unconstrained control
+    # learnable scales (init 1.0)
+    "u": ("unconstrained", False),  # unconstrained control
 }
 
 # First-pass G-cuts, computed for every (sigma, seed, arm) for continuity
 # (later passes print them alongside, not re-adjudicated).
-CUTS = {"energy_tv": 0.02, "conditional_kl": 0.01, "ess_fraction": 0.20,
-        "plateau_ratio": 0.5, "late_error_ratio": 2.0}
+CUTS = {
+    "energy_tv": 0.02,
+    "conditional_kl": 0.01,
+    "ess_fraction": 0.20,
+    "plateau_ratio": 0.5,
+    "late_error_ratio": 2.0,
+}
 
 
 def make_logit_fn(net, adjacency, sigma, mode):
@@ -148,36 +156,38 @@ def make_logit_fn(net, adjacency, sigma, mode):
 
         def logit_fn(x_masked):
             return net(x_masked) + gated_offset(x_masked)
+
         return logit_fn, gated_offset
 
     def logit_fn(x_masked):
         return net(x_masked) + preconditioner_logit_diff(
             x_masked, adjacency, sigma, N_PLUS, mode
         )
+
     return logit_fn, None
 
 
-def draw_eval_contexts(slice_states, slice_log_p_cond, generator,
-                       n_contexts=EVAL_CONTEXTS):
+def draw_eval_contexts(
+    slice_states, slice_log_p_cond, generator, n_contexts=EVAL_CONTEXTS
+):
     """Corruption contexts from the population WDCE law with EXACT weights:
     terminal ~ exact fibre conditional, lambda ~ U(0,1), sites masked
     independently, empty masks redrawn. Drawn ONCE on CPU RNG and shared by
     every arm, seed, and pass, so all KL numbers are matched."""
     terminal_rows = torch.multinomial(
-        slice_log_p_cond.exp(), n_contexts, replacement=True,
+        slice_log_p_cond.exp(),
+        n_contexts,
+        replacement=True,
         generator=generator,
     )
     terminals = slice_states[terminal_rows].float()
     corruption_level = torch.rand(n_contexts, 1, generator=generator)
-    mask = torch.rand(
-        n_contexts, N_SITES, generator=generator
-    ) < corruption_level
+    mask = torch.rand(n_contexts, N_SITES, generator=generator) < corruption_level
     empty = ~mask.any(dim=1)
     while empty.any():
-        mask[empty] = (
-            torch.rand(int(empty.sum()), N_SITES, generator=generator)
-            < torch.rand(int(empty.sum()), 1, generator=generator)
-        )
+        mask[empty] = torch.rand(
+            int(empty.sum()), N_SITES, generator=generator
+        ) < torch.rand(int(empty.sum()), 1, generator=generator)
         empty = ~mask.any(dim=1)
     return terminals.masked_fill(mask, 0.0)
 
@@ -187,18 +197,16 @@ def exact_conditional_per_context(context, slice_states, slice_log_p_cond):
     context, by selecting the fibre states consistent with the unmasked
     pattern and renormalising — pure reuse of the enumerated conditional."""
     unmasked = context != 0.0
-    consistent = (
-        slice_states[:, unmasked].float() == context[unmasked]
-    ).all(dim=1)
+    consistent = (slice_states[:, unmasked].float() == context[unmasked]).all(dim=1)
     log_p = slice_log_p_cond[consistent]
     posterior = torch.softmax(log_p, dim=0)
     plus_indicator = (slice_states[consistent] == 1).float()
-    return posterior @ plus_indicator          # (n_sites,), valid at masked
+    return posterior @ plus_indicator  # (n_sites,), valid at masked
 
 
-def conditional_kl_and_late_error(logit_fn, contexts, slice_states,
-                                  slice_log_p_cond, device,
-                                  n_plus_target):
+def conditional_kl_and_late_error(
+    logit_fn, contexts, slice_states, slice_log_p_cond, device, n_plus_target
+):
     """Mean KL(exact || model) over (context, masked site) pairs — exact per
     context, no sampling floor — plus the late-generation (m <= 4) mean
     absolute error. The model conditional carries the same feasibility
@@ -227,22 +235,34 @@ def conditional_kl_and_late_error(logit_fn, contexts, slice_states,
         p, q = exact_p_plus, model_p_plus
         kl = torch.where(p > 0, p * (p.log() - q.log()), torch.zeros_like(p))
         kl = kl + torch.where(
-            p < 1, (1 - p) * ((1 - p).log() - (1 - q).log()),
+            p < 1,
+            (1 - p) * ((1 - p).log() - (1 - q).log()),
             torch.zeros_like(p),
         )
         kl_terms.append(kl)
         if masked_count[row] <= LATE_GENERATION_MAX_MASKED:
             late_errors.append((p - model_p_plus).abs())
     mean_kl = torch.cat(kl_terms).mean().item()
-    late_error = torch.cat(late_errors).mean().item() if late_errors \
-        else float("nan")
+    late_error = torch.cat(late_errors).mean().item() if late_errors else float("nan")
     return mean_kl, late_error
 
 
-def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
-                 exact_hist, bins, sigma, device, run_dir,
-                 eval_rollouts, n_plus_target, save_artefacts=True,
-                 exact_log_z=None, free_energy_ref=None):
+def evaluate_arm(
+    logit_fn,
+    target,
+    slice_states,
+    slice_log_p_cond,
+    exact_hist,
+    bins,
+    sigma,
+    device,
+    run_dir,
+    eval_rollouts,
+    n_plus_target,
+    save_artefacts=True,
+    exact_log_z=None,
+    free_energy_ref=None,
+):
     """Eval rollouts -> ESS fraction, G0 count, energy-marginal TV, plus the
     two DNFS-shared instruments: within-level excess TV and
     per-site free-energy bias. Saves terminals + log-weights so any later
@@ -266,9 +286,7 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
                 logit_fn, batch, N_SITES, n_plus_target, generator
             )
             terminals_all.append(terminals.cpu())
-            log_w_all.append(
-                (target.log_prob(terminals) - rollout_log_prob).cpu()
-            )
+            log_w_all.append((target.log_prob(terminals) - rollout_log_prob).cpu())
     terminals = torch.cat(terminals_all)
     log_w = torch.cat(log_w_all)
     ess = ess_from_log_weights(log_w).item()
@@ -276,8 +294,10 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
     adjacency_cpu = target.A.cpu()
     model_hist = slice_energy_hist(terminals, weights, adjacency_cpu, bins)
     if save_artefacts:
-        torch.save({"terminals": terminals.to(torch.int8),
-                    "log_weights": log_w}, run_dir / "eval_artefacts.pt")
+        torch.save(
+            {"terminals": terminals.to(torch.int8), "log_weights": log_w},
+            run_dir / "eval_artefacts.pt",
+        )
 
     if n_plus_target is None:
         # Free-space (arm-u) instrument set = what MDNS's own tables
@@ -285,8 +305,9 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
         # the self-normalised estimate (their abs. log-Zhat metric). The
         # fibre instruments (off-fibre count, within-level excess,
         # on-slice free-energy reference) are undefined off the slice.
-        log_z_estimate = (torch.logsumexp(log_w, dim=0)
-                          - torch.log(torch.tensor(float(len(log_w)))))
+        log_z_estimate = torch.logsumexp(log_w, dim=0) - torch.log(
+            torch.tensor(float(len(log_w)))
+        )
         n_plus = ((terminals + 1) / 2).sum(dim=1)
         return {
             "eval_rollouts": len(terminals),
@@ -301,9 +322,7 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
 
     n_plus = ((terminals + 1) / 2).sum(dim=1)
     off_fibre = int((n_plus != n_plus_target).sum().item())
-    free_energy_model = free_energy_lb_estimate(
-        log_w, sigma, N_SITES
-    ).item()
+    free_energy_model = free_energy_lb_estimate(log_w, sigma, N_SITES).item()
     if free_energy_ref is None:
         free_energy_ref = on_slice_free_energy_reference(
             _CpuTargetView(target), slice_states
@@ -323,7 +342,10 @@ def evaluate_arm(logit_fn, target, slice_states, slice_log_p_cond,
         slice_energies = _energy(slice_states.float(), adjacency_cpu)
         sample_energies = _energy(terminals, adjacency_cpu)
         levels = within_level_uniformity(
-            terminals, weights, sample_energies, slice_states.float(),
+            terminals,
+            weights,
+            sample_energies,
+            slice_states.float(),
             slice_energies,
         )
         metrics["max_level_excess"] = max(
@@ -366,17 +388,34 @@ def near_boundary_loss_weight(boost):
     measurable; see wdce_cross_entropy's docstring) gradient reallocation
     towards the starved near-boundary contexts the first pass's KL
     decompositions localised."""
+
     def eta(corrupted):
         masked_count, budget = masked_count_and_budget(corrupted, N_PLUS)
         near = (budget == 1) | (budget == masked_count - 1)
         return 1.0 + boost * near.float()
+
     return eta
 
 
-def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
-              device, boost=0.0, objective="wdce", replicates=None,
-              optimiser_kind="adam", ema_decay=0.0, ema_warmup=False,
-              *, n_plus_target):
+def train_arm(
+    arm,
+    mode,
+    target,
+    sigma,
+    seed,
+    steps,
+    results_root,
+    tag,
+    device,
+    boost=0.0,
+    objective="wdce",
+    replicates=None,
+    optimiser_kind="adam",
+    ema_decay=0.0,
+    ema_warmup=False,
+    *,
+    n_plus_target,
+):
     seed_everything(seed)
     net = MaskedConditionalNet(N_SITES).to(device)
     logit_fn, gated_offset = make_logit_fn(net, target.A, sigma, mode)
@@ -384,17 +423,19 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
     if gated_offset is not None:
         gated_offset.to(device)
         trainables += list(gated_offset.parameters())
-    optimiser_class = {"adam": torch.optim.Adam,
-                       "adamw": torch.optim.AdamW}[optimiser_kind]
+    optimiser_class = {"adam": torch.optim.Adam, "adamw": torch.optim.AdamW}[
+        optimiser_kind
+    ]
     optimiser = optimiser_class(trainables, lr=LEARNING_RATE)
-    ema = (ExponentialMovingAverage(trainables, ema_decay, warmup=ema_warmup)
-           if ema_decay > 0 else None)
+    ema = (
+        ExponentialMovingAverage(trainables, ema_decay, warmup=ema_warmup)
+        if ema_decay > 0
+        else None
+    )
     replicates = replicates or CORRUPTION_REPLICATES
     context_weight = near_boundary_loss_weight(boost) if boost > 0 else None
     rollout_generator = torch.Generator(device=device).manual_seed(seed)
-    corruption_generator = torch.Generator(device=device).manual_seed(
-        seed + 1
-    )
+    corruption_generator = torch.Generator(device=device).manual_seed(seed + 1)
 
     sigma_tag = f"s{sigma:.3f}".replace("0.", "")
     run_dir = results_root / f"arm_{arm}_{mode}_{sigma_tag}_seed{seed}_{tag}"
@@ -404,44 +445,60 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
     for step in range(steps):
         if objective == "lv":
             loss, terminals, log_w = log_variance_loss(
-                logit_fn, target.log_prob, TRAIN_ROLLOUTS_PER_STEP,
-                N_SITES, n_plus_target, rollout_generator,
+                logit_fn,
+                target.log_prob,
+                TRAIN_ROLLOUTS_PER_STEP,
+                N_SITES,
+                n_plus_target,
+                rollout_generator,
             )
         else:
             with torch.no_grad():
                 terminals, rollout_log_prob = rollout_budget_masked(
-                    logit_fn, TRAIN_ROLLOUTS_PER_STEP, N_SITES,
-                    n_plus_target, rollout_generator,
+                    logit_fn,
+                    TRAIN_ROLLOUTS_PER_STEP,
+                    N_SITES,
+                    n_plus_target,
+                    rollout_generator,
                 )
                 log_w = target.log_prob(terminals) - rollout_log_prob
         with torch.no_grad():
             weights = torch.softmax(log_w, dim=0)
             if n_plus_target is not None:
                 train_off_fibre += int(
-                    (((terminals + 1) / 2).sum(dim=1)
-                     != n_plus_target).sum().item()
+                    (((terminals + 1) / 2).sum(dim=1) != n_plus_target).sum().item()
                 )
-            ess_fraction = (
-                ess_from_log_weights(log_w).item() / TRAIN_ROLLOUTS_PER_STEP
-            )
+            ess_fraction = ess_from_log_weights(log_w).item() / TRAIN_ROLLOUTS_PER_STEP
         if objective == "wdce":
             loss = wdce_cross_entropy(
-                logit_fn, terminals, weights, replicates,
-                corruption_generator, context_loss_weight=context_weight,
+                logit_fn,
+                terminals,
+                weights,
+                replicates,
+                corruption_generator,
+                context_loss_weight=context_weight,
             )
         optimiser.zero_grad()
         loss.backward()
-        grad_norm = torch.norm(torch.stack([
-            parameter.grad.norm() for parameter in trainables
-            if parameter.grad is not None
-        ])).item()
+        grad_norm = torch.norm(
+            torch.stack(
+                [
+                    parameter.grad.norm()
+                    for parameter in trainables
+                    if parameter.grad is not None
+                ]
+            )
+        ).item()
         optimiser.step()
         if ema is not None:
             ema.update()
         log_rows.append(
-            {"step": step, "loss": loss.item(),
-             "train_ess_fraction": ess_fraction,
-             "grad_norm": grad_norm}
+            {
+                "step": step,
+                "loss": loss.item(),
+                "train_ess_fraction": ess_fraction,
+                "grad_norm": grad_norm,
+            }
         )
     wall_clock = time.time() - started
 
@@ -450,9 +507,17 @@ def train_arm(arm, mode, target, sigma, seed, steps, results_root, tag,
         writer.writeheader()
         writer.writerows(log_rows)
     if ema is not None:
-        ema.swap_in()      # evaluation sees the EMA parameters (D.2.2)
-    return (net, logit_fn, gated_offset, run_dir, log_rows,
-            train_off_fibre, wall_clock, ema)
+        ema.swap_in()  # evaluation sees the EMA parameters (D.2.2)
+    return (
+        net,
+        logit_fn,
+        gated_offset,
+        run_dir,
+        log_rows,
+        train_off_fibre,
+        wall_clock,
+        ema,
+    )
 
 
 def chain_reference_energies(probe_root, point, adjacency):
@@ -484,12 +549,20 @@ def chain_reference_energies(probe_root, point, adjacency):
         spins = np.load(chain_dir / "snapshots.npz")["spins"]
         states = torch.from_numpy(spins.astype(np.float32))
         energies = _energy(states, adjacency)
-        pooled.append(energies[len(energies) // 2:])
+        pooled.append(energies[len(energies) // 2 :])
     return torch.cat(pooled)
 
 
-def build_space(constrained, sigma, device, eval_contexts, *,
-                probe_root=None, probe_point=None, free_energy_ref=None):
+def build_space(
+    constrained,
+    sigma,
+    device,
+    eval_contexts,
+    *,
+    probe_root=None,
+    probe_point=None,
+    free_energy_ref=None,
+):
     """Everything an arm's training/eval needs that depends only on which
     STATE SPACE it lives on: the fibre (constrained arms) or the free
     2^d space (arm u).
@@ -518,7 +591,9 @@ def build_space(constrained, sigma, device, eval_contexts, *,
         )
     if constrained:
         target = FixedCompositionIsingTarget(
-            D=LATTICE_SIDE, sigma=sigma, target_composition=0.5,
+            D=LATTICE_SIDE,
+            sigma=sigma,
+            target_composition=0.5,
             device=device,
         )
         cpu_target = FixedCompositionIsingTarget(
@@ -543,15 +618,18 @@ def build_space(constrained, sigma, device, eval_contexts, *,
         # chain reference already IS energies — histogram them directly
         # against the same bin edges the model's samples will use.
         lower, upper = bins[:-1], bins[1:]
-        membership = (
-            (reference_energies[:, None] >= lower[None, :])
-            & (reference_energies[:, None] < upper[None, :])
+        membership = (reference_energies[:, None] >= lower[None, :]) & (
+            reference_energies[:, None] < upper[None, :]
         )
         mass = (membership.float() * (uniform / uniform.sum())[:, None]).sum(0)
         return {
-            "target": target, "states": None, "log_p": None,
-            "bins": bins, "exact_hist": (0.5 * (lower + upper), mass),
-            "contexts": None, "exact_log_z": None,
+            "target": target,
+            "states": None,
+            "log_p": None,
+            "bins": bins,
+            "exact_hist": (0.5 * (lower + upper), mass),
+            "contexts": None,
+            "exact_log_z": None,
             "free_energy_ref": free_energy_ref,
             "n_plus_target": N_PLUS,
         }
@@ -564,13 +642,11 @@ def build_space(constrained, sigma, device, eval_contexts, *,
         exact_log_z = None
     else:
         space_states = states
-        space_log_p = log_pi          # exact_log_probs is already normalised
+        space_log_p = log_pi  # exact_log_probs is already normalised
         # log Z must come from the UNNORMALISED densities — exact_log_probs
         # returns log-probs with logsumexp = 0 by contract, whose
         # normaliser is the quantity wanted here.
-        exact_log_z = torch.logsumexp(
-            cpu_target.log_prob(states.float()), dim=0
-        ).item()
+        exact_log_z = torch.logsumexp(cpu_target.log_prob(states.float()), dim=0).item()
     space_energies = _energy(space_states.float(), adjacency_cpu)
     bins = _categorical_energy_bins(space_energies)
     exact_hist = slice_energy_hist(
@@ -578,12 +654,18 @@ def build_space(constrained, sigma, device, eval_contexts, *,
     )
     # CPU RNG on purpose: the sigma_c context set must match the first pass
     contexts = draw_eval_contexts(
-        space_states, space_log_p,
-        torch.Generator().manual_seed(EVAL_SEED), eval_contexts,
+        space_states,
+        space_log_p,
+        torch.Generator().manual_seed(EVAL_SEED),
+        eval_contexts,
     )
     return {
-        "target": target, "states": space_states, "log_p": space_log_p,
-        "bins": bins, "exact_hist": exact_hist, "contexts": contexts,
+        "target": target,
+        "states": space_states,
+        "log_p": space_log_p,
+        "bins": bins,
+        "exact_hist": exact_hist,
+        "contexts": contexts,
         "exact_log_z": exact_log_z,
         # None = "derive it from the enumerated slice in evaluate_arm";
         # only the chain-referenced regime supplies a constant.
@@ -592,18 +674,37 @@ def build_space(constrained, sigma, device, eval_contexts, *,
     }
 
 
-def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
-              eval_rollouts, eval_contexts, boost=0.0, objective="wdce",
-              replicates=None, optimiser_kind="adam", ema_decay=0.0,
-              ema_warmup=False, probe_root=None, probe_point=None,
-              free_energy_ref=None):
+def run_slate(
+    sigma,
+    seeds,
+    arms,
+    steps,
+    results_root,
+    tag,
+    device,
+    eval_rollouts,
+    eval_contexts,
+    boost=0.0,
+    objective="wdce",
+    replicates=None,
+    optimiser_kind="adam",
+    ema_decay=0.0,
+    ema_warmup=False,
+    probe_root=None,
+    probe_point=None,
+    free_energy_ref=None,
+):
     spaces = {}
     for arm in arms:
         _, constrained = ARMS[arm]
         if constrained not in spaces:
             spaces[constrained] = build_space(
-                constrained, sigma, device, eval_contexts,
-                probe_root=probe_root, probe_point=probe_point,
+                constrained,
+                sigma,
+                device,
+                eval_contexts,
+                probe_root=probe_root,
+                probe_point=probe_point,
                 free_energy_ref=free_energy_ref,
             )
 
@@ -619,8 +720,7 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
             n_plus_target = space["n_plus_target"]
             seed_everything(seed)
             init_net = MaskedConditionalNet(N_SITES).to(device)
-            init_fn, init_gated = make_logit_fn(
-                init_net, target.A, sigma, mode)
+            init_fn, init_gated = make_logit_fn(init_net, target.A, sigma, mode)
             if init_gated is not None:
                 init_gated.to(device)
             # No enumerated slice -> no exact fibre conditional -> the KL
@@ -628,29 +728,71 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
             # expensive. NaN so the recorded report keeps its schema.
             init_kl, init_late_error = (
                 conditional_kl_and_late_error(
-                    init_fn, contexts, slice_states, slice_log_p_cond,
-                    device, n_plus_target,
+                    init_fn,
+                    contexts,
+                    slice_states,
+                    slice_log_p_cond,
+                    device,
+                    n_plus_target,
                 )
-                if contexts is not None else (float("nan"), float("nan"))
+                if contexts is not None
+                else (float("nan"), float("nan"))
             )
-            print(f"[gate] sigma={sigma} seed={seed} arm {arm} ({mode}): "
-                  f"training {steps} steps ...", flush=True)
-            (net, logit_fn, gated_offset, run_dir, log_rows,
-             train_off_fibre, wall, ema) = \
-                train_arm(arm, mode, target, sigma, seed, steps,
-                          results_root, tag, device, boost, objective,
-                          replicates, optimiser_kind, ema_decay, ema_warmup,
-                          n_plus_target=n_plus_target)
+            print(
+                f"[gate] sigma={sigma} seed={seed} arm {arm} ({mode}): "
+                f"training {steps} steps ...",
+                flush=True,
+            )
+            (
+                net,
+                logit_fn,
+                gated_offset,
+                run_dir,
+                log_rows,
+                train_off_fibre,
+                wall,
+                ema,
+            ) = train_arm(
+                arm,
+                mode,
+                target,
+                sigma,
+                seed,
+                steps,
+                results_root,
+                tag,
+                device,
+                boost,
+                objective,
+                replicates,
+                optimiser_kind,
+                ema_decay,
+                ema_warmup,
+                n_plus_target=n_plus_target,
+            )
             trained_kl, trained_late_error = (
                 conditional_kl_and_late_error(
-                    logit_fn, contexts, slice_states, slice_log_p_cond,
-                    device, n_plus_target,
+                    logit_fn,
+                    contexts,
+                    slice_states,
+                    slice_log_p_cond,
+                    device,
+                    n_plus_target,
                 )
-                if contexts is not None else (float("nan"), float("nan"))
+                if contexts is not None
+                else (float("nan"), float("nan"))
             )
             eval_metrics = evaluate_arm(
-                logit_fn, target, slice_states, slice_log_p_cond,
-                exact_hist, bins, sigma, device, run_dir, eval_rollouts,
+                logit_fn,
+                target,
+                slice_states,
+                slice_log_p_cond,
+                exact_hist,
+                bins,
+                sigma,
+                device,
+                run_dir,
+                eval_rollouts,
                 n_plus_target=n_plus_target,
                 exact_log_z=space["exact_log_z"],
                 free_energy_ref=space["free_energy_ref"],
@@ -661,30 +803,48 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
             if ema is not None:
                 ema.swap_out()
                 raw_metrics = evaluate_arm(
-                    logit_fn, target, slice_states, slice_log_p_cond,
-                    exact_hist, bins, sigma, device, run_dir,
-                    eval_rollouts, save_artefacts=False,
+                    logit_fn,
+                    target,
+                    slice_states,
+                    slice_log_p_cond,
+                    exact_hist,
+                    bins,
+                    sigma,
+                    device,
+                    run_dir,
+                    eval_rollouts,
+                    save_artefacts=False,
                     n_plus_target=n_plus_target,
                     exact_log_z=space["exact_log_z"],
                     free_energy_ref=space["free_energy_ref"],
                 )
                 raw_kl, raw_late = (
                     conditional_kl_and_late_error(
-                        logit_fn, contexts, slice_states, slice_log_p_cond,
-                        device, n_plus_target,
+                        logit_fn,
+                        contexts,
+                        slice_states,
+                        slice_log_p_cond,
+                        device,
+                        n_plus_target,
                     )
-                    if contexts is not None else (float("nan"), float("nan"))
+                    if contexts is not None
+                    else (float("nan"), float("nan"))
                 )
                 raw_param_eval = {
-                    key: value for key, value in raw_metrics.items()
+                    key: value
+                    for key, value in raw_metrics.items()
                     if key != "within_level"
                 }
                 raw_param_eval["trained_conditional_kl"] = raw_kl
                 raw_param_eval["trained_late_generation_error"] = raw_late
                 ema.swap_in()
             report = {
-                "arm": arm, "preconditioner": mode, "sigma": sigma,
-                "seed": seed, "steps": steps, "device": str(device),
+                "arm": arm,
+                "preconditioner": mode,
+                "sigma": sigma,
+                "seed": seed,
+                "steps": steps,
+                "device": str(device),
                 "near_boundary_boost": boost,
                 "objective": objective,
                 "replicates": replicates or CORRUPTION_REPLICATES,
@@ -692,9 +852,12 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 "ema_decay": ema_decay,
                 "ema_warmup": ema_warmup,
                 "learned_gates": (
-                    {"gate_budget": gated_offset.gate_budget.item(),
-                     "gate_field": gated_offset.gate_field.item()}
-                    if gated_offset is not None else None
+                    {
+                        "gate_budget": gated_offset.gate_budget.item(),
+                        "gate_field": gated_offset.gate_field.item(),
+                    }
+                    if gated_offset is not None
+                    else None
                 ),
                 "train_off_fibre_count": train_off_fibre,
                 "train_wall_clock_s": wall,
@@ -702,8 +865,7 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 "plateau_step": plateau_step(
                     [row["train_ess_fraction"] for row in log_rows]
                 ),
-                "final_train_ess_fraction":
-                    log_rows[-1]["train_ess_fraction"],
+                "final_train_ess_fraction": log_rows[-1]["train_ess_fraction"],
                 "raw_param_eval": raw_param_eval,
                 "init_conditional_kl": init_kl,
                 "trained_conditional_kl": trained_kl,
@@ -717,13 +879,16 @@ def run_slate(sigma, seeds, arms, steps, results_root, tag, device,
                 json.dump(report, handle, indent=2)
             tail = (
                 f"logZerr {report['log_z_abs_error']:.4f}"
-                if n_plus_target is None else
-                f"FEbias {report['free_energy_bias']:+.4f} "
+                if n_plus_target is None
+                else f"FEbias {report['free_energy_bias']:+.4f} "
                 f"G0 off-fibre {report['off_fibre_count']}"
             )
-            print(f"[gate] sigma={sigma} seed={seed} arm {arm}: "
-                  f"KL {trained_kl:.4f} TV {report['energy_tv']:.4f} "
-                  f"ESS {report['ess_fraction']:.3f} " + tail, flush=True)
+            print(
+                f"[gate] sigma={sigma} seed={seed} arm {arm}: "
+                f"KL {trained_kl:.4f} TV {report['energy_tv']:.4f} "
+                f"ESS {report['ess_fraction']:.3f} " + tail,
+                flush=True,
+            )
     return reports
 
 
@@ -739,7 +904,8 @@ def first_pass_cut_table(reports, seeds):
         row = {
             "G0_pass": all(
                 r["off_fibre_count"] == 0 and r["train_off_fibre_count"] == 0
-                for r in (a, b, c) if r is not None
+                for r in (a, b, c)
+                if r is not None
             ),
             "G1_energy_tv": a["energy_tv"],
             "G1_conditional_kl": a["trained_conditional_kl"],
@@ -755,8 +921,7 @@ def first_pass_cut_table(reports, seeds):
             row["G2a_plateaus"] = (a["plateau_step"], b["plateau_step"])
             row["G2a_pass"] = a["plateau_step"] is not None and (
                 b["plateau_step"] is None
-                or a["plateau_step"]
-                <= CUTS["plateau_ratio"] * b["plateau_step"]
+                or a["plateau_step"] <= CUTS["plateau_ratio"] * b["plateau_step"]
             )
         if c is not None:
             ratio = c["trained_late_generation_error"] / max(
@@ -770,61 +935,93 @@ def first_pass_cut_table(reports, seeds):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results-dir",
-                        default="results/03_hard/mdns_budget_gate_4x4")
+    parser.add_argument("--results-dir", default="results/03_hard/mdns_budget_gate_4x4")
     parser.add_argument("--tag", default="20260813-gate")
     parser.add_argument("--steps", type=int, default=TRAIN_STEPS)
-    parser.add_argument("--seeds", default=str(TRAIN_SEED),
-                        help="comma-separated")
-    parser.add_argument("--sigmas", default=str(SIGMA),
-                        help="comma-separated operating points")
+    parser.add_argument("--seeds", default=str(TRAIN_SEED), help="comma-separated")
+    parser.add_argument(
+        "--sigmas", default=str(SIGMA), help="comma-separated operating points"
+    )
     parser.add_argument("--arms", default="a,b,c")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--threads", type=int, default=4)
-    parser.add_argument("--eval-rollouts", type=int, default=EVAL_ROLLOUTS,
-                        help="plumbing smoke only; the protocol value is "
-                             "the default")
-    parser.add_argument("--eval-contexts", type=int, default=EVAL_CONTEXTS,
-                        help="plumbing smoke only")
-    parser.add_argument("--near-boundary-boost", type=float, default=0.0,
-                        help="eta(context) boost kappa on b in {1, m-1} "
-                             "contexts; 0 = the protocol loss (default)")
-    parser.add_argument("--objective", choices=["wdce", "lv"],
-                        default="wdce",
-                        help="lv = constrained F_LV (their strongest 4x4 "
-                             "objective)")
-    parser.add_argument("--replicates", type=int, default=None,
-                        help="WDCE corruption replicates R (default: the "
-                             "protocol's 2; paper 4x4 uses 16, "
-                             "ablation-insensitive on 8-64)")
-    parser.add_argument("--optimiser", choices=["adam", "adamw"],
-                        default="adam")
-    parser.add_argument("--ema-decay", type=float, default=0.0,
-                        help="0 = off (the protocol); paper always "
-                             "uses 0.9999 and evaluates the EMA weights")
-    parser.add_argument("--ema-warmup", action="store_true",
-                        help="bias-correction warmup schedule "
-                             "min(decay, (1+t)/(10+t)); off = the "
-                             "paper-literal plain shadow")
-    parser.add_argument("--lattice-side", type=int, default=LATTICE_SIDE,
-                        help="L for the LxL torus. 4 = the "
-                             "enumerable size; 8 requires --probe-root and "
-                             "--free-energy-ref, since C(64,32) rules "
-                             "enumeration out")
-    parser.add_argument("--probe-root", default=None,
-                        help="certified Kawasaki reference chains, e.g. "
-                             "results/kawasaki_probe. Setting this switches "
-                             "the energy reference from enumeration to "
-                             "chains and DROPS the enumeration-only "
-                             "instruments (conditional KL, late-generation "
-                             "error, within-level uniformity)")
-    parser.add_argument("--probe-point", default=None,
-                        help="operating point under the probe root: "
-                             "'sc' (sigma_c) or 's010'")
-    parser.add_argument("--free-energy-ref", type=float, default=None,
-                        help="slice-TI F/d for this (sigma, size), the "
-                             "chain regime's stand-in for the enumerated "
-                             "on-slice reference; 8x8 sigma_c = -1.90410")
+    parser.add_argument(
+        "--eval-rollouts",
+        type=int,
+        default=EVAL_ROLLOUTS,
+        help="plumbing smoke only; the protocol value is the default",
+    )
+    parser.add_argument(
+        "--eval-contexts", type=int, default=EVAL_CONTEXTS, help="plumbing smoke only"
+    )
+    parser.add_argument(
+        "--near-boundary-boost",
+        type=float,
+        default=0.0,
+        help="eta(context) boost kappa on b in {1, m-1} "
+        "contexts; 0 = the protocol loss (default)",
+    )
+    parser.add_argument(
+        "--objective",
+        choices=["wdce", "lv"],
+        default="wdce",
+        help="lv = constrained F_LV (their strongest 4x4 objective)",
+    )
+    parser.add_argument(
+        "--replicates",
+        type=int,
+        default=None,
+        help="WDCE corruption replicates R (default: the "
+        "protocol's 2; paper 4x4 uses 16, "
+        "ablation-insensitive on 8-64)",
+    )
+    parser.add_argument("--optimiser", choices=["adam", "adamw"], default="adam")
+    parser.add_argument(
+        "--ema-decay",
+        type=float,
+        default=0.0,
+        help="0 = off (the protocol); paper always "
+        "uses 0.9999 and evaluates the EMA weights",
+    )
+    parser.add_argument(
+        "--ema-warmup",
+        action="store_true",
+        help="bias-correction warmup schedule "
+        "min(decay, (1+t)/(10+t)); off = the "
+        "paper-literal plain shadow",
+    )
+    parser.add_argument(
+        "--lattice-side",
+        type=int,
+        default=LATTICE_SIDE,
+        help="L for the LxL torus. 4 = the "
+        "enumerable size; 8 requires --probe-root and "
+        "--free-energy-ref, since C(64,32) rules "
+        "enumeration out",
+    )
+    parser.add_argument(
+        "--probe-root",
+        default=None,
+        help="certified Kawasaki reference chains, e.g. "
+        "results/kawasaki_probe. Setting this switches "
+        "the energy reference from enumeration to "
+        "chains and DROPS the enumeration-only "
+        "instruments (conditional KL, late-generation "
+        "error, within-level uniformity)",
+    )
+    parser.add_argument(
+        "--probe-point",
+        default=None,
+        help="operating point under the probe root: 'sc' (sigma_c) or 's010'",
+    )
+    parser.add_argument(
+        "--free-energy-ref",
+        type=float,
+        default=None,
+        help="slice-TI F/d for this (sigma, size), the "
+        "chain regime's stand-in for the enumerated "
+        "on-slice reference; 8x8 sigma_c = -1.90410",
+    )
     args = parser.parse_args(argv)
     torch.set_num_threads(args.threads)
     device = torch.device(args.device)
@@ -839,17 +1036,28 @@ def main(argv=None):
     all_reports = {}
     for sigma in (float(value) for value in args.sigmas.split(",")):
         reports = run_slate(
-            sigma, seeds, arms, args.steps, results_root, args.tag,
-            device, args.eval_rollouts, args.eval_contexts,
-            args.near_boundary_boost, args.objective, args.replicates,
-            args.optimiser, args.ema_decay, args.ema_warmup,
-            probe_root=args.probe_root, probe_point=args.probe_point,
+            sigma,
+            seeds,
+            arms,
+            args.steps,
+            results_root,
+            args.tag,
+            device,
+            args.eval_rollouts,
+            args.eval_contexts,
+            args.near_boundary_boost,
+            args.objective,
+            args.replicates,
+            args.optimiser,
+            args.ema_decay,
+            args.ema_warmup,
+            probe_root=args.probe_root,
+            probe_point=args.probe_point,
             free_energy_ref=args.free_energy_ref,
         )
         all_reports[f"sigma_{sigma}"] = {
             "reports": reports,
-            "first_pass_cuts_for_continuity":
-                first_pass_cut_table(reports, seeds),
+            "first_pass_cuts_for_continuity": first_pass_cut_table(reports, seeds),
         }
     with open(results_root / f"verdict_{args.tag}.json", "w") as handle:
         json.dump(all_reports, handle, indent=2)

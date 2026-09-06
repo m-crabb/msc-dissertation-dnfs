@@ -53,7 +53,10 @@ from ase import Atoms
 from icet import ClusterExpansion, ClusterSpace
 from mchammer.calculators import ClusterExpansionCalculator
 from mchammer.ensembles import (
-    CanonicalEnsemble, SemiGrandCanonicalEnsemble, VCSGCEnsemble)
+    CanonicalEnsemble,
+    SemiGrandCanonicalEnsemble,
+    VCSGCEnsemble,
+)
 
 from discrete_flow_sampler.diagnostics.metrics import integrated_autocorr
 
@@ -67,8 +70,8 @@ NATURAL_BOLTZMANN = 1.0
 # rather than silently biasing them.
 BURN_IN_FRACTION = 1.0 / 3.0
 
-_UP_SYMBOL = "Au"      # spin +1
-_DOWN_SYMBOL = "Ag"    # spin -1
+_UP_SYMBOL = "Au"  # spin +1
+_DOWN_SYMBOL = "Ag"  # spin -1
 
 
 def ising_cluster_expansion(sigma: float, bias: float = 0.0):
@@ -87,9 +90,7 @@ def ising_cluster_expansion(sigma: float, bias: float = 0.0):
     cluster_space = ClusterSpace(
         primitive, cutoffs=[1.1], chemical_symbols=[_UP_SYMBOL, _DOWN_SYMBOL]
     )
-    expansion = ClusterExpansion(
-        cluster_space, parameters=[0.0, -bias, -4.0 * sigma]
-    )
+    expansion = ClusterExpansion(cluster_space, parameters=[0.0, -bias, -4.0 * sigma])
     return primitive, cluster_space, expansion
 
 
@@ -196,7 +197,7 @@ def _base_summary(
 
 
 def _post_burn_in(frame_trace: np.ndarray) -> np.ndarray:
-    return frame_trace[int(len(frame_trace) * BURN_IN_FRACTION):]
+    return frame_trace[int(len(frame_trace) * BURN_IN_FRACTION) :]
 
 
 def run_vcsgc(
@@ -268,8 +269,15 @@ def run_vcsgc(
     potential_trace = _post_burn_in(data["potential"].values)
 
     summary = _base_summary(
-        "vcsgc", D, sigma, bias, n_steps, seed, data_write_interval,
-        wall_seconds_setup, wall_seconds_run,
+        "vcsgc",
+        D,
+        sigma,
+        bias,
+        n_steps,
+        seed,
+        data_write_interval,
+        wall_seconds_setup,
+        wall_seconds_run,
     )
     summary["penalty_strength"] = penalty_strength
     summary["target_composition"] = target_composition
@@ -370,8 +378,15 @@ def run_sgc(
     potential_trace = _post_burn_in(data["potential"].values)
 
     summary = _base_summary(
-        "sgc", D, sigma, bias, n_steps, seed, data_write_interval,
-        wall_seconds_setup, wall_seconds_run,
+        "sgc",
+        D,
+        sigma,
+        bias,
+        n_steps,
+        seed,
+        data_write_interval,
+        wall_seconds_setup,
+        wall_seconds_run,
     )
     summary["initial_composition"] = initial_composition
     summary["observables"] = {
@@ -466,7 +481,7 @@ def run_canonical_probe(
         temperature=NATURAL_TEMPERATURE,
         boltzmann_constant=NATURAL_BOLTZMANN,
         ensemble_data_write_interval=snapshot_interval,
-        trajectory_write_interval=np.inf,     # snapshots are captured directly
+        trajectory_write_interval=np.inf,  # snapshots are captured directly
         dc_filename=None,
         random_seed=seed,
     )
@@ -476,9 +491,9 @@ def run_canonical_probe(
     snapshots = np.empty((n_snapshots, d), dtype=np.int8)
     run_start = time.perf_counter()
     for k in range(n_snapshots):
-        snapshots[k] = atoms_to_spins(
-            ensemble.structure.get_chemical_symbols()
-        ).astype(np.int8)
+        snapshots[k] = atoms_to_spins(ensemble.structure.get_chemical_symbols()).astype(
+            np.int8
+        )
         ensemble.run(snapshot_interval)
     wall_seconds_run = time.perf_counter() - run_start
 
@@ -496,9 +511,9 @@ def run_canonical_probe(
         )
     # Row at step k*T holds the acceptance count over ((k-1)T, kT] divided by
     # T, so the interval-weighted sum over all rows is the total accepted.
-    n_accepted = int(round(
-        float(data["acceptance_ratio"].to_numpy().sum()) * snapshot_interval
-    ))
+    n_accepted = int(
+        round(float(data["acceptance_ratio"].to_numpy().sum()) * snapshot_interval)
+    )
     # Rows 0..n_kept-1 are written at the same trial step as snapshots
     # 0..n_kept-1; the final row (post-run state) has no snapshot.
     potential_per_snapshot = data["potential"].to_numpy()[:n_snapshots]
@@ -560,8 +575,15 @@ def run_canonical(
     composition_is_constant = int(np.sum(final_spins > 0)) == n_up
 
     summary = _base_summary(
-        "canonical", D, sigma, bias, n_steps, seed, data_write_interval,
-        wall_seconds_setup, wall_seconds_run,
+        "canonical",
+        D,
+        sigma,
+        bias,
+        n_steps,
+        seed,
+        data_write_interval,
+        wall_seconds_setup,
+        wall_seconds_run,
     )
     summary["target_composition"] = target_composition
     summary["composition_realised"] = n_up / n_sites

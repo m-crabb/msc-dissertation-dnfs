@@ -239,7 +239,7 @@ class GroupedAnchorSwapHead(nn.Module):
         masked-attention readouts keep G fp32 the same way.
         """
         x_idx = ((x + 1) / 2).long()
-        omega = self.backbone.omega(x_idx)                     # (B, d, h)
+        omega = self.backbone.omega(x_idx)  # (B, d, h)
         batch = x.shape[0]
         chunk = self.group_chunk_size or self.n_groups
         G = omega.new_zeros(batch, self.d, self.d)
@@ -247,7 +247,7 @@ class GroupedAnchorSwapHead(nn.Module):
             groups = torch.arange(
                 start, min(start + chunk, self.n_groups), device=x.device
             )
-            H = self.masked_bodies(x, t, groups)               # (n, B, d, h)
+            H = self.masked_bodies(x, t, groups)  # (n, B, d, h)
             for offset, group_id in enumerate(groups.tolist()):
                 sites = (self.group_of_site == group_id).nonzero().flatten()
                 # difference[:, p, j, :] = omega_{x_i} - omega_{x_j}, i = sites[p]

@@ -15,6 +15,7 @@ These tests pin the measured jump budget:
     writes jumps_per_site_{proposed,accepted,state_changing} into the
     metrics.json every eval-variant dir already gets.
 """
+
 import json
 import math
 from pathlib import Path
@@ -38,7 +39,10 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 TRANSPORT_COUNTER_KEYS = {
-    "proposed", "accepted", "accepted_state_changing", "state_steps",
+    "proposed",
+    "accepted",
+    "accepted_state_changing",
+    "state_steps",
 }
 
 
@@ -54,9 +58,7 @@ class _ConstRateHead:
         self.value = value
 
     def __call__(self, x, t):
-        return torch.full(
-            (x.shape[0], self.d, self.d), self.value, dtype=x.dtype
-        )
+        return torch.full((x.shape[0], self.d, self.d), self.value, dtype=x.dtype)
 
 
 class _SinglePairHead:
@@ -72,9 +74,7 @@ class _SinglePairHead:
         self.value = value
 
     def __call__(self, x, t):
-        scores = torch.full(
-            (x.shape[0], self.d, self.d), -1000.0, dtype=x.dtype
-        )
+        scores = torch.full((x.shape[0], self.d, self.d), -1000.0, dtype=x.dtype)
         scores[:, 0, 1] = self.value
         return scores
 
@@ -88,9 +88,7 @@ def test_multi_event_trajectory_counts_ordered_transport_budget():
     (state_changing <= accepted <= proposed), all positive for a nonzero-rate
     head, and state_steps = batch x n_euler_steps."""
     torch.manual_seed(0)
-    target = FixedCompositionIsingTarget(
-        D=4, sigma=0.1, target_composition=0.5
-    )
+    target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     head = _ConstRateHead(target.d, value=2.0)
     batch_size, n_euler_steps = 8, 8
     ts = torch.linspace(0.0, 1.0, n_euler_steps + 1)
@@ -116,9 +114,7 @@ def test_one_event_trajectory_produces_same_counter_keys():
     directly — there is no thinning/rejection stage — so proposed == accepted
     by construction."""
     torch.manual_seed(0)
-    target = FixedCompositionIsingTarget(
-        D=4, sigma=0.1, target_composition=0.5
-    )
+    target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     head = _ConstRateHead(target.d, value=2.0)
     batch_size, n_euler_steps = 8, 8
     ts = torch.linspace(0.0, 1.0, n_euler_steps + 1)
@@ -150,8 +146,7 @@ def _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4, use_matching_step=False):
             n_eval_samples=n_eval_samples,
             eval_sample_chunk=eval_sample_chunk,
         ),
-        model=ModelCfg(kind="letf", hidden_dim=16, n_layers=2, n_heads=2,
-                       vocab_size=2),
+        model=ModelCfg(kind="letf", hidden_dim=16, n_layers=2, n_heads=2, vocab_size=2),
         estimator="control_variate",
         head_kind="mask_one",
         wandb_project="test",
@@ -184,9 +179,7 @@ def test_final_eval_writes_integrated_jumps_per_site_fields(tmp_path):
         <= saved["jumps_per_site_proposed"]
     )
     # One-event step: a fired event is both the proposal and the acceptance.
-    assert (
-        saved["jumps_per_site_accepted"] == saved["jumps_per_site_proposed"]
-    )
+    assert saved["jumps_per_site_accepted"] == saved["jumps_per_site_proposed"]
 
 
 def test_final_eval_matching_step_jumps_fields_land_too(tmp_path):
@@ -194,9 +187,7 @@ def test_final_eval_matching_step_jumps_fields_land_too(tmp_path):
     the fields as well (this is the path eval/ on a 16x16-rung-style cell and
     every eval-variant dir shares)."""
     torch.manual_seed(0)
-    cfg = _tiny_cfg(
-        n_eval_samples=10, eval_sample_chunk=4, use_matching_step=True
-    )
+    cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4, use_matching_step=True)
     target, head = build_target_and_head(cfg, "cpu")
 
     metrics = final_eval(head, target, cfg, Path(tmp_path))
@@ -251,9 +242,7 @@ def test_same_spin_pair_fires_as_noop_in_one_event_step():
     t = torch.zeros(1)
 
     stats = {}
-    new_state, _ = _euler_step_swap(
-        head, same_spin_state, t, step_dt, stats=stats
-    )
+    new_state, _ = _euler_step_swap(head, same_spin_state, t, step_dt, stats=stats)
     assert _int_stat(stats, "proposed") == 1
     assert _int_stat(stats, "accepted") == 1
     assert _int_stat(stats, "accepted_state_changing") == 0
@@ -264,18 +253,14 @@ def test_stats_argument_stays_optional_and_inert():
     """(4) None = today's behaviour: both step kinds run without a stats dict
     and the stats accumulation consumes no RNG, so a stats-on and a stats-off
     trajectory from the same seed are byte-identical."""
-    target = FixedCompositionIsingTarget(
-        D=4, sigma=0.1, target_composition=0.5
-    )
+    target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     head = _ConstRateHead(target.d, value=2.0)
     ts = torch.linspace(0.0, 1.0, 9)
     for multi_event in (False, True):
         torch.manual_seed(3)
         x_initial = target.sample_base(8, device="cpu")
         torch.manual_seed(4)
-        x_without_stats = sample_swap_ctmc(
-            head, x_initial, ts, multi_event=multi_event
-        )
+        x_without_stats = sample_swap_ctmc(head, x_initial, ts, multi_event=multi_event)
         torch.manual_seed(4)
         x_with_stats = sample_swap_ctmc(
             head, x_initial, ts, multi_event=multi_event, matching_stats={}

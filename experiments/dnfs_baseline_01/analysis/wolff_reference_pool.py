@@ -10,6 +10,7 @@ each), which makes the Gelman--Rubin diagnostic a real multi-start check.
 Writes: results/01_baseline/wolff_ref_d10_sigma{0.1,0.220343,0.22305}.pt
 (~a minute each; 0.220343 = SIGMA_C to :g precision).
 """
+
 import json
 import sys
 from pathlib import Path
@@ -42,7 +43,9 @@ def recount_flops(sigma: float) -> None:
     Writes a <pool>.pt.flops.json sidecar; the pool file is never touched.
     """
     from discrete_flow_sampler.diagnostics.flops import (
-        WOLFF_FLOPS_PER_CLUSTER_SITE, wolff_run_flops)
+        WOLFF_FLOPS_PER_CLUSTER_SITE,
+        wolff_run_flops,
+    )
 
     pool_path = RESULTS / f"wolff_ref_d10_sigma{sigma:g}.pt"
     stored = torch.load(pool_path, weights_only=True)
@@ -61,7 +64,8 @@ def recount_flops(sigma: float) -> None:
     ]
     replayed = torch.stack(per_chain, dim=1).reshape(N_RECORDS * N_CHAINS, target.d)
     assert torch.equal(replayed.to(torch.int8), stored["samples"]), (
-        f"replay diverged from {pool_path.name} -- sampler drift, recount void")
+        f"replay diverged from {pool_path.name} -- sampler drift, recount void"
+    )
 
     total_sites = sum(cluster_sizes)
     sidecar = {
@@ -76,9 +80,11 @@ def recount_flops(sigma: float) -> None:
     }
     sidecar_path = Path(str(pool_path) + ".flops.json")
     sidecar_path.write_text(json.dumps(sidecar, indent=2))
-    print(f"[wolff flops sigma={sigma:g}] mean cluster "
-          f"{sidecar['mean_cluster_size']:.1f} sites, total "
-          f"{sidecar['total_flops']:.3g} FLOPs -> {sidecar_path.name}")
+    print(
+        f"[wolff flops sigma={sigma:g}] mean cluster "
+        f"{sidecar['mean_cluster_size']:.1f} sites, total "
+        f"{sidecar['total_flops']:.3g} FLOPs -> {sidecar_path.name}"
+    )
 
 
 def build_pool(sigma: float) -> None:
@@ -109,8 +115,10 @@ def build_pool(sigma: float) -> None:
         },
         out,
     )
-    print(f"[wolff ref sigma={sigma}] {N_CHAINS} chains x {N_RECORDS} records"
-          f" -> {out.name}  R-hat(m) = {rhat_m:.4f}")
+    print(
+        f"[wolff ref sigma={sigma}] {N_CHAINS} chains x {N_RECORDS} records"
+        f" -> {out.name}  R-hat(m) = {rhat_m:.4f}"
+    )
 
 
 if __name__ == "__main__":

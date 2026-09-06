@@ -18,8 +18,12 @@ ATOL = 1e-5
 def _backbone(d=9, seed=42, hidden_dim=8, n_heads=2, n_layers=2, use_sdpa=False):
     torch.manual_seed(seed)
     m = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers,
-        n_heads=n_heads, use_sdpa_readout=use_sdpa,
+        d=d,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        n_heads=n_heads,
+        use_sdpa_readout=use_sdpa,
     )
     m.eval()
     return m
@@ -143,9 +147,7 @@ def test_doubly_hollow_unordered_pair_loop_is_bit_identical():
             if i == j:
                 continue
             H = _masked_body(m, x, t, (i, j))
-            reference[:, i, j] = (
-                H[:, j, :] * (om[:, i, :] - om[:, j, :])
-            ).sum(-1)
+            reference[:, i, j] = (H[:, j, :] * (om[:, i, :] - om[:, j, :])).sum(-1)
     assert torch.equal(DoublyHollowSwapHead(m)(x, t), reference)
 
 

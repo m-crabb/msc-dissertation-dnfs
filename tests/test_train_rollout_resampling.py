@@ -43,6 +43,7 @@ What correct looks like:
    plain-IS draw or it stops being comparable with every archived cell, so
    no call that asks for log-weights may carry a resampling config.
 """
+
 import csv
 import math
 from pathlib import Path
@@ -89,7 +90,7 @@ class _ConstantRateModel:
         return torch.full_like(x, self.flip_rate, dtype=torch.float)
 
 
-_LATTICE_SIDE = 4          # d = 16 sites on the fixed-composition slice
+_LATTICE_SIDE = 4  # d = 16 sites on the fixed-composition slice
 _N_EULER_STEPS = 8
 _OUTER_BATCH = 8
 _INNER_PER_OUTER = 2
@@ -98,9 +99,7 @@ _N_STEPS = 4
 
 def _tiny_head(n_sites=_LATTICE_SIDE**2):
     return DoublyHollowSwapHead(
-        LeTFRateMatrix(
-            d=n_sites, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
-        )
+        LeTFRateMatrix(d=n_sites, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
     )
 
 
@@ -114,9 +113,14 @@ def _head_and_target(lattice_side=_LATTICE_SIDE, seed=42, sigma=0.3):
 
 def _tiny_cfgs(**train_overrides):
     train_kwargs = dict(
-        n_steps=_N_STEPS, batch_size=_OUTER_BATCH,
-        outer_batch_size=_OUTER_BATCH, inner_steps_per_outer=_INNER_PER_OUTER,
-        lr=1e-3, seed=0, replay_buffer_cycles=1, grad_clip_max_norm=500.0,
+        n_steps=_N_STEPS,
+        batch_size=_OUTER_BATCH,
+        outer_batch_size=_OUTER_BATCH,
+        inner_steps_per_outer=_INNER_PER_OUTER,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=1,
+        grad_clip_max_norm=500.0,
         warmup_steps=0,
     )
     train_kwargs.update(train_overrides)
@@ -137,8 +141,14 @@ def _run_tiny_training(output_dir, **train_overrides):
     )
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(**train_overrides)
     train_swap(
-        _tiny_head(), target, train_cfg, ctmc_cfg, eval_cfg, Path(output_dir),
-        use_wandb=False, estimator_mode="control_variate",
+        _tiny_head(),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(output_dir),
+        use_wandb=False,
+        estimator_mode="control_variate",
     )
     return Path(output_dir)
 
@@ -149,9 +159,7 @@ def _log_rows(run_dir):
 
 
 def _final_weights(run_dir):
-    return torch.load(
-        run_dir / "checkpoints" / "final.pt", weights_only=True
-    )
+    return torch.load(run_dir / "checkpoints" / "final.pt", weights_only=True)
 
 
 # ------------------------------------------------------------------ 1. OFF
@@ -203,7 +211,11 @@ def test_never_firing_trajectory_mode_is_bit_exact_parity():
     torch.manual_seed(7)
     x_initial = target.sample_base(16, device="cpu")
     smc_trajectory, stats = sample_swap_ctmc(
-        head, x_initial, time_grid, return_all_states=True, target=target,
+        head,
+        x_initial,
+        time_grid,
+        return_all_states=True,
+        target=target,
         resampling=ResamplingConfig(ess_threshold_fraction=0.0),
     )
     assert stats.n_events == 0 and stats.event_steps == []
@@ -220,7 +232,11 @@ def test_trajectory_mode_fires_and_every_slice_stays_on_the_manifold():
     x_initial = target.sample_base(32, device="cpu")
     time_grid = torch.linspace(0.0, 1.0, 20)
     trajectory, stats = sample_swap_ctmc(
-        head, x_initial, time_grid, return_all_states=True, target=target,
+        head,
+        x_initial,
+        time_grid,
+        return_all_states=True,
+        target=target,
         # tau = 1.0 fires at every checkpoint where the weights are not
         # exactly uniform, i.e. from the first weight update onwards.
         resampling=ResamplingConfig(ess_threshold_fraction=1.0),
@@ -244,14 +260,19 @@ def test_flip_sampler_takes_the_same_trajectory_mode():
     time_grid = torch.linspace(0.0, 1.0, 15)
 
     plain_trajectory = sample_ctmc(
-        _ConstantRateModel(flip_rate=0.5), x_initial, time_grid,
+        _ConstantRateModel(flip_rate=0.5),
+        x_initial,
+        time_grid,
         return_all_states=True,
     )
     torch.manual_seed(3)
     x_initial = torch.randint(0, 2, (16, 4)).float() * 2 - 1
     trajectory, stats = sample_ctmc(
-        _ConstantRateModel(flip_rate=0.5), x_initial, time_grid,
-        return_all_states=True, target=target,
+        _ConstantRateModel(flip_rate=0.5),
+        x_initial,
+        time_grid,
+        return_all_states=True,
+        target=target,
         resampling=ResamplingConfig(ess_threshold_fraction=1.0),
     )
     assert trajectory.shape == plain_trajectory.shape
@@ -268,13 +289,19 @@ def test_trajectory_mode_still_needs_a_target():
     time_grid = torch.linspace(0.0, 1.0, 5)
     with pytest.raises(ValueError):
         sample_swap_ctmc(
-            head, x_initial, time_grid, return_all_states=True,
+            head,
+            x_initial,
+            time_grid,
+            return_all_states=True,
             resampling=ResamplingConfig(),
         )
     with pytest.raises(ValueError):
         sample_ctmc(
-            _ConstantRateModel(0.1), x_initial, time_grid,
-            return_all_states=True, resampling=ResamplingConfig(),
+            _ConstantRateModel(0.1),
+            x_initial,
+            time_grid,
+            return_all_states=True,
+            resampling=ResamplingConfig(),
         )
 
 
@@ -283,18 +310,12 @@ def test_resample_event_count_reaches_the_training_log(tmp_path):
     integer per outer cycle when armed, NaN when off (the established idiom
     for a column a run cannot populate)."""
     fired_rows = _log_rows(
-        _run_tiny_training(
-            tmp_path / "fires", rollout_resample_ess_fraction=1.0
-        )
+        _run_tiny_training(tmp_path / "fires", rollout_resample_ess_fraction=1.0)
     )
-    assert all(
-        float(row["rollout_resample_events"]) > 0 for row in fired_rows
-    )
+    assert all(float(row["rollout_resample_events"]) > 0 for row in fired_rows)
 
     off_rows = _log_rows(_run_tiny_training(tmp_path / "off"))
-    assert all(
-        math.isnan(float(row["rollout_resample_events"])) for row in off_rows
-    )
+    assert all(math.isnan(float(row["rollout_resample_events"])) for row in off_rows)
 
 
 # ---------------------------------------------- 3. SLICES RECORDED AFTER
@@ -324,14 +345,16 @@ def test_slices_are_recorded_after_the_resample_checkpoint(monkeypatch):
             True,
         )
 
-    monkeypatch.setattr(
-        swap_ctmc_module, "resample_if_needed", collapse_to_first_row
-    )
+    monkeypatch.setattr(swap_ctmc_module, "resample_if_needed", collapse_to_first_row)
     torch.manual_seed(3)
     x_initial = target.sample_base(8, device="cpu")
     time_grid = torch.linspace(0.0, 1.0, 6)
     trajectory, stats = sample_swap_ctmc(
-        head, x_initial, time_grid, return_all_states=True, target=target,
+        head,
+        x_initial,
+        time_grid,
+        return_all_states=True,
+        target=target,
         resampling=ResamplingConfig(ess_threshold_fraction=0.5),
     )
     assert stats.n_events == 5
@@ -355,9 +378,7 @@ def test_buffer_after_a_resampled_rollout_is_well_formed(tmp_path, monkeypatch):
         captured_buffers.append((x_buffer, t_idx_buffer))
         return x_buffer, t_idx_buffer
 
-    monkeypatch.setattr(
-        swap_training, "_append_replay_buffer", recording_append
-    )
+    monkeypatch.setattr(swap_training, "_append_replay_buffer", recording_append)
     _run_tiny_training(tmp_path, rollout_resample_ess_fraction=1.0)
 
     manifold_target = FixedCompositionIsingTarget(
@@ -365,9 +386,7 @@ def test_buffer_after_a_resampled_rollout_is_well_formed(tmp_path, monkeypatch):
     )
     assert captured_buffers
     for x_buffer, t_idx_buffer in captured_buffers:
-        assert x_buffer.shape == (
-            _N_EULER_STEPS * _OUTER_BATCH, _LATTICE_SIDE**2
-        )
+        assert x_buffer.shape == (_N_EULER_STEPS * _OUTER_BATCH, _LATTICE_SIDE**2)
         assert x_buffer.dtype == torch.float32
         assert torch.isfinite(x_buffer).all()
         assert t_idx_buffer.shape == (_N_EULER_STEPS * _OUTER_BATCH,)
@@ -434,10 +453,12 @@ def test_resampling_reproduces_that_weighting_in_expectation():
 
     weighted_mean = (torch.softmax(log_weights, dim=0) * xi_t).sum()
     jitters = (torch.arange(4096) + 0.5) / 4096
-    resampled_means = torch.stack([
-        xi_t[systematic_resample_indices(log_weights, uniform=jitter)].mean()
-        for jitter in jitters
-    ])
+    resampled_means = torch.stack(
+        [
+            xi_t[systematic_resample_indices(log_weights, uniform=jitter)].mean()
+            for jitter in jitters
+        ]
+    )
     assert torch.isclose(resampled_means.mean(), weighted_mean, atol=1e-3)
 
 
@@ -457,23 +478,17 @@ def test_only_the_rollout_resamples_never_the_in_training_eval_draw(
         recorded_calls.append(kwargs)
         return original_sampler(*args, **kwargs)
 
-    monkeypatch.setattr(
-        swap_training, "sample_swap_ctmc", recording_sampler
-    )
+    monkeypatch.setattr(swap_training, "sample_swap_ctmc", recording_sampler)
     _run_tiny_training(tmp_path, rollout_resample_ess_fraction=1.0)
 
     rollout_calls = [
-        kwargs for kwargs in recorded_calls
-        if kwargs.get("return_all_states")
+        kwargs for kwargs in recorded_calls if kwargs.get("return_all_states")
     ]
     eval_calls = [
-        kwargs for kwargs in recorded_calls
-        if kwargs.get("return_log_weights")
+        kwargs for kwargs in recorded_calls if kwargs.get("return_log_weights")
     ]
     assert rollout_calls and eval_calls
-    assert all(
-        kwargs.get("resampling") is not None for kwargs in rollout_calls
-    )
+    assert all(kwargs.get("resampling") is not None for kwargs in rollout_calls)
     assert all(kwargs.get("resampling") is None for kwargs in eval_calls)
 
 
@@ -491,23 +506,34 @@ def _run_tiny_flip_training(output_dir, *, amortised=False, **train_overrides):
     torch.manual_seed(0)
     if amortised:
         target = IsingTarget(
-            D=2, sigma=0.1, target_composition=0.5,
+            D=2,
+            sigma=0.1,
+            target_composition=0.5,
             composition_penalty_strength=5.0,
         )
     else:
         target = IsingTarget(D=2, sigma=0.1)
     model = LeTFRateMatrix(
-        d=target.d, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2,
+        d=target.d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=1,
+        n_heads=2,
         condition_on_composition=amortised,
     )
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(**train_overrides)
     amortised_kwargs = (
-        {"composition_centre": 0.5, "composition_half_width": 0.25}
-        if amortised else {}
+        {"composition_centre": 0.5, "composition_half_width": 0.25} if amortised else {}
     )
     train(
-        model, target, train_cfg, ctmc_cfg, eval_cfg, Path(output_dir),
-        use_wandb=False, **amortised_kwargs,
+        model,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(output_dir),
+        use_wandb=False,
+        **amortised_kwargs,
     )
     return Path(output_dir)
 
@@ -541,18 +567,12 @@ def test_flip_trainer_event_count_reaches_the_training_log(tmp_path):
     """Same judgement contract as the swap loop: an integer per outer cycle
     when armed, NaN when the flag is off."""
     fired_rows = _log_rows(
-        _run_tiny_flip_training(
-            tmp_path / "fires", rollout_resample_ess_fraction=1.0
-        )
+        _run_tiny_flip_training(tmp_path / "fires", rollout_resample_ess_fraction=1.0)
     )
-    assert all(
-        float(row["rollout_resample_events"]) > 0 for row in fired_rows
-    )
+    assert all(float(row["rollout_resample_events"]) > 0 for row in fired_rows)
 
     off_rows = _log_rows(_run_tiny_flip_training(tmp_path / "off"))
-    assert all(
-        math.isnan(float(row["rollout_resample_events"])) for row in off_rows
-    )
+    assert all(math.isnan(float(row["rollout_resample_events"])) for row in off_rows)
 
 
 def test_flip_trainer_eval_draw_never_resamples(tmp_path, monkeypatch):
@@ -569,17 +589,13 @@ def test_flip_trainer_eval_draw_never_resamples(tmp_path, monkeypatch):
     _run_tiny_flip_training(tmp_path, rollout_resample_ess_fraction=1.0)
 
     rollout_calls = [
-        kwargs for kwargs in recorded_calls
-        if kwargs.get("return_all_states")
+        kwargs for kwargs in recorded_calls if kwargs.get("return_all_states")
     ]
     eval_calls = [
-        kwargs for kwargs in recorded_calls
-        if kwargs.get("return_log_weights")
+        kwargs for kwargs in recorded_calls if kwargs.get("return_log_weights")
     ]
     assert rollout_calls and eval_calls
-    assert all(
-        kwargs.get("resampling") is not None for kwargs in rollout_calls
-    )
+    assert all(kwargs.get("resampling") is not None for kwargs in rollout_calls)
     assert all(kwargs.get("resampling") is None for kwargs in eval_calls)
 
 

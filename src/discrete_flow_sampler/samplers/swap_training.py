@@ -16,6 +16,7 @@ here `SWAP_LOG_RATIO_CLAMP`; `log_ratio_p99` is omitted.
 `rollout_resample_events` counts outer-cycle ESS-triggered SMC events and
 reads NaN when disabled (`TrainCfg.rollout_resample_ess_fraction`).
 """
+
 import csv
 import json
 import math
@@ -33,6 +34,7 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
     gather_pair_scores,
     upper_tri_pairs,
 )
+from discrete_flow_sampler.samplers.optim import StableAdamW
 from discrete_flow_sampler.samplers.resampling import ResamplingConfig
 from discrete_flow_sampler.samplers.resume import (
     capture_rng_state,
@@ -45,10 +47,9 @@ from discrete_flow_sampler.samplers.swap_ctmc import (
     compute_c_t_grid_swap,
     n_slices,
     reduce_c_t_grid,
-    slice_index_of,
     sample_swap_ctmc,
+    slice_index_of,
 )
-from discrete_flow_sampler.samplers.optim import StableAdamW
 from discrete_flow_sampler.samplers.swap_kolmogorov import (
     c_t_offset_rms,
     loss_swap_backward_microbatched,
@@ -61,7 +62,6 @@ from discrete_flow_sampler.samplers.training import (
 )
 from discrete_flow_sampler.seeding import seed_everything
 
-
 # torch.quantile refuses inputs above 2**24 elements. The pair-rate slab is
 # (outer_batch, d(d-1)/2), which at d=256 and the production outer batch of
 # 512 is 16,711,680 -- 99.6% of the cap, a margin of 65,536 elements. The
@@ -69,7 +69,7 @@ from discrete_flow_sampler.seeding import seed_everything
 # first size over it (40,857,600, 2.4x), where the step-0 init diagnostic
 # raised "quantile() input tensor is too large" before the first optimiser
 # step of the first 20x20 run.
-_QUANTILE_MAX_ELEMENTS = 2 ** 24
+_QUANTILE_MAX_ELEMENTS = 2**24
 
 
 def _p99(values: torch.Tensor) -> float:
@@ -128,9 +128,9 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
     """
     pairs = upper_tri_pairs(x.shape[1], x.device)
     forward_rates = F.relu(gather_pair_scores(head(x, t), pairs))  # (B, n_pairs)
-    lambda_dt = (forward_rates * step_dt).sum(dim=-1)              # (B,)
+    lambda_dt = (forward_rates * step_dt).sum(dim=-1)  # (B,)
 
-    log_ratio = target.swap_log_ratio(x, t, pairs)   # unclamped: measures saturation
+    log_ratio = target.swap_log_ratio(x, t, pairs)  # unclamped: measures saturation
 
     return {
         "rate_pair_mean": forward_rates.mean().item(),
@@ -142,9 +142,7 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
         # (n_euler from the tail of Lambda) needs the tail directly — the
         # d256 review showed it is NOT recoverable from mean + exceedance
         # because the state distribution of Lambda is fat-tailed.
-        "lambda_dt_p99": torch.quantile(
-            lambda_dt.float(), 0.99
-        ).item(),
+        "lambda_dt_p99": torch.quantile(lambda_dt.float(), 0.99).item(),
         "log_ratio_clamp_frac": (
             (log_ratio > SWAP_LOG_RATIO_CLAMP).float().mean().item()
         ),
@@ -269,14 +267,13 @@ def train_swap(
             head.parameters(), lr=train_cfg.lr, weight_decay=1e-4
         )
     elif optimiser_kind == "stable_adamw":
-        optimiser = StableAdamW(
-            head.parameters(), lr=train_cfg.lr, weight_decay=1e-4
-        )
+        optimiser = StableAdamW(head.parameters(), lr=train_cfg.lr, weight_decay=1e-4)
     else:
         raise ValueError(f"unknown optimiser {optimiser_kind!r}")
     ema = (
         ExponentialMovingAverage(head.parameters(), ema_decay, warmup=True)
-        if ema_decay > 0 else None
+        if ema_decay > 0
+        else None
     )
     start_step = 0
     if resume_state is not None:
@@ -297,7 +294,8 @@ def train_swap(
                 print(
                     "[train_swap] WARNING: resume.pt has no EMA state; "
                     "shadow re-seeded at resume weights; EMA history and "
-                    "warmup restart", flush=True,
+                    "warmup restart",
+                    flush=True,
                 )
 
     if start_step >= train_cfg.n_steps:
@@ -322,7 +320,9 @@ def train_swap(
     train_autocast_bf16 = getattr(train_cfg, "train_autocast_bf16", False)
     outer_batch = train_cfg.outer_batch_size or train_cfg.batch_size
     n_grid = ctmc_cfg.n_euler_steps
-    n_composition_slices = n_slices(target)   # 1 for a specialist, K on a composition mixture
+    n_composition_slices = n_slices(
+        target
+    )  # 1 for a specialist, K on a composition mixture
     # Trajectory step for every simulation in this loop (buffer rebuild and
     # in-training eval draw): the matching step is required from d=256 up,
     # where one-event clip-safety would need ~3x the Euler grid. getattr
@@ -330,12 +330,8 @@ def train_swap(
     multi_event = getattr(ctmc_cfg, "use_matching_step", False)
     inner_steps_per_outer = train_cfg.inner_steps_per_outer
     replay_buffer_cycles = getattr(train_cfg, "replay_buffer_cycles", 1)
-    halt_on_cv_inversion_after = getattr(
-        train_cfg, "halt_on_cv_inversion_after", None
-    )
-    halt_cv_inversion_window = int(
-        getattr(train_cfg, "halt_cv_inversion_window", 10)
-    )
+    halt_on_cv_inversion_after = getattr(train_cfg, "halt_on_cv_inversion_after", None)
+    halt_cv_inversion_window = int(getattr(train_cfg, "halt_cv_inversion_window", 10))
     cv_var_ratio_history: list[float] = []
     loss_microbatch_size = getattr(train_cfg, "loss_microbatch_size", None)
     # Per-slot c_t EMA across outer cycles. Default 0.0 preserves the
@@ -354,9 +350,7 @@ def train_swap(
     c_t_batch = getattr(train_cfg, "c_t_batch", None)
     if c_t_batch is not None:
         if isinstance(c_t_batch, bool) or int(c_t_batch) != c_t_batch:
-            raise TypeError(
-                f"c_t_batch must be an int or None, got {c_t_batch!r}"
-            )
+            raise TypeError(f"c_t_batch must be an int or None, got {c_t_batch!r}")
         c_t_batch = int(c_t_batch)
         if c_t_batch < outer_batch:
             raise ValueError(
@@ -386,9 +380,7 @@ def train_swap(
             f"rollout batch, and 1.0 already fires at every checkpoint."
         )
     rollout_resampling = (
-        ResamplingConfig(
-            ess_threshold_fraction=float(rollout_resample_ess_fraction)
-        )
+        ResamplingConfig(ess_threshold_fraction=float(rollout_resample_ess_fraction))
         if rollout_resample_ess_fraction is not None
         else None
     )
@@ -442,17 +434,29 @@ def train_swap(
         writer = csv.writer(log_file)
         if log_mode == "w":
             writer.writerow(
-                ["step", "loss", "ess", "var_dt_log_p_tilde",
-                 "var_estimator_integrand", "cv_var_ratio", "grad_norm",
-                 "rate_pair_mean", "rate_pair_p99",
-                 "lambda_dt_clipped_frac", "lambda_dt_p99",
-                 "log_ratio_clamp_frac",
-                 "proposal_drop_frac", "events_per_site_per_step",
-                 "rollout_resample_events",
-                 "sigma_current", "lr_current",
-                 "c_t_ema_rms_delta", "c_t_offset_rms",
-                 "grad_sqnorm_slice_mean",
-                 "wall_clock_step_s"]
+                [
+                    "step",
+                    "loss",
+                    "ess",
+                    "var_dt_log_p_tilde",
+                    "var_estimator_integrand",
+                    "cv_var_ratio",
+                    "grad_norm",
+                    "rate_pair_mean",
+                    "rate_pair_p99",
+                    "lambda_dt_clipped_frac",
+                    "lambda_dt_p99",
+                    "log_ratio_clamp_frac",
+                    "proposal_drop_frac",
+                    "events_per_site_per_step",
+                    "rollout_resample_events",
+                    "sigma_current",
+                    "lr_current",
+                    "c_t_ema_rms_delta",
+                    "c_t_offset_rms",
+                    "grad_sqnorm_slice_mean",
+                    "wall_clock_step_s",
+                ]
             )
 
         step = start_step
@@ -475,9 +479,7 @@ def train_swap(
         # carries the argument). The c_t EMA reset below stays unconditional
         # either way -- c_t is a function of sigma, so smoothing across a
         # boundary would mix estimates of two different quantities.
-        flush_replay_on_stage = bool(
-            getattr(train_cfg, "flush_replay_on_stage", True)
-        )
+        flush_replay_on_stage = bool(getattr(train_cfg, "flush_replay_on_stage", True))
         # Per-stage best-checkpoint instrument: within each curriculum stage,
         # save the head whenever the TRAILING MEDIAN (window 3) of the
         # periodic train-eval ESS makes a new stage best. The median window
@@ -487,9 +489,7 @@ def train_swap(
         # schema and final.pt are untouched, and the flag is off in every
         # archived config. Raw weights only: the EMA shadow lags mid-stage,
         # so an "EMA best" is not well defined at the save instant.
-        stage_best_enabled = bool(
-            getattr(train_cfg, "stage_best_checkpoints", False)
-        )
+        stage_best_enabled = bool(getattr(train_cfg, "stage_best_checkpoints", False))
         stage_best_json_path = ckpt_dir / "stage_best.json"
         # Reload on resume so best-so-far survives preemption; the trailing
         # window itself restarts, which can only delay a re-save, not fake one.
@@ -557,7 +557,9 @@ def train_swap(
                 x_diag = target.sample_base(outer_batch, device=device)
                 t_diag = torch.zeros(outer_batch, device=device)
                 init_diag = _swap_rate_diagnostics(
-                    head, x_diag, t_diag,
+                    head,
+                    x_diag,
+                    t_diag,
                     step_dt=1.0 / max(n_grid - 1, 1),
                     target=target,
                 )
@@ -568,9 +570,7 @@ def train_swap(
                 json.dumps(init_diag, indent=2)
             )
             if use_wandb:
-                wandb.log(
-                    {f"init/{k}": v for k, v in init_diag.items()}, step=0
-                )
+                wandb.log({f"init/{k}": v for k, v in init_diag.items()}, step=0)
 
         for outer in range(start_outer, n_outer):
             # Update σ before rebuilding the buffer so inner-step samples are
@@ -589,9 +589,7 @@ def train_swap(
                         current_intended_lr = float(lr_now)
                     if sigma_now != replay_sigma:
                         if flush_replay_on_stage:
-                            _clear_replay(
-                                x_replay_chunks, t_idx_replay_chunks
-                            )
+                            _clear_replay(x_replay_chunks, t_idx_replay_chunks)
                         replay_sigma = sigma_now
                         if c_t_ema is not None:
                             # c_t is a function of sigma: smoothing must
@@ -629,12 +627,16 @@ def train_swap(
             )
             with torch.no_grad():
                 rollout_result = sample_swap_ctmc(
-                    head, x_initial, t_grid, return_all_states=True,
+                    head,
+                    x_initial,
+                    t_grid,
+                    return_all_states=True,
                     multi_event=multi_event,
                     matching_stats=outer_matching_stats,
-                    target=target, resampling=rollout_resampling,
+                    target=target,
+                    resampling=rollout_resampling,
                     return_cv_integrand=reuse_rollout_integrand,
-                )                                              # (T, n_rollout, D)
+                )  # (T, n_rollout, D)
                 if reuse_rollout_integrand:
                     x_traj_full, integrand_per_t = rollout_result
                     rollout_resample_events = float("nan")
@@ -656,14 +658,16 @@ def train_swap(
                     # compute_c_t_grid_swap applies, on the same values:
                     # a plain mean for a specialist, a WITHIN-slice mean
                     # (T, K) on a composition mixture (see mean_per_slice).
-                    c_t_grid = reduce_c_t_grid(
-                        integrand_per_t, x_traj_full[0], target)
+                    c_t_grid = reduce_c_t_grid(integrand_per_t, x_traj_full[0], target)
                 else:
                     c_t_grid, integrand_per_t = compute_c_t_grid_swap(
-                        t_grid, x_traj_full, target, head,
+                        t_grid,
+                        x_traj_full,
+                        target,
+                        head,
                         mode=estimator_mode,
                         chunk_rows=c_t_grid_chunk_rows,
-                    )                                   # (T,), (T, n_rollout)
+                    )  # (T,), (T, n_rollout)
                 # Smooth the grid across cycles (first cycle after
                 # construction/reset passes through raw). The rms delta
                 # logs how much correction the EMA is applying — 0.0 on
@@ -688,16 +692,13 @@ def train_swap(
                     naive_per_t = integrand_per_t
                 else:
                     t_grid_per_state = t_grid.repeat_interleave(n_rollout)
-                    x_traj_flat = x_traj_full.reshape(
-                        n_grid * n_rollout, n_dims
-                    )
+                    x_traj_flat = x_traj_full.reshape(n_grid * n_rollout, n_dims)
                     naive_per_t = target.dt_log_p_tilde_t(
-                        x_traj_flat, t_grid_per_state,
+                        x_traj_flat,
+                        t_grid_per_state,
                     ).reshape(n_grid, n_rollout)
                 var_dt_log_p_tilde = naive_per_t.var(dim=-1).mean().item()
-                var_estimator_integrand = (
-                    integrand_per_t.var(dim=-1).mean().item()
-                )
+                var_estimator_integrand = integrand_per_t.var(dim=-1).mean().item()
 
             # CV-inversion observer: the
             # controlled/naive integrand variance ratio, formed from the two
@@ -709,7 +710,8 @@ def train_swap(
             # crosses below 1 within ~1000 steps — hence the window).
             cv_var_ratio = (
                 var_estimator_integrand / var_dt_log_p_tilde
-                if var_dt_log_p_tilde > 0 else float("nan")
+                if var_dt_log_p_tilde > 0
+                else float("nan")
             )
             cv_var_ratio_history.append(cv_var_ratio)
             if (
@@ -725,13 +727,16 @@ def train_swap(
                 # on a run the classifier has already called — gracefully.
                 # Marker for the judge; loop exits; final.pt still saves.
                 (output_dir / "cv_inversion_halt.json").write_text(
-                    json.dumps({
-                        "step": step,
-                        "window": halt_cv_inversion_window,
-                        "trailing_ratios": cv_var_ratio_history[
-                            -halt_cv_inversion_window:
-                        ],
-                    }, indent=2)
+                    json.dumps(
+                        {
+                            "step": step,
+                            "window": halt_cv_inversion_window,
+                            "trailing_ratios": cv_var_ratio_history[
+                                -halt_cv_inversion_window:
+                            ],
+                        },
+                        indent=2,
+                    )
                 )
                 break
 
@@ -774,8 +779,7 @@ def train_swap(
                 proposed_total = float(outer_matching_stats["proposed"])
                 accepted_total = float(outer_matching_stats["accepted"])
                 proposal_drop_frac = (
-                    1.0 - accepted_total / proposed_total
-                    if proposed_total > 0 else 0.0
+                    1.0 - accepted_total / proposed_total if proposed_total > 0 else 0.0
                 )
                 events_per_site_per_step = accepted_total / (
                     float(outer_matching_stats["state_steps"]) * n_dims
@@ -784,9 +788,8 @@ def train_swap(
                 proposal_drop_frac = float("nan")
                 events_per_site_per_step = float("nan")
 
-            t_idx_buffer = (
-                torch.arange(n_grid, device=device)
-                .repeat_interleave(outer_batch)
+            t_idx_buffer = torch.arange(n_grid, device=device).repeat_interleave(
+                outer_batch
             )
             # Flatten and retain the most recent outer trajectory batches for
             # uniform inner-step sampling. `c_t_grid` intentionally remains
@@ -808,8 +811,12 @@ def train_swap(
             # Indexed by (slot, slice) so that on a mixture the per-slice
             # offsets, which are equal and opposite around the pooled
             # mean, cannot cancel in the signed slot mean.
-            delta_residual_sum = torch.zeros(n_grid * n_composition_slices, device=device)
-            delta_residual_count = torch.zeros(n_grid * n_composition_slices, device=device)
+            delta_residual_sum = torch.zeros(
+                n_grid * n_composition_slices, device=device
+            )
+            delta_residual_count = torch.zeros(
+                n_grid * n_composition_slices, device=device
+            )
 
             for _inner in range(inner_steps_per_outer):
                 step_start = time.time()
@@ -823,25 +830,26 @@ def train_swap(
                     warmup_rel_step = step - warmup_anchor
                     if warmup_rel_step < warmup_steps:
                         warmup_scale = (warmup_rel_step + 1) / warmup_steps
-                        _set_optimizer_lr(
-                            optimiser, current_intended_lr * warmup_scale
-                        )
+                        _set_optimizer_lr(optimiser, current_intended_lr * warmup_scale)
                     elif warmup_rel_step == warmup_steps:
                         _set_optimizer_lr(optimiser, current_intended_lr)
 
                 # INNER STEP -- N uniform draws from buffer (paper line 7).
                 sample_idx = torch.randint(
-                    buffer_size, (inner_batch,), device=device,
+                    buffer_size,
+                    (inner_batch,),
+                    device=device,
                 )
-                x_sample = x_buffer[sample_idx]                    # (N, D)
-                t_idx_sample = t_idx_buffer[sample_idx]            # (N,)
-                t_sample = t_grid[t_idx_sample]                    # (N,)
+                x_sample = x_buffer[sample_idx]  # (N, D)
+                t_idx_sample = t_idx_buffer[sample_idx]  # (N,)
+                t_sample = t_grid[t_idx_sample]  # (N,)
                 # Each row's baseline is ITS slice's ∂_t log Z_t: the grid
                 # is (T,) for a specialist and (T, K) on a mixture, and
                 # the slice is read off the state (swaps conserve it).
-                slice_sample = slice_index_of(target, x_sample)    # (N,)
+                slice_sample = slice_index_of(target, x_sample)  # (N,)
                 c_t_sample = c_t_grid.reshape(n_grid, -1)[
-                    t_idx_sample, slice_sample]                   # (N,)
+                    t_idx_sample, slice_sample
+                ]  # (N,)
 
                 # loss_microbatch_size slices this one backward over batch
                 # rows — the gradient-identical memory schedule that fits
@@ -865,22 +873,26 @@ def train_swap(
                     dtype=torch.bfloat16,
                     enabled=train_autocast_bf16,
                 ):
-                    loss_value, residual_sample = (
-                        loss_swap_backward_microbatched(
-                            x_sample, t_sample, c_t_sample, head, target,
-                            microbatch_size=loss_microbatch_size,
-                            slice_grad_sqnorms_out=slice_grad_sqnorms,
-                        )
+                    loss_value, residual_sample = loss_swap_backward_microbatched(
+                        x_sample,
+                        t_sample,
+                        c_t_sample,
+                        head,
+                        target,
+                        microbatch_size=loss_microbatch_size,
+                        slice_grad_sqnorms_out=slice_grad_sqnorms,
                     )
                 # Mean over FULL slices only: a ragged tail is a different
                 # batch size b and would bias E|g_b|^2.
                 full_slice_sqnorms = [
-                    sqnorm for rows, sqnorm in (slice_grad_sqnorms or [])
+                    sqnorm
+                    for rows, sqnorm in (slice_grad_sqnorms or [])
                     if rows == loss_microbatch_size
                 ]
                 grad_sqnorm_slice_mean = (
                     sum(full_slice_sqnorms) / len(full_slice_sqnorms)
-                    if full_slice_sqnorms else float("nan")
+                    if full_slice_sqnorms
+                    else float("nan")
                 )
                 # Δ diagnostic: −E[residual] per slot is the offset between
                 # c_t and the mean of ξ_t over the distribution the LOSS
@@ -914,12 +926,16 @@ def train_swap(
                 }
                 if step % eval_cfg.eval_every == 0:
                     eval_autocast = torch.autocast(
-                        device.type, dtype=torch.bfloat16,
+                        device.type,
+                        dtype=torch.bfloat16,
                         enabled=getattr(eval_cfg, "eval_autocast_bf16", False),
                     )
                     with torch.no_grad(), eval_autocast:
                         eval_grid = torch.linspace(
-                            0.0, 1.0, n_grid, device=device,
+                            0.0,
+                            1.0,
+                            n_grid,
+                            device=device,
                         )
                         # Stream the eval draw in slices: the vectorised swap
                         # head rides d anchor copies per sample, so feeding
@@ -934,19 +950,19 @@ def train_swap(
                             or eval_cfg.n_eval_samples
                         )
                         eval_chunk = (
-                            getattr(eval_cfg, "eval_sample_chunk", None)
-                            or n_train_eval
+                            getattr(eval_cfg, "eval_sample_chunk", None) or n_train_eval
                         )
                         log_weight_slices = []
                         remaining = n_train_eval
                         while remaining > 0:
                             n_slice = min(eval_chunk, remaining)
-                            x_eval_initial = target.sample_base(
-                                n_slice, device=device
-                            )
+                            x_eval_initial = target.sample_base(n_slice, device=device)
                             _, slice_log_weights = sample_swap_ctmc(
-                                head, x_eval_initial, eval_grid,
-                                return_log_weights=True, target=target,
+                                head,
+                                x_eval_initial,
+                                eval_grid,
+                                return_log_weights=True,
+                                target=target,
                                 multi_event=multi_event,
                             )
                             log_weight_slices.append(slice_log_weights)
@@ -973,15 +989,12 @@ def train_swap(
                         stage_ess_recent.append(ess_value)
                         if len(stage_ess_recent) > 3:
                             del stage_ess_recent[0]
-                        ess_trailing_median = statistics.median(
-                            stage_ess_recent
-                        )
+                        ess_trailing_median = statistics.median(stage_ess_recent)
                         stage_key = str(current_stage)
                         stage_best = stage_best_records.get(stage_key)
                         if (
                             stage_best is None
-                            or ess_trailing_median
-                            > stage_best["ess_trailing_median"]
+                            or ess_trailing_median > stage_best["ess_trailing_median"]
                         ):
                             torch.save(
                                 head.state_dict(),
@@ -999,20 +1012,29 @@ def train_swap(
                     delta_residual_sum, delta_residual_count
                 )
                 writer.writerow(
-                    [step, loss_value.item(), ess_value,
-                     var_dt_log_p_tilde, var_estimator_integrand,
-                     cv_var_ratio,
-                     grad_norm.item(), rate_diag["rate_pair_mean"],
-                     rate_diag["rate_pair_p99"],
-                     rate_diag["lambda_dt_clipped_frac"],
-                     rate_diag["lambda_dt_p99"],
-                     rate_diag["log_ratio_clamp_frac"],
-                     proposal_drop_frac, events_per_site_per_step,
-                     rollout_resample_events,
-                     float(target.sigma), optimiser.param_groups[0]["lr"],
-                     c_t_ema_rms_delta, c_t_offset_value,
-                     grad_sqnorm_slice_mean,
-                     wall_clock_step_s]
+                    [
+                        step,
+                        loss_value.item(),
+                        ess_value,
+                        var_dt_log_p_tilde,
+                        var_estimator_integrand,
+                        cv_var_ratio,
+                        grad_norm.item(),
+                        rate_diag["rate_pair_mean"],
+                        rate_diag["rate_pair_p99"],
+                        rate_diag["lambda_dt_clipped_frac"],
+                        rate_diag["lambda_dt_p99"],
+                        rate_diag["log_ratio_clamp_frac"],
+                        proposal_drop_frac,
+                        events_per_site_per_step,
+                        rollout_resample_events,
+                        float(target.sigma),
+                        optimiser.param_groups[0]["lr"],
+                        c_t_ema_rms_delta,
+                        c_t_offset_value,
+                        grad_sqnorm_slice_mean,
+                        wall_clock_step_s,
+                    ]
                 )
                 log_file.flush()
 
@@ -1033,10 +1055,7 @@ def train_swap(
                     if step % eval_cfg.eval_every == 0:
                         log_dict["train/ess"] = ess_value
                         log_dict.update(
-                            {
-                                f"train/{key}": value
-                                for key, value in rate_diag.items()
-                            }
+                            {f"train/{key}": value for key, value in rate_diag.items()}
                         )
                     wandb.log(log_dict, step=step)
 

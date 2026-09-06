@@ -49,8 +49,10 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 def build_target_and_policy(cfg: GFNCellCfg, device):
     target = FixedCompositionIsingTarget(
-        D=cfg.D, sigma=cfg.sigma,
-        target_composition=cfg.target_composition, device=device,
+        D=cfg.D,
+        sigma=cfg.sigma,
+        target_composition=cfg.target_composition,
+        device=device,
     )
     policy = RasterGFNPolicy(
         D=cfg.D,
@@ -99,9 +101,14 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
         # trained under the decay and are not re-run. The network group
         # keeps torch's default 0.01, a declared deviation from the house
         # trainer's 1e-4.
-        groups.append({"params": [policy.log_z],
-                       "lr": cfg.log_z_learning_rate, "weight_decay": 0.0,
-                       "name": "log_z"})
+        groups.append(
+            {
+                "params": [policy.log_z],
+                "lr": cfg.log_z_learning_rate,
+                "weight_decay": 0.0,
+                "name": "log_z",
+            }
+        )
         split_out.add(id(policy.log_z))
     if cfg.flow_head_learning_rate is not None:
         if policy.flow_head is None:
@@ -111,15 +118,20 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
                 "FL-DB arm's lever)"
             )
         flow_params = list(policy.flow_head.parameters())
-        groups.append({"params": flow_params,
-                       "lr": cfg.flow_head_learning_rate,
-                       "name": "flow_head"})
+        groups.append(
+            {
+                "params": flow_params,
+                "lr": cfg.flow_head_learning_rate,
+                "name": "flow_head",
+            }
+        )
         split_out |= {id(p) for p in flow_params}
-    network_params = [p for p in policy.parameters()
-                      if id(p) not in split_out]
+    network_params = [p for p in policy.parameters() if id(p) not in split_out]
     return torch.optim.AdamW(
-        [{"params": network_params, "lr": cfg.learning_rate,
-          "name": "network"}, *groups]
+        [
+            {"params": network_params, "lr": cfg.learning_rate, "name": "network"},
+            *groups,
+        ]
     )
 
 
@@ -197,9 +209,7 @@ def final_eval_gfn(
             spins, log_q = policy.sample(chunk)
             target.assert_on_manifold(spins)
             sample_chunks.append(spins.cpu())
-            log_weight_chunks.append(
-                (target.log_prob(spins) - log_q).float().cpu()
-            )
+            log_weight_chunks.append((target.log_prob(spins) - log_q).float().cpu())
             remaining -= chunk
     eval_samples = torch.cat(sample_chunks)
     eval_log_weights = torch.cat(log_weight_chunks)
@@ -216,15 +226,11 @@ def final_eval_gfn(
         "objective": cfg.objective,
         "log_z_is_estimate": float(log_mean_exp(eval_log_weights).item()),
     }
-    eval_metrics["ess_fraction"] = (
-        eval_metrics["ess"] / eval_metrics["n_eval_samples"]
-    )
+    eval_metrics["ess_fraction"] = eval_metrics["ess"] / eval_metrics["n_eval_samples"]
     if cfg.objective == "tb":
         eval_metrics["log_z_learned"] = float(policy.log_z.item())
     eval_metrics.update(
-        composition_observables(
-            eval_samples, target_composition=cfg.target_composition
-        )
+        composition_observables(eval_samples, target_composition=cfg.target_composition)
     )
     (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
     return eval_metrics
@@ -251,8 +257,7 @@ def train_gfn(
     # Complete = every armed eval landed: a preemption between the raw and
     # EMA evals must re-enter, not short-circuit half-done.
     complete = (run_dir / "eval" / "metrics.json").exists() and (
-        cfg.ema_decay <= 0
-        or (run_dir / "eval_ema" / "metrics.json").exists()
+        cfg.ema_decay <= 0 or (run_dir / "eval_ema" / "metrics.json").exists()
     )
     if complete:
         print(f"[train_gfn] {run_dir.name} already complete; nothing to do")
@@ -278,8 +283,14 @@ def train_gfn(
             config=asdict(cfg),
             id=stored_run_id,
             resume="allow",
-            tags=[cfg.name, f"D={cfg.D}", f"sigma={cfg.sigma}",
-                  "gfn", cfg.objective, f"seed={seed}"],
+            tags=[
+                cfg.name,
+                f"D={cfg.D}",
+                f"sigma={cfg.sigma}",
+                "gfn",
+                cfg.objective,
+                f"seed={seed}",
+            ],
         )
         wandb_id_path.write_text(wandb.run.id)
 
@@ -296,9 +307,9 @@ def train_gfn(
             )
     optimiser = build_optimiser(cfg, policy)
     ema = (
-        ExponentialMovingAverage(policy.parameters(), cfg.ema_decay,
-                                 warmup=True)
-        if cfg.ema_decay > 0 else None
+        ExponentialMovingAverage(policy.parameters(), cfg.ema_decay, warmup=True)
+        if cfg.ema_decay > 0
+        else None
     )
 
     checkpoint_dir = run_dir / "checkpoints"
@@ -321,7 +332,11 @@ def train_gfn(
     log_file = open(log_path, "a", newline="")
     log_writer = csv.writer(log_file)
     log_columns = [
-        "step", "loss", "log_z", "ess_fraction_train", "sigma",
+        "step",
+        "loss",
+        "log_z",
+        "ess_fraction_train",
+        "sigma",
         # d64 failure-triage columns. grad_norm is the PRE-clip total
         # norm (clip_grad_norm_'s return value), so whether the rail engaged
         # is readable as grad_norm > grad_clip_max_norm. mean_log_q is the
@@ -332,7 +347,10 @@ def train_gfn(
         # learned value, so learned-vs-IS gap + tail slope replace the 4x4
         # exact arbitration. ess_frozen is the eval_every diagnostic
         # (epsilon=0, n_eval_samples_training draws, current stage sigma).
-        "grad_norm", "mean_log_q", "log_z_is_batch", "ess_frozen",
+        "grad_norm",
+        "mean_log_q",
+        "log_z_is_batch",
+        "ess_frozen",
     ]
     if start_step == 0 and log_path.stat().st_size == 0:
         log_writer.writerow(log_columns)
@@ -342,14 +360,13 @@ def train_gfn(
         target.set_sigma(_stage_sigma(cfg, step))
         apply_lr_warmup(optimiser, cfg, step)
         spins, _ = policy.sample(cfg.batch_size, epsilon=cfg.epsilon)
-        loss, model_log_prob = _loss_and_train_diagnostics(
-            cfg, policy, target, spins
-        )
+        loss, model_log_prob = _loss_and_train_diagnostics(cfg, policy, target, spins)
         optimiser.zero_grad()
         loss.backward()
         grad_norm = torch.nn.utils.clip_grad_norm_(
             policy.parameters(),
-            cfg.grad_clip_max_norm if cfg.grad_clip_max_norm is not None
+            cfg.grad_clip_max_norm
+            if cfg.grad_clip_max_norm is not None
             else float("inf"),
         )
         optimiser.step()
@@ -360,9 +377,9 @@ def train_gfn(
             # In-training ESS on the behaviour batch: a convergence telltale,
             # not the frozen number (epsilon-mixed draws, moving sigma).
             batch_log_weights = target.log_prob(spins) - model_log_prob
-            batch_ess_fraction = float(
-                ess_from_log_weights(batch_log_weights).item()
-            ) / cfg.batch_size
+            batch_ess_fraction = (
+                float(ess_from_log_weights(batch_log_weights).item()) / cfg.batch_size
+            )
             ess_frozen = float("nan")
             if cfg.eval_every > 0 and step % cfg.eval_every == 0:
                 with torch.no_grad(), _eval_autocast(cfg, device):
@@ -372,20 +389,25 @@ def train_gfn(
                         chunk = min(cfg.eval_sample_chunk, remaining)
                         frozen_spins, frozen_log_q = policy.sample(chunk)
                         frozen_weight_chunks.append(
-                            (target.log_prob(frozen_spins)
-                             - frozen_log_q).float()
+                            (target.log_prob(frozen_spins) - frozen_log_q).float()
                         )
                         remaining -= chunk
                     frozen_log_weights = torch.cat(frozen_weight_chunks)
-                    ess_frozen = float(
-                        ess_from_log_weights(frozen_log_weights).item()
-                    ) / cfg.n_eval_samples_training
-            row = [step, float(loss.item()), float(policy.log_z.item()),
-                   batch_ess_fraction, target.sigma,
-                   float(grad_norm.item()),
-                   float(model_log_prob.mean().item()),
-                   float(log_mean_exp(batch_log_weights).item()),
-                   ess_frozen]
+                    ess_frozen = (
+                        float(ess_from_log_weights(frozen_log_weights).item())
+                        / cfg.n_eval_samples_training
+                    )
+            row = [
+                step,
+                float(loss.item()),
+                float(policy.log_z.item()),
+                batch_ess_fraction,
+                target.sigma,
+                float(grad_norm.item()),
+                float(model_log_prob.mean().item()),
+                float(log_mean_exp(batch_log_weights).item()),
+                ess_frozen,
+            ]
             log_writer.writerow(row)
             log_file.flush()
             if use_wandb:
@@ -395,9 +417,12 @@ def train_gfn(
 
         if (step + 1) % cfg.checkpoint_every == 0:
             torch.save(
-                {"step": step + 1, "policy": policy.state_dict(),
-                 "optimiser": optimiser.state_dict(),
-                 "ema": ema.state_dict() if ema is not None else None},
+                {
+                    "step": step + 1,
+                    "policy": policy.state_dict(),
+                    "optimiser": optimiser.state_dict(),
+                    "ema": ema.state_dict() if ema is not None else None,
+                },
                 resume_path,
             )
             if on_checkpoint is not None:
@@ -419,16 +444,25 @@ def train_gfn(
             policy, target, cfg, run_dir, eval_dir_suffix="_ema"
         )
         ema.swap_out()
-        print(f"[train_gfn] {run_dir.name} (ema): "
-              f"{json.dumps(ema_metrics, indent=2)}")
+        print(f"[train_gfn] {run_dir.name} (ema): {json.dumps(ema_metrics, indent=2)}")
     if use_wandb:
         import wandb
 
-        wandb.log({f"eval/{k}": v for k, v in eval_metrics.items()
-                   if isinstance(v, (int, float))})
+        wandb.log(
+            {
+                f"eval/{k}": v
+                for k, v in eval_metrics.items()
+                if isinstance(v, (int, float))
+            }
+        )
         if ema_metrics is not None:
-            wandb.log({f"eval_ema/{k}": v for k, v in ema_metrics.items()
-                       if isinstance(v, (int, float))})
+            wandb.log(
+                {
+                    f"eval_ema/{k}": v
+                    for k, v in ema_metrics.items()
+                    if isinstance(v, (int, float))
+                }
+            )
         wandb.finish()
     return run_dir
 

@@ -37,6 +37,7 @@ Stage layout:
                            estimator-side variance reduction on top of
                            the architectural one.
 """
+
 from dataclasses import dataclass, replace
 from typing import Literal
 
@@ -106,7 +107,7 @@ class TrainCfg:
     train_autocast_bf16: bool = False
     inner_steps_per_outer: int = 100
     outer_batch_size: int | None = None  # None -> falls back to batch_size
-    replay_buffer_cycles: int = 1        # number of retained outer batches
+    replay_buffer_cycles: int = 1  # number of retained outer batches
     grad_clip_max_norm: float = 500.0  # some transformer runs override this
     # Opt-in mechanism diagnostic: record pre-clip gradient L2 norms split
     # into exact-field gains, omega readout, composition embedder, and the
@@ -131,7 +132,7 @@ class TrainCfg:
     # σ-transitions, because that failure mode is structurally different (not
     # random-init) and the curriculum's LR drops already play the warmup role
     # at sensitive transitions.
-    warmup_steps: int = 500              # 0 to disable; e.g. paper-faithful runs
+    warmup_steps: int = 500  # 0 to disable; e.g. paper-faithful runs
     # Optimiser selection. "adamw" is the recipe of record for every archived
     # run. "stable_adamw" adds Adafactor-style per-tensor UPDATE clipping
     # (StableAdamW, Wortsman et al. 2023): the trust-region alternative to
@@ -314,10 +315,10 @@ class EvalCfg:
 class ModelCfg:
     kind: Literal["mlp", "lemlp", "leconv_deep", "let"] = "lemlp"
     hidden_dim: int = 256
-    n_layers: int = 3        # n_summands K for lemlp; Linear blocks for mlp
+    n_layers: int = 3  # n_summands K for lemlp; Linear blocks for mlp
     kernel_schedule: tuple[int, ...] = ()  # leconv_deep only; per-layer kernels
-    hollow_global_context: bool = False    # leconv_deep only
-    n_heads: int = 4         # leTF only; ignored elsewhere
+    hollow_global_context: bool = False  # leconv_deep only
+    n_heads: int = 4  # leTF only; ignored elsewhere
     # leTF only: fused-kernel readout attention (never materialises the
     # (B, n_heads, d, 2d) score buffer). Tier-2 opt-in: same math, different
     # reduction order; no state_dict change.
@@ -451,7 +452,7 @@ class StageCfg:
 
 
 def optimised_recipe(cell: StageCfg) -> StageCfg:
-    """Optimisation bundle as a recipe transform  for the flip route 
+    """Optimisation bundle as a recipe transform  for the flip route
     — the mirror of the hard route's `optimised_recipe`.
 
     Two declared changes, nothing else: model.compile_model=True (measured
@@ -510,7 +511,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d4": StageCfg(
         name="stage_0_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -519,7 +522,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d10": StageCfg(
         name="stage_0_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3, vocab_size=2),
@@ -532,7 +537,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d4_cv": StageCfg(
         name="stage_0_d4_cv",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -541,7 +548,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_0_d10_cv": StageCfg(
         name="stage_0_d10_cv",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="mlp", hidden_dim=256, n_layers=3, vocab_size=2),
@@ -552,7 +561,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_1_d4": StageCfg(
         name="stage_1_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -561,7 +572,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_1_d10": StageCfg(
         name="stage_1_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
@@ -572,7 +585,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_2_d4": StageCfg(
         name="stage_2_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=128, n_layers=2, vocab_size=2),
@@ -581,7 +596,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_2_d10": StageCfg(
         name="stage_2_d10",
         ising=IsingCfg(D=10, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(kind="lemlp", hidden_dim=256, n_layers=3, vocab_size=2),
@@ -595,7 +612,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d10_critical_deep": StageCfg(
         name="stage_3_d10_critical_deep",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
@@ -613,7 +632,9 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_3_d10_critical_deep_k15": StageCfg(
         name="stage_3_d10_critical_deep_k15",
         ising=IsingCfg(D=10, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=50_000, batch_size=256, replay_buffer_cycles=4, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
         model=ModelCfg(
@@ -725,12 +746,12 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_4_d4": StageCfg(
         name="stage_4_d4",
         ising=IsingCfg(D=4, sigma=0.1, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
     # 4x4 row at the critical coupling for the Stage-4 report table: gives the
@@ -742,12 +763,12 @@ CONFIGS: dict[str, StageCfg] = {
     "stage_4_d4_critical": StageCfg(
         name="stage_4_d4_critical",
         ising=IsingCfg(D=4, sigma=0.22305, bias=0.0),
-        train=TrainCfg(n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42),
+        train=TrainCfg(
+            n_steps=10_000, batch_size=128, replay_buffer_cycles=8, lr=1e-3, seed=42
+        ),
         ctmc=CTMCCfg(n_euler_steps=50),
         eval=EvalCfg(eval_every=200, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
     # Legacy/debug subcritical leTF config. Kept as a diagnostic point for the
@@ -775,9 +796,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=64, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
     # Canonical subcritical leTF comparison run. This keeps the paper-aligned
@@ -798,9 +817,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
     "stage_4_d10_critical": StageCfg(
@@ -816,9 +833,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=100),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
         curriculum=CurriculumCfg(
             stages=(
@@ -852,9 +867,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
     # 10k-step probe of stage_4_d10_paper with LR warmup enabled. Used for
@@ -876,9 +889,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
     "stage_4_d10_critical_paper": StageCfg(
@@ -895,9 +906,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
     ),
     "stage_4_d10_critical_paper_curriculum": StageCfg(
@@ -914,9 +923,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
         curriculum=CurriculumCfg(
             stages=(
@@ -945,9 +952,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
         curriculum=CurriculumCfg(
             stages=(
@@ -976,9 +981,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         ctmc=CTMCCfg(n_euler_steps=64),
         eval=EvalCfg(eval_every=500, n_eval_samples=5_000),
-        model=ModelCfg(
-            kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2
-        ),
+        model=ModelCfg(kind="let", hidden_dim=128, n_layers=3, n_heads=4, vocab_size=2),
         estimator="control_variate",
         curriculum=CurriculumCfg(
             stages=(
@@ -1027,15 +1030,17 @@ for _wave1_parent_name in (
 # `let` 128x3, so the twin differs from its parent by the channel alone.
 # The archived `stage_4_d16_critical_50k_ladder` ended at the legacy 0.22305
 # and died (ESS 0.0); these replace it as the 16x16 unconstrained record.
-_HARD_HOUSE_LADDER = CurriculumCfg(stages=(
-    CurriculumStageCfg(start_step=0, sigma=0.10, lr=1e-3),
-    CurriculumStageCfg(start_step=5_000, sigma=0.14, lr=1e-3),
-    CurriculumStageCfg(start_step=10_000, sigma=0.17, lr=1e-3),
-    CurriculumStageCfg(start_step=15_000, sigma=0.19, lr=1e-3),
-    CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
-    CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
-    CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
-))
+_HARD_HOUSE_LADDER = CurriculumCfg(
+    stages=(
+        CurriculumStageCfg(start_step=0, sigma=0.10, lr=1e-3),
+        CurriculumStageCfg(start_step=5_000, sigma=0.14, lr=1e-3),
+        CurriculumStageCfg(start_step=10_000, sigma=0.17, lr=1e-3),
+        CurriculumStageCfg(start_step=15_000, sigma=0.19, lr=1e-3),
+        CurriculumStageCfg(start_step=20_000, sigma=0.205, lr=3e-4),
+        CurriculumStageCfg(start_step=25_000, sigma=0.215, lr=3e-4),
+        CurriculumStageCfg(start_step=30_000, sigma=SIGMA_C, lr=3e-4),
+    )
+)
 
 # 10x10: the 16x16 100k recipe at the table's own size,
 # four seeds, to see whether the hard house recipe plus the channel reaches
@@ -1045,23 +1050,32 @@ _HARD_HOUSE_LADDER = CurriculumCfg(stages=(
 # (the end-of-run eval still draws 5000) that at d16 would have been ~1.5 h
 # of the 100k run's GPU time per seed.
 for _side, _n_steps, _batch, _microbatch, _n_eval_training in (
-    (8, 50_000, 128, None, None), (16, 100_000, 512, 128, None),
+    (8, 50_000, 128, None, None),
+    (16, 100_000, 512, 128, None),
     (10, 100_000, 512, None, 512),
 ):
     _parent = CONFIGS["stage_4_d8_critical_paper_curriculum_sc"]
     _name = f"stage_4_d{_side}_sc_hardrecipe"
     _cell = replace(
-        _parent, name=_name,
+        _parent,
+        name=_name,
         ising=replace(_parent.ising, D=_side, sigma=0.10),
-        train=replace(_parent.train, n_steps=_n_steps, batch_size=_batch,
-                      outer_batch_size=None, replay_buffer_cycles=8,
-                      loss_microbatch_size=_microbatch),
+        train=replace(
+            _parent.train,
+            n_steps=_n_steps,
+            batch_size=_batch,
+            outer_batch_size=None,
+            replay_buffer_cycles=8,
+            loss_microbatch_size=_microbatch,
+        ),
         ctmc=replace(_parent.ctmc, n_euler_steps=128),
         eval=replace(_parent.eval, n_eval_samples_training=_n_eval_training),
-        curriculum=_HARD_HOUSE_LADDER, ema_decay=0.9999,
+        curriculum=_HARD_HOUSE_LADDER,
+        ema_decay=0.9999,
     )
     CONFIGS[_name] = _cell
     CONFIGS[f"{_name}_efc"] = replace(
-        _cell, name=f"{_name}_efc",
+        _cell,
+        name=f"{_name}_efc",
         model=replace(_cell.model, exact_field_channel=True),
     )

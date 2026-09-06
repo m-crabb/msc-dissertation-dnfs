@@ -34,6 +34,7 @@ unit of independence, the floor drawn at the neural cells' own N) are the
 8x8 house table's and are tested there; what is tested here is only what
 the FIGURE adds.
 """
+
 import numpy as np
 import pytest
 import torch
@@ -48,8 +49,7 @@ def _balanced_spins(n, seed, d):
     """n draws from the c=0.5 slice: every row exactly d/2 up, d/2 down."""
     generator = torch.Generator().manual_seed(seed)
     base = torch.cat([torch.ones(d // 2), -torch.ones(d // 2)])
-    return torch.stack([base[torch.randperm(d, generator=generator)]
-                        for _ in range(n)])
+    return torch.stack([base[torch.randperm(d, generator=generator)] for _ in range(n)])
 
 
 def _phase_separated(lattice_edge, side):
@@ -60,12 +60,15 @@ def _phase_separated(lattice_edge, side):
     one of them has collapsed.
     """
     grid = -torch.ones(lattice_edge, lattice_edge)
-    half = slice(None, lattice_edge // 2) if side == 0 else slice(lattice_edge // 2, None)
+    half = (
+        slice(None, lattice_edge // 2) if side == 0 else slice(lattice_edge // 2, None)
+    )
     grid[:, half] = 1.0
     return grid.reshape(1, -1)
 
 
 # --- fact one: the constraint kills magnetisation, phi survives -----------
+
 
 @pytest.mark.parametrize("lattice_edge", [8, 16])
 def test_magnetisation_is_degenerate_on_the_slice(lattice_edge):
@@ -76,8 +79,7 @@ def test_magnetisation_is_degenerate_on_the_slice(lattice_edge):
     """
     d = lattice_edge * lattice_edge
     states = _balanced_spins(256, seed=0, d=d)
-    assert torch.allclose(magnetisation(states),
-                          torch.zeros(len(states)), atol=1e-6)
+    assert torch.allclose(magnetisation(states), torch.zeros(len(states)), atol=1e-6)
 
 
 @pytest.mark.parametrize("lattice_edge", [8, 16])
@@ -86,9 +88,11 @@ def test_phi_separates_the_two_phase_separated_modes(lattice_edge):
     tracks which half is up. If this ever reads 0, the observable has lost
     the axis the coverage panel is drawn on."""
     left_up = half_magnetisation_order_parameter(
-        _phase_separated(lattice_edge, side=0), lattice_edge)
+        _phase_separated(lattice_edge, side=0), lattice_edge
+    )
     right_up = half_magnetisation_order_parameter(
-        _phase_separated(lattice_edge, side=1), lattice_edge)
+        _phase_separated(lattice_edge, side=1), lattice_edge
+    )
     assert left_up.item() == pytest.approx(1.0)
     assert right_up.item() == pytest.approx(-1.0)
 
@@ -102,10 +106,13 @@ def test_phi_is_z2_odd(lattice_edge):
     states = _balanced_spins(64, seed=1, d=d)
     assert torch.allclose(
         half_magnetisation_order_parameter(-states, lattice_edge),
-        -half_magnetisation_order_parameter(states, lattice_edge), atol=1e-6)
+        -half_magnetisation_order_parameter(states, lattice_edge),
+        atol=1e-6,
+    )
 
 
 # --- fact two: the support, and binning on it ----------------------------
+
 
 @pytest.mark.parametrize("lattice_edge", [8, 16])
 def test_phi_support_matches_the_analytic_grid(lattice_edge):
@@ -122,7 +129,8 @@ def test_phi_support_matches_the_analytic_grid(lattice_edge):
     assert np.allclose(np.diff(support), 2.0 / (d / 2))
 
     observed = half_magnetisation_order_parameter(
-        _balanced_spins(512, seed=2, d=d), lattice_edge).numpy()
+        _balanced_spins(512, seed=2, d=d), lattice_edge
+    ).numpy()
     nearest = np.abs(observed[:, None] - support[None, :]).min(axis=1)
     assert nearest.max() < 1e-6
 
@@ -133,12 +141,13 @@ def test_phi_pmf_is_normalised_and_lands_on_the_right_atoms(lattice_edge):
     separated states must put all their mass on the two end atoms."""
     from experiments.constrained_hard_03.analysis import hard_results_cell as hrc
 
-    both_modes = torch.cat([_phase_separated(lattice_edge, 0),
-                            _phase_separated(lattice_edge, 1)])
+    both_modes = torch.cat(
+        [_phase_separated(lattice_edge, 0), _phase_separated(lattice_edge, 1)]
+    )
     pmf = hrc.phi_pmf(both_modes, lattice_edge)
     assert pmf.sum() == pytest.approx(1.0)
-    assert pmf[-1] == pytest.approx(0.5)   # phi = +1
-    assert pmf[0] == pytest.approx(0.5)    # phi = -1
+    assert pmf[-1] == pytest.approx(0.5)  # phi = +1
+    assert pmf[0] == pytest.approx(0.5)  # phi = -1
     assert pmf[1:-1].sum() == pytest.approx(0.0)
 
 
@@ -159,6 +168,7 @@ def test_phi_pmf_is_weight_aware():
 
 
 # --- the energy panel: same anti-aliasing contract ------------------------
+
 
 @pytest.mark.parametrize("lattice_edge", [8, 16])
 def test_energy_support_is_the_exact_level_set(lattice_edge):
@@ -190,6 +200,7 @@ def test_bare_energy_lands_on_its_level_set(lattice_edge):
 
 # --- the reference pool, as the figure consumes it ------------------------
 
+
 def test_pooled_reference_splits_into_equal_chain_blocks():
     """The d256 reference ships as ONE pooled tensor, chain-block
     contiguous (generate_kawasaki_reference_d256.py concatenates the
@@ -214,15 +225,14 @@ def test_reference_floor_is_positive_and_shrinks_with_draws():
 
     pool = _balanced_spins(4000, seed=4, d=64)
     chains = hrc.split_pooled_into_chains(pool, n_chains=8)
-    small = hrc.phi_floor(chains, lattice_edge=8, n_draws=100, n_replicates=24,
-                          seed=0)
-    large = hrc.phi_floor(chains, lattice_edge=8, n_draws=1000, n_replicates=24,
-                          seed=0)
+    small = hrc.phi_floor(chains, lattice_edge=8, n_draws=100, n_replicates=24, seed=0)
+    large = hrc.phi_floor(chains, lattice_edge=8, n_draws=1000, n_replicates=24, seed=0)
     assert small > 0.0
     assert large < small
 
 
 # --- the tripwire guard --------------------------------------------------
+
 
 def test_tripwire_halted_cells_are_excluded(tmp_path):
     """A cell the cold-CV tripwire halted must never reach a panel.
@@ -259,8 +269,10 @@ def test_head_token_does_not_match_a_longer_head(tmp_path):
     own R=2 variant."""
     from experiments.constrained_hard_03.analysis import hard_results_cell as hrc
 
-    for name in ("H2_d256_c50_s220_letf_thp_100k_w3_seed42_tag",
-                 "H2_d256_c50_s220_letf_thp2_100k_w3_seed42_tag"):
+    for name in (
+        "H2_d256_c50_s220_letf_thp_100k_w3_seed42_tag",
+        "H2_d256_c50_s220_letf_thp2_100k_w3_seed42_tag",
+    ):
         run = tmp_path / name
         (run / "eval_ema").mkdir(parents=True)
         (run / "eval_ema" / "metrics.json").write_text("{}")

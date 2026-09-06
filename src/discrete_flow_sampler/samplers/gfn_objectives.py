@@ -13,9 +13,7 @@ rewards from env.log_reward, mirrored here as prefix partial energies).
 import torch
 
 
-def raster_prefix_log_reward_increments(
-    target, spins: torch.Tensor
-) -> torch.Tensor:
+def raster_prefix_log_reward_increments(target, spins: torch.Tensor) -> torch.Tensor:
     """(B, d) per-site increments of the prefix partial energy.
 
     The FL-DB intermediate reward is the partial energy of a prefix: the
@@ -88,7 +86,5 @@ def forward_looking_db_loss(
     """
     terminal = torch.zeros_like(flow_residuals[:, :1])
     next_flow_residuals = torch.cat([flow_residuals[:, 1:], terminal], dim=1)
-    residual = (
-        flow_residuals + site_log_probs - reward_increments - next_flow_residuals
-    )
+    residual = flow_residuals + site_log_probs - reward_increments - next_flow_residuals
     return (residual**2).mean()

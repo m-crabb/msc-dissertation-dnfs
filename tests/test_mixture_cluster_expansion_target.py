@@ -5,6 +5,7 @@ swaps conserve n_plus row-wise, so `base_log_eta` read off x makes the per-slice
 geometric path exact, and `swap_log_ratio` (Eq. (3) on the expansion) is unchanged
 because both states of a swap share a slice. Pinned on the 16-site Cu-Au cell.
 """
+
 import math
 
 import pytest
@@ -17,13 +18,14 @@ from discrete_flow_sampler.targets.cluster_expansion import (
 )
 
 SPEC = "data/ce/cuau_fcc_2x2x4.json"
-COMPOSITIONS = (0.5, 0.4375, 0.375, 0.3125, 0.25)      # n_Au = 8, 7, 6, 5, 4 of 16
+COMPOSITIONS = (0.5, 0.4375, 0.375, 0.3125, 0.25)  # n_Au = 8, 7, 6, 5, 4 of 16
 BETA = 1.0 / (8.617333262e-5 * 500.0)
 
 
 def _mixture(compositions=COMPOSITIONS):
     return MixtureCompositionClusterExpansionTarget(
-        BinaryExpansionSpec.from_json(SPEC), beta=BETA, compositions=compositions)
+        BinaryExpansionSpec.from_json(SPEC), beta=BETA, compositions=compositions
+    )
 
 
 def _n_plus(x):
@@ -42,9 +44,12 @@ def test_sample_base_lands_only_on_registered_slices_and_covers_all():
 def test_base_log_eta_is_the_per_row_slice_constant():
     tgt = _mixture()
     x = tgt.sample_base(200, device="cpu")
-    expected = torch.tensor([
-        -(math.lgamma(17) - math.lgamma(n + 1) - math.lgamma(17 - n))
-        for n in _n_plus(x).long().tolist()])
+    expected = torch.tensor(
+        [
+            -(math.lgamma(17) - math.lgamma(n + 1) - math.lgamma(17 - n))
+            for n in _n_plus(x).long().tolist()
+        ]
+    )
     assert torch.allclose(tgt.base_log_eta(x), expected.to(x.dtype), atol=1e-5)
 
 
@@ -56,9 +61,12 @@ def test_swap_log_ratio_matches_the_single_slice_expansion_target_per_row():
     got = tgt.swap_log_ratio(x, t, pairs)
     for c in COMPOSITIONS:
         single = FixedCompositionClusterExpansionTarget(
-            BinaryExpansionSpec.from_json(SPEC), beta=BETA, target_composition=c)
+            BinaryExpansionSpec.from_json(SPEC), beta=BETA, target_composition=c
+        )
         rows = _n_plus(x) == single.n_plus_target
-        assert torch.allclose(got[rows], single.swap_log_ratio(x[rows], t[rows], pairs), atol=1e-6)
+        assert torch.allclose(
+            got[rows], single.swap_log_ratio(x[rows], t[rows], pairs), atol=1e-6
+        )
 
 
 def test_anchor_slice_is_the_first_composition_and_energy_is_the_expansions():
@@ -76,7 +84,8 @@ def test_anchor_slice_is_the_first_composition_and_energy_is_the_expansions():
 def test_assert_on_manifold_accepts_members_rejects_others():
     tgt = _mixture()
     tgt.assert_on_manifold(tgt.sample_base(50, device="cpu"))
-    off = torch.full((1, 16), -1.0); off[0, :3] = 1.0                     # n_Au = 3, not on the grid
+    off = torch.full((1, 16), -1.0)
+    off[0, :3] = 1.0  # n_Au = 3, not on the grid
     with pytest.raises(AssertionError):
         tgt.assert_on_manifold(off)
 

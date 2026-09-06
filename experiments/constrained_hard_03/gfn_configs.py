@@ -192,8 +192,16 @@ def _gfn_d16_sweep_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCel
 # ladder also drops lr 1e-3 -> 3e-4 at step 20k; the GFN trains flat-lr —
 # a declared deviation the star's flat 3e-4 arm brackets.)
 _D64_GFN_SIGMA_STAGES = (
-    0.100, 0.140, 0.170, 0.190, 0.205, 0.215,
-    SIGMA_C, SIGMA_C, SIGMA_C, SIGMA_C,
+    0.100,
+    0.140,
+    0.170,
+    0.190,
+    0.205,
+    0.215,
+    SIGMA_C,
+    SIGMA_C,
+    SIGMA_C,
+    SIGMA_C,
 )
 
 # Trimmed star around the d64 centre, sigma_c only (the discriminating
@@ -203,13 +211,14 @@ _D64_GFN_SIGMA_STAGES = (
 # 10k" no longer excuses it at 50k, 3e-3 because the FLDB triplet sat
 # disjoint above its centre.
 _D64_STAR_ARMS = (
-    ("l3e4", "e005"), ("l3e3", "e005"), ("l1e3", "e000"), ("l1e3", "e010"),
+    ("l3e4", "e005"),
+    ("l3e3", "e005"),
+    ("l1e3", "e000"),
+    ("l1e3", "e010"),
 )
 
 
-def _gfn_d64_parity_cell(
-    objective: str, sigma_label: str, sigma: float
-) -> GFNCellCfg:
+def _gfn_d64_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNCellCfg:
     """8x8 centre: the validated 4x4 parity recipe at the house d64 budget.
 
     Parity is measured params again: the SAME hidden 64 / 2 layers / 4
@@ -234,13 +243,9 @@ def _gfn_d64_parity_cell(
         eval_every=200,
         compile_policy=True,
         checkpoint_every=5000,
-        sigma_stages=(
-            _D64_GFN_SIGMA_STAGES if sigma_label == "s220" else ()
-        ),
+        sigma_stages=(_D64_GFN_SIGMA_STAGES if sigma_label == "s220" else ()),
     )
-    return replace(
-        cell, name=f"GFN_d64_c50_{sigma_label}_{objective}_50k_par"
-    )
+    return replace(cell, name=f"GFN_d64_c50_{sigma_label}_{objective}_50k_par")
 
 
 def _gfn_d64_star_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCellCfg:
@@ -310,28 +315,30 @@ GFN_CONFIGS.update(
 # confounded during the ladder. NEVER a table row (breaks budget parity);
 # it buys the sentence "comparable quality at twice the budget, TB
 # dominates at matched budget" — or refutes it.
-GFN_CONFIGS.update({
-    cell.name: cell
-    for cell in (
-        replace(
-            _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
-            name="GFN_d64_c50_s220_fldb_100k_par",
-            n_steps=100_000,
-        ),
-        # Standalone-flow arm: the torchgfn-conventional parameterisation
-        # at the matched 50k budget, ONE lever off the centre. Compared
-        # against the centre (policy identical), so
-        # the added flow-MLP params (~17k at d64) are a declared delta,
-        # not a parity break — parity with the house heads binds the
-        # PRINTED centre rows, and this arm's comparison never leaves the
-        # fldb family.
-        replace(
-            _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
-            name="GFN_d64_c50_s220_fldb_50k_sfh",
-            standalone_flow_head=True,
-        ),
-    )
-})
+GFN_CONFIGS.update(
+    {
+        cell.name: cell
+        for cell in (
+            replace(
+                _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
+                name="GFN_d64_c50_s220_fldb_100k_par",
+                n_steps=100_000,
+            ),
+            # Standalone-flow arm: the torchgfn-conventional parameterisation
+            # at the matched 50k budget, ONE lever off the centre. Compared
+            # against the centre (policy identical), so
+            # the added flow-MLP params (~17k at d64) are a declared delta,
+            # not a parity break — parity with the house heads binds the
+            # PRINTED centre rows, and this arm's comparison never leaves the
+            # fldb family.
+            replace(
+                _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
+                name="GFN_d64_c50_s220_fldb_50k_sfh",
+                standalone_flow_head=True,
+            ),
+        )
+    }
+)
 
 
 # The 16x16 rung: the fairness claim the comparator subsection owes —
@@ -348,7 +355,12 @@ GFN_CONFIGS.update({
 # matched ITS rung's house cells). Flat lr stays a declared deviation, as
 # at d64.
 _D256_GFN_SIGMA_STAGES = (
-    0.100, 0.140, 0.170, 0.190, 0.205, 0.215,
+    0.100,
+    0.140,
+    0.170,
+    0.190,
+    0.205,
+    0.215,
 ) + (SIGMA_C,) * 14
 
 
@@ -379,9 +391,7 @@ def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
     touched."""
     sigma_c = sigma_label == "s220"
     cell = replace(
-        _gfn_d64_parity_cell(
-            objective, sigma_label, SIGMA_C if sigma_c else 0.10
-        ),
+        _gfn_d64_parity_cell(objective, sigma_label, SIGMA_C if sigma_c else 0.10),
         D=16,
         hidden_dim=68,
         n_steps=100_000 if sigma_c else 50_000,
@@ -402,14 +412,16 @@ def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
     )
 
 
-GFN_CONFIGS.update({
-    cell.name: cell
-    for objective in GFN_OBJECTIVES
-    for cell in (
-        _gfn_d256_parity_cell(objective, "s010"),
-        _gfn_d256_parity_cell(objective, "s220"),
-    )
-})
+GFN_CONFIGS.update(
+    {
+        cell.name: cell
+        for objective in GFN_OBJECTIVES
+        for cell in (
+            _gfn_d256_parity_cell(objective, "s010"),
+            _gfn_d256_parity_cell(objective, "s220"),
+        )
+    }
+)
 
 
 # The 20x20 rung: the TB comparator carried to the chapter's largest
@@ -446,11 +458,13 @@ def _gfn_d400_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
     )
 
 
-GFN_CONFIGS.update({
-    cell.name: cell
-    for objective in GFN_OBJECTIVES
-    for cell in (
-        _gfn_d400_parity_cell(objective, "s010"),
-        _gfn_d400_parity_cell(objective, "s220"),
-    )
-})
+GFN_CONFIGS.update(
+    {
+        cell.name: cell
+        for objective in GFN_OBJECTIVES
+        for cell in (
+            _gfn_d400_parity_cell(objective, "s010"),
+            _gfn_d400_parity_cell(objective, "s220"),
+        )
+    }
+)

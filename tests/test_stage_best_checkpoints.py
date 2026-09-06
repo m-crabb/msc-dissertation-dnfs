@@ -15,6 +15,7 @@ What correct looks like, written before the implementation:
   final.pt path are untouched, and with the flag off (the default and every
   archived config) no new files appear.
 """
+
 import json
 from pathlib import Path
 
@@ -39,9 +40,14 @@ def _tiny_head():
 
 def _tiny_cfgs(**train_overrides):
     train_kwargs = dict(
-        n_steps=8, batch_size=8, outer_batch_size=8,
-        inner_steps_per_outer=2, lr=1e-3, seed=0,
-        replay_buffer_cycles=1, grad_clip_max_norm=500.0,
+        n_steps=8,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=1,
+        grad_clip_max_norm=500.0,
         warmup_steps=0,
     )
     train_kwargs.update(train_overrides)
@@ -64,8 +70,14 @@ def test_stage_best_checkpoints_written_per_stage_with_metadata(tmp_path):
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(stage_best_checkpoints=True)
     train_swap(
-        _tiny_head(), target, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-        use_wandb=False, estimator_mode="control_variate",
+        _tiny_head(),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
         sigma_curriculum=_TWO_STAGE_CURRICULUM,
     )
     ckpt_dir = Path(tmp_path) / "checkpoints"
@@ -87,8 +99,14 @@ def test_stage_best_checkpoints_off_by_default_writes_nothing(tmp_path):
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
     train_swap(
-        _tiny_head(), target, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-        use_wandb=False, estimator_mode="control_variate",
+        _tiny_head(),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
         sigma_curriculum=_TWO_STAGE_CURRICULUM,
     )
     ckpt_dir = Path(tmp_path) / "checkpoints"

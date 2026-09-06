@@ -171,9 +171,11 @@ def test_d10_c05_l50_anneal_mirrors_ne64_with_lambda_curriculum_only():
     base = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64_anneal"]
     stages = cfg.lambda_curriculum.stages
-    assert [
-        (s.start_step, s.composition_penalty_strength) for s in stages
-    ] == [(0, 10.0), (10_000, 25.0), (20_000, 50.0)]
+    assert [(s.start_step, s.composition_penalty_strength) for s in stages] == [
+        (0, 10.0),
+        (10_000, 25.0),
+        (20_000, 50.0),
+    ]
     assert stages[-1].composition_penalty_strength == (
         cfg.ising.composition_penalty_strength
     )
@@ -292,7 +294,7 @@ def test_hard_cell_is_fixed_composition_no_penalty():
     assert cfg.ising.D == 4
     assert cfg.ising.target_composition == 0.5
     assert cfg.ising.composition_penalty_strength == 0.0
-    assert cfg.ising.sigma < 0.2                       # subcritical floor rung
+    assert cfg.ising.sigma < 0.2  # subcritical floor rung
     assert cfg.model.kind == "letf"
     assert cfg.head_kind == "doubly_hollow"
 
@@ -303,9 +305,7 @@ def test_hard_ladder_covers_three_sigmas_plus_control():
     # Scoped to the binary D=16 ladder this test is about: `_dh` alone now
     # also catches the Potts gate cell (H3_d9, a different lattice, species
     # count and sigma convention), which is not a rung of this ladder.
-    ladder = [
-        k for k in CONFIGS if k.startswith("H2_d16") and k.endswith("_dh")
-    ]
+    ladder = [k for k in CONFIGS if k.startswith("H2_d16") and k.endswith("_dh")]
     assert sorted(CONFIGS[k].ising.sigma for k in ladder) == [0.10, 0.223, 0.40]
     control = CONFIGS["H2_d16_c50_s010_letf_na"]
     assert control.head_kind == "non_antisym"
@@ -369,7 +369,9 @@ def test_d64_50k_curriculum_cell_mirrors_base_except_budget_and_ladder():
         for stage in stages
     )
     normalised = replace(
-        cell, name=base.name, curriculum=None,
+        cell,
+        name=base.name,
+        curriculum=None,
         train=replace(cell.train, n_steps=base.train.n_steps),
     )
     assert normalised == base
@@ -387,9 +389,7 @@ def test_hard_cfg_anchor_chunk_size_reaches_mask_one_head():
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
     cfg = CONFIGS["H2_d64_c50_s223_letf_mo"]
-    backbone = LeTFRateMatrix(
-        d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
-    )
+    backbone = LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
     assert cfg.anchor_chunk_size is None
     assert build_swap_head(cfg, backbone).anchor_chunk_size is None
     chunked = replace(cfg, anchor_chunk_size=32)
@@ -409,12 +409,12 @@ def test_hard_cfg_band_capacity_knobs_reach_band_heads():
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
     cfg = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
-    backbone = LeTFRateMatrix(
-        d=64, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
-    )
+    backbone = LeTFRateMatrix(d=64, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
 
     assert (cfg.band_feature_dim, cfg.attention_dim, cfg.pair_offsets) == (
-        None, None, None,
+        None,
+        None,
+        None,
     )
     default_head = build_swap_head(cfg, backbone)
     assert default_head.pair_offsets == (1, cfg.ising.D)
@@ -462,8 +462,7 @@ def test_band_push_cells_mirror_ma_twin_except_declared_fields():
     wide = CONFIGS["H2_d64_c50_s223_letf_ma_wide_50k_curr"]
     assert (wide.band_feature_dim, wide.attention_dim) == (32, 64)
     assert (
-        replace(wide, name=twin.name, band_feature_dim=None, attention_dim=None)
-        == twin
+        replace(wide, name=twin.name, band_feature_dim=None, attention_dim=None) == twin
     )
 
     offsets = CONFIGS["H2_d64_c50_s223_letf_ma_offs_50k_curr"]
@@ -609,13 +608,18 @@ def test_grouped_anchor_cells_mirror_ma_twin_except_declared_fields():
     contiguous = CONFIGS["H2_d64_c50_s223_letf_ga8_contig_50k_curr"]
 
     for cell, n_groups, grouping in (
-        (ga8, 8, "diagonal"), (ga16, 16, "diagonal"), (contiguous, 8, "contiguous"),
+        (ga8, 8, "diagonal"),
+        (ga16, 16, "diagonal"),
+        (contiguous, 8, "contiguous"),
     ):
         assert cell.head_kind == "grouped_anchor"
         assert (cell.n_groups, cell.grouping) == (n_groups, grouping)
         normalised = replace(
-            cell, name=twin.name, head_kind=twin.head_kind,
-            n_groups=None, grouping="diagonal",
+            cell,
+            name=twin.name,
+            head_kind=twin.head_kind,
+            n_groups=None,
+            grouping="diagonal",
         )
         assert normalised == twin
 
@@ -647,8 +651,11 @@ def test_build_swap_head_wires_the_grouped_anchor_knobs():
             d=cfg.ising.D**2, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2
         )
 
-    expected = {"ga8": (8, "diagonal"), "ga16": (16, "diagonal"),
-                "ga8_contig": (8, "contiguous")}
+    expected = {
+        "ga8": (8, "diagonal"),
+        "ga16": (16, "diagonal"),
+        "ga8_contig": (8, "contiguous"),
+    }
     for tag, (n_groups, grouping) in expected.items():
         cfg = CONFIGS[f"H2_d64_c50_s223_letf_{tag}_50k_curr"]
         head = build_swap_head(cfg, _backbone(cfg))
@@ -724,8 +731,13 @@ def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
         "fmoatt": {"interior_band": "attention", "site_orderings": ("row", "col")},
     }
     factorised_fields = (
-        "bilinear_rank", "factor_dim", "global_feature_dim",
-        "use_bilinear", "use_global", "site_orderings", "interior_band",
+        "bilinear_rank",
+        "factor_dim",
+        "global_feature_dim",
+        "use_bilinear",
+        "use_global",
+        "site_orderings",
+        "interior_band",
     )
     for arm, knobs in arm_knobs.items():
         for sigma_label in ("s010", "s223"):
@@ -757,9 +769,7 @@ def test_fab8_d64_rung_mirrors_ma_curriculum_twin_except_declared_fields():
     twin = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"]
     assert cell.head_kind == "factorised"
     assert cell.ema_decay == 0.9999 and twin.ema_decay == 0.0
-    rebuilt = replace(
-        cell, name=twin.name, head_kind=twin.head_kind, ema_decay=0.0
-    )
+    rebuilt = replace(cell, name=twin.name, head_kind=twin.head_kind, ema_decay=0.0)
     assert rebuilt == twin
 
 
@@ -774,9 +784,7 @@ def test_fab16_d64_rung_mirrors_fab8_rung_except_rank():
     cell = CONFIGS["H2_d64_c50_s223_letf_fab16_50k_curr"]
     twin = CONFIGS["H2_d64_c50_s223_letf_fab8_50k_curr"]
     assert cell.bilinear_rank == 16
-    rebuilt = replace(
-        cell, name=twin.name, bilinear_rank=twin.bilinear_rank
-    )
+    rebuilt = replace(cell, name=twin.name, bilinear_rank=twin.bilinear_rank)
     assert rebuilt == twin
 
 
@@ -792,9 +800,7 @@ def test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings():
     cell = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr"]
     twin = CONFIGS["H2_d64_c50_s223_letf_fab8_50k_curr"]
     assert cell.site_orderings == ("row", "col")
-    rebuilt = replace(
-        cell, name=twin.name, site_orderings=twin.site_orderings
-    )
+    rebuilt = replace(cell, name=twin.name, site_orderings=twin.site_orderings)
     assert rebuilt == twin
 
 
@@ -821,9 +827,7 @@ def test_d256_cv2_cell_mirrors_naive_rescue_except_declared_fields():
         estimator=twin.estimator,
         curriculum=twin.curriculum,
         ema_decay=twin.ema_decay,
-        train=replace(
-            cell.train, n_steps=twin.train.n_steps, lr=twin.train.lr
-        ),
+        train=replace(cell.train, n_steps=twin.train.n_steps, lr=twin.train.lr),
     )
     assert rebuilt == twin
 
@@ -938,9 +942,7 @@ def test_d256_fmo2_warm_ne512_differs_from_its_twin_in_the_grid_alone():
     twin = CONFIGS["H2_d256_c50_s223_letf_fmo2_20k_sc_warm"]
     assert cell.ctmc.n_euler_steps == 512 == 2 * cell.ising.D**2
     assert twin.ctmc.n_euler_steps == 128
-    rebuilt = replace(
-        cell, name=twin.name, ctmc=replace(cell.ctmc, n_euler_steps=128)
-    )
+    rebuilt = replace(cell, name=twin.name, ctmc=replace(cell.ctmc, n_euler_steps=128))
     assert rebuilt == twin
 
 
@@ -981,7 +983,13 @@ def test_d16_unconstrained_control_mirrors_d8_walkback_except_declared():
     assert cell.train.n_steps == 50_000
     ladder = cell.curriculum.stages
     assert [s.sigma for s in ladder] == [
-        0.100, 0.140, 0.170, 0.190, 0.205, 0.215, 0.22305
+        0.100,
+        0.140,
+        0.170,
+        0.190,
+        0.205,
+        0.215,
+        0.22305,
     ]
     assert [s.start_step for s in ladder] == list(range(0, 35_000, 5_000))
     # lr drops to 3e-4 exactly on reaching sigma=0.205, per the hard recipe.
@@ -1142,9 +1150,7 @@ def test_m3_ctb512_d64_smoke_mirrors_ma_recipe_except_declared_fields():
     rebuilt = replace(
         cell,
         name=twin.name,
-        train=replace(
-            cell.train, n_steps=twin.train.n_steps, c_t_batch=None
-        ),
+        train=replace(cell.train, n_steps=twin.train.n_steps, c_t_batch=None),
         curriculum=twin.curriculum,
     )
     assert rebuilt == twin
@@ -1176,12 +1182,9 @@ def test_swap_route_never_reads_the_ising_log_ratio_clamp_field():
 
     torch.manual_seed(0)
     head = LeTFMaskOneSwapHead(
-        LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2,
-                       n_heads=2)
+        LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
     )
-    target = FixedCompositionIsingTarget(
-        D=4, sigma=0.223, target_composition=0.5
-    )
+    target = FixedCompositionIsingTarget(D=4, sigma=0.223, target_composition=0.5)
     x = target.sample_base(8, device="cpu")
     t = torch.full((8,), 0.7)
     reference = residual_swap(x, t, 0.0, head, target)
@@ -1228,8 +1231,7 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
     # arm_b_ef is the exact-field twin of arm_b: the channel flag alone differs.
     assert arm_b_ef.exact_field_channel and not arm_b.exact_field_channel
     assert replace(arm_b_ef, name=arm_b.name, exact_field_channel=False) == arm_b
-    for arm in (arm_a, arm_b, arm_p, arm_p03, arm_c, arm_d, arm_d_lr03,
-                arm_b_ef):
+    for arm in (arm_a, arm_b, arm_p, arm_p03, arm_c, arm_d, arm_d_lr03, arm_b_ef):
         assert arm.ctmc.n_euler_steps == 128, arm.name
         assert arm.train.batch_size == 512, arm.name
         assert arm.train.loss_microbatch_size == 128, arm.name
@@ -1238,15 +1240,18 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
     # with the backward schedule riding for the reason above.
     assert arm_a.estimator == "control_variate"
     assert arm_a.train.halt_on_cv_inversion_after == 2000
-    assert replace(
-        arm_a,
-        name=cvcont.name,
-        ctmc=replace(arm_a.ctmc, n_euler_steps=cvcont.ctmc.n_euler_steps),
-        train=replace(
-            arm_a.train,
-            loss_microbatch_size=cvcont.train.loss_microbatch_size,
-        ),
-    ) == cvcont
+    assert (
+        replace(
+            arm_a,
+            name=cvcont.name,
+            ctmc=replace(arm_a.ctmc, n_euler_steps=cvcont.ctmc.n_euler_steps),
+            train=replace(
+                arm_a.train,
+                loss_microbatch_size=cvcont.train.loss_microbatch_size,
+            ),
+        )
+        == cvcont
+    )
 
     # arm_b vs the keystone: the estimator, the horizon and the cold-start
     # tripwire are the three declared changes. arm_a and arm_b then carry the SAME
@@ -1257,38 +1262,42 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
     assert arm_b.train.halt_on_cv_inversion_after == 5000
     assert arm_b.curriculum == keystone.curriculum
     assert arm_b.curriculum.stages[-1].start_step == 30_000
-    assert replace(
-        arm_b,
-        name=keystone.name,
-        estimator=keystone.estimator,
-        train=replace(
-            arm_b.train,
-            n_steps=keystone.train.n_steps,
-            halt_on_cv_inversion_after=keystone.train.halt_on_cv_inversion_after,
-        ),
-    ) == keystone
+    assert (
+        replace(
+            arm_b,
+            name=keystone.name,
+            estimator=keystone.estimator,
+            train=replace(
+                arm_b.train,
+                n_steps=keystone.train.n_steps,
+                halt_on_cv_inversion_after=keystone.train.halt_on_cv_inversion_after,
+            ),
+        )
+        == keystone
+    )
 
     # arm_p vs the keystone: capacity only, width and depth bundled as declared.
     assert (arm_p.model.hidden_dim, arm_p.model.n_layers) == (128, 3)
     assert arm_p.model.n_heads == keystone.model.n_heads == 4
     assert arm_p.estimator == "naive_mc"
-    assert replace(
-        arm_p,
-        name=keystone.name,
-        model=replace(
-            arm_p.model,
-            hidden_dim=keystone.model.hidden_dim,
-            n_layers=keystone.model.n_layers,
-        ),
-    ) == keystone
+    assert (
+        replace(
+            arm_p,
+            name=keystone.name,
+            model=replace(
+                arm_p.model,
+                hidden_dim=keystone.model.hidden_dim,
+                n_layers=keystone.model.n_layers,
+            ),
+        )
+        == keystone
+    )
 
     # arm_p03 vs arm_p: the curriculum lr is the only change, flattened to
     # the ladder's final value at every stage so the h128 lr artefact the 5k
     # screen measured is separable from a capacity effect.
     assert {stage.lr for stage in arm_p03.curriculum.stages} == {3e-4}
-    assert replace(
-        arm_p03, name=arm_p.name, curriculum=arm_p.curriculum
-    ) == arm_p
+    assert replace(arm_p03, name=arm_p.name, curriculum=arm_p.curriculum) == arm_p
 
     # arm_c vs arm_a and arm_d vs arm_b: capacity only, on each h32 arm.
     for capacity_arm, base_arm in ((arm_c, arm_a), (arm_d, arm_b)):
@@ -1296,23 +1305,24 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
             128,
             3,
         ), capacity_arm.name
-        assert replace(
-            capacity_arm,
-            name=base_arm.name,
-            model=replace(
-                capacity_arm.model,
-                hidden_dim=base_arm.model.hidden_dim,
-                n_layers=base_arm.model.n_layers,
-            ),
-        ) == base_arm, capacity_arm.name
+        assert (
+            replace(
+                capacity_arm,
+                name=base_arm.name,
+                model=replace(
+                    capacity_arm.model,
+                    hidden_dim=base_arm.model.hidden_dim,
+                    n_layers=base_arm.model.n_layers,
+                ),
+            )
+            == base_arm
+        ), capacity_arm.name
 
     # arm_d_lr03 vs arm_d: the curriculum lr is the only change, the same
     # flat 3e-4 treatment as arm_p03 — needed because arm_p03 showed the
     # ladder lr is an artefact at h128, voiding arm_d's capacity read there.
     assert {stage.lr for stage in arm_d_lr03.curriculum.stages} == {3e-4}
-    assert replace(
-        arm_d_lr03, name=arm_d.name, curriculum=arm_d.curriculum
-    ) == arm_d
+    assert replace(arm_d_lr03, name=arm_d.name, curriculum=arm_d.curriculum) == arm_d
 
 
 def test_interior_separation_cells_are_single_variable_twins():
@@ -1337,9 +1347,12 @@ def test_interior_separation_cells_are_single_variable_twins():
     ):
         cell = CONFIGS[f"H2_d64_c50_s223_letf_{arm}_50k_curr"]
         assert (cell.interior_band, cell.site_orderings) == (band, orderings)
-        assert replace(
-            cell, name=fmo2.name, interior_band=None, site_orderings=("row", "col")
-        ) == fmo2
+        assert (
+            replace(
+                cell, name=fmo2.name, interior_band=None, site_orderings=("row", "col")
+            )
+            == fmo2
+        )
 
 
 def test_bilinear_exterior_cells_change_only_the_combiner():
@@ -1354,12 +1367,19 @@ def test_bilinear_exterior_cells_change_only_the_combiner():
         for arm, twin_arm in (("mab", "ma"), ("ivb", "iv")):
             cell = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k"]
             twin = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{twin_arm}_10k"]
-            assert cell.exterior_combiner == "bilinear" and twin.exterior_combiner == "mlp"
+            assert (
+                cell.exterior_combiner == "bilinear" and twin.exterior_combiner == "mlp"
+            )
             assert replace(cell, name=twin.name, exterior_combiner="mlp") == twin
     for arm, twin_arm in (("mab", "ma"), ("ivb", "iv")):
         cell = CONFIGS[f"H2_d64_c50_s223_letf_{arm}_50k_curr"]
         twin = CONFIGS[f"H2_d64_c50_s223_letf_{twin_arm}_50k_curr"]
-        assert replace(cell, name=twin.name, exterior_combiner="mlp", ema_decay=twin.ema_decay) == twin
+        assert (
+            replace(
+                cell, name=twin.name, exterior_combiner="mlp", ema_decay=twin.ema_decay
+            )
+            == twin
+        )
 
 
 def test_thp_d256_twins_of_arm_b():
@@ -1373,12 +1393,16 @@ def test_thp_d256_twins_of_arm_b():
     arm_b = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
     for name, fields in {
         "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2": {},
-        "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef": {"exact_field_channel": False},
+        "H2_d256_c50_s223_letf_thp_70k_curr_b512_ne128_cv2_ef": {
+            "exact_field_channel": False
+        },
         "H2_d256_c50_s223_letf_thp2_70k_curr_b512_ne128_cv2": {"patch_radius": None},
     }.items():
         cell = CONFIGS[name]
         assert cell.head_kind == "two_hole_patch"
-        assert replace(cell, name=arm_b.name, head_kind=arm_b.head_kind, **fields) == arm_b
+        assert (
+            replace(cell, name=arm_b.name, head_kind=arm_b.head_kind, **fields) == arm_b
+        )
         assert cell.train.loss_microbatch_size == 128 and cell.train.batch_size == 512
 
 
@@ -1416,14 +1440,17 @@ def test_wave1_sigma_c_twins_mirror_their_archived_parents():
             )
 
         # Everything not declared above is identical to the archived parent.
-        assert replace(
-            twin,
-            name=parent.name,
-            ising=replace(twin.ising, sigma=parent.ising.sigma),
-            train=replace(twin.train, c_t_from_rollout=False),
-            model=replace(twin.model, compile_model=False),
-            curriculum=parent.curriculum,
-        ) == parent
+        assert (
+            replace(
+                twin,
+                name=parent.name,
+                ising=replace(twin.ising, sigma=parent.ising.sigma),
+                train=replace(twin.train, c_t_from_rollout=False),
+                model=replace(twin.model, compile_model=False),
+                curriculum=parent.curriculum,
+            )
+            == parent
+        )
 
 
 def test_amort_specialist_twins_mirror_c05_except_composition():
@@ -1441,9 +1468,9 @@ def test_amort_specialist_twins_mirror_c05_except_composition():
         twin = CONSTRAINED_CONFIGS[name]
         assert twin.ising.target_composition == c_target, name
         rebuilt = replace(
-            twin, name=base.name,
-            ising=replace(twin.ising,
-                          target_composition=base.ising.target_composition),
+            twin,
+            name=base.name,
+            ising=replace(twin.ising, target_composition=base.ising.target_composition),
         )
         assert rebuilt == base, name
 
@@ -1458,15 +1485,17 @@ def test_flat_window_ablation_mirrors_conditioned_cell_except_curriculum():
     from dataclasses import replace
 
     base = CONSTRAINED_CONFIGS["S2_d4_camort_50k_l50_letf_anneal_offset_clip50"]
-    twin = CONSTRAINED_CONFIGS[
-        "S2_d4_camort_50k_l50_letf_anneal_offset_clip50_flatw30"]
+    twin = CONSTRAINED_CONFIGS["S2_d4_camort_50k_l50_letf_anneal_offset_clip50_flatw30"]
     assert twin.composition.curriculum is None
     assert twin.composition.half_width == 0.30
     rebuilt = replace(
-        twin, name=base.name,
-        composition=replace(twin.composition,
-                            half_width=base.composition.half_width,
-                            curriculum=base.composition.curriculum),
+        twin,
+        name=base.name,
+        composition=replace(
+            twin.composition,
+            half_width=base.composition.half_width,
+            curriculum=base.composition.curriculum,
+        ),
     )
     assert rebuilt == base
 
@@ -1483,6 +1512,7 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
+
     from discrete_flow_sampler.targets.ising import SIGMA_C, SIGMA_C_LEGACY
 
     def deoptimised(cell):
@@ -1523,8 +1553,11 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
         ("mo", "H2_d64_c50_s223_letf_mo_50k_curr", {}),
         ("ma", "H2_d64_c50_s223_letf_ma_50k_curr", {}),
         ("fimo2ef", "H2_d64_c50_s223_letf_fimo2ef_50k_curr", {}),
-        ("fmo2ef", "H2_d64_c50_s223_letf_fmo2_50k_curr",
-         {"exact_field_channel": False}),
+        (
+            "fmo2ef",
+            "H2_d64_c50_s223_letf_fmo2_50k_curr",
+            {"exact_field_channel": False},
+        ),
         ("thp", "H2_d64_c50_s223_letf_thp_50k_curr", {}),
     ):
         w2 = CONFIGS[f"H2_d64_c50_s220_letf_{arm}_50k_curr_w2"]
@@ -1536,7 +1569,9 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
         final_w2, final_twin = w2.curriculum.stages[-1], twin.curriculum.stages[-1]
         assert final_w2.sigma == SIGMA_C and final_twin.sigma == 0.223, w2.name
         assert (final_w2.start_step, final_w2.lr) == (
-            final_twin.start_step, final_twin.lr), w2.name
+            final_twin.start_step,
+            final_twin.lr,
+        ), w2.name
         rebuilt = replace(
             deoptimised(w2),
             name=twin.name,
@@ -1601,6 +1636,7 @@ def test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
+
     from discrete_flow_sampler.targets.ising import SIGMA_C
 
     w2 = CONFIGS["H2_d16_c50_s220_letf_fimo2ef_10k_w2"]
@@ -1609,7 +1645,8 @@ def test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef():
     assert sigma_twin.ising.sigma == 0.223
     assert sigma_twin.compile_head and sigma_twin.train.c_t_from_rollout
     rebuilt = replace(
-        sigma_twin, name=w2.name,
+        sigma_twin,
+        name=w2.name,
         ising=replace(sigma_twin.ising, sigma=SIGMA_C),
     )
     assert rebuilt == w2
@@ -1619,7 +1656,9 @@ def test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef():
     assert not eager_twin.compile_head
     assert not eager_twin.train.c_t_from_rollout
     rebuilt = replace(
-        eager_twin, name=w2.name, compile_head=True,
+        eager_twin,
+        name=w2.name,
+        compile_head=True,
         train=replace(eager_twin.train, c_t_from_rollout=True),
     )
     assert rebuilt == w2
@@ -1643,7 +1682,8 @@ def test_hold_round2_twins_isolate_compile_and_ef():
     assert compile_twin.compile_head
     assert not compile_twin.train.c_t_from_rollout
     rebuilt = replace(
-        compile_twin, name=w2.name,
+        compile_twin,
+        name=w2.name,
         train=replace(compile_twin.train, c_t_from_rollout=True),
     )
     assert rebuilt == w2
@@ -1693,13 +1733,18 @@ def test_wave2_house_cells_build_their_heads():
     name but are not house cells -- and would in any case be built here on
     the wrong backbone, since this harness hands every cell a plain leTF."""
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, _WAVE2_ARM_KNOBS, build_swap_head,
+        _WAVE2_ARM_KNOBS,
+        CONFIGS,
+        build_swap_head,
     )
+
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
     wave2 = [
-        name for arm in _WAVE2_ARM_KNOBS for name in (
+        name
+        for arm in _WAVE2_ARM_KNOBS
+        for name in (
             f"H2_d16_c50_s010_letf_{arm}_10k_w2",
             f"H2_d16_c50_s220_letf_{arm}_10k_w2",
             f"H2_d64_c50_s220_letf_{arm}_50k_curr_w2",
@@ -1710,7 +1755,7 @@ def test_wave2_house_cells_build_their_heads():
     assert all(cfg.model.kind == "letf" for cfg in map(CONFIGS.get, wave2))
     for name in wave2:
         cfg = CONFIGS[name]
-        d = cfg.ising.D ** 2
+        d = cfg.ising.D**2
         backbone = LeTFRateMatrix(
             d=d, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
         )
@@ -1743,16 +1788,19 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
     coupling."""
     from dataclasses import replace
 
-    from discrete_flow_sampler.targets.ising import SIGMA_C
     from experiments.constrained_hard_03.configs import CONFIGS
+
+    from discrete_flow_sampler.targets.ising import SIGMA_C
 
     arm_b = CONFIGS["H2_d256_c50_s223_letf_fmo2_70k_curr_b512_ne128_cv2"]
     declared = {
         "thp": {"head_kind": "two_hole_patch"},
         "thp2": {"head_kind": "two_hole_patch", "patch_radius": 2},
         "fimo2ef": {
-            "head_kind": "factorised", "exact_field_channel": True,
-            "interior_band": "prefix", "site_orderings": ("row", "col"),
+            "head_kind": "factorised",
+            "exact_field_channel": True,
+            "interior_band": "prefix",
+            "site_orderings": ("row", "col"),
             "gather_triu_pairs": True,
         },
         # site_orderings PINNED to ('row',). The cell inherits
@@ -1762,7 +1810,8 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
         # were trained as. thp/thp2 need no pin: the patch head still does
         # not read the field.
         "ma": {
-            "head_kind": "masked_attention", "gather_triu_pairs": True,
+            "head_kind": "masked_attention",
+            "gather_triu_pairs": True,
             "site_orderings": ("row",),
         },
     }
@@ -1770,14 +1819,17 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
     eval_chunk = {"ma": 128}
     # Fields the arms set that _ARM_B does not; reset to rebuild the parent.
     reset = {
-        "head_kind": arm_b.head_kind, "patch_radius": None,
-        "exact_field_channel": False, "interior_band": None,
-        "gather_triu_pairs": False, "site_orderings": arm_b.site_orderings,
+        "head_kind": arm_b.head_kind,
+        "patch_radius": None,
+        "exact_field_channel": False,
+        "interior_band": None,
+        "gather_triu_pairs": False,
+        "site_orderings": arm_b.site_orderings,
     }
 
     cells = [
-        (f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3", arm,
-         "s220") for arm in declared
+        (f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3", arm, "s220")
+        for arm in declared
     ] + [
         (f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3", arm, "s010")
         for arm in declared
@@ -1793,7 +1845,8 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
         assert cell.train.halt_on_cv_inversion_after is None, name
         assert cell.train.loss_microbatch_size == microbatch[arm], name
         assert cell.eval.eval_sample_chunk == eval_chunk.get(
-            arm, arm_b.eval.eval_sample_chunk), name
+            arm, arm_b.eval.eval_sample_chunk
+        ), name
         if label == "s220":
             assert cell.ising.sigma == SIGMA_C, name
             assert cell.train.n_steps == 100_000, name
@@ -1801,8 +1854,9 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
             assert cell.curriculum.stages[:-1] == arm_b.curriculum.stages[:-1]
             final, b_final = cell.curriculum.stages[-1], arm_b.curriculum.stages[-1]
             assert final.sigma == SIGMA_C and b_final.sigma == 0.223, name
-            assert (final.start_step, final.lr) == (
-                b_final.start_step, b_final.lr), name
+            assert (final.start_step, final.lr) == (b_final.start_step, b_final.lr), (
+                name
+            )
             # Decision (c) is scoped to factorised x exact sigma_c ONLY.
             assert cell.compile_head == (arm != "fimo2ef"), name
         else:
@@ -1817,16 +1871,13 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
             ising=replace(cell.ising, sigma=arm_b.ising.sigma),
             curriculum=arm_b.curriculum,
             train=replace(
-                cell.train, n_steps=arm_b.train.n_steps,
+                cell.train,
+                n_steps=arm_b.train.n_steps,
                 loss_microbatch_size=arm_b.train.loss_microbatch_size,
                 c_t_from_rollout=False,
-                halt_on_cv_inversion_after=(
-                    arm_b.train.halt_on_cv_inversion_after
-                ),
+                halt_on_cv_inversion_after=(arm_b.train.halt_on_cv_inversion_after),
             ),
-            eval=replace(
-                cell.eval, eval_sample_chunk=arm_b.eval.eval_sample_chunk
-            ),
+            eval=replace(cell.eval, eval_sample_chunk=arm_b.eval.eval_sample_chunk),
             **reset,
         )
         assert rebuilt == arm_b, name
@@ -1845,8 +1896,9 @@ def test_d256_house_twins_isolate_the_radius_and_the_coupling():
     recipe change."""
     from dataclasses import replace
 
-    from discrete_flow_sampler.targets.ising import SIGMA_C
     from experiments.constrained_hard_03.configs import CONFIGS
+
+    from discrete_flow_sampler.targets.ising import SIGMA_C
 
     for template in (
         "H2_d256_c50_s220_letf_{}_100k_curr_b512_ne128_cv2_w3",
@@ -1858,12 +1910,10 @@ def test_d256_house_twins_isolate_the_radius_and_the_coupling():
         assert replace(thp2, name=thp.name, patch_radius=None) == thp
 
     for arm in ("thp", "thp2", "fimo2ef", "ma"):
-        critical = CONFIGS[
-            f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3"]
+        critical = CONFIGS[f"H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3"]
         floor = CONFIGS[f"H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3"]
         # The compile deviation is the fimo2ef sigma_c cell's alone.
-        assert (floor.compile_head != critical.compile_head) == (
-            arm == "fimo2ef"), arm
+        assert (floor.compile_head != critical.compile_head) == (arm == "fimo2ef"), arm
         rebuilt = replace(
             floor,
             name=critical.name,
@@ -1885,13 +1935,22 @@ def test_d256_fimo2ef_head_matches_the_smaller_fimo2ef_cells():
     and pair_offsets is (1, D), the lattice's own row/column adjacency."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    d256 = CONFIGS[
-        "H2_d256_c50_s220_letf_fimo2ef_100k_curr_b512_ne128_cv2_w3"]
+    d256 = CONFIGS["H2_d256_c50_s220_letf_fimo2ef_100k_curr_b512_ne128_cv2_w3"]
     shaping = (
-        "head_kind", "exact_field_channel", "interior_band", "site_orderings",
-        "bilinear_rank", "factor_dim", "global_feature_dim", "use_bilinear",
-        "use_global", "band_feature_dim", "attention_dim", "pair_offsets",
-        "exterior_combiner", "readout_score_scale",
+        "head_kind",
+        "exact_field_channel",
+        "interior_band",
+        "site_orderings",
+        "bilinear_rank",
+        "factor_dim",
+        "global_feature_dim",
+        "use_bilinear",
+        "use_global",
+        "band_feature_dim",
+        "attention_dim",
+        "pair_offsets",
+        "exterior_combiner",
+        "readout_score_scale",
     )
     for smaller_name in (
         "H2_d16_c50_s220_letf_fimo2ef_10k_w2e",
@@ -1900,7 +1959,9 @@ def test_d256_fimo2ef_head_matches_the_smaller_fimo2ef_cells():
         smaller = CONFIGS[smaller_name]
         for field in shaping:
             assert getattr(d256, field) == getattr(smaller, field), (
-                smaller_name, field)
+                smaller_name,
+                field,
+            )
         assert not smaller.gather_triu_pairs, smaller_name
         # Decision (c) holds at every size for factorised x exact sigma_c.
         assert not smaller.compile_head and not d256.compile_head
@@ -1915,9 +1976,10 @@ def test_d256_house_cells_build_their_heads():
     (the ef arms need the target for the field channel's adjacency, and the
     gather and separable flags must survive the constructors), so a knob typo
     fails here and not eighteen hours into a GPU run."""
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     house = [name for name in CONFIGS if name.endswith("_w3")]
     assert len(house) == 19
@@ -1925,13 +1987,17 @@ def test_d256_house_cells_build_their_heads():
         cfg = CONFIGS[name]
         assert cfg.ising.D == 16, name
         backbone = LeTFRateMatrix(
-            d=cfg.ising.D ** 2, vocab_size=2, hidden_dim=16, n_layers=2,
+            d=cfg.ising.D**2,
+            vocab_size=2,
+            hidden_dim=16,
+            n_layers=2,
             n_heads=2,
         )
         target = FixedCompositionIsingTarget(
             D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
         )
         assert build_swap_head(cfg, backbone, target=target) is not None, name
+
 
 def test_d256_house_cells_never_carry_the_cold_cv_tripwire():
     """Production house cells must reach their full budget.
@@ -1992,8 +2058,10 @@ def test_d400_radius_cells_are_declared_transforms_of_arm_b():
         "thp3": {"head_kind": "two_hole_patch", "patch_radius": 3},
     }
     reset = {
-        "head_kind": arm_b.head_kind, "patch_radius": None,
-        "exact_field_channel": False, "interior_band": None,
+        "head_kind": arm_b.head_kind,
+        "patch_radius": None,
+        "exact_field_channel": False,
+        "interior_band": None,
         "gather_triu_pairs": False,
     }
 
@@ -2020,12 +2088,11 @@ def test_d400_radius_cells_are_declared_transforms_of_arm_b():
             ising=replace(cell.ising, D=arm_b.ising.D, sigma=arm_b.ising.sigma),
             curriculum=arm_b.curriculum,
             train=replace(
-                cell.train, n_steps=arm_b.train.n_steps,
+                cell.train,
+                n_steps=arm_b.train.n_steps,
                 loss_microbatch_size=arm_b.train.loss_microbatch_size,
                 c_t_from_rollout=False,
-                halt_on_cv_inversion_after=(
-                    arm_b.train.halt_on_cv_inversion_after
-                ),
+                halt_on_cv_inversion_after=(arm_b.train.halt_on_cv_inversion_after),
             ),
             **reset,
         )
@@ -2066,14 +2133,14 @@ def test_d400_critical_cells_are_their_floor_siblings_at_sigma_c():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, SIGMA_C, _D64_SIGMA_LADDER_SC,
+        _D64_SIGMA_LADDER_SC,
+        CONFIGS,
+        SIGMA_C,
     )
 
     for arm in ("thp2", "thp3"):
         floor = CONFIGS[f"H2_d400_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w4"]
-        crit = CONFIGS[
-            f"H2_d400_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w4"
-        ]
+        crit = CONFIGS[f"H2_d400_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w4"]
         assert crit.ising.sigma == SIGMA_C, arm
         assert crit.curriculum is _D64_SIGMA_LADDER_SC, arm
         assert crit.train.n_steps == 100_000, arm
@@ -2113,7 +2180,10 @@ def test_d400_critical_ladder_is_reused_not_rescaled():
     later would silently make the d256 and d400 critical cells
     incomparable."""
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, SIGMA_C, _D64_SIGMA_LADDER, _D64_SIGMA_LADDER_SC,
+        _D64_SIGMA_LADDER,
+        _D64_SIGMA_LADDER_SC,
+        CONFIGS,
+        SIGMA_C,
     )
 
     stages = _D64_SIGMA_LADDER_SC.stages
@@ -2121,14 +2191,18 @@ def test_d400_critical_ladder_is_reused_not_rescaled():
         s.start_step for s in _D64_SIGMA_LADDER.stages
     ]
     assert [s.start_step for s in stages] == [
-        0, 5_000, 10_000, 15_000, 20_000, 25_000, 30_000
+        0,
+        5_000,
+        10_000,
+        15_000,
+        20_000,
+        25_000,
+        30_000,
     ]
     assert stages[-1].sigma == SIGMA_C
     # No stage carries a lattice-dependent field.
     for stage in stages:
-        assert not any(
-            f in vars(stage) for f in ("D", "d", "lattice_side")
-        ), stage
+        assert not any(f in vars(stage) for f in ("D", "d", "lattice_side")), stage
 
     # The d256 and d400 critical cells share the object, so the schedule
     # cannot drift between the two rungs.
@@ -2163,9 +2237,10 @@ def test_d400_radius_cells_build_their_heads():
     torus, so D=20 earns a fourth level (1, 2, 4, 8) that D=16 does not --
     free extra context that comes with the rung and is NOT a declared knob.
     """
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     cells = [name for name in CONFIGS if name.endswith("_w4")]
     # 2 floor arms + 2 sigma_c arms.
@@ -2173,7 +2248,10 @@ def test_d400_radius_cells_build_their_heads():
     for name in cells:
         cfg = CONFIGS[name]
         backbone = LeTFRateMatrix(
-            d=cfg.ising.D ** 2, vocab_size=2, hidden_dim=16, n_layers=2,
+            d=cfg.ising.D**2,
+            vocab_size=2,
+            hidden_dim=16,
+            n_layers=2,
             n_heads=2,
         )
         target = FixedCompositionIsingTarget(
@@ -2238,16 +2316,20 @@ def test_d576_cells_build_their_heads():
     one this rung -- powers of two whose box fits the torus give (1, 2, 4, 8)
     at D=24 exactly as at D=20, since r=16 would need 33 <= D. So the only
     thing that grows with this lattice is the relative-position embedding."""
+    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     cells = [name for name in CONFIGS if "_w5" in name]
     assert len(cells) == 2
     for name in cells:
         cfg = CONFIGS[name]
         backbone = LeTFRateMatrix(
-            d=cfg.ising.D ** 2, vocab_size=2, hidden_dim=16, n_layers=2,
+            d=cfg.ising.D**2,
+            vocab_size=2,
+            hidden_dim=16,
+            n_layers=2,
             n_heads=2,
         )
         target = FixedCompositionIsingTarget(
@@ -2273,9 +2355,11 @@ def test_every_new_probe_cell_rides_the_optimised_recipe():
     calling `optimised_recipe` directly."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    probes = [n for n in CONFIGS
-              if n.endswith("_win") or n.endswith("_rel") or "_w4" in n
-              or "_w5" in n]
+    probes = [
+        n
+        for n in CONFIGS
+        if n.endswith("_win") or n.endswith("_rel") or "_w4" in n or "_w5" in n
+    ]
     # 4 `mal` window twins + 4 `mar` relative-position twins (4x4 and 8x8,
     # both couplings each) + 8 d400 radius x precision arms (4 at the 0.10
     # floor, 4 at sigma_c) + 2 d576 sigma_c radius arms. Update
@@ -2309,9 +2393,10 @@ def test_arm_b_cells_are_single_variable_and_the_control_is_matched():
     from dataclasses import replace
 
     import torch
-
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, _ARM_B_ARMS, _ARM_B_PARENTS,
+        _ARM_B_ARMS,
+        _ARM_B_PARENTS,
+        CONFIGS,
     )
     from experiments.constrained_hard_03.run import build_target_and_head
 
@@ -2354,7 +2439,9 @@ def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, _ARM_B_D64_ARMS, _ARM_B_D64_PARENT,
+        _ARM_B_D64_ARMS,
+        _ARM_B_D64_PARENT,
+        CONFIGS,
     )
 
     parent = CONFIGS[_ARM_B_D64_PARENT]
@@ -2364,13 +2451,17 @@ def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
     b2 = CONFIGS["H2_d64_c50_s220_letf_fiefb_50k_curr_bond1o"]
     b3 = CONFIGS["H2_d64_c50_s220_letf_fief_50k_curr_1o"]
     b1 = CONFIGS["H2_d64_c50_s220_letf_fimo2efb_50k_curr_bond"]
-    assert len(_ARM_B_D64_ARMS) == 3, "three bond-rung arms; baseline is an existing cfg"
+    assert len(_ARM_B_D64_ARMS) == 3, (
+        "three bond-rung arms; baseline is an existing cfg"
+    )
     # b1 keeps the parent's two orderings and adds bonds -- the uncontaminated
     # "do bonds help" question the b2/b3 pair cannot ask.
     assert b1.site_orderings == parent.site_orderings and b1.global_bond_features
-    for cell, knobs in ((b1, _ARM_B_D64_ARMS["fimo2efb_50k_curr_bond"]),
-                        (b2, _ARM_B_D64_ARMS["fiefb_50k_curr_bond1o"]),
-                        (b3, _ARM_B_D64_ARMS["fief_50k_curr_1o"])):
+    for cell, knobs in (
+        (b1, _ARM_B_D64_ARMS["fimo2efb_50k_curr_bond"]),
+        (b2, _ARM_B_D64_ARMS["fiefb_50k_curr_bond1o"]),
+        (b3, _ARM_B_D64_ARMS["fief_50k_curr_1o"]),
+    ):
         undone = {field: getattr(parent, field) for field in knobs}
         assert replace(cell, name=parent.name, **undone) == parent, cell.name
         assert cell.compile_head and cell.train.c_t_from_rollout, cell.name
@@ -2401,14 +2492,17 @@ def test_raster_ladder_roster_covers_both_rungs():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, _RASTER_LADDER_ARMS, _RASTER_LADDER_PARENTS,
-        _RASTER_LADDER_RUNG_KNOBS, build_swap_head,
+        _RASTER_LADDER_ARMS,
+        _RASTER_LADDER_PARENTS,
+        _RASTER_LADDER_RUNG_KNOBS,
+        CONFIGS,
+        build_swap_head,
     )
+
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
-    assert set(_RASTER_LADDER_ARMS) == {
-        "mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"}
+    assert set(_RASTER_LADDER_ARMS) == {"mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"}
     assert len(_RASTER_LADDER_PARENTS) == 6
 
     for arm, knobs in _RASTER_LADDER_ARMS.items():
@@ -2423,12 +2517,11 @@ def test_raster_ladder_roster_covers_both_rungs():
             # head assembles the same symmetric pair slab.
             rung = _RASTER_LADDER_RUNG_KNOBS.get(pattern, {})
             if knobs.get("head_kind", parent.head_kind) != "masked_attention":
-                rung = {k: v for k, v in rung.items()
-                        if k != "separable_band_scores"}
+                rung = {k: v for k, v in rung.items() if k != "separable_band_scores"}
             # Only the roster's knobs may differ from the `ma` parent.
             assert cfg == replace(parent, name=name, **knobs, **rung), name
 
-            d = cfg.ising.D ** 2
+            d = cfg.ising.D**2
             backbone = LeTFRateMatrix(
                 d=d, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
             )
@@ -2440,6 +2533,7 @@ def test_raster_ladder_roster_covers_both_rungs():
 
 # --- composition-amortised cell (hard camort) ------------------------------
 
+
 def test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob():
     """The amortised cell exists to test ONE question (does mixture
     training buy back the cross-slice transfer zero-shot loses at
@@ -2448,6 +2542,7 @@ def test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob():
     probe's composition FRACTIONS (n+/64 = 32/30/28/24/20) so the two
     tables read side by side, anchor slice 0.5 first."""
     from dataclasses import asdict
+
     from experiments.constrained_hard_03.configs import CONFIGS
 
     centre = CONFIGS["H2_d64_c50_s220_letf_thp_50k_curr_w2"]
@@ -2470,6 +2565,7 @@ def test_d256_camort_cell_is_the_thp2_critical_twin_plus_the_mixture_knob():
     a grid change would make it a new design un-anchored from the d64
     result."""
     from dataclasses import asdict
+
     from experiments.constrained_hard_03.configs import CONFIGS
 
     centre = CONFIGS["H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3"]
@@ -2492,10 +2588,11 @@ def test_composition_mixture_builds_the_mixture_target():
     the registered slice set, and the anchor slice is the inherited scalar
     (so single-slice diagnostics keep meaning)."""
     from dataclasses import replace
+
     from experiments.constrained_hard_03.configs import CONFIGS
     from experiments.constrained_hard_03.run import build_target_and_head
-    from discrete_flow_sampler.targets.ising import (
-        MixtureCompositionIsingTarget)
+
+    from discrete_flow_sampler.targets.ising import MixtureCompositionIsingTarget
 
     cfg = replace(
         CONFIGS["H2_d16_c50_s010_letf_dh"],
@@ -2510,8 +2607,9 @@ def test_composition_mixture_builds_the_mixture_target():
 def test_composition_mixture_conflicts_with_potts_route():
     """Both knobs claim the target constructor; asking for both must raise
     at build time, not silently pick one."""
-    import pytest
     from dataclasses import replace
+
+    import pytest
     from experiments.constrained_hard_03.configs import CONFIGS
     from experiments.constrained_hard_03.run import build_target_and_head
 
@@ -2529,6 +2627,7 @@ def test_camort_gate_cell_is_the_d16_thp_twin_plus_the_mixture_knob():
     """Same one-lever discipline as the d64 cell, one rung down; the d16
     grid drops 0.46875 because 7.5 up-spins is no slice."""
     from dataclasses import asdict
+
     from experiments.constrained_hard_03.configs import CONFIGS
 
     centre = CONFIGS["H2_d16_c50_s220_letf_thp_10k_w2"]

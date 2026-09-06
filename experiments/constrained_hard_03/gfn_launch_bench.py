@@ -24,12 +24,12 @@ not the AR policy's d sequential one-token kernels).
 
     pixi run -e dev python -m experiments.constrained_hard_03.gfn_launch_bench
 """
+
 import argparse
 import sys
 import time
 
 import torch
-
 from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 from experiments.constrained_hard_03.run_gfn import (
     _loss_and_train_diagnostics,
@@ -124,8 +124,10 @@ def wall_clock_bench(cfg, device):
         seconds = _timed(
             lambda: policy.sample(batch, epsilon=cfg.epsilon), device=device
         )
-        print(f"  rollout B={batch} ({phase}): {seconds*1e3:.1f} ms "
-              f"= {seconds/batch*1e6:.1f} us/sample")
+        print(
+            f"  rollout B={batch} ({phase}): {seconds * 1e3:.1f} ms "
+            f"= {seconds / batch * 1e6:.1f} us/sample"
+        )
 
     def train_step():
         spins, _ = policy.sample(cfg.batch_size, epsilon=cfg.epsilon)
@@ -136,9 +138,11 @@ def wall_clock_bench(cfg, device):
 
     seconds = _timed(train_step, device=device)
     projected_hours = seconds * cfg.n_steps / 3600
-    print(f"  train step B={cfg.batch_size}: {seconds*1e3:.1f} ms "
-          f"-> {cfg.n_steps} steps ~= {projected_hours:.2f} h "
-          f"(+ eval_every rollouts on top)")
+    print(
+        f"  train step B={cfg.batch_size}: {seconds * 1e3:.1f} ms "
+        f"-> {cfg.n_steps} steps ~= {projected_hours:.2f} h "
+        f"(+ eval_every rollouts on top)"
+    )
 
 
 # Inductor kernels differ per SIZE as well as per backend, so each rung's
@@ -153,18 +157,25 @@ _RUNG_GATE_CELLS = {
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--allow-cpu", action="store_true",
-                        help="smoke the script off-venue; the gate only "
-                             "certifies the stack it runs on")
-    parser.add_argument("--rung", choices=sorted(_RUNG_GATE_CELLS),
-                        default="d64",
-                        help="which rung's cells to gate and bench")
+    parser.add_argument(
+        "--allow-cpu",
+        action="store_true",
+        help="smoke the script off-venue; the gate only certifies the stack it runs on",
+    )
+    parser.add_argument(
+        "--rung",
+        choices=sorted(_RUNG_GATE_CELLS),
+        default="d64",
+        help="which rung's cells to gate and bench",
+    )
     args = parser.parse_args()
     if not torch.cuda.is_available() and not args.allow_cpu:
         sys.exit("no CUDA device: run on the launch venue (or --allow-cpu)")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"device: {device} "
-          f"({torch.cuda.get_device_name(0) if device == 'cuda' else 'cpu'})")
+    print(
+        f"device: {device} "
+        f"({torch.cuda.get_device_name(0) if device == 'cuda' else 'cpu'})"
+    )
 
     all_ok = True
     for objective in ("tb", "fldb"):

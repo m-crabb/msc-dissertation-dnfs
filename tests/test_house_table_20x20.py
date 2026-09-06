@@ -21,6 +21,7 @@ module's docstring already promises the factor is "derived, not hard-coded, so
 another rung built this way cannot be mis-billed"; this rung is the one that
 tests the promise.
 """
+
 import json
 from pathlib import Path
 
@@ -41,7 +42,11 @@ def test_rung_is_two_coupling_at_exact_sigma_c():
     against the sigma = 0.1 pool would carry a d<nn>/dsigma systematic that
     no amount of sampling averages away."""
     from experiments.constrained_hard_03.analysis.house_table_20x20 import (
-        REFERENCE_DIRS, SIGMA, SIGMA_LABELS)
+        REFERENCE_DIRS,
+        SIGMA,
+        SIGMA_LABELS,
+    )
+
     from discrete_flow_sampler.targets.ising import SIGMA_C
 
     assert SIGMA_LABELS == ("s010", "s220")
@@ -58,13 +63,19 @@ def test_reference_bill_uses_this_rung_s_lattice_not_the_d256_default():
     convention fails here rather than agreeing with itself.
     """
     from experiments.constrained_hard_03.analysis.house_table_16x16 import (
-        chain_trial_counts)
+        chain_trial_counts,
+    )
+    from experiments.constrained_hard_03.analysis.house_table_20x20 import L as fill_L
     from experiments.constrained_hard_03.analysis.house_table_20x20 import (
-        L as fill_L, reference_trial_counts)
+        reference_trial_counts,
+    )
 
     assert fill_L == 20
-    provenance = {"burn_in_sweeps": 1000, "sampling_sweeps_per_chain": 2000,
-                  "n_chains": 3}
+    provenance = {
+        "burn_in_sweeps": 1000,
+        "sampling_sweeps_per_chain": 2000,
+        "n_chains": 3,
+    }
     expected = (1000 + 2000) * 20 * 20
 
     assert reference_trial_counts(provenance) == [expected] * 3
@@ -72,8 +83,7 @@ def test_reference_bill_uses_this_rung_s_lattice_not_the_d256_default():
     assert reference_trial_counts(provenance) != chain_trial_counts(provenance)
 
 
-@pytest.mark.skipif(not REFERENCE_DIR.is_dir(),
-                    reason="d400 reference not generated")
+@pytest.mark.skipif(not REFERENCE_DIR.is_dir(), reason="d400 reference not generated")
 def test_reference_is_certified_at_this_lattice_and_coupling():
     """A reference is a reference only for its own lattice AND sigma.
 
@@ -90,17 +100,16 @@ def test_reference_is_certified_at_this_lattice_and_coupling():
     assert certification["certified"] is True
 
 
-@pytest.mark.skipif(not REFERENCE_DIR_SC.is_dir(),
-                    reason="d400 sigma_c reference not generated")
+@pytest.mark.skipif(
+    not REFERENCE_DIR_SC.is_dir(), reason="d400 sigma_c reference not generated"
+)
 def test_sigma_c_reference_is_certified_at_exact_sigma_c():
     """The sigma_c pool must record EXACT SIGMA_C -- the d256 sc pool's
     0.22305 mislabel is the precedent this assertion exists to catch."""
     from discrete_flow_sampler.targets.ising import SIGMA_C
 
-    provenance = json.loads(
-        (REFERENCE_DIR_SC / "provenance.json").read_text())
-    certification = json.loads(
-        (REFERENCE_DIR_SC / "certification.json").read_text())
+    provenance = json.loads((REFERENCE_DIR_SC / "provenance.json").read_text())
+    certification = json.loads((REFERENCE_DIR_SC / "certification.json").read_text())
 
     assert provenance["lattice_side"] == L
     assert abs(provenance["sigma"] - SIGMA_C) < 1e-12
@@ -122,7 +131,10 @@ def test_external_anchor_gates_on_lattice_side_as_well_as_sigma():
     narrowly and record an external cross-check that was never valid.
     An earlier version of the check keyed on sigma alone."""
     from experiments.constrained_hard_03.generate_kawasaki_reference_d256 import (
-        CERTIFICATION_NN_TARGET, external_nn_anchor)
+        CERTIFICATION_NN_TARGET,
+        external_nn_anchor,
+    )
+
     from discrete_flow_sampler.targets.ising import SIGMA_C
 
     assert external_nn_anchor(SIGMA_C, 16)[0] == CERTIFICATION_NN_TARGET
@@ -131,8 +143,7 @@ def test_external_anchor_gates_on_lattice_side_as_well_as_sigma():
     assert external_nn_anchor(0.1, 20) == (None, None)
 
 
-@pytest.mark.skipif(not REFERENCE_DIR.is_dir(),
-                    reason="d400 reference not generated")
+@pytest.mark.skipif(not REFERENCE_DIR.is_dir(), reason="d400 reference not generated")
 def test_reference_has_no_external_anchor_and_says_so():
     """Off sigma_c there is no mchammer anchor, and that must be RECORDED.
 
@@ -144,14 +155,16 @@ def test_reference_has_no_external_anchor_and_says_so():
 
     anchor = certification.get("external_nn_anchor")
     assert anchor in (None, "none off sigma_c") or anchor.get("target") is None
-    assert certification["multi_chain_agreement"][
-        "gelman_rubin_nn_correlation"] < 1.01
+    assert certification["multi_chain_agreement"]["gelman_rubin_nn_correlation"] < 1.01
 
 
 def test_every_arm_names_a_real_config_at_both_couplings():
     """A renamed arm would otherwise surface as a permanently blank cell."""
     from experiments.constrained_hard_03.analysis.house_table_20x20 import (
-        ARM_CONFIGS, ARMS, SIGMA_LABELS)
+        ARM_CONFIGS,
+        ARMS,
+        SIGMA_LABELS,
+    )
     from experiments.constrained_hard_03.configs import CONFIGS
 
     assert set(ARM_CONFIGS) == set(ARMS)

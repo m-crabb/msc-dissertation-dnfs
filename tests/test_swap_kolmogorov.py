@@ -24,10 +24,10 @@ def _exact_slice(target, D, t_scalar):
     """Exact p_t^C and ∂_t log Z_t^C on the fixed-N slice by enumeration."""
     states = enumerate_states(D * D).float()
     n_plus = ((states + 1) * 0.5).sum(dim=-1)
-    slice_states = states[n_plus == target.n_plus_target]        # (M, d)
+    slice_states = states[n_plus == target.n_plus_target]  # (M, d)
     t = torch.full((slice_states.shape[0],), float(t_scalar))
-    log_p = target.log_p_tilde_t(slice_states, t)                # (M,)
-    p_cond = torch.softmax(log_p, dim=0)                         # p_t^C
+    log_p = target.log_p_tilde_t(slice_states, t)  # (M,)
+    p_cond = torch.softmax(log_p, dim=0)  # p_t^C
     dt_log_Z = (p_cond * target.dt_log_p_tilde_t(slice_states, t)).sum()
     return slice_states, p_cond, dt_log_Z
 
@@ -137,4 +137,5 @@ def test_c_t_offset_rms_ignores_unvisited_slots():
 
 def test_c_t_offset_rms_is_nan_before_any_sample():
     import math
+
     assert math.isnan(c_t_offset_rms(torch.zeros(3), torch.zeros(3)))

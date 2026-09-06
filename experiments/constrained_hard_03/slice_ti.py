@@ -69,6 +69,10 @@ import math
 from pathlib import Path
 
 import numpy as np
+from experiments.constrained_hard_03.probe_analysis_8x8 import (
+    batch_means_tau_int,
+    kawasaki_burn_in_sweeps,
+)
 
 from discrete_flow_sampler.mcmc.kawasaki import (
     init_phase_separated,
@@ -76,16 +80,12 @@ from discrete_flow_sampler.mcmc.kawasaki import (
     run_chain,
     run_local_swap_chain_snapshots,
 )
-from experiments.constrained_hard_03.probe_analysis_8x8 import (
-    batch_means_tau_int,
-    kawasaki_burn_in_sweeps,
-)
 
-NEURAL_F_PER_SITE_8X8_SC = -1.89703   # archived replicate estimate (mean)
-NEURAL_F_SE_8X8_SC = 0.00014          # cross-replicate standard error
+NEURAL_F_PER_SITE_8X8_SC = -1.89703  # archived replicate estimate (mean)
+NEURAL_F_SE_8X8_SC = 0.00014  # cross-replicate standard error
 BURN_IN_FLOOR_SWEEPS = 10_000
 
-SEED_BASE = 7_000                      # disjoint from probe seed ranges
+SEED_BASE = 7_000  # disjoint from probe seed ranges
 CHAIN_SWEEPS = 300_000
 REPLICATE_CHAINS = 4
 
@@ -107,11 +107,16 @@ def composite_simpson(grid, values):
     h = np.diff(grid)
     if not np.allclose(h, h[0], rtol=1e-10, atol=1e-14):
         raise ValueError("composite Simpson expects a uniform grid")
-    return float(h[0] / 3.0 * (
-        values[0] + values[-1]
-        + 4.0 * values[1:-1:2].sum()
-        + 2.0 * values[2:-1:2].sum()
-    ))
+    return float(
+        h[0]
+        / 3.0
+        * (
+            values[0]
+            + values[-1]
+            + 4.0 * values[1:-1:2].sum()
+            + 2.0 * values[2:-1:2].sum()
+        )
+    )
 
 
 def _simpson_weights(grid):
@@ -145,12 +150,12 @@ def uniform_slice_mean_energy(lattice_side):
 def lattice_energy_double_counted(states, lattice_side):
     """x^T A x for a batch of flat +/-1 states, via torus rolls: each site
     times the sum of its 4 neighbours (double-counted, matching target.A)."""
-    grids = np.asarray(states, dtype=np.float64).reshape(
-        -1, lattice_side, lattice_side
-    )
+    grids = np.asarray(states, dtype=np.float64).reshape(-1, lattice_side, lattice_side)
     neighbour_sum = (
-        np.roll(grids, 1, axis=1) + np.roll(grids, -1, axis=1)
-        + np.roll(grids, 1, axis=2) + np.roll(grids, -1, axis=2)
+        np.roll(grids, 1, axis=1)
+        + np.roll(grids, -1, axis=1)
+        + np.roll(grids, 1, axis=2)
+        + np.roll(grids, -1, axis=2)
     )
     return (grids * neighbour_sum).sum(axis=(1, 2))
 
@@ -159,9 +164,12 @@ def slice_ti_free_energy_per_site(grid, integrand, lattice_side, n_plus):
     """F(sigma_target)/d = -[log C(d, n_plus) + int_0^sigma <x^T A x>] / (2 sigma d)."""
     d = lattice_side * lattice_side
     sigma_target = float(grid[-1])
-    log_z = math.lgamma(d + 1) - math.lgamma(n_plus + 1) - math.lgamma(
-        d - n_plus + 1
-    ) + composite_simpson(grid, integrand)
+    log_z = (
+        math.lgamma(d + 1)
+        - math.lgamma(n_plus + 1)
+        - math.lgamma(d - n_plus + 1)
+        + composite_simpson(grid, integrand)
+    )
     return -log_z / (2.0 * sigma_target * d)
 
 
@@ -199,14 +207,17 @@ def _one_chain_mean_energy(lattice_side, sigma, seed, sweeps, init="random"):
     return float(kept.mean()), tau, burn
 
 
-def grid_point_estimate(lattice_side, sigma, point_index, sweeps=CHAIN_SWEEPS,
-                        chains=REPLICATE_CHAINS):
+def grid_point_estimate(
+    lattice_side, sigma, point_index, sweeps=CHAIN_SWEEPS, chains=REPLICATE_CHAINS
+):
     """Mean +/- cross-chain SE of <x^T A x>_sigma from `chains` fresh chains."""
     means, taus = [], []
     for replicate in range(chains):
         mean, tau, _ = _one_chain_mean_energy(
-            lattice_side, sigma,
-            seed=SEED_BASE + 100 * point_index + replicate, sweeps=sweeps,
+            lattice_side,
+            sigma,
+            seed=SEED_BASE + 100 * point_index + replicate,
+            sweeps=sweeps,
         )
         means.append(mean)
         taus.append(tau)
@@ -215,8 +226,15 @@ def grid_point_estimate(lattice_side, sigma, point_index, sweeps=CHAIN_SWEEPS,
     return float(means.mean()), float(se), float(np.max(taus))
 
 
-def ti_reference(lattice_side, n_plus, sigma_target, n_intervals, label,
-                 seed_offset, sweeps=CHAIN_SWEEPS):
+def ti_reference(
+    lattice_side,
+    n_plus,
+    sigma_target,
+    n_intervals,
+    label,
+    seed_offset,
+    sweeps=CHAIN_SWEEPS,
+):
     """Full TI estimate at one operating point, with the half-grid check."""
     grid = np.linspace(0.0, sigma_target, n_intervals + 1)
     integrand = np.empty(len(grid))
@@ -225,13 +243,13 @@ def ti_reference(lattice_side, n_plus, sigma_target, n_intervals, label,
     integrand[0], ses[0] = uniform_slice_mean_energy(lattice_side), 0.0
     for index, sigma in enumerate(grid[1:], start=1):
         integrand[index], ses[index], tau = grid_point_estimate(
-            lattice_side, float(sigma), point_index=seed_offset + index,
+            lattice_side,
+            float(sigma),
+            point_index=seed_offset + index,
             sweeps=sweeps,
         )
         taus.append(tau)
-    f_per_site = slice_ti_free_energy_per_site(
-        grid, integrand, lattice_side, n_plus
-    )
+    f_per_site = slice_ti_free_energy_per_site(grid, integrand, lattice_side, n_plus)
     d = lattice_side * lattice_side
     se_f = quadrature_error(grid, ses) / (2.0 * sigma_target * d)
     coarse = slice_ti_free_energy_per_site(
@@ -263,8 +281,11 @@ def sigma_c_cross_checks(result, lattice_side=8, sweeps=CHAIN_SWEEPS):
     mode_means = []
     for init in ("mode0", "mode1"):
         mean, _, _ = _one_chain_mean_energy(
-            lattice_side, sigma, seed=SEED_BASE + 9_000 + len(mode_means),
-            sweeps=sweeps, init=init,
+            lattice_side,
+            sigma,
+            seed=SEED_BASE + 9_000 + len(mode_means),
+            sweeps=sweeps,
+            init=init,
         )
         mode_means.append(mean)
     local_means = []
@@ -272,13 +293,17 @@ def sigma_c_cross_checks(result, lattice_side=8, sweeps=CHAIN_SWEEPS):
         rng = np.random.default_rng(SEED_BASE + 9_500 + replicate)
         x0 = init_random_at_composition(d, 0.5, rng).astype(np.int8)
         snapshots, _, _ = run_local_swap_chain_snapshots(
-            x0, lattice_side, sigma, sweeps * d,
-            SEED_BASE + 9_500 + replicate, thin=d,
+            x0,
+            lattice_side,
+            sigma,
+            sweeps * d,
+            SEED_BASE + 9_500 + replicate,
+            thin=d,
         )
         energies = lattice_energy_double_counted(snapshots, lattice_side)
         tail = energies[BURN_IN_FLOOR_SWEEPS:]
         tau, _, _ = batch_means_tau_int(tail)
-        local_means.append(float(energies[kawasaki_burn_in_sweeps(tau):].mean()))
+        local_means.append(float(energies[kawasaki_burn_in_sweeps(tau) :].mean()))
     return {"mode_seeded_means": mode_means, "local_runner_means": local_means}
 
 
@@ -291,19 +316,27 @@ def validate_4x4():
     """Run the REAL chain pipeline at 4x4 and score it against enumeration --
     the validate-at-D=4 rule: prove the instrument where the answer is exact
     before spending it where the answer is the deliverable."""
-    from discrete_flow_sampler.diagnostics.metrics import (
-        conditional_pmf_at_composition, enumerate_states, exact_log_probs,
-    )
-    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
     from experiments.constrained_hard_03.gate_4x4 import (
         on_slice_free_energy_reference,
     )
 
+    from discrete_flow_sampler.diagnostics.metrics import (
+        conditional_pmf_at_composition,
+        enumerate_states,
+        exact_log_probs,
+    )
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
     rows = []
     for sigma_target, n_intervals in ((0.10, 8), (0.223, 16)):
-        estimate = ti_reference(4, 8, sigma_target, n_intervals,
-                                label=f"v4x4-{sigma_target}",
-                                seed_offset=0 if sigma_target == 0.10 else 20)
+        estimate = ti_reference(
+            4,
+            8,
+            sigma_target,
+            n_intervals,
+            label=f"v4x4-{sigma_target}",
+            seed_offset=0 if sigma_target == 0.10 else 20,
+        )
         target = FixedCompositionIsingTarget(
             D=4, sigma=sigma_target, target_composition=0.5
         )
@@ -313,52 +346,76 @@ def validate_4x4():
             all_states, log_pi, target.n_plus_target
         )
         exact = float(on_slice_free_energy_reference(target, slice_states.float()))
-        rows.append({
-            **{k: estimate[k] for k in
-               ("sigma", "f_per_site", "f_se", "half_grid_shift",
-                "max_tau_int_sweeps")},
-            "f_exact": exact,
-            "deviation": estimate["f_per_site"] - exact,
-            "deviation_over_se": (estimate["f_per_site"] - exact)
-            / estimate["f_se"],
-        })
-        print(f"[slice-ti] 4x4 sigma={sigma_target}: "
-              f"TI {estimate['f_per_site']:.5f} +/- {estimate['f_se']:.5f} "
-              f"vs exact {exact:.5f} "
-              f"({rows[-1]['deviation_over_se']:+.2f} SE); "
-              f"half-grid shift {estimate['half_grid_shift']:+.1e}")
+        rows.append(
+            {
+                **{
+                    k: estimate[k]
+                    for k in (
+                        "sigma",
+                        "f_per_site",
+                        "f_se",
+                        "half_grid_shift",
+                        "max_tau_int_sweeps",
+                    )
+                },
+                "f_exact": exact,
+                "deviation": estimate["f_per_site"] - exact,
+                "deviation_over_se": (estimate["f_per_site"] - exact)
+                / estimate["f_se"],
+            }
+        )
+        print(
+            f"[slice-ti] 4x4 sigma={sigma_target}: "
+            f"TI {estimate['f_per_site']:.5f} +/- {estimate['f_se']:.5f} "
+            f"vs exact {exact:.5f} "
+            f"({rows[-1]['deviation_over_se']:+.2f} SE); "
+            f"half-grid shift {estimate['half_grid_shift']:+.1e}"
+        )
     return rows
 
 
 def run_8x8():
     results = []
     for sigma_target, n_intervals in ((0.10, 8), (0.223, 16)):
-        result = ti_reference(8, 32, sigma_target, n_intervals,
-                              label=f"p8x8-{sigma_target}",
-                              seed_offset=40 if sigma_target == 0.10 else 60)
-        print(f"[slice-ti] 8x8 sigma={sigma_target}: "
-              f"F/d = {result['f_per_site']:.5f} +/- {result['f_se']:.5f} "
-              f"(half-grid shift {result['half_grid_shift']:+.1e}, "
-              f"max tau {result['max_tau_int_sweeps']:.1f} sweeps)")
+        result = ti_reference(
+            8,
+            32,
+            sigma_target,
+            n_intervals,
+            label=f"p8x8-{sigma_target}",
+            seed_offset=40 if sigma_target == 0.10 else 60,
+        )
+        print(
+            f"[slice-ti] 8x8 sigma={sigma_target}: "
+            f"F/d = {result['f_per_site']:.5f} +/- {result['f_se']:.5f} "
+            f"(half-grid shift {result['half_grid_shift']:+.1e}, "
+            f"max tau {result['max_tau_int_sweeps']:.1f} sweeps)"
+        )
         results.append(result)
     checks = sigma_c_cross_checks(results[-1])
-    print(f"[slice-ti] sigma_c cross-checks: mode-seeded means "
-          f"{checks['mode_seeded_means']}, local-runner means "
-          f"{checks['local_runner_means']} "
-          f"(grid-point estimate {results[-1]['integrand'][-1]:.3f})")
+    print(
+        f"[slice-ti] sigma_c cross-checks: mode-seeded means "
+        f"{checks['mode_seeded_means']}, local-runner means "
+        f"{checks['local_runner_means']} "
+        f"(grid-point estimate {results[-1]['integrand'][-1]:.3f})"
+    )
     bias = NEURAL_F_PER_SITE_8X8_SC - results[-1]["f_per_site"]
     combined = math.hypot(NEURAL_F_SE_8X8_SC, results[-1]["f_se"])
-    print(f"[slice-ti] neural bias at sigma_c: {bias:+.5f} +/- {combined:.5f} "
-          f"per site ({bias / combined:+.1f} combined SE); "
-          f"variational bound predicts bias >= 0")
-    return {"points": results, "sigma_c_cross_checks": checks,
-            "neural_bias_sc": {"bias": bias, "se": combined}}
+    print(
+        f"[slice-ti] neural bias at sigma_c: {bias:+.5f} +/- {combined:.5f} "
+        f"per site ({bias / combined:+.1f} combined SE); "
+        f"variational bound predicts bias >= 0"
+    )
+    return {
+        "points": results,
+        "sigma_c_cross_checks": checks,
+        "neural_bias_sc": {"bias": bias, "se": combined},
+    }
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", required=True,
-                        choices=["validate4x4", "run8x8"])
+    parser.add_argument("--stage", required=True, choices=["validate4x4", "run8x8"])
     parser.add_argument("--out", default="results/03_hard/slice_ti_8x8")
     args = parser.parse_args(argv)
     out_dir = Path(args.out)

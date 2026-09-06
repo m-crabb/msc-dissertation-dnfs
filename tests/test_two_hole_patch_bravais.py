@@ -53,14 +53,23 @@ def _spec(path=FCC_64):
     return BinaryExpansionSpec.from_json(path)
 
 
-def _fcc_head(seed=42, hidden_dim=8, feature_dim=6, patch_shells=1, pooling_shells=None):
+def _fcc_head(
+    seed=42, hidden_dim=8, feature_dim=6, patch_shells=1, pooling_shells=None
+):
     torch.manual_seed(seed)
     spec = _spec()
     geometry = bravais_patch_geometry(
-        spec.positions, spec.cell, patch_shells=patch_shells, pooling_shells=pooling_shells,
+        spec.positions,
+        spec.cell,
+        patch_shells=patch_shells,
+        pooling_shells=pooling_shells,
     )
     backbone = LeTFRateMatrix(
-        d=spec.n_sites, vocab_size=2, hidden_dim=hidden_dim, n_layers=1, n_heads=2,
+        d=spec.n_sites,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=1,
+        n_heads=2,
     )
     head = TwoHolePatchSwapHead(backbone, geometry=geometry, feature_dim=feature_dim)
     head.eval()
@@ -129,7 +138,9 @@ def test_fcc_displacement_table_is_a_translation_group_table():
     for row in table:
         assert sorted(row.tolist()) == list(range(64)), "each row enumerates the group"
     negation = geometry.negate_displacement
-    assert (negation[table] == table.transpose(0, 1)).all(), "class(j->i) = -class(i->j)"
+    assert (negation[table] == table.transpose(0, 1)).all(), (
+        "class(j->i) = -class(i->j)"
+    )
     # The class of j from i is the site the identity-site's translate lands on.
     for k in range(64):
         assert table[0, k] == k
@@ -187,7 +198,9 @@ def test_torus_geometry_reproduces_the_original_buffers(lattice_side, patch_radi
     assert (geometry.neighbour_site == neighbour_site).all()
     opposite = torch.tensor([offsets.index((-dr, -dc)) for dr, dc in offsets])
     assert (geometry.opposite_offset == opposite).all()
-    displacement = ((rows[None, :] - rows[:, None]) % D) * D + (cols[None, :] - cols[:, None]) % D
+    displacement = ((rows[None, :] - rows[:, None]) % D) * D + (
+        cols[None, :] - cols[:, None]
+    ) % D
     assert (geometry.pair_displacement == displacement).all()
     dr = (rows[:, None] - rows[None, :]).abs()
     dc = (cols[:, None] - cols[None, :]).abs()
@@ -220,7 +233,9 @@ def test_mask_pooling_equals_circular_conv_pooling_on_the_torus():
     for level, radius in enumerate(head.pooling_radii):
         conv = head._level_box_mean(values, level)
         mask = getattr(head, f"level_mask_{level}")
-        matmul = torch.einsum("ij,bjf->bif", mask, values) / head.geometry.level_sizes[level]
+        matmul = (
+            torch.einsum("ij,bjf->bif", mask, values) / head.geometry.level_sizes[level]
+        )
         assert _drift(conv, matmul) < 1e-5
 
 
@@ -252,9 +267,13 @@ def test_fcc_pair_context_sensitive_near_and_far():
     x = _state(64)
     t = torch.rand(1)
     i = 0
-    j = int(geometry.neighbour_site[i, 0])              # a nearest neighbour of i
+    j = int(geometry.neighbour_site[i, 0])  # a nearest neighbour of i
     other_neighbour = int(geometry.neighbour_site[i, 1])
-    far = [s for s in range(64) if geometry.level_masks[-1][i, s] == 0 and geometry.level_masks[-1][j, s] == 0][0]
+    far = [
+        s
+        for s in range(64)
+        if geometry.level_masks[-1][i, s] == 0 and geometry.level_masks[-1][j, s] == 0
+    ][0]
     base = head.compute_pair_context(x, t)[:, i, j, :]
     for site, region in ((other_neighbour, "neighbour of i"), (far, "far site")):
         drift = _drift(head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base)
@@ -268,7 +287,13 @@ def test_fcc_vectorised_context_matches_per_pair_reference(patch_shells):
     x = _state(64, batch=2)
     t = torch.rand(2)
     H = head.compute_pair_context(x, t)
-    pairs = [(0, int(geometry.neighbour_site[0, 0])), (0, 63), (5, 40), (17, 18), (30, 31)]
+    pairs = [
+        (0, int(geometry.neighbour_site[0, 0])),
+        (0, 63),
+        (5, 40),
+        (17, 18),
+        (30, 31),
+    ]
     for i, j in pairs:
         reference = head.pair_context_reference(x, t, i, j)
         assert _drift(H[:, i, j, :], reference) < ATOL, (i, j)
@@ -299,10 +324,12 @@ def test_fcc_pair_output_translation_equivariant():
     head, geometry = _fcc_head()
     x = _state(64)
     t = torch.rand(1)
-    index_sign = torch.sign(torch.arange(64)[None, :] - torch.arange(64)[:, None]).float()
+    index_sign = torch.sign(
+        torch.arange(64)[None, :] - torch.arange(64)[:, None]
+    ).float()
     G = head(x, t)[0] * index_sign
     for k in (1, 5, 17, 63):
-        perm = geometry.translation(k)                    # site i -> perm[i]
+        perm = geometry.translation(k)  # site i -> perm[i]
         x_shifted = torch.empty_like(x)
         x_shifted[:, perm] = x
         G_shifted = head(x_shifted, t)[0] * index_sign
@@ -343,10 +370,16 @@ def test_cuau64_patch_cells_mirror_their_mask_one_parents():
     for c_tag in ("c25", "c50"):
         cell = CONFIGS[f"H2_cuau64_{c_tag}_T500_thp_50k_curr"]
         parent = CONFIGS[f"H2_cuau64_{c_tag}_T500_mask_one_50k_curr"]
-        assert replace(
-            cell, name=parent.name, head_kind=parent.head_kind, patch_shells=None,
-            eval=replace(cell.eval, n_eval_samples_training=None),
-        ) == parent
+        assert (
+            replace(
+                cell,
+                name=parent.name,
+                head_kind=parent.head_kind,
+                patch_shells=None,
+                eval=replace(cell.eval, n_eval_samples_training=None),
+            )
+            == parent
+        )
         assert cell.eval.n_eval_samples_training == 256 and cell.patch_shells == 2
 
 
@@ -408,8 +441,12 @@ def test_kolmogorov_residual_zero_mean_on_square_expansion_slice(patch_shells=1)
     )
 
     spec = _spec(SQUARE_16)
-    geometry = bravais_patch_geometry(spec.positions, spec.cell, patch_shells=patch_shells)
-    target = FixedCompositionClusterExpansionTarget(spec, beta=20.0, target_composition=0.5)
+    geometry = bravais_patch_geometry(
+        spec.positions, spec.cell, patch_shells=patch_shells
+    )
+    target = FixedCompositionClusterExpansionTarget(
+        spec, beta=20.0, target_composition=0.5
+    )
     states = enumerate_states(16).float()
     n_plus = ((states + 1) * 0.5).sum(dim=-1)
     slice_states = states[n_plus == target.n_plus_target]
@@ -422,7 +459,10 @@ def test_kolmogorov_residual_zero_mean_on_square_expansion_slice(patch_shells=1)
             p_cond = torch.softmax(log_p, dim=0)
             dt_log_Z = (p_cond * target.dt_log_p_tilde_t(slice_states, t)).sum()
             residual = residual_swap(slice_states, t, dt_log_Z, head, target)
-            out.append(abs((p_cond * residual).sum().item()) / residual.pow(2).mean().sqrt().item())
+            out.append(
+                abs((p_cond * residual).sum().item())
+                / residual.pow(2).mean().sqrt().item()
+            )
         return out
 
     torch.manual_seed(3)
@@ -441,24 +481,34 @@ def test_kolmogorov_residual_zero_mean_on_square_expansion_slice(patch_shells=1)
 def test_cuau64_temperature_grid_cells_stop_their_ladder_at_the_row_temperature():
     """MetaDNS grid rows: same cell as the 500 K thp / flip parents, ladder
     truncated at 1200 K (one stage) or 680 K (four stages linear in beta)."""
-    from experiments.constrained_hard_03.configs import CONFIGS as HARD, cuau_sigma
+    from experiments.constrained_hard_03.configs import CONFIGS as HARD
+    from experiments.constrained_hard_03.configs import cuau_sigma
     from experiments.constrained_soft_02.configs import CONFIGS as SOFT
 
     def final_temperature(cfg):
         return 1.0 / (2.0 * 8.617333262e-5 * cfg.curriculum.stages[-1].sigma)
 
-    grid = [(HARD[f"H2_cuau64_{c}_{v}"], HARD[f"H2_cuau64_{c}_T500_thp_50k_curr"])
-            for c in ("c25", "c50") for v in ("T1200_thp_10k", "T680_thp_30k_l4")]
-    grid += [(SOFT[v], SOFT["A1_cuau64_T500_letf_50k_curr"])
-             for v in ("A1_cuau64_T1200_letf_10k", "A1_cuau64_T680_letf_30k_l4")]
+    grid = [
+        (HARD[f"H2_cuau64_{c}_{v}"], HARD[f"H2_cuau64_{c}_T500_thp_50k_curr"])
+        for c in ("c25", "c50")
+        for v in ("T1200_thp_10k", "T680_thp_30k_l4")
+    ]
+    grid += [
+        (SOFT[v], SOFT["A1_cuau64_T500_letf_50k_curr"])
+        for v in ("A1_cuau64_T1200_letf_10k", "A1_cuau64_T680_letf_30k_l4")
+    ]
     for cell, parent in grid:
         one_stage = "T1200" in cell.name
         assert len(cell.curriculum.stages) == (1 if one_stage else 4)
         assert final_temperature(cell) == pytest.approx(1200.0 if one_stage else 680.0)
         assert cell.curriculum.stages[0].sigma == pytest.approx(cuau_sigma(1200.0))
         assert cell.train.n_steps == (10_000 if one_stage else 30_000)
-        assert replace(cell, name=parent.name, curriculum=parent.curriculum,
-                       train=parent.train) == parent
+        assert (
+            replace(
+                cell, name=parent.name, curriculum=parent.curriculum, train=parent.train
+            )
+            == parent
+        )
 
 
 def test_cuau16_composition_sweep_cells_differ_from_the_house_cell_only_by_composition():
@@ -485,9 +535,18 @@ def test_cuau16_free_grid_cells_stop_the_ladder_at_the_row_temperature():
     from experiments.constrained_soft_02.configs import CONFIGS
 
     house = CONFIGS["A1_cuau16_T500_letf_50k_house"]
-    for name, n_stages, n_steps, T in (("A1_cuau16_T1200_letf_10k", 1, 10_000, 1200.0),
-                                       ("A1_cuau16_T680_letf_30k_l4", 4, 30_000, 680.0)):
+    for name, n_stages, n_steps, T in (
+        ("A1_cuau16_T1200_letf_10k", 1, 10_000, 1200.0),
+        ("A1_cuau16_T680_letf_30k_l4", 4, 30_000, 680.0),
+    ):
         cell = CONFIGS[name]
         assert len(cell.curriculum.stages) == n_stages and cell.train.n_steps == n_steps
-        assert 1.0 / (2.0 * 8.617333262e-5 * cell.curriculum.stages[-1].sigma) == pytest.approx(T)
-        assert replace(cell, name=house.name, curriculum=house.curriculum, train=house.train) == house
+        assert 1.0 / (
+            2.0 * 8.617333262e-5 * cell.curriculum.stages[-1].sigma
+        ) == pytest.approx(T)
+        assert (
+            replace(
+                cell, name=house.name, curriculum=house.curriculum, train=house.train
+            )
+            == house
+        )

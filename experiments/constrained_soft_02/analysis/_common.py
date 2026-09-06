@@ -9,8 +9,9 @@ they scored.
 from pathlib import Path
 
 
-def latest_run_dir(results_dir: Path, config: str, seed: int,
-                   eval_dir: str = "eval") -> Path | None:
+def latest_run_dir(
+    results_dir: Path, config: str, seed: int, eval_dir: str = "eval"
+) -> Path | None:
     """Newest run dir for (config, seed) carrying an {eval_dir}/metrics.json.
 
     Matches both the timestamped `{config}_seed{seed}_<timestamp>` form that
@@ -27,8 +28,7 @@ def latest_run_dir(results_dir: Path, config: str, seed: int,
     bare = results_dir / f"{config}_seed{seed}"
     if bare.exists():
         matches.add(bare)
-    matches = sorted(
-        m for m in matches if (m / eval_dir / "metrics.json").exists())
+    matches = sorted(m for m in matches if (m / eval_dir / "metrics.json").exists())
     return matches[-1] if matches else None
 
 
@@ -45,5 +45,13 @@ def seed_of(run_dir_name: str) -> str:
 # definition here so the reference derivation (16) and the model slope
 # fit (15) can never disagree about the grid.
 REVAMP_GRID = (
-    0.25, 0.3125, 0.375, 0.4375, 0.50, 0.5625, 0.625, 0.6875, 0.75,
+    0.25,
+    0.3125,
+    0.375,
+    0.4375,
+    0.50,
+    0.5625,
+    0.625,
+    0.6875,
+    0.75,
 )

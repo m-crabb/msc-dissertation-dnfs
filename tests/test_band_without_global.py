@@ -74,7 +74,11 @@ BLIND_ATOL = 1e-6
 def _backbone(seed=42):
     torch.manual_seed(seed)
     return LeTFRateMatrix(
-        d=D, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=D,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
 
@@ -82,8 +86,13 @@ def _backbone(seed=42):
 def _head(**kw):
     torch.manual_seed(0)
     defaults = dict(
-        bilinear_rank=3, factor_dim=4, global_feature_dim=6, position_dim=5,
-        band_feature_dim=6, attention_dim=6, pair_offsets=(1, LATTICE_SIDE),
+        bilinear_rank=3,
+        factor_dim=4,
+        global_feature_dim=6,
+        position_dim=5,
+        band_feature_dim=6,
+        attention_dim=6,
+        pair_offsets=(1, LATTICE_SIDE),
         lattice_side=LATTICE_SIDE,
     )
     return FactorisedSwapHead(_backbone(), **{**defaults, **kw}).eval()
@@ -102,10 +111,13 @@ BAND_ONLY_CASES = {
     "prefix": {"interior_band": "prefix", "use_global": False},
     "attention": {"interior_band": "attention", "use_global": False},
     "prefix_gathered": {
-        "interior_band": "prefix", "use_global": False, "gather_triu_pairs": True,
+        "interior_band": "prefix",
+        "use_global": False,
+        "gather_triu_pairs": True,
     },
     "prefix_two_orderings": {
-        "interior_band": "prefix", "use_global": False,
+        "interior_band": "prefix",
+        "use_global": False,
         "site_orderings": ("row", "col"),
     },
 }
@@ -128,7 +140,7 @@ def test_band_without_global_owns_no_global_site_features(case):
     byte-identity of any head built after it."""
     head = _head(**BAND_ONLY_CASES[case])
     assert not hasattr(head, "global_site_features")
-    assert hasattr(head, "global_context_readout")   # the band's readout now
+    assert hasattr(head, "global_context_readout")  # the band's readout now
 
 
 @torch.no_grad()
@@ -213,7 +225,11 @@ def test_config_flag_reaches_the_head():
     parent = CONFIGS["H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2"]
     torch.manual_seed(42)
     d64 = LeTFRateMatrix(
-        d=64, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=64,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
     # The exact-field channel is switched off here so the assertion lands on

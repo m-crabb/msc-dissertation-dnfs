@@ -9,6 +9,7 @@ derivation exists to prevent: masking the *unconstrained* conditionals and
 renormalising at sampling time leaves a trajectory-DEPENDENT correction, so
 keeping the unconstrained conditionals in the weights silently biases every
 estimate."""
+
 from itertools import combinations, permutations
 from math import factorial, isclose
 
@@ -32,12 +33,8 @@ def assignment_conditional_product(reveal_order, a_sites, n_sites):
 
 
 @pytest.mark.parametrize("n_sites,n_a", [(4, 2), (5, 2), (6, 3)])
-def test_assignment_product_is_the_same_constant_on_every_trajectory(
-    n_sites, n_a
-):
-    expected = (
-        factorial(n_a) * factorial(n_sites - n_a) / factorial(n_sites)
-    )
+def test_assignment_product_is_the_same_constant_on_every_trajectory(n_sites, n_a):
+    expected = factorial(n_a) * factorial(n_sites - n_a) / factorial(n_sites)
     for a_sites in combinations(range(n_sites), n_a):
         for reveal_order in permutations(range(n_sites)):
             product = assignment_conditional_product(
@@ -62,8 +59,7 @@ def test_terminal_law_is_uniform_on_the_composition_fibre(n_sites, n_a):
         )
         terminal_probabilities.append(total)
     assert all(
-        isclose(p, 1.0 / len(fibre), rel_tol=1e-9)
-        for p in terminal_probabilities
+        isclose(p, 1.0 / len(fibre), rel_tol=1e-9) for p in terminal_probabilities
     )
     assert isclose(sum(terminal_probabilities), 1.0, rel_tol=1e-9)
 
@@ -91,9 +87,9 @@ def test_mask_and_renormalise_correction_is_trajectory_dependent():
             masked_count = n_sites - step
             q_a = unconstrained_q_a(revealed_a)
             if remaining_budget == 0:
-                feasible_mass = 1.0 - q_a       # A refused, B forced
+                feasible_mass = 1.0 - q_a  # A refused, B forced
             elif remaining_budget == masked_count:
-                feasible_mass = q_a             # B refused, A forced
+                feasible_mass = q_a  # B refused, A forced
             else:
                 feasible_mass = 1.0
             product *= feasible_mass

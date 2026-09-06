@@ -9,9 +9,9 @@ Schema comparison is deliberate — e.g. forgetting `use_stencil=True` drops an
 attention family and the `band_stencil_features` MLP, so the key set itself
 diverges and the mismatch is caught structurally.
 """
+
 import pytest
 import torch
-
 from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 from experiments.constrained_hard_03.profile_swap import build_head_and_target
 
@@ -39,9 +39,7 @@ def test_bench_head_matches_production_cell(bench_kind, cell_name):
 
     assert type(bench_head) is type(production_head)
     bench_schema = {k: v.shape for k, v in bench_head.state_dict().items()}
-    production_schema = {
-        k: v.shape for k, v in production_head.state_dict().items()
-    }
+    production_schema = {k: v.shape for k, v in production_head.state_dict().items()}
     assert bench_schema == production_schema
 
 
@@ -81,8 +79,11 @@ def test_site_orderings_reach_the_raster_bench_heads(head_kind):
     `test_config_flag_reaches_the_raster_heads` for the config path.
     """
     head, _ = build_head_and_target(
-        d=64, device=torch.device("cpu"), anchor_chunk=None,
-        head_kind=head_kind, site_orderings=("row", "col"),
+        d=64,
+        device=torch.device("cpu"),
+        anchor_chunk=None,
+        head_kind=head_kind,
+        site_orderings=("row", "col"),
     )
     assert head.site_orderings == ("row", "col")
     # The permutation buffer is what an extra sweep actually costs; a head
@@ -95,7 +96,10 @@ def test_one_sweep_stays_the_default_on_the_bench(head_kind):
     """Every archived bench row was taken at one sweep; the fix must not
     silently re-price them."""
     head, _ = build_head_and_target(
-        d=64, device=torch.device("cpu"), anchor_chunk=None, head_kind=head_kind,
+        d=64,
+        device=torch.device("cpu"),
+        anchor_chunk=None,
+        head_kind=head_kind,
     )
     assert head.site_orderings == ("row",)
     assert not hasattr(head, "_order_col")
@@ -145,8 +149,7 @@ def test_masked_attention_shares_the_interval_forward_code_object():
         MaskedAttentionSwapHead,
     )
 
-    assert (MaskedAttentionSwapHead.forward.__code__
-            is IntervalSwapHead.forward.__code__)
+    assert MaskedAttentionSwapHead.forward.__code__ is IntervalSwapHead.forward.__code__
 
 
 def test_compiled_configs_reset_dynamo_before_compiling():
@@ -182,8 +185,13 @@ def test_compile_gave_up_watch_arms_once_and_rearms():
         assert logger.handlers.count(_COMPILE_WATCH) == 1, "handler piled up"
 
         record = logging.LogRecord(
-            "torch._dynamo", logging.WARNING, __file__, 0,
-            "torch._dynamo hit config.recompile_limit (8)", None, None,
+            "torch._dynamo",
+            logging.WARNING,
+            __file__,
+            0,
+            "torch._dynamo hit config.recompile_limit (8)",
+            None,
+            None,
         )
         logger.handle(record)
         assert _COMPILE_WATCH.gave_up, "the eager fallback must be detected"

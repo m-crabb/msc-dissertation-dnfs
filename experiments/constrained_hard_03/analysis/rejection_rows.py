@@ -97,6 +97,7 @@ to reach 512 kept at 4x4 sigma_c (8x the current eval) and about 1.5 million
 to reach 5,000 at 8x8 sigma_c (300x). Both are re-evals of trained
 checkpoints, not retrains.
 """
+
 import argparse
 import json
 import sys
@@ -109,11 +110,15 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from discrete_flow_sampler.diagnostics.flops import (
-    measured_forward_flops, neural_sampling_flops_per_sample,
-    per_effective_sample)
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+)
 from discrete_flow_sampler.diagnostics.metrics import (
-    correlation_profile_error, energy_wasserstein2,
-    magnetisation_profile_error)
+    correlation_profile_error,
+    energy_wasserstein2,
+    magnetisation_profile_error,
+)
 
 # (paradigm, rung, coupling) -> run-dir glob, or None where no run exists.
 # Rungs are named by SITE COUNT to match the hard chapter (d16 = 4x4,
@@ -121,18 +126,36 @@ from discrete_flow_sampler.diagnostics.metrics import (
 # EDGE (d4, d8), which is why the globs read d4/d8 for the same lattices.
 CELLS = {
     ("unconstrained", 16, "s010"): ("01_baseline", "stage_4_d4_seed{seed}_20260609-*"),
-    ("unconstrained", 16, "s220"): ("01_baseline", "stage_4_d4_critical_sc_seed{seed}_20260824-wave1-sc"),
+    ("unconstrained", 16, "s220"): (
+        "01_baseline",
+        "stage_4_d4_critical_sc_seed{seed}_20260824-wave1-sc",
+    ),
     ("unconstrained", 64, "s010"): None,
-    ("unconstrained", 64, "s220"): ("01_baseline", "stage_4_d8_critical_paper_curriculum_sc_seed{seed}_20260824-wave1-sc"),
+    ("unconstrained", 64, "s220"): (
+        "01_baseline",
+        "stage_4_d8_critical_paper_curriculum_sc_seed{seed}_20260824-wave1-sc",
+    ),
     # Soft cells are the SAME runs the soft chapter's house tables print
     # (tab:eval-soft-4x4 = the 10k house family, tab:eval-soft-8x8 = the 8x8
     # house specialists), so the rejection row and the soft table are priced
     # off identical draws. The old 50k anneal cell (S2_d4_c05_50k_l50_letf_
     # anneal_offset_clip50) was a different sampler from the one soft prints.
-    ("soft", 16, "s010"): ("02_constrained_soft", "S2_d4_c0500_10k_l50_letf_house_seed{seed}_20260902-softhouse-d16-10k"),
-    ("soft", 16, "s220"): ("02_constrained_soft", "S2_d4_c0500_10k_l50_letf_house_sc_seed{seed}_20260902-softhouse-d16-10k"),
-    ("soft", 64, "s010"): ("02_constrained_soft", "S2_d8_c0500_l50_letf_ne128_house_seed{seed}_20260831-softhouse-d64"),
-    ("soft", 64, "s220"): ("02_constrained_soft", "S2_d8_c0500_l50_letf_ne128_house_sc_seed{seed}_20260831-softhouse-d64"),
+    ("soft", 16, "s010"): (
+        "02_constrained_soft",
+        "S2_d4_c0500_10k_l50_letf_house_seed{seed}_20260902-softhouse-d16-10k",
+    ),
+    ("soft", 16, "s220"): (
+        "02_constrained_soft",
+        "S2_d4_c0500_10k_l50_letf_house_sc_seed{seed}_20260902-softhouse-d16-10k",
+    ),
+    ("soft", 64, "s010"): (
+        "02_constrained_soft",
+        "S2_d8_c0500_l50_letf_ne128_house_seed{seed}_20260831-softhouse-d64",
+    ),
+    ("soft", 64, "s220"): (
+        "02_constrained_soft",
+        "S2_d8_c0500_l50_letf_ne128_house_sc_seed{seed}_20260831-softhouse-d64",
+    ),
 }
 SEEDS = (42, 43, 44, 45)
 # The draw count each rung's neural rows are evaluated at; a rejection cell
@@ -148,46 +171,77 @@ def kept_draws(run_dir, n_plus):
     (see the module docstring), so the stored weights are already the right
     ones and any renormalisation cancels in the self-normalised estimator.
     """
-    samples = torch.load(run_dir / "eval" / "samples.pt",
-                         weights_only=True).float()
+    samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
     log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
     on_manifold = (samples > 0).sum(dim=-1) == n_plus
     return samples[on_manifold], log_w[on_manifold], int(samples.shape[0])
 
 
-def _seed_errors(samples, weights, reference, reference_weights,
-                 reference_energy, energy_of, lattice_edge, floor_draws,
-                 n_replicates, generator):
+def _seed_errors(
+    samples,
+    weights,
+    reference,
+    reference_weights,
+    reference_energy,
+    energy_of,
+    lattice_edge,
+    floor_draws,
+    n_replicates,
+    generator,
+):
     """The three error columns for ONE seed, scored at `floor_draws`.
 
     Subsampled without replacement and averaged over replicates so the number
     sits at the rung's own draw count rather than at whatever rejection left
     (see the module docstring).
     """
-    w_ref = reference_weights if reference_weights is not None else \
-        torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    w_ref = (
+        reference_weights
+        if reference_weights is not None
+        else torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    )
     energies = energy_of(samples)
     replicates = []
     for _ in range(n_replicates):
         idx = torch.randperm(samples.shape[0], generator=generator)[:floor_draws]
         sub_w = weights[idx] / weights[idx].sum()
-        replicates.append({
-            "dMag": magnetisation_profile_error(
-                samples[idx], sub_w, reference, lattice_edge,
-                reference_weights=w_ref),
-            "dCorr": correlation_profile_error(
-                samples[idx], sub_w, reference, lattice_edge,
-                reference_weights=w_ref),
-            "EW2": energy_wasserstein2(
-                energies[idx], sub_w, reference_energy,
-                reference_weights=w_ref),
-        })
+        replicates.append(
+            {
+                "dMag": magnetisation_profile_error(
+                    samples[idx],
+                    sub_w,
+                    reference,
+                    lattice_edge,
+                    reference_weights=w_ref,
+                ),
+                "dCorr": correlation_profile_error(
+                    samples[idx],
+                    sub_w,
+                    reference,
+                    lattice_edge,
+                    reference_weights=w_ref,
+                ),
+                "EW2": energy_wasserstein2(
+                    energies[idx], sub_w, reference_energy, reference_weights=w_ref
+                ),
+            }
+        )
     return {k: float(np.mean([r[k] for r in replicates])) for k in replicates[0]}
 
 
-def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
-                   reference_weights, energy_of, lattice_edge, floor_draws,
-                   n_replicates=64, seed=0):
+def rejection_cell(
+    results_root,
+    glob,
+    n_sites,
+    reference,
+    reference_energy,
+    reference_weights,
+    energy_of,
+    lattice_edge,
+    floor_draws,
+    n_replicates=64,
+    seed=0,
+):
     """One (paradigm, rung, coupling) cell as mean +- SD over seeds.
 
     PER SEED, not pooled, so the row reports the same statistic as every
@@ -197,8 +251,7 @@ def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
     to about 0.001 -- but it discards the seed spread, which is exactly what
     tells a reader that the 8x8 critical cell rests on 15-18 draws per seed.
     """
-    from experiments.dnfs_baseline_01.run import (_build_model,
-                                                  _rebuild_from_run_dir)
+    from experiments.dnfs_baseline_01.run import _build_model, _rebuild_from_run_dir
 
     generator = torch.Generator().manual_seed(seed)
     rows, n_kept_total, n_drawn_total, run_dir = [], 0, 0, None
@@ -212,12 +265,24 @@ def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
         n_kept_total += n_kept
         n_drawn_total += drawn
         weights = torch.softmax(log_w, dim=0)
-        row = {"ESS": float(1.0 / (weights.pow(2).sum() * n_kept)),
-               "acceptance": n_kept / drawn, "n_kept": n_kept}
+        row = {
+            "ESS": float(1.0 / (weights.pow(2).sum() * n_kept)),
+            "acceptance": n_kept / drawn,
+            "n_kept": n_kept,
+        }
         if n_kept >= floor_draws:
-            row |= _seed_errors(samples, weights, reference, reference_weights,
-                                reference_energy, energy_of, lattice_edge,
-                                floor_draws, n_replicates, generator)
+            row |= _seed_errors(
+                samples,
+                weights,
+                reference,
+                reference_weights,
+                reference_energy,
+                energy_of,
+                lattice_edge,
+                floor_draws,
+                n_replicates,
+                generator,
+            )
         rows.append(row)
     if run_dir is None:
         return None
@@ -226,17 +291,19 @@ def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
     # on every draw, and only `acceptance` of them survive to be weighted.
     cfg, target, _device = _rebuild_from_run_dir(run_dir)
     model = _build_model(cfg, target)
-    per_forward = measured_forward_flops(
-        model, (reference[:1], torch.full((1,), 0.5)))
-    raw = neural_sampling_flops_per_sample(per_forward, cfg.ctmc.n_euler_steps,
-                                           n_sites)
+    per_forward = measured_forward_flops(model, (reference[:1], torch.full((1,), 0.5)))
+    raw = neural_sampling_flops_per_sample(per_forward, cfg.ctmc.n_euler_steps, n_sites)
     for row in rows:
-        row["FLOP/es"] = per_effective_sample(raw / row["acceptance"],
-                                              row["ESS"])
+        row["FLOP/es"] = per_effective_sample(raw / row["acceptance"], row["ESS"])
 
-    cell = {key: (float(np.mean([r[key] for r in rows])),
-                  float(np.std([r[key] for r in rows])))
-            for key in rows[0] if key not in ("n_kept",)}
+    cell = {
+        key: (
+            float(np.mean([r[key] for r in rows])),
+            float(np.std([r[key] for r in rows])),
+        )
+        for key in rows[0]
+        if key not in ("n_kept",)
+    }
     cell["n_kept"] = n_kept_total
     cell["n_kept_per_seed"] = [r["n_kept"] for r in rows]
     cell["n_drawn"] = n_drawn_total
@@ -244,8 +311,9 @@ def rejection_cell(results_root, glob, n_sites, reference, reference_energy,
     if "dMag" in rows[0]:
         cell["scored_at_draws"] = floor_draws
     else:
-        cell["draws_needed"] = int(np.ceil(
-            floor_draws / (n_kept_total / n_drawn_total)))
+        cell["draws_needed"] = int(
+            np.ceil(floor_draws / (n_kept_total / n_drawn_total))
+        )
     return cell
 
 
@@ -268,12 +336,16 @@ def references_for(rung, sigma_label, results_dir):
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
     from experiments.constrained_hard_03.run import build_target_and_head
 
-    probe = (results_dir /
-             f"{h8.CELL_NAME[sigma_label].format(arm='mo')}_seed42_{h8.TAG}")
+    probe = (
+        results_dir / f"{h8.CELL_NAME[sigma_label].format(arm='mo')}_seed42_{h8.TAG}"
+    )
     target, _ = build_target_and_head(h8.registry_config_for(probe), "cpu")
     chains = h8.load_reference_chains(
-        REPO_ROOT / "results" / "03_hard" / "kawasaki_w2", h8.L,
-        h8.KAWASAKI_TAG[sigma_label], 0.2)
+        REPO_ROOT / "results" / "03_hard" / "kawasaki_w2",
+        h8.L,
+        h8.KAWASAKI_TAG[sigma_label],
+        0.2,
+    )
     reference = torch.cat(chains)
     energy_of = lambda x: h8.energy_per_site(target, x)
     return reference, energy_of(reference), energy_of, None
@@ -319,46 +391,65 @@ def latex_rows(table, rung, print_errors=False):
                 cells += ["--"] * 5
                 continue
             cells.append(f"${cell['ESS'][0]:.3f} \\pm {cell['ESS'][1]:.3f}$")
-            cells += [f"${cell[c][0] * 100:.1f} \\pm {cell[c][1] * 100:.1f}$"
-                      if print_errors and c in cell else "--"
-                      for c in ERROR_COLUMNS]
+            cells += [
+                f"${cell[c][0] * 100:.1f} \\pm {cell[c][1] * 100:.1f}$"
+                if print_errors and c in cell
+                else "--"
+                for c in ERROR_COLUMNS
+            ]
             mean, sd = cell["FLOP/es"]
             exponent = int(np.floor(np.log10(mean)))
-            cells.append(f"${mean / 10 ** exponent:.1f}"
-                         f"\\times10^{{{exponent}}}$")
-        lines.append(f"        {LATEX_LABEL[paradigm]} & "
-                     + " & ".join(cells) + r" \\")
+            cells.append(f"${mean / 10**exponent:.1f}\\times10^{{{exponent}}}$")
+        lines.append(f"        {LATEX_LABEL[paradigm]} & " + " & ".join(cells) + r" \\")
     return "\n".join(lines)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-root", type=Path, default=REPO_ROOT / "results")
-    parser.add_argument("--out", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard" / "rejection_rows.json")
-    parser.add_argument("--latex", type=int, choices=(16, 64),
-                        help="emit this rung's two rejection rows and exit")
-    parser.add_argument("--print-errors", action="store_true",
-                        help="also print the equalised error columns "
-                             "(off in print; see latex_rows)")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=REPO_ROOT / "results" / "03_hard" / "rejection_rows.json",
+    )
+    parser.add_argument(
+        "--latex",
+        type=int,
+        choices=(16, 64),
+        help="emit this rung's two rejection rows and exit",
+    )
+    parser.add_argument(
+        "--print-errors",
+        action="store_true",
+        help="also print the equalised error columns (off in print; see latex_rows)",
+    )
     args = parser.parse_args(argv)
 
     hard_dir = args.results_root / "03_hard"
     table = {}
     for rung in (16, 64):
         for sigma_label in ("s010", "s220"):
-            wanted = [k for k in CELLS
-                      if k[1] == rung and k[2] == sigma_label and CELLS[k]]
+            wanted = [
+                k for k in CELLS if k[1] == rung and k[2] == sigma_label and CELLS[k]
+            ]
             if not wanted:
                 continue
             reference, reference_energy, energy_of, ref_probs = references_for(
-                rung, sigma_label, hard_dir)
+                rung, sigma_label, hard_dir
+            )
             for key in wanted:
                 subdir, glob = CELLS[key]
                 cell = rejection_cell(
-                    args.results_root / subdir, glob, rung, reference,
-                    reference_energy, ref_probs, energy_of, int(rung ** 0.5),
-                    FLOOR_DRAWS[rung])
+                    args.results_root / subdir,
+                    glob,
+                    rung,
+                    reference,
+                    reference_energy,
+                    ref_probs,
+                    energy_of,
+                    int(rung**0.5),
+                    FLOOR_DRAWS[rung],
+                )
                 if cell:
                     table[f"{key[0]}_{rung}_{sigma_label}"] = cell
 
@@ -369,15 +460,20 @@ def main(argv=None):
         print(latex_rows(table, args.latex, args.print_errors))
         return
 
-    print(f"{'cell':28} {'accept':>8} {'kept/seed':>18} {'ESS':>16} "
-          f"{'FLOP/es':>10}  errors")
+    print(
+        f"{'cell':28} {'accept':>8} {'kept/seed':>18} {'ESS':>16} "
+        f"{'FLOP/es':>10}  errors"
+    )
     for key, c in table.items():
-        errs = ("filled" if "dMag" in c
-                else f"-- (needs {c['draws_needed']:,} raw draws)")
+        errs = (
+            "filled" if "dMag" in c else f"-- (needs {c['draws_needed']:,} raw draws)"
+        )
         ess = f"{c['ESS'][0]:.3f} +- {c['ESS'][1]:.3f}"
-        print(f"{key:28} {c['acceptance'][0]*100:7.2f}% "
-              f"{str(c['n_kept_per_seed']):>18} {ess:>16} "
-              f"{c['FLOP/es'][0]:10.2e}  {errs}")
+        print(
+            f"{key:28} {c['acceptance'][0] * 100:7.2f}% "
+            f"{str(c['n_kept_per_seed']):>18} {ess:>16} "
+            f"{c['FLOP/es'][0]:10.2e}  {errs}"
+        )
     for key, spec in CELLS.items():
         if spec is None:
             print(f"{key[0]}_{key[1]}_{key[2]:6} NO RUN -- blank in print")

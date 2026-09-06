@@ -55,6 +55,7 @@ two sections'.
 Reads the per-composition SPECIALIST cells (the same artefacts
 tab:amort-4x4 scores), seeds 42-45 pooled, 5000 draws each.
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -68,8 +69,7 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from discrete_flow_sampler.diagnostics.metrics import (
-    enumerate_states, exact_log_probs)
+from discrete_flow_sampler.diagnostics.metrics import enumerate_states, exact_log_probs
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 L = 4
@@ -104,59 +104,83 @@ def panel_series(results_dir=None):
     all_states = enumerate_states(D_SITES)
     panels = []
     for stem, composition, panel_title in PANELS:
-        target = IsingTarget(D=L, sigma=SIGMA, bias=0.0,
-                             target_composition=composition,
-                             composition_penalty_strength=PENALTY_STRENGTH)
+        target = IsingTarget(
+            D=L,
+            sigma=SIGMA,
+            bias=0.0,
+            target_composition=composition,
+            composition_penalty_strength=PENALTY_STRENGTH,
+        )
         log_pi = exact_log_probs(target, all_states)
-        key_to_logp = dict(zip(state_keys(all_states).tolist(),
-                               log_pi.tolist()))
+        key_to_logp = dict(zip(state_keys(all_states).tolist(), log_pi.tolist()))
         xs, ys = [], []
         for seed in SEEDS:
             matches = sorted(results_dir.glob(f"{stem}_seed{seed}_*"))
             if not matches:
-                raise FileNotFoundError(
-                    f"no run dir for seed {seed} matching {stem}")
+                raise FileNotFoundError(f"no run dir for seed {seed} matching {stem}")
             run_dir = matches[0]
-            samples = torch.load(run_dir / "eval" / "samples.pt",
-                                 weights_only=True).float()
-            log_w = torch.load(run_dir / "eval" / "log_weights.pt",
-                               weights_only=True)
-            xs.append(torch.tensor([key_to_logp[k]
-                                    for k in state_keys(samples).tolist()]))
+            samples = torch.load(
+                run_dir / "eval" / "samples.pt", weights_only=True
+            ).float()
+            log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
+            xs.append(
+                torch.tensor([key_to_logp[k] for k in state_keys(samples).tolist()])
+            )
             ys.append(target.log_prob(samples) - log_w)
         x, y = torch.cat(xs), torch.cat(ys)
         offset = (y - x).median()
-        print(f"[scatter] c={composition:.2f}: {len(x)} points, median offset "
-              f"{offset:.3f} nats, residual sd after removal "
-              f"{(y - x - offset).std():.3f} nats")
+        print(
+            f"[scatter] c={composition:.2f}: {len(x)} points, median offset "
+            f"{offset:.3f} nats, residual sd after removal "
+            f"{(y - x - offset).std():.3f} nats"
+        )
         # Limits from the enumerated support actually visited, padded, so the
         # diagonal spans the plotted cloud rather than the full 2^16 tail.
-        lims = (min(x.min().item(), (y - offset).min().item()) - 0.3,
-                max(x.max().item(), (y - offset).max().item()) + 0.3)
-        panels.append({"title": panel_title, "lims": lims,
-                       "xlabel": r"exact $\log \pi(x)$",
-                       "series": [("soft specialist", COLOUR, x, y - offset)]})
+        lims = (
+            min(x.min().item(), (y - offset).min().item()) - 0.3,
+            max(x.max().item(), (y - offset).max().item()) + 0.3,
+        )
+        panels.append(
+            {
+                "title": panel_title,
+                "lims": lims,
+                "xlabel": r"exact $\log \pi(x)$",
+                "series": [("soft specialist", COLOUR, x, y - offset)],
+            }
+        )
     return panels
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results-dir", type=Path,
-                        default=REPO_ROOT / "results" / "02_constrained_soft")
-    parser.add_argument("--out", type=Path, required=True,
-                        help="output PNG path (the Overleaf assets file)")
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=REPO_ROOT / "results" / "02_constrained_soft",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="output PNG path (the Overleaf assets file)",
+    )
     args = parser.parse_args(argv)
 
     # Style annex: in-figure labels 9pt, annotations 8pt.
-    plt.rcParams.update({"font.size": 9, "axes.labelsize": 9,
-                         "xtick.labelsize": 8, "ytick.labelsize": 8,
-                         "legend.fontsize": 8})
+    plt.rcParams.update(
+        {
+            "font.size": 9,
+            "axes.labelsize": 9,
+            "xtick.labelsize": 8,
+            "ytick.labelsize": 8,
+            "legend.fontsize": 8,
+        }
+    )
     fig, axes = plt.subplots(1, 2, figsize=(4.54, 2.5))
 
     for ax, panel in zip(axes, panel_series(args.results_dir)):
         for _label, colour, x, y in panel["series"]:
-            ax.scatter(x, y, s=4, alpha=0.25, lw=0, color=colour,
-                       rasterized=True)
+            ax.scatter(x, y, s=4, alpha=0.25, lw=0, color=colour, rasterized=True)
         ax.plot(panel["lims"], panel["lims"], color="black", lw=0.8, zorder=0)
         ax.set_xlim(panel["lims"])
         ax.set_ylim(panel["lims"])

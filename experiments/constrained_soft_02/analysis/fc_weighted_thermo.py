@@ -48,15 +48,16 @@ eval's shadow-weight draw, archived pre-EMA d10 cells keep the default):
         --vcsgc_seeds 0 1 2 --vcsgc_steps 300000 \
         --plot results/02_constrained_soft/fc_weighted_thermo_d8_house.png
 """
+
 import argparse
 import json
 from pathlib import Path
 
 import numpy as np
 import torch
+from experiments.constrained_soft_02.analysis._common import latest_run_dir, seed_of
 
 from discrete_flow_sampler.mcmc.mchammer_ising import run_vcsgc
-from experiments.constrained_soft_02.analysis._common import latest_run_dir, seed_of
 
 
 def _load_meta(run_dir: Path, eval_dir: str = "eval") -> dict:
@@ -64,10 +65,16 @@ def _load_meta(run_dir: Path, eval_dir: str = "eval") -> dict:
     ising = cfg["ising"]
     metrics = json.loads((run_dir / eval_dir / "metrics.json").read_text())
     D = ising["D"]
-    return dict(name=run_dir.name, run_dir=run_dir, D=D, d=D * D,
-                sigma=ising["sigma"], lam=ising["composition_penalty_strength"],
-                c_target=ising["target_composition"],
-                ess_frac=metrics["ess_fraction"])
+    return dict(
+        name=run_dir.name,
+        run_dir=run_dir,
+        D=D,
+        d=D * D,
+        sigma=ising["sigma"],
+        lam=ising["composition_penalty_strength"],
+        c_target=ising["target_composition"],
+        ess_frac=metrics["ess_fraction"],
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -95,27 +102,39 @@ def _wstd(vals: np.ndarray, w: np.ndarray, mean: float) -> float:
     return float(np.sqrt((w * (vals - mean) ** 2).sum()))
 
 
-def dnfs_observables(run_dir: Path, D: int, sigma: float, n_boot: int, rng,
-                     eval_dir: str = "eval"):
+def dnfs_observables(
+    run_dir: Path, D: int, sigma: float, n_boot: int, rng, eval_dir: str = "eval"
+):
     """Self-normalised IS estimates + bootstrap of (c_mean, c_std, E/site, SRO)."""
     d = D * D
-    spins = torch.load(run_dir / eval_dir / "samples.pt", weights_only=True).float().numpy()
+    spins = (
+        torch.load(run_dir / eval_dir / "samples.pt", weights_only=True).float().numpy()
+    )
     spins = spins.reshape(spins.shape[0], -1)
-    logw = torch.load(run_dir / eval_dir / "log_weights.pt", weights_only=True).double().numpy().ravel()
+    logw = (
+        torch.load(run_dir / eval_dir / "log_weights.pt", weights_only=True)
+        .double()
+        .numpy()
+        .ravel()
+    )
     n = spins.shape[0]
 
-    c = ((spins + 1.0) * 0.5).mean(axis=1)            # fraction of +1 spins
+    c = ((spins + 1.0) * 0.5).mean(axis=1)  # fraction of +1 spins
     s_ord = _nn_sum_ordered(spins, D).astype(float)
-    e_site = -sigma * s_ord / d                        # CE energy per site
-    sro = s_ord / (4.0 * d)                            # <x_i x_j> over undirected bonds
+    e_site = -sigma * s_ord / d  # CE energy per site
+    sro = s_ord / (4.0 * d)  # <x_i x_j> over undirected bonds
 
     def _est(idx):
         lw = logw[idx]
         w = np.exp(lw - lw.max())
         w /= w.sum()
         cm = _wmean(c[idx], w)
-        return dict(c_mean=cm, c_std=_wstd(c[idx], w, cm),
-                    e_site=_wmean(e_site[idx], w), sro=_wmean(sro[idx], w))
+        return dict(
+            c_mean=cm,
+            c_std=_wstd(c[idx], w, cm),
+            e_site=_wmean(e_site[idx], w),
+            sro=_wmean(sro[idx], w),
+        )
 
     point = _est(np.arange(n))
     boots = {k: np.empty(n_boot) for k in point}
@@ -127,8 +146,9 @@ def dnfs_observables(run_dir: Path, D: int, sigma: float, n_boot: int, rng,
     return point, {k: float(boots[k].std()) for k in point}
 
 
-def vcsgc_observables(D: int, sigma: float, c_target: float, lam: float,
-                      n_steps: int, seeds):
+def vcsgc_observables(
+    D: int, sigma: float, c_target: float, lam: float, n_steps: int, seeds
+):
     """Native VCSGCEnsemble reference at kappa=lam, phi=-2*c_target, kT=1.
 
     Chains are delegated to `mchammer_ising.run_vcsgc`, which keeps the same
@@ -139,41 +159,63 @@ def vcsgc_observables(D: int, sigma: float, c_target: float, lam: float,
     d = D * D
     per_seed = {k: [] for k in ("c_mean", "c_std", "e_site", "sro")}
     for s in seeds:
-        traces = run_vcsgc(D=D, sigma=sigma, penalty_strength=lam,
-                           target_composition=c_target, n_steps=n_steps,
-                           seed=s)["traces"]
+        traces = run_vcsgc(
+            D=D,
+            sigma=sigma,
+            penalty_strength=lam,
+            target_composition=c_target,
+            n_steps=n_steps,
+            seed=s,
+        )["traces"]
         c = traces["composition"]
-        pot = traces["potential"]                       # total CE energy
+        pot = traces["potential"]  # total CE energy
         per_seed["c_mean"].append(c.mean())
         per_seed["c_std"].append(c.std())
         per_seed["e_site"].append((pot / d).mean())
         per_seed["sro"].append((-pot / sigma / (4.0 * d)).mean())
     point = {k: float(np.mean(v)) for k, v in per_seed.items()}
-    err = {k: float(np.std(v, ddof=1)) if len(v) > 1 else 0.0
-           for k, v in per_seed.items()}
+    err = {
+        k: float(np.std(v, ddof=1)) if len(v) > 1 else 0.0 for k, v in per_seed.items()
+    }
     return point, err
 
 
 # --------------------------------------------------------------------------- #
 def main() -> None:
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--results_dir", type=Path, default=Path("results/02_constrained_soft"))
-    p.add_argument("--configs", nargs="+", required=True,
-                   help="config-name stems (without _seed..); one per window")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--results_dir", type=Path, default=Path("results/02_constrained_soft")
+    )
+    p.add_argument(
+        "--configs",
+        nargs="+",
+        required=True,
+        help="config-name stems (without _seed..); one per window",
+    )
     p.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44, 45])
     p.add_argument("--ess_floor", type=float, default=0.30)
     p.add_argument("--n_boot", type=int, default=2000)
     p.add_argument("--vcsgc_seeds", nargs="+", type=int, default=[0, 1, 2])
     p.add_argument("--vcsgc_steps", type=int, default=300_000)
     p.add_argument("--plot", type=Path, default=None)
-    p.add_argument("--flag_c", nargs="*", type=float, default=[],
-                   help="compositions drawn with a provisional ring (their Z2 "
-                        "mirrors inherit it); used while a window awaits retrain "
-                        "or prints from a different training grid")
-    p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
-                   help="which frozen eval to score: raw weights or the "
-                        "dual eval's EMA shadow draw")
+    p.add_argument(
+        "--flag_c",
+        nargs="*",
+        type=float,
+        default=[],
+        help="compositions drawn with a provisional ring (their Z2 "
+        "mirrors inherit it); used while a window awaits retrain "
+        "or prints from a different training grid",
+    )
+    p.add_argument(
+        "--eval_dir",
+        choices=["eval", "eval_ema"],
+        default="eval",
+        help="which frozen eval to score: raw weights or the "
+        "dual eval's EMA shadow draw",
+    )
     args = p.parse_args()
     rng = np.random.default_rng(0)
 
@@ -183,8 +225,10 @@ def main() -> None:
         for seed in args.seeds:
             rd = latest_run_dir(args.results_dir, config, seed, args.eval_dir)
             (metas if rd is not None else missing).append(
-                _load_meta(rd, args.eval_dir) if rd is not None
-                else f"{config} seed{seed}")
+                _load_meta(rd, args.eval_dir)
+                if rd is not None
+                else f"{config} seed{seed}"
+            )
     if missing:
         print(f"[warn] no eval found for: {', '.join(missing)}")
     if not metas:
@@ -194,21 +238,29 @@ def main() -> None:
     lams = sorted({m["lam"] for m in metas})
     sigmas = sorted({m["sigma"] for m in metas})
     if len(Ds) > 1 or len(lams) > 1 or len(sigmas) > 1:
-        raise SystemExit(f"expected one (D, sigma, lambda); got D={Ds} sigma={sigmas} lambda={lams}")
+        raise SystemExit(
+            f"expected one (D, sigma, lambda); got D={Ds} sigma={sigmas} lambda={lams}"
+        )
     D, sigma, lam = Ds[0], sigmas[0], lams[0]
     d = D * D
     analytic_cstd = 1.0 / np.sqrt(2.0 * lam * d)
-    print(f"=== weighted thermo: DNFS soft vs vcSGC (kappa=lambda={lam:g}) : "
-          f"D={D} sigma={sigma} kT=1 ess_floor={args.ess_floor} ===")
+    print(
+        f"=== weighted thermo: DNFS soft vs vcSGC (kappa=lambda={lam:g}) : "
+        f"D={D} sigma={sigma} kT=1 ess_floor={args.ess_floor} ==="
+    )
     print(f"analytic composition width 1/sqrt(2*lambda*d) = {analytic_cstd:.4f}")
-    print(f"vcSGC: {len(args.vcsgc_seeds)} seeds x {args.vcsgc_steps} steps, burn-in 1/3\n")
+    print(
+        f"vcSGC: {len(args.vcsgc_seeds)} seeds x {args.vcsgc_steps} steps, burn-in 1/3\n"
+    )
 
     by_c: dict[float, list[dict]] = {}
     for m in metas:
         by_c.setdefault(round(m["c_target"], 4), []).append(m)
 
-    hdr = (f"{'c_t':>6} {'src':>6} {'gated':>6} "
-           f"{'<c>':>16} {'std(c)':>16} {'E/site':>18} {'SRO':>16}")
+    hdr = (
+        f"{'c_t':>6} {'src':>6} {'gated':>6} "
+        f"{'<c>':>16} {'std(c)':>16} {'E/site':>18} {'SRO':>16}"
+    )
     print(hdr)
     print("-" * len(hdr))
 
@@ -219,28 +271,34 @@ def main() -> None:
         excluded = [m for m in rows if m["ess_frac"] < args.ess_floor]
 
         # --- vcSGC reference -------------------------------------------
-        v_pt, v_err = vcsgc_observables(D, sigma, c_t, lam, args.vcsgc_steps,
-                                        args.vcsgc_seeds)
-        print(f"{c_t:>6.3f} {'vcSGC':>6} {len(args.vcsgc_seeds):>2} seeds "
-              f"{v_pt['c_mean']:>8.4f}+/-{v_err['c_mean']:<6.4f} "
-              f"{v_pt['c_std']:>8.4f}+/-{v_err['c_std']:<6.4f} "
-              f"{v_pt['e_site']:>9.4f}+/-{v_err['e_site']:<7.4f} "
-              f"{v_pt['sro']:>8.4f}+/-{v_err['sro']:<6.4f}")
+        v_pt, v_err = vcsgc_observables(
+            D, sigma, c_t, lam, args.vcsgc_steps, args.vcsgc_seeds
+        )
+        print(
+            f"{c_t:>6.3f} {'vcSGC':>6} {len(args.vcsgc_seeds):>2} seeds "
+            f"{v_pt['c_mean']:>8.4f}+/-{v_err['c_mean']:<6.4f} "
+            f"{v_pt['c_std']:>8.4f}+/-{v_err['c_std']:<6.4f} "
+            f"{v_pt['e_site']:>9.4f}+/-{v_err['e_site']:<7.4f} "
+            f"{v_pt['sro']:>8.4f}+/-{v_err['sro']:<6.4f}"
+        )
 
         # --- DNFS soft (ESS-gated, seed-averaged) ----------------------
         if not gated:
             ess_lo = min(m["ess_frac"] for m in rows)
             ess_hi = max(m["ess_frac"] for m in rows)
-            print(f"{'':>6} {'DNFS':>6} {0:>2}/{len(rows):<3} "
-                  f"(all seeds below ESS floor {ess_lo:.3f}-{ess_hi:.3f})\n")
+            print(
+                f"{'':>6} {'DNFS':>6} {0:>2}/{len(rows):<3} "
+                f"(all seeds below ESS floor {ess_lo:.3f}-{ess_hi:.3f})\n"
+            )
             curve.append(dict(c=c_t, vcsgc=v_pt, vcsgc_err=v_err, dnfs=None))
             continue
 
         pts = {k: [] for k in ("c_mean", "c_std", "e_site", "sro")}
         within = {k: [] for k in pts}
         for m in gated:
-            pt, er = dnfs_observables(m["run_dir"], D, sigma, args.n_boot, rng,
-                                      args.eval_dir)
+            pt, er = dnfs_observables(
+                m["run_dir"], D, sigma, args.n_boot, rng, args.eval_dir
+            )
             for k in pts:
                 pts[k].append(pt[k])
                 within[k].append(er[k])
@@ -248,24 +306,33 @@ def main() -> None:
         d_err = {}
         for k in pts:
             w = float(np.mean(within[k]))
-            b = float(np.std(pts[k], ddof=1) / np.sqrt(len(pts[k]))) if len(pts[k]) > 1 else 0.0
+            b = (
+                float(np.std(pts[k], ddof=1) / np.sqrt(len(pts[k])))
+                if len(pts[k]) > 1
+                else 0.0
+            )
             d_err[k] = float(np.hypot(w, b))
 
         exc = ",".join(f"{seed_of(m['name'])}:{m['ess_frac']:.2f}" for m in excluded)
-        print(f"{'':>6} {'DNFS':>6} {len(gated):>2}/{len(rows):<3} "
-              f"{d_pt['c_mean']:>8.4f}+/-{d_err['c_mean']:<6.4f} "
-              f"{d_pt['c_std']:>8.4f}+/-{d_err['c_std']:<6.4f} "
-              f"{d_pt['e_site']:>9.4f}+/-{d_err['e_site']:<7.4f} "
-              f"{d_pt['sro']:>8.4f}+/-{d_err['sro']:<6.4f}"
-              + (f"  excluded {exc}" if exc else ""))
+        print(
+            f"{'':>6} {'DNFS':>6} {len(gated):>2}/{len(rows):<3} "
+            f"{d_pt['c_mean']:>8.4f}+/-{d_err['c_mean']:<6.4f} "
+            f"{d_pt['c_std']:>8.4f}+/-{d_err['c_std']:<6.4f} "
+            f"{d_pt['e_site']:>9.4f}+/-{d_err['e_site']:<7.4f} "
+            f"{d_pt['sro']:>8.4f}+/-{d_err['sro']:<6.4f}"
+            + (f"  excluded {exc}" if exc else "")
+        )
         # gap line: DNFS - vcSGC on each observable
-        print(f"{'':>6} {'Delta':>6} {'':>6} "
-              f"{d_pt['c_mean'] - v_pt['c_mean']:>+8.4f}{'':>8} "
-              f"{d_pt['c_std'] - v_pt['c_std']:>+8.4f}{'':>8} "
-              f"{d_pt['e_site'] - v_pt['e_site']:>+9.4f}{'':>9} "
-              f"{d_pt['sro'] - v_pt['sro']:>+8.4f}\n")
-        curve.append(dict(c=c_t, vcsgc=v_pt, vcsgc_err=v_err,
-                          dnfs=d_pt, dnfs_err=d_err))
+        print(
+            f"{'':>6} {'Delta':>6} {'':>6} "
+            f"{d_pt['c_mean'] - v_pt['c_mean']:>+8.4f}{'':>8} "
+            f"{d_pt['c_std'] - v_pt['c_std']:>+8.4f}{'':>8} "
+            f"{d_pt['e_site'] - v_pt['e_site']:>+9.4f}{'':>9} "
+            f"{d_pt['sro'] - v_pt['sro']:>+8.4f}\n"
+        )
+        curve.append(
+            dict(c=c_t, vcsgc=v_pt, vcsgc_err=v_err, dnfs=d_pt, dnfs_err=d_err)
+        )
 
     if args.plot is not None:
         _plot(curve, lam, analytic_cstd, args.flag_c, args.plot)
@@ -294,8 +361,15 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
         cm = round(1.0 - r["c"], 4)
         if abs(r["c"] - 0.5) < 1e-6 or cm in sampled:
             continue
-        out.append((cm, flip(r["vcsgc"][key]), r["vcsgc_err"][key],
-                    flip(r["dnfs"][key]), r["dnfs_err"][key]))
+        out.append(
+            (
+                cm,
+                flip(r["vcsgc"][key]),
+                r["vcsgc_err"][key],
+                flip(r["dnfs"][key]),
+                r["dnfs_err"][key],
+            )
+        )
     return out
 
 
@@ -329,16 +403,25 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        ANALYTIC_GUIDE, CLASSICAL_HUE, FIGSIZE_SINGLE_2X2,
-        FONT_SIZE_ANNOTATION, MUTED, SAMPLER_HUE, SAVEFIG_DPI, style_axes,
-        use_house_style)
+        ANALYTIC_GUIDE,
+        CLASSICAL_HUE,
+        FIGSIZE_SINGLE_2X2,
+        FONT_SIZE_ANNOTATION,
+        MUTED,
+        SAMPLER_HUE,
+        SAVEFIG_DPI,
+        style_axes,
+        use_house_style,
+    )
 
     use_house_style()
     have = [r for r in curve if r["dnfs"] is not None]
-    panels = [("c_mean", r"$\langle c\rangle$"),
-              ("c_std", r"std$(c)$"),
-              ("e_site", r"$E/d$"),
-              ("sro", r"$\langle x_i x_j\rangle_{NN}$")]
+    panels = [
+        ("c_mean", r"$\langle c\rangle$"),
+        ("c_std", r"std$(c)$"),
+        ("e_site", r"$E/d$"),
+        ("sro", r"$\langle x_i x_j\rangle_{NN}$"),
+    ]
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
     fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_SINGLE_2X2)
     for i, (ax, (key, ylab)) in enumerate(zip(axes.ravel(), panels)):
@@ -346,8 +429,18 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         # sorted by composition (the reflection is stated in the body text)
         mir = _zmirror(have, key)
         pts = sorted(
-            [(r["c"], r["vcsgc"][key], r["vcsgc_err"][key],
-              r["dnfs"][key], r["dnfs_err"][key]) for r in have] + mir)
+            [
+                (
+                    r["c"],
+                    r["vcsgc"][key],
+                    r["vcsgc_err"][key],
+                    r["dnfs"][key],
+                    r["dnfs_err"][key],
+                )
+                for r in have
+            ]
+            + mir
+        )
         pc = [p[0] for p in pts]
         vc, vce = [p[1] for p in pts], [p[2] for p in pts]
         dn, dne = [p[3] for p in pts], [p[4] for p in pts]
@@ -360,23 +453,52 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         # figure exists to show. The dodge is visual only, stated in the
         # caption.
         dodge = 0.004
-        ax.errorbar([c - dodge for c in pc], vc, yerr=vce, fmt="o", ms=3.5,
-                    color=CLASSICAL_HUE, capsize=1.5, lw=0.8,
-                    label="vcSGC (mchammer)" if i == 0 else None)
-        ax.errorbar([c + dodge for c in pc], dn, yerr=dne, fmt="s", ms=3.5,
-                    color=SAMPLER_HUE, capsize=1.5, lw=0.8,
-                    label="DNFS soft (IS)" if i == 0 else None)
+        ax.errorbar(
+            [c - dodge for c in pc],
+            vc,
+            yerr=vce,
+            fmt="o",
+            ms=3.5,
+            color=CLASSICAL_HUE,
+            capsize=1.5,
+            lw=0.8,
+            label="vcSGC (mchammer)" if i == 0 else None,
+        )
+        ax.errorbar(
+            [c + dodge for c in pc],
+            dn,
+            yerr=dne,
+            fmt="s",
+            ms=3.5,
+            color=SAMPLER_HUE,
+            capsize=1.5,
+            lw=0.8,
+            label="DNFS soft (IS)" if i == 0 else None,
+        )
         ring = [(c, y) for c, y in zip(pc, dn) if round(c, 4) in flagged]
         if ring:
-            ax.scatter([c for c, _ in ring], [y for _, y in ring], s=50,
-                       facecolors="none", edgecolors=MUTED, linewidths=1.0,
-                       zorder=4)
+            ax.scatter(
+                [c for c, _ in ring],
+                [y for _, y in ring],
+                s=50,
+                facecolors="none",
+                edgecolors=MUTED,
+                linewidths=1.0,
+                zorder=4,
+            )
         # Guides are labelled in place: at 1.6 in wide a legend box would sit
         # on top of the eleven marks it is explaining.
         if key == "c_mean":
             ax.plot(pc, pc, ls="--", color=ANALYTIC_GUIDE, lw=0.8)
-            ax.text(0.96, 0.06, "$c=c_t$", transform=ax.transAxes, ha="right",
-                    color=ANALYTIC_GUIDE, fontsize=FONT_SIZE_ANNOTATION)
+            ax.text(
+                0.96,
+                0.06,
+                "$c=c_t$",
+                transform=ax.transAxes,
+                ha="right",
+                color=ANALYTIC_GUIDE,
+                fontsize=FONT_SIZE_ANNOTATION,
+            )
         # Three x ticks and at most four y ticks: the axis spans 0.2-0.8 in
         # every panel and a narrow panel cannot carry the default five labels
         # without overprinting.
@@ -391,15 +513,26 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
             # replace them): 0.0090/0.0100/0.0110 are the widest labels in the
             # figure and five of them will not fit a 1.6 in panel.
             ax.set_ylim(analytic_cstd - 0.001, analytic_cstd + 0.001)
-            ax.set_yticks([analytic_cstd - 0.001, analytic_cstd,
-                           analytic_cstd + 0.001])
-            ax.text(0.04, 0.90, r"$1/\sqrt{2\lambda d}$", transform=ax.transAxes,
-                    color=ANALYTIC_GUIDE, fontsize=FONT_SIZE_ANNOTATION)
+            ax.set_yticks([analytic_cstd - 0.001, analytic_cstd, analytic_cstd + 0.001])
+            ax.text(
+                0.04,
+                0.90,
+                r"$1/\sqrt{2\lambda d}$",
+                transform=ax.transAxes,
+                color=ANALYTIC_GUIDE,
+                fontsize=FONT_SIZE_ANNOTATION,
+            )
         ax.set_xlabel("composition $c$")
         ax.set_ylabel(ylab)
         style_axes(ax)
-        ax.text(0.02, 1.03, f"({chr(97 + i)})", transform=ax.transAxes,
-                fontweight="bold", va="bottom")
+        ax.text(
+            0.02,
+            1.03,
+            f"({chr(97 + i)})",
+            transform=ax.transAxes,
+            fontweight="bold",
+            va="bottom",
+        )
     # One figure-level legend for the two series, which are shared by all four
     # panels; naming them once was already the 2x2's convention.
     handles, labels = axes.ravel()[0].get_legend_handles_labels()

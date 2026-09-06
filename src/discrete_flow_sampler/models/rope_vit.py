@@ -71,14 +71,16 @@ def periodic_rope_angles(lattice_side: int, head_dim: int, device) -> Tensor:
     """Per-site rotation angles, (L*L, head_dim // 2): integer-multiple phases
     2 pi m coord / L, first half of the planes on rows, second half on cols."""
     if head_dim % 4 != 0:
-        raise ValueError(f"head_dim must be a multiple of 4 (row+col planes), got {head_dim}")
+        raise ValueError(
+            f"head_dim must be a multiple of 4 (row+col planes), got {head_dim}"
+        )
     planes_per_axis = head_dim // 4
     nyquist = max(lattice_side // 2, 1)
     if planes_per_axis == 1:
         multipliers = torch.ones(1)
     else:
         exponents = torch.arange(planes_per_axis) / (planes_per_axis - 1)
-        multipliers = (nyquist ** exponents).round()
+        multipliers = (nyquist**exponents).round()
     sites = torch.arange(lattice_side * lattice_side)
     rows = (sites // lattice_side).float()
     cols = (sites % lattice_side).float()
@@ -114,9 +116,13 @@ class RoPELatticeAttention(nn.Module):
     ):
         super().__init__()
         if hidden_dim % n_heads != 0:
-            raise ValueError(f"hidden_dim {hidden_dim} not divisible by n_heads {n_heads}")
+            raise ValueError(
+                f"hidden_dim {hidden_dim} not divisible by n_heads {n_heads}"
+            )
         if lattice_side % patch_size != 0:
-            raise ValueError(f"patch_size {patch_size} must divide lattice_side {lattice_side}")
+            raise ValueError(
+                f"patch_size {patch_size} must divide lattice_side {lattice_side}"
+            )
         self.n_heads = n_heads
         self.head_dim = hidden_dim // n_heads
         self.lattice_side = lattice_side
@@ -137,16 +143,29 @@ class RoPELatticeAttention(nn.Module):
         position = torch.arange(d)
         band = position // band_width
         patches_per_row = lattice_side // patch_size
-        patch_of_position = band * patches_per_row + (position % lattice_side) // patch_size
+        patch_of_position = (
+            band * patches_per_row + (position % lattice_side) // patch_size
+        )
         window = band[:, None] * band_width + torch.arange(band_width)[None, :]
-        window_allowed = window <= position[:, None] if causal else torch.ones_like(window, dtype=torch.bool)
+        window_allowed = (
+            window <= position[:, None]
+            if causal
+            else torch.ones_like(window, dtype=torch.bool)
+        )
         patch_band = torch.arange(d // patch_size**2) // patches_per_row
-        patch_allowed = patch_band[None, :] < band[:, None] if causal else patch_band[None, :] != band[:, None]
+        patch_allowed = (
+            patch_band[None, :] < band[:, None]
+            if causal
+            else patch_band[None, :] != band[:, None]
+        )
         patch_members = patch_of_position.argsort(stable=True).view(-1, patch_size**2)
         for name, tensor in (
-            ("site_angles", angles), ("patch_of_position", patch_of_position),
-            ("window_index", window), ("window_allowed", window_allowed),
-            ("patch_allowed", patch_allowed), ("patch_members", patch_members),
+            ("site_angles", angles),
+            ("patch_of_position", patch_of_position),
+            ("window_index", window),
+            ("window_allowed", window_allowed),
+            ("patch_allowed", patch_allowed),
+            ("patch_members", patch_members),
         ):
             self.register_buffer(name, tensor, persistent=False)
 
@@ -156,31 +175,39 @@ class RoPELatticeAttention(nn.Module):
         def heads_of(t: Tensor) -> Tensor:
             return t.view(batch, seq_len, self.n_heads, self.head_dim).transpose(1, 2)
 
-        q, k, v = heads_of(self.q_proj(x)), heads_of(self.k_proj(x)), heads_of(self.v_proj(x))
+        q, k, v = (
+            heads_of(self.q_proj(x)),
+            heads_of(self.k_proj(x)),
+            heads_of(self.v_proj(x)),
+        )
         angles = self.site_angles.view(1, 1, -1, self.head_dim // 2)
-        q_sites = apply_rope(q[:, :, 1:], angles)                     # (B, H, d, dk)
+        q_sites = apply_rope(q[:, :, 1:], angles)  # (B, H, d, dk)
         k_sites = apply_rope(k[:, :, 1:], angles)
         v_sites = v[:, :, 1:]
         scale = 1.0 / math.sqrt(self.head_dim)
 
-        cond_logit = (q[:, :, 1:] * k[:, :, :1]).sum(-1, keepdim=True) * scale  # (B, H, d, 1)
-        near_k = k_sites[:, :, self.window_index]                     # (B, H, d, pL, dk)
+        cond_logit = (q[:, :, 1:] * k[:, :, :1]).sum(
+            -1, keepdim=True
+        ) * scale  # (B, H, d, 1)
+        near_k = k_sites[:, :, self.window_index]  # (B, H, d, pL, dk)
         near_v = v_sites[:, :, self.window_index]
         near_logit = torch.einsum("bhik,bhiwk->bhiw", q_sites, near_k) * scale
         near_logit = near_logit.masked_fill(~self.window_allowed, float("-inf"))
-        far_k = k_sites[:, :, self.patch_members].mean(dim=3)         # (B, H, N, dk)
+        far_k = k_sites[:, :, self.patch_members].mean(dim=3)  # (B, H, N, dk)
         far_v = v_sites[:, :, self.patch_members].mean(dim=3)
         far_logit = torch.einsum("bhik,bhnk->bhin", q_sites, far_k) * scale
         far_logit = far_logit.masked_fill(~self.patch_allowed, float("-inf"))
 
-        weights = torch.softmax(torch.cat([cond_logit, near_logit, far_logit], dim=-1), dim=-1)
+        weights = torch.softmax(
+            torch.cat([cond_logit, near_logit, far_logit], dim=-1), dim=-1
+        )
         n_near = near_logit.shape[-1]
         out_sites = (
             weights[..., :1] * v[:, :, :1]
             + torch.einsum("bhiw,bhiwk->bhik", weights[..., 1 : 1 + n_near], near_v)
             + torch.einsum("bhin,bhnk->bhik", weights[..., 1 + n_near :], far_v)
         )
-        out = torch.cat([v[:, :, :1], out_sites], dim=2)              # cond attends itself
+        out = torch.cat([v[:, :, :1], out_sites], dim=2)  # cond attends itself
         return self.out_proj(out.transpose(1, 2).reshape(batch, seq_len, hidden))
 
 
@@ -188,11 +215,15 @@ class _RoPEBlock(nn.Module):
     """`letf._CausalBlock` minus its absolute position table: proj_in ->
     pre-norm attention + residual -> FFN + residual -> raw-input skip."""
 
-    def __init__(self, hidden_dim, n_heads, lattice_side, patch_size, causal, reverse, ff_mult=4):
+    def __init__(
+        self, hidden_dim, n_heads, lattice_side, patch_size, causal, reverse, ff_mult=4
+    ):
         super().__init__()
         self.proj_in = nn.Linear(hidden_dim, hidden_dim)
         self.norm_attn = nn.LayerNorm(hidden_dim)
-        self.attn = RoPELatticeAttention(hidden_dim, n_heads, lattice_side, patch_size, causal, reverse)
+        self.attn = RoPELatticeAttention(
+            hidden_dim, n_heads, lattice_side, patch_size, causal, reverse
+        )
         self.norm_ff = nn.LayerNorm(hidden_dim)
         self.ff = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim * ff_mult),
@@ -225,10 +256,20 @@ class RoPEStack(nn.Module):
         ff_mult: int = 4,
     ):
         super().__init__()
-        self.blocks = nn.ModuleList([
-            _RoPEBlock(hidden_dim, n_heads, lattice_side, patch_size, causal, reverse, ff_mult)
-            for _ in range(n_layers)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                _RoPEBlock(
+                    hidden_dim,
+                    n_heads,
+                    lattice_side,
+                    patch_size,
+                    causal,
+                    reverse,
+                    ff_mult,
+                )
+                for _ in range(n_layers)
+            ]
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         for block in self.blocks:
@@ -242,7 +283,9 @@ class RoPEAttentionReadout(AttentionReadout):
     argument: the rotation is a fixed function of the site index, not of x."""
 
     def __init__(self, hidden_dim, n_heads, lattice_side, use_sdpa=False):
-        super().__init__(hidden_dim, n_heads, lattice_side * lattice_side, use_sdpa=use_sdpa)
+        super().__init__(
+            hidden_dim, n_heads, lattice_side * lattice_side, use_sdpa=use_sdpa
+        )
         del self.pos_embed
         angles = periodic_rope_angles(lattice_side, self.d_k, "cpu")
         self.register_buffer("site_angles", angles, persistent=False)
@@ -263,15 +306,23 @@ class RoPEAttentionReadout(AttentionReadout):
         angles = self.site_angles.view(1, 1, d, -1)
         Q = apply_rope(split_heads(Q, d), angles)
         K = split_heads(K, 2 * d)
-        K = torch.cat([apply_rope(K[:, :, :d], angles), apply_rope(K[:, :, d:], angles)], dim=2)
+        K = torch.cat(
+            [apply_rope(K[:, :, :d], angles), apply_rope(K[:, :, d:], angles)], dim=2
+        )
         V = split_heads(V, 2 * d)
         joint_mask = self._cached_joint_mask(d, Q.device)
         if self.use_sdpa:
-            out = nn.functional.scaled_dot_product_attention(Q, K, V, attn_mask=~joint_mask)
+            out = nn.functional.scaled_dot_product_attention(
+                Q, K, V, attn_mask=~joint_mask
+            )
         else:
             scores = torch.matmul(Q, K.transpose(-1, -2)) / math.sqrt(self.d_k)
-            out = torch.matmul(torch.softmax(scores.masked_fill(joint_mask, float("-inf")), dim=-1), V)
-        out = self.out_proj(out.transpose(1, 2).contiguous().view(B, d, self.hidden_dim))
+            out = torch.matmul(
+                torch.softmax(scores.masked_fill(joint_mask, float("-inf")), dim=-1), V
+            )
+        out = self.out_proj(
+            out.transpose(1, 2).contiguous().view(B, d, self.hidden_dim)
+        )
         h = combined + out
         return h + self.ff(self.norm_ff(h))
 
@@ -299,14 +350,22 @@ class RoPEViTRateMatrix(LeTFRateMatrix):
         if lattice_side * lattice_side != d:
             raise ValueError(f"d={d} is not a square lattice site count")
         super().__init__(
-            d, vocab_size, hidden_dim, n_layers, n_heads,
+            d,
+            vocab_size,
+            hidden_dim,
+            n_layers,
+            n_heads,
             use_sdpa_readout=use_sdpa_readout,
             condition_on_composition=condition_on_composition,
         )
         self.lattice_side = lattice_side
         self.patch_size = patch_size
-        self.fwd_stack = RoPEStack(hidden_dim, n_layers, n_heads, lattice_side, patch_size, reverse=False)
-        self.bwd_stack = RoPEStack(hidden_dim, n_layers, n_heads, lattice_side, patch_size, reverse=True)
+        self.fwd_stack = RoPEStack(
+            hidden_dim, n_layers, n_heads, lattice_side, patch_size, reverse=False
+        )
+        self.bwd_stack = RoPEStack(
+            hidden_dim, n_layers, n_heads, lattice_side, patch_size, reverse=True
+        )
         self.attention_readout = RoPEAttentionReadout(
             hidden_dim, n_heads, lattice_side, use_sdpa=use_sdpa_readout
         )

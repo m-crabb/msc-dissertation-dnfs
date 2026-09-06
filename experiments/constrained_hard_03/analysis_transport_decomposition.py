@@ -73,6 +73,7 @@ Run remotely:  modal run modal_app.py::transport_decomposition_remote \
                    --run-dir-name <dir>
 Run locally:   python analysis_transport_decomposition.py <run_dir>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,12 +82,12 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 import torch
-
 from experiments.constrained_hard_03.configs import CONFIGS, HardStageCfg
 from experiments.constrained_hard_03.run import (
     _backfill_missing_defaults,
     build_target_and_head,
 )
+
 from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 from discrete_flow_sampler.seeding import seed_everything
 
@@ -127,8 +128,9 @@ def decompose_run(
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     target, head = build_target_and_head(cfg, device)
     head.load_state_dict(
-        torch.load(run_dir / "checkpoints" / "final.pt",
-                   map_location=device, weights_only=True)
+        torch.load(
+            run_dir / "checkpoints" / "final.pt", map_location=device, weights_only=True
+        )
     )
     head.eval()
 
@@ -147,12 +149,16 @@ def decompose_run(
             batch = min(chunk, remaining)
             x_initial = target.sample_base(batch, device=device)
             trajectory = sample_swap_ctmc(
-                head, x_initial, ts, return_all_states=True, target=target,
+                head,
+                x_initial,
+                ts,
+                return_all_states=True,
+                target=target,
                 multi_event=cfg.ctmc.use_matching_step,
                 matching_stats=transport_stats,
-            )                                        # (n_steps + 1, B, d)
-            alignment = bond_alignment(trajectory, adjacency)   # (n_steps+1, B)
-            steps = alignment[1:] - alignment[:-1]              # (n_steps, B)
+            )  # (n_steps + 1, B, d)
+            alignment = bond_alignment(trajectory, adjacency)  # (n_steps+1, B)
+            steps = alignment[1:] - alignment[:-1]  # (n_steps, B)
             net_all.append(alignment[-1] - alignment[0])
             gross_all.append(steps.abs().sum(dim=0))
             forward_all.append(steps.clamp(min=0.0).sum(dim=0))
@@ -173,8 +179,7 @@ def decompose_run(
         float(transport_stats["state_steps"]) * target.d
     )
     swaps_per_site = (
-        float(transport_stats["accepted_state_changing"])
-        * per_site_trajectory_norm
+        float(transport_stats["accepted_state_changing"]) * per_site_trajectory_norm
     )
     net_mean, gross_mean = float(net.mean()), float(gross.mean())
     return {
@@ -212,9 +217,7 @@ def main() -> None:
         device=args.device or None,
     )
     print(json.dumps(result, indent=2))
-    (run_dir / "transport_decomposition.json").write_text(
-        json.dumps(result, indent=2)
-    )
+    (run_dir / "transport_decomposition.json").write_text(json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

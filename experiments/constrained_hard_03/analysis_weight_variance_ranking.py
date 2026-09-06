@@ -216,7 +216,9 @@ def collect_rows() -> tuple[list[EvalRow], int, int]:
 
         for eval_dir in eval_dirs:
             log_weights = (
-                torch.load(eval_dir / "log_weights.pt", map_location="cpu", weights_only=True)
+                torch.load(
+                    eval_dir / "log_weights.pt", map_location="cpu", weights_only=True
+                )
                 .double()
                 .numpy()
                 .ravel()
@@ -225,7 +227,9 @@ def collect_rows() -> tuple[list[EvalRow], int, int]:
             per_eval_rng = np.random.default_rng(
                 [BOOTSTRAP_SEED, *f"{run_dir.name}/{eval_dir.name}".encode()]
             )
-            variance_ci, ess_ci = bootstrap_confidence_intervals(log_weights, per_eval_rng)
+            variance_ci, ess_ci = bootstrap_confidence_intervals(
+                log_weights, per_eval_rng
+            )
             rows.append(
                 EvalRow(
                     run_name=run_dir.name,
@@ -268,7 +272,9 @@ def build_table(rows: list[EvalRow]) -> pd.DataFrame:
     table["chi_squared"] = 1.0 / table["ess_over_n"] - 1.0
     table["nats_per_site"] = np.log1p(table["chi_squared"]) / table["d"]
 
-    table = table.sort_values("var_per_site", ascending=True, kind="stable").reset_index(drop=True)
+    table = table.sort_values(
+        "var_per_site", ascending=True, kind="stable"
+    ).reset_index(drop=True)
 
     # Compare adjacent rows within each lattice size, matching the archive's
     # within-size ranking claims.
@@ -312,10 +318,12 @@ def pairwise_resolution_report(table: pd.DataFrame, label: str) -> None:
         for j in range(i + 1, len(rows)):
             a, b = rows.iloc[i], rows.iloc[j]
             var_ok = intervals_disjoint(
-                (a.var_log_w_ci_lo, a.var_log_w_ci_hi), (b.var_log_w_ci_lo, b.var_log_w_ci_hi)
+                (a.var_log_w_ci_lo, a.var_log_w_ci_hi),
+                (b.var_log_w_ci_lo, b.var_log_w_ci_hi),
             )
             ess_ok = intervals_disjoint(
-                (a.ess_over_n_ci_lo, a.ess_over_n_ci_hi), (b.ess_over_n_ci_lo, b.ess_over_n_ci_hi)
+                (a.ess_over_n_ci_lo, a.ess_over_n_ci_hi),
+                (b.ess_over_n_ci_lo, b.ess_over_n_ci_hi),
             )
             n_pairs += 1
             resolved_var += var_ok
@@ -325,7 +333,9 @@ def pairwise_resolution_report(table: pd.DataFrame, label: str) -> None:
                     f"  {'VAR-only' if var_ok else 'ESS-only'}: "
                     f"{shorten(a.run)}/{a.eval_subdir}  vs  {shorten(b.run)}/{b.eval_subdir}"
                 )
-    print(f"pairs: {n_pairs}   resolved by Var[log w] CI: {resolved_var}   by ESS/N CI: {resolved_ess}")
+    print(
+        f"pairs: {n_pairs}   resolved by Var[log w] CI: {resolved_var}   by ESS/N CI: {resolved_ess}"
+    )
     if disagreements:
         print("pairs resolved under one statistic only:")
         print("\n".join(disagreements))
@@ -335,7 +345,7 @@ def shorten(run_name: str) -> str:
     """Trim the shared H2_d256_c50_s223_letf_ prefix for readable printing."""
     for prefix in ("H2_d256_c50_s223_letf_", "H2_d256_", "H2_"):
         if run_name.startswith(prefix):
-            return run_name[len(prefix):]
+            return run_name[len(prefix) :]
     return run_name
 
 
@@ -347,16 +357,17 @@ def main() -> None:
     print(f"evals analysed: {len(table)} across {table['run'].nunique()} runs")
     print(f"run dirs skipped (no eval-like log_weights.pt): {runs_without_weights}")
     if runs_without_config:
-        print(f"run dirs skipped (weights present but no parsable config.json): {runs_without_config}")
+        print(
+            f"run dirs skipped (weights present but no parsable config.json): {runs_without_config}"
+        )
     print(f"ranked table written to {OUTPUT_CSV}")
 
     # Cross-check archived ESS/N, allowing float32/float64 accumulation drift.
     checkable = table.dropna(subset=["ess_fraction_recorded"])
     if len(checkable):
         relative_gap = (
-            (checkable["ess_over_n"] - checkable["ess_fraction_recorded"]).abs()
-            / checkable["ess_fraction_recorded"]
-        )
+            checkable["ess_over_n"] - checkable["ess_fraction_recorded"]
+        ).abs() / checkable["ess_fraction_recorded"]
         print(
             f"ESS/N cross-check vs recorded metrics.json ({len(checkable)} evals): "
             f"max relative gap {relative_gap.max():.2e}"
@@ -380,7 +391,9 @@ def main() -> None:
         "nats_per_site": "nats/site",
         "top_weight_fraction": "top-w",
     }
-    print("\n=== 16x16 sigma_c-class runs, ranked by Var[log w]/site (ascending = better) ===")
+    print(
+        "\n=== 16x16 sigma_c-class runs, ranked by Var[log w]/site (ascending = better) ==="
+    )
     with pd.option_context("display.width", 250, "display.max_columns", 30):
         print(
             focus[list(display_columns)]
@@ -394,7 +407,9 @@ def main() -> None:
     # under heavy tails the ESS ordering can invert the variance ordering
     # (a run with LOWER Var[log w] showing WORSE ESS/N because one lucky draw
     # inflated a rival's ESS). Surface any strong disagreements explicitly.
-    print("\n=== Var-rank vs ESS-rank disagreements (|rank gap| >= 3 within a lattice size) ===")
+    print(
+        "\n=== Var-rank vs ESS-rank disagreements (|rank gap| >= 3 within a lattice size) ==="
+    )
     any_inversion = False
     for n_sites, group in table.groupby("d"):
         group = group.copy()

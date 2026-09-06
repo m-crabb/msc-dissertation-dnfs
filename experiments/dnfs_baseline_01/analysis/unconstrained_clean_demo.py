@@ -13,7 +13,7 @@ two-panel results-cell figure at the headline 10x10 size:
       covers both phases puts ~half its weighted mass in each mode, which is
       exactly what the Kawasaki chains of the hard chapter cannot do.
 
-Reference = the certified Wolff cluster pool (the chapter's ground truth; 
+Reference = the certified Wolff cluster pool (the chapter's ground truth;
 built by wolff_reference_pool.py, R-hat <= 1.002). The pool
 file is keyed by the RUN's own coupling, so legacy runs meet the legacy pool
 and sigma_c retrains meet the 0.220343 pool -- couplings are never mixed.
@@ -27,17 +27,26 @@ The subcritical appendix figure (log-density marginal, uniform bins -- a
 genuinely continuous axis) stays in its pre-house form: the approved board
 keeps it as-is, so its code path is unchanged.
 """
+
 import argparse
 import json
 from pathlib import Path
 
-from discrete_flow_sampler.diagnostics.figure_style import (
-    FIGSIZE_FULL_1X2_SHORT, FIGSIZE_SINGLE, FONT_SIZE_ANNOTATION,
-    FONT_SIZE_LABEL, REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI, seed_band,
-    style_axes, use_house_style)
 import matplotlib.pyplot as plt
 import torch
 
+from discrete_flow_sampler.diagnostics.figure_style import (
+    FIGSIZE_FULL_1X2_SHORT,
+    FIGSIZE_SINGLE,
+    FONT_SIZE_ANNOTATION,
+    FONT_SIZE_LABEL,
+    REFERENCE_INK,
+    SAMPLER_HUE,
+    SAVEFIG_DPI,
+    seed_band,
+    style_axes,
+    use_house_style,
+)
 from discrete_flow_sampler.diagnostics.metrics import marginal_tvd
 from discrete_flow_sampler.targets.ising import IsingTarget
 
@@ -59,8 +68,14 @@ def load_seed_runs(run_dirs: list[Path]) -> list[dict]:
         samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
         log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
         metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
-        runs.append({"samples": samples, "weights": torch.softmax(log_w, dim=0),
-                     "metrics": metrics, "name": run_dir.name})
+        runs.append(
+            {
+                "samples": samples,
+                "weights": torch.softmax(log_w, dim=0),
+                "metrics": metrics,
+                "name": run_dir.name,
+            }
+        )
     return runs
 
 
@@ -76,28 +91,33 @@ def energy_level_index(target: IsingTarget, x: torch.Tensor) -> torch.Tensor:
     energy = -target.log_prob(x) / (2.0 * target.sigma)
     level = (energy + 2.0 * target.d) / 4.0
     level_rounded = level.round()
-    assert (level - level_rounded).abs().max() < 1e-2, \
+    assert (level - level_rounded).abs().max() < 1e-2, (
         "state energies off the exact-level support"
+    )
     return level_rounded.long().clamp(0, target.d)
 
 
-def energy_level_pmfs(target: IsingTarget, ref_samples: torch.Tensor,
-                      seed_runs: list[dict]) -> dict:
+def energy_level_pmfs(
+    target: IsingTarget, ref_samples: torch.Tensor, seed_runs: list[dict]
+) -> dict:
     """Reference + per-seed pmfs on the exact energy levels, E/d axis."""
     n_levels = target.d + 1
     support_energy_per_site = (torch.arange(n_levels) * 4.0 - 2.0 * target.d) / target.d
 
     def pmf(x: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
         return torch.zeros(n_levels).index_add_(
-            0, energy_level_index(target, x), weights)
+            0, energy_level_index(target, x), weights
+        )
 
     uniform = torch.full((ref_samples.shape[0],), 1.0 / ref_samples.shape[0])
     ref_pmf = pmf(ref_samples, uniform)
-    seed_pmfs = torch.stack([pmf(run["samples"], run["weights"])
-                             for run in seed_runs])
-    return {"support": support_energy_per_site, "ref": ref_pmf,
-            "seeds": seed_pmfs,
-            "tvds": [marginal_tvd(s, ref_pmf) for s in seed_pmfs]}
+    seed_pmfs = torch.stack([pmf(run["samples"], run["weights"]) for run in seed_runs])
+    return {
+        "support": support_energy_per_site,
+        "ref": ref_pmf,
+        "seeds": seed_pmfs,
+        "tvds": [marginal_tvd(s, ref_pmf) for s in seed_pmfs],
+    }
 
 
 def magnetisation_pmfs(ref_samples: torch.Tensor, seed_runs: list[dict]) -> dict:
@@ -105,20 +125,28 @@ def magnetisation_pmfs(ref_samples: torch.Tensor, seed_runs: list[dict]) -> dict
     support_m = (2.0 * torch.arange(N_SITES + 1) - N_SITES) / N_SITES
 
     def pmf(samples: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
-        up_count = ((magnetisation(samples) + 1.0) * 0.5 * N_SITES)
+        up_count = (magnetisation(samples) + 1.0) * 0.5 * N_SITES
         bucket = up_count.round().long().clamp(0, N_SITES)
         return torch.zeros(N_SITES + 1).index_add_(0, bucket, weights)
 
     uniform = torch.full((ref_samples.shape[0],), 1.0 / ref_samples.shape[0])
     ref_pmf = pmf(ref_samples, uniform)
-    seed_pmfs = torch.stack([pmf(run["samples"], run["weights"])
-                             for run in seed_runs])
-    return {"support": support_m, "ref": ref_pmf, "seeds": seed_pmfs,
-            "tvds": [marginal_tvd(s, ref_pmf) for s in seed_pmfs]}
+    seed_pmfs = torch.stack([pmf(run["samples"], run["weights"]) for run in seed_runs])
+    return {
+        "support": support_m,
+        "ref": ref_pmf,
+        "seeds": seed_pmfs,
+        "tvds": [marginal_tvd(s, ref_pmf) for s in seed_pmfs],
+    }
 
 
-def reference_tv_floor(ref_samples: torch.Tensor, n_chains: int,
-                       pmf_of: callable, seed: int = 0, n_draws: int = 5000) -> float:
+def reference_tv_floor(
+    ref_samples: torch.Tensor,
+    n_chains: int,
+    pmf_of: callable,
+    seed: int = 0,
+    n_draws: int = 5000,
+) -> float:
     """Mean TV of n_draws iid reference frames against the empirical pool.
 
     This conditional ideal-draw benchmark excludes uncertainty in the pool
@@ -137,8 +165,9 @@ def reference_tv_floor(ref_samples: torch.Tensor, n_chains: int,
     return sum(tvs) / len(tvs)
 
 
-def populated_window(support: torch.Tensor, *pmfs: torch.Tensor,
-                     pad_levels: int = 2) -> tuple[float, float]:
+def populated_window(
+    support: torch.Tensor, *pmfs: torch.Tensor, pad_levels: int = 2
+) -> tuple[float, float]:
     """x-limits trimmed to the populated levels: the exact support spans the
     whole spectrum but at any one coupling only a narrow window carries mass,
     and plotting the empty tail flattens the visible structure."""
@@ -151,33 +180,54 @@ def populated_window(support: torch.Tensor, *pmfs: torch.Tensor,
     return support[lo].item(), support[hi].item()
 
 
-def plot_house_panel(ax, support, ref_pmf, seed_pmfs, xlabel, panel_label,
-                     n_reference, with_legend):
+def plot_house_panel(
+    ax, support, ref_pmf, seed_pmfs, xlabel, panel_label, n_reference, with_legend
+):
     """One K2 panel: reference as ink steps on the discrete support, sampler
     as the seed-band grammar, bold corner label, house axes."""
-    ax.step(support, ref_pmf, where="mid", color=REFERENCE_INK, lw=1.6,
-            zorder=3, label=f"Wolff (n={n_reference})")
+    ax.step(
+        support,
+        ref_pmf,
+        where="mid",
+        color=REFERENCE_INK,
+        lw=1.6,
+        zorder=3,
+        label=f"Wolff (n={n_reference})",
+    )
     seed_band(ax, support, seed_pmfs, SAMPLER_HUE, "DNFS")
     ax.set_xlabel(xlabel)
     ax.set_ylabel("probability mass")
     ax.set_xlim(*populated_window(support, ref_pmf, *seed_pmfs))
-    ax.text(0.02, 0.98, panel_label, transform=ax.transAxes,
-            fontsize=FONT_SIZE_LABEL, fontweight="bold", va="top")
+    ax.text(
+        0.02,
+        0.98,
+        panel_label,
+        transform=ax.transAxes,
+        fontsize=FONT_SIZE_LABEL,
+        fontweight="bold",
+        va="top",
+    )
     if with_legend:
         # seed_band's stock label overflows a half-text-width panel; relabel
         # compactly, keeping n on both entries (the band convention).
         handles, _ = ax.get_legend_handles_labels()
         n_seeds = seed_pmfs.shape[0]
-        ax.legend(handles,
-                  [f"Wolff (n={n_reference})",
-                   f"DNFS IS-weighted\n(min–max, {n_seeds} seeds)"],
-                  fontsize=FONT_SIZE_ANNOTATION, frameon=False,
-                  loc="upper right")
+        ax.legend(
+            handles,
+            [
+                f"Wolff (n={n_reference})",
+                f"DNFS IS-weighted\n(min–max, {n_seeds} seeds)",
+            ],
+            fontsize=FONT_SIZE_ANNOTATION,
+            frameon=False,
+            loc="upper right",
+        )
     style_axes(ax)
 
 
-def log_density_marginal(target: IsingTarget, ref_samples: torch.Tensor,
-                         seed_runs: list[dict]) -> dict:
+def log_density_marginal(
+    target: IsingTarget, ref_samples: torch.Tensor, seed_runs: list[dict]
+) -> dict:
     """Pre-house subcritical appendix panel: log p~ marginal on uniform bins
     (continuous axis; bin count quoted in its caption). Unchanged on purpose:
     the approved board keeps the appendix twin as-is."""
@@ -192,34 +242,56 @@ def log_density_marginal(target: IsingTarget, ref_samples: torch.Tensor,
         return torch.zeros(N_LOG_DENSITY_BINS).index_add_(0, bin_idx, weights)
 
     uniform = torch.full((ref_values.numel(),), 1.0 / ref_values.numel())
-    seed_pmfs = torch.stack([pmf(values, run["weights"])
-                             for values, run in zip(seed_values, seed_runs)])
-    return {"centres": 0.5 * (edges[:-1] + edges[1:]),
-            "ref": pmf(ref_values, uniform), "seeds": seed_pmfs}
+    seed_pmfs = torch.stack(
+        [pmf(values, run["weights"]) for values, run in zip(seed_values, seed_runs)]
+    )
+    return {
+        "centres": 0.5 * (edges[:-1] + edges[1:]),
+        "ref": pmf(ref_values, uniform),
+        "seeds": seed_pmfs,
+    }
 
 
 def load_point(run_dirs: list[Path]) -> dict:
     """Everything one coupling needs: target, Wolff pool, per-seed evals."""
     ising_cfg = json.loads((run_dirs[0] / "config.json").read_text())["ising"]
-    target = IsingTarget(D=ising_cfg["D"], sigma=ising_cfg["sigma"],
-                         bias=ising_cfg["bias"])
-    pool = torch.load(RESULTS / f"wolff_ref_d10_sigma{ising_cfg['sigma']:g}.pt",
-                      weights_only=True)
-    return {"target": target, "sigma": ising_cfg["sigma"],
-            "ref_samples": pool["samples"].float(),
-            "n_chains": pool["n_chains"], "seed_runs": load_seed_runs(run_dirs)}
+    target = IsingTarget(
+        D=ising_cfg["D"], sigma=ising_cfg["sigma"], bias=ising_cfg["bias"]
+    )
+    pool = torch.load(
+        RESULTS / f"wolff_ref_d10_sigma{ising_cfg['sigma']:g}.pt", weights_only=True
+    )
+    return {
+        "target": target,
+        "sigma": ising_cfg["sigma"],
+        "ref_samples": pool["samples"].float(),
+        "n_chains": pool["n_chains"],
+        "seed_runs": load_seed_runs(run_dirs),
+    }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--budget_runs", required=True, nargs="+", type=Path,
-                        help="stage_4_d10_budget run dirs (seeds 42-45)")
-    parser.add_argument("--critical_runs", required=True, nargs="+", type=Path,
-                        help="stage_4_d10_critical run dirs (legacy family "
-                             "until the _sc retrains land, then those)")
-    parser.add_argument("--out", type=Path,
-                        default=Path("unconstrained_clean_demo.png"))
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--budget_runs",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="stage_4_d10_budget run dirs (seeds 42-45)",
+    )
+    parser.add_argument(
+        "--critical_runs",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="stage_4_d10_critical run dirs (legacy family "
+        "until the _sc retrains land, then those)",
+    )
+    parser.add_argument(
+        "--out", type=Path, default=Path("unconstrained_clean_demo.png")
+    )
     args = parser.parse_args()
     use_house_style()
 
@@ -230,61 +302,97 @@ def main() -> None:
     magnet = magnetisation_pmfs(ref, critical["seed_runs"])
 
     def energy_pmf_of(x, w):
-        return torch.zeros(target.d + 1).index_add_(
-            0, energy_level_index(target, x), w)
+        return torch.zeros(target.d + 1).index_add_(0, energy_level_index(target, x), w)
 
     def magnet_pmf_of(x, w):
-        up_count = ((magnetisation(x) + 1.0) * 0.5 * N_SITES)
+        up_count = (magnetisation(x) + 1.0) * 0.5 * N_SITES
         return torch.zeros(N_SITES + 1).index_add_(
-            0, up_count.round().long().clamp(0, N_SITES), w)
+            0, up_count.round().long().clamp(0, N_SITES), w
+        )
 
     floor_energy = reference_tv_floor(ref, critical["n_chains"], energy_pmf_of)
     floor_magnet = reference_tv_floor(ref, critical["n_chains"], magnet_pmf_of)
 
     tvd_e, tvd_m = torch.tensor(energy["tvds"]), torch.tensor(magnet["tvds"])
-    print(f"=== critical (sigma={critical['sigma']:g}, "
-          f"{len(critical['seed_runs'])} seeds) -- caption numbers ===")
-    print(f"  (a) energy-level TV : {tvd_e.mean():.3f} +/- {tvd_e.std():.3f} "
-          f"(floor {floor_energy:.3f})")
-    print(f"  (b) magnetisation TV: {tvd_m.mean():.3f} +/- {tvd_m.std():.3f} "
-          f"(floor {floor_magnet:.3f})")
+    print(
+        f"=== critical (sigma={critical['sigma']:g}, "
+        f"{len(critical['seed_runs'])} seeds) -- caption numbers ==="
+    )
+    print(
+        f"  (a) energy-level TV : {tvd_e.mean():.3f} +/- {tvd_e.std():.3f} "
+        f"(floor {floor_energy:.3f})"
+    )
+    print(
+        f"  (b) magnetisation TV: {tvd_m.mean():.3f} +/- {tvd_m.std():.3f} "
+        f"(floor {floor_magnet:.3f})"
+    )
     for run in critical["seed_runs"]:
         mass_plus = run["weights"][magnetisation(run["samples"]) > 0].sum()
         print(f"  {run['name']}: mass(m>0) = {mass_plus:.3f}")
 
     fig, (ax_energy, ax_magnet) = plt.subplots(1, 2, figsize=FIGSIZE_FULL_1X2_SHORT)
-    plot_house_panel(ax_energy, energy["support"], energy["ref"],
-                     energy["seeds"], r"$E/d$", "(a)",
-                     ref.shape[0], with_legend=True)
-    plot_house_panel(ax_magnet, magnet["support"], magnet["ref"],
-                     magnet["seeds"], r"magnetisation $m$", "(b)",
-                     ref.shape[0], with_legend=False)
+    plot_house_panel(
+        ax_energy,
+        energy["support"],
+        energy["ref"],
+        energy["seeds"],
+        r"$E/d$",
+        "(a)",
+        ref.shape[0],
+        with_legend=True,
+    )
+    plot_house_panel(
+        ax_magnet,
+        magnet["support"],
+        magnet["ref"],
+        magnet["seeds"],
+        r"magnetisation $m$",
+        "(b)",
+        ref.shape[0],
+        with_legend=False,
+    )
     fig.tight_layout()
     critical_out = args.out.with_name(f"{args.out.stem}_critical.png")
     fig.savefig(critical_out, dpi=SAVEFIG_DPI)
 
     # --- subcritical appendix twin (pre-house panel on the house canvas) ----
     subcritical = load_point(args.budget_runs)
-    log_density = log_density_marginal(subcritical["target"],
-                                       subcritical["ref_samples"],
-                                       subcritical["seed_runs"])
-    ess = torch.tensor([run["metrics"]["ess_fraction"]
-                        for run in subcritical["seed_runs"]])
+    log_density = log_density_marginal(
+        subcritical["target"], subcritical["ref_samples"], subcritical["seed_runs"]
+    )
+    ess = torch.tensor(
+        [run["metrics"]["ess_fraction"] for run in subcritical["seed_runs"]]
+    )
     fig_sub, ax_sub = plt.subplots(figsize=FIGSIZE_SINGLE)
-    ax_sub.plot(log_density["centres"], log_density["ref"],
-                color=REFERENCE_INK, lw=1.8, label="Wolff reference")
-    ax_sub.fill_between(log_density["centres"],
-                        log_density["seeds"].min(dim=0).values,
-                        log_density["seeds"].max(dim=0).values,
-                        color=SAMPLER_HUE, alpha=0.18, label="DNFS (seed min-max)")
-    ax_sub.plot(log_density["centres"], log_density["seeds"].mean(dim=0),
-                color=SAMPLER_HUE, lw=1.5, label="DNFS IS-weighted (mean)")
+    ax_sub.plot(
+        log_density["centres"],
+        log_density["ref"],
+        color=REFERENCE_INK,
+        lw=1.8,
+        label="Wolff reference",
+    )
+    ax_sub.fill_between(
+        log_density["centres"],
+        log_density["seeds"].min(dim=0).values,
+        log_density["seeds"].max(dim=0).values,
+        color=SAMPLER_HUE,
+        alpha=0.18,
+        label="DNFS (seed min-max)",
+    )
+    ax_sub.plot(
+        log_density["centres"],
+        log_density["seeds"].mean(dim=0),
+        color=SAMPLER_HUE,
+        lw=1.5,
+        label="DNFS IS-weighted (mean)",
+    )
     ax_sub.set_xlabel(r"$\log \tilde p(x)$")
     ax_sub.set_ylabel("probability mass")
     ax_sub.set_title(
         f"log-density marginal, $\\sigma={subcritical['sigma']:g}$\n"
         f"ESS fraction ${ess.mean():.3f} \\pm {ess.std():.3f}$ (4 seeds)",
-        fontsize=10)
+        fontsize=10,
+    )
     ax_sub.legend(fontsize=8, framealpha=0.9)
     fig_sub.tight_layout()
     subcritical_out = args.out.with_name(f"{args.out.stem}_subcritical.png")

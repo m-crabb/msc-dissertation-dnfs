@@ -27,6 +27,7 @@ dilutes whatever mass the interval deserves, and a learned soft mask
 approximates the hard interval indicator without containing it. So the
 lattice window can lose, and the experiment is what settles it.
 """
+
 import pytest
 import torch
 
@@ -41,11 +42,15 @@ ATOL = 1e-5
 
 def _head(d=16, window="interval", seed=42, pair_offsets=(1,), **kw):
     torch.manual_seed(seed)
-    backbone = LeTFRateMatrix(d=d, vocab_size=2, hidden_dim=8, n_layers=1,
-                              n_heads=2)
+    backbone = LeTFRateMatrix(d=d, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
     head = MaskedAttentionSwapHead(
-        backbone, pair_offsets=pair_offsets, band_feature_dim=6,
-        position_dim=6, attention_dim=8, attention_window=window, **kw
+        backbone,
+        pair_offsets=pair_offsets,
+        band_feature_dim=6,
+        position_dim=6,
+        attention_dim=8,
+        attention_window=window,
+        **kw,
     )
     head.eval()
     return head
@@ -80,8 +85,12 @@ def test_pair_context_is_blind_to_both_holes(window):
         for hole in (i, j):
             flipped = x.clone()
             flipped[0, hole] = -flipped[0, hole]
-            moved = (head.compute_pair_context(flipped, t)[:, i, j]
-                     - base[:, i, j]).abs().max().item()
+            moved = (
+                (head.compute_pair_context(flipped, t)[:, i, j] - base[:, i, j])
+                .abs()
+                .max()
+                .item()
+            )
             assert moved < ATOL, (window, i, j, hole, moved)
 
 
@@ -109,10 +118,10 @@ def test_swap_antisymmetry_survives_the_window(window):
     x, t = _state(d, batch=1), torch.rand(1)
     G = head(x, t)
     assert (G + G.transpose(1, 2)).abs().max().item() == 0.0
-    pairs = [(i, j) for i in range(d) for j in range(i + 1, d)
-             if x[0, i] != x[0, j]]
-    worst = max((G[0, i, j] + head(swap2(x, i, j), t)[0, i, j]).abs().item()
-                for i, j in pairs)
+    pairs = [(i, j) for i in range(d) for j in range(i + 1, d) if x[0, i] != x[0, j]]
+    worst = max(
+        (G[0, i, j] + head(swap2(x, i, j), t)[0, i, j]).abs().item() for i, j in pairs
+    )
     assert worst < ATOL, (window, worst)
 
 
@@ -121,8 +130,9 @@ def test_lattice_window_costs_no_parameters():
     FLOPs: the flag must not add a tensor."""
     a = _head(window="interval", pair_offsets=(1, 4))
     b = _head(window="lattice", pair_offsets=(1, 4))
-    assert {n: p.shape for n, p in a.named_parameters()} == \
-           {n: p.shape for n, p in b.named_parameters()}
+    assert {n: p.shape for n, p in a.named_parameters()} == {
+        n: p.shape for n, p in b.named_parameters()
+    }
 
 
 def test_lattice_window_is_blind_with_the_stencil_family_too():
@@ -138,8 +148,12 @@ def test_lattice_window_is_blind_with_the_stencil_family_too():
         for hole in (i, j):
             flipped = x.clone()
             flipped[0, hole] = -flipped[0, hole]
-            moved = (head.compute_pair_context(flipped, t)[:, i, j]
-                     - base[:, i, j]).abs().max().item()
+            moved = (
+                (head.compute_pair_context(flipped, t)[:, i, j] - base[:, i, j])
+                .abs()
+                .max()
+                .item()
+            )
             assert moved < ATOL, (i, j, hole, moved)
 
 
@@ -149,9 +163,7 @@ def test_mal_gate_cells_are_their_ma_twins_plus_the_window():
     else, so a window effect is chargeable to the window."""
     from dataclasses import replace
 
-    from experiments.constrained_hard_03.configs import CONFIGS
-
-    from experiments.constrained_hard_03.configs import _MAL_TWINS
+    from experiments.constrained_hard_03.configs import _MAL_TWINS, CONFIGS
 
     assert len(_MAL_TWINS) == 4, "gate + 8x8 rung, both couplings"
     for parent, name in _MAL_TWINS.items():
@@ -164,16 +176,20 @@ def test_mal_gate_cells_are_their_ma_twins_plus_the_window():
 def test_mal_gate_cells_build_their_heads():
     """Construction check at the gate lattice, so a knob typo fails here
     rather than after a launch."""
+    from experiments.constrained_hard_03.configs import (
+        _MAL_TWINS,
+        CONFIGS,
+        build_swap_head,
+    )
+
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
     from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-    from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
-
-    from experiments.constrained_hard_03.configs import _MAL_TWINS
 
     for name in _MAL_TWINS.values():
         cfg = CONFIGS[name]
-        backbone = LeTFRateMatrix(d=cfg.ising.D ** 2, vocab_size=2,
-                                  hidden_dim=16, n_layers=2, n_heads=2)
+        backbone = LeTFRateMatrix(
+            d=cfg.ising.D**2, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
+        )
         target = FixedCompositionIsingTarget(
             D=cfg.ising.D, sigma=cfg.ising.sigma, target_composition=0.5
         )
@@ -200,23 +216,32 @@ def test_relative_pair_position_keeps_every_guarantee(window):
     so blindness, index antisymmetry and swap antisymmetry must all survive
     exactly -- under both windows, since the two flags compose."""
     d = 16
-    head = _head(d=d, window=window, pair_offsets=(1, 4), lattice_side=4,
-                 pair_position_mode="relative")
+    head = _head(
+        d=d,
+        window=window,
+        pair_offsets=(1, 4),
+        lattice_side=4,
+        pair_position_mode="relative",
+    )
     x, t = _state(d, batch=1), torch.rand(1)
     base = head.compute_pair_context(x, t)
     for i, j in ((0, 1), (0, 15), (3, 9), (2, 6)):
         for hole in (i, j):
             flipped = x.clone()
             flipped[0, hole] = -flipped[0, hole]
-            moved = (head.compute_pair_context(flipped, t)[:, i, j]
-                     - base[:, i, j]).abs().max().item()
+            moved = (
+                (head.compute_pair_context(flipped, t)[:, i, j] - base[:, i, j])
+                .abs()
+                .max()
+                .item()
+            )
             assert moved < ATOL, (window, i, j, hole, moved)
     G = head(x, t)
     assert (G + G.transpose(1, 2)).abs().max().item() == 0.0
-    pairs = [(i, j) for i in range(d) for j in range(i + 1, d)
-             if x[0, i] != x[0, j]]
-    worst = max((G[0, i, j] + head(swap2(x, i, j), t)[0, i, j]).abs().item()
-                for i, j in pairs)
+    pairs = [(i, j) for i in range(d) for j in range(i + 1, d) if x[0, i] != x[0, j]]
+    worst = max(
+        (G[0, i, j] + head(swap2(x, i, j), t)[0, i, j]).abs().item() for i, j in pairs
+    )
     assert worst < ATOL, (window, worst)
 
 
@@ -237,12 +262,11 @@ def test_mar_cells_are_their_ma_twins_plus_the_position_code():
     `pair_position_mode` and nothing else."""
     from dataclasses import replace
 
-    from experiments.constrained_hard_03.configs import CONFIGS, _MAR_TWINS
+    from experiments.constrained_hard_03.configs import _MAR_TWINS, CONFIGS
 
     assert len(_MAR_TWINS) == 4, "4x4 gate + 8x8 rung, both couplings"
     for parent, name in _MAR_TWINS.items():
         ma, mar = CONFIGS[parent], CONFIGS[name]
         assert ma.pair_position_mode == "absolute", name
         assert mar.pair_position_mode == "relative", name
-        assert replace(mar, name=ma.name,
-                       pair_position_mode="absolute") == ma, name
+        assert replace(mar, name=ma.name, pair_position_mode="absolute") == ma, name

@@ -32,6 +32,7 @@ Spin convention in the JSON: s = +1 is species[1] (Au), s = -1 is species[0]
 (Cu). The oracle's atomic numbers are mapped accordingly; the fit absorbs any
 sign the library uses internally.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -96,8 +97,7 @@ def enumerate_tuples(positions, cell, cutoffs, decimals=4):
         anchor_shift = images[members[anchor][1]]
         key = tuple(
             sorted(
-                (s, tuple((images[g] - anchor_shift).astype(int)))
-                for s, g in members
+                (s, tuple((images[g] - anchor_shift).astype(int))) for s, g in members
             )
         )
         if key in seen:
@@ -160,9 +160,12 @@ def clease_oracle(eci_file, structure_file, size):
     from clease.settings import CEBulk, Concentration
 
     settings = CEBulk(
-        crystalstructure="fcc", a=3.8, size=list(size),
+        crystalstructure="fcc",
+        a=3.8,
+        size=list(size),
         concentration=Concentration(basis_elements=[["Au", "Cu"]]),
-        db_name="scratch_aucu.db", max_cluster_dia=[6.0, 4.5, 4.5],
+        db_name="scratch_aucu.db",
+        max_cluster_dia=[6.0, 4.5, 4.5],
     )
     eci = json.load(open(eci_file))
     atoms = attach_calculator(settings, atoms=ase.io.read(structure_file), eci=eci)
@@ -172,13 +175,20 @@ def clease_oracle(eci_file, structure_file, size):
         return float(atoms.get_potential_energy())
 
     cutoffs = {2: 6.0, 3: 4.5, 4: 4.5}
-    return atoms.get_positions(), np.array(atoms.get_cell()), energy, cutoffs, {
-        "source": "MetaDNS Cu-Au cluster expansion (Du et al. 2026, arXiv 2605.21722), "
-                  "ECIs fitted by Damewood et al. 2022; CLEASE 1.1.0 CEBulk fcc a=3.8, "
-                  "max_cluster_dia [6.0, 4.5, 4.5]",
-        "eci_file": str(eci_file), "structure_file": str(structure_file),
-        "energy_units": "eV, total energy of the periodic cell",
-    }
+    return (
+        atoms.get_positions(),
+        np.array(atoms.get_cell()),
+        energy,
+        cutoffs,
+        {
+            "source": "MetaDNS Cu-Au cluster expansion (Du et al. 2026, arXiv 2605.21722), "
+            "ECIs fitted by Damewood et al. 2022; CLEASE 1.1.0 CEBulk fcc a=3.8, "
+            "max_cluster_dia [6.0, 4.5, 4.5]",
+            "eci_file": str(eci_file),
+            "structure_file": str(structure_file),
+            "energy_units": "eV, total energy of the periodic cell",
+        },
+    )
 
 
 def icet_oracle(ce_file, side):
@@ -196,13 +206,19 @@ def icet_oracle(ce_file, side):
         return float(calc.calculate_total(occupations=np.where(spins > 0, AU, CU)))
 
     cutoffs = {2: 3.6, 3: 3.6}
-    return atoms.get_positions(), np.array(atoms.get_cell()), energy, cutoffs, {
-        "source": "icet-ce/cluster_expansion.ce (square-grid Cu/Au toy, EMT-fitted, "
-                  "pairs + triplets, cutoffs 3.6/3.6 A, a = 2.5 A); evaluated here on a "
-                  f"PERIODIC {side}x{side} cell with no vacancy padding",
-        "ce_file": str(ce_file),
-        "energy_units": "eV, ClusterExpansionCalculator.calculate_total on the periodic cell",
-    }
+    return (
+        atoms.get_positions(),
+        np.array(atoms.get_cell()),
+        energy,
+        cutoffs,
+        {
+            "source": "icet-ce/cluster_expansion.ce (square-grid Cu/Au toy, EMT-fitted, "
+            "pairs + triplets, cutoffs 3.6/3.6 A, a = 2.5 A); evaluated here on a "
+            f"PERIODIC {side}x{side} cell with no vacancy padding",
+            "ce_file": str(ce_file),
+            "energy_units": "eV, ClusterExpansionCalculator.calculate_total on the periodic cell",
+        },
+    )
 
 
 def main():
@@ -212,7 +228,9 @@ def main():
     parser.add_argument("--eci-file", type=Path)
     parser.add_argument("--structure-file", type=Path)
     parser.add_argument("--size", type=int, nargs=3, default=(4, 4, 4))
-    parser.add_argument("--ce-file", type=Path, default=Path("icet-ce/cluster_expansion.ce"))
+    parser.add_argument(
+        "--ce-file", type=Path, default=Path("icet-ce/cluster_expansion.ce")
+    )
     parser.add_argument("--side", type=int, default=8)
     parser.add_argument("--n-fit", type=int, default=3000)
     parser.add_argument("--n-reference", type=int, default=64)
@@ -220,7 +238,8 @@ def main():
 
     if args.source == "clease":
         positions, cell, energy, cutoffs, meta = clease_oracle(
-            args.eci_file, args.structure_file, args.size)
+            args.eci_file, args.structure_file, args.size
+        )
     else:
         positions, cell, energy, cutoffs, meta = icet_oracle(args.ce_file, args.side)
     n_sites = len(positions)
@@ -236,9 +255,11 @@ def main():
     X = design_matrix(spins, groups)
     coef, *_ = np.linalg.lstsq(X, energies, rcond=None)
     residual = X @ coef - energies
-    print(f"fit: max |residual| = {np.abs(residual).max():.3e} eV, "
-          f"rms = {np.sqrt((residual ** 2).mean()):.3e} eV, "
-          f"energy range {energies.min():.3f}..{energies.max():.3f} eV")
+    print(
+        f"fit: max |residual| = {np.abs(residual).max():.3e} eV, "
+        f"rms = {np.sqrt((residual**2).mean()):.3e} eV, "
+        f"energy range {energies.min():.3f}..{energies.max():.3f} eV"
+    )
     assert np.abs(residual).max() < 1e-8, "enumeration does not span the expansion"
 
     reference_spins = random_spins(args.n_reference, n_sites, np.random.default_rng(1))
@@ -255,8 +276,15 @@ def main():
             by_len.setdefault(len(tup), []).append(list(tup))
         constant += c * len(by_len.pop(0, []))
         for length, same in sorted(by_len.items()):
-            terms.append({"order": length, "shape_order": order, "signature": list(sig),
-                          "coefficient": float(c), "tuples": same})
+            terms.append(
+                {
+                    "order": length,
+                    "shape_order": order,
+                    "signature": list(sig),
+                    "coefficient": float(c),
+                    "tuples": same,
+                }
+            )
     payload = {
         **meta,
         "n_sites": n_sites,
@@ -267,9 +295,17 @@ def main():
         "cutoffs": {str(k): v for k, v in cutoffs.items()},
         "constant": constant,
         "terms": terms,
-        "nearest_neighbour_pairs": [list(t) for t in groups[(2, nn_signature)] if len(t) == 2],
-        "fit": {"n_configs": args.n_fit, "max_abs_residual_eV": float(np.abs(residual).max())},
-        "reference": {"spins": reference_spins.tolist(), "energies": reference_energies},
+        "nearest_neighbour_pairs": [
+            list(t) for t in groups[(2, nn_signature)] if len(t) == 2
+        ],
+        "fit": {
+            "n_configs": args.n_fit,
+            "max_abs_residual_eV": float(np.abs(residual).max()),
+        },
+        "reference": {
+            "spins": reference_spins.tolist(),
+            "energies": reference_energies,
+        },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload))

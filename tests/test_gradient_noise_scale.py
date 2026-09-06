@@ -20,6 +20,7 @@ squared-norms equal independently computed slice gradients, and (3) that
 collection is a pure observer: accumulated gradients stay bit-identical
 and the single-backward paths never touch the out-list.
 """
+
 import math
 
 import torch
@@ -54,10 +55,12 @@ def _batch(tgt, batch_size, seed=7):
 
 
 def _flat_grad(head):
-    return torch.cat([
-        p.grad.reshape(-1) if p.grad is not None else torch.zeros(p.numel())
-        for p in head.parameters()
-    ])
+    return torch.cat(
+        [
+            p.grad.reshape(-1) if p.grad is not None else torch.zeros(p.numel())
+            for p in head.parameters()
+        ]
+    )
 
 
 # ---------------------------------------------------------------- algebra
@@ -105,7 +108,12 @@ def test_slice_sqnorms_match_independent_slice_gradients():
     head.zero_grad()
     collected = []
     loss_swap_backward_microbatched(
-        x, t, c_t, head, tgt, microbatch_size=microbatch,
+        x,
+        t,
+        c_t,
+        head,
+        tgt,
+        microbatch_size=microbatch,
         slice_grad_sqnorms_out=collected,
     )
     # batch 10 / micro 4 -> slices of 4, 4, 2 (ragged tail included).
@@ -115,8 +123,12 @@ def test_slice_sqnorms_match_independent_slice_gradients():
         start = slice_index * microbatch
         head.zero_grad()
         slice_loss, _ = loss_swap(
-            x[start:start + rows], t[start:start + rows],
-            c_t[start:start + rows], head, tgt, return_residual=True,
+            x[start : start + rows],
+            t[start : start + rows],
+            c_t[start : start + rows],
+            head,
+            tgt,
+            return_residual=True,
         )
         slice_loss.backward()
         want = float(_flat_grad(head).pow(2).sum())
@@ -133,13 +145,23 @@ def test_collection_leaves_accumulated_gradients_bit_identical():
 
     head.zero_grad()
     loss_swap_backward_microbatched(
-        x, t, c_t, head, tgt, microbatch_size=4,
+        x,
+        t,
+        c_t,
+        head,
+        tgt,
+        microbatch_size=4,
     )
     reference = _flat_grad(head).clone()
 
     head.zero_grad()
     loss_swap_backward_microbatched(
-        x, t, c_t, head, tgt, microbatch_size=4,
+        x,
+        t,
+        c_t,
+        head,
+        tgt,
+        microbatch_size=4,
         slice_grad_sqnorms_out=[],
     )
     assert torch.equal(_flat_grad(head), reference)
@@ -156,7 +178,12 @@ def test_out_list_untouched_on_single_backward_paths():
         head.zero_grad()
         collected = []
         loss_swap_backward_microbatched(
-            x, t, c_t, head, tgt, microbatch_size=microbatch_size,
+            x,
+            t,
+            c_t,
+            head,
+            tgt,
+            microbatch_size=microbatch_size,
             slice_grad_sqnorms_out=collected,
         )
         assert collected == []

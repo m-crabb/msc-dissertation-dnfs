@@ -13,6 +13,7 @@ the c_target=0.5:
      |mass(m>0) − mass(m<0)| asymmetry measures how badly q_θ has failed
      to learn the invariance the leTF isn't manifestly equivariant under.
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -21,47 +22,55 @@ import matplotlib.pyplot as plt
 import torch
 
 from discrete_flow_sampler.diagnostics.metrics import (
+    composition_fraction_up as composition,
+)
+from discrete_flow_sampler.diagnostics.metrics import (
     conditional_pmf_at_composition,
     enumerate_states,
     ess_from_log_weights,
     exact_log_probs,
+    marginal_tvd,
     z2_asymmetry_from_samples,
 )
 from discrete_flow_sampler.targets.ising import IsingTarget
-from discrete_flow_sampler.diagnostics.metrics import (
-    composition_fraction_up as composition,
-    marginal_tvd,
-)
 
 N_SITES = 16  # D=4 -> d = 16; 2^16 = 65,536 enumerable states
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--run_dir", required=True, type=Path,
-                   help="DNFS results dir (containing config.json + eval/)")
+    p.add_argument(
+        "--run_dir",
+        required=True,
+        type=Path,
+        help="DNFS results dir (containing config.json + eval/)",
+    )
     p.add_argument("--n_bins_energy", type=int, default=40)
     args = p.parse_args()
 
     run_dir = args.run_dir
     cfg = json.loads((run_dir / "config.json").read_text())["ising"]
     if cfg["target_composition"] != 0.5:
-        print(f"WARNING: this script is for c_target=0.5; run has "
-              f"c_target={cfg['target_composition']}.")
+        print(
+            f"WARNING: this script is for c_target=0.5; run has "
+            f"c_target={cfg['target_composition']}."
+        )
     samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
     log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
     stored = json.loads((run_dir / "eval" / "metrics.json").read_text())
 
     target = IsingTarget(
-        D=cfg["D"], sigma=cfg["sigma"], bias=cfg["bias"],
+        D=cfg["D"],
+        sigma=cfg["sigma"],
+        bias=cfg["bias"],
         target_composition=cfg["target_composition"],
         composition_penalty_strength=cfg["composition_penalty_strength"],
     )
 
     # --- Exact distribution over all 2^16 states ------------------------
-    states = enumerate_states(N_SITES)                  # (65536, 16) int64
+    states = enumerate_states(N_SITES)  # (65536, 16) int64
     states_f = states.float()
-    log_pi = exact_log_probs(target, states_f)          # normalised
+    log_pi = exact_log_probs(target, states_f)  # normalised
     pi = log_pi.exp()
 
     c_states = composition(states_f)
@@ -83,7 +92,9 @@ def main() -> None:
     # Conditional p(log p̃ | c=0.5) on the c=0.5 slice (n_plus = 8)
     n_plus_target = N_SITES // 2  # 8 for c_target=0.5, d=16
     slice_states, log_pi_cond = conditional_pmf_at_composition(
-        states, log_pi, n_plus_target=n_plus_target,
+        states,
+        log_pi,
+        n_plus_target=n_plus_target,
     )
     pi_cond = log_pi_cond.exp()
     energy_slice = target.log_prob(slice_states.float())
@@ -113,11 +124,13 @@ def main() -> None:
         weighted_cond_pmf = torch.zeros(args.n_bins_energy)
     else:
         w_slice = w[on_slice]
-        w_slice = w_slice / w_slice.sum()       # renormalise on the slice
+        w_slice = w_slice / w_slice.sum()  # renormalise on the slice
         e_slice_samples = target.log_prob(samples[on_slice])
         es_idx_s = torch.bucketize(e_slice_samples, es_edges[1:-1], right=False)
         weighted_cond_pmf = torch.zeros(args.n_bins_energy).index_add_(
-            0, es_idx_s, w_slice,
+            0,
+            es_idx_s,
+            w_slice,
         )
 
     # Z_2 asymmetry on full IS-weighted samples
@@ -131,27 +144,41 @@ def main() -> None:
     print(f"  IS-weighted  E_hat[c+]      : {weighted_mean_c:.4f}")
     print(f"  stored unweighted mean c    : {stored['composition_mean']:.4f}")
     print(f"  exact   E_pi[m]             : {exact_mean_m:+.4f}    (Z_2 pins = 0)")
-    print(f"  IS-weighted  E_hat[m]       : {weighted_mean_m:+.4f}    "
-          f"(Z_2 break = {abs(weighted_mean_m):.4f})")
+    print(
+        f"  IS-weighted  E_hat[m]       : {weighted_mean_m:+.4f}    "
+        f"(Z_2 break = {abs(weighted_mean_m):.4f})"
+    )
     print(f"  ESS / N                     : {ess_frac:.3f}  (ESS = {ess:.0f})")
     print()
     print("  Z_2 mass split (should be 0.5/0.5 at c_target=0.5, bias=0):")
-    print(f"    mass(m>0) = {z2['mass_pos']:.4f}   mass(m<0) = {z2['mass_neg']:.4f}   "
-          f"mass(m=0) = {z2['mass_zero']:.4f}")
+    print(
+        f"    mass(m>0) = {z2['mass_pos']:.4f}   mass(m<0) = {z2['mass_neg']:.4f}   "
+        f"mass(m=0) = {z2['mass_zero']:.4f}"
+    )
     print(f"    asymmetry |pos - neg|     = {z2['asymmetry']:.4f}")
     print()
     print("  TVDs (sample-budget-limited at N=5000):")
-    print(f"    composition marginal      : {marginal_tvd(weighted_c_pmf, exact_c_pmf):.4f}")
-    print(f"    energy marginal (full)    : {marginal_tvd(weighted_e_pmf, exact_e_pmf):.4f}")
-    print(f"    energy | c=0.5 conditional: {marginal_tvd(weighted_cond_pmf, exact_cond_pmf):.4f}")
-    print(f"    (n_samples on c=0.5 slice : {int(on_slice.sum().item())} / {samples.shape[0]})")
+    print(
+        f"    composition marginal      : {marginal_tvd(weighted_c_pmf, exact_c_pmf):.4f}"
+    )
+    print(
+        f"    energy marginal (full)    : {marginal_tvd(weighted_e_pmf, exact_e_pmf):.4f}"
+    )
+    print(
+        f"    energy | c=0.5 conditional: {marginal_tvd(weighted_cond_pmf, exact_cond_pmf):.4f}"
+    )
+    print(
+        f"    (n_samples on c=0.5 slice : {int(on_slice.sum().item())} / {samples.shape[0]})"
+    )
 
     # --- Figure --------------------------------------------------------
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
 
     ax = axes[0, 0]
     ax.bar(support_c - 0.012, exact_c_pmf, width=0.024, label="exact π", alpha=0.7)
-    ax.bar(support_c + 0.012, weighted_c_pmf, width=0.024, label="IS-weighted", alpha=0.7)
+    ax.bar(
+        support_c + 0.012, weighted_c_pmf, width=0.024, label="IS-weighted", alpha=0.7
+    )
     ax.axvline(cfg["target_composition"], ls="--", c="k", lw=1, label="c_target")
     ax.set_xlabel(r"composition $c_+$")
     ax.set_ylabel("probability")

@@ -50,14 +50,17 @@ from discrete_flow_sampler.constraints.swap_readout import (
 )
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
-
 ATOL = 1e-5
 
 
 def _backbone(d, seed=42, hidden_dim=8, n_heads=2, n_layers=2, use_sdpa=False):
     torch.manual_seed(seed)
     m = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers, n_heads=n_heads,
+        d=d,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        n_heads=n_heads,
         use_sdpa_readout=use_sdpa,
     )
     m.eval()
@@ -268,7 +271,7 @@ def test_trivial_swaps_and_diagonal_vanish():
     G = head(x, t)
 
     assert torch.equal(torch.diagonal(G, dim1=1, dim2=2), torch.zeros(batch, d))
-    same_spin = x.unsqueeze(2) == x.unsqueeze(1)          # (B, d, d)
+    same_spin = x.unsqueeze(2) == x.unsqueeze(1)  # (B, d, d)
     assert torch.equal(G[same_spin], torch.zeros(int(same_spin.sum())))
 
 
@@ -298,8 +301,7 @@ def test_G_responds_to_sites_that_are_neither_masked_nor_read():
     # A read site whose spin differs from the row's in every batch element, so
     # the token difference -- and hence G[:, row, read] -- is nonzero to begin with.
     read = next(
-        s for s in range(d)
-        if s not in masked and bool((x[:, s] != x[:, row]).all())
+        s for s in range(d) if s not in masked and bool((x[:, s] != x[:, row]).all())
     )
     base = head(x, t)
     assert not torch.equal(base[:, row, read], torch.zeros(batch))
@@ -361,7 +363,7 @@ def test_runs_exactly_k_body_passes():
     finally:
         backbone.fwd_stack.forward = original
 
-    assert len(rows_per_call) == 1                        # unchunked: one pass
+    assert len(rows_per_call) == 1  # unchunked: one pass
     assert rows_per_call[0] == n_groups * batch
     assert sum(rows_per_call) == n_groups * batch < d * batch
 

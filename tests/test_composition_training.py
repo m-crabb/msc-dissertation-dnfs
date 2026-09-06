@@ -18,6 +18,7 @@ What is pinned here:
   4. That the draw window widens on a curriculum, and that compositions stay
      inside the window that was in force.
 """
+
 import csv
 from types import SimpleNamespace
 
@@ -38,8 +39,13 @@ from discrete_flow_sampler.targets.ising import (
 
 def _tiny_cfgs(*, n_steps=4, inner=2, seed=0):
     train_cfg = SimpleNamespace(
-        n_steps=n_steps, inner_steps_per_outer=inner, batch_size=8,
-        outer_batch_size=4, replay_buffer_cycles=2, lr=1e-3, seed=seed,
+        n_steps=n_steps,
+        inner_steps_per_outer=inner,
+        batch_size=8,
+        outer_batch_size=4,
+        replay_buffer_cycles=2,
+        lr=1e-3,
+        seed=seed,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=3)
     eval_cfg = SimpleNamespace(eval_every=1_000_000, n_eval_samples=4)
@@ -48,7 +54,9 @@ def _tiny_cfgs(*, n_steps=4, inner=2, seed=0):
 
 def _soft_target():
     return IsingTarget(
-        D=2, sigma=0.1, target_composition=0.5,
+        D=2,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=5.0,
     )
 
@@ -56,7 +64,11 @@ def _soft_target():
 def _model(target, *, conditioned):
     torch.manual_seed(0)
     return LeTFRateMatrix(
-        d=target.d, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2,
+        d=target.d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=1,
+        n_heads=2,
         condition_on_composition=conditioned,
     )
 
@@ -70,6 +82,7 @@ def _rows(output_dir):
 # Shared helpers — these serve both constraint routes
 # --------------------------------------------------------------------------
 
+
 def test_expand_b_major_aligns_and_rejects_ragged():
     values = torch.tensor([0.3, 0.8])
     torch.testing.assert_close(
@@ -82,17 +95,13 @@ def test_expand_b_major_aligns_and_rejects_ragged():
 
 def test_draw_composition_respects_window_and_value_set():
     generator = torch.Generator().manual_seed(0)
-    draws = [
-        draw_composition(0.5, 0.2, None, generator=generator)
-        for _ in range(200)
-    ]
+    draws = [draw_composition(0.5, 0.2, None, generator=generator) for _ in range(200)]
     assert all(0.3 - 1e-9 <= c <= 0.7 + 1e-9 for c in draws)
     assert max(draws) - min(draws) > 0.2, "window is not being explored"
 
     values = (0.3, 0.8)
     picked = {
-        draw_composition(0.5, 0.2, values, generator=generator)
-        for _ in range(50)
+        draw_composition(0.5, 0.2, values, generator=generator) for _ in range(50)
     }
     assert picked == {0.3, 0.8}
 
@@ -106,8 +115,11 @@ def test_draw_composition_quantises_onto_the_realisable_lattice():
     generator = torch.Generator().manual_seed(0)
     for _ in range(50):
         composition = draw_composition(
-            0.5, 0.3, None,
-            quantise_to=target.composition_quantum, generator=generator,
+            0.5,
+            0.3,
+            None,
+            quantise_to=target.composition_quantum,
+            generator=generator,
         )
         n_plus = composition * target.d
         assert abs(n_plus - round(n_plus)) < 1e-9
@@ -155,13 +167,19 @@ def test_retain_chunks_evicts_parallel_quantities_in_lockstep():
 # Training loop
 # --------------------------------------------------------------------------
 
+
 def test_amortised_run_draws_and_logs_a_composition_per_cycle(tmp_path):
     target = _soft_target()
     model = _model(target, conditioned=True)
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(n_steps=8, inner=2)
 
     train(
-        model, target, train_cfg, ctmc_cfg, eval_cfg, tmp_path,
+        model,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        tmp_path,
         use_wandb=False,
         composition_centre=0.5,
         composition_half_width=0.2,
@@ -184,8 +202,15 @@ def test_amortised_run_rejects_an_unconditioned_model(tmp_path):
 
     with pytest.raises(ValueError, match="composition conditioning"):
         train(
-            model, target, train_cfg, ctmc_cfg, eval_cfg, tmp_path,
-            use_wandb=False, composition_centre=0.5, composition_half_width=0.1,
+            model,
+            target,
+            train_cfg,
+            ctmc_cfg,
+            eval_cfg,
+            tmp_path,
+            use_wandb=False,
+            composition_centre=0.5,
+            composition_half_width=0.1,
         )
 
 
@@ -204,7 +229,12 @@ def test_specialist_run_is_unchanged_and_reproducible(tmp_path):
         train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(n_steps=4, seed=3)
         output_dir = tmp_path / f"run{index}"
         train(
-            model, target, train_cfg, ctmc_cfg, eval_cfg, output_dir,
+            model,
+            target,
+            train_cfg,
+            ctmc_cfg,
+            eval_cfg,
+            output_dir,
             use_wandb=False,
         )
         rows = _rows(output_dir)
@@ -230,7 +260,12 @@ def test_composition_curriculum_widens_the_draw_window(tmp_path):
         SimpleNamespace(start_step=20, half_width=0.3, lr=None),
     )
     train(
-        model, target, train_cfg, ctmc_cfg, eval_cfg, tmp_path,
+        model,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        tmp_path,
         use_wandb=False,
         composition_centre=0.5,
         composition_half_width=0.02,

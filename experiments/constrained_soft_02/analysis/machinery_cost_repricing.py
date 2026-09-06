@@ -56,7 +56,9 @@ def point_ess_by_seed(cell: str) -> dict[int, float]:
     if not runs:
         raise FileNotFoundError(f"no runs for {cell} under {RESULTS_DIR}")
     return {
-        seed_of(r): json.loads((r / "eval" / "metrics.json").read_text())["ess_fraction"]
+        seed_of(r): json.loads((r / "eval" / "metrics.json").read_text())[
+            "ess_fraction"
+        ]
         for r in runs
     }
 
@@ -66,7 +68,9 @@ def centre_ess_by_seed(cell: str) -> dict[int, float]:
     out: dict[int, float] = {}
     for r in sorted(RESULTS_DIR.glob(f"{cell}_seed*")):
         rows = json.loads((r / "eval" / "composition_sweep.json").read_text())
-        (centre_row,) = [row for row in rows if row["composition"] == CENTRE_COMPOSITION]
+        (centre_row,) = [
+            row for row in rows if row["composition"] == CENTRE_COMPOSITION
+        ]
         out[seed_of(r)] = centre_row["ess_fraction"]
     return out
 

@@ -27,6 +27,7 @@ Run locally (CPU inductor) or on the GPU venue:
     pixi run -e dev modal run -m \
         experiments.constrained_hard_03.modal_app::compile_gate
 """
+
 import sys
 
 import pytest
@@ -61,8 +62,7 @@ class _CompileHeadsPlugin:
 
 def run_head_tests_compiled() -> bool:
     exit_code = pytest.main(
-        ["-q", "tests/test_two_hole_patch_swap_head.py",
-         "-p", "no:cacheprovider"],
+        ["-q", "tests/test_two_hole_patch_swap_head.py", "-p", "no:cacheprovider"],
         plugins=[_CompileHeadsPlugin()],
     )
     return exit_code == 0
@@ -96,8 +96,10 @@ def run_gradient_parity(device) -> tuple[bool, list[str]]:
         # grad at all — keep them as None so a grad EXISTING on one side
         # only is itself a parity failure.
         grads.append(
-            {name: None if p.grad is None else p.grad.detach().clone()
-             for name, p in head.named_parameters()}
+            {
+                name: None if p.grad is None else p.grad.detach().clone()
+                for name, p in head.named_parameters()
+            }
         )
 
     failures = []
@@ -118,8 +120,7 @@ def run_gradient_parity(device) -> tuple[bool, list[str]]:
         if eager_grad is None:
             continue
         if name in STRUCTURAL_ZERO_PARAMS:
-            for label, grad in (("eager", eager_grad),
-                                ("compiled", compiled_grad)):
+            for label, grad in (("eager", eager_grad), ("compiled", compiled_grad)):
                 if grad.abs().max() > GRAD_ABSOLUTE_TOLERANCE:
                     failures.append(
                         f"{name} ({label}): structural zero violated, "
@@ -127,8 +128,7 @@ def run_gradient_parity(device) -> tuple[bool, list[str]]:
                     )
             continue
         relative_gap = (
-            (eager_grad - compiled_grad).norm()
-            / eager_grad.norm().clamp_min(1e-30)
+            (eager_grad - compiled_grad).norm() / eager_grad.norm().clamp_min(1e-30)
         ).item()
         if relative_gap > GRAD_RELATIVE_TOLERANCE:
             failures.append(f"{name}: relative grad gap {relative_gap:.3e}")
@@ -137,16 +137,22 @@ def run_gradient_parity(device) -> tuple[bool, list[str]]:
 
 def main() -> int:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[compile_gate] device = {device} "
-          f"({torch.cuda.get_device_name(0) if device == 'cuda' else 'cpu'})")
+    print(
+        f"[compile_gate] device = {device} "
+        f"({torch.cuda.get_device_name(0) if device == 'cuda' else 'cpu'})"
+    )
 
     tests_pass = run_head_tests_compiled()
-    print(f"[compile_gate] head tests with compiled heads: "
-          f"{'PASS' if tests_pass else 'FAIL'}")
+    print(
+        f"[compile_gate] head tests with compiled heads: "
+        f"{'PASS' if tests_pass else 'FAIL'}"
+    )
 
     parity_pass, failures = run_gradient_parity(device)
-    print(f"[compile_gate] gradient parity eager vs compiled: "
-          f"{'PASS' if parity_pass else 'FAIL'}")
+    print(
+        f"[compile_gate] gradient parity eager vs compiled: "
+        f"{'PASS' if parity_pass else 'FAIL'}"
+    )
     for failure in failures:
         print(f"[compile_gate]   {failure}")
 

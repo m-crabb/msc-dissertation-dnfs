@@ -19,6 +19,7 @@ outer cycle, captured by wrapping the trainer's ``_append_replay_buffer``.
 Rows are counted in units of one outer cycle's contribution, so the
 expected sequences are exact integers and independent of grid size.
 """
+
 from pathlib import Path
 
 import torch
@@ -56,9 +57,14 @@ _TWO_STAGE_CURRICULUM = [
 
 def _tiny_cfgs(**train_overrides):
     train_kwargs = dict(
-        n_steps=_INNER_PER_OUTER * _N_OUTER, batch_size=8, outer_batch_size=8,
-        inner_steps_per_outer=_INNER_PER_OUTER, lr=1e-3, seed=0,
-        replay_buffer_cycles=_REPLAY_CYCLES, grad_clip_max_norm=500.0,
+        n_steps=_INNER_PER_OUTER * _N_OUTER,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=_INNER_PER_OUTER,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=_REPLAY_CYCLES,
+        grad_clip_max_norm=500.0,
         warmup_steps=0,
     )
     train_kwargs.update(train_overrides)
@@ -80,15 +86,19 @@ def _buffer_cycles_per_outer_step(tmp_path, monkeypatch, **train_overrides):
         retained_rows.append(x_buffer.shape[0])
         return x_buffer, t_idx_buffer
 
-    monkeypatch.setattr(
-        swap_training, "_append_replay_buffer", recording_append
-    )
+    monkeypatch.setattr(swap_training, "_append_replay_buffer", recording_append)
     torch.manual_seed(0)
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs(**train_overrides)
     train_swap(
-        _tiny_head(), target, train_cfg, ctmc_cfg, eval_cfg, Path(tmp_path),
-        use_wandb=False, estimator_mode="control_variate",
+        _tiny_head(),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        Path(tmp_path),
+        use_wandb=False,
+        estimator_mode="control_variate",
         sigma_curriculum=_TWO_STAGE_CURRICULUM,
     )
     rows_per_cycle = retained_rows[0]
@@ -110,9 +120,7 @@ def test_flush_true_matches_the_default(tmp_path, monkeypatch):
     assert cycles == [1, 2, 3, 4, 1, 2, 3, 4]
 
 
-def test_no_flush_retains_the_window_across_the_boundary(
-    tmp_path, monkeypatch
-):
+def test_no_flush_retains_the_window_across_the_boundary(tmp_path, monkeypatch):
     """Flag off: the boundary is invisible to the buffer, which stays at its
     retention cap throughout."""
     cycles = _buffer_cycles_per_outer_step(
@@ -121,9 +129,7 @@ def test_no_flush_retains_the_window_across_the_boundary(
     assert cycles == [1, 2, 3, 4, 4, 4, 4, 4]
 
 
-def test_no_flush_still_resets_the_c_t_ema_at_the_boundary(
-    tmp_path, monkeypatch
-):
+def test_no_flush_still_resets_the_c_t_ema_at_the_boundary(tmp_path, monkeypatch):
     """c_t = dt log Z_t is a function of sigma, so its cross-cycle EMA must
     be reset at the transition whatever the buffer does. Guarded because the
     reset shares the same `if sigma changed` block as the flush and could be
@@ -138,8 +144,10 @@ def test_no_flush_still_resets_the_c_t_ema_at_the_boundary(
 
     monkeypatch.setattr(swap_training, "CTGridEMA", RecordingCTGridEMA)
     cycles = _buffer_cycles_per_outer_step(
-        tmp_path, monkeypatch,
-        flush_replay_on_stage=False, c_t_ema_halflife_cycles=4.0,
+        tmp_path,
+        monkeypatch,
+        flush_replay_on_stage=False,
+        c_t_ema_halflife_cycles=4.0,
     )
     assert cycles == [1, 2, 3, 4, 4, 4, 4, 4]
     assert reset_steps, "the c_t grid EMA was never reset at the boundary"

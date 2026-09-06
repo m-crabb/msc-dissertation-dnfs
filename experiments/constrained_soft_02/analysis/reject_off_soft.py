@@ -34,6 +34,7 @@ The soft sampler priced at each window is the chapter's delivered recipe (the
 F(c) convention): the matched-base specialist off centre, the house specialist
 at the centre, both couplings, seeds 42-45, raw final weights.
 """
+
 import argparse
 import json
 import sys
@@ -47,14 +48,18 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "experiments" / "constrained_hard_03" / "analysis"))
 
 from rejection_rows import SEEDS, kept_draws  # noqa: E402
+
 from discrete_flow_sampler.diagnostics.flops import (  # noqa: E402
-    measured_forward_flops, neural_sampling_flops_per_sample,
-    per_effective_sample)
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+)
 
 RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
 LAMBDA = 50.0
 WINDOWS = (0.25, 0.375, 0.5)
 COUPLINGS = ("s010", "s220")
+
 
 # (n_sites, coupling, c_target) -> run-dir glob.  Off-centre 8x8 windows are
 # the matched-base cells; the centre has no matched-base twin (Bernoulli(1/2)
@@ -82,18 +87,22 @@ def score_cell(n_sites, coupling, c_target):
     n_plus = int(round(c_target * n_sites))
     per_seed, run_dir = [], None
     for seed in SEEDS:
-        matches = sorted(RESULTS.glob(run_glob(n_sites, coupling, c_target).format(seed=seed)))
+        matches = sorted(
+            RESULTS.glob(run_glob(n_sites, coupling, c_target).format(seed=seed))
+        )
         if not matches:
             continue
         run_dir = matches[0]
         samples, log_w, drawn = kept_draws(run_dir, n_plus)
         survivors = torch.softmax(log_w, dim=0)
-        per_seed.append({
-            "acceptance": samples.shape[0] / drawn,
-            "ESS": float(1.0 / (survivors.pow(2).sum() * samples.shape[0])),
-            "n_kept": int(samples.shape[0]),
-            "n_drawn": drawn,
-        })
+        per_seed.append(
+            {
+                "acceptance": samples.shape[0] / drawn,
+                "ESS": float(1.0 / (survivors.pow(2).sum() * samples.shape[0])),
+                "n_kept": int(samples.shape[0]),
+                "n_drawn": drawn,
+            }
+        )
     if run_dir is None:
         return None
 
@@ -105,9 +114,13 @@ def score_cell(n_sites, coupling, c_target):
     for row in per_seed:
         row["FLOP/es"] = per_effective_sample(raw / row["acceptance"], row["ESS"])
 
-    summary = {key: (float(np.mean([r[key] for r in per_seed])),
-                     float(np.std([r[key] for r in per_seed])))
-               for key in ("acceptance", "ESS", "FLOP/es")}
+    summary = {
+        key: (
+            float(np.mean([r[key] for r in per_seed])),
+            float(np.std([r[key] for r in per_seed])),
+        )
+        for key in ("acceptance", "ESS", "FLOP/es")
+    }
     summary["n_kept_per_seed"] = [r["n_kept"] for r in per_seed]
     summary["n_drawn_per_seed"] = [r["n_drawn"] for r in per_seed]
     summary["envelope_prediction"] = envelope_slice_mass(n_sites, c_target)
@@ -134,11 +147,17 @@ def latex_rows(table, n_sites):
                 continue
             acc, acc_sd = cell["acceptance"]
             ess, ess_sd = cell["ESS"]
-            cells += [f"${acc:.2f} \\pm {acc_sd:.2f}$",
-                      f"${ess:.2f} \\pm {ess_sd:.2f}$",
-                      flop_cell(cell["FLOP/es"][0])]
+            cells += [
+                f"${acc:.2f} \\pm {acc_sd:.2f}$",
+                f"${ess:.2f} \\pm {ess_sd:.2f}$",
+                flop_cell(cell["FLOP/es"][0]),
+            ]
         prediction = envelope_slice_mass(n_sites, c_target)
-        lines.append(f"        $c_\\text{{target}} = {c_target}$ & ${prediction:.2f}$ & " + " & ".join(cells) + r" \\")
+        lines.append(
+            f"        $c_\\text{{target}} = {c_target}$ & ${prediction:.2f}$ & "
+            + " & ".join(cells)
+            + r" \\"
+        )
     return "\n".join(lines)
 
 
@@ -155,9 +174,11 @@ def main(argv=None):
                 cell = score_cell(n_sites, coupling, c_target)
                 if cell is not None:
                     table[f"soft_{n_sites}_{coupling}_c{c_target}"] = cell
-                    print(f"{n_sites:3d} {coupling} c={c_target:<5} acc {cell['acceptance'][0]:.3f}"
-                          f" (env {cell['envelope_prediction']:.3f})  ESS {cell['ESS'][0]:.3f}"
-                          f"  FLOP/es {cell['FLOP/es'][0]:.2e}  kept {cell['n_kept_per_seed']}")
+                    print(
+                        f"{n_sites:3d} {coupling} c={c_target:<5} acc {cell['acceptance'][0]:.3f}"
+                        f" (env {cell['envelope_prediction']:.3f})  ESS {cell['ESS'][0]:.3f}"
+                        f"  FLOP/es {cell['FLOP/es'][0]:.2e}  kept {cell['n_kept_per_seed']}"
+                    )
     args.out.write_text(json.dumps(table, indent=2))
     print(f"wrote {args.out}")
     if args.latex:

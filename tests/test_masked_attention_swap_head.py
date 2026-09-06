@@ -28,13 +28,22 @@ from discrete_flow_sampler.samplers._swap_neighbours import (
 
 
 def _head(
-    d=9, offsets=(1, 3), seed=42, hidden_dim=8, n_heads=2, n_layers=2,
+    d=9,
+    offsets=(1, 3),
+    seed=42,
+    hidden_dim=8,
+    n_heads=2,
+    n_layers=2,
     gather_triu_pairs=False,
 ):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers,
-        n_heads=n_heads, use_sdpa_readout=False,
+        d=d,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        n_heads=n_heads,
+        use_sdpa_readout=False,
     )
     head = MaskedAttentionSwapHead(
         backbone, pair_offsets=offsets, gather_triu_pairs=gather_triu_pairs
@@ -94,9 +103,7 @@ def test_pair_context_blind_to_both_holes_exactly(gather_triu_pairs):
             (_flip(x, j), f"x_{j}"),
             (_flip(x, i, j), f"x_{i} and x_{j}"),
         ):
-            drift = _drift(
-                head.compute_pair_context(flipped_x, t)[:, i, j, :], base
-            )
+            drift = _drift(head.compute_pair_context(flipped_x, t)[:, i, j, :], base)
             assert drift == 0.0, f"H_[{i},{j}] leaks {label}: {drift:.2e}"
 
 
@@ -111,8 +118,9 @@ def test_band_summaries_blind_exactly():
 
     for i, j in PROBE_PAIRS:
         for flipped_x, label in ((_flip(x, i), f"x_{i}"), (_flip(x, j), f"x_{j}")):
-            drift = _drift(head.band_summaries(flipped_x, t)[:, i, j, :],
-                           band[:, i, j, :])
+            drift = _drift(
+                head.band_summaries(flipped_x, t)[:, i, j, :], band[:, i, j, :]
+            )
             assert drift == 0.0, f"band[{i},{j}] leaks {label}: {drift:.2e}"
 
 
@@ -127,7 +135,7 @@ def test_band_empty_visible_sets_are_exact_zero():
     F = band.shape[-1] // 3
 
     assert (band[:, 3, 4, :] == 0.0).all(), "adjacent pair: whole band nonzero"
-    offset3_block = band[:, 2, 5, 2 * F:]
+    offset3_block = band[:, 2, 5, 2 * F :]
     assert (offset3_block == 0.0).all(), "j-i=3 < delta+2: offset-3 block nonzero"
     assert (band[:, 2, 5, : 2 * F] != 0.0).any(), (
         "unary/offset-1 blocks empty on a 3-wide gap: over-masking"
@@ -145,9 +153,7 @@ def test_pair_context_sensitive_to_context():
     base = head.compute_pair_context(x, t)[:, i, j, :]
 
     for site, interval in ((0, "prefix"), (3, "band"), (7, "suffix")):
-        drift = _drift(
-            head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base
-        )
+        drift = _drift(head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base)
         assert drift > 1e-7, f"H_[{i},{j}] ignores its {interval} (site {site})"
 
 
@@ -258,9 +264,7 @@ def test_head_parameters_receive_grad_and_grads_finite():
     for p in stacks:
         if p.grad is not None:
             assert torch.isfinite(p.grad).all(), "non-finite grad in causal stacks"
-    readout_grads = [
-        p.grad for p in head.backbone.attention_readout.parameters()
-    ]
+    readout_grads = [p.grad for p in head.backbone.attention_readout.parameters()]
     assert all(g is None for g in readout_grads), (
         "attention_readout unexpectedly live; the one-pass design routed "
         "through the machinery it exists to replace"
@@ -277,11 +281,18 @@ def _stencil_head(d=16, offsets=(1, 4), lattice_side=4, seed=42):
     """
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
     head = MaskedAttentionSwapHead(
-        backbone, pair_offsets=offsets, use_stencil=True, lattice_side=lattice_side,
+        backbone,
+        pair_offsets=offsets,
+        use_stencil=True,
+        lattice_side=lattice_side,
     )
     head.eval()
     return head
@@ -384,7 +395,11 @@ def test_stencil_off_adds_nothing():
     so every existing MA cell builds the head it always did."""
     torch.manual_seed(0)
     backbone = LeTFRateMatrix(
-        d=16, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=16,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
     head = MaskedAttentionSwapHead(backbone, pair_offsets=(1, 4))
@@ -416,7 +431,11 @@ def test_blindness_holds_at_tuned_band_capacity():
     neither row nor column adjacency."""
     torch.manual_seed(0)
     backbone = LeTFRateMatrix(
-        d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2,
+        d=16,
+        vocab_size=2,
+        hidden_dim=16,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
     head = MaskedAttentionSwapHead(
@@ -446,7 +465,11 @@ def test_readout_score_scale_is_an_exact_score_multiplier():
     head = _head()
     torch.manual_seed(42)  # identical RNG stream -> identical weights
     backbone = LeTFRateMatrix(
-        d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=9,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
     scaled = MaskedAttentionSwapHead(

@@ -22,18 +22,19 @@ stays a human judgement (the naive precedent: one failed bar stated
 honestly without failing the arm — a harness that decided automatically
 would flatten exactly that nuance).
 """
+
 import argparse
 import csv
 import math
 from pathlib import Path
 
-RUNG_BOUNDARIES = (0, 5_000, 10_000, 12_000)   # truncated smoke ladder
+RUNG_BOUNDARIES = (0, 5_000, 10_000, 12_000)  # truncated smoke ladder
 ESCAPE_WINDOW = (2_500, 3_500)
 SURVIVAL_WINDOW = (10_000, 12_000)
 EXCURSION_PRE = (9_500, 10_000)
 EXCURSION_PEAK = (10_000, 10_600)
 FINAL_WINDOW = (11_500, 12_000)
-TRAIN_ESS_BAR = 15.0                            # of 256, estimator lens
+TRAIN_ESS_BAR = 15.0  # of 256, estimator lens
 ESCAPE_SCALE_BAR = 500.0
 
 
@@ -93,12 +94,12 @@ def arm_report(run_dir):
     escape_grad = median(column(rows, "grad_norm", *ESCAPE_WINDOW))
 
     survival = [
-        (r["step"], r["loss"]) for r in rows
+        (r["step"], r["loss"])
+        for r in rows
         if SURVIVAL_WINDOW[0] <= r["step"] < SURVIVAL_WINDOW[1]
         and not math.isnan(r["loss"])
     ]
-    slope = least_squares_slope([s for s, _ in survival],
-                                [v for _, v in survival])
+    slope = least_squares_slope([s for s, _ in survival], [v for _, v in survival])
     pre = median(column(rows, "loss", *EXCURSION_PRE))
     peak_values = column(rows, "loss", *EXCURSION_PEAK)
     peak = max(peak_values) if peak_values else math.nan
@@ -109,51 +110,55 @@ def arm_report(run_dir):
     for rung in range(len(RUNG_BOUNDARIES) - 1):
         end = RUNG_BOUNDARIES[rung + 1]
         window = (end - 500, end)
-        per_rung.append({
-            "rung": rung,
-            "loss": median(column(rows, "loss", *window)),
-            "grad": median(column(rows, "grad_norm", *window)),
-            "ess": median(column(rows, "ess", RUNG_BOUNDARIES[rung], end)),
-        })
+        per_rung.append(
+            {
+                "rung": rung,
+                "loss": median(column(rows, "loss", *window)),
+                "grad": median(column(rows, "grad_norm", *window)),
+                "ess": median(column(rows, "ess", RUNG_BOUNDARIES[rung], end)),
+            }
+        )
 
     ess_all = column(rows, "ess")
     ess_around_5k = median(column(rows, "ess", 4_000, 6_000))
     ess_final_rung = column(rows, "ess", 10_000, 12_000)
     ess_final_slope = math.nan
-    ess_steps = [r["step"] for r in rows
-                 if 10_000 <= r["step"] < 12_000
-                 and not math.isnan(r.get("ess", math.nan))]
+    ess_steps = [
+        r["step"]
+        for r in rows
+        if 10_000 <= r["step"] < 12_000 and not math.isnan(r.get("ess", math.nan))
+    ]
     if ess_steps:
         ess_final_slope = least_squares_slope(ess_steps, ess_final_rung)
 
     var_ratio_rows = [
-        (r["step"],
-         r["var_estimator_integrand"] / r["var_dt_log_p_tilde"])
+        (r["step"], r["var_estimator_integrand"] / r["var_dt_log_p_tilde"])
         for r in rows
         if not math.isnan(r.get("var_estimator_integrand", math.nan))
         and not math.isnan(r.get("var_dt_log_p_tilde", math.nan))
         and r["var_dt_log_p_tilde"] != 0.0
     ]
-    var_ratio_final = median(
-        [v for s, v in var_ratio_rows if 11_000 <= s < 12_000]
-    )
+    var_ratio_final = median([v for s, v in var_ratio_rows if 11_000 <= s < 12_000])
 
     def stat(key, agg):
         vals = column(rows, key)
         if not vals:
             return math.nan
-        return {"median": median(vals), "max": max(vals),
-                "p95": sorted(vals)[int(0.95 * (len(vals) - 1))]}[agg]
+        return {
+            "median": median(vals),
+            "max": max(vals),
+            "p95": sorted(vals)[int(0.95 * (len(vals) - 1))],
+        }[agg]
 
     return {
         "name": name,
         "n_rows": len(rows),
-        "last_step": max((r["step"] for r in rows
-                          if not math.isnan(r["step"])), default=math.nan),
+        "last_step": max(
+            (r["step"] for r in rows if not math.isnan(r["step"])), default=math.nan
+        ),
         "escape_grad_3k": escape_grad,
         "escape_annotation": (
-            "pass-scale" if escape_grad < 2 * ESCAPE_SCALE_BAR
-            else "ABOVE 500-scale"
+            "pass-scale" if escape_grad < 2 * ESCAPE_SCALE_BAR else "ABOVE 500-scale"
         ),
         "survival_slope": slope,
         "survival_annotation": "pass" if slope <= 0 else "FAIL (rising)",
@@ -165,7 +170,8 @@ def arm_report(run_dir):
         "ess_max": max(ess_all) if ess_all else math.nan,
         "ess_final_slope_per_step": ess_final_slope,
         "ess_annotation": (
-            "never > 15/256" if (ess_all and max(ess_all) <= TRAIN_ESS_BAR)
+            "never > 15/256"
+            if (ess_all and max(ess_all) <= TRAIN_ESS_BAR)
             else "clears 15/256 at least once"
         ),
         "var_ratio_final_rung": var_ratio_final,
@@ -181,11 +187,12 @@ def arm_report(run_dir):
 
 def format_report(report):
     pre, peak, final_loss = report["excursion"]
-    rungs = " / ".join(
-        f"{r['loss']:.3g}" for r in report["per_rung"]
-    ) + " (loss), " + " / ".join(
-        f"{r['grad']:.3g}" for r in report["per_rung"]
-    ) + " (grad)"
+    rungs = (
+        " / ".join(f"{r['loss']:.3g}" for r in report["per_rung"])
+        + " (loss), "
+        + " / ".join(f"{r['grad']:.3g}" for r in report["per_rung"])
+        + " (grad)"
+    )
     lines = [
         f"### {report['name']} "
         f"(rows {report['n_rows']}, last step {report['last_step']:.0f})",
@@ -201,8 +208,7 @@ def format_report(report):
         f"| transition excursion | contained "
         f"| pre {pre:.3g} -> peak {peak:.3g} -> final {final_loss:.3g} "
         f"| — |",
-        f"| estimator: loss@5k | < 5 (twin: 20) "
-        f"| {report['loss_at_5k']:.3g} | — |",
+        f"| estimator: loss@5k | < 5 (twin: 20) | {report['loss_at_5k']:.3g} | — |",
         f"| estimator: train ESS | > 15/256, rising at ~5k "
         f"| median {report['ess_around_5k']:.3g} at 5k; max "
         f"{report['ess_max']:.3g}; final-rung slope "
@@ -213,8 +219,7 @@ def format_report(report):
         f"| sim: proposal_drop_frac | median < 0.01 "
         f"| {report['proposal_drop_median']:.2g} "
         f"(p95 {report['proposal_drop_p95']:.2g}) | — |",
-        f"| sim: events/site/step | < 0.1 "
-        f"| {report['events_median']:.2g} | — |",
+        f"| sim: events/site/step | < 0.1 | {report['events_median']:.2g} | — |",
         f"| sim: lambda_dt_p99 | logged, sane "
         f"| median {report['lambda_dt_p99_median']:.3g} | — |",
         f"| clip health | — | clipped_frac median "
@@ -231,11 +236,11 @@ def format_report(report):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_dirs", nargs="+")
-    parser.add_argument("--out", default=None,
-                        help="markdown output path (default: stdout)")
+    parser.add_argument(
+        "--out", default=None, help="markdown output path (default: stdout)"
+    )
     args = parser.parse_args(argv)
-    lines = ["# Smoke-wave deep-review measurements "
-             "(harness: smoke_review.py)", ""]
+    lines = ["# Smoke-wave deep-review measurements (harness: smoke_review.py)", ""]
     for run_dir in args.run_dirs:
         lines += format_report(arm_report(run_dir))
     text = "\n".join(lines) + "\n"

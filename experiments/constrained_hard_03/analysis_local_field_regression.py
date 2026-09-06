@@ -23,8 +23,8 @@ import json
 from pathlib import Path
 
 import torch
-
 from experiments.constrained_hard_03.gate_4x4 import load_run
+
 from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
 
 
@@ -81,12 +81,12 @@ def analyse(run_dir, t_value, device="cpu"):
     t = torch.full((x.shape[0],), t_value)
     with torch.no_grad():
         G = torch.cat([head(xb, tb) for xb, tb in zip(x.split(1024), t.split(1024))])
-    G = G[:, i_idx, j_idx]                                           # (N, P)
+    G = G[:, i_idx, j_idx]  # (N, P)
     xi, xj = x[:, i_idx], x[:, j_idx]
     differing = xi != xj
     S = (G / (xi - xj))[differing]
     # hole-excluded local fields: field at i minus the partner's bond
-    field = x @ A                                                    # (N, d)
+    field = x @ A  # (N, d)
     h_i = field[:, i_idx] - A[i_idx, j_idx] * xj
     h_j = field[:, j_idx] - A[i_idx, j_idx] * xi
     delta_h, sum_h = (h_i - h_j)[differing], (h_i + h_j)[differing]
@@ -94,21 +94,34 @@ def analyse(run_dir, t_value, device="cpu"):
     # exterior energy: all bonds not touching either hole (blind, a hole-
     # subtracted BOND sum); E = E_ext + (x_i - x_j)(h_i - h_j)/2 - A_ij on
     # differing pairs, so (E_ext, h_i, h_j, A_ij) carry everything about E.
-    energy = -0.5 * (x * field).sum(1, keepdim=True)                 # -sum_bonds x_k x_l
+    energy = -0.5 * (x * field).sum(1, keepdim=True)  # -sum_bonds x_k x_l
     E_ext = (energy + xi * h_i + xj * h_j + A[i_idx, j_idx] * xi * xj)[differing]
     ones = torch.ones_like(S)
     linear_field = torch.stack([ones, delta_h], 1)
     local_quadratic = torch.stack(
-        [ones, delta_h, sum_h, delta_h**2, delta_h * sum_h, adjacent, adjacent * delta_h], 1
+        [
+            ones,
+            delta_h,
+            sum_h,
+            delta_h**2,
+            delta_h * sum_h,
+            adjacent,
+            adjacent * delta_h,
+        ],
+        1,
     )
     with_exterior_energy = torch.cat(
-        [local_quadratic, torch.stack([E_ext, E_ext * delta_h, E_ext**2, E_ext**2 * delta_h], 1)], 1
+        [
+            local_quadratic,
+            torch.stack([E_ext, E_ext * delta_h, E_ext**2, E_ext**2 * delta_h], 1),
+        ],
+        1,
     )
     # Lookup over the neighbourhood spins of i and j (holes excluded).
-    neigh_mask = ((A[i_idx] + A[j_idx]) > 0).float()                 # (P, d)
+    neigh_mask = ((A[i_idx] + A[j_idx]) > 0).float()  # (P, d)
     neigh_mask[torch.arange(len(i_idx)), i_idx] = 0
     neigh_mask[torch.arange(len(i_idx)), j_idx] = 0
-    bits = ((x.unsqueeze(1) > 0).float() * neigh_mask.unsqueeze(0))  # (N, P, d)
+    bits = (x.unsqueeze(1) > 0).float() * neigh_mask.unsqueeze(0)  # (N, P, d)
     powers = 2.0 ** torch.arange(d)
     pattern = (bits * powers).sum(-1)
     pair_id = torch.arange(len(i_idx)).expand(x.shape[0], -1)
@@ -125,12 +138,14 @@ def analyse(run_dir, t_value, device="cpu"):
     )
     residual_on_energy = r_squared(local_residual, energy_design)
     return {
-        "run": Path(run_dir).name, "t": t_value,
+        "run": Path(run_dir).name,
+        "t": t_value,
         "lookup_protocol": "pair_bitmask_heldout_sse_v2",
         "r2_linear_field": r_squared(S, linear_field),
         "r2_local_quadratic": r_squared(S, local_quadratic),
         "r2_with_exterior_energy": r_squared(S, with_exterior_energy),
-        "r2_any_local": local_r2, "n_local_cells": n_cells,
+        "r2_any_local": local_r2,
+        "n_local_cells": n_cells,
         "nonlocal_share_explained_by_E_ext": residual_on_energy,
         "S_std": float(S.std()),
         "G_same_token_max": float(G[~differing].abs().max()),
@@ -144,13 +159,17 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
     rows = [analyse(r, t) for r in args.run_dirs for t in args.t]
-    print(f"{'run':46s} {'t':>4s} {'linear':>7s} {'quad':>7s} {'+E_ext':>7s} "
-          f"{'local':>7s} {'resid~E':>8s} {'S_std':>6s}")
+    print(
+        f"{'run':46s} {'t':>4s} {'linear':>7s} {'quad':>7s} {'+E_ext':>7s} "
+        f"{'local':>7s} {'resid~E':>8s} {'S_std':>6s}"
+    )
     for r in rows:
-        print(f"{r['run'][16:62]:46s} {r['t']:4.1f} {r['r2_linear_field']:7.3f} "
-              f"{r['r2_local_quadratic']:7.3f} {r['r2_with_exterior_energy']:7.3f} "
-              f"{r['r2_any_local']:7.3f} {r['nonlocal_share_explained_by_E_ext']:8.3f} "
-              f"{r['S_std']:6.3f}")
+        print(
+            f"{r['run'][16:62]:46s} {r['t']:4.1f} {r['r2_linear_field']:7.3f} "
+            f"{r['r2_local_quadratic']:7.3f} {r['r2_with_exterior_energy']:7.3f} "
+            f"{r['r2_any_local']:7.3f} {r['nonlocal_share_explained_by_E_ext']:8.3f} "
+            f"{r['S_std']:6.3f}"
+        )
     if args.out:
         args.out.write_text(json.dumps(rows, indent=1))
 

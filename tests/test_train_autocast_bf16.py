@@ -30,6 +30,7 @@ THE TWO THINGS THAT MUST NOT MOVE, and why they are tests and not comments:
 
 Default False, so every archived cell is byte-identical.
 """
+
 import torch
 
 from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
@@ -37,9 +38,7 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 
 def _target(D):
-    return FixedCompositionIsingTarget(
-        D=D, sigma=0.220343, target_composition=0.5
-    )
+    return FixedCompositionIsingTarget(D=D, sigma=0.220343, target_composition=0.5)
 
 
 # The fp32 cells the `bf16` twins are read against, one template per rung.
@@ -94,8 +93,9 @@ def test_train_autocast_bf16_defaults_off_everywhere():
     and the `_w5bf16` d576 cells (bf16-only at d400+) may carry it."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    on = [n for n, c in CONFIGS.items()
-          if getattr(c.train, "train_autocast_bf16", False)]
+    on = [
+        n for n, c in CONFIGS.items() if getattr(c.train, "train_autocast_bf16", False)
+    ]
     assert all(n.endswith(("_w4bf16", "_w5bf16")) for n in on), on
 
 
@@ -117,7 +117,8 @@ def test_bf16_probe_cells_are_their_fp32_twins_plus_the_flag():
         assert bf16.train.train_autocast_bf16 is True, label
         assert fp32.train.train_autocast_bf16 is False, label
         rebuilt = replace(
-            bf16, name=fp32.name,
+            bf16,
+            name=fp32.name,
             train=replace(bf16.train, train_autocast_bf16=False),
         )
         assert rebuilt == fp32, label

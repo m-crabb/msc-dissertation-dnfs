@@ -24,6 +24,7 @@ against itself -- estimates the wrong thing: it answers "how much does this
 reference wobble under resampling", not "how far apart would two
 independent references land", which is what an error column needs.
 """
+
 import json
 
 import pytest
@@ -41,11 +42,11 @@ def _balanced_spins(n, seed, d=D_SITES):
     """n draws from the c=0.5 slice: every row exactly d/2 up, d/2 down."""
     generator = torch.Generator().manual_seed(seed)
     base = torch.cat([torch.ones(d // 2), -torch.ones(d // 2)])
-    return torch.stack([base[torch.randperm(d, generator=generator)]
-                        for _ in range(n)])
+    return torch.stack([base[torch.randperm(d, generator=generator)] for _ in range(n)])
 
 
 # --- the reference itself -------------------------------------------------
+
 
 def test_reference_is_composition_exact():
     """Every reference state sits on the slice the neural cells are scored
@@ -61,6 +62,7 @@ def test_reference_is_composition_exact():
 
 
 # --- reference standard error ---------------------------------------------
+
 
 def test_reference_se_is_positive_and_falls_with_more_chains():
     """The reference's precision is not zero at 8x8, and it improves as the
@@ -91,7 +93,7 @@ def test_reference_se_tracks_root_n_scaling():
     se_base = h8.reference_standard_error(base, L, n_splits=64, seed=1)["dMag"]
     se_quad = h8.reference_standard_error(quad, L, n_splits=64, seed=1)["dMag"]
 
-    assert 0.35 < se_quad / se_base < 0.72   # ideal 0.5, sampling slack
+    assert 0.35 < se_quad / se_base < 0.72  # ideal 0.5, sampling slack
 
 
 def test_reference_se_matches_a_directly_measured_one():
@@ -117,8 +119,9 @@ def test_reference_se_matches_a_directly_measured_one():
     for replicate in range(4):
         flat = _balanced_spins(n_chains * per_chain, seed=1000 + replicate)
         w = torch.full((flat.shape[0],), 1.0 / flat.shape[0])
-        observed.append(magnetisation_profile_error(
-            flat, w, truth, L, reference_weights=w_truth))
+        observed.append(
+            magnetisation_profile_error(flat, w, truth, L, reference_weights=w_truth)
+        )
     direct = sum(observed) / len(observed)
     direct *= (1 + n_chains * per_chain / truth_n) ** -0.5
 
@@ -138,12 +141,14 @@ def test_reference_se_is_far_below_the_sampling_floor():
 
     se = h8.reference_standard_error(pool, L, n_splits=32, seed=2)
     floor = h8.sampling_floor_from_reference(
-        reference, L, n_draws=500, n_replicates=32, seed=3)
+        reference, L, n_draws=500, n_replicates=32, seed=3
+    )
 
     assert floor["dMag"] > 4 * se["dMag"]
 
 
 # --- the sampling floor ---------------------------------------------------
+
 
 def test_sampling_floor_falls_with_more_draws():
     """The floor is the error a PERFECT sampler still shows at finite N, so
@@ -153,9 +158,11 @@ def test_sampling_floor_falls_with_more_draws():
 
     reference = _balanced_spins(20_000, seed=4)
     few = h8.sampling_floor_from_reference(
-        reference, L, n_draws=250, n_replicates=32, seed=5)
+        reference, L, n_draws=250, n_replicates=32, seed=5
+    )
     many = h8.sampling_floor_from_reference(
-        reference, L, n_draws=4000, n_replicates=32, seed=5)
+        reference, L, n_draws=4000, n_replicates=32, seed=5
+    )
 
     assert many["dMag"] < few["dMag"]
     assert many["dCorr"] < few["dCorr"]
@@ -175,12 +182,14 @@ def test_perfect_sampler_sits_at_the_floor():
 
     observed = magnetisation_profile_error(draws, uniform, reference, L)
     floor = h8.sampling_floor_from_reference(
-        reference, L, n_draws=1000, n_replicates=64, seed=8)
+        reference, L, n_draws=1000, n_replicates=64, seed=8
+    )
 
     assert observed < 2.5 * floor["dMag"]
 
 
 # --- FLOP/es provenance ---------------------------------------------------
+
 
 def test_flop_config_comes_from_the_run_dir_not_the_registry(tmp_path):
     """The 4x4 fill bills FLOPs off the LIVE registry (house_table_4x4.py
@@ -192,11 +201,15 @@ def test_flop_config_comes_from_the_run_dir_not_the_registry(tmp_path):
 
     run_dir = tmp_path / "H2_d64_c50_s010_letf_thp_50k_w2_seed42_tag"
     run_dir.mkdir()
-    (run_dir / "config.json").write_text(json.dumps({
-        "name": "H2_d64_c50_s010_letf_thp_50k_w2",
-        "gather_triu_pairs": False,
-        "ctmc": {"n_euler_steps": 77},
-    }))
+    (run_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "name": "H2_d64_c50_s010_letf_thp_50k_w2",
+                "gather_triu_pairs": False,
+                "ctmc": {"n_euler_steps": 77},
+            }
+        )
+    )
 
     saved = h8.run_dir_config(run_dir)
     assert saved["gather_triu_pairs"] is False
@@ -209,20 +222,25 @@ def test_registry_drift_against_run_dir_is_reported(tmp_path):
     provenance finding, not something for the fill to paper over."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
-    saved = {"gather_triu_pairs": False, "compile_head": False,
-             "ctmc": {"n_euler_steps": 128}}
-    live = {"gather_triu_pairs": True, "compile_head": False,
-            "ctmc": {"n_euler_steps": 128}}
+    saved = {
+        "gather_triu_pairs": False,
+        "compile_head": False,
+        "ctmc": {"n_euler_steps": 128},
+    }
+    live = {
+        "gather_triu_pairs": True,
+        "compile_head": False,
+        "ctmc": {"n_euler_steps": 128},
+    }
 
-    drift = h8.config_drift(saved, live, fields=("gather_triu_pairs",
-                                                 "compile_head"))
+    drift = h8.config_drift(saved, live, fields=("gather_triu_pairs", "compile_head"))
     assert drift == {"gather_triu_pairs": (False, True)}
 
 
 # --- integration on the real reference, skipped when absent ---------------
 
-@pytest.mark.parametrize("sigma_label,npz_tag", [("s010", "s100"),
-                                                 ("s220", "s220")])
+
+@pytest.mark.parametrize("sigma_label,npz_tag", [("s010", "s100"), ("s220", "s220")])
 def test_real_reference_certifies(sigma_label, npz_tag):
     """The chapter caption claims R-hat <= 1.01 on every observable. Pin it
     against the shipped chains so the claim cannot rot."""
@@ -230,12 +248,13 @@ def test_real_reference_certifies(sigma_label, npz_tag):
 
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
-    kawasaki_dir = Path(__file__).resolve().parents[1] / "results" / "03_hard" / "kawasaki_w2"
+    kawasaki_dir = (
+        Path(__file__).resolve().parents[1] / "results" / "03_hard" / "kawasaki_w2"
+    )
     if not sorted(kawasaki_dir.glob(f"kawasaki_D{L}_{npz_tag}_seed*.npz")):
         pytest.skip("D8 reference chains not present")
 
-    chains = h8.load_reference_chains(kawasaki_dir, L, npz_tag,
-                                      burn_in_fraction=0.2)
+    chains = h8.load_reference_chains(kawasaki_dir, L, npz_tag, burn_in_fraction=0.2)
     assert len(chains) == 15
     assert h8.is_composition_exact(torch.cat(chains), n_plus=D_SITES // 2)
 
@@ -249,18 +268,23 @@ def test_real_reference_certifies(sigma_label, npz_tag):
 # that it happens, that it moves nothing but the bill, and that it stays off
 # the families it does not apply to.
 
-@pytest.mark.parametrize("name,expected", [
-    ("H2_d64_c50_s220_letf_ma_50k_curr_w2", True),
-    ("H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2", True),
-    ("H2_d64_c50_s220_letf_iv_50k_curr_w2", False),
-    ("H2_d64_c50_s220_letf_ivmo2ef_50k_curr_w2", False),
-    ("H2_d64_c50_s220_letf_thp_50k_curr_w2", False),
-    ("H2_d64_c50_s220_letf_mo_50k_curr_w2", False),
-    ("H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2", False),
-])
+
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("H2_d64_c50_s220_letf_ma_50k_curr_w2", True),
+        ("H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2", True),
+        ("H2_d64_c50_s220_letf_iv_50k_curr_w2", False),
+        ("H2_d64_c50_s220_letf_ivmo2ef_50k_curr_w2", False),
+        ("H2_d64_c50_s220_letf_thp_50k_curr_w2", False),
+        ("H2_d64_c50_s220_letf_mo_50k_curr_w2", False),
+        ("H2_d64_c50_s220_letf_fimo2ef_50k_curr_w2", False),
+    ],
+)
 def test_billing_config_is_separable_for_attention_bands_only(name, expected):
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        flop_billing_config)
+        flop_billing_config,
+    )
     from experiments.constrained_hard_03.configs import CONFIGS
 
     billed = flop_billing_config(CONFIGS[name])
@@ -275,7 +299,8 @@ def test_billing_config_moves_exactly_one_field():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        flop_billing_config)
+        flop_billing_config,
+    )
     from experiments.constrained_hard_03.configs import CONFIGS
 
     trained = CONFIGS["H2_d64_c50_s220_letf_ma_50k_curr_w2"]
@@ -289,9 +314,9 @@ def test_billed_head_computes_the_trained_head_s_function():
     whose ESS it prints -- the one error an exactness argument cannot
     survive."""
     import torch
-
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        flop_billing_config)
+        flop_billing_config,
+    )
     from experiments.constrained_hard_03.configs import CONFIGS
     from experiments.constrained_hard_03.run import build_target_and_head
 
@@ -301,7 +326,7 @@ def test_billed_head_computes_the_trained_head_s_function():
     torch.manual_seed(0)
     _, billed = build_target_and_head(flop_billing_config(cfg), device="cpu")
 
-    d = cfg.ising.D ** 2
+    d = cfg.ising.D**2
     half = torch.cat([torch.ones(d // 2), -torch.ones(d - d // 2)])
     x = torch.stack([half[torch.randperm(d)] for _ in range(2)])
     t = torch.full((2,), 0.5)
@@ -314,15 +339,16 @@ def test_separable_billing_actually_lowers_the_attention_bill():
     """The point of the exercise. A no-op here would mean the flag never
     reached the head and the table quietly kept the dense price."""
     import torch
-
-    from discrete_flow_sampler.diagnostics.flops import measured_forward_flops
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        flop_billing_config)
+        flop_billing_config,
+    )
     from experiments.constrained_hard_03.configs import CONFIGS
     from experiments.constrained_hard_03.run import build_target_and_head
 
+    from discrete_flow_sampler.diagnostics.flops import measured_forward_flops
+
     cfg = CONFIGS["H2_d16_c50_s220_letf_ma_10k_w2"]
-    d = cfg.ising.D ** 2
+    d = cfg.ising.D**2
     half = torch.cat([torch.ones(d // 2), -torch.ones(d - d // 2)])
     example = (torch.stack([half[torch.randperm(d)]]), torch.full((1,), 0.5))
 
@@ -343,8 +369,7 @@ def test_ladder_provenance_is_keyed_by_coupling_not_by_arm():
     missing-condition branch prints `--` -- indistinguishable from "not yet
     run". The column would stay blank with the runs sitting on disk.
     """
-    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        ARM_PROVENANCE)
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import ARM_PROVENANCE
 
     assert all(isinstance(k, tuple) and len(k) == 2 for k in ARM_PROVENANCE)
     for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef"):
@@ -358,29 +383,35 @@ def test_every_provenanced_cell_names_a_real_config():
     """A tag typo or a renamed arm would otherwise surface as a permanently
     blank row rather than an error."""
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        ARM_PROVENANCE, CELL_NAME)
+        ARM_PROVENANCE,
+        CELL_NAME,
+    )
     from experiments.constrained_hard_03.configs import CONFIGS
 
-    for (arm, sigma_label) in ARM_PROVENANCE:
+    for arm, sigma_label in ARM_PROVENANCE:
         name = CELL_NAME[sigma_label].format(arm=arm)
         assert name in CONFIGS, name
 
 
 # --- GFlowNet comparator rows ---------------------------------------------
 
+
 def test_gfn_cells_name_real_configs():
     """Both GFN arms at both couplings must resolve to registered d64
     configs; a tag or name typo would otherwise print as a permanently
     blank row (same failure mode the provenance test above guards)."""
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        GFN_ARMS, GFN_CELL_NAME, SIGMA_LABELS)
+        GFN_ARMS,
+        GFN_CELL_NAME,
+        SIGMA_LABELS,
+    )
     from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 
     for gfn_arm in GFN_ARMS:
         for sigma_label in SIGMA_LABELS:
             name = GFN_CELL_NAME.format(
-                sigma_label=sigma_label,
-                objective=gfn_arm.removeprefix("gfn_"))
+                sigma_label=sigma_label, objective=gfn_arm.removeprefix("gfn_")
+            )
             assert name in GFN_CONFIGS, name
 
 
@@ -391,8 +422,10 @@ def test_gfn_registry_audit_catches_architecture_drift(tmp_path):
     A policy trained at hidden 32 billed at the registry's hidden 64 would
     silently overstate the row's FLOP/es."""
     from dataclasses import asdict
+
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        gfn_registry_config_for)
+        gfn_registry_config_for,
+    )
     from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 
     name = "GFN_d64_c50_s010_tb_50k_par"
@@ -418,8 +451,7 @@ def test_gfn_row_reads_frozen_ess_and_bills_without_euler_factor(tmp_path):
     is used per RAW SAMPLE as-is: an autoregressive rollout has no Euler
     grid, so a bill that picked up the house n_euler multiplier would
     overstate FLOP/es by two orders."""
-    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        neural_cell)
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import neural_cell
 
     run_dir = tmp_path / "gfn_run"
     (run_dir / "eval").mkdir(parents=True)
@@ -429,7 +461,8 @@ def test_gfn_row_reads_frozen_ess_and_bills_without_euler_factor(tmp_path):
     torch.save(torch.zeros(n), run_dir / "eval" / "log_weights.pt")
     frozen_ess = 0.625  # deliberately NOT the value uniform weights imply
     (run_dir / "eval" / "metrics.json").write_text(
-        json.dumps({"ess_fraction": frozen_ess}))
+        json.dumps({"ess_fraction": frozen_ess})
+    )
 
     class UniformTarget:
         sigma = 0.1
@@ -439,8 +472,9 @@ def test_gfn_row_reads_frozen_ess_and_bills_without_euler_factor(tmp_path):
 
     reference = _balanced_spins(128, seed=2)
     flops_per_raw = 1.0e6
-    row = neural_cell(run_dir, UniformTarget(), reference,
-                      torch.zeros(128), flops_per_raw)
+    row = neural_cell(
+        run_dir, UniformTarget(), reference, torch.zeros(128), flops_per_raw
+    )
     assert row["ESS"] == frozen_ess
     assert row["FLOP/es"] == pytest.approx(flops_per_raw / frozen_ess)
 
@@ -450,13 +484,16 @@ def test_gfn_rows_stay_outside_the_bold_comparison():
     hard.tex caption): even when a GFN cell holds the best number in a
     column, the bold must land on the best SWAP cell. A refactor that
     computed `best` over every key in the table would silently move it."""
-    from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-        latex_table)
+    from experiments.constrained_hard_03.analysis.house_table_8x8 import latex_table
 
     def entry(ess, flops):
-        return {"ESS": (ess, 0.001), "dMag": (0.05, 0.01),
-                "dCorr": (0.05, 0.01), "EW2": (0.05, 0.01),
-                "FLOP/es": (flops, 0.0)}
+        return {
+            "ESS": (ess, 0.001),
+            "dMag": (0.05, 0.01),
+            "dCorr": (0.05, 0.01),
+            "EW2": (0.05, 0.01),
+            "FLOP/es": (flops, 0.0),
+        }
 
     table = {
         "mo_s010": entry(0.90, 1.0e9),

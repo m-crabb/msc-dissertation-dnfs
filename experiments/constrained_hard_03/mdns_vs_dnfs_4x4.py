@@ -23,6 +23,7 @@ discipline): the DNFS record's eval spends
 per sample over 65,536 rollouts. ESS FRACTIONS are the comparable
 quantity, absolute ESS is not.
 """
+
 import argparse
 import json
 import re
@@ -36,10 +37,11 @@ SHARED_METRICS = [
 ]
 # json float keys as the driver writes them <-> demo-pack cell name stems
 OPERATING_POINTS = {"sigma_0.1": "s010", "sigma_0.223": "s223"}
-MDNS_ARM_NAMES = {"a": "MDNS A (V0)", "b": "MDNS B (none)",
-                  "c": "MDNS C (unconstr.)"}
-DNFS_HEAD_LABELS = {"ma": "DNFS letf ma 10k (reported)",
-                    "mo": "DNFS letf mo 10k (reference)"}
+MDNS_ARM_NAMES = {"a": "MDNS A (V0)", "b": "MDNS B (none)", "c": "MDNS C (unconstr.)"}
+DNFS_HEAD_LABELS = {
+    "ma": "DNFS letf ma 10k (reported)",
+    "mo": "DNFS letf mo 10k (reference)",
+}
 # Recorded per-point bounds, provenance doc §2b (no per-seed artefact).
 DNFS_FREE_ENERGY_BIAS_BOUND = {"s010": 0.003, "s223": 0.007}
 
@@ -58,7 +60,8 @@ def parse_demo_pack_table(path):
         if match:
             point, head, seed, tv, ess, excess = match.groups()
             table.setdefault((point, head), {})[int(seed)] = {
-                "energy_tv": float(tv), "ess_fraction": float(ess),
+                "energy_tv": float(tv),
+                "ess_fraction": float(ess),
                 "max_level_excess": float(excess),
             }
     return table
@@ -76,29 +79,32 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mdns-verdict",
-        default="results/03_hard/mdns_budget_gate2_4x4/"
-                "verdict_20260813-gate2-10k.json")
+        default="results/03_hard/mdns_budget_gate2_4x4/verdict_20260813-gate2-10k.json",
+    )
     parser.add_argument(
-        "--dnfs-table",
-        default="results/03_hard/demo_4x4/observables_table.md")
+        "--dnfs-table", default="results/03_hard/demo_4x4/observables_table.md"
+    )
     args = parser.parse_args(argv)
 
     mdns = json.loads(Path(args.mdns_verdict).read_text())
     dnfs = parse_demo_pack_table(args.dnfs_table)
 
-    print("DNFS anchor: 10k head-twin gate record "
-          "(H2_d16_c50_{s010,s223}_letf_{ma,mo}_10k, "
-          "results/03_hard/demo_4x4/) — ma reported, mo reference.")
+    print(
+        "DNFS anchor: 10k head-twin gate record "
+        "(H2_d16_c50_{s010,s223}_letf_{ma,mo}_10k, "
+        "results/03_hard/demo_4x4/) — ma reported, mo reference."
+    )
     for sigma_key, point in OPERATING_POINTS.items():
         if sigma_key not in mdns:
             print(f"(no MDNS results for {sigma_key} — skipped)")
             continue
         reports = mdns[sigma_key]["reports"]
         seeds = sorted({report["seed"] for report in reports.values()})
-        print(f"\n## Operating point {point} "
-              f"(sigma = {sigma_key.split('_')[1]}) — mean [per-seed]")
-        print("| sampler | " + " | ".join(
-            label for _, label in SHARED_METRICS) + " |")
+        print(
+            f"\n## Operating point {point} "
+            f"(sigma = {sigma_key.split('_')[1]}) — mean [per-seed]"
+        )
+        print("| sampler | " + " | ".join(label for _, label in SHARED_METRICS) + " |")
         print("|" + "---|" * (len(SHARED_METRICS) + 1))
 
         for head, label in DNFS_HEAD_LABELS.items():
@@ -109,26 +115,29 @@ def main(argv=None):
                 for key, _ in SHARED_METRICS[:3]
             ]
             cells.append(
-                f"<= {DNFS_FREE_ENERGY_BIAS_BOUND[point]:.3f}"
-                " (recorded bound)"
+                f"<= {DNFS_FREE_ENERGY_BIAS_BOUND[point]:.3f} (recorded bound)"
             )
             print(f"| {label} | " + " | ".join(cells) + " |")
         for arm, arm_label in MDNS_ARM_NAMES.items():
-            rows = [reports[f"{arm}_seed{seed}"] for seed in seeds
-                    if f"{arm}_seed{seed}" in reports]
+            rows = [
+                reports[f"{arm}_seed{seed}"]
+                for seed in seeds
+                if f"{arm}_seed{seed}" in reports
+            ]
             if not rows:
                 continue
             cells = [
-                numeric_cell([row[key] for row in rows])
-                for key, _ in SHARED_METRICS
+                numeric_cell([row[key] for row in rows]) for key, _ in SHARED_METRICS
             ]
             print(f"| {arm_label} | " + " | ".join(cells) + " |")
 
         mdns_n = next(iter(reports.values()))["eval_rollouts"]
-        print(f"\nCost currencies (stated, never divided): "
-              f"DNFS = 5,000 IS draws/replicate at ~5e5 backbone rows "
-              f"per replicate (backbone-row currency); "
-              f"MDNS = 16 network calls/sample x {mdns_n} samples/seed.")
+        print(
+            f"\nCost currencies (stated, never divided): "
+            f"DNFS = 5,000 IS draws/replicate at ~5e5 backbone rows "
+            f"per replicate (backbone-row currency); "
+            f"MDNS = 16 network calls/sample x {mdns_n} samples/seed."
+        )
     return 0
 
 

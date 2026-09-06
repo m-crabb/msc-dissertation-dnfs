@@ -115,6 +115,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+
 from discrete_flow_sampler.diagnostics.figure_style import (
     CLASSICAL_HUE,
     HARD_DELTA_HUE,
@@ -146,7 +147,8 @@ SPIN_COLOUR_MAP = SPIN_CMAP
 # eight replicate evals -- so the montage reads replicate s101, the first
 # of the pooled eight.
 HEADLINE_8X8_RUN = (
-    RESULTS_ROOT / "03_hard"
+    RESULTS_ROOT
+    / "03_hard"
     / "H2_d64_c50_s223_letf_ma_100k_curr_seed42_20260722-124315"
 )
 HEADLINE_8X8_EVAL_SUBDIR = "eval_replicate_s101"
@@ -161,9 +163,10 @@ HEADLINE_8X8_REFERENCE_DIR = RESULTS_ROOT / "kawasaki_probe" / "reference" / "sc
 # The 16x16 recipe run the SMC tau-sweep was run on -- the archive's live
 # 16x16 arm rather than an abandoned rescue attempt.
 D256_RUN = (
-    RESULTS_ROOT / "03_hard"
+    RESULTS_ROOT
+    / "03_hard"
     / "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_seed43"
-      "_20260818-d256-recipe-s43"
+    "_20260818-d256-recipe-s43"
 )
 # Plain-IS side: `eval` (not `eval_ema`) is the frozen protocol, the only
 # draw set comparable to the published ESS tables, and the SMC evals were
@@ -193,14 +196,14 @@ SPINE_RUNS = (
     ),
     (
         "soft penalty",
-        RESULTS_ROOT / "02_constrained_soft"
+        RESULTS_ROOT
+        / "02_constrained_soft"
         / "S2_d8_c05_l50_letf_ne64_seed42_20260812-walkback",
         "eval",
     ),
     (
         "hard swap",
-        RESULTS_ROOT / "03_hard"
-        / "H2_d64_c50_s010_letf_ma_50k_seed42_20260812-floor",
+        RESULTS_ROOT / "03_hard" / "H2_d64_c50_s010_letf_ma_50k_seed42_20260812-floor",
         "eval",
     ),
 )
@@ -261,8 +264,10 @@ class DrawSet:
     def lattice(self, draw_index: int) -> np.ndarray:
         """One draw as a (side, side) array of 0/1 for the two-level colour map."""
         spin_vector = self.spins[draw_index]
-        return (spin_vector > 0).astype(np.float32).reshape(
-            self.lattice_side, self.lattice_side
+        return (
+            (spin_vector > 0)
+            .astype(np.float32)
+            .reshape(self.lattice_side, self.lattice_side)
         )
 
 
@@ -281,16 +286,24 @@ def require(path: Path, what: str) -> Path:
 def load_neural_draws(run_dir: Path, eval_subdir: str, label: str) -> DrawSet:
     """Eval draws + log importance weights + the run's Ising and eval settings."""
     eval_dir = require(run_dir / eval_subdir, f"eval dir for {label}")
-    spins = torch.load(
-        require(eval_dir / "samples.pt", f"samples for {label}"),
-        map_location="cpu",
-        weights_only=True,
-    ).float().numpy()
-    log_weights = torch.load(
-        require(eval_dir / "log_weights.pt", f"log weights for {label}"),
-        map_location="cpu",
-        weights_only=True,
-    ).double().numpy()
+    spins = (
+        torch.load(
+            require(eval_dir / "samples.pt", f"samples for {label}"),
+            map_location="cpu",
+            weights_only=True,
+        )
+        .float()
+        .numpy()
+    )
+    log_weights = (
+        torch.load(
+            require(eval_dir / "log_weights.pt", f"log weights for {label}"),
+            map_location="cpu",
+            weights_only=True,
+        )
+        .double()
+        .numpy()
+    )
     config = json.loads(
         require(run_dir / "config.json", f"config for {label}").read_text()
     )
@@ -449,8 +462,11 @@ def closest_disjoint_pairs(draws: DrawSet, n_pairs: int) -> list[tuple[int, int,
         pair_distances = distances[rows, columns]
         keep = np.argsort(pair_distances, kind="stable")[: 4 * n_pairs]
         candidates.extend(
-            (float(pair_distances[k]), block.start + int(rows[k]),
-             block.start + int(columns[k]))
+            (
+                float(pair_distances[k]),
+                block.start + int(rows[k]),
+                block.start + int(columns[k]),
+            )
             for k in keep
         )
     candidates.sort()
@@ -511,8 +527,9 @@ def build_headline_8x8(
             axis.set_visible(False)
     axes[0, 0].set_ylabel("DNFS", fontsize=8, color=SAMPLER_HUE)
     axes[1, 0].set_ylabel("Kawasaki", fontsize=8, color=CLASSICAL_HUE)
-    figure.subplots_adjust(left=0.06, right=0.99, top=0.99, bottom=0.02,
-                           wspace=0.12, hspace=0.08)
+    figure.subplots_adjust(
+        left=0.06, right=0.99, top=0.99, bottom=0.02, wspace=0.12, hspace=0.08
+    )
 
     caption = (
         f"Fixed-composition draws on the {neural.lattice_side}x"
@@ -557,7 +574,10 @@ def build_d256_plain_vs_smc(
         for column, (first, second, distance) in enumerate(pairs):
             draw_lattice_tile(axes[0, column], draws, first, hue)
             draw_lattice_tile(
-                axes[1, column], draws, second, hue,
+                axes[1, column],
+                draws,
+                second,
+                hue,
                 annotation=f"H = {distance}",
             )
         block.suptitle(title, fontsize=8, color=hue)
@@ -581,9 +601,7 @@ def build_d256_plain_vs_smc(
     return figure, caption
 
 
-def build_spine_row(
-    regimes: list[DrawSet], n_tiles: int
-) -> tuple[plt.Figure, str]:
+def build_spine_row(regimes: list[DrawSet], n_tiles: int) -> tuple[plt.Figure, str]:
     """One weight-resampled block per constraint regime, unconstrained -> hard."""
     regime_hues = (SAMPLER_HUE, NEURAL_COMPARATOR_HUE, HARD_DELTA_HUE)
     figure = plt.figure(figsize=(7.0, 2.5))
@@ -601,19 +619,19 @@ def build_spine_row(
         block.suptitle(
             f"{draws.label}\n{draws.lattice_side}x{draws.lattice_side}, "
             f"$c$ = {up_fraction.mean():.3f} $\\pm$ {up_fraction.std():.3f}",
-            fontsize=8, color=hue,
+            fontsize=8,
+            color=hue,
         )
         block.subplots_adjust(top=0.84, bottom=0.02, hspace=0.10, wspace=0.10)
 
     sigmas = {f"{draws.sigma:g}" for draws in regimes}
     sigma_clause = (
-        f"$\\sigma$ = {sigmas.pop()}" if len(sigmas) == 1
+        f"$\\sigma$ = {sigmas.pop()}"
+        if len(sigmas) == 1
         else "per-panel $\\sigma$ as titled"
     )
     penalty = regimes[1].penalty_strength
-    sizes = ", ".join(
-        f"{draws.lattice_side}x{draws.lattice_side}" for draws in regimes
-    )
+    sizes = ", ".join(f"{draws.lattice_side}x{draws.lattice_side}" for draws in regimes)
     composition_clause = ", ".join(
         f"{mean:.3f} $\\pm$ {std:.3f}" for mean, std in composition_summaries
     )
@@ -654,7 +672,9 @@ def resolve_draw_sets(args: argparse.Namespace) -> dict[str, object]:
 
 
 def describe_draw_set(
-    draws: DrawSet, tile_note: str, with_siblings: bool,
+    draws: DrawSet,
+    tile_note: str,
+    with_siblings: bool,
     with_resample: bool = True,
 ) -> None:
     """One draw set's provenance, shape and selection statistics.
@@ -719,7 +739,9 @@ def report_dry_run(draw_sets: dict[str, object]) -> None:
     print("\nmontage 2: d256_plain_vs_smc.png")
     for key in ("d256_plain", "d256_smc"):
         describe_draw_set(
-            draw_sets[key], f"{N_PAIRS_D256_PER_BLOCK} closest pairs", True,
+            draw_sets[key],
+            f"{N_PAIRS_D256_PER_BLOCK} closest pairs",
+            True,
             with_resample=False,
         )
     print("\nmontage 3: spine_row.png")
@@ -740,7 +762,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--d256-smc-eval-subdir", default=D256_SMC_EVAL_SUBDIR)
     parser.add_argument("--out-dir", type=Path, default=OUTPUT_DIR)
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="report resolved run dirs and tensor shapes, render nothing",
     )
     args = parser.parse_args(argv)
@@ -759,14 +782,16 @@ def main(argv: list[str] | None = None) -> None:
         (
             "headline_8x8",
             lambda: build_headline_8x8(
-                draw_sets["headline_neural"], draw_sets["headline_reference"],
+                draw_sets["headline_neural"],
+                draw_sets["headline_reference"],
                 N_TILES_HEADLINE_PER_ROW,
             ),
         ),
         (
             "d256_plain_vs_smc",
             lambda: build_d256_plain_vs_smc(
-                draw_sets["d256_plain"], draw_sets["d256_smc"],
+                draw_sets["d256_plain"],
+                draw_sets["d256_smc"],
                 N_PAIRS_D256_PER_BLOCK,
             ),
         ),

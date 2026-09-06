@@ -16,6 +16,7 @@ each composition in turn and write per-composition rows:
 The same `train(cfg, seed, ...)` function is also imported by
 `modal_app.py` for remote runs, so both paths share artefacts and metadata.
 """
+
 import argparse
 import json
 import platform
@@ -28,7 +29,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
-
 import torch
 from experiments.dnfs_baseline_01.configs import (
     CONFIGS,
@@ -77,13 +77,14 @@ ENUMERATION_MAX_SPINS = 20
 # from one that memorised the atoms it was trained on.
 SPECIALIST_COMPOSITIONS = (0.25, 0.375, 0.50, 0.625, 0.75)
 HELD_OUT_COMPOSITIONS = (0.3125, 0.4375, 0.5625, 0.6875)
-SWEEP_COMPOSITIONS = tuple(
-    sorted(SPECIALIST_COMPOSITIONS + HELD_OUT_COMPOSITIONS)
-)
+SWEEP_COMPOSITIONS = tuple(sorted(SPECIALIST_COMPOSITIONS + HELD_OUT_COMPOSITIONS))
 
 
 def _construct_target(
-    ising, device, sigma=None, composition_penalty_strength=None,
+    ising,
+    device,
+    sigma=None,
+    composition_penalty_strength=None,
     log_ratio_clamp=None,
 ):
     """Build the IsingTarget from an IsingCfg — the ONE construction seam.
@@ -119,11 +120,14 @@ def _construct_target(
     sigma_now = ising.sigma if sigma is None else sigma
     if ising.expansion_json is not None:
         from discrete_flow_sampler.targets.cluster_expansion import (
-            BinaryExpansionSpec, ClusterExpansionTarget,
+            BinaryExpansionSpec,
+            ClusterExpansionTarget,
         )
+
         return ClusterExpansionTarget(
             BinaryExpansionSpec.from_json(ising.expansion_json),
-            beta=2.0 * sigma_now, **shared,
+            beta=2.0 * sigma_now,
+            **shared,
         )
     return IsingTarget(D=ising.D, sigma=sigma_now, **shared)
 
@@ -132,7 +136,9 @@ def _build_model(cfg, target):
     model = _construct_model(cfg, target)
     if getattr(cfg.model, "exact_field_channel", False):
         from discrete_flow_sampler.constraints.exact_field_channel import (
-            ExactFieldFlipModel)
+            ExactFieldFlipModel,
+        )
+
         # Wrapped BEFORE compile so `.compile()` reaches the inner model
         # (the channel's own arithmetic is three elementwise lines and
         # stays eager, mirroring the hard route's wrapper).
@@ -161,14 +167,16 @@ def _construct_model(cfg, target):
         ).to(target.device)
     if cfg.model.kind == "lemlp":
         from discrete_flow_sampler.models.lemlp import LeMLPRateMatrix
+
         return LeMLPRateMatrix(
             d=target.d,
             vocab_size=cfg.model.vocab_size,
             hidden_dim=cfg.model.hidden_dim,
-            n_summands=cfg.model.n_layers,   # see ModelCfg comment on n_layers
+            n_summands=cfg.model.n_layers,  # see ModelCfg comment on n_layers
         ).to(target.device)
     if cfg.model.kind == "leconv_deep":
         from discrete_flow_sampler.models.leconv_deep import LeConvDeepRateMatrix
+
         return LeConvDeepRateMatrix(
             D=cfg.ising.D,
             vocab_size=cfg.model.vocab_size,
@@ -178,6 +186,7 @@ def _construct_model(cfg, target):
         ).to(target.device)
     if cfg.model.kind == "let":
         from discrete_flow_sampler.models.letf import LeTFRateMatrix
+
         return LeTFRateMatrix(
             d=target.d,
             vocab_size=cfg.model.vocab_size,
@@ -200,9 +209,7 @@ def _trailing_ess_metrics(run_dir: Path, k: int = 10) -> dict:
     ESS is over outer_batch_size, not n_eval_samples — interpret in absolute
     counts, not as a fraction comparable to eval/ess_fraction.
     """
-    recent = (
-        pd.read_csv(run_dir / "training_log.csv")["ess"].dropna().tail(k)
-    )
+    recent = pd.read_csv(run_dir / "training_log.csv")["ess"].dropna().tail(k)
     return {
         f"ess_trailing{k}_median": float(recent.median()),
         f"ess_trailing{k}_min": float(recent.min()),
@@ -290,16 +297,14 @@ def _compute_eval_metrics(
         metrics["internal_energy_per_site_exact"] = float(E_exact.item())
         metrics["entropy_per_site_exact"] = float(S_exact.item())
         metrics["free_energy_per_site_bias"] = (
-            metrics["free_energy_per_site"]
-            - metrics["free_energy_per_site_exact"]
+            metrics["free_energy_per_site"] - metrics["free_energy_per_site_exact"]
         )
         metrics["internal_energy_per_site_bias"] = (
             metrics["internal_energy_per_site"]
             - metrics["internal_energy_per_site_exact"]
         )
         metrics["entropy_per_site_bias"] = (
-            metrics["entropy_per_site"]
-            - metrics["entropy_per_site_exact"]
+            metrics["entropy_per_site"] - metrics["entropy_per_site_exact"]
         )
 
     return metrics
@@ -382,7 +387,8 @@ def _eval_at_composition(model, target, cfg, composition: float | None, device):
     effective = metrics["ess"]
     metrics["nfe_per_effective_sample"] = (
         cfg.ctmc.n_euler_steps * cfg.eval.n_eval_samples / effective
-        if effective > 0 else float("inf")
+        if effective > 0
+        else float("inf")
     )
     return samples, log_weights, metrics
 
@@ -477,6 +483,7 @@ def train(
 
     if use_wandb:
         import wandb
+
         tags = [
             cfg.name,
             cfg.name.split("_d")[0],
@@ -529,9 +536,9 @@ def train(
     # baseline (unconstrained) configs lambda_curriculum is None and this
     # block is a no-op.
     if cfg.lambda_curriculum is not None:
-        target_lambda_init = (
-            cfg.lambda_curriculum.stages[0].composition_penalty_strength
-        )
+        target_lambda_init = cfg.lambda_curriculum.stages[
+            0
+        ].composition_penalty_strength
     else:
         target_lambda_init = cfg.ising.composition_penalty_strength
     target = _construct_target(
@@ -556,9 +563,7 @@ def train(
             cfg.curriculum.stages if cfg.curriculum is not None else None
         ),
         lambda_curriculum=(
-            cfg.lambda_curriculum.stages
-            if cfg.lambda_curriculum is not None
-            else None
+            cfg.lambda_curriculum.stages if cfg.lambda_curriculum is not None else None
         ),
         composition_centre=(
             cfg.composition.centre if cfg.composition is not None else None
@@ -604,25 +609,24 @@ def train(
         torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
 
         eval_metrics.update(_trailing_ess_metrics(run_dir))
-        (eval_dir / "metrics.json").write_text(
-            json.dumps(eval_metrics, indent=2))
+        (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
 
     # EMA dual eval: the same draw through the shadow weights
     # (checkpoints/final_ema.pt), landing in eval_ema/ with the identical
     # metric schema so the house-table ingestion reads either dir. The raw
     # weights are restored afterwards so nothing downstream sees the swap.
     ema_metrics = None
-    if cfg.ema_decay > 0 and not (
-        run_dir / "eval_ema" / "metrics.json"
-    ).exists():
+    if cfg.ema_decay > 0 and not (run_dir / "eval_ema" / "metrics.json").exists():
         raw_state = {
-            key: value.detach().clone()
-            for key, value in model.state_dict().items()
+            key: value.detach().clone() for key, value in model.state_dict().items()
         }
-        model.load_state_dict(torch.load(
-            run_dir / "checkpoints" / "final_ema.pt",
-            map_location=device, weights_only=True,
-        ))
+        model.load_state_dict(
+            torch.load(
+                run_dir / "checkpoints" / "final_ema.pt",
+                map_location=device,
+                weights_only=True,
+            )
+        )
         ema_samples, ema_log_weights, ema_metrics = _eval_at_composition(
             model, target, cfg, eval_composition, device
         )
@@ -632,13 +636,10 @@ def train(
         torch.save(ema_samples.cpu(), ema_dir / "samples.pt")
         torch.save(ema_log_weights.cpu(), ema_dir / "log_weights.pt")
         ema_metrics.update(_trailing_ess_metrics(run_dir))
-        (ema_dir / "metrics.json").write_text(
-            json.dumps(ema_metrics, indent=2))
+        (ema_dir / "metrics.json").write_text(json.dumps(ema_metrics, indent=2))
 
     if use_wandb:
-        artifact = wandb.Artifact(
-            f"eval_{cfg.name}_seed{seed}", type="evaluation"
-        )
+        artifact = wandb.Artifact(f"eval_{cfg.name}_seed{seed}", type="evaluation")
         artifact.add_file(str(eval_dir / "samples.pt"))
         artifact.add_file(str(eval_dir / "log_weights.pt"))
         artifact.add_file(str(eval_dir / "metrics.json"))
@@ -699,9 +700,7 @@ def _rebuild_from_run_dir(run_dir: Path):
     ):
         curriculum = cfg_dict.get(curriculum_key)
         if curriculum is not None:
-            ising = replace(
-                ising, **{value_key: curriculum["stages"][-1][value_key]}
-            )
+            ising = replace(ising, **{value_key: curriculum["stages"][-1][value_key]})
     target = _construct_target(ising, device=device)
     cfg = SimpleNamespace(
         ising=ising,
@@ -711,7 +710,8 @@ def _rebuild_from_run_dir(run_dir: Path):
         # The window centre is the composition a single eval draw is
         # conditioned on; None for a specialist run.
         composition_centre=(
-            None if cfg_dict.get("composition") is None
+            None
+            if cfg_dict.get("composition") is None
             else float(cfg_dict["composition"]["centre"])
         ),
         condition_on_composition=cfg_dict["model"].get(
@@ -722,7 +722,9 @@ def _rebuild_from_run_dir(run_dir: Path):
 
 
 def eval_only(
-    run_dir: str | Path, redraw: bool = False, redraw_seed: int = 0,
+    run_dir: str | Path,
+    redraw: bool = False,
+    redraw_seed: int = 0,
     n_euler_override: int | None = None,
 ) -> dict:
     """Recompute eval metrics from a finished run's saved samples.
@@ -806,13 +808,11 @@ def eval_only(
         torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
         torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
         eval_metrics.update(_trailing_ess_metrics(run_dir))
-        (eval_dir / "metrics.json").write_text(
-            json.dumps(eval_metrics, indent=2)
-        )
+        (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
         return eval_metrics
-    eval_samples = torch.load(
-        run_dir / "eval" / "samples.pt", weights_only=True
-    ).to(device)
+    eval_samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).to(
+        device
+    )
     eval_log_weights = torch.load(
         run_dir / "eval" / "log_weights.pt", weights_only=True
     ).to(device)
@@ -826,9 +826,7 @@ def eval_only(
             composition=cfg.composition_centre,
         )
     eval_metrics.update(_trailing_ess_metrics(run_dir))
-    (run_dir / "eval" / "metrics.json").write_text(
-        json.dumps(eval_metrics, indent=2)
-    )
+    (run_dir / "eval" / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
     return eval_metrics
 
 
@@ -925,9 +923,7 @@ def composition_sweep(
 
     if save:
         eval_dir.mkdir(exist_ok=True)
-        (eval_dir / "composition_sweep.json").write_text(
-            json.dumps(rows, indent=2)
-        )
+        (eval_dir / "composition_sweep.json").write_text(json.dumps(rows, indent=2))
     return rows
 
 
@@ -945,9 +941,9 @@ def main():
         "--tag",
         default=None,
         help="Run-dir suffix (default: wall-clock timestamp). A fixed tag "
-             "makes resubmission after preemption reuse the run dir, skip a "
-             "completed run, and resume an unfinished one from its last "
-             "checkpoints/resume.pt outer-cycle boundary",
+        "makes resubmission after preemption reuse the run dir, skip a "
+        "completed run, and resume an unfinished one from its last "
+        "checkpoints/resume.pt outer-cycle boundary",
     )
     parser.add_argument(
         "--eval-only",
@@ -958,9 +954,9 @@ def main():
         "--redraw",
         action="store_true",
         help="With --eval-only: ignore the saved samples and draw a fresh "
-             "eval batch from checkpoints/final.pt (archives the stale "
-             "eval/ first; for evals whose DRAW was wrong, e.g. early "
-             "matched-base runs)",
+        "eval batch from checkpoints/final.pt (archives the stale "
+        "eval/ first; for evals whose DRAW was wrong, e.g. early "
+        "matched-base runs)",
     )
     parser.add_argument(
         "--redraw-seed",
@@ -973,21 +969,21 @@ def main():
         type=int,
         default=None,
         help="With --redraw: draw on this Euler grid instead of the run's "
-             "own; artefacts go to eval_ne<k>/ and the frozen eval/ is left "
-             "untouched (grid-offset measurement)",
+        "own; artefacts go to eval_ne<k>/ and the frozen eval/ is left "
+        "untouched (grid-offset measurement)",
     )
     parser.add_argument(
         "--sweep",
         action="store_true",
         help="Per-composition eval sweep of a trained amortised run "
-             "(requires --run-dir)",
+        "(requires --run-dir)",
     )
     parser.add_argument(
         "--compositions",
         type=float,
         nargs="+",
         help="Override the sweep grid (default: the six specialist "
-             "compositions plus the four held-out points)",
+        "compositions plus the four held-out points)",
     )
     parser.add_argument(
         "--checkpoint",
@@ -1006,8 +1002,7 @@ def main():
         rows = composition_sweep(
             args.run_dir,
             compositions=(
-                tuple(args.compositions) if args.compositions
-                else SWEEP_COMPOSITIONS
+                tuple(args.compositions) if args.compositions else SWEEP_COMPOSITIONS
             ),
             checkpoint=args.checkpoint,
         )
@@ -1018,7 +1013,9 @@ def main():
         if not args.run_dir:
             parser.error("--eval-only requires --run-dir")
         metrics = eval_only(
-            args.run_dir, redraw=args.redraw, redraw_seed=args.redraw_seed,
+            args.run_dir,
+            redraw=args.redraw,
+            redraw_seed=args.redraw_seed,
             n_euler_override=args.n_euler_override,
         )
         print(json.dumps(metrics, indent=2))

@@ -96,7 +96,6 @@ from torch import Tensor
 
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 
-
 # ---- lattice geometry -----------------------------------------------------
 #
 # Every geometric fact the head uses is a statement about the lattice's
@@ -175,7 +174,9 @@ def _torus_displacements(lattice_side: int) -> tuple[Tensor, Tensor]:
 
 
 def torus_patch_geometry(
-    lattice_side: int, patch_radius: int, pooling_radii: tuple[int, ...] | None = None,
+    lattice_side: int,
+    patch_radius: int,
+    pooling_radii: tuple[int, ...] | None = None,
 ) -> PatchGeometry:
     """The D x D torus: byte-for-byte the tensors the head built before the
     geometry object existed (every archived two-hole-patch row)."""
@@ -186,39 +187,51 @@ def torus_patch_geometry(
         )
     if pooling_radii is None:
         pooling_radii = tuple(
-            2**level for level in range(int(math.log2(lattice_side)) + 1)
+            2**level
+            for level in range(int(math.log2(lattice_side)) + 1)
             if 2 * 2**level + 1 <= lattice_side
         )
     if any(2 * r + 1 > lattice_side for r in pooling_radii):
-        raise ValueError(f"pooling box must fit the torus: {pooling_radii} at D={lattice_side}")
+        raise ValueError(
+            f"pooling box must fit the torus: {pooling_radii} at D={lattice_side}"
+        )
     d = lattice_side * lattice_side
     offsets = torus_neighbour_offsets(patch_radius)
     sites = torch.arange(d)
     rows, cols = sites // lattice_side, sites % lattice_side
-    neighbour_site = torch.stack([
-        ((rows + dr) % lattice_side) * lattice_side + (cols + dc) % lattice_side
-        for dr, dc in offsets
-    ], dim=1)                                                       # (d, K)
+    neighbour_site = torch.stack(
+        [
+            ((rows + dr) % lattice_side) * lattice_side + (cols + dc) % lattice_side
+            for dr, dc in offsets
+        ],
+        dim=1,
+    )  # (d, K)
     opposite = torch.tensor([offsets.index((-dr, -dc)) for dr, dc in offsets])
     dr, dc = _torus_displacements(lattice_side)
     level_masks = [(torch.maximum(dr, dc) <= r).float() for r in pooling_radii]
     level_sizes = tuple((2 * r + 1) ** 2 for r in pooling_radii)
     # Signed torus displacement of j from i, one class per (dr, dc).
-    displacement = (
-        ((rows[None, :] - rows[:, None]) % lattice_side) * lattice_side
-        + (cols[None, :] - cols[:, None]) % lattice_side
-    )                                                               # (d, d)
+    displacement = ((rows[None, :] - rows[:, None]) % lattice_side) * lattice_side + (
+        cols[None, :] - cols[:, None]
+    ) % lattice_side  # (d, d)
     return PatchGeometry(
-        neighbour_site=neighbour_site, opposite_offset=opposite,
-        level_masks=level_masks, level_sizes=level_sizes,
-        pair_displacement=displacement, negate_displacement=displacement[:, 0].clone(),
-        lattice_side=lattice_side, pooling_radii=tuple(pooling_radii),
+        neighbour_site=neighbour_site,
+        opposite_offset=opposite,
+        level_masks=level_masks,
+        level_sizes=level_sizes,
+        pair_displacement=displacement,
+        negate_displacement=displacement[:, 0].clone(),
+        lattice_side=lattice_side,
+        pooling_radii=tuple(pooling_radii),
     )
 
 
 def bravais_patch_geometry(
-    positions, cell, patch_shells: int = 1,
-    pooling_shells: tuple[int, ...] | None = None, tolerance: float = 1e-5,
+    positions,
+    cell,
+    patch_shells: int = 1,
+    pooling_shells: tuple[int, ...] | None = None,
+    tolerance: float = 1e-5,
 ) -> PatchGeometry:
     """A periodic supercell with ONE site per primitive cell (every site
     translation-equivalent), from Cartesian `positions` (d, 3) and the
@@ -246,14 +259,16 @@ def bravais_patch_geometry(
     cell = torch.as_tensor(cell, dtype=torch.float64)
     d = positions.shape[0]
     fractional = positions @ torch.linalg.inv(cell)
-    difference = fractional[None, :, :] - fractional[:, None, :]      # (d, d, 3) j from i
+    difference = fractional[None, :, :] - fractional[:, None, :]  # (d, d, 3) j from i
     # Group table: class of (i -> j) = the site at frac_j - frac_i + frac_0.
     target = (difference + fractional[0]) % 1.0
-    gap = (fractional[None, None, :, :] - target[:, :, None, :]) % 1.0   # (d, d, d, 3)
-    on_site = (torch.minimum(gap, 1.0 - gap) < tolerance).all(dim=-1)   # (d, d, d)
+    gap = (fractional[None, None, :, :] - target[:, :, None, :]) % 1.0  # (d, d, d, 3)
+    on_site = (torch.minimum(gap, 1.0 - gap) < tolerance).all(dim=-1)  # (d, d, d)
     if not (on_site.sum(dim=-1) == 1).all():
-        raise ValueError("positions are not one site per primitive cell of the supercell")
-    pair_displacement = on_site.float().argmax(dim=-1)                # (d, d)
+        raise ValueError(
+            "positions are not one site per primitive cell of the supercell"
+        )
+    pair_displacement = on_site.float().argmax(dim=-1)  # (d, d)
     negate_displacement = pair_displacement[:, 0].clone()
     # Minimum-image distances and how many images realise them.
     shifts = torch.tensor(
@@ -261,17 +276,20 @@ def bravais_patch_geometry(
         dtype=torch.float64,
     )
     wrapped = difference - torch.round(difference)
-    images = (wrapped[:, :, None, :] + shifts) @ cell                 # (d, d, 27, 3)
+    images = (wrapped[:, :, None, :] + shifts) @ cell  # (d, d, 27, 3)
     image_distance = images.norm(dim=-1)
-    distance = image_distance.min(dim=-1).values                       # (d, d)
+    distance = image_distance.min(dim=-1).values  # (d, d)
     n_images_at_minimum = (image_distance - distance[:, :, None] < tolerance).sum(-1)
     shell_radii = torch.unique(torch.round(distance[0] / tolerance)) * tolerance
     shell_radii = shell_radii[shell_radii > tolerance]
-    shell_of = torch.bucketize(distance, shell_radii - tolerance)      # (d, d): 0 = centre
+    shell_of = torch.bucketize(distance, shell_radii - tolerance)  # (d, d): 0 = centre
     if patch_shells > len(shell_radii):
-        raise ValueError(f"patch_shells {patch_shells} exceeds the {len(shell_radii)} shells of the cell")
+        raise ValueError(
+            f"patch_shells {patch_shells} exceeds the {len(shell_radii)} shells of the cell"
+        )
     window_classes = [
-        k for k in sorted(range(1, d), key=lambda k: (float(distance[0, k]), k))
+        k
+        for k in sorted(range(1, d), key=lambda k: (float(distance[0, k]), k))
         if shell_of[0, k] <= patch_shells
     ]
     aliased = [k for k in window_classes if n_images_at_minimum[0, k] > 1]
@@ -282,7 +300,7 @@ def bravais_patch_geometry(
         )
     neighbour_site = torch.stack(
         [(pair_displacement == k).float().argmax(dim=1) for k in window_classes], dim=1
-    )                                                                  # (d, K)
+    )  # (d, K)
     opposite = torch.tensor(
         [window_classes.index(int(negate_displacement[k])) for k in window_classes]
     )
@@ -291,9 +309,12 @@ def bravais_patch_geometry(
     level_masks = [(shell_of <= shells).double().float() for shells in pooling_shells]
     level_sizes = tuple(int(mask[0].sum()) for mask in level_masks)
     return PatchGeometry(
-        neighbour_site=neighbour_site, opposite_offset=opposite,
-        level_masks=level_masks, level_sizes=level_sizes,
-        pair_displacement=pair_displacement, negate_displacement=negate_displacement,
+        neighbour_site=neighbour_site,
+        opposite_offset=opposite,
+        level_masks=level_masks,
+        level_sizes=level_sizes,
+        pair_displacement=pair_displacement,
+        negate_displacement=negate_displacement,
     )
 
 
@@ -334,10 +355,14 @@ class TwoHolePatchSwapHead(nn.Module):
         super().__init__()
         if geometry is None:
             if lattice_side is None:
-                raise ValueError("give lattice_side (torus) or geometry (any Bravais cell)")
+                raise ValueError(
+                    "give lattice_side (torus) or geometry (any Bravais cell)"
+                )
             geometry = torus_patch_geometry(lattice_side, patch_radius, pooling_radii)
         if geometry.d != backbone.d:
-            raise ValueError(f"geometry has {geometry.d} sites != backbone.d {backbone.d}")
+            raise ValueError(
+                f"geometry has {geometry.d} sites != backbone.d {backbone.d}"
+            )
         self.backbone = backbone
         self.geometry = geometry
         self.d = geometry.d
@@ -351,12 +376,20 @@ class TwoHolePatchSwapHead(nn.Module):
         self.n_levels = len(geometry.level_masks)
         hidden = backbone.hidden_dim
 
-        self.register_buffer("neighbour_site", geometry.neighbour_site, persistent=False)
-        self.register_buffer("opposite_offset", geometry.opposite_offset, persistent=False)
+        self.register_buffer(
+            "neighbour_site", geometry.neighbour_site, persistent=False
+        )
+        self.register_buffer(
+            "opposite_offset", geometry.opposite_offset, persistent=False
+        )
         for level, mask in enumerate(geometry.level_masks):
             self.register_buffer(f"level_mask_{level}", mask, persistent=False)
-        self.register_buffer("pair_displacement", geometry.pair_displacement, persistent=False)
-        self.relative_position_embedding = nn.Embedding(geometry.n_displacements, feature_dim)
+        self.register_buffer(
+            "pair_displacement", geometry.pair_displacement, persistent=False
+        )
+        self.relative_position_embedding = nn.Embedding(
+            geometry.n_displacements, feature_dim
+        )
 
         self.patch_mlp = nn.Sequential(
             nn.Linear(self.n_patch + hidden, patch_hidden_dim),
@@ -365,10 +398,12 @@ class TwoHolePatchSwapHead(nn.Module):
         )
         # One projection per pooled level plus the global level, bias-free:
         # a bias is hole-invariant and already lives in the pair MLP.
-        self.level_projections = nn.ModuleList([
-            nn.Linear(hidden, feature_dim, bias=False)
-            for _ in range(self.n_levels + 1)
-        ])
+        self.level_projections = nn.ModuleList(
+            [
+                nn.Linear(hidden, feature_dim, bias=False)
+                for _ in range(self.n_levels + 1)
+            ]
+        )
         self.first_hole_map = nn.Linear(feature_dim, feature_dim, bias=False)
         self.second_hole_map = nn.Linear(feature_dim, feature_dim, bias=False)
         self.context_norm = nn.LayerNorm(feature_dim)
@@ -388,7 +423,7 @@ class TwoHolePatchSwapHead(nn.Module):
 
     def _patch_mlp(self, patches: Tensor, t: Tensor) -> Tensor:
         """phi(patch, t) over any leading patch layout (..., K) -> (..., f)."""
-        time_embedding = self.backbone.time_embedder(t)             # (B, h)
+        time_embedding = self.backbone.time_embedder(t)  # (B, h)
         shape = patches.shape[:-1] + (time_embedding.shape[-1],)
         time_embedding = time_embedding.view(
             (patches.shape[0],) + (1,) * (patches.ndim - 2) + (-1,)
@@ -403,9 +438,9 @@ class TwoHolePatchSwapHead(nn.Module):
         """f_i^{(-offset_k)} for every site and window entry, (B, d, K, f):
         phi on P_i with entry k overwritten by 0 (an unconditional override,
         so the result cannot depend on the token that was there)."""
-        patches = self._patches(x)                                   # (B, d, K)
+        patches = self._patches(x)  # (B, d, K)
         keep = 1.0 - torch.eye(self.n_patch, device=x.device, dtype=x.dtype)
-        zeroed = patches.unsqueeze(2) * keep                         # (B, d, K, K)
+        zeroed = patches.unsqueeze(2) * keep  # (B, d, K, K)
         return self._patch_mlp(zeroed, t)
 
     def _level_box_mean(self, values: Tensor, level: int) -> Tensor:
@@ -414,7 +449,10 @@ class TwoHolePatchSwapHead(nn.Module):
         other cell (the same linear map; equality is tested)."""
         if self.lattice_side is None:
             mask = getattr(self, f"level_mask_{level}")
-            return torch.einsum("ij,bjf->bif", mask, values) / self.geometry.level_sizes[level]
+            return (
+                torch.einsum("ij,bjf->bif", mask, values)
+                / self.geometry.level_sizes[level]
+            )
         batch, d, f = values.shape
         D = self.lattice_side
         radius = self.pooling_radii[level]
@@ -426,7 +464,7 @@ class TwoHolePatchSwapHead(nn.Module):
 
     def _level_values(self, x: Tensor) -> list[tuple[Tensor, float]]:
         """(v^l, n_l) per level: projected per-site embeddings and box size."""
-        psi = self.backbone.token_embedder(((x + 1) / 2).long())     # (B, d, h)
+        psi = self.backbone.token_embedder(((x + 1) / 2).long())  # (B, d, h)
         boxes = list(self.geometry.level_sizes) + [self.d]
         return [
             (projection(psi), float(n))
@@ -448,7 +486,7 @@ class TwoHolePatchSwapHead(nn.Module):
         is what the tests compare against.
         """
         batch, d = x.shape
-        f_site = self.site_patch_features(x, t)                      # (B, d, f)
+        f_site = self.site_patch_features(x, t)  # (B, d, f)
         own = f_site.clone()
         levels = []
         for level, (v, n) in enumerate(self._level_values(x)):
@@ -458,20 +496,20 @@ class TwoHolePatchSwapHead(nn.Module):
             else:
                 mean = v.sum(dim=1, keepdim=True).expand_as(v) / n
                 in_box = None
-            own = own + mean - v / n                                 # drop own term
+            own = own + mean - v / n  # drop own term
             levels.append((v / n, in_box))
         tau = self.time_projection(self.backbone.time_embedder(t))
         z = (
-            self.first_hole_map(own).unsqueeze(2)                    # hole i's context
-            + self.second_hole_map(own).unsqueeze(1)                 # hole j's context
+            self.first_hole_map(own).unsqueeze(2)  # hole i's context
+            + self.second_hole_map(own).unsqueeze(1)  # hole j's context
             + self.relative_position_embedding(self.pair_displacement)
             + tau.view(batch, 1, 1, -1)
         )
         # Hole i loses partner j from its boxes, hole j loses partner i.
         for v, in_box in levels:
             partner = (
-                self.first_hole_map(v).unsqueeze(1)                  # v_j seen from i
-                + self.second_hole_map(v).unsqueeze(2)               # v_i seen from j
+                self.first_hole_map(v).unsqueeze(1)  # v_j seen from i
+                + self.second_hole_map(v).unsqueeze(2)  # v_i seen from j
             )
             z = z - (partner if in_box is None else partner * in_box)
         # Near pairs (j = i + offset): swap in phi with the partner zeroed on
@@ -510,16 +548,19 @@ class TwoHolePatchSwapHead(nn.Module):
         first, second = contexts
         tau = self.time_projection(self.backbone.time_embedder(t))
         z_ij = (
-            self.first_hole_map(first) + self.second_hole_map(second)
-            + self.relative_position_embedding(self.pair_displacement[i, j]) + tau
+            self.first_hole_map(first)
+            + self.second_hole_map(second)
+            + self.relative_position_embedding(self.pair_displacement[i, j])
+            + tau
         )
         z_ji = (
-            self.first_hole_map(second) + self.second_hole_map(first)
-            + self.relative_position_embedding(self.pair_displacement[j, i]) + tau
+            self.first_hole_map(second)
+            + self.second_hole_map(first)
+            + self.relative_position_embedding(self.pair_displacement[j, i])
+            + tau
         )
-        return (
-            self.pair_mlp(self.context_norm(z_ij))
-            - self.pair_mlp(self.context_norm(z_ji))
+        return self.pair_mlp(self.context_norm(z_ij)) - self.pair_mlp(
+            self.context_norm(z_ji)
         )
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:

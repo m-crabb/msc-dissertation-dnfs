@@ -84,7 +84,7 @@ def log_partition_torus(n_rows: int, n_cols: int, bond_coupling: float) -> float
             sign *= piece_sign
         return log_mag, sign
 
-    log_z2, sign_z2 = signed_log_prod_sinh(odd_angles)   # always +1
+    log_z2, sign_z2 = signed_log_prod_sinh(odd_angles)  # always +1
     log_z4, sign_z4 = signed_log_prod_sinh(even_angles)  # sign of gamma_0
 
     # Signed logsumexp of the four products (the total is always positive).

@@ -1,10 +1,10 @@
 """Finished flip evaluations must use the target at the end of training."""
+
 import json
 from dataclasses import asdict
 
 import pytest
 import torch
-
 from experiments.dnfs_baseline_01.configs import (
     CTMCCfg,
     CurriculumCfg,
@@ -18,6 +18,7 @@ from experiments.dnfs_baseline_01.configs import (
     TrainCfg,
 )
 from experiments.dnfs_baseline_01.run import _rebuild_from_run_dir, eval_only, train
+
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 
@@ -25,25 +26,34 @@ def _curriculum_cfg():
     return StageCfg(
         name="tiny_terminal_target",
         ising=IsingCfg(
-            D=2, sigma=0.1, target_composition=0.5,
+            D=2,
+            sigma=0.1,
+            target_composition=0.5,
             composition_penalty_strength=1.0,
         ),
         model=ModelCfg(kind="mlp", hidden_dim=8, n_layers=1),
         estimator="naive_mc",
         train=TrainCfg(
-            n_steps=4, inner_steps_per_outer=2, batch_size=4,
-            outer_batch_size=4, warmup_steps=0,
+            n_steps=4,
+            inner_steps_per_outer=2,
+            batch_size=4,
+            outer_batch_size=4,
+            warmup_steps=0,
         ),
         ctmc=CTMCCfg(n_euler_steps=4),
         eval=EvalCfg(n_eval_samples=16, eval_every=2),
-        curriculum=CurriculumCfg(stages=(
-            CurriculumStageCfg(start_step=0, sigma=0.1),
-            CurriculumStageCfg(start_step=2, sigma=0.22),
-        )),
-        lambda_curriculum=LambdaCurriculumCfg(stages=(
-            LambdaCurriculumStageCfg(0, 1.0),
-            LambdaCurriculumStageCfg(2, 5.0),
-        )),
+        curriculum=CurriculumCfg(
+            stages=(
+                CurriculumStageCfg(start_step=0, sigma=0.1),
+                CurriculumStageCfg(start_step=2, sigma=0.22),
+            )
+        ),
+        lambda_curriculum=LambdaCurriculumCfg(
+            stages=(
+                LambdaCurriculumStageCfg(0, 1.0),
+                LambdaCurriculumStageCfg(2, 5.0),
+            )
+        ),
     )
 
 
@@ -57,11 +67,16 @@ def test_rebuild_uses_terminal_density_and_preserves_saved_config(tmp_path):
     assert cfg.ising.sigma == target.sigma == 0.22
     assert cfg.ising.composition_penalty_strength == 5.0
     reference = IsingTarget(
-        D=2, sigma=0.22, target_composition=0.5,
-        composition_penalty_strength=5.0, device=device,
+        D=2,
+        sigma=0.22,
+        target_composition=0.5,
+        composition_penalty_strength=5.0,
+        device=device,
     )
     states = torch.tensor(
-        [[1, 1, 1, 1], [1, 1, -1, -1]], dtype=torch.float32, device=device,
+        [[1, 1, 1, 1], [1, 1, -1, -1]],
+        dtype=torch.float32,
+        device=device,
     )
     torch.testing.assert_close(target.log_prob(states), reference.log_prob(states))
     assert path.read_bytes() == original
@@ -99,7 +114,10 @@ def test_alloy_rebuild_uses_terminal_temperature(tmp_path):
 
 def test_curriculum_rescore_matches_training_final_eval(tmp_path):
     run_dir = train(
-        _curriculum_cfg(), seed=0, output_dir=tmp_path, use_wandb=False,
+        _curriculum_cfg(),
+        seed=0,
+        output_dir=tmp_path,
+        use_wandb=False,
     )
     original = json.loads((run_dir / "eval" / "metrics.json").read_text())
     tensor_bytes = {
@@ -110,9 +128,12 @@ def test_curriculum_rescore_matches_training_final_eval(tmp_path):
     rescored = eval_only(run_dir)
 
     for key in (
-        "free_energy_per_site", "internal_energy_per_site",
-        "entropy_per_site", "free_energy_per_site_exact",
-        "internal_energy_per_site_exact", "entropy_per_site_exact",
+        "free_energy_per_site",
+        "internal_energy_per_site",
+        "entropy_per_site",
+        "free_energy_per_site_exact",
+        "internal_energy_per_site_exact",
+        "entropy_per_site_exact",
     ):
         assert rescored[key] == pytest.approx(original[key], abs=1e-7)
     for name, original_bytes in tensor_bytes.items():

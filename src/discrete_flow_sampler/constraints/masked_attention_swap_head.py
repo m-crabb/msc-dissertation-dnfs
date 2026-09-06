@@ -155,11 +155,16 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         site_orderings: tuple[str, ...] = ("row",),
     ):
         super().__init__(
-            backbone, pair_offsets, band_feature_dim, position_dim,
+            backbone,
+            pair_offsets,
+            band_feature_dim,
+            position_dim,
             readout_score_scale=readout_score_scale,
-            exterior_combiner=exterior_combiner, bilinear_rank=bilinear_rank,
+            exterior_combiner=exterior_combiner,
+            bilinear_rank=bilinear_rank,
             gather_triu_pairs=gather_triu_pairs,
-            site_orderings=site_orderings, lattice_side=lattice_side,
+            site_orderings=site_orderings,
+            lattice_side=lattice_side,
         )
         if attention_window not in ("interval", "lattice"):
             raise ValueError(
@@ -189,7 +194,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         if self.pair_position_mode == "relative":
             self._init_relative_pair_positions(
                 position_dim,
-                lattice_side if lattice_side is not None else round(self.d ** 0.5),
+                lattice_side if lattice_side is not None else round(self.d**0.5),
             )
         self.band_query_projections = nn.ModuleList(
             nn.Linear(2 * position_dim, attention_dim) for _ in range(n_families)
@@ -254,9 +259,10 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 [term_features, term_positions.expand(batch, n_terms, -1)], dim=-1
             )
         )  # (B, n, A)
-        scores = torch.einsum(
-            f"{pair_axes}a,bka->b{pair_axes}k", query, keys
-        ) * self.attention_scale
+        scores = (
+            torch.einsum(f"{pair_axes}a,bka->b{pair_axes}k", query, keys)
+            * self.attention_scale
+        )
         scores = scores.masked_fill(~visible, EXCLUDED_SCORE_FILL)
         weights = scores.softmax(dim=-1)  # (B, d, d, n) or (B, P, n)
         pooled = torch.einsum(
@@ -363,17 +369,15 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             # (B, d, d, n) tensor this method exists to avoid.
             weighted = beta.unsqueeze(-1) * term_features.unsqueeze(1)
             numerator = torch.einsum("bik,bjkf->bijf", alpha, weighted)
-            non_empty = (
-                visible_row.float() @ visible_col.float().T > 0
-            ).unsqueeze(-1)
+            non_empty = (visible_row.float() @ visible_col.float().T > 0).unsqueeze(-1)
         else:
             rows, cols = pairs
             joint = alpha[:, rows] * beta[:, cols]  # (B, P, n)
             normaliser = joint.sum(dim=-1)
             numerator = torch.einsum("bpk,bkf->bpf", joint, term_features)
-            non_empty = (
-                visible_row[rows] & visible_col[cols]
-            ).any(dim=-1, keepdim=True)
+            non_empty = (visible_row[rows] & visible_col[cols]).any(
+                dim=-1, keepdim=True
+            )
 
         pooled = numerator / normaliser.clamp_min(EMPTY_BAND_FLOOR).unsqueeze(-1)
         return torch.where(non_empty, pooled, 0.0)
@@ -395,14 +399,12 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         exists to avoid.
         """
         emb = self.backbone.token_embedder(((x + 1) / 2).long())
-        position = self.pair_position_embedding(
-            torch.arange(self.d, device=x.device)
-        )
+        position = self.pair_position_embedding(torch.arange(self.d, device=x.device))
         widest = 0.0
         for family, (_, term_features, term_slot) in enumerate(
             self._band_families(emb)
         ):
-            if term_features.shape[1] == 0:      # stencil is empty at d = 2*side
+            if term_features.shape[1] == 0:  # stencil is empty at d = 2*side
                 continue
             row_scores, col_scores = self._band_family_halves(
                 family, position, term_features, position[term_slot].unsqueeze(0)
@@ -444,10 +446,9 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         """
         site = torch.arange(self.d)
         rows, cols = site // side, site % side
-        displacement = (
-            ((rows[None, :] - rows[:, None]) % side) * side
-            + (cols[None, :] - cols[:, None]) % side
-        )
+        displacement = ((rows[None, :] - rows[:, None]) % side) * side + (
+            cols[None, :] - cols[:, None]
+        ) % side
         self.register_buffer("pair_displacement", displacement, persistent=False)
         self.relative_pair_embedding = nn.Embedding(self.d, 2 * position_dim)
 
@@ -482,9 +483,7 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         the `lattice` option exists to measure which.
         """
         if self.attention_window == "interval":
-            return (
-                (slot + min(offsets) > site_i) & (slot + max(offsets) < site_j)
-            )
+            return (slot + min(offsets) > site_i) & (slot + max(offsets) < site_j)
         visible = None
         for offset in offsets:
             support = slot + offset
@@ -532,16 +531,16 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         row of the position table -- the unary and offset families start at
         site 0, the stencil starts at `side`.
         """
-        yield (0,), self.band_unary_features(emb), torch.arange(
-            self.d, device=emb.device
+        yield (
+            (0,),
+            self.band_unary_features(emb),
+            torch.arange(self.d, device=emb.device),
         )
         for delta, feature_mlp in zip(self.pair_offsets, self.band_pair_features):
             n_terms = self.d - delta
             yield (
                 (0, delta),
-                feature_mlp(
-                    torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)
-                ),
+                feature_mlp(torch.cat([emb[:, :n_terms], emb[:, delta:]], dim=-1)),
                 torch.arange(n_terms, device=emb.device),
             )
         if self.use_stencil:
@@ -617,8 +616,8 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 term_shape = (1, 1, -1)
                 pair_query_input = (
                     self.relative_pair_embedding(self.pair_displacement)
-                    if self.pair_position_mode == "relative" else
-                    torch.cat(
+                    if self.pair_position_mode == "relative"
+                    else torch.cat(
                         [
                             position.view(d, 1, -1).expand(d, d, -1),
                             position.view(1, d, -1).expand(d, d, -1),
@@ -632,8 +631,8 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 term_shape = (1, -1)
                 pair_query_input = (
                     self.relative_pair_embedding(self.pair_displacement[rows, cols])
-                    if self.pair_position_mode == "relative" else
-                    torch.cat([position[rows], position[cols]], dim=-1)
+                    if self.pair_position_mode == "relative"
+                    else torch.cat([position[rows], position[cols]], dim=-1)
                 )  # (P, 2P)
 
         families = []
@@ -647,8 +646,13 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 )
                 families.append(
                     self._attend_band_family_separable(
-                        family, position, term_features, term_positions,
-                        visible_row, visible_col, pairs,
+                        family,
+                        position,
+                        term_features,
+                        term_positions,
+                        visible_row,
+                        visible_col,
+                        pairs,
                     )
                 )
             else:
@@ -657,8 +661,11 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 )
                 families.append(
                     self._attend_band_family(
-                        family, pair_query_input, term_features,
-                        term_positions, visible,
+                        family,
+                        pair_query_input,
+                        term_features,
+                        term_positions,
+                        visible,
                     )
                 )
         return torch.cat(families, dim=-1)  # (B, d, d, F)

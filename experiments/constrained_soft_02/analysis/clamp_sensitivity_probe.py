@@ -42,6 +42,7 @@ EXPECTED OUTCOMES
   If C fails and the `dt_log_p̃ - dt_log_Z_t` residue dominates by magnitude,
   the operative fix is the `dt_log_p̃` bound rather than the ceiling.
 """
+
 import argparse
 import json
 from contextlib import nullcontext
@@ -67,9 +68,9 @@ def _decompose(x, t, dt_log_Zt, model, target):
     log_p_neighbours = _log_p_tilde_at_neighbours(x, t, target, model.vocab_size)
     raw_ratio = log_p_neighbours - target.log_p_tilde_t(x, t)[:, None, None]
     ceiling = target.log_ratio_clamp
-    site_terms = (
-        G_plus - neg_G_plus * raw_ratio.clamp(max=ceiling).exp()
-    ).sum(dim=(-2, -1))
+    site_terms = (G_plus - neg_G_plus * raw_ratio.clamp(max=ceiling).exp()).sum(
+        dim=(-2, -1)
+    )
 
     dt_log_p_tilde = target.dt_log_p_tilde_t(x, t)
     return {
@@ -86,6 +87,7 @@ def _decompose(x, t, dt_log_Zt, model, target):
 def probe(run_dir: Path, ceilings, n_states: int, composition: float | None):
     from experiments.constrained_soft_02.configs import CONFIGS
     from experiments.dnfs_baseline_01.run import _build_model
+
     from discrete_flow_sampler.targets.ising import IsingTarget
 
     cfg = CONFIGS[json.loads((run_dir / "config.json").read_text())["name"]]
@@ -93,7 +95,9 @@ def probe(run_dir: Path, ceilings, n_states: int, composition: float | None):
     # under the final penalty strength and that is the regime being probed.
     lam = cfg.ising.composition_penalty_strength
     target = IsingTarget(
-        D=cfg.ising.D, sigma=cfg.ising.sigma, bias=cfg.ising.bias,
+        D=cfg.ising.D,
+        sigma=cfg.ising.sigma,
+        bias=cfg.ising.bias,
         target_composition=cfg.ising.target_composition,
         composition_penalty_strength=lam,
         base_composition=cfg.ising.base_composition,
@@ -130,17 +134,19 @@ def probe(run_dir: Path, ceilings, n_states: int, composition: float | None):
         for ceiling in ceilings:
             target.log_ratio_clamp = ceiling
             d = _decompose(x, t, dt_log_Zt, model_bound, target)
-            rows.append({
-                "ceiling": ceiling,
-                "clamp_frac": d["clamp_frac"].item(),
-                "raw_ratio_p99": d["raw_ratio_p99"].item(),
-                "dt_log_p_tilde_mean": d["dt_log_p_tilde"].mean().item(),
-                "dt_log_Zt": d["dt_log_Zt"][0].item(),
-                "target_residue_absmean": d["target_residue"].abs().mean().item(),
-                "site_terms_absmean": d["site_terms"].abs().mean().item(),
-                "residual_absmean": d["residual"].abs().mean().item(),
-                "loss": d["residual"].pow(2).mean().item(),
-            })
+            rows.append(
+                {
+                    "ceiling": ceiling,
+                    "clamp_frac": d["clamp_frac"].item(),
+                    "raw_ratio_p99": d["raw_ratio_p99"].item(),
+                    "dt_log_p_tilde_mean": d["dt_log_p_tilde"].mean().item(),
+                    "dt_log_Zt": d["dt_log_Zt"][0].item(),
+                    "target_residue_absmean": d["target_residue"].abs().mean().item(),
+                    "site_terms_absmean": d["site_terms"].abs().mean().item(),
+                    "residual_absmean": d["residual"].abs().mean().item(),
+                    "loss": d["residual"].pow(2).mean().item(),
+                }
+            )
         achieved = target.composition_fraction(x).mean().item()
     return achieved, rows
 
@@ -155,25 +161,46 @@ def main():
     )
     args = ap.parse_args()
 
-    achieved, rows = probe(
-        args.run_dir, args.ceilings, args.n_states, args.composition
+    achieved, rows = probe(args.run_dir, args.ceilings, args.n_states, args.composition)
+    lam_hint = (
+        "requested c=%s" % args.composition if args.composition else "unconditioned"
     )
-    lam_hint = "requested c=%s" % args.composition if args.composition else "unconditioned"
     print(f"\n{args.run_dir.name}\n  {lam_hint}, achieved <c> = {achieved:.4f}")
     # dt_log_p̃ and dt_log_Z_t are printed separately, not just their
     # difference: dt_log_Z_t is the mean of (dt_log_p̃ + site_terms), so a
     # large `target_residue` can come either from a large dt_log_p̃ — which
     # would implicate the penalty's linear entry — or from a large
     # dt_log_Z_t dragged up by site_terms. Only the split distinguishes them.
-    hdr = ("ceiling", "clampfrac", "ratio_p99", "dt_log_p~", "dt_log_Zt",
-           "|dtlogp-dtlogZ|", "|site_terms|", "|residual|", "loss")
+    hdr = (
+        "ceiling",
+        "clampfrac",
+        "ratio_p99",
+        "dt_log_p~",
+        "dt_log_Zt",
+        "|dtlogp-dtlogZ|",
+        "|site_terms|",
+        "|residual|",
+        "loss",
+    )
     print("  " + "".join(f"{h:>16}" for h in hdr))
     for r in rows:
-        print("  " + "".join(f"{v:>16.4g}" for v in (
-            r["ceiling"], r["clamp_frac"], r["raw_ratio_p99"],
-            r["dt_log_p_tilde_mean"], r["dt_log_Zt"],
-            r["target_residue_absmean"], r["site_terms_absmean"],
-            r["residual_absmean"], r["loss"])))
+        print(
+            "  "
+            + "".join(
+                f"{v:>16.4g}"
+                for v in (
+                    r["ceiling"],
+                    r["clamp_frac"],
+                    r["raw_ratio_p99"],
+                    r["dt_log_p_tilde_mean"],
+                    r["dt_log_Zt"],
+                    r["target_residue_absmean"],
+                    r["site_terms_absmean"],
+                    r["residual_absmean"],
+                    r["loss"],
+                )
+            )
+        )
 
 
 if __name__ == "__main__":

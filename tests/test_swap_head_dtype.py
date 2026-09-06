@@ -24,7 +24,11 @@ from discrete_flow_sampler.models.letf import LeTFRateMatrix
 def _backbone(d=9):
     torch.manual_seed(42)
     return LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
 

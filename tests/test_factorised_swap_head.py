@@ -60,8 +60,12 @@ def _head(
 ):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=hidden_dim, n_layers=n_layers,
-        n_heads=n_heads, use_sdpa_readout=False,
+        d=d,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        n_heads=n_heads,
+        use_sdpa_readout=False,
     )
     head = FactorisedSwapHead(
         backbone,
@@ -118,15 +122,14 @@ ABLATIONS = [
 @torch.no_grad()
 @pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 @pytest.mark.parametrize("use_bilinear,use_global", ABLATIONS)
-def test_pair_context_blind_to_both_holes(
-    use_bilinear, use_global, gather_triu_pairs
-):
+def test_pair_context_blind_to_both_holes(use_bilinear, use_global, gather_triu_pairs):
     """Core claim: H_ij invariant under ANY change to x_i, x_j, in every
     ablation arm -- blindness is per-term, so no arm may leak. Run on both
     assembly paths: the triu-pair gather re-indexes the global term's
     per-pair map, which is the arm that carries the hole subtraction."""
     head = _head(
-        use_bilinear=use_bilinear, use_global=use_global,
+        use_bilinear=use_bilinear,
+        use_global=use_global,
         gather_triu_pairs=gather_triu_pairs,
     )
     x = _state()
@@ -140,9 +143,7 @@ def test_pair_context_blind_to_both_holes(
             (_flip(x, j), f"x_{j}"),
             (_flip(x, i, j), f"x_{i} and x_{j}"),
         ):
-            drift = _drift(
-                head.compute_pair_context(flipped_x, t)[:, i, j, :], base
-            )
+            drift = _drift(head.compute_pair_context(flipped_x, t)[:, i, j, :], base)
             assert drift < ATOL, f"H_[{i},{j}] leaks {label}: {drift:.2e}"
 
 
@@ -158,9 +159,7 @@ def test_pair_context_sensitive_to_all_coverage_regions():
     base = head.compute_pair_context(x, t)[:, i, j, :]
 
     for site, region in ((0, "prefix"), (3, "interior"), (7, "suffix")):
-        drift = _drift(
-            head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base
-        )
+        drift = _drift(head.compute_pair_context(_flip(x, site), t)[:, i, j, :], base)
         assert drift > 1e-7, f"H_[{i},{j}] ignores its {region} (site {site})"
 
 
@@ -303,9 +302,7 @@ def test_head_parameters_receive_grad():
         head.backbone.bwd_stack.parameters()
     )
     assert any(p.grad is not None for p in stacks), "causal stacks dead"
-    readout_grads = [
-        p.grad for p in head.backbone.attention_readout.parameters()
-    ]
+    readout_grads = [p.grad for p in head.backbone.attention_readout.parameters()]
     assert all(g is None for g in readout_grads), (
         "attention_readout unexpectedly live; the one-pass design routed "
         "through the machinery it exists to replace"
@@ -317,7 +314,11 @@ def test_flags_must_enable_at_least_one_term():
     alone -- reject at construction, not at first NaN."""
     torch.manual_seed(0)
     backbone = LeTFRateMatrix(
-        d=9, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2,
+        d=9,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=1,
+        n_heads=2,
     )
     with pytest.raises(ValueError):
         FactorisedSwapHead(backbone, use_bilinear=False, use_global=False)
@@ -359,7 +360,11 @@ def _mo_head(
 ):
     torch.manual_seed(seed)
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=d,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
     head = FactorisedSwapHead(
@@ -392,8 +397,14 @@ def test_single_ordering_forward_bit_exact_to_default():
     """orderings=("row",) must be the SAME code path as the default head, not
     a numerically-similar one: same RNG consumption at construction, same op
     sequence in forward, bit-identical output."""
-    default = _head(hidden_dim=8, n_heads=2, bilinear_rank=3, factor_dim=4,
-                    global_feature_dim=6, position_dim=5)
+    default = _head(
+        hidden_dim=8,
+        n_heads=2,
+        bilinear_rank=3,
+        factor_dim=4,
+        global_feature_dim=6,
+        position_dim=5,
+    )
     single = _mo_head(site_orderings=("row",), lattice_side=None)
     x = _state()
     t = torch.rand(1)
@@ -448,9 +459,7 @@ def test_col_ordering_opens_row_interior_coverage():
     assert newly_covered > 1e-6, (
         "col ordering failed to open coverage of a row-interior site"
     )
-    assert both_interior <= ATOL, (
-        "pair (1,7) saw a site interior to BOTH orderings"
-    )
+    assert both_interior <= ATOL, "pair (1,7) saw a site interior to BOTH orderings"
 
 
 @torch.no_grad()
@@ -468,9 +477,7 @@ def test_multi_order_forward_matches_context_readout_and_antisymmetry():
         torch.diagonal(G, dim1=1, dim2=2),
         torch.zeros_like(torch.diagonal(G, dim1=1, dim2=2)),
     )
-    omega_factor = head.omega_projection(
-        head.backbone.omega(((x + 1) / 2).long())
-    )
+    omega_factor = head.omega_projection(head.backbone.omega(((x + 1) / 2).long()))
     token_difference = omega_factor.unsqueeze(2) - omega_factor.unsqueeze(1)
     H = head.compute_pair_context(x, t)
     G_reference = (token_difference * H).sum(-1)
@@ -523,14 +530,26 @@ def test_extra_orderings_validated_at_construction():
 def _band_head(interior_band, site_orderings=("row",), gather_triu_pairs=False, **kw):
     torch.manual_seed(42)
     backbone = LeTFRateMatrix(
-        d=9, vocab_size=2, hidden_dim=8, n_layers=2, n_heads=2,
+        d=9,
+        vocab_size=2,
+        hidden_dim=8,
+        n_layers=2,
+        n_heads=2,
         use_sdpa_readout=False,
     )
     head = FactorisedSwapHead(
-        backbone, bilinear_rank=3, factor_dim=4, global_feature_dim=6,
-        position_dim=5, interior_band=interior_band, band_feature_dim=5,
-        attention_dim=6, lattice_side=3, site_orderings=site_orderings,
-        gather_triu_pairs=gather_triu_pairs, **kw,
+        backbone,
+        bilinear_rank=3,
+        factor_dim=4,
+        global_feature_dim=6,
+        position_dim=5,
+        interior_band=interior_band,
+        band_feature_dim=5,
+        attention_dim=6,
+        lattice_side=3,
+        site_orderings=site_orderings,
+        gather_triu_pairs=gather_triu_pairs,
+        **kw,
     )
     head.eval()
     return head
@@ -550,9 +569,12 @@ def test_interior_band_context_blind_to_both_holes(
     H = head.compute_pair_context(x, t)
     for i, j in upper_tri_pairs(9, x.device).tolist():
         for flips in ((i,), (j,), (i, j)):
-            assert _drift(head.compute_pair_context(_flip(x, *flips), t)[:, i, j], H[:, i, j]) < ATOL, (
-                interior_band, site_orderings, i, j, flips
-            )
+            assert (
+                _drift(
+                    head.compute_pair_context(_flip(x, *flips), t)[:, i, j], H[:, i, j]
+                )
+                < ATOL
+            ), (interior_band, site_orderings, i, j, flips)
 
 
 @pytest.mark.parametrize("interior_band", ["prefix", "attention"])
@@ -565,10 +587,14 @@ def test_interior_band_sees_the_open_interval(interior_band):
     without_band = _head(use_bilinear=False, use_global=True)
     x, t = _state(), torch.rand(1)
     i, j, interior_site = 1, 7, 4
-    delta_with = with_band.compute_pair_context(_flip(x, interior_site), t)[:, i, j] \
+    delta_with = (
+        with_band.compute_pair_context(_flip(x, interior_site), t)[:, i, j]
         - with_band.compute_pair_context(x, t)[:, i, j]
-    delta_without = without_band.compute_pair_context(_flip(x, interior_site), t)[:, i, j] \
+    )
+    delta_without = (
+        without_band.compute_pair_context(_flip(x, interior_site), t)[:, i, j]
         - without_band.compute_pair_context(x, t)[:, i, j]
+    )
     assert delta_with.abs().max() > ATOL
     assert not torch.allclose(delta_with, delta_without)
 
@@ -583,7 +609,9 @@ def test_interior_band_forward_matches_context_readout_and_antisymmetry(
     omega_f = head.omega_projection(head.backbone.omega(((x + 1) / 2).long()))
     token_difference = omega_f.unsqueeze(2) - omega_f.unsqueeze(1)
     G = head(x, t)
-    assert _drift(G, (token_difference * head.compute_pair_context(x, t)).sum(-1)) < ATOL
+    assert (
+        _drift(G, (token_difference * head.compute_pair_context(x, t)).sum(-1)) < ATOL
+    )
     assert (G + G.transpose(1, 2)).abs().max() == 0.0
 
 
@@ -599,7 +627,9 @@ def test_no_interior_band_is_byte_identical_to_archived_head():
     assert archived.state_dict().keys() == explicit.state_dict().keys()
     x, t = _state(), torch.rand(1)
     assert torch.equal(archived(x, t), explicit(x, t))
-    assert not any(k.startswith("interior_band_provider") for k in archived.state_dict())
+    assert not any(
+        k.startswith("interior_band_provider") for k in archived.state_dict()
+    )
 
 
 @pytest.mark.parametrize("interior_band", ["prefix", "attention"])
@@ -611,7 +641,9 @@ def test_interior_band_provider_has_no_duplicate_backbone_and_gets_grad(interior
     head.train()
     x, t = _state(), torch.rand(1)
     head(x, t).sum().backward()
-    band_params = [p for n, p in head.named_parameters() if n.startswith("interior_band_provider")]
+    band_params = [
+        p for n, p in head.named_parameters() if n.startswith("interior_band_provider")
+    ]
     assert band_params and all(p.grad is not None for p in band_params)
 
 
@@ -647,8 +679,11 @@ def _bond_head(site_orderings=("row",), gather_triu_pairs=False, **kw):
     """`_band_head`'s twin with the bond family on. Bonds ride the band
     provider's modules, so `interior_band` must be present."""
     return _band_head(
-        "prefix", site_orderings=site_orderings,
-        gather_triu_pairs=gather_triu_pairs, global_bond_features=True, **kw,
+        "prefix",
+        site_orderings=site_orderings,
+        gather_triu_pairs=gather_triu_pairs,
+        global_bond_features=True,
+        **kw,
     )
 
 
@@ -746,9 +781,12 @@ def test_global_bond_context_blind_to_both_holes(site_orderings, gather_triu_pai
     H = head.compute_pair_context(x, t)
     for i, j in upper_tri_pairs(9, x.device).tolist():
         for flips in ((i,), (j,), (i, j)):
-            assert _drift(
-                head.compute_pair_context(_flip(x, *flips), t)[:, i, j], H[:, i, j]
-            ) < ATOL, (site_orderings, gather_triu_pairs, i, j, flips)
+            assert (
+                _drift(
+                    head.compute_pair_context(_flip(x, *flips), t)[:, i, j], H[:, i, j]
+                )
+                < ATOL
+            ), (site_orderings, gather_triu_pairs, i, j, flips)
 
 
 @torch.no_grad()
@@ -763,9 +801,13 @@ def test_global_bonds_see_exterior_structure_the_unary_sum_cannot():
     without = _band_head("prefix", use_bilinear=False)
     x, t = _state(), torch.rand(1)
     i, j, exterior_site = 3, 5, 8
+
     def response(head):
-        return head.compute_pair_context(_flip(x, exterior_site), t)[:, i, j] \
+        return (
+            head.compute_pair_context(_flip(x, exterior_site), t)[:, i, j]
             - head.compute_pair_context(x, t)[:, i, j]
+        )
+
     assert response(with_bonds).abs().max() > ATOL
     assert not torch.allclose(response(with_bonds), response(without))
 
@@ -777,7 +819,9 @@ def test_global_bond_forward_matches_context_readout_and_antisymmetry():
     omega_f = head.omega_projection(head.backbone.omega(((x + 1) / 2).long()))
     token_difference = omega_f.unsqueeze(2) - omega_f.unsqueeze(1)
     G = head(x, t)
-    assert _drift(G, (token_difference * head.compute_pair_context(x, t)).sum(-1)) < ATOL
+    assert (
+        _drift(G, (token_difference * head.compute_pair_context(x, t)).sum(-1)) < ATOL
+    )
     assert (G + G.transpose(1, 2)).abs().max() == 0.0
 
 
@@ -789,8 +833,9 @@ def test_global_bond_features_reuse_the_band_modules_and_add_no_feature_params()
     fails, which is the point -- that is a different experiment."""
     plain = _band_head("prefix")
     bonds = _bond_head()
-    added = sum(p.numel() for p in bonds.parameters()) \
-        - sum(p.numel() for p in plain.parameters())
+    added = sum(p.numel() for p in bonds.parameters()) - sum(
+        p.numel() for p in plain.parameters()
+    )
     provider = bonds.interior_band_provider
     band_pair_ids = {id(p) for m in provider.band_pair_features for p in m.parameters()}
     assert band_pair_ids, "no bond modules to share"

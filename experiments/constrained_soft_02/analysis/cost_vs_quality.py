@@ -37,6 +37,7 @@ Example:
     python -m experiments.constrained_soft_02.analysis.cost_vs_quality \\
         --results-dir results/02_constrained_soft --D 10
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -89,8 +90,7 @@ def collect_dnfs(
         metrics_path = run_dir / "eval" / "metrics.json"
         if sweep_path.exists():
             entries = [
-                (row["composition"], row)
-                for row in json.loads(sweep_path.read_text())
+                (row["composition"], row) for row in json.loads(sweep_path.read_text())
             ]
         elif metrics_path.exists():
             metrics = json.loads(metrics_path.read_text())
@@ -101,15 +101,17 @@ def collect_dnfs(
             cost = _seconds_per_effective_sample(metrics)
             if cost is None:
                 continue
-            rows.append({
-                "cell": cfg["name"],
-                "seed": cfg["train"]["seed"],
-                "composition": composition,
-                "ess_fraction": metrics.get("ess_fraction"),
-                "dnfs_s_per_eff": cost,
-                "nfe_per_eff": metrics.get("nfe_per_effective_sample"),
-                "device": metrics.get("eval_device"),
-            })
+            rows.append(
+                {
+                    "cell": cfg["name"],
+                    "seed": cfg["train"]["seed"],
+                    "composition": composition,
+                    "ess_fraction": metrics.get("ess_fraction"),
+                    "dnfs_s_per_eff": cost,
+                    "nfe_per_eff": metrics.get("nfe_per_effective_sample"),
+                    "device": metrics.get("eval_device"),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -121,18 +123,20 @@ def collect_mchammer(baseline_dir: Path, *, D: int) -> pd.DataFrame:
         if summary["D"] != D:
             continue
         observables = summary["observables"]
-        rows.append({
-            "composition": summary["target_composition"],
-            "seed": summary["seed"],
-            "mcmc_s_per_eff_composition": observables.get(
-                "composition", {}
-            ).get("seconds_per_effective_sample"),
-            "mcmc_s_per_eff_potential": observables.get(
-                "potential", {}
-            ).get("seconds_per_effective_sample"),
-            "steps_per_second": summary["steps_per_second"],
-            "hostname": summary["hostname"],
-        })
+        rows.append(
+            {
+                "composition": summary["target_composition"],
+                "seed": summary["seed"],
+                "mcmc_s_per_eff_composition": observables.get("composition", {}).get(
+                    "seconds_per_effective_sample"
+                ),
+                "mcmc_s_per_eff_potential": observables.get("potential", {}).get(
+                    "seconds_per_effective_sample"
+                ),
+                "steps_per_second": summary["steps_per_second"],
+                "hostname": summary["hostname"],
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -162,9 +166,7 @@ def build_grid(dnfs: pd.DataFrame, mcmc: pd.DataFrame) -> pd.DataFrame:
         mcmc_s_per_eff_potential=("mcmc_s_per_eff_potential", "mean"),
     )
     grid = dnfs_agg.merge(mcmc_agg, on="composition", how="outer")
-    grid["mcmc_over_dnfs"] = (
-        grid["mcmc_s_per_eff_composition"] / grid["dnfs_s_per_eff"]
-    )
+    grid["mcmc_over_dnfs"] = grid["mcmc_s_per_eff_composition"] / grid["dnfs_s_per_eff"]
     return grid.sort_values(["cell", "composition"]).reset_index(drop=True)
 
 
@@ -174,9 +176,11 @@ def main():
     parser.add_argument("--baseline-dir", default=str(MCHAMMER_SOFT))
     parser.add_argument("--D", type=int, default=10)
     parser.add_argument(
-        "--seeds", nargs="+", type=int,
+        "--seeds",
+        nargs="+",
+        type=int,
         help="Restrict the DNFS side to these seeds. Quote such a row only "
-             "next to the survival rate of the cell it came from.",
+        "next to the survival rate of the cell it came from.",
     )
     parser.add_argument("--out", help="Optional CSV path for the grid")
     args = parser.parse_args()

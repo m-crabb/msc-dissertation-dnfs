@@ -11,6 +11,7 @@ Tests pinned here:
     2) Random rate matrix on a real Ising target -> residual non-zero.
     3) loss(...) == residual(...).pow(2).mean().
 """
+
 import torch
 
 from discrete_flow_sampler.samplers.kolmogorov import loss, residual_general
@@ -129,6 +130,7 @@ def test_residual_lenet_nonzero_for_random_lemlp():
     should NOT satisfy Kolmogorov — guards against a vacuous
     `test_residual_lenet_zero_*`."""
     from discrete_flow_sampler.models.lemlp import LeMLPRateMatrix
+
     target = IsingTarget(D=2, sigma=0.1)
     torch.manual_seed(0)
     model = LeMLPRateMatrix(d=4, vocab_size=2, hidden_dim=16, n_summands=2)
@@ -157,9 +159,9 @@ def test_loss_dispatches_on_is_locally_equivariant():
     non_le_loss = loss(x, t, dt_log_Zt, non_le_model, target)
 
     expected_le = residual_lenet(x, t, dt_log_Zt, le_model, target).pow(2).mean()
-    expected_non_le = residual_general(
-        x, t, dt_log_Zt, non_le_model, target
-    ).pow(2).mean()
+    expected_non_le = (
+        residual_general(x, t, dt_log_Zt, non_le_model, target).pow(2).mean()
+    )
 
     torch.testing.assert_close(le_loss, expected_le)
     torch.testing.assert_close(non_le_loss, expected_non_le)

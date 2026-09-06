@@ -15,6 +15,7 @@ claim. The tests pin the three ways that can happen:
 Fixtures are JSON only: the module reads config.json, metrics.json,
 composition_sweep.json and mchammer summary.json, and never loads a model.
 """
+
 import importlib
 import json
 
@@ -26,16 +27,28 @@ grid = importlib.import_module(
 
 
 def _write_dnfs_run(
-    results_dir, name, *, seed=42, D=10, composition=0.5,
-    ess_fraction=0.5, n_eval=1000, draw_seconds=None, sweep=None,
+    results_dir,
+    name,
+    *,
+    seed=42,
+    D=10,
+    composition=0.5,
+    ess_fraction=0.5,
+    n_eval=1000,
+    draw_seconds=None,
+    sweep=None,
 ):
     run_dir = results_dir / name
     (run_dir / "eval").mkdir(parents=True)
-    (run_dir / "config.json").write_text(json.dumps({
-        "name": name.split("_seed")[0],
-        "ising": {"D": D, "target_composition": composition},
-        "train": {"seed": seed},
-    }))
+    (run_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "name": name.split("_seed")[0],
+                "ising": {"D": D, "target_composition": composition},
+                "train": {"seed": seed},
+            }
+        )
+    )
 
     def _metrics(comp, ess_frac):
         payload = {
@@ -60,21 +73,33 @@ def _write_dnfs_run(
     return run_dir
 
 
-def _write_mchammer(baseline_dir, name, *, D=10, composition=0.5, seed=42,
-                    s_per_eff=0.002, potential_s_per_eff=0.004):
+def _write_mchammer(
+    baseline_dir,
+    name,
+    *,
+    D=10,
+    composition=0.5,
+    seed=42,
+    s_per_eff=0.002,
+    potential_s_per_eff=0.004,
+):
     cell = baseline_dir / name
     cell.mkdir(parents=True)
-    (cell / "summary.json").write_text(json.dumps({
-        "D": D,
-        "seed": seed,
-        "target_composition": composition,
-        "steps_per_second": 50_000.0,
-        "hostname": "test-host",
-        "observables": {
-            "composition": {"seconds_per_effective_sample": s_per_eff},
-            "potential": {"seconds_per_effective_sample": potential_s_per_eff},
-        },
-    }))
+    (cell / "summary.json").write_text(
+        json.dumps(
+            {
+                "D": D,
+                "seed": seed,
+                "target_composition": composition,
+                "steps_per_second": 50_000.0,
+                "hostname": "test-host",
+                "observables": {
+                    "composition": {"seconds_per_effective_sample": s_per_eff},
+                    "potential": {"seconds_per_effective_sample": potential_s_per_eff},
+                },
+            }
+        )
+    )
 
 
 def test_untimed_runs_are_dropped_not_costed_as_zero(tmp_path):
@@ -101,8 +126,11 @@ def test_cost_is_seconds_per_effective_sample_not_per_drawn_sample(tmp_path):
     axis the grid is built to expose.
     """
     _write_dnfs_run(
-        tmp_path, "cell_seed42",
-        draw_seconds=10.0, ess_fraction=0.5, n_eval=1000,
+        tmp_path,
+        "cell_seed42",
+        draw_seconds=10.0,
+        ess_fraction=0.5,
+        n_eval=1000,
     )
 
     collected = grid.collect_dnfs(tmp_path, D=10)
@@ -129,13 +157,15 @@ def test_sides_are_seed_meaned_before_joining(tmp_path):
     results_dir, baseline_dir = tmp_path / "runs", tmp_path / "mch"
     for seed in (42, 43):
         _write_dnfs_run(
-            results_dir, f"cell_seed{seed}", seed=seed,
-            draw_seconds=10.0, ess_fraction=0.5, n_eval=1000,
+            results_dir,
+            f"cell_seed{seed}",
+            seed=seed,
+            draw_seconds=10.0,
+            ess_fraction=0.5,
+            n_eval=1000,
         )
     for seed in (42, 43, 44):
-        _write_mchammer(
-            baseline_dir, f"cell_seed{seed}", seed=seed, s_per_eff=0.06
-        )
+        _write_mchammer(baseline_dir, f"cell_seed{seed}", seed=seed, s_per_eff=0.06)
 
     table = grid.build_grid(
         grid.collect_dnfs(results_dir, D=10),
@@ -161,8 +191,12 @@ def test_seed_filter_isolates_a_survivor_from_the_seed_mean(tmp_path):
     """
     for seed, ess_fraction in ((42, 0.001), (44, 0.5)):
         _write_dnfs_run(
-            tmp_path, f"cell_seed{seed}", seed=seed,
-            draw_seconds=10.0, ess_fraction=ess_fraction, n_eval=1000,
+            tmp_path,
+            f"cell_seed{seed}",
+            seed=seed,
+            draw_seconds=10.0,
+            ess_fraction=ess_fraction,
+            n_eval=1000,
         )
 
     everything = grid.collect_dnfs(tmp_path, D=10)
@@ -183,7 +217,10 @@ def test_swept_run_contributes_one_row_per_composition(tmp_path):
     actually loses to a specialist.
     """
     _write_dnfs_run(
-        tmp_path, "amort_seed42", draw_seconds=10.0, n_eval=1000,
+        tmp_path,
+        "amort_seed42",
+        draw_seconds=10.0,
+        n_eval=1000,
         sweep=[(0.30, 0.01), (0.50, 0.50)],
     )
 

@@ -17,6 +17,7 @@ Reports:
 Marginal TVDs (low-dim: 17 / ~40 bins) are informative at N=5000; the
 full 2^16-state TVD is sample-floored at this budget (project_tvd_floor).
 """
+
 import json
 from pathlib import Path
 
@@ -24,14 +25,14 @@ import matplotlib.pyplot as plt
 import torch
 
 from discrete_flow_sampler.diagnostics.metrics import (
+    composition_fraction_up as composition,
+)
+from discrete_flow_sampler.diagnostics.metrics import (
     enumerate_states,
     exact_log_probs,
-)
-from discrete_flow_sampler.targets.ising import IsingTarget
-from discrete_flow_sampler.diagnostics.metrics import (
-    composition_fraction_up as composition,
     marginal_tvd,
 )
+from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUN_DIR = REPO_ROOT / "results" / "02_constrained_soft" / "S2_d4_c03_l50_seed42"
@@ -53,29 +54,29 @@ def main() -> None:
     )
 
     # --- Exact constrained distribution over all 2^16 states ---
-    states = enumerate_states(N_SITES).float()          # (65536, 16)
-    log_pi = exact_log_probs(target, states)             # normalised, Σ exp = 1
-    pi = log_pi.exp()                                    # (65536,)
+    states = enumerate_states(N_SITES).float()  # (65536, 16)
+    log_pi = exact_log_probs(target, states)  # normalised, Σ exp = 1
+    pi = log_pi.exp()  # (65536,)
 
-    c_states = composition(states)                       # (65536,)
+    c_states = composition(states)  # (65536,)
     exact_mean_c = (pi * c_states).sum().item()
 
     # 17 composition support points: k/16, k = 0..16
     k = torch.arange(N_SITES + 1)
     support_c = k.float() / N_SITES
-    bucket = (c_states * N_SITES).round().long()         # state -> support index
+    bucket = (c_states * N_SITES).round().long()  # state -> support index
     exact_c_pmf = torch.zeros(N_SITES + 1)
     exact_c_pmf.index_add_(0, bucket, pi)
 
-    energy_states = target.log_prob(states)              # log p̃ per state
+    energy_states = target.log_prob(states)  # log p̃ per state
     e_lo, e_hi = energy_states.min().item(), energy_states.max().item()
-    e_edges = torch.linspace(e_lo, e_hi, 41)             # ~40 energy bins
+    e_edges = torch.linspace(e_lo, e_hi, 41)  # ~40 energy bins
     e_idx_states = torch.bucketize(energy_states, e_edges[1:-1], right=False)
     exact_e_pmf = torch.zeros(40)
     exact_e_pmf.index_add_(0, e_idx_states, pi)
 
     # --- IS-weighted empirical from the c=0.3 run ---
-    w = torch.softmax(log_w, dim=0)                      # self-normalised IS
+    w = torch.softmax(log_w, dim=0)  # self-normalised IS
     c_samples = composition(samples)
     weighted_mean_c = (w * c_samples).sum().item()
 
@@ -92,23 +93,33 @@ def main() -> None:
     print("=== d=4 constrained exact-fidelity ===")
     print(f"  exact   E_pi[c+]            : {exact_mean_c:.4f}")
     print(f"  IS-weighted  E_hat[c+]      : {weighted_mean_c:.4f}")
-    print(f"  stored unweighted mean      : {stored['composition_mean']:.4f}  "
-          f"(proposal Q, not target)")
+    print(
+        f"  stored unweighted mean      : {stored['composition_mean']:.4f}  "
+        f"(proposal Q, not target)"
+    )
     print(f"  composition bias (exact-IS) : {exact_mean_c - weighted_mean_c:+.4f}")
-    print(f"  composition marginal TVD    : {marginal_tvd(weighted_c_pmf, exact_c_pmf):.4f}")
-    print(f"  energy marginal TVD         : {marginal_tvd(weighted_e_pmf, exact_e_pmf):.4f}")
+    print(
+        f"  composition marginal TVD    : {marginal_tvd(weighted_c_pmf, exact_c_pmf):.4f}"
+    )
+    print(
+        f"  energy marginal TVD         : {marginal_tvd(weighted_e_pmf, exact_e_pmf):.4f}"
+    )
     print()
     print("  context — stored scalar biases (metrics.json, already exact at d=4):")
-    print(f"    F/D bias {stored['free_energy_per_site_bias']:+.4f}  "
-          f"E/D bias {stored['internal_energy_per_site_bias']:+.4f}  "
-          f"S/D bias {stored['entropy_per_site_bias']:+.4f}")
+    print(
+        f"    F/D bias {stored['free_energy_per_site_bias']:+.4f}  "
+        f"E/D bias {stored['internal_energy_per_site_bias']:+.4f}  "
+        f"S/D bias {stored['entropy_per_site_bias']:+.4f}"
+    )
     print("    F/D bias is large+positive vs near-zero E/D: the IS weight-tail")
     print("    signature (Eq.37 absolute log-Ẑ bound vs Eq.38 self-normalised).")
 
     # --- Figure ---
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
     axes[0].bar(support_c - 0.012, exact_c_pmf, width=0.024, label="exact π", alpha=0.7)
-    axes[0].bar(support_c + 0.012, weighted_c_pmf, width=0.024, label="IS-weighted", alpha=0.7)
+    axes[0].bar(
+        support_c + 0.012, weighted_c_pmf, width=0.024, label="IS-weighted", alpha=0.7
+    )
     axes[0].axvline(cfg["target_composition"], ls="--", c="k", lw=1, label="c_target")
     axes[0].set_xlabel(r"composition $c_+$")
     axes[0].set_ylabel("probability")

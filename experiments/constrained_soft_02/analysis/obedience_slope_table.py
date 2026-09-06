@@ -41,7 +41,6 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
-
 from experiments.constrained_soft_02.analysis._common import REVAMP_GRID
 
 CLAIM_BAND = (0.30, 0.70)
@@ -62,8 +61,11 @@ def slope_and_mirror(rows: list[dict]) -> tuple[float, float, float, str]:
     if set(delivered) == set(REVAMP_GRID):
         band, grid_name = delivered, "revamp"
     else:
-        band = {c: m for c, m in delivered.items()
-                if CLAIM_BAND[0] - 1e-9 <= c <= CLAIM_BAND[1] + 1e-9}
+        band = {
+            c: m
+            for c, m in delivered.items()
+            if CLAIM_BAND[0] - 1e-9 <= c <= CLAIM_BAND[1] + 1e-9
+        }
         grid_name = "claim_band"
     requested = np.array(sorted(band))
     realised = np.array([band[c] for c in requested])
@@ -71,7 +73,8 @@ def slope_and_mirror(rows: list[dict]) -> tuple[float, float, float, str]:
 
     mismatches = [
         delivered[c] - (1.0 - delivered[round(1.0 - c, 4)])
-        for c in delivered if round(1.0 - c, 4) in delivered and c <= 0.5
+        for c in delivered
+        if round(1.0 - c, 4) in delivered and c <= 0.5
     ]
     mirror = float(np.mean(mismatches)) if mismatches else np.nan
     return slope, mirror, float(realised.max() - realised.min()), grid_name
@@ -80,15 +83,16 @@ def slope_and_mirror(rows: list[dict]) -> tuple[float, float, float, str]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", default="results/02_constrained_soft")
-    parser.add_argument("--eval_dir", choices=["eval", "eval_ema"],
-                        default="eval")
-    parser.add_argument("--out", default="results/02_constrained_soft/"
-                                         "obedience_slope_table.csv")
+    parser.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval")
+    parser.add_argument(
+        "--out", default="results/02_constrained_soft/obedience_slope_table.csv"
+    )
     args = parser.parse_args()
 
     records = []
     for sweep_path in sorted(
-            Path(args.results).glob(f"*/{args.eval_dir}/composition_sweep.json")):
+        Path(args.results).glob(f"*/{args.eval_dir}/composition_sweep.json")
+    ):
         run_dir = sweep_path.parent.parent
         cfg = json.loads((run_dir / "config.json").read_text())
         rows = json.loads(sweep_path.read_text())
@@ -96,17 +100,19 @@ def main() -> None:
             continue
         slope, mirror, span, grid_name = slope_and_mirror(rows)
         name = run_dir.name
-        records.append({
-            "run": name,
-            "family": name.rsplit("_seed", 1)[0],
-            "D": cfg["ising"]["D"],
-            "conditioned": cfg["model"].get("condition_on_composition", False),
-            "fit_grid": grid_name,
-            "slope": round(slope, 4),
-            "z2_mirror_mismatch": round(mirror, 4),
-            "delivered_span": round(span, 4),
-            "healthy": HEALTHY_BAND[0] <= slope <= HEALTHY_BAND[1],
-        })
+        records.append(
+            {
+                "run": name,
+                "family": name.rsplit("_seed", 1)[0],
+                "D": cfg["ising"]["D"],
+                "conditioned": cfg["model"].get("condition_on_composition", False),
+                "fit_grid": grid_name,
+                "slope": round(slope, 4),
+                "z2_mirror_mismatch": round(mirror, 4),
+                "delivered_span": round(span, 4),
+                "healthy": HEALTHY_BAND[0] <= slope <= HEALTHY_BAND[1],
+            }
+        )
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -120,13 +126,16 @@ def main() -> None:
         families[(record["D"], record["family"])].append(record)
     print(f"{'D':>3}  {'family':<50}{'n':>3}{'mean':>8}{'healthy':>9}   slopes")
     for (dim, family), group in sorted(
-        families.items(), key=lambda kv: (kv[0][0], -np.mean([r["slope"] for r in kv[1]]))
+        families.items(),
+        key=lambda kv: (kv[0][0], -np.mean([r["slope"] for r in kv[1]])),
     ):
         slopes = [r["slope"] for r in group]
         healthy = sum(r["healthy"] for r in group)
-        print(f"{dim:>3}  {family[:50]:<50}{len(group):>3}{np.mean(slopes):>8.3f}"
-              f"{healthy:>6}/{len(group):<2}   "
-              f"{', '.join(f'{s:.2f}' for s in sorted(slopes))}")
+        print(
+            f"{dim:>3}  {family[:50]:<50}{len(group):>3}{np.mean(slopes):>8.3f}"
+            f"{healthy:>6}/{len(group):<2}   "
+            f"{', '.join(f'{s:.2f}' for s in sorted(slopes))}"
+        )
     print(f"\nwrote {out_path} ({len(records)} runs)")
 
 

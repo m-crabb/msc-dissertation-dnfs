@@ -13,6 +13,7 @@ one head call for the IS integrand). Assertions compare `F.relu(second)` on
 both sides — relu is idempotent, so the same assertion pins both the old and
 the new contract.
 """
+
 import torch
 import torch.nn.functional as F
 
@@ -103,7 +104,8 @@ def _reference_sample_swap_ctmc(head, x0, ts, *, target, multi_event):
     batch_size, _ = state.shape
     log_weights = torch.zeros(batch_size, dtype=state.dtype, device=state.device)
     step_fn = (
-        _reference_euler_step_swap_matching if multi_event
+        _reference_euler_step_swap_matching
+        if multi_event
         else _reference_euler_step_swap
     )
     for step in range(len(ts) - 1):
@@ -130,16 +132,12 @@ class _ConstScoreHead:
         self.value = value
 
     def __call__(self, x, t):
-        return torch.full(
-            (x.shape[0], self.d, self.d), self.value, dtype=x.dtype
-        )
+        return torch.full((x.shape[0], self.d, self.d), self.value, dtype=x.dtype)
 
 
 def _small_head_and_target(d_side=4, seed=11):
     torch.manual_seed(seed)
-    target = FixedCompositionIsingTarget(
-        D=d_side, sigma=0.223, target_composition=0.5
-    )
+    target = FixedCompositionIsingTarget(D=d_side, sigma=0.223, target_composition=0.5)
     backbone = LeTFRateMatrix(
         d=target.d, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2
     )
@@ -252,7 +250,11 @@ def test_sampler_log_weights_bit_exact_vs_reference():
         )
         torch.manual_seed(4)
         got_x, got_w = sample_swap_ctmc(
-            head, x0, ts, return_log_weights=True, target=target,
+            head,
+            x0,
+            ts,
+            return_log_weights=True,
+            target=target,
             multi_event=multi_event,
         )
         assert torch.equal(got_x, want_x), f"multi_event={multi_event}"
@@ -336,7 +338,11 @@ def _letf_pair(d: int, seed: int = 13) -> tuple[LeTFRateMatrix, LeTFRateMatrix]:
     for use_sdpa in (False, True):
         torch.manual_seed(seed)
         model = LeTFRateMatrix(
-            d=d, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2,
+            d=d,
+            vocab_size=2,
+            hidden_dim=16,
+            n_layers=2,
+            n_heads=2,
             use_sdpa_readout=use_sdpa,
         )
         model.eval()

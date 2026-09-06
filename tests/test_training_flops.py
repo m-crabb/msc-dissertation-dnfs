@@ -30,6 +30,7 @@ What these tests pin:
    step function of n_steps, and a line through steps is a plausible-looking
    wrong answer.
 """
+
 import math
 
 import pytest
@@ -40,7 +41,6 @@ from discrete_flow_sampler.diagnostics.flops import (
     training_run_flops,
     valid_measurement_horizons,
 )
-
 
 # --- 1. the fit and its refusal to extrapolate off bad data -------------------
 
@@ -104,9 +104,9 @@ def test_c_t_grid_recompute_is_charged_only_when_it_runs():
     recomputed = training_forward_counts(**shared, c_t_from_rollout=False)
     assert reused["c_t_grid_forwards"] == 0
     assert recomputed["c_t_grid_forwards"] == 128 * 10
-    assert (
-        recomputed["rollout_forwards"] == reused["rollout_forwards"]
-    ), "the rollout itself is unchanged; only the extra grid pass appears"
+    assert recomputed["rollout_forwards"] == reused["rollout_forwards"], (
+        "the rollout itself is unchanged; only the extra grid pass appears"
+    )
 
 
 def test_run_flops_prices_backward_against_forward():
@@ -219,7 +219,14 @@ def test_diagnostic_eval_flops_price_the_severable_instrument():
     )
     assert total == 250 * 128 * 1e9 * 4.0
     # Instrument off -> nothing charged.
-    assert diagnostic_eval_flops(
-        update_forward_flops=1e9, update_batch_size=128, n_euler_steps=128,
-        n_steps=50_000, eval_every=None, n_eval_draws=512,
-    ) == 0.0
+    assert (
+        diagnostic_eval_flops(
+            update_forward_flops=1e9,
+            update_batch_size=128,
+            n_euler_steps=128,
+            n_steps=50_000,
+            eval_every=None,
+            n_eval_draws=512,
+        )
+        == 0.0
+    )

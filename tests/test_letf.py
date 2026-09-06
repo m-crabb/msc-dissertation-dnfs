@@ -15,6 +15,7 @@ slice-and-mask design depends on inputs structured by the inclusive-causal
 stacks, so an isolated readout test feeding arbitrary tensors is over-strict.
 The full-pipeline hollow test in pillar 2 is the right level of granularity.
 """
+
 import pytest
 import torch
 import torch.nn as nn
@@ -92,9 +93,7 @@ def test_compute_body_hollow(use_sdpa):
             # Tier-2 structural evidence: SDPA gives masked keys attention
             # weight exactly 0 (exp(-inf)), so hollowness must hold EXACTLY
             # flag-on, not just within tolerance.
-            assert diff == 0.0, (
-                f"SDPA hollowness not exact at i={i}: diff = {diff:.2e}"
-            )
+            assert diff == 0.0, f"SDPA hollowness not exact at i={i}: diff = {diff:.2e}"
         assert diff < 1e-5, (
             f"Hollow violated at i={i}: ||H1[i] - H2[i]||_inf = {diff:.2e}"
         )
@@ -168,9 +167,7 @@ def test_omega_readout_init_uses_leaps_small_scale():
     clip ceiling (500) so the longer warmup (2000) has room to work.
     """
     torch.manual_seed(0)
-    model = LeTFRateMatrix(
-        d=100, vocab_size=2, hidden_dim=128, n_layers=1, n_heads=4
-    )
+    model = LeTFRateMatrix(d=100, vocab_size=2, hidden_dim=128, n_layers=1, n_heads=4)
     omega_std = model.omega.weight.detach().std().item()
     # Target 0.002 +/- factor of ~2 sampling band on a (2, 128) tensor.
     assert 0.001 < omega_std < 0.005, (

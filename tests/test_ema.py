@@ -7,6 +7,7 @@ reset counter restarts the warmup schedule, changing every subsequent
 effective decay. Round-tripping through state_dict must reproduce the
 continuation bit-exactly.
 """
+
 import torch
 
 from discrete_flow_sampler.ema import ExponentialMovingAverage
@@ -46,12 +47,8 @@ def test_lost_counter_would_diverge():
     update differs — this is why `updates` travels in the checkpoint."""
     parameter, ema = _stepped_ema(n_updates=7)
 
-    reset_counter = ExponentialMovingAverage(
-        [parameter], decay=0.9999, warmup=True
-    )
-    reset_counter.load_state_dict(
-        {"updates": 0, "shadow": ema.state_dict()["shadow"]}
-    )
+    reset_counter = ExponentialMovingAverage([parameter], decay=0.9999, warmup=True)
+    reset_counter.load_state_dict({"updates": 0, "shadow": ema.state_dict()["shadow"]})
     with torch.no_grad():
         parameter.mul_(1.5)
     ema.update()

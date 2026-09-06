@@ -56,17 +56,20 @@ def brute_force_flip_log_ratio(target, x):
 @pytest.fixture(scope="module")
 def soft_target():
     return IsingTarget(
-        D=3, sigma=0.17, device="cpu",
-        target_composition=0.3, composition_penalty_strength=50.0,
+        D=3,
+        sigma=0.17,
+        device="cpu",
+        target_composition=0.3,
+        composition_penalty_strength=50.0,
     )
 
 
 def closed_form_flip_log_ratio(target, x):
     """The derived form, built ONLY from hollow features and x_i."""
     d = x.shape[1]
-    h = x @ target.A                                   # local fields, (N, d)
-    c = target.composition_fraction(x).unsqueeze(1)    # (N, 1)
-    c_hollow = c - (x + 1.0) / (2.0 * d)               # hole-excluded, (N, d)
+    h = x @ target.A  # local fields, (N, d)
+    c = target.composition_fraction(x).unsqueeze(1)  # (N, 1)
+    c_hollow = c - (x + 1.0) / (2.0 * d)  # hole-excluded, (N, d)
     lam = target.composition_penalty_strength
     return x * (
         -4.0 * target.sigma * h
@@ -79,9 +82,7 @@ def test_closed_form_matches_brute_force(soft_target):
     x = enumerate_all(soft_target.d)
     brute = brute_force_flip_log_ratio(soft_target, x)
     closed = closed_form_flip_log_ratio(soft_target, x)
-    assert torch.allclose(brute, closed, atol=1e-4), (
-        (brute - closed).abs().max()
-    )
+    assert torch.allclose(brute, closed, atol=1e-4), (brute - closed).abs().max()
 
 
 def test_closed_form_matches_brute_force_without_penalty():
@@ -110,16 +111,13 @@ def test_features_are_hollow(soft_target):
     x = enumerate_all(soft_target.d)
     d = soft_target.d
     h = x @ soft_target.A
-    c_hollow = (
-        soft_target.composition_fraction(x).unsqueeze(1) - (x + 1.0) / (2.0 * d)
-    )
+    c_hollow = soft_target.composition_fraction(x).unsqueeze(1) - (x + 1.0) / (2.0 * d)
     for i in range(d):
         flipped = x.clone()
         flipped[:, i] = -flipped[:, i]
         h_f = flipped @ soft_target.A
-        c_f = (
-            soft_target.composition_fraction(flipped).unsqueeze(1)
-            - (flipped + 1.0) / (2.0 * d)
-        )
+        c_f = soft_target.composition_fraction(flipped).unsqueeze(1) - (
+            flipped + 1.0
+        ) / (2.0 * d)
         assert torch.allclose(h_f[:, i], h[:, i], atol=1e-6)
         assert torch.allclose(c_f[:, i], c_hollow[:, i], atol=1e-6)

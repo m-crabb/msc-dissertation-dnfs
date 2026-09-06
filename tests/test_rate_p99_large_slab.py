@@ -13,10 +13,12 @@ directions: it must WORK above the cap, and it must not move a single
 number below it -- every reported d256 figure was produced by the
 `torch.quantile` path and the 16x16 house table is filled from those runs.
 """
+
 import torch
 
 from discrete_flow_sampler.samplers.swap_training import (
-    _QUANTILE_MAX_ELEMENTS, _p99,
+    _QUANTILE_MAX_ELEMENTS,
+    _p99,
 )
 
 

@@ -41,6 +41,7 @@ Why the "slice trick" not strict-causal-with-bracketing-tokens:
     to "strict-causal at the d-output level" without the bracketing
     bookkeeping.
 """
+
 import math
 
 import torch
@@ -249,25 +250,25 @@ class AttentionReadout(nn.Module):
         return mask
 
     def forward(self, fwd_x: Tensor, bwd_x: Tensor, cond_t: Tensor) -> Tensor:
-        sliced_fwd = fwd_x[:, :-1, :]    # (B, d, h)
-        sliced_bwd = bwd_x[:, 1:, :]     # (B, d, h)
+        sliced_fwd = fwd_x[:, :-1, :]  # (B, d, h)
+        sliced_bwd = bwd_x[:, 1:, :]  # (B, d, h)
 
-        combined = (sliced_fwd + sliced_bwd) / math.sqrt(2) + cond_t   # (B, d, h)
+        combined = (sliced_fwd + sliced_bwd) / math.sqrt(2) + cond_t  # (B, d, h)
         all_keys = torch.cat([sliced_fwd, sliced_bwd], dim=1) + cond_t  # (B, 2d, h)
 
-        Q = self.q_proj(self.norm_in(combined))     # (B, d, h)
+        Q = self.q_proj(self.norm_in(combined))  # (B, d, h)
         kv_norm = self.norm_in(all_keys)
-        K = self.k_proj(kv_norm)                     # (B, 2d, h)
-        V = self.v_proj(kv_norm)                     # (B, 2d, h)
+        K = self.k_proj(kv_norm)  # (B, 2d, h)
+        V = self.v_proj(kv_norm)  # (B, 2d, h)
 
         B, d, _ = Q.shape
 
         def split_heads(t: Tensor, T: int) -> Tensor:
             return t.view(B, T, self.n_heads, self.d_k).transpose(1, 2)
 
-        Q = split_heads(Q, d)             # (B, n_heads, d, d_k)
-        K = split_heads(K, 2 * d)         # (B, n_heads, 2d, d_k)
-        V = split_heads(V, 2 * d)         # (B, n_heads, 2d, d_k)
+        Q = split_heads(Q, d)  # (B, n_heads, d, d_k)
+        K = split_heads(K, 2 * d)  # (B, n_heads, 2d, d_k)
+        V = split_heads(V, 2 * d)  # (B, n_heads, 2d, d_k)
 
         pos = self.pos_embed.unsqueeze(0).unsqueeze(0)  # (1, 1, d, d_k)
         Q = Q + pos
@@ -281,15 +282,15 @@ class AttentionReadout(nn.Module):
             # (True = attend), hence the negation.
             out = nn.functional.scaled_dot_product_attention(
                 Q, K, V, attn_mask=~joint_mask
-            )                                        # (B, n_heads, d, d_k)
+            )  # (B, n_heads, d, d_k)
         else:
             scale = math.sqrt(self.d_k)
             scores = torch.matmul(Q, K.transpose(-1, -2)) / scale  # (B, n_heads, d, 2d)
             scores = scores.masked_fill(joint_mask, float("-inf"))
-            attn = torch.softmax(scores, dim=-1)    # (B, n_heads, d, 2d)
-            out = torch.matmul(attn, V)              # (B, n_heads, d, d_k)
+            attn = torch.softmax(scores, dim=-1)  # (B, n_heads, d, 2d)
+            out = torch.matmul(attn, V)  # (B, n_heads, d, d_k)
         out = out.transpose(1, 2).contiguous().view(B, d, self.hidden_dim)
-        out = self.out_proj(out)                     # (B, d, h)
+        out = self.out_proj(out)  # (B, d, h)
 
         # Residual + per-position FF. `combined` is hollow at every position;
         # `out` is hollow at every position; per-position FF preserves hollow.
@@ -373,9 +374,7 @@ class LeTFRateMatrix(nn.Module):
             # tensor exactly same-seed paired to an unconditioned specialist.
             # The offset avoids duplicating the random values about to be used
             # by the first stack while remaining reproducible per run seed.
-            composition_seed = (
-                torch.initial_seed() + 0x5EED_C0DE_51A7
-            ) % (2**63)
+            composition_seed = (torch.initial_seed() + 0x5EED_C0DE_51A7) % (2**63)
             with torch.random.fork_rng(devices=[]):
                 torch.manual_seed(composition_seed)
                 self.comp_embedder = TimestepEmbedder(hidden_dim)
@@ -438,10 +437,7 @@ class LeTFRateMatrix(nn.Module):
         # behaviour in c, which is exactly the interpolation property the
         # amortised runs test. If the channel later underfits, scaling c into
         # a wider range before embedding is the first knob to reach for.
-        return (
-            self.time_embedder(t).unsqueeze(1)
-            + self.comp_embedder(c).unsqueeze(1)
-        )
+        return self.time_embedder(t).unsqueeze(1) + self.comp_embedder(c).unsqueeze(1)
 
     def compute_body(self, x: Tensor, t: Tensor, c: Tensor | None = None) -> Tensor:
         """Pre-readout body H_HTF(x), shape (B, d, hidden_dim). Hollow at every site.
@@ -450,14 +446,14 @@ class LeTFRateMatrix(nn.Module):
         `c` is the target composition; see `_conditioning`.
         """
         x_idx = ((x + 1) / 2).long()
-        x_emb = self.token_embedder(x_idx)              # (B, d, h)
-        cond_t = self._conditioning(t, c)               # (B, 1, h)
+        x_emb = self.token_embedder(x_idx)  # (B, d, h)
+        cond_t = self._conditioning(t, c)  # (B, 1, h)
 
-        fwd_in = torch.cat([cond_t, x_emb], dim=1)      # (B, 1+d, h)
-        fwd_x = self.fwd_stack(fwd_in)                  # (B, 1+d, h)
+        fwd_in = torch.cat([cond_t, x_emb], dim=1)  # (B, 1+d, h)
+        fwd_x = self.fwd_stack(fwd_in)  # (B, 1+d, h)
 
         bwd_in = torch.cat([cond_t, x_emb.flip(1)], dim=1)
-        bwd_x = self.bwd_stack(bwd_in).flip(1)          # (B, 1+d, h)
+        bwd_x = self.bwd_stack(bwd_in).flip(1)  # (B, 1+d, h)
 
         return self.attention_readout(fwd_x, bwd_x, cond_t)
 
@@ -465,9 +461,9 @@ class LeTFRateMatrix(nn.Module):
         H = self.compute_body(x, t, c)
         H = self.output_norm(H) + self._conditioning(t, c)
         x_idx = ((x + 1) / 2).long()
-        omega_all = self.omega.weight                    # (S, h)
-        omega_xi = self.omega(x_idx)                     # (B, d, h)
+        omega_all = self.omega.weight  # (S, h)
+        omega_xi = self.omega(x_idx)  # (B, d, h)
         diff = omega_all[None, None, :, :] - omega_xi[:, :, None, :]  # (B, d, S, h)
-        G = torch.einsum("bdh,bdsh->bds", H, diff)      # (B, d, S)
+        G = torch.einsum("bdh,bdsh->bds", H, diff)  # (B, d, S)
         G = G.scatter(-1, x_idx.unsqueeze(-1), 0.0)
         return G

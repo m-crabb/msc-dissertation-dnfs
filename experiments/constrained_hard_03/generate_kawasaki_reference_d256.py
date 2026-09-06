@@ -51,6 +51,7 @@ from discrete_flow_sampler.diagnostics.metrics.
 Run:  pixi run -e default python -m experiments.constrained_hard_03.generate_kawasaki_reference_d256
       (add --sigma / --out-dir to generate a sigma-matched twin elsewhere)
 """
+
 import argparse
 import json
 import math
@@ -72,24 +73,23 @@ from discrete_flow_sampler.mcmc.kawasaki import (
     init_random_at_composition,
     run_nonlocal_swap_chain_snapshots,
 )
-from discrete_flow_sampler.targets.ising import (
-    SIGMA_C, FixedCompositionIsingTarget)
+from discrete_flow_sampler.targets.ising import SIGMA_C, FixedCompositionIsingTarget
 
 # `main` sets these defaults from --lattice-side before generating chains.
 # build_initial_spins and run_one_chain read this shared size; imported use
 # at multiple sizes would need explicit size arguments. The tested
 # external_nn_anchor helper already takes its lattice side explicitly.
 LATTICE_SIDE = 16
-N_SITES = LATTICE_SIDE * LATTICE_SIDE          # 256
-DEFAULT_SIGMA = SIGMA_C    # exact sigma_c; the archived
-                           # d256 reference dumps were generated at legacy 0.22305
-                           # and pair ONLY with the pre-migration hard runs
-TARGET_COMPOSITION = 0.5                       # 128 up / 128 down, exact
-N_CHAINS = 8                                   # 2 ordered-left, 2 ordered-right, 4 random
-BURN_IN_SWEEPS = 100_000                       # ~6000x the measured tau — cheap at numba speed
+N_SITES = LATTICE_SIDE * LATTICE_SIDE  # 256
+DEFAULT_SIGMA = SIGMA_C  # exact sigma_c; the archived
+# d256 reference dumps were generated at legacy 0.22305
+# and pair ONLY with the pre-migration hard runs
+TARGET_COMPOSITION = 0.5  # 128 up / 128 down, exact
+N_CHAINS = 8  # 2 ordered-left, 2 ordered-right, 4 random
+BURN_IN_SWEEPS = 100_000  # ~6000x the measured tau — cheap at numba speed
 SAMPLING_SWEEPS = 102_400
-RECORD_EVERY_SWEEPS = 2                        # dense trace for the tau measurement
-SEED_BASE = 3000                               # disjoint from earlier probe seed ranges (1000/2000)
+RECORD_EVERY_SWEEPS = 2  # dense trace for the tau measurement
+SEED_BASE = 3000  # disjoint from earlier probe seed ranges (1000/2000)
 MIN_STORED_SAMPLES = 5_000
 # External anchor at exact SIGMA_C, measured 2026-08-26 with the independent
 # mchammer engine (icet CanonicalEnsemble, unlike-pair swaps, same CE
@@ -102,16 +102,21 @@ MIN_STORED_SAMPLES = 5_000
 # whose internal certification was immaculate.
 CERTIFICATION_NN_TARGET = 0.578756
 CERTIFICATION_NN_TOLERANCE = 0.004
-THINNING_SAFETY_FACTOR = 2.0                   # thin at 2x worst-chain tau, not 1x
+THINNING_SAFETY_FACTOR = 2.0  # thin at 2x worst-chain tau, not 1x
 DEFAULT_OUT_DIR = Path("results/kawasaki_ref_d256_sc")
 
 # Chain start conditions: mode-balanced ordered starts (phase-separated in each
 # Z2/orientation basin) plus neutral random starts, so between-chain agreement
 # is evidence of mixing rather than of shared initialisation.
 CHAIN_START_CONDITIONS = [
-    ("ordered", 0), ("ordered", 0),            # phase-separated, +domain left
-    ("ordered", 1), ("ordered", 1),            # phase-separated, +domain right
-    ("random", None), ("random", None), ("random", None), ("random", None),
+    ("ordered", 0),
+    ("ordered", 0),  # phase-separated, +domain left
+    ("ordered", 1),
+    ("ordered", 1),  # phase-separated, +domain right
+    ("random", None),
+    ("random", None),
+    ("random", None),
+    ("random", None),
 ]
 
 
@@ -141,13 +146,21 @@ def run_one_chain(chain_index, sigma):
     burn_proposals = BURN_IN_SWEEPS * N_SITES
     t0 = time.perf_counter()
     _, spins, _ = run_nonlocal_swap_chain_snapshots(
-        spins, LATTICE_SIDE, sigma, burn_proposals, burn_seed,
-        thin=burn_proposals,                   # records only the (discarded) initial state
+        spins,
+        LATTICE_SIDE,
+        sigma,
+        burn_proposals,
+        burn_seed,
+        thin=burn_proposals,  # records only the (discarded) initial state
     )
     sampling_proposals = SAMPLING_SWEEPS * N_SITES
     record_every_proposals = RECORD_EVERY_SWEEPS * N_SITES
     snapshots, _, n_accepted = run_nonlocal_swap_chain_snapshots(
-        spins, LATTICE_SIDE, sigma, sampling_proposals, sampling_seed,
+        spins,
+        LATTICE_SIDE,
+        sigma,
+        sampling_proposals,
+        sampling_seed,
         thin=record_every_proposals,
     )
     wall_seconds = time.perf_counter() - t0
@@ -175,38 +188,52 @@ def standard_error(values):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description=("Generate a certified Kawasaki reference sample set for the "
-                     "16x16 fixed-composition Ising model."),
+        description=(
+            "Generate a certified Kawasaki reference sample set for the "
+            "16x16 fixed-composition Ising model."
+        ),
     )
     parser.add_argument(
-        "--sigma", type=float, default=DEFAULT_SIGMA,
-        help=("Coupling the reference chain is simulated at. A reference set is "
-              "a reference only for the sigma it was generated at: its "
-              "nn-correlation and energy are properties of "
-              "exp(sigma * x^T A x), so comparing model samples trained at "
-              "sigma_model against a reference drawn at sigma_ref carries a "
-              "systematic of order d<nn>/dsigma * (sigma_ref - sigma_model) "
-              "that more sampling cannot average away. Set this to the sigma "
-              "the model under judgement was trained at. "
-              f"(default: {DEFAULT_SIGMA}, the project's sigma_c)"),
+        "--sigma",
+        type=float,
+        default=DEFAULT_SIGMA,
+        help=(
+            "Coupling the reference chain is simulated at. A reference set is "
+            "a reference only for the sigma it was generated at: its "
+            "nn-correlation and energy are properties of "
+            "exp(sigma * x^T A x), so comparing model samples trained at "
+            "sigma_model against a reference drawn at sigma_ref carries a "
+            "systematic of order d<nn>/dsigma * (sigma_ref - sigma_model) "
+            "that more sampling cannot average away. Set this to the sigma "
+            "the model under judgement was trained at. "
+            f"(default: {DEFAULT_SIGMA}, the project's sigma_c)"
+        ),
     )
     parser.add_argument(
-        "--lattice-side", type=int, default=LATTICE_SIDE,
-        help=("Edge D of the DxD torus; the reference is generated at d = D^2 "
-              "sites and half-filling. A reference is a reference only for the "
-              "LATTICE it was generated at as well as the sigma -- the "
-              "nn-correlation and energy per site both depend on D -- so this "
-              "must match the runs under judgement. The external nn anchor is "
-              "sigma_c- AND d256-specific and is skipped automatically off "
-              f"sigma_c. (default: {LATTICE_SIDE})"),
+        "--lattice-side",
+        type=int,
+        default=LATTICE_SIDE,
+        help=(
+            "Edge D of the DxD torus; the reference is generated at d = D^2 "
+            "sites and half-filling. A reference is a reference only for the "
+            "LATTICE it was generated at as well as the sigma -- the "
+            "nn-correlation and energy per site both depend on D -- so this "
+            "must match the runs under judgement. The external nn anchor is "
+            "sigma_c- AND d256-specific and is skipped automatically off "
+            f"sigma_c. (default: {LATTICE_SIDE})"
+        ),
     )
     parser.add_argument(
-        "--out-dir", type=Path, default=DEFAULT_OUT_DIR,
-        help=("Directory for samples.pt, provenance.json and certification.json. "
-              "Give each sigma its own directory: overwriting an existing "
-              "reference in place would invalidate every number already quoted "
-              "from it, with nothing in the filename to reveal that it moved. "
-              f"(default: {DEFAULT_OUT_DIR})"),
+        "--out-dir",
+        type=Path,
+        default=DEFAULT_OUT_DIR,
+        help=(
+            "Directory for samples.pt, provenance.json and certification.json. "
+            "Give each sigma its own directory: overwriting an existing "
+            "reference in place would invalidate every number already quoted "
+            "from it, with nothing in the filename to reveal that it moved. "
+            f"(default: {DEFAULT_OUT_DIR})"
+        ),
     )
     return parser.parse_args()
 
@@ -244,9 +271,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"D = {LATTICE_SIDE} (d = {N_SITES}), sigma = {sigma!r} -> {out_dir}/")
 
-    target = FixedCompositionIsingTarget(
-        LATTICE_SIDE, sigma, TARGET_COMPOSITION
-    )
+    target = FixedCompositionIsingTarget(LATTICE_SIDE, sigma, TARGET_COMPOSITION)
     adjacency = target.A
 
     dense_snapshots = []
@@ -255,17 +280,21 @@ def main():
         snapshots, meta = run_one_chain(chain_index, sigma)
         dense_snapshots.append(snapshots)
         chain_metas.append(meta)
-        print(f"chain {chain_index} ({meta['init_kind']}"
-              f"{'' if meta['init_side'] is None else meta['init_side']}): "
-              f"{meta['n_recorded']} snapshots, "
-              f"accept {meta['acceptance_rate']:.3f}, "
-              f"{meta['wall_seconds']:.1f}s")
+        print(
+            f"chain {chain_index} ({meta['init_kind']}"
+            f"{'' if meta['init_side'] is None else meta['init_side']}): "
+            f"{meta['n_recorded']} snapshots, "
+            f"accept {meta['acceptance_rate']:.3f}, "
+            f"{meta['wall_seconds']:.1f}s"
+        )
 
     # --- autocorrelation of the certification observable, per chain ---------
-    nn_traces = np.stack([
-        nn_correlation(torch.from_numpy(snaps), adjacency).numpy()
-        for snaps in dense_snapshots
-    ])                                          # (n_chains, n_recorded)
+    nn_traces = np.stack(
+        [
+            nn_correlation(torch.from_numpy(snaps), adjacency).numpy()
+            for snaps in dense_snapshots
+        ]
+    )  # (n_chains, n_recorded)
     tau_records_per_chain = [float(integrated_autocorr(t)) for t in nn_traces]
     tau_sweeps_per_chain = [t * RECORD_EVERY_SWEEPS for t in tau_records_per_chain]
     worst_tau_sweeps = max(tau_sweeps_per_chain)
@@ -281,7 +310,9 @@ def main():
     thinned_nn_per_chain = [t[::thin_records] for t in nn_traces]
     samples = np.concatenate(thinned_per_chain, axis=0)
     print(f"tau per chain (sweeps): {[f'{t:.1f}' for t in tau_sweeps_per_chain]}")
-    print(f"thinning: every {thinning_sweeps} sweeps -> {samples.shape[0]} stored draws")
+    print(
+        f"thinning: every {thinning_sweeps} sweeps -> {samples.shape[0]} stored draws"
+    )
     if samples.shape[0] < MIN_STORED_SAMPLES:
         raise RuntimeError(
             f"only {samples.shape[0]} draws after thinning at "
@@ -296,8 +327,8 @@ def main():
     )
     log_prob_from_target = target.base_log_prob(samples_tensor.float())
     convention_gap = (
-        log_prob_from_target - sigma * quadratic_per_site * N_SITES
-    ).abs().max().item()
+        (log_prob_from_target - sigma * quadratic_per_site * N_SITES).abs().max().item()
+    )
     if convention_gap > 1e-3:
         raise RuntimeError(
             f"chain energy convention disagrees with "
@@ -307,18 +338,24 @@ def main():
     # --- certification statistics -------------------------------------------
     nn_values = np.concatenate(thinned_nn_per_chain)
     nn_mean = float(nn_values.mean())
-    nn_stderr = standard_error(nn_values)      # honest because draws are thinned past tau
+    nn_stderr = standard_error(nn_values)  # honest because draws are thinned past tau
     chain_nn_means = [float(t.mean()) for t in thinned_nn_per_chain]
     nn_stderr_between_chains = standard_error(chain_nn_means)
 
     energy_values = quadratic_per_site.numpy()
     ordered_nn = np.concatenate(
-        [t for t, m in zip(thinned_nn_per_chain, chain_metas)
-         if m["init_kind"] == "ordered"]
+        [
+            t
+            for t, m in zip(thinned_nn_per_chain, chain_metas)
+            if m["init_kind"] == "ordered"
+        ]
     )
     random_nn = np.concatenate(
-        [t for t, m in zip(thinned_nn_per_chain, chain_metas)
-         if m["init_kind"] == "random"]
+        [
+            t
+            for t, m in zip(thinned_nn_per_chain, chain_metas)
+            if m["init_kind"] == "random"
+        ]
     )
     start_gap = float(ordered_nn.mean() - random_nn.mean())
     start_gap_stderr = math.sqrt(
@@ -336,20 +373,22 @@ def main():
             "reference_value": nn_anchor,
             "tolerance": nn_tolerance,
             "within_tolerance": (
-                None if nn_anchor is None
+                None
+                if nn_anchor is None
                 else bool(abs(nn_mean - nn_anchor) <= nn_tolerance)
             ),
             "no_external_anchor_at_this_sigma": nn_anchor is None,
         },
-        "energy_per_site": {                   # sigma-free quadratic form x^T A x / d
+        "energy_per_site": {  # sigma-free quadratic form x^T A x / d
             "mean": float(energy_values.mean()),
             "stderr": standard_error(energy_values),
             "log_prob_per_site_mean": float(log_prob_from_target.mean()) / N_SITES,
         },
         "multi_chain_agreement": {
             "gelman_rubin_nn_correlation": gelman_rubin(thinned_nn_stack),
-            "split_half_gelman_rubin_nn_correlation":
-                split_half_gelman_rubin(thinned_nn_stack),
+            "split_half_gelman_rubin_nn_correlation": split_half_gelman_rubin(
+                thinned_nn_stack
+            ),
             "per_chain_nn_means": chain_nn_means,
         },
         "start_condition_agreement": {
@@ -363,7 +402,7 @@ def main():
         "hard_constraint": {
             "composition": TARGET_COMPOSITION,
             "n_up_spins_exact": target.n_plus_target,
-            "all_samples_on_manifold": True,   # assert_on_manifold passed above
+            "all_samples_on_manifold": True,  # assert_on_manifold passed above
         },
         "energy_convention_max_gap_vs_target_class": convention_gap,
         "certified": bool(
@@ -379,7 +418,7 @@ def main():
         "sigma": sigma,
         "target_composition": TARGET_COMPOSITION,
         "move_set": "nonlocal unlike-pair Kawasaki swap, Metropolis on sigma * x^T A x",
-        "annealing_schedule": None,            # direct simulation at sigma_c; burn-in only
+        "annealing_schedule": None,  # direct simulation at sigma_c; burn-in only
         "n_chains": N_CHAINS,
         "burn_in_sweeps": BURN_IN_SWEEPS,
         "sampling_sweeps_per_chain": SAMPLING_SWEEPS,

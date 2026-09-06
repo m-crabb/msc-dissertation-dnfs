@@ -1,4 +1,5 @@
 """Tests for LR warmup and pre-training init diagnostics."""
+
 import csv
 import json
 
@@ -28,8 +29,14 @@ def _tiny_train(tmp_path, warmup_steps: int):
     ctmc_cfg = CTMCCfg(n_euler_steps=4)
     eval_cfg = EvalCfg(eval_every=1000, n_eval_samples=4)
     train(
-        model, target, train_cfg, ctmc_cfg, eval_cfg, tmp_path,
-        use_wandb=False, estimator_mode="control_variate",
+        model,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        tmp_path,
+        use_wandb=False,
+        estimator_mode="control_variate",
     )
     with (tmp_path / "training_log.csv").open() as f:
         return [float(row["lr_current"]) for row in csv.DictReader(f)]

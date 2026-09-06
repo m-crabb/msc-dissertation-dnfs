@@ -36,6 +36,7 @@ UPWARD so each rung starts from the previous rung's equilibrated states (the
 frozen competitor rule: burn-in then thinned records). On the 16-site cell
 everything here is checked against exact enumeration in the tests.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -58,9 +59,13 @@ K_B_EV = 8.617333262e-5
 def build_target(spec, temperature_K, composition=None, penalty=0.0, canonical=False):
     beta = 1.0 / (K_B_EV * temperature_K)
     if canonical:
-        return FixedCompositionClusterExpansionTarget(spec, beta=beta, target_composition=composition)
+        return FixedCompositionClusterExpansionTarget(
+            spec, beta=beta, target_composition=composition
+        )
     return ClusterExpansionTarget(
-        spec, beta=beta, target_composition=composition,
+        spec,
+        beta=beta,
+        target_composition=composition,
         composition_penalty_strength=penalty,
     )
 
@@ -89,14 +94,17 @@ def metropolis_sweeps(target, x, n_sweeps, generator, canonical):
             i = torch.randint(d, (n_chains,), generator=generator)
             y[rows, i] = -x[rows, i]
         log_p_new = target.log_prob(y)
-        accept = torch.log(torch.rand(n_chains, generator=generator)) < (log_p_new - log_p)
+        accept = torch.log(torch.rand(n_chains, generator=generator)) < (
+            log_p_new - log_p
+        )
         x[accept] = y[accept]
         log_p = torch.where(accept, log_p_new, log_p)
     return x
 
 
-def run_chains(target, n_chains, burn_in_sweeps, n_records, thin_sweeps, seed, canonical,
-               x0=None):
+def run_chains(
+    target, n_chains, burn_in_sweeps, n_records, thin_sweeps, seed, canonical, x0=None
+):
     """Thinned records from n_chains independent chains: (n_records, n_chains, d)."""
     generator = torch.Generator().manual_seed(seed)
     x = target.sample_base(n_chains, device="cpu") if x0 is None else x0.clone()
@@ -117,13 +125,24 @@ def observables(target, states):
     quadratic = (flat @ target.A * flat).sum(-1).reshape(n_records, n_chains)
     bond = quadratic / target.A.sum()
     return {
-        "energy_per_site": energy.mean(0), "composition": composition.mean(0),
+        "energy_per_site": energy.mean(0),
+        "composition": composition.mean(0),
         "nn_correlation": bond.mean(0),
     }
 
 
-def beta_ladder_free_energy(spec, temperature_K, composition, canonical, n_grid, n_chains,
-                            burn_in_sweeps, n_records, thin_sweeps, seed):
+def beta_ladder_free_energy(
+    spec,
+    temperature_K,
+    composition,
+    canonical,
+    n_grid,
+    n_chains,
+    burn_in_sweeps,
+    n_records,
+    thin_sweeps,
+    seed,
+):
     """log Z(beta) at the target temperature by Simpson over a uniform beta grid.
 
     Returns F per site in eV, its cross-chain SE, and the half-grid shift.
@@ -138,17 +157,27 @@ def beta_ladder_free_energy(spec, temperature_K, composition, canonical, n_grid,
     mean_energy, se_energy = [], []
     x = None
     for k, beta in enumerate(grid):
-        target = build_target(spec, 1.0 / (K_B_EV * max(beta, 1e-12)), composition,
-                              canonical=canonical)
+        target = build_target(
+            spec, 1.0 / (K_B_EV * max(beta, 1e-12)), composition, canonical=canonical
+        )
         if beta == 0.0:
             # uniform on the state space (or the slice): the exact mean energy
             # of the base is a sample average over a large independent draw
             x = target.sample_base(n_chains, device="cpu")
-            states = torch.stack([target.sample_base(n_chains, device="cpu")
-                                  for _ in range(n_records)])
+            states = torch.stack(
+                [target.sample_base(n_chains, device="cpu") for _ in range(n_records)]
+            )
         else:
-            states, x = run_chains(target, n_chains, burn_in_sweeps, n_records,
-                                   thin_sweeps, seed + k, canonical, x0=x)
+            states, x = run_chains(
+                target,
+                n_chains,
+                burn_in_sweeps,
+                n_records,
+                thin_sweeps,
+                seed + k,
+                canonical,
+                x0=x,
+            )
         per_chain = observables(target, states)["energy_per_site"] * d
         mean_energy.append(float(per_chain.mean()))
         se_energy.append(float(per_chain.std(unbiased=True) / math.sqrt(n_chains)))
@@ -161,18 +190,30 @@ def beta_ladder_free_energy(spec, temperature_K, composition, canonical, n_grid,
         return h / 3.0 * float(np.dot(weights, values)), h / 3.0 * weights
 
     integral, weights = simpson(mean_energy, grid)
-    log_omega = (math.lgamma(d + 1) - math.lgamma(round(composition * d) + 1)
-                 - math.lgamma(d - round(composition * d) + 1)) if canonical else d * math.log(2.0)
+    log_omega = (
+        (
+            math.lgamma(d + 1)
+            - math.lgamma(round(composition * d) + 1)
+            - math.lgamma(d - round(composition * d) + 1)
+        )
+        if canonical
+        else d * math.log(2.0)
+    )
     log_z = log_omega - integral
     free_energy_per_site = -log_z / beta_max / d
     se = float(np.sqrt(np.sum((weights * se_energy) ** 2))) / beta_max / d
     coarse, _ = simpson(mean_energy[::2], grid[::2])
     half_grid_shift = (coarse - integral) / beta_max / d
     return {
-        "temperature_K": temperature_K, "composition": composition, "canonical": canonical,
-        "free_energy_per_site_eV": free_energy_per_site, "se": se,
-        "half_grid_shift": half_grid_shift, "log_z": log_z,
-        "grid": grid.tolist(), "mean_energy": mean_energy.tolist(),
+        "temperature_K": temperature_K,
+        "composition": composition,
+        "canonical": canonical,
+        "free_energy_per_site_eV": free_energy_per_site,
+        "se": se,
+        "half_grid_shift": half_grid_shift,
+        "log_z": log_z,
+        "grid": grid.tolist(),
+        "mean_energy": mean_energy.tolist(),
     }
 
 
@@ -194,23 +235,52 @@ def main():
     args = parser.parse_args()
     spec = BinaryExpansionSpec.from_json(args.spec)
     if args.mode == "chain":
-        target = build_target(spec, args.temperature, args.composition, args.penalty,
-                              args.canonical)
-        states, _ = run_chains(target, args.n_chains, args.burn_in, args.n_records,
-                               args.thin, args.seed, args.canonical)
+        target = build_target(
+            spec, args.temperature, args.composition, args.penalty, args.canonical
+        )
+        states, _ = run_chains(
+            target,
+            args.n_chains,
+            args.burn_in,
+            args.n_records,
+            args.thin,
+            args.seed,
+            args.canonical,
+        )
         obs = observables(target, states)
-        payload = {k: {"mean": float(v.mean()), "se": float(v.std(unbiased=True) / math.sqrt(len(v)))}
-                   for k, v in obs.items()}
+        payload = {
+            k: {
+                "mean": float(v.mean()),
+                "se": float(v.std(unbiased=True) / math.sqrt(len(v))),
+            }
+            for k, v in obs.items()
+        }
         payload["n_states"] = int(states.shape[0] * states.shape[1])
-        torch.save(states.reshape(-1, spec.n_sites).to(torch.int8), args.out.with_suffix(".pt"))
+        torch.save(
+            states.reshape(-1, spec.n_sites).to(torch.int8), args.out.with_suffix(".pt")
+        )
     else:
         payload = beta_ladder_free_energy(
-            spec, args.temperature, args.composition, args.canonical, args.n_grid,
-            args.n_chains, args.burn_in, args.n_records, args.thin, args.seed)
+            spec,
+            args.temperature,
+            args.composition,
+            args.canonical,
+            args.n_grid,
+            args.n_chains,
+            args.burn_in,
+            args.n_records,
+            args.thin,
+            args.seed,
+        )
     payload.update(spec=str(args.spec), temperature_K=args.temperature, mode=args.mode)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=1))
-    print(json.dumps({k: v for k, v in payload.items() if k not in ("grid", "mean_energy")}, indent=1))
+    print(
+        json.dumps(
+            {k: v for k, v in payload.items() if k not in ("grid", "mean_energy")},
+            indent=1,
+        )
+    )
 
 
 if __name__ == "__main__":

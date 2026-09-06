@@ -36,13 +36,15 @@ masked sampler with the UNCONSTRAINED preconditioner starts it off the
 fibre-conditional law precisely at the boundary states (b = 0 or b = m)
 where the budget binds hardest -- the states every trajectory must pass
 through late in generation."""
-from itertools import combinations, product as cartesian_product
+
+from itertools import combinations
+from itertools import product as cartesian_product
 from math import comb, exp, isclose, log
 
-RING_SIGMA = 0.4          # strong enough that the energy tilt matters
-SMALL_RING = 6            # 3^6 = 729 masked patterns: fully exhaustive
+RING_SIGMA = 0.4  # strong enough that the energy tilt matters
+SMALL_RING = 6  # 3^6 = 729 masked patterns: fully exhaustive
 SMALL_RING_PLUSSES = 3
-LARGE_RING = 8            # sigma = 0 checks only (no completion sums)
+LARGE_RING = 8  # sigma = 0 checks only (no completion sums)
 LARGE_RING_PLUSSES = 4
 
 
@@ -89,8 +91,7 @@ def fibre_completion_mass(state, sigma, n_plus_target, neighbours):
     return total
 
 
-def exact_masked_conditional_plus(state, site, sigma, n_plus_target,
-                                  neighbours):
+def exact_masked_conditional_plus(state, site, sigma, n_plus_target, neighbours):
     """Brute-force Pr_pi(X^site = +1 | unmasked pattern) over the fibre."""
     masked_sites = [i for i, spin in enumerate(state) if spin is None]
     _, budget = masked_and_budget(state, n_plus_target)
@@ -114,8 +115,7 @@ def stable_sigmoid(logit_difference):
     return e / (1.0 + e)
 
 
-def budget_tilted_conditional_plus(state, site, sigma, n_plus_target,
-                                   neighbours):
+def budget_tilted_conditional_plus(state, site, sigma, n_plus_target, neighbours):
     """The budget-tilted preconditioner's conditional (the derived object).
 
     logit(+1) - logit(-1) = log(b/(m-b)) + 4 sigma f_i, with the field f_i
@@ -134,10 +134,7 @@ def budget_tilted_conditional_plus(state, site, sigma, n_plus_target,
         return 1.0
     urn_mean = (2.0 * budget - masked) / masked
     left, right = neighbours[site]
-    field = sum(
-        state[j] if state[j] is not None else urn_mean
-        for j in (left, right)
-    )
+    field = sum(state[j] if state[j] is not None else urn_mean for j in (left, right))
     return stable_sigmoid(log(budget / (masked - budget)) + 4.0 * sigma * field)
 
 
@@ -146,14 +143,13 @@ def unconstrained_preconditioner_plus(state, site, sigma, neighbours):
     (closed-form full conditional, masked neighbours imputed at zero,
     h = 0): blind to the budget by construction."""
     left, right = neighbours[site]
-    field = sum(
-        state[j] for j in (left, right) if state[j] is not None
-    )
+    field = sum(state[j] for j in (left, right) if state[j] is not None)
     return stable_sigmoid(4.0 * sigma * field)
 
 
-def optimal_unmask_probability_via_value_function(state, site, spin, sigma,
-                                                  n_plus_target, neighbours):
+def optimal_unmask_probability_via_value_function(
+    state, site, spin, sigma, n_plus_target, neighbours
+):
     """The controlled generator's unmask tilt computed the LONG way:
     reference rate x exp(V(child) - V(state)), with exp(V) equal to the
     completion mass divided by the completion count C(m, b) (the reference's
@@ -169,13 +165,11 @@ def optimal_unmask_probability_via_value_function(state, site, spin, sigma,
     child = list(state)
     child[site] = spin
     child_masked, child_budget = masked_and_budget(child, n_plus_target)
-    state_value = (
-        fibre_completion_mass(state, sigma, n_plus_target, neighbours)
-        / comb(masked, budget)
+    state_value = fibre_completion_mass(state, sigma, n_plus_target, neighbours) / comb(
+        masked, budget
     )
-    child_value = (
-        fibre_completion_mass(child, sigma, n_plus_target, neighbours)
-        / comb(child_masked, child_budget)
+    child_value = fibre_completion_mass(child, sigma, n_plus_target, neighbours) / comb(
+        child_masked, child_budget
     )
     return reference_probability * child_value / state_value
 
@@ -215,7 +209,11 @@ def test_value_function_tilts_sum_to_one_per_site():
                 continue
             total = sum(
                 optimal_unmask_probability_via_value_function(
-                    state, site, spin, RING_SIGMA, SMALL_RING_PLUSSES,
+                    state,
+                    site,
+                    spin,
+                    RING_SIGMA,
+                    SMALL_RING_PLUSSES,
                     neighbours,
                 )
                 for spin in (+1, -1)
@@ -241,8 +239,7 @@ def test_sigma_zero_is_exactly_the_urn_law():
             approx = budget_tilted_conditional_plus(
                 state, site, 0.0, LARGE_RING_PLUSSES, neighbours
             )
-            assert isclose(approx, budget / masked, rel_tol=1e-12,
-                           abs_tol=1e-15)
+            assert isclose(approx, budget / masked, rel_tol=1e-12, abs_tol=1e-15)
 
 
 def test_boundary_budgets_are_deltas_at_any_sigma():
@@ -288,9 +285,7 @@ def test_z2_mirror_covariance_on_the_symmetric_fibre():
     conditional and the preconditioner alike."""
     neighbours = ring_neighbour_pairs(SMALL_RING)
     for state in feasible_masked_states(SMALL_RING, SMALL_RING_PLUSSES):
-        mirrored = tuple(
-            None if spin is None else -spin for spin in state
-        )
+        mirrored = tuple(None if spin is None else -spin for spin in state)
         for site, spin_value in enumerate(state):
             if spin_value is not None:
                 continue
@@ -305,7 +300,8 @@ def test_z2_mirror_covariance_on_the_symmetric_fibre():
                 assert isclose(
                     conditional(state, site),
                     1.0 - conditional(mirrored, site),
-                    rel_tol=1e-9, abs_tol=1e-12,
+                    rel_tol=1e-9,
+                    abs_tol=1e-12,
                 )
 
 
@@ -325,13 +321,21 @@ def test_budget_tilt_strictly_dominates_the_unconstrained_preconditioner():
             exact = exact_masked_conditional_plus(
                 state, site, RING_SIGMA, SMALL_RING_PLUSSES, neighbours
             )
-            tilted_errors.append(abs(exact - budget_tilted_conditional_plus(
-                state, site, RING_SIGMA, SMALL_RING_PLUSSES, neighbours
-            )))
+            tilted_errors.append(
+                abs(
+                    exact
+                    - budget_tilted_conditional_plus(
+                        state, site, RING_SIGMA, SMALL_RING_PLUSSES, neighbours
+                    )
+                )
+            )
             untilted_errors.append(
-                abs(exact - unconstrained_preconditioner_plus(
-                    state, site, RING_SIGMA, neighbours
-                ))
+                abs(
+                    exact
+                    - unconstrained_preconditioner_plus(
+                        state, site, RING_SIGMA, neighbours
+                    )
+                )
             )
     mean_tilted = sum(tilted_errors) / len(tilted_errors)
     mean_untilted = sum(untilted_errors) / len(untilted_errors)
@@ -346,17 +350,21 @@ def test_untilted_form_violates_a_boundary_delta():
     """Pin one concrete instance of the failure mode: budget exhausted,
     but both unmasked neighbours are +1, so the unconstrained
     preconditioner leans +1 while the fibre forbids it."""
-    state = (+1, +1, None, +1, -1, None)     # b = 0, m = 2 at N_+ = 3
+    state = (+1, +1, None, +1, -1, None)  # b = 0, m = 2 at N_+ = 3
     neighbours = ring_neighbour_pairs(SMALL_RING)
     masked, budget = masked_and_budget(state, SMALL_RING_PLUSSES)
     assert (masked, budget) == (2, 0)
-    site = 2                                  # neighbours 1 and 3, both +1
-    assert unconstrained_preconditioner_plus(
-        state, site, RING_SIGMA, neighbours
-    ) > 0.9
-    assert budget_tilted_conditional_plus(
-        state, site, RING_SIGMA, SMALL_RING_PLUSSES, neighbours
-    ) == 0.0
-    assert exact_masked_conditional_plus(
-        state, site, RING_SIGMA, SMALL_RING_PLUSSES, neighbours
-    ) == 0.0
+    site = 2  # neighbours 1 and 3, both +1
+    assert unconstrained_preconditioner_plus(state, site, RING_SIGMA, neighbours) > 0.9
+    assert (
+        budget_tilted_conditional_plus(
+            state, site, RING_SIGMA, SMALL_RING_PLUSSES, neighbours
+        )
+        == 0.0
+    )
+    assert (
+        exact_masked_conditional_plus(
+            state, site, RING_SIGMA, SMALL_RING_PLUSSES, neighbours
+        )
+        == 0.0
+    )

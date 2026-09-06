@@ -15,6 +15,7 @@ The other three pin the boundary behaviours that make the numbers readable:
 no reweighting when λ = 0, a marginal that is a probability distribution, and
 the soft row collapsing onto the hard row as λ → ∞.
 """
+
 import importlib
 import math
 
@@ -28,7 +29,7 @@ comparator = importlib.import_module(
     "experiments.constrained_soft_02.analysis.filter_row_comparator"
 )
 
-D = 3          # 3x3 = 9 sites; enumerable in milliseconds
+D = 3  # 3x3 = 9 sites; enumerable in milliseconds
 SIGMA = 0.1
 
 
@@ -85,9 +86,8 @@ def test_soft_filter_matches_brute_force_over_all_states(marginal):
     # all 2^d states with each state carrying its own probability. The module
     # sums the same thing over d+1 slices; agreeing is the reduction.
     probabilities = log_p.exp()
-    brute_force = (
-        float((probabilities * weights).sum()) ** 2
-        / float((probabilities * weights**2).sum())
+    brute_force = float((probabilities * weights).sum()) ** 2 / float(
+        (probabilities * weights**2).sum()
     )
 
     reduced = comparator.soft_filter_ess_fraction(
@@ -143,7 +143,9 @@ def test_rejecting_off_the_soft_target_is_exactly_the_constrained_ensemble():
 
     def conditional(lam):
         target = IsingTarget(
-            D=D, sigma=SIGMA, target_composition=c_target,
+            D=D,
+            sigma=SIGMA,
+            target_composition=c_target,
             composition_penalty_strength=lam,
         )
         log_p = target.log_prob(states)[on_slice]
@@ -170,9 +172,7 @@ def test_soft_sampler_acceptance_beats_unconstrained_rejection(marginal):
     soft = comparator.soft_target_slice_acceptance(
         D=D, sigma=SIGMA, c_target=c_target, lam=50.0
     )
-    unconstrained = comparator.hard_filter_acceptance(
-        marginal, c_target=c_target, d=d
-    )
+    unconstrained = comparator.hard_filter_acceptance(marginal, c_target=c_target, d=d)
 
     assert soft > unconstrained
     assert 0.0 < soft <= 1.0
@@ -186,11 +186,7 @@ def test_off_lattice_composition_cannot_be_hard_filtered(marginal):
     would understate rejection sampling's real failure mode, which is that it
     cannot service the request at any cost.
     """
-    assert comparator.hard_filter_acceptance(
-        marginal, c_target=0.575, d=D * D
-    ) == 0.0
+    assert comparator.hard_filter_acceptance(marginal, c_target=0.575, d=D * D) == 0.0
     assert not math.isnan(
-        comparator.soft_filter_ess_fraction(
-            marginal, c_target=0.575, lam=50.0, d=D * D
-        )
+        comparator.soft_filter_ess_fraction(marginal, c_target=0.575, lam=50.0, d=D * D)
     )

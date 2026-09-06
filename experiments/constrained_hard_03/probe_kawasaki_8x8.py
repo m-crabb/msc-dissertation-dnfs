@@ -57,6 +57,7 @@ Example:
     pixi run -e default python -m experiments.constrained_hard_03.probe_kawasaki_8x8 \\
         --stage reference --smoke
 """
+
 import argparse
 import json
 import socket
@@ -78,11 +79,11 @@ from discrete_flow_sampler.mcmc.mchammer_ising import run_canonical_probe
 OPERATING_POINTS = {"sc": 0.223, "s010": 0.10}
 TARGET_COMPOSITION = 0.5
 FULL_LATTICE_SIDE = 8
-REFERENCE_CHAINS_PER_MODE = 4          # 8 chains: 0-3 mode A, 4-7 mode B
-COMPETITOR_RANDOM_CHAINS = 4           # + 2 mode A + 2 mode B = 8 chains
+REFERENCE_CHAINS_PER_MODE = 4  # 8 chains: 0-3 mode A, 4-7 mode B
+COMPETITOR_RANDOM_CHAINS = 4  # + 2 mode A + 2 mode B = 8 chains
 COMPETITOR_MODE_CHAINS = 2
-REFERENCE_VALIDITY_RHAT = 1.01         # validity bar, every observable
-COMPETITOR_HEALTH_RHAT = 1.1           # reported, never gating
+REFERENCE_VALIDITY_RHAT = 1.01  # validity bar, every observable
+COMPETITOR_HEALTH_RHAT = 1.1  # reported, never gating
 MAX_DOUBLINGS = 3
 REFERENCE_SEED_BASE = 1000
 COMPETITOR_SEED_BASE = 2000
@@ -97,22 +98,23 @@ SMOKE_CHAINS_PER_MODE = 2
 @dataclass
 class ChainSpec:
     """Everything one worker needs to run and persist a single chain."""
-    stage: str                 # reference | competitor
-    variant: str               # local | nonlocal (reference is always nonlocal)
-    point: str                 # sc | s010
+
+    stage: str  # reference | competitor
+    variant: str  # local | nonlocal (reference is always nonlocal)
+    point: str  # sc | s010
     sigma: float
     lattice_side: int
     chain_index: int
     seed: int
-    init_kind: str             # random | phase_separated
-    init_side: int | None      # 0 (phi > 0 mode) / 1 (phi < 0 mode) / None
+    init_kind: str  # random | phase_separated
+    init_side: int | None  # 0 (phi > 0 mode) / 1 (phi < 0 mode) / None
     sweeps: int
     snapshot_every_sweeps: int
     out_dir: str
 
 
 def build_initial_spins(spec: ChainSpec) -> np.ndarray:
-    d = spec.lattice_side ** 2
+    d = spec.lattice_side**2
     if spec.init_kind == "random":
         return init_random_at_composition(
             d, TARGET_COMPOSITION, np.random.default_rng(spec.seed)
@@ -138,7 +140,11 @@ def run_chain_worker(spec: ChainSpec) -> dict:
     if spec.variant == "local":
         run_start = time.perf_counter()
         snapshots, _, n_accepted = run_local_swap_chain_snapshots(
-            initial_spins.copy(), D, spec.sigma, n_proposals, spec.seed,
+            initial_spins.copy(),
+            D,
+            spec.sigma,
+            n_proposals,
+            spec.seed,
             snapshot_interval,
         )
         wall_seconds_run = time.perf_counter() - run_start
@@ -212,42 +218,48 @@ def run_chains_parallel(specs: list[ChainSpec], n_workers: int) -> list[dict]:
 # demo_4x4 -> gate_4x4 -> models dependency out of spawned chain workers.
 
 
-def observable_traces(specs: list[ChainSpec], lattice_side: int,
-                      sigma: float) -> dict[str, np.ndarray]:
+def observable_traces(
+    specs: list[ChainSpec], lattice_side: int, sigma: float
+) -> dict[str, np.ndarray]:
     """Per-observable (n_chains, n_snapshots) arrays from the saved npzs,
     computed with the demo_4x4 observable set."""
     import torch
-
-    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
     from experiments.constrained_hard_03.demo_4x4 import (
         OBSERVABLE_NAMES,
         observable_values,
     )
 
+    from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
     target = FixedCompositionIsingTarget(
-        D=lattice_side, sigma=sigma,
-        target_composition=TARGET_COMPOSITION, bias=0.0, device="cpu",
+        D=lattice_side,
+        sigma=sigma,
+        target_composition=TARGET_COMPOSITION,
+        bias=0.0,
+        device="cpu",
     )
     per_chain = []
     for spec in specs:
         spins = np.load(Path(spec.out_dir) / "snapshots.npz")["spins"]
         states = torch.from_numpy(spins.astype(np.float32))
-        per_chain.append({
-            name: observable_values(name, states, target).numpy()
-            for name in OBSERVABLE_NAMES
-        })
+        per_chain.append(
+            {
+                name: observable_values(name, states, target).numpy()
+                for name in OBSERVABLE_NAMES
+            }
+        )
     return {
-        name: np.stack([chain[name] for chain in per_chain])
-        for name in per_chain[0]
+        name: np.stack([chain[name] for chain in per_chain]) for name in per_chain[0]
     }
 
 
-def rhat_block(traces: dict[str, np.ndarray],
-               discard_first_half: bool) -> dict[str, float]:
+def rhat_block(
+    traces: dict[str, np.ndarray], discard_first_half: bool
+) -> dict[str, float]:
     out = {}
     for name, chains in traces.items():
         if discard_first_half:
-            chains = chains[:, chains.shape[1] // 2:]
+            chains = chains[:, chains.shape[1] // 2 :]
         out[name] = float(split_half_gelman_rubin(chains))
     return out
 
@@ -257,7 +269,7 @@ def post_discard_moments(traces: dict[str, np.ndarray]) -> dict[str, dict]:
     across chains, report E[O] and Var[O]."""
     moments = {}
     for name, chains in traces.items():
-        pooled = chains[:, chains.shape[1] // 2:].reshape(-1)
+        pooled = chains[:, chains.shape[1] // 2 :].reshape(-1)
         moments[name] = {
             "mean": float(pooled.mean()),
             "var": float(pooled.var()),
@@ -269,53 +281,71 @@ def post_discard_moments(traces: dict[str, np.ndarray]) -> dict[str, dict]:
 # Reference and competitor stages.
 
 
-def chain_dir(out_root: Path, spec_stage: str, point: str, variant: str,
-              chain_index: int) -> Path:
+def chain_dir(
+    out_root: Path, spec_stage: str, point: str, variant: str, chain_index: int
+) -> Path:
     if spec_stage == "reference":
         return out_root / "reference" / point / f"chain_{chain_index:02d}"
     return out_root / "competitor" / point / variant / f"chain_{chain_index:02d}"
 
 
-def reference_specs(point: str, sweeps: int, args, out_root: Path,
-                    chains_per_mode: int) -> list[ChainSpec]:
-    inits = ([("phase_separated", 0)] * chains_per_mode
-             + [("phase_separated", 1)] * chains_per_mode)
+def reference_specs(
+    point: str, sweeps: int, args, out_root: Path, chains_per_mode: int
+) -> list[ChainSpec]:
+    inits = [("phase_separated", 0)] * chains_per_mode + [
+        ("phase_separated", 1)
+    ] * chains_per_mode
     return [
         ChainSpec(
-            stage="reference", variant="nonlocal", point=point,
-            sigma=OPERATING_POINTS[point], lattice_side=args.lattice_side,
+            stage="reference",
+            variant="nonlocal",
+            point=point,
+            sigma=OPERATING_POINTS[point],
+            lattice_side=args.lattice_side,
             chain_index=index,
             seed=REFERENCE_SEED_BASE + POINT_SEED_OFFSETS[point] + index,
-            init_kind=kind, init_side=side, sweeps=sweeps,
+            init_kind=kind,
+            init_side=side,
+            sweeps=sweeps,
             snapshot_every_sweeps=args.snapshot_every_sweeps,
-            out_dir=str(chain_dir(out_root, "reference", point, "nonlocal",
-                                  index)),
+            out_dir=str(chain_dir(out_root, "reference", point, "nonlocal", index)),
         )
         for index, (kind, side) in enumerate(inits)
     ]
 
 
-def competitor_specs(point: str, variant: str, args,
-                     out_root: Path) -> list[ChainSpec]:
+def competitor_specs(point: str, variant: str, args, out_root: Path) -> list[ChainSpec]:
     if args.smoke:
-        inits = ([("random", None)] * SMOKE_CHAINS_PER_MODE
-                 + [("phase_separated", 0)] * SMOKE_CHAINS_PER_MODE
-                 + [("phase_separated", 1)] * SMOKE_CHAINS_PER_MODE)
+        inits = (
+            [("random", None)] * SMOKE_CHAINS_PER_MODE
+            + [("phase_separated", 0)] * SMOKE_CHAINS_PER_MODE
+            + [("phase_separated", 1)] * SMOKE_CHAINS_PER_MODE
+        )
     else:
-        inits = ([("random", None)] * COMPETITOR_RANDOM_CHAINS
-                 + [("phase_separated", 0)] * COMPETITOR_MODE_CHAINS
-                 + [("phase_separated", 1)] * COMPETITOR_MODE_CHAINS)
+        inits = (
+            [("random", None)] * COMPETITOR_RANDOM_CHAINS
+            + [("phase_separated", 0)] * COMPETITOR_MODE_CHAINS
+            + [("phase_separated", 1)] * COMPETITOR_MODE_CHAINS
+        )
     return [
         ChainSpec(
-            stage="competitor", variant=variant, point=point,
-            sigma=OPERATING_POINTS[point], lattice_side=args.lattice_side,
+            stage="competitor",
+            variant=variant,
+            point=point,
+            sigma=OPERATING_POINTS[point],
+            lattice_side=args.lattice_side,
             chain_index=index,
-            seed=(COMPETITOR_SEED_BASE + POINT_SEED_OFFSETS[point]
-                  + VARIANT_SEED_OFFSETS[variant] + index),
-            init_kind=kind, init_side=side, sweeps=args.sweeps,
+            seed=(
+                COMPETITOR_SEED_BASE
+                + POINT_SEED_OFFSETS[point]
+                + VARIANT_SEED_OFFSETS[variant]
+                + index
+            ),
+            init_kind=kind,
+            init_side=side,
+            sweeps=args.sweeps,
             snapshot_every_sweeps=args.snapshot_every_sweeps,
-            out_dir=str(chain_dir(out_root, "competitor", point, variant,
-                                  index)),
+            out_dir=str(chain_dir(out_root, "competitor", point, variant, index)),
         )
         for index, (kind, side) in enumerate(inits)
     ]
@@ -324,12 +354,11 @@ def competitor_specs(point: str, variant: str, args,
 def run_reference_point(point: str, args, out_root: Path) -> bool:
     """Run the reference chains for one operating point, gate on the
     R-hat bar, doubling mechanically on failure. Returns pass/fail."""
-    chains_per_mode = (SMOKE_CHAINS_PER_MODE if args.smoke
-                       else REFERENCE_CHAINS_PER_MODE)
+    chains_per_mode = SMOKE_CHAINS_PER_MODE if args.smoke else REFERENCE_CHAINS_PER_MODE
     doubling_history = []
     passed = False
     for attempt in range(MAX_DOUBLINGS + 1):
-        sweeps = args.sweeps * 2 ** attempt
+        sweeps = args.sweeps * 2**attempt
         specs = reference_specs(point, sweeps, args, out_root, chains_per_mode)
         print(
             f"[probe] reference/{point}: attempt {attempt} — "
@@ -338,21 +367,21 @@ def run_reference_point(point: str, args, out_root: Path) -> bool:
             flush=True,
         )
         chain_metas = run_chains_parallel(specs, args.workers)
-        traces = observable_traces(specs, args.lattice_side,
-                                   OPERATING_POINTS[point])
+        traces = observable_traces(specs, args.lattice_side, OPERATING_POINTS[point])
         rhat_post_discard = rhat_block(traces, discard_first_half=True)
         rhat_full_trace = rhat_block(traces, discard_first_half=False)
         passed = all(
-            value <= REFERENCE_VALIDITY_RHAT
-            for value in rhat_post_discard.values()
+            value <= REFERENCE_VALIDITY_RHAT for value in rhat_post_discard.values()
         )
-        doubling_history.append({
-            "attempt": attempt,
-            "sweeps": sweeps,
-            "rhat_post_discard": rhat_post_discard,
-            "rhat_full_trace": rhat_full_trace,
-            "passed": passed,
-        })
+        doubling_history.append(
+            {
+                "attempt": attempt,
+                "sweeps": sweeps,
+                "rhat_post_discard": rhat_post_discard,
+                "rhat_full_trace": rhat_full_trace,
+                "passed": passed,
+            }
+        )
         print(
             f"[probe] reference/{point}: split-half R-hat (post-discard) "
             + ", ".join(f"{k}={v:.4f}" for k, v in rhat_post_discard.items())
@@ -419,13 +448,13 @@ def run_competitor_point(point: str, args, out_root: Path) -> None:
     metas_by_dir = {meta["out_dir"]: meta for meta in metas}
 
     for variant, specs in specs_by_variant.items():
-        traces = observable_traces(specs, args.lattice_side,
-                                   OPERATING_POINTS[point])
+        traces = observable_traces(specs, args.lattice_side, OPERATING_POINTS[point])
         # Competitor health uses every stored record from step 0; burn-in
         # is discarded only by the analysis stage.
         rhat_full_trace = rhat_block(traces, discard_first_half=False)
         health_floor_exceeded = [
-            name for name, value in rhat_full_trace.items()
+            name
+            for name, value in rhat_full_trace.items()
             if value > COMPETITOR_HEALTH_RHAT
         ]
         chain_metas = [metas_by_dir[spec.out_dir] for spec in specs]
@@ -444,15 +473,20 @@ def run_competitor_point(point: str, args, out_root: Path) -> None:
             "total_proposals": sum(m["n_proposals"] for m in chain_metas),
             "chains": chain_metas,
         }
-        summary_path = (out_root / "competitor" / point / variant
-                        / "competitor_summary.json")
+        summary_path = (
+            out_root / "competitor" / point / variant / "competitor_summary.json"
+        )
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(summary, indent=2))
         print(
             f"[probe] competitor/{point}/{variant}: R-hat "
             + ", ".join(f"{k}={v:.3f}" for k, v in rhat_full_trace.items())
-            + (f" (health floor {COMPETITOR_HEALTH_RHAT} exceeded on: "
-               f"{health_floor_exceeded})" if health_floor_exceeded else "")
+            + (
+                f" (health floor {COMPETITOR_HEALTH_RHAT} exceeded on: "
+                f"{health_floor_exceeded})"
+                if health_floor_exceeded
+                else ""
+            )
             + f" -> wrote {summary_path}",
             flush=True,
         )
@@ -460,29 +494,42 @@ def run_competitor_point(point: str, args, out_root: Path) -> None:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", required=True,
-                        choices=["reference", "competitor"])
-    parser.add_argument("--point", choices=list(OPERATING_POINTS),
-                        default=None,
-                        help="default: run both points sequentially")
-    parser.add_argument("--sweeps", type=int, default=1_000_000,
-                        help="chain length; 1 sweep = d proposals")
+    parser.add_argument("--stage", required=True, choices=["reference", "competitor"])
+    parser.add_argument(
+        "--point",
+        choices=list(OPERATING_POINTS),
+        default=None,
+        help="default: run both points sequentially",
+    )
+    parser.add_argument(
+        "--sweeps",
+        type=int,
+        default=1_000_000,
+        help="chain length; 1 sweep = d proposals",
+    )
     parser.add_argument("--snapshot-every-sweeps", type=int, default=10)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--out", default="results/kawasaki_probe")
-    parser.add_argument("--lattice-side", type=int, default=FULL_LATTICE_SIDE,
-                        help="torus side D; non-default sizes (the 16x16 "
-                             "rescue rung's reference chain) MUST also set "
-                             "--out, or the 8x8 chain dirs get overwritten")
-    parser.add_argument("--smoke", action="store_true",
-                        help="D=4, 2000 sweeps, 2 chains/mode, 2 workers; "
-                             "output under <out>/smoke/")
+    parser.add_argument(
+        "--lattice-side",
+        type=int,
+        default=FULL_LATTICE_SIDE,
+        help="torus side D; non-default sizes (the 16x16 "
+        "rescue rung's reference chain) MUST also set "
+        "--out, or the 8x8 chain dirs get overwritten",
+    )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="D=4, 2000 sweeps, 2 chains/mode, 2 workers; output under <out>/smoke/",
+    )
     args = parser.parse_args(argv)
 
-    if (args.lattice_side != FULL_LATTICE_SIDE
-            and args.out == "results/kawasaki_probe"):
-        parser.error("--lattice-side != 8 requires an explicit --out "
-                     "(protects the frozen 8x8 probe outputs)")
+    if args.lattice_side != FULL_LATTICE_SIDE and args.out == "results/kawasaki_probe":
+        parser.error(
+            "--lattice-side != 8 requires an explicit --out "
+            "(protects the frozen 8x8 probe outputs)"
+        )
     out_root = Path(args.out)
     if args.smoke:
         args.lattice_side = SMOKE_LATTICE_SIDE

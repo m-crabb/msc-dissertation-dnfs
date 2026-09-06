@@ -17,6 +17,7 @@ b = D  =>  uniform on the slice.
 
 Run:  pixi run -e default python warm_base_selftest.py
 """
+
 from __future__ import annotations
 
 import itertools
@@ -24,7 +25,6 @@ import itertools
 import numpy as np
 from scipy.special import logsumexp
 from scipy.stats import chisquare
-
 from warm_base_reference import (
     BlockOccupancyBase,
     UniformSliceBase,
@@ -63,9 +63,12 @@ try:
     for side in (4, 8):
         target = IsingTarget(D=side, sigma=0.223, device=torch.device("cpu"))
         same = np.array_equal(target.A.cpu().numpy(), torus_adjacency(side))
-        check(f"adjacency matches ising.py at D={side}", same,
-              f"sum(A) = {torus_adjacency(side).sum():.0f} = 4d")
-except Exception as exc:                                     # pragma: no cover
+        check(
+            f"adjacency matches ising.py at D={side}",
+            same,
+            f"sum(A) = {torus_adjacency(side).sum():.0f} = 4d",
+        )
+except Exception as exc:  # pragma: no cover
     check("adjacency matches ising.py", False, f"could not import: {exc}")
 
 # 1. exact normalisation on the slice at D = 4
@@ -88,12 +91,17 @@ fit_pop = states[rng.choice(n_states, size=20_000, p=target_probs)]
 for block_side, n_offsets in ((2, 1), (2, 4), (4, 16)):
     base = BlockOccupancyBase.fit(fit_pop, SIDE, block_side, n_offsets=n_offsets)
     total = logsumexp(base.log_density(states))
-    check(f"logsumexp log_eta over all {n_states} slice states = 0 "
-          f"[b={block_side}, K={n_offsets}]",
-          abs(total) < 1e-9, f"logsumexp = {total:+.3e}")
-    check(f"log_eta finite on the whole slice [b={block_side}, K={n_offsets}]",
-          np.isfinite(base.log_density(states)).all(),
-          f"min log_eta = {base.log_density(states).min():.3f}")
+    check(
+        f"logsumexp log_eta over all {n_states} slice states = 0 "
+        f"[b={block_side}, K={n_offsets}]",
+        abs(total) < 1e-9,
+        f"logsumexp = {total:+.3e}",
+    )
+    check(
+        f"log_eta finite on the whole slice [b={block_side}, K={n_offsets}]",
+        np.isfinite(base.log_density(states)).all(),
+        f"min log_eta = {base.log_density(states).min():.3f}",
+    )
 
 # 2. sampler matches the density (chi-square) at D = 4
 state_key = {tuple(s.tolist()): i for i, s in enumerate(states)}
@@ -102,8 +110,9 @@ for block_side, n_offsets in ((2, 1), (2, 4)):
     log_p = base.log_density(states)
     n_draws = 400_000
     draws = base.sample(n_draws, np.random.default_rng(12345))
-    idx = np.fromiter((state_key[tuple(s.tolist())] for s in draws),
-                      dtype=np.int64, count=n_draws)
+    idx = np.fromiter(
+        (state_key[tuple(s.tolist())] for s in draws), dtype=np.int64, count=n_draws
+    )
     observed = np.bincount(idx, minlength=n_states).astype(float)
     expected = np.exp(log_p) * n_draws
     # Adaptive binning: a chi-square on raw cells is invalid when most of the
@@ -118,66 +127,90 @@ for block_side, n_offsets in ((2, 1), (2, 4)):
         acc_o += observed[i]
         acc_e += expected[i]
         if acc_e >= MIN_EXPECTED:
-            obs_bins.append(acc_o); exp_bins.append(acc_e); acc_o = acc_e = 0.0
+            obs_bins.append(acc_o)
+            exp_bins.append(acc_e)
+            acc_o = acc_e = 0.0
     if acc_e > 0:
-        obs_bins[-1] += acc_o; exp_bins[-1] += acc_e
+        obs_bins[-1] += acc_o
+        exp_bins[-1] += acc_e
     stat, pvalue = chisquare(obs_bins, exp_bins)
-    check(f"sampler == density, chi-square [b={block_side}, K={n_offsets}]",
-          pvalue > 0.001,
-          f"chi2 = {stat:.1f} on {len(obs_bins) - 1} bins-1 dof, p = {pvalue:.3f}")
+    check(
+        f"sampler == density, chi-square [b={block_side}, K={n_offsets}]",
+        pvalue > 0.001,
+        f"chi2 = {stat:.1f} on {len(obs_bins) - 1} bins-1 dof, p = {pvalue:.3f}",
+    )
 
 # 3. Z2 and translation symmetry
 for block_side, n_offsets in ((2, 1), (2, 4), (4, 16)):
     base = BlockOccupancyBase.fit(fit_pop, SIDE, block_side, n_offsets=n_offsets)
     lp = base.log_density(states)
     lp_flipped = base.log_density(-states)
-    check(f"Z2: log_eta(x) == log_eta(-x) [b={block_side}, K={n_offsets}]",
-          np.allclose(lp, lp_flipped, atol=1e-12),
-          f"max |diff| = {np.abs(lp - lp_flipped).max():.2e}")
+    check(
+        f"Z2: log_eta(x) == log_eta(-x) [b={block_side}, K={n_offsets}]",
+        np.allclose(lp, lp_flipped, atol=1e-12),
+        f"max |diff| = {np.abs(lp - lp_flipped).max():.2e}",
+    )
 
     lp_shift = base.log_density(translate(states, SIDE, 1, 0))
     shifted_ok = np.allclose(lp, lp_shift, atol=1e-12)
-    expect = (n_offsets == block_side * block_side)
-    check(f"translation by 1 site {'invariant' if expect else 'NOT invariant'} "
-          f"[b={block_side}, K={n_offsets}]",
-          shifted_ok == expect,
-          f"max |diff| = {np.abs(lp - lp_shift).max():.2e}")
+    expect = n_offsets == block_side * block_side
+    check(
+        f"translation by 1 site {'invariant' if expect else 'NOT invariant'} "
+        f"[b={block_side}, K={n_offsets}]",
+        shifted_ok == expect,
+        f"max |diff| = {np.abs(lp - lp_shift).max():.2e}",
+    )
 
 # 4. degenerate tiling b = D reduces to uniform on the slice
 base_full = BlockOccupancyBase.fit(fit_pop, SIDE, SIDE, n_offsets=1)
 uniform = UniformSliceBase(SIDE, N_UP)
-check("b = D collapses to uniform on the slice",
-      np.allclose(base_full.log_density(states), uniform.log_density(states)),
-      f"log_eta = {base_full.log_density(states)[0]:.6f} vs "
-      f"-log C(16,8) = {-uniform.log_normaliser:.6f}")
+check(
+    "b = D collapses to uniform on the slice",
+    np.allclose(base_full.log_density(states), uniform.log_density(states)),
+    f"log_eta = {base_full.log_density(states)[0]:.6f} vs "
+    f"-log C(16,8) = {-uniform.log_normaliser:.6f}",
+)
 
 # 5. the uniform base's exact nn-correlation -1/(d-1)
 draws = uniform.sample(200_000, np.random.default_rng(7))
 emp = nn_correlation(draws, A4).mean()
-check("uniform-slice nn-correlation == -1/(d-1)",
-      abs(emp - uniform.exact_nn_correlation()) < 4e-3,
-      f"empirical {emp:+.5f} vs exact {uniform.exact_nn_correlation():+.5f}")
+check(
+    "uniform-slice nn-correlation == -1/(d-1)",
+    abs(emp - uniform.exact_nn_correlation()) < 4e-3,
+    f"empirical {emp:+.5f} vs exact {uniform.exact_nn_correlation():+.5f}",
+)
 
 # 6. DP normaliser against brute force at a size where brute force is possible
 base = BlockOccupancyBase.fit(fit_pop, SIDE, 2, n_offsets=4)
 s, B, N = base.tile_sites, base.n_tiles, base.n_up
-brute = logsumexp([
-    sum(base.log_weights[m] for m in occ)
-    for occ in itertools.product(range(s + 1), repeat=B) if sum(occ) == N
-])
-check("DP log Z_w == brute-force enumeration",
-      abs(brute - base.log_normaliser) < 1e-10,
-      f"DP {base.log_normaliser:.10f} vs brute {brute:.10f}")
+brute = logsumexp(
+    [
+        sum(base.log_weights[m] for m in occ)
+        for occ in itertools.product(range(s + 1), repeat=B)
+        if sum(occ) == N
+    ]
+)
+check(
+    "DP log Z_w == brute-force enumeration",
+    abs(brute - base.log_normaliser) < 1e-10,
+    f"DP {base.log_normaliser:.10f} vs brute {brute:.10f}",
+)
 
 # 7. sampled composition is exactly on the slice at production sizes
-for side, n_up, block_side, n_offsets in ((8, 32, 2, 4), (16, 128, 2, 4), (16, 128, 4, 16)):
+for side, n_up, block_side, n_offsets in (
+    (8, 32, 2, 4),
+    (16, 128, 2, 4),
+    (16, 128, 4, 16),
+):
     d = side * side
     pop = UniformSliceBase(side, n_up).sample(2000, np.random.default_rng(1))
     b = BlockOccupancyBase.fit(pop, side, block_side, n_offsets=n_offsets)
     dr = b.sample(3000, np.random.default_rng(2))
-    check(f"draws on the slice at D={side}, b={block_side}",
-          bool(((dr > 0).sum(axis=1) == n_up).all()) and set(np.unique(dr)) == {-1, 1},
-          f"n_up unique = {np.unique((dr > 0).sum(axis=1))}")
+    check(
+        f"draws on the slice at D={side}, b={block_side}",
+        bool(((dr > 0).sum(axis=1) == n_up).all()) and set(np.unique(dr)) == {-1, 1},
+        f"n_up unique = {np.unique((dr > 0).sum(axis=1))}",
+    )
 
 # 8. Delta c = c_1 - c_0 = int_0^1 Var_{p_t}[D] dt, and the Monte-Carlo
 #    estimator used by warm_base_offline_table.py, both against exact enumeration.
@@ -201,32 +234,39 @@ c0, _ = c_of_t(0.0)
 c1, _ = c_of_t(1.0)
 grid = np.linspace(0.0, 1.0, 2001)
 integral = np.trapezoid([c_of_t(t)[1] for t in grid], grid)
-check("Delta c == int_0^1 Var_{p_t}[D] dt (exact enumeration)",
-      abs((c1 - c0) - integral) < 1e-6 * max(1.0, abs(c1 - c0)),
-      f"c1 - c0 = {c1 - c0:.6f}, integral = {integral:.6f}")
+check(
+    "Delta c == int_0^1 Var_{p_t}[D] dt (exact enumeration)",
+    abs((c1 - c0) - integral) < 1e-6 * max(1.0, abs(c1 - c0)),
+    f"c1 - c0 = {c1 - c0:.6f}, integral = {integral:.6f}",
+)
 
 rng_mc = np.random.default_rng(99)
 p1 = np.exp(log_rho - logsumexp(log_rho))
 ref_draws = states[rng_mc.choice(n_states, size=400_000, p=p1)]
 base_draws = base.sample(400_000, rng_mc)
 mc_delta_c = (
-    (SIGMA_SELFTEST * (ref_draws.astype(np.float64) @ A4 * ref_draws).sum(axis=1)
-     - base.log_density(ref_draws)).mean()
-    - (SIGMA_SELFTEST * (base_draws.astype(np.float64) @ A4 * base_draws).sum(axis=1)
-       - base.log_density(base_draws)).mean()
+    SIGMA_SELFTEST * (ref_draws.astype(np.float64) @ A4 * ref_draws).sum(axis=1)
+    - base.log_density(ref_draws)
+).mean() - (
+    SIGMA_SELFTEST * (base_draws.astype(np.float64) @ A4 * base_draws).sum(axis=1)
+    - base.log_density(base_draws)
+).mean()
+check(
+    "Monte-Carlo Delta c estimator == exact c1 - c0",
+    abs(mc_delta_c - (c1 - c0)) < 0.02,
+    f"MC {mc_delta_c:.4f} vs exact {c1 - c0:.4f}",
 )
-check("Monte-Carlo Delta c estimator == exact c1 - c0",
-      abs(mc_delta_c - (c1 - c0)) < 0.02,
-      f"MC {mc_delta_c:.4f} vs exact {c1 - c0:.4f}")
 
 energy_only = SIGMA_SELFTEST * (
     (ref_draws.astype(np.float64) @ A4 * ref_draws).sum(axis=1).mean()
     - (base_draws.astype(np.float64) @ A4 * base_draws).sum(axis=1).mean()
 )
-check("energy-only surrogate OVERSTATES Delta c for a warm base",
-      energy_only > (c1 - c0) + 0.05,
-      f"energy-only {energy_only:.4f} vs true {c1 - c0:.4f} "
-      f"(base-entropy term {energy_only - mc_delta_c:.4f})")
+check(
+    "energy-only surrogate OVERSTATES Delta c for a warm base",
+    energy_only > (c1 - c0) + 0.05,
+    f"energy-only {energy_only:.4f} vs true {c1 - c0:.4f} "
+    f"(base-entropy term {energy_only - mc_delta_c:.4f})",
+)
 
 print()
 for status, name, detail in results:

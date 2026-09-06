@@ -39,6 +39,7 @@ wrong number that the 8x8 tests cannot catch.
     reject off. A fill that emitted either would print a row with no
     run behind it.
 """
+
 import json
 
 import pytest
@@ -52,11 +53,11 @@ def _balanced_spins(n, seed, d=D_SITES):
     """n draws from the c=0.5 slice: every row exactly d/2 up, d/2 down."""
     generator = torch.Generator().manual_seed(seed)
     base = torch.cat([torch.ones(d // 2), -torch.ones(d // 2)])
-    return torch.stack([base[torch.randperm(d, generator=generator)]
-                        for _ in range(n)])
+    return torch.stack([base[torch.randperm(d, generator=generator)] for _ in range(n)])
 
 
 # --- (1) the FLOP bill's units -------------------------------------------
+
 
 def test_trial_count_converts_sweeps_to_proposals():
     """One sweep is N_SITES proposals, and burn-in counts.
@@ -68,8 +69,11 @@ def test_trial_count_converts_sweeps_to_proposals():
     """
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
-    provenance = {"n_chains": 8, "burn_in_sweeps": 100_000,
-                  "sampling_sweeps_per_chain": 102_400}
+    provenance = {
+        "n_chains": 8,
+        "burn_in_sweeps": 100_000,
+        "sampling_sweeps_per_chain": 102_400,
+    }
     counts = h16.chain_trial_counts(provenance, lattice_edge=L)
     assert len(counts) == 8
     assert all(c == (100_000 + 102_400) * D_SITES for c in counts)
@@ -80,13 +84,13 @@ def test_trial_count_scales_with_the_lattice():
     hard-coded 256 would silently mis-bill any other rung built this way."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
-    provenance = {"n_chains": 2, "burn_in_sweeps": 10,
-                  "sampling_sweeps_per_chain": 10}
+    provenance = {"n_chains": 2, "burn_in_sweeps": 10, "sampling_sweeps_per_chain": 10}
     assert h16.chain_trial_counts(provenance, lattice_edge=8)[0] == 20 * 64
     assert h16.chain_trial_counts(provenance, lattice_edge=16)[0] == 20 * 256
 
 
 # --- (2) chain identity from the pooled tensor ---------------------------
+
 
 def test_pooled_reference_splits_into_equal_chain_blocks():
     """Eight equal blocks whose concatenation is the pool, in order."""
@@ -110,13 +114,14 @@ def test_chain_blocks_are_not_interleaved():
     """
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
-    pooled = torch.tensor([[0.], [0.], [1.], [1.]])
+    pooled = torch.tensor([[0.0], [0.0], [1.0], [1.0]])
     blocks = h16.split_pooled_into_chains(pooled, n_chains=2)
     assert blocks[0].unique().tolist() == [0.0]
     assert blocks[1].unique().tolist() == [1.0]
 
 
 # --- (3) the coupling guard ----------------------------------------------
+
 
 def test_reference_rejects_a_mislabelled_coupling(tmp_path):
     """A pool whose provenance sigma disagrees with the column's must raise.
@@ -130,7 +135,8 @@ def test_reference_rejects_a_mislabelled_coupling(tmp_path):
     directory = tmp_path / "kawasaki_ref_d256_s220"
     directory.mkdir()
     (directory / "provenance.json").write_text(
-        json.dumps({"sigma": 0.22305, "n_chains": 8}))
+        json.dumps({"sigma": 0.22305, "n_chains": 8})
+    )
     torch.save(_balanced_spins(16, seed=0), directory / "samples.pt")
 
     with pytest.raises(AssertionError, match="sigma"):
@@ -145,7 +151,8 @@ def test_reference_accepts_the_exact_frozen_sigma_c(tmp_path):
     directory = tmp_path / "kawasaki_ref_d256_s220"
     directory.mkdir()
     (directory / "provenance.json").write_text(
-        json.dumps({"sigma": 0.22034339675488573, "n_chains": 2}))
+        json.dumps({"sigma": 0.22034339675488573, "n_chains": 2})
+    )
     torch.save(_balanced_spins(16, seed=0), directory / "samples.pt")
 
     chains, provenance = h16.load_reference(directory, sigma_key="s220")
@@ -161,7 +168,8 @@ def test_reference_must_be_composition_exact(tmp_path):
     directory = tmp_path / "kawasaki_ref_d256_s010"
     directory.mkdir()
     (directory / "provenance.json").write_text(
-        json.dumps({"sigma": 0.1, "n_chains": 2}))
+        json.dumps({"sigma": 0.1, "n_chains": 2})
+    )
     off_slice = _balanced_spins(16, seed=0)
     off_slice[3, 0] = -off_slice[3, 0]
     torch.save(off_slice, directory / "samples.pt")
@@ -171,6 +179,7 @@ def test_reference_must_be_composition_exact(tmp_path):
 
 
 # --- (4) the arm set -----------------------------------------------------
+
 
 def test_arm_set_is_the_heads_that_ran():
     """The three w3 heads (ma, thp, thp2) plus the raster-ordering ladder
@@ -183,8 +192,17 @@ def test_arm_set_is_the_heads_that_ran():
     and config still exist -- an editorial removal, not a deletion."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
-    assert set(h16.ARMS) == {"ma", "thp", "thp2", "masep", "mamo2", "mamo2ef",
-                             "iv", "ivmo2", "ivmo2ef"}
+    assert set(h16.ARMS) == {
+        "ma",
+        "thp",
+        "thp2",
+        "masep",
+        "mamo2",
+        "mamo2ef",
+        "iv",
+        "ivmo2",
+        "ivmo2ef",
+    }
     assert not {"fimo2", "fimo2ef", "fmo2ef"} & set(h16.ARMS)
     # Every arm prints a row, and the ladder sits in its own block.
     printed = [key for row in h16.LATEX_ROWS if row for key in [row[0]]]
@@ -206,12 +224,18 @@ def test_gfn_rows_stay_outside_the_bold_comparison():
     assert set(h16.GFN_ARMS) <= set(printed)
 
     def entry(ess, flops):
-        return {"ESS": (ess, 0.001), "dMag": (0.05, 0.01),
-                "dCorr": (0.05, 0.01), "EW2": (0.05, 0.01),
-                "FLOP/es": (flops, 0.0)}
+        return {
+            "ESS": (ess, 0.001),
+            "dMag": (0.05, 0.01),
+            "dCorr": (0.05, 0.01),
+            "EW2": (0.05, 0.01),
+            "FLOP/es": (flops, 0.0),
+        }
 
-    table = {"thp_s010": entry(0.90, 1.0e9),
-             "gfn_tb_s010": entry(0.99, 1.0e6)}  # best ESS and FLOP/es
+    table = {
+        "thp_s010": entry(0.90, 1.0e9),
+        "gfn_tb_s010": entry(0.99, 1.0e6),
+    }  # best ESS and FLOP/es
     body = h16.latex_table(table)
     gfn_line = next(l for l in body.splitlines() if "trajectory balance" in l)
     thp_line = next(l for l in body.splitlines() if "two-hole patch head" in l)
@@ -240,6 +264,7 @@ def test_row_order_puts_reference_and_floor_above_the_heads():
 
 
 # --- cell selection ------------------------------------------------------
+
 
 def _make_cell(tmp_path, name, halted=False):
     run = tmp_path / name

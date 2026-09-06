@@ -10,6 +10,7 @@ Tests for the off-paper utilities removed in the 2026-05 metric refactor
 (TVD, KL, 1-D Wasserstein, log_prob_w1) have been deleted alongside the
 function definitions.
 """
+
 import pytest
 import torch
 
@@ -50,10 +51,12 @@ def test_ess_one_for_dominant_weight():
 
 
 def test_composition_and_magnetisation_observables():
-    x = torch.tensor([
-        [1.0, 1.0, -1.0, -1.0],
-        [1.0, -1.0, -1.0, -1.0],
-    ])
+    x = torch.tensor(
+        [
+            [1.0, 1.0, -1.0, -1.0],
+            [1.0, -1.0, -1.0, -1.0],
+        ]
+    )
 
     torch.testing.assert_close(composition_fraction_up(x), torch.tensor([0.5, 0.25]))
     torch.testing.assert_close(magnetisation(x), torch.tensor([0.0, -0.5]))
@@ -136,9 +139,7 @@ def test_internal_energy_uniform_weights_equals_mean_neg_log_p_tilde():
     K, sigma, D = 8, 0.1, 4
     log_weights = torch.zeros(K)
     log_p_tilde = torch.tensor([0.5, -1.0, 0.0, 2.0, -0.3, 0.7, 1.1, -1.4])
-    E_per_site = internal_energy_estimate(
-        log_weights, log_p_tilde, sigma=sigma, D=D
-    )
+    E_per_site = internal_energy_estimate(log_weights, log_p_tilde, sigma=sigma, D=D)
     expected = -log_p_tilde.mean().item() / (2 * sigma * D)
     assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
 
@@ -149,9 +150,7 @@ def test_internal_energy_dominant_weight_picks_single_sample():
     sigma, D = 0.1, 4
     log_weights = torch.tensor([0.0, -100.0, -100.0, -100.0])
     log_p_tilde = torch.tensor([0.7, 0.0, 0.0, 0.0])
-    E_per_site = internal_energy_estimate(
-        log_weights, log_p_tilde, sigma=sigma, D=D
-    )
+    E_per_site = internal_energy_estimate(log_weights, log_p_tilde, sigma=sigma, D=D)
     expected = -log_p_tilde[0].item() / (2 * sigma * D)
     assert E_per_site.item() == pytest.approx(expected, abs=1e-6)
 
@@ -182,6 +181,7 @@ def test_exact_free_energy_matches_logsumexp_definition():
 
     class TinyTarget:
         device = "cpu"
+
         def log_prob(self, x):
             # log p̃(x) = σ · sum(x) (linear; not Ising, but enumerates fine)
             return sigma * x.sum(dim=-1).float()
@@ -221,7 +221,8 @@ def test_conditional_pmf_slice_normalises_and_picks_right_count():
     torch.testing.assert_close(
         log_pi_cond,
         torch.full((6,), -torch.log(torch.tensor(6.0)).item()),
-        atol=1e-6, rtol=0,
+        atol=1e-6,
+        rtol=0,
     )
 
 
@@ -231,8 +232,11 @@ def test_conditional_pmf_z2_symmetric_at_c_half():
     from discrete_flow_sampler.targets.ising import IsingTarget
 
     target = IsingTarget(
-        D=2, sigma=0.1, bias=0.0,
-        target_composition=0.5, composition_penalty_strength=50.0,
+        D=2,
+        sigma=0.1,
+        bias=0.0,
+        target_composition=0.5,
+        composition_penalty_strength=50.0,
     )
     D_total = 4  # 2x2 = 4 sites
     states = enumerate_states(D_total)
@@ -253,12 +257,14 @@ def test_conditional_pmf_z2_symmetric_at_c_half():
 def test_z2_asymmetry_zero_for_symmetric_weights():
     """Pair each x with -x and give equal IS weight → e_m_is = 0 and
     mass_pos == mass_neg, so asymmetry = 0."""
-    samples = torch.tensor([
-        [1.0, -1.0, 1.0, -1.0],   # m = 0
-        [1.0, 1.0, -1.0, -1.0],   # m = 0
-        [1.0, 1.0, 1.0, -1.0],    # m = +0.5
-        [-1.0, -1.0, -1.0, 1.0],  # m = -0.5  (negation of previous)
-    ])
+    samples = torch.tensor(
+        [
+            [1.0, -1.0, 1.0, -1.0],  # m = 0
+            [1.0, 1.0, -1.0, -1.0],  # m = 0
+            [1.0, 1.0, 1.0, -1.0],  # m = +0.5
+            [-1.0, -1.0, -1.0, 1.0],  # m = -0.5  (negation of previous)
+        ]
+    )
     log_w = torch.zeros(4)  # uniform IS weights
     result = z2_asymmetry_from_samples(samples, log_w)
     assert result["e_m_is"] == pytest.approx(0.0, abs=1e-6)
@@ -268,10 +274,12 @@ def test_z2_asymmetry_zero_for_symmetric_weights():
 
 def test_z2_asymmetry_flags_imbalanced_samples():
     """All samples have m > 0 → mass_pos = 1, mass_neg = 0, asymmetry = 1."""
-    samples = torch.tensor([
-        [1.0, 1.0, 1.0, -1.0],    # m = +0.5
-        [1.0, 1.0, -1.0, 1.0],    # m = +0.5
-    ])
+    samples = torch.tensor(
+        [
+            [1.0, 1.0, 1.0, -1.0],  # m = +0.5
+            [1.0, 1.0, -1.0, 1.0],  # m = +0.5
+        ]
+    )
     log_w = torch.zeros(2)
     result = z2_asymmetry_from_samples(samples, log_w)
     assert result["mass_pos"] == pytest.approx(1.0, abs=1e-6)
@@ -284,6 +292,7 @@ def test_exact_internal_energy_matches_pi_weighted_neg_log_p_tilde():
 
     class TinyTarget:
         device = "cpu"
+
         def log_prob(self, x):
             return sigma * x.sum(dim=-1).float()
 
@@ -301,8 +310,8 @@ def test_exact_internal_energy_matches_pi_weighted_neg_log_p_tilde():
 import numpy as np
 
 from discrete_flow_sampler.diagnostics.metrics import (
-    integrated_autocorr,
     gelman_rubin,
+    integrated_autocorr,
 )
 
 
@@ -355,7 +364,7 @@ def test_nn_correlation_checkerboard_is_minus_one():
     # bipartite checkerboard on the 4×4 torus: sign = (-1)^(row+col)
     coords = torch.arange(16)
     row, col = coords // 4, coords % 4
-    x = ((-1.0) ** (row + col)).unsqueeze(0)     # (1, 16)
+    x = ((-1.0) ** (row + col)).unsqueeze(0)  # (1, 16)
     assert torch.allclose(nn_correlation(x, tgt.A), -torch.ones(1), atol=1e-6)
 
 
@@ -369,7 +378,7 @@ def test_diagonal_correlation_checkerboard_is_plus_one():
     # colour, so every diagonal product is +1 — the OPPOSITE of nn_correlation.
     coords = torch.arange(16)
     row, col = coords // 4, coords % 4
-    x = ((-1.0) ** (row + col)).unsqueeze(0)     # (1, 16)
+    x = ((-1.0) ** (row + col)).unsqueeze(0)  # (1, 16)
     assert torch.allclose(diagonal_correlation(x, 4), torch.ones(1), atol=1e-6)
 
 
@@ -382,9 +391,9 @@ def test_half_magnetisation_order_parameter_modes_and_checkerboard():
 
     D = 4
     grid = torch.ones(D, D)
-    grid[:, D // 2:] = -1.0                       # left half +1, right half -1
+    grid[:, D // 2 :] = -1.0  # left half +1, right half -1
     left_phase = grid.reshape(-1)
-    right_phase = -left_phase                     # the Z2 partner mode
+    right_phase = -left_phase  # the Z2 partner mode
     coords = torch.arange(D * D)
     row, col = coords // D, coords % D
     checkerboard = ((-1.0) ** (row + col)).float()

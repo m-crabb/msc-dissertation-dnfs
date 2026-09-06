@@ -28,13 +28,13 @@ Contracts frozen here, each guarding a specific failure:
    init-contamination failure through the back door; resetting only the
    counter would restart the warmup schedule mid-run (ema.py docstring).
 """
+
 from types import SimpleNamespace
 
 import pytest
 import torch
 
-from discrete_flow_sampler.constraints.exact_field_channel import (
-    ExactFieldFlipModel)
+from discrete_flow_sampler.constraints.exact_field_channel import ExactFieldFlipModel
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers.training import train
 from discrete_flow_sampler.targets.ising import IsingTarget
@@ -54,14 +54,21 @@ def _die_after(n_checkpoints):
         calls["n"] += 1
         if calls["n"] >= n_checkpoints:
             raise _Preempted
+
     return hook
 
 
 def _cfgs(*, seed=0, resume_every_outer=1):
     train_cfg = SimpleNamespace(
-        n_steps=N_STEPS, inner_steps_per_outer=INNER_PER_OUTER,
-        batch_size=8, outer_batch_size=4, replay_buffer_cycles=2,
-        lr=1e-3, seed=seed, grad_clip_max_norm=500.0, warmup_steps=0,
+        n_steps=N_STEPS,
+        inner_steps_per_outer=INNER_PER_OUTER,
+        batch_size=8,
+        outer_batch_size=4,
+        replay_buffer_cycles=2,
+        lr=1e-3,
+        seed=seed,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
         resume_every_outer=resume_every_outer,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=3)
@@ -71,7 +78,9 @@ def _cfgs(*, seed=0, resume_every_outer=1):
 
 def _soft_target():
     return IsingTarget(
-        D=2, sigma=0.1, target_composition=0.5,
+        D=2,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=5.0,
     )
 
@@ -79,19 +88,24 @@ def _soft_target():
 def _model(target, *, init_seed, channel=False):
     torch.manual_seed(init_seed)
     model = LeTFRateMatrix(
-        d=target.d, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
+        d=target.d, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2
+    )
     return ExactFieldFlipModel(model, target) if channel else model
 
 
-def _run(run_dir, *, init_seed=0, ema_decay=0.0, channel=False,
-         on_checkpoint=None):
+def _run(run_dir, *, init_seed=0, ema_decay=0.0, channel=False, on_checkpoint=None):
     target = _soft_target()
     train_cfg, ctmc_cfg, eval_cfg = _cfgs()
     train(
         model=_model(target, init_seed=init_seed, channel=channel),
-        target=target, train_cfg=train_cfg, ctmc_cfg=ctmc_cfg,
-        eval_cfg=eval_cfg, output_dir=run_dir, use_wandb=False,
-        estimator_mode="control_variate", ema_decay=ema_decay,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=run_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        ema_decay=ema_decay,
         on_checkpoint=on_checkpoint,
     )
 
@@ -132,16 +146,29 @@ def test_shadow_covers_channel_gains(tmp_path):
 
 def _stage_cfg(name, ema_decay):
     from experiments.dnfs_baseline_01.configs import (
-        CTMCCfg, EvalCfg, IsingCfg, ModelCfg, StageCfg, TrainCfg)
+        CTMCCfg,
+        EvalCfg,
+        IsingCfg,
+        ModelCfg,
+        StageCfg,
+        TrainCfg,
+    )
+
     return StageCfg(
         name=name,
         ising=IsingCfg(
-            D=2, sigma=0.1, target_composition=0.5,
-            composition_penalty_strength=5.0),
+            D=2, sigma=0.1, target_composition=0.5, composition_penalty_strength=5.0
+        ),
         train=TrainCfg(
-            n_steps=12, inner_steps_per_outer=2, batch_size=8,
-            outer_batch_size=4, replay_buffer_cycles=2, lr=1e-3, seed=0,
-            warmup_steps=0),
+            n_steps=12,
+            inner_steps_per_outer=2,
+            batch_size=8,
+            outer_batch_size=4,
+            replay_buffer_cycles=2,
+            lr=1e-3,
+            seed=0,
+            warmup_steps=0,
+        ),
         ctmc=CTMCCfg(n_euler_steps=3),
         eval=EvalCfg(eval_every=4, n_eval_samples=8),
         model=ModelCfg(kind="let", hidden_dim=8, n_layers=1, n_heads=2),
@@ -166,8 +193,7 @@ def test_run_entry_dual_eval_and_short_circuit(tmp_path):
     run_train(armed, seed=0, output_dir=tmp_path, use_wandb=False, tag="t0")
     run_dir = tmp_path / "ema_smoke_seed0_t0"
     raw_metrics = json.loads((run_dir / "eval" / "metrics.json").read_text())
-    ema_metrics = json.loads(
-        (run_dir / "eval_ema" / "metrics.json").read_text())
+    ema_metrics = json.loads((run_dir / "eval_ema" / "metrics.json").read_text())
     assert set(raw_metrics) == set(ema_metrics)
 
     shutil.rmtree(run_dir / "eval_ema")
@@ -175,19 +201,20 @@ def test_run_entry_dual_eval_and_short_circuit(tmp_path):
     assert (run_dir / "eval_ema" / "metrics.json").exists()
 
     disarmed = _stage_cfg("ema_off_smoke", ema_decay=0.0)
-    run_train(disarmed, seed=0, output_dir=tmp_path, use_wandb=False,
-              tag="t0")
+    run_train(disarmed, seed=0, output_dir=tmp_path, use_wandb=False, tag="t0")
     assert not (tmp_path / "ema_off_smoke_seed0_t0" / "eval_ema").exists()
 
 
 def test_resume_carries_shadow_and_counter(tmp_path):
     _run(tmp_path / "ref", init_seed=0, ema_decay=0.999)
     with pytest.raises(_Preempted):
-        _run(tmp_path / "int", init_seed=0, ema_decay=0.999,
-             on_checkpoint=_die_after(3))
+        _run(
+            tmp_path / "int", init_seed=0, ema_decay=0.999, on_checkpoint=_die_after(3)
+        )
     assert not (tmp_path / "int" / "checkpoints" / "final_ema.pt").exists()
     resume_state = torch.load(
-        tmp_path / "int" / "checkpoints" / "resume.pt", weights_only=True)
+        tmp_path / "int" / "checkpoints" / "resume.pt", weights_only=True
+    )
     assert resume_state.get("ema") is not None
     _run(tmp_path / "int", init_seed=999, ema_decay=0.999)
     reference = _state(tmp_path / "ref" / "checkpoints" / "final_ema.pt")

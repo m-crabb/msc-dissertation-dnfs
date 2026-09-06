@@ -64,10 +64,13 @@ def test_single_pass_reverse_rate_identity():
     pairs = upper_tri_pairs(4, "cpu")
     G_x = gather_pair_scores(head(x, t), pairs)
     reverse_from_x = F.relu(-G_x)
-    reverse_true = torch.stack([
-        F.relu(gather_pair_scores(head(swap2(x, int(i), int(j)), t), pairs))[:, k]
-        for k, (i, j) in enumerate(pairs.tolist())
-    ], dim=1)
+    reverse_true = torch.stack(
+        [
+            F.relu(gather_pair_scores(head(swap2(x, int(i), int(j)), t), pairs))[:, k]
+            for k, (i, j) in enumerate(pairs.tolist())
+        ],
+        dim=1,
+    )
     assert torch.allclose(reverse_from_x, reverse_true, atol=1e-6)
 
 
@@ -82,23 +85,26 @@ def test_orientation_negative_control_index_not_spin():
     pairs = upper_tri_pairs(4, "cpu")
     G_x = gather_pair_scores(head(x, t), pairs)
     reverse_from_x = F.relu(-G_x)
-    transposed = torch.stack([
-        F.relu(head(swap2(x, int(i), int(j)), t)[:, int(j), int(i)])
-        for k, (i, j) in enumerate(pairs.tolist())
-    ], dim=1)
+    transposed = torch.stack(
+        [
+            F.relu(head(swap2(x, int(i), int(j)), t)[:, int(j), int(i)])
+            for k, (i, j) in enumerate(pairs.tolist())
+        ],
+        dim=1,
+    )
     # active (opposite-spin) pairs must disagree by a clear margin
-    active = (x[:, pairs[:, 0]] != x[:, pairs[:, 1]])
+    active = x[:, pairs[:, 0]] != x[:, pairs[:, 1]]
     assert (reverse_from_x - transposed).abs()[active].max() > 1e-4
 
 
 @torch.no_grad()
 def test_euler_step_preserves_composition():
-    head, tgt = _head_and_target(D=4)            # d=16, N_A=8
+    head, tgt = _head_and_target(D=4)  # d=16, N_A=8
     state = tgt.sample_base(32, device="cpu")
     t = torch.full((32,), 0.5)
     for _ in range(50):
         state, _ = _euler_step_swap(head, state, t, torch.tensor(0.05))
-        tgt.assert_on_manifold(state)            # bit-exact composition invariance
+        tgt.assert_on_manifold(state)  # bit-exact composition invariance
 
 
 @torch.no_grad()
@@ -118,16 +124,18 @@ def test_sample_swap_ctmc_log_weights_finite_and_contract():
     head, tgt = _head_and_target(D=4)
     x0 = tgt.sample_base(16, device="cpu")
     ts = torch.linspace(0.0, 1.0, 20)
-    x_final, log_w = sample_swap_ctmc(
-        head, x0, ts, return_log_weights=True, target=tgt
-    )
+    x_final, log_w = sample_swap_ctmc(head, x0, ts, return_log_weights=True, target=tgt)
     assert log_w.shape == (16,) and torch.isfinite(log_w).all()
     with pytest.raises(ValueError):
-        sample_swap_ctmc(head, x0, ts, return_log_weights=True)          # no target
+        sample_swap_ctmc(head, x0, ts, return_log_weights=True)  # no target
     with pytest.raises(ValueError):
         sample_swap_ctmc(
-            head, x0, ts,
-            return_log_weights=True, return_all_states=True, target=tgt,
+            head,
+            x0,
+            ts,
+            return_log_weights=True,
+            return_all_states=True,
+            target=tgt,
         )
 
 
@@ -136,7 +144,7 @@ def test_compute_c_t_grid_swap_modes():
     head, tgt = _head_and_target(D=4)
     x0 = tgt.sample_base(8, device="cpu")
     ts = torch.linspace(0.0, 1.0, 6)
-    traj = sample_swap_ctmc(head, x0, ts, return_all_states=True)        # (6,8,16)
+    traj = sample_swap_ctmc(head, x0, ts, return_all_states=True)  # (6,8,16)
     for mode in ("naive_mc", "control_variate"):
         c_t, integrand = compute_c_t_grid_swap(ts, traj, tgt, head, mode=mode)
         assert c_t.shape == (6,) and integrand.shape == (6, 8)

@@ -26,11 +26,13 @@ What correct looks like, independent of implementation:
    base state) — this pins that the enlarged draw's RNG consumption is
    checkpointed via the RNG state, not reconstructed.
 """
+
 import csv
 from pathlib import Path
 
 import pytest
 import torch
+from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 from discrete_flow_sampler.constraints.swap_readout import (
     LeTFMaskOneSwapHead,
@@ -39,8 +41,6 @@ from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers import swap_training
 from discrete_flow_sampler.samplers.swap_training import train_swap
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-
-from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 
 class _Cfg:
@@ -67,23 +67,40 @@ def _head(init_seed: int) -> LeTFMaskOneSwapHead:
 
 
 def _cfgs(n_steps: int, c_t_batch, n_eval_samples: int = 16):
-    train_cfg = _Cfg(n_steps=n_steps, batch_size=8, outer_batch_size=8,
-                     inner_steps_per_outer=2, lr=1e-3, seed=0,
-                     replay_buffer_cycles=2, grad_clip_max_norm=500.0,
-                     warmup_steps=0, resume_every_outer=1,
-                     c_t_batch=c_t_batch)
+    train_cfg = _Cfg(
+        n_steps=n_steps,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=2,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        resume_every_outer=1,
+        c_t_batch=c_t_batch,
+    )
     ctmc_cfg = _Cfg(n_euler_steps=8)
     eval_cfg = _Cfg(eval_every=2, n_eval_samples=n_eval_samples)
     return train_cfg, ctmc_cfg, eval_cfg
 
 
-def _run(run_dir: Path, n_steps: int, head, c_t_batch,
-         n_eval_samples: int = 16) -> None:
+def _run(
+    run_dir: Path, n_steps: int, head, c_t_batch, n_eval_samples: int = 16
+) -> None:
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(n_steps, c_t_batch, n_eval_samples)
-    train_swap(head, target, train_cfg, ctmc_cfg, eval_cfg, run_dir,
-               use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM)
+    train_swap(
+        head,
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        run_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=TWO_STAGE_CURRICULUM,
+    )
 
 
 def _log_rows(run_dir: Path) -> list[dict]:
@@ -117,9 +134,17 @@ def test_off_and_explicit_equal_are_bit_identical_to_unknobbed(tmp_path):
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_cfg, ctmc_cfg, eval_cfg = _cfgs(4, None)
     del train_cfg.c_t_batch  # the getattr-default path
-    train_swap(_head(init_seed=0), target, train_cfg, ctmc_cfg, eval_cfg,
-               default_dir, use_wandb=False, estimator_mode="control_variate",
-               sigma_curriculum=TWO_STAGE_CURRICULUM)
+    train_swap(
+        _head(init_seed=0),
+        target,
+        train_cfg,
+        ctmc_cfg,
+        eval_cfg,
+        default_dir,
+        use_wandb=False,
+        estimator_mode="control_variate",
+        sigma_curriculum=TWO_STAGE_CURRICULUM,
+    )
 
     _assert_logs_bit_identical(none_dir, default_dir, n_rows=4)
     _assert_logs_bit_identical(none_dir, equal_dir, n_rows=4)
@@ -140,8 +165,7 @@ def test_c_t_uses_the_larger_rollout_set(tmp_path, monkeypatch):
 
     def c_t_spy(t_grid, x_traj, target, head, *, mode, chunk_rows=None):
         seen["c_t_row_counts"].append(x_traj.shape[1])
-        return real_c_t(t_grid, x_traj, target, head, mode=mode,
-                        chunk_rows=chunk_rows)
+        return real_c_t(t_grid, x_traj, target, head, mode=mode, chunk_rows=chunk_rows)
 
     monkeypatch.setattr(FixedCompositionIsingTarget, "sample_base", base_spy)
     monkeypatch.setattr(swap_training, "compute_c_t_grid_swap", c_t_spy)
@@ -150,8 +174,13 @@ def test_c_t_uses_the_larger_rollout_set(tmp_path, monkeypatch):
     # unambiguous: init diagnostics draw outer_batch (8), eval draws 12,
     # the c_t cycle draws the enlarged 16.
     run_dir = tmp_path / "run"
-    _run(run_dir, n_steps=4, head=_head(init_seed=0), c_t_batch=2 * OUTER_BATCH,
-         n_eval_samples=12)
+    _run(
+        run_dir,
+        n_steps=4,
+        head=_head(init_seed=0),
+        c_t_batch=2 * OUTER_BATCH,
+        n_eval_samples=12,
+    )
 
     # n_steps=4 -> two outer cycles, hence two c_t calls, both enlarged.
     assert seen["c_t_row_counts"] == [2 * OUTER_BATCH, 2 * OUTER_BATCH]
@@ -168,8 +197,7 @@ def test_buffer_size_and_composition_unchanged(tmp_path, monkeypatch):
 
     def c_t_spy(t_grid, x_traj, target, head, *, mode, chunk_rows=None):
         captured["full_traj"] = x_traj
-        return real_c_t(t_grid, x_traj, target, head, mode=mode,
-                        chunk_rows=chunk_rows)
+        return real_c_t(t_grid, x_traj, target, head, mode=mode, chunk_rows=chunk_rows)
 
     real_append = swap_training._append_replay_buffer
 
@@ -188,8 +216,8 @@ def test_buffer_size_and_composition_unchanged(tmp_path, monkeypatch):
     run_dir = tmp_path / "run"
     _run(run_dir, n_steps=8, head=_head(init_seed=0), c_t_batch=2 * OUTER_BATCH)
 
-    full = captured["full_traj"]           # last cycle: (T, 2*outer_batch, D)
-    buf = captured["buffer_traj"]          # (T, outer_batch, D)
+    full = captured["full_traj"]  # last cycle: (T, 2*outer_batch, D)
+    buf = captured["buffer_traj"]  # (T, outer_batch, D)
     n_grid = full.shape[0]
     assert full.shape[1] == 2 * OUTER_BATCH
     assert buf.shape[1] == OUTER_BATCH
@@ -203,12 +231,15 @@ def test_buffer_size_and_composition_unchanged(tmp_path, monkeypatch):
 def test_c_t_batch_below_outer_batch_rejected(tmp_path):
     run_dir = tmp_path / "run"
     with pytest.raises(ValueError, match="c_t_batch"):
-        _run(run_dir, n_steps=2, head=_head(init_seed=0),
-             c_t_batch=OUTER_BATCH - 1)
+        _run(run_dir, n_steps=2, head=_head(init_seed=0), c_t_batch=OUTER_BATCH - 1)
     # A non-integer row count is nonsense for a rollout draw.
     with pytest.raises((ValueError, TypeError)):
-        _run(tmp_path / "run2", n_steps=2, head=_head(init_seed=0),
-             c_t_batch=OUTER_BATCH + 0.5)
+        _run(
+            tmp_path / "run2",
+            n_steps=2,
+            head=_head(init_seed=0),
+            c_t_batch=OUTER_BATCH + 0.5,
+        )
 
 
 def test_resumed_run_bit_exact_with_knob_on(tmp_path):
@@ -218,13 +249,14 @@ def test_resumed_run_bit_exact_with_knob_on(tmp_path):
     uninterrupted_dir = tmp_path / "uninterrupted"
     interrupted_dir = tmp_path / "interrupted"
 
-    _run(uninterrupted_dir, n_steps=8, head=_head(init_seed=0),
-         c_t_batch=2 * OUTER_BATCH)
+    _run(
+        uninterrupted_dir, n_steps=8, head=_head(init_seed=0), c_t_batch=2 * OUTER_BATCH
+    )
 
-    _run(interrupted_dir, n_steps=4, head=_head(init_seed=0),
-         c_t_batch=2 * OUTER_BATCH)
+    _run(interrupted_dir, n_steps=4, head=_head(init_seed=0), c_t_batch=2 * OUTER_BATCH)
     (interrupted_dir / "checkpoints" / "final.pt").unlink()
-    _run(interrupted_dir, n_steps=8, head=_head(init_seed=999),
-         c_t_batch=2 * OUTER_BATCH)
+    _run(
+        interrupted_dir, n_steps=8, head=_head(init_seed=999), c_t_batch=2 * OUTER_BATCH
+    )
 
     _assert_logs_bit_identical(uninterrupted_dir, interrupted_dir, n_rows=8)

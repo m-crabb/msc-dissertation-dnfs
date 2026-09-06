@@ -8,6 +8,7 @@ The record is appended rather than overwritten because a resumed run can be
 requeued onto a different node, and then both hosts are true for different
 step ranges of the same directory.
 """
+
 import json
 
 from experiments.dnfs_baseline_01.run import write_host_metadata

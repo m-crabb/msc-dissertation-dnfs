@@ -259,7 +259,9 @@ class FactorisedSwapHead(nn.Module):
                     f"for d={backbone.d}"
                 )
         if interior_band not in (None, "prefix", "attention"):
-            raise ValueError(f"interior_band must be None, 'prefix' or 'attention'; got {interior_band!r}")
+            raise ValueError(
+                f"interior_band must be None, 'prefix' or 'attention'; got {interior_band!r}"
+            )
 
         if global_bond_features and interior_band is None:
             raise ValueError(
@@ -300,7 +302,9 @@ class FactorisedSwapHead(nn.Module):
         self.interior_band = interior_band
         if interior_band is not None:
             pair_offsets = pair_offsets or (1, lattice_side or round(self.d**0.5))
-        band_dim = 0 if interior_band is None else band_feature_dim * (1 + len(pair_offsets))
+        band_dim = (
+            0 if interior_band is None else band_feature_dim * (1 + len(pair_offsets))
+        )
         # Bond-carrying global term: the whole-lattice bond sums ride the
         # SAME per-pair path at one extra family per offset. No feature
         # parameters -- they are the band provider's own modules -- so the
@@ -348,30 +352,43 @@ class FactorisedSwapHead(nn.Module):
                 f"_order_inverse_{name}", order.argsort(), persistent=False
             )
         if site_orderings[1:]:
-            self.extra_ordering_modules = nn.ModuleDict({
-                name: nn.ModuleDict({
-                    "prefix_norm": nn.LayerNorm(hidden),
-                    "suffix_norm": nn.LayerNorm(hidden),
-                    "prefix_factors": nn.Linear(
-                        hidden + position_dim, bilinear_rank * factor_dim
-                    ),
-                    "suffix_factors": nn.Linear(
-                        hidden + position_dim, bilinear_rank * factor_dim
-                    ),
-                })
-                for name in site_orderings[1:]
-            })
+            self.extra_ordering_modules = nn.ModuleDict(
+                {
+                    name: nn.ModuleDict(
+                        {
+                            "prefix_norm": nn.LayerNorm(hidden),
+                            "suffix_norm": nn.LayerNorm(hidden),
+                            "prefix_factors": nn.Linear(
+                                hidden + position_dim, bilinear_rank * factor_dim
+                            ),
+                            "suffix_factors": nn.Linear(
+                                hidden + position_dim, bilinear_rank * factor_dim
+                            ),
+                        }
+                    )
+                    for name in site_orderings[1:]
+                }
+            )
         # Band provider LAST for the same reason as the orderings: absent at
         # interior_band=None, and never ahead of the archived modules' draws.
         if interior_band is not None:
             self._build_interior_band_provider(
-                backbone, interior_band, pair_offsets, band_feature_dim,
-                attention_dim, lattice_side,
+                backbone,
+                interior_band,
+                pair_offsets,
+                band_feature_dim,
+                attention_dim,
+                lattice_side,
             )
 
     def _build_interior_band_provider(
-        self, backbone, interior_band, pair_offsets, band_feature_dim,
-        attention_dim, lattice_side,
+        self,
+        backbone,
+        interior_band,
+        pair_offsets,
+        band_feature_dim,
+        attention_dim,
+        lattice_side,
     ) -> None:
         """Own a band head for its `band_summaries` only (module docstring)."""
         if interior_band == "prefix":
@@ -380,8 +397,11 @@ class FactorisedSwapHead(nn.Module):
             )
         else:
             provider = MaskedAttentionSwapHead(
-                backbone, pair_offsets=pair_offsets, band_feature_dim=band_feature_dim,
-                attention_dim=attention_dim, lattice_side=lattice_side,
+                backbone,
+                pair_offsets=pair_offsets,
+                band_feature_dim=band_feature_dim,
+                attention_dim=attention_dim,
+                lattice_side=lattice_side,
             )
         del provider.pair_readout, provider.context_norm
         if interior_band == "prefix":
@@ -432,9 +452,7 @@ class FactorisedSwapHead(nn.Module):
 
     def _site_positions(self, x: Tensor) -> Tensor:
         """(B, d, position_dim) broadcast of the site-position embedding."""
-        pos = self.site_position_embedding(
-            torch.arange(self.d, device=x.device)
-        )
+        pos = self.site_position_embedding(torch.arange(self.d, device=x.device))
         return pos.unsqueeze(0).expand(x.shape[0], -1, -1)
 
     def _factor_tensors(self, x: Tensor, t: Tensor) -> tuple[Tensor, Tensor]:
@@ -489,26 +507,23 @@ class FactorisedSwapHead(nn.Module):
         """
         if self.use_global:
             x_idx = ((x + 1) / 2).long()
-            token_embedding = self.backbone.token_embedder(x_idx)   # (B, d, h)
+            token_embedding = self.backbone.token_embedder(x_idx)  # (B, d, h)
             psi = self.global_site_features(
                 torch.cat([token_embedding, self._site_positions(x)], dim=-1)
-            )                                                       # (B, d, Fg)
-            total = psi.sum(dim=1)                                  # (B, Fg)
+            )  # (B, d, Fg)
+            total = psi.sum(dim=1)  # (B, Fg)
         if self.gather_triu_pairs:
             rows, cols = triu_pair_indices(self.d, x.device)
             if self.use_global:
                 hole_subtracted = (
                     total.unsqueeze(1) - psi[:, rows] - psi[:, cols]
-                )                                                   # (B, P, Fg)
+                )  # (B, P, Fg)
             if self.interior_band is not None:
-                band = self.interior_band_provider.band_summaries(
-                    x, t, (rows, cols)
-                )
+                band = self.interior_band_provider.band_summaries(x, t, (rows, cols))
                 hole_subtracted = (
-                    torch.cat(
-                        [hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1
-                    )
-                    if self.use_global else band
+                    torch.cat([hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1)
+                    if self.use_global
+                    else band
                 )
             if self.global_bond_features:
                 # Symmetric in (i, j) already, so -- unlike the band -- it
@@ -520,16 +535,14 @@ class FactorisedSwapHead(nn.Module):
                     [hole_subtracted, bonds.to(hole_subtracted.dtype)], dim=-1
                 )
             return scatter_symmetric_pairs(
-                self.global_context_readout(
-                    self.global_context_norm(hole_subtracted)
-                ),
+                self.global_context_readout(self.global_context_norm(hole_subtracted)),
                 self.d,
             )
         if self.use_global:
             hole_subtracted = (
                 total.view(x.shape[0], 1, 1, -1)
-                - psi.unsqueeze(2)                              # remove psi_i
-                - psi.unsqueeze(1)                              # remove psi_j
+                - psi.unsqueeze(2)  # remove psi_i
+                - psi.unsqueeze(1)  # remove psi_j
             )
         if self.interior_band is not None:
             # Band summaries are defined on i < j; mirror to the label-
@@ -540,19 +553,16 @@ class FactorisedSwapHead(nn.Module):
             ).view(1, self.d, self.d, 1)
             band = torch.where(upper, band, band.transpose(1, 2))
             hole_subtracted = (
-                torch.cat(
-                    [hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1
-                )
-                if self.use_global else band
+                torch.cat([hole_subtracted, band.to(hole_subtracted.dtype)], dim=-1)
+                if self.use_global
+                else band
             )
         if self.global_bond_features:
             bonds = self.interior_band_provider.hole_free_bond_totals(x)
             hole_subtracted = torch.cat(
                 [hole_subtracted, bonds.to(hole_subtracted.dtype)], dim=-1
             )
-        return self.global_context_readout(
-            self.global_context_norm(hole_subtracted)
-        )
+        return self.global_context_readout(self.global_context_norm(hole_subtracted))
 
     def compute_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
         """The pair context H, (B, d, d, f), mirrored to i > j.
@@ -575,15 +585,18 @@ class FactorisedSwapHead(nn.Module):
             ]
         interior_context = (
             self._interior_pair_context(x, t)
-            if self.use_global or self.interior_band is not None else None
+            if self.use_global or self.interior_band is not None
+            else None
         )
         tau = self.time_projection(self.backbone.time_embedder(t))
-        upper = torch.triu(
-            torch.ones(d, d, dtype=torch.bool, device=x.device)
-        ).view(1, d, d, 1)
+        upper = torch.triu(torch.ones(d, d, dtype=torch.bool, device=x.device)).view(
+            1, d, d, 1
+        )
         with torch.autocast(device_type=x.device.type, enabled=False):
-            H = tau.float().view(batch, 1, 1, self.factor_dim).expand(
-                batch, d, d, self.factor_dim
+            H = (
+                tau.float()
+                .view(batch, 1, 1, self.factor_dim)
+                .expand(batch, d, d, self.factor_dim)
             )
             if interior_context is not None:
                 H = H + interior_context.float()
@@ -607,9 +620,9 @@ class FactorisedSwapHead(nn.Module):
         """
         H = self.compute_pair_context(x, t)
         x_idx = ((x + 1) / 2).long()
-        omega = self.backbone.omega(x_idx)                      # (B, d, h)
+        omega = self.backbone.omega(x_idx)  # (B, d, h)
         with torch.autocast(device_type=x.device.type, enabled=False):
-            omega_factor = self.omega_projection(omega.float()) # (B, d, f)
+            omega_factor = self.omega_projection(omega.float())  # (B, d, f)
             token_difference = omega_factor.unsqueeze(2) - omega_factor.unsqueeze(1)
             scores = (H * token_difference).sum(-1)
             upper = torch.triu(scores, diagonal=1)

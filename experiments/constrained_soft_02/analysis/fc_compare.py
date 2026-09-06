@@ -60,6 +60,7 @@ pre-EMA d10 cells keep the default):
         --seeds 42 43 44 45 --ess_floor 0.30 --eval_dir eval_ema \
         --plot results/02_constrained_soft/fc_compare_d8_house.png
 """
+
 import argparse
 import json
 from functools import partial
@@ -92,8 +93,9 @@ def _load_record(run_dir: Path, eval_dir: str = "eval") -> dict:
     }
 
 
-def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng,
-                 eval_dir: str = "eval") -> tuple[float, np.ndarray]:
+def _bootstrap_F(
+    run_dir: Path, d: int, n_boot: int, rng, eval_dir: str = "eval"
+) -> tuple[float, np.ndarray]:
     """Per-site canonical-units free energy (nats) and a bootstrap sample of it.
 
     F_total = -mean(log w); per site = F_total / d. This reproduces
@@ -109,8 +111,9 @@ def _bootstrap_F(run_dir: Path, d: int, n_boot: int, rng,
     return point, boot
 
 
-def _bootstrap_slice_F(run_dir: Path, d: int, n_boot: int, rng, eval_dir: str,
-                       lam: float, c_t: float) -> tuple[float, np.ndarray]:
+def _bootstrap_slice_F(
+    run_dir: Path, d: int, n_boot: int, rng, eval_dir: str, lam: float, c_t: float
+) -> tuple[float, np.ndarray]:
     """Canonical F/site at c_t read off the SOFT draw by the slice-mass identity.
 
     Conditioning the penalised target on the composition slice cancels the
@@ -147,8 +150,9 @@ def _bootstrap_slice_F(run_dir: Path, d: int, n_boot: int, rng, eval_dir: str,
     return point, boot
 
 
-def _grids_available(run_dir: Path, native_ne: int,
-                     eval_dir: str = "eval") -> list[tuple[int, str]]:
+def _grids_available(
+    run_dir: Path, native_ne: int, eval_dir: str = "eval"
+) -> list[tuple[int, str]]:
     """Euler grids this checkpoint has been drawn on, coarsest first.
 
     The frozen `{eval_dir}/` is the run's native grid; `{eval_dir}_ne<k>/`
@@ -159,14 +163,19 @@ def _grids_available(run_dir: Path, native_ne: int,
     grids = [(native_ne, eval_dir)]
     for side in run_dir.glob(f"{eval_dir}_ne*"):
         if (side / "log_weights.pt").exists():
-            grids.append(
-                (int(side.name.removeprefix(f"{eval_dir}_ne")), side.name))
+            grids.append((int(side.name.removeprefix(f"{eval_dir}_ne")), side.name))
     return sorted(grids)
 
 
-def _richardson_F(run_dir: Path, native_ne: int, d: int, n_boot: int,
-                  rng, eval_dir: str = "eval", bootstrap=_bootstrap_F,
-                  ) -> tuple[float, np.ndarray, tuple[int, int] | None]:
+def _richardson_F(
+    run_dir: Path,
+    native_ne: int,
+    d: int,
+    n_boot: int,
+    rng,
+    eval_dir: str = "eval",
+    bootstrap=_bootstrap_F,
+) -> tuple[float, np.ndarray, tuple[int, int] | None]:
     """First-order Richardson extrapolation of F/site to the continuum grid.
 
     The Euler-grid error is first order (measured step ratios 0.44-0.49
@@ -207,7 +216,7 @@ def _laplace_offset(lam: float, d: int, Fp_total: float, Fpp_total: float) -> fl
     giving a = lambda*d + 1/2 F_can''. Slope term f'^2/(4a), f' = -F_can'.
     """
     a = lam * d + 0.5 * Fpp_total
-    return float(np.log(d) + 0.5 * np.log(np.pi / a) + (Fp_total ** 2) / (4.0 * a))
+    return float(np.log(d) + 0.5 * np.log(np.pi / a) + (Fp_total**2) / (4.0 * a))
 
 
 def _enumerated_canonical(run_dir: Path) -> dict[float, float]:
@@ -220,54 +229,109 @@ def _enumerated_canonical(run_dir: Path) -> dict[float, float]:
     -log Z_lambda/(2 sigma d), not the canonical one, so it cannot serve as
     the truth here.)
     """
-    from discrete_flow_sampler.diagnostics.metrics import enumerate_states
     from experiments.dnfs_baseline_01.run import _rebuild_from_run_dir
+
+    from discrete_flow_sampler.diagnostics.metrics import enumerate_states
+
     _, target, _ = _rebuild_from_run_dir(run_dir)
-    states = enumerate_states(target.d).to(target.device)   # target.d = total sites
+    states = enumerate_states(target.d).to(target.device)  # target.d = total sites
     log_p = target.base_log_prob(states.float()).double().cpu()
     composition = (states > 0).double().mean(dim=1)
-    return {round(float(u), 4): float(-torch.logsumexp(log_p[composition == u], 0) / target.d)
-            for u in composition.unique()}
+    return {
+        round(float(u), 4): float(
+            -torch.logsumexp(log_p[composition == u], 0) / target.d
+        )
+        for u in composition.unique()
+    }
 
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--results_dir", type=Path, default=Path("results/02_constrained_soft"))
-    p.add_argument("--reference", type=Path, default=None,
-                   help="npz from fc_mchammer_reference (D=10 ground truth); "
-                        "omit at D<=4 to use the exact-enumeration column")
-    p.add_argument("--configs", nargs="+", required=True,
-                   help="config-name stems (without _seed..); one per composition window")
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--results_dir", type=Path, default=Path("results/02_constrained_soft")
+    )
+    p.add_argument(
+        "--reference",
+        type=Path,
+        default=None,
+        help="npz from fc_mchammer_reference (D=10 ground truth); "
+        "omit at D<=4 to use the exact-enumeration column",
+    )
+    p.add_argument(
+        "--configs",
+        nargs="+",
+        required=True,
+        help="config-name stems (without _seed..); one per composition window",
+    )
     p.add_argument("--seeds", nargs="+", type=int, default=[42, 43, 44, 45])
-    p.add_argument("--ess_floor", type=float, default=0.30,
-                   help="per-seed ESS-fraction floor for entering the F(c) average")
-    p.add_argument("--n_boot", type=int, default=2000,
-                   help="bootstrap resamples of the per-window importance weights")
-    p.add_argument("--plot", type=Path, default=None,
-                   help="optional output path for the overlay + residual figure")
-    p.add_argument("--correction", choices=["laplace", "slice_mass"], default="laplace",
-                   help="soft -> canonical map for the filled series: the continuum "
-                        "Laplace offset (reference shape enters) or the exact "
-                        "slice-mass identity (reference-free, see _bootstrap_slice_F)")
-    p.add_argument("--richardson", action="store_true",
-                   help="extrapolate each seed's F to the continuum grid from its "
-                        "two finest available draws (eval/ + eval_ne<k>/ redraws)")
-    p.add_argument("--flag_c", nargs="*", type=float, default=[],
-                   help="compositions drawn with a provisional ring (their Z2 "
-                        "mirrors inherit it); used while a window awaits retrain "
-                        "or prints from a different training grid")
-    p.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval",
-                   help="which frozen eval to score: raw weights or the "
-                        "dual eval's EMA shadow draw")
-    p.add_argument("--hard_rows", nargs="*", type=Path, default=[],
-                   help="zero-shot probe JSONs of the HARD (canonical) sampler, "
-                        "one per seed, native Euler grid; adds the direct "
-                        "fixed-composition free energy as a third series")
-    p.add_argument("--hard_rows_fine", nargs="*", type=Path, default=[],
-                   help="the same seeds redrawn on a finer Euler grid, same "
-                        "order as --hard_rows; enables Richardson extrapolation "
-                        "of the hard series")
+    p.add_argument(
+        "--ess_floor",
+        type=float,
+        default=0.30,
+        help="per-seed ESS-fraction floor for entering the F(c) average",
+    )
+    p.add_argument(
+        "--n_boot",
+        type=int,
+        default=2000,
+        help="bootstrap resamples of the per-window importance weights",
+    )
+    p.add_argument(
+        "--plot",
+        type=Path,
+        default=None,
+        help="optional output path for the overlay + residual figure",
+    )
+    p.add_argument(
+        "--correction",
+        choices=["laplace", "slice_mass"],
+        default="laplace",
+        help="soft -> canonical map for the filled series: the continuum "
+        "Laplace offset (reference shape enters) or the exact "
+        "slice-mass identity (reference-free, see _bootstrap_slice_F)",
+    )
+    p.add_argument(
+        "--richardson",
+        action="store_true",
+        help="extrapolate each seed's F to the continuum grid from its "
+        "two finest available draws (eval/ + eval_ne<k>/ redraws)",
+    )
+    p.add_argument(
+        "--flag_c",
+        nargs="*",
+        type=float,
+        default=[],
+        help="compositions drawn with a provisional ring (their Z2 "
+        "mirrors inherit it); used while a window awaits retrain "
+        "or prints from a different training grid",
+    )
+    p.add_argument(
+        "--eval_dir",
+        choices=["eval", "eval_ema"],
+        default="eval",
+        help="which frozen eval to score: raw weights or the "
+        "dual eval's EMA shadow draw",
+    )
+    p.add_argument(
+        "--hard_rows",
+        nargs="*",
+        type=Path,
+        default=[],
+        help="zero-shot probe JSONs of the HARD (canonical) sampler, "
+        "one per seed, native Euler grid; adds the direct "
+        "fixed-composition free energy as a third series",
+    )
+    p.add_argument(
+        "--hard_rows_fine",
+        nargs="*",
+        type=Path,
+        default=[],
+        help="the same seeds redrawn on a finer Euler grid, same "
+        "order as --hard_rows; enables Richardson extrapolation "
+        "of the hard series",
+    )
     args = p.parse_args()
     rng = np.random.default_rng(0)
 
@@ -292,10 +356,14 @@ def main() -> None:
     if len(Ds) > 1 or len(lambdas) > 1:
         raise SystemExit(f"expected one D and one lambda; got D={Ds} lambda={lambdas}")
     D, d, lam = Ds[0], records[0]["d"], lambdas[0]
-    print(f"=== F(c) compare : D={D} sigma={sigmas} lambda={lam} "
-          f"n_euler={n_eulers} ess_floor={args.ess_floor} n_boot={args.n_boot} ===")
+    print(
+        f"=== F(c) compare : D={D} sigma={sigmas} lambda={lam} "
+        f"n_euler={n_eulers} ess_floor={args.ess_floor} n_boot={args.n_boot} ==="
+    )
     if len(n_eulers) > 1:
-        print(f"[warn] mixed n_euler {n_eulers}: discretisation bias differs across windows.")
+        print(
+            f"[warn] mixed n_euler {n_eulers}: discretisation bias differs across windows."
+        )
 
     # --- canonical reference curve + its slope/curvature ----------------
     # ref_c -> (F_total, F'_total, F''_total); F_total used as ground truth and
@@ -316,7 +384,11 @@ def main() -> None:
         ref_F_total = ref_F_persite * d
         ref_src = "exact canonical enumeration (2^d states, slice sums)"
     order = np.argsort(ref_c)
-    ref_c, ref_F_total, ref_F_persite = ref_c[order], ref_F_total[order], ref_F_persite[order]
+    ref_c, ref_F_total, ref_F_persite = (
+        ref_c[order],
+        ref_F_total[order],
+        ref_F_persite[order],
+    )
     ref_Fp = np.gradient(ref_F_total, ref_c)
     ref_Fpp = np.gradient(ref_Fp, ref_c)
     print(f"ground truth: {ref_src}")
@@ -330,9 +402,11 @@ def main() -> None:
     for r in records:
         by_c.setdefault(round(r["c_target"], 4), []).append(r)
 
-    header = (f"{'c_t':>6} {'gated':>6} {'ESS frac':>14} "
-              f"{'F_raw (nats/site)':>20} {'F_corr':>16} {'F_truth':>9} "
-              f"{'raw-tru':>9} {'corr-tru':>9}  excluded(seed:ESS)")
+    header = (
+        f"{'c_t':>6} {'gated':>6} {'ESS frac':>14} "
+        f"{'F_raw (nats/site)':>20} {'F_corr':>16} {'F_truth':>9} "
+        f"{'raw-tru':>9} {'corr-tru':>9}  excluded(seed:ESS)"
+    )
     print(header)
 
     curve = []
@@ -345,11 +419,22 @@ def main() -> None:
 
         F_truth = _ref_at(c_t, ref_F_persite)
         if not gated:
-            line = (f"{c_t:>6.3f} {0:>2}/{len(rows):<3} {ess_lo:>6.3f}-{ess_hi:<6.3f} "
-                    f"{'(all excluded)':>20}")
+            line = (
+                f"{c_t:>6.3f} {0:>2}/{len(rows):<3} {ess_lo:>6.3f}-{ess_hi:<6.3f} "
+                f"{'(all excluded)':>20}"
+            )
             print(line)
-            curve.append(dict(c=c_t, raw=np.nan, raw_err=np.nan, corr=np.nan,
-                              corr_err=np.nan, truth=F_truth, n=0))
+            curve.append(
+                dict(
+                    c=c_t,
+                    raw=np.nan,
+                    raw_err=np.nan,
+                    corr=np.nan,
+                    corr_err=np.nan,
+                    truth=F_truth,
+                    n=0,
+                )
+            )
             continue
 
         # per-seed point + bootstrap (per-site nats)
@@ -357,15 +442,18 @@ def main() -> None:
         for r in gated:
             if args.richardson:
                 pt, boot, pair = _richardson_F(
-                    r["run_dir"], r["n_euler"], d, args.n_boot, rng,
-                    args.eval_dir)
+                    r["run_dir"], r["n_euler"], d, args.n_boot, rng, args.eval_dir
+                )
                 if pair is None:
-                    print(f"[warn] {r['name']}: no side-grid redraw, "
-                          f"point stays on the native ne{r['n_euler']} draw")
+                    print(
+                        f"[warn] {r['name']}: no side-grid redraw, "
+                        f"point stays on the native ne{r['n_euler']} draw"
+                    )
                 grid_pairs.append(pair)
             else:
                 pt, boot = _bootstrap_F(
-                    r["run_dir"], d, args.n_boot, rng, args.eval_dir)
+                    r["run_dir"], d, args.n_boot, rng, args.eval_dir
+                )
             seed_pts.append(pt)
             seed_boots.append(boot)
         if args.richardson and any(gp is not None for gp in grid_pairs):
@@ -377,7 +465,11 @@ def main() -> None:
         # between-seed training scatter, added in quadrature.
         boot_mean = np.mean(np.stack(seed_boots), axis=0)
         within = float(boot_mean.std())
-        between = float(seed_pts.std(ddof=1) / np.sqrt(len(seed_pts))) if len(seed_pts) > 1 else 0.0
+        between = (
+            float(seed_pts.std(ddof=1) / np.sqrt(len(seed_pts)))
+            if len(seed_pts) > 1
+            else 0.0
+        )
         F_raw_err = float(np.hypot(within, between))
 
         if args.correction == "slice_mass":
@@ -386,17 +478,29 @@ def main() -> None:
             slice_pts, slice_boots = [], []
             for r in gated:
                 if args.richardson:
-                    pt, boot, _ = _richardson_F(r["run_dir"], r["n_euler"], d, args.n_boot,
-                                                rng, args.eval_dir, slice_estimator)
+                    pt, boot, _ = _richardson_F(
+                        r["run_dir"],
+                        r["n_euler"],
+                        d,
+                        args.n_boot,
+                        rng,
+                        args.eval_dir,
+                        slice_estimator,
+                    )
                 else:
-                    pt, boot = slice_estimator(r["run_dir"], d, args.n_boot, rng, args.eval_dir)
+                    pt, boot = slice_estimator(
+                        r["run_dir"], d, args.n_boot, rng, args.eval_dir
+                    )
                 slice_pts.append(pt)
                 slice_boots.append(boot)
             slice_pts = np.array(slice_pts)
             F_corr = float(slice_pts.mean())
             within = float(np.mean(np.stack(slice_boots), axis=0).std())
-            between = (float(slice_pts.std(ddof=1) / np.sqrt(len(slice_pts)))
-                       if len(slice_pts) > 1 else 0.0)
+            between = (
+                float(slice_pts.std(ddof=1) / np.sqrt(len(slice_pts)))
+                if len(slice_pts) > 1
+                else 0.0
+            )
             F_corr_err = float(np.hypot(within, between))
         else:
             # Laplace correction (continuum, with curvature) from the reference shape
@@ -413,25 +517,49 @@ def main() -> None:
         corr_gap = (F_corr - F_truth) if F_truth is not None else None
 
         def _fmt(v, w=9, prec=4):
-            return f"{v:>{w}.{prec}f}" if v is not None and not np.isnan(v) else f"{'-':>{w}}"
+            return (
+                f"{v:>{w}.{prec}f}"
+                if v is not None and not np.isnan(v)
+                else f"{'-':>{w}}"
+            )
 
-        line = (f"{c_t:>6.3f} {len(gated):>2}/{len(rows):<3} {ess_lo:>6.3f}-{ess_hi:<6.3f} "
-                f"{F_raw:>11.4f} +/-{F_raw_err:<5.4f} {F_corr:>10.4f}{'':>5} "
-                f"{_fmt(F_truth)} {_fmt(raw_gap)} {_fmt(corr_gap)}  "
-                + ",".join(f"{seed_of(r['name'])}:{r['ess_frac']:.2f}" for r in excluded))
+        line = (
+            f"{c_t:>6.3f} {len(gated):>2}/{len(rows):<3} {ess_lo:>6.3f}-{ess_hi:<6.3f} "
+            f"{F_raw:>11.4f} +/-{F_raw_err:<5.4f} {F_corr:>10.4f}{'':>5} "
+            f"{_fmt(F_truth)} {_fmt(raw_gap)} {_fmt(corr_gap)}  "
+            + ",".join(f"{seed_of(r['name'])}:{r['ess_frac']:.2f}" for r in excluded)
+        )
         print(line)
-        curve.append(dict(c=c_t, raw=F_raw, raw_err=F_raw_err, corr=F_corr,
-                          corr_err=F_corr_err, truth=F_truth, n=len(gated)))
+        curve.append(
+            dict(
+                c=c_t,
+                raw=F_raw,
+                raw_err=F_raw_err,
+                corr=F_corr,
+                corr_err=F_corr_err,
+                truth=F_truth,
+                n=len(gated),
+            )
+        )
 
     # --- Z2 symmetry note on the corrected curve ------------------------
     cmap = {row["c"]: row["corr"] for row in curve if not np.isnan(row["corr"])}
-    pairs = sorted({(min(c, 1 - c), max(c, 1 - c)) for c in cmap
-                    if round(1 - c, 4) in cmap and abs(c - 0.5) > 1e-6})
+    pairs = sorted(
+        {
+            (min(c, 1 - c), max(c, 1 - c))
+            for c in cmap
+            if round(1 - c, 4) in cmap and abs(c - 0.5) > 1e-6
+        }
+    )
     if pairs:
-        print("\n--- Z_2 check  F_corr(c) vs F_corr(1-c) (no field => should match) ---")
+        print(
+            "\n--- Z_2 check  F_corr(c) vs F_corr(1-c) (no field => should match) ---"
+        )
         for lo, hi in pairs:
-            print(f"  F({lo:.3f})={cmap[lo]:+.4f}  F({hi:.3f})={cmap[hi]:+.4f}  "
-                  f"|gap|={abs(cmap[lo] - cmap[hi]):.4f}")
+            print(
+                f"  F({lo:.3f})={cmap[lo]:+.4f}  F({hi:.3f})={cmap[hi]:+.4f}  "
+                f"|gap|={abs(cmap[lo] - cmap[hi]):.4f}"
+            )
 
     if args.plot is not None:
         # The soft-ensemble truth: the canonical curve mapped INTO the
@@ -439,20 +567,37 @@ def main() -> None:
         # correction adds). The raw markers should sit ON this line; drawn
         # so the raw-vs-canonical gap reads as the ensemble mapping, not
         # as sampler error (the question every reader otherwise asks).
-        soft_offsets = np.array([
-            _laplace_offset(lam, d, fp, fpp) / d
-            for fp, fpp in zip(ref_Fp, ref_Fpp)])
-        hard = (_hard_series(args.hard_rows, args.hard_rows_fine, d,
-                             lambda c: _ref_at(c, ref_F_persite))
-                if args.hard_rows else None)
-        _plot(curve, ref_c, ref_F_persite, ref_F_persite - soft_offsets,
-              args.flag_c, args.plot, hard,
-              corrected_label={"laplace": "Laplace-corrected",
-                               "slice_mass": "slice mass"}[args.correction])
+        soft_offsets = np.array(
+            [_laplace_offset(lam, d, fp, fpp) / d for fp, fpp in zip(ref_Fp, ref_Fpp)]
+        )
+        hard = (
+            _hard_series(
+                args.hard_rows,
+                args.hard_rows_fine,
+                d,
+                lambda c: _ref_at(c, ref_F_persite),
+            )
+            if args.hard_rows
+            else None
+        )
+        _plot(
+            curve,
+            ref_c,
+            ref_F_persite,
+            ref_F_persite - soft_offsets,
+            args.flag_c,
+            args.plot,
+            hard,
+            corrected_label={
+                "laplace": "Laplace-corrected",
+                "slice_mass": "slice mass",
+            }[args.correction],
+        )
 
 
-def _hard_series(files: list[Path], fine_files: list[Path], d: int,
-                 ref_at) -> list[dict]:
+def _hard_series(
+    files: list[Path], fine_files: list[Path], d: int, ref_at
+) -> list[dict]:
     """The hard sampler's F(c) read straight off its slice weights.
 
     Each probe JSON holds one seed's rows; at stop_time 1 the row carries
@@ -468,10 +613,14 @@ def _hard_series(files: list[Path], fine_files: list[Path], d: int,
     samplers). ESS is carried per composition because the estimate is a
     variational bound whose gap grows as the weights degrade.
     """
+
     def load(path):
         blob = json.loads(Path(path).read_text())
-        rows = {round(r["composition"], 4): r for r in blob["rows"]
-                if abs(r["stop_time"] - 1.0) < 1e-9}
+        rows = {
+            round(r["composition"], 4): r
+            for r in blob["rows"]
+            if abs(r["stop_time"] - 1.0) < 1e-9
+        }
         return blob["n_euler_steps"], rows
 
     seeds = [load(f) for f in files]
@@ -501,20 +650,32 @@ def _hard_series(files: list[Path], fine_files: list[Path], d: int,
             errors.append(err)
         points = np.array(points)
         within = float(np.sqrt(np.mean(np.square(errors)) / len(errors)))
-        between = (float(points.std(ddof=1) / np.sqrt(len(points)))
-                   if len(points) > 1 else 0.0)
-        series.append(dict(c=c, F=float(points.mean()),
-                           F_err=float(np.hypot(within, between)),
-                           truth=ref_at(c), ess_lo=min(ess), ess_hi=max(ess),
-                           n=len(points)))
-    print(f"\n--- hard (canonical) series: {len(files)} seeds, "
-          f"{'Richardson' if fine_files else 'native grid'} ---")
+        between = (
+            float(points.std(ddof=1) / np.sqrt(len(points))) if len(points) > 1 else 0.0
+        )
+        series.append(
+            dict(
+                c=c,
+                F=float(points.mean()),
+                F_err=float(np.hypot(within, between)),
+                truth=ref_at(c),
+                ess_lo=min(ess),
+                ess_hi=max(ess),
+                n=len(points),
+            )
+        )
+    print(
+        f"\n--- hard (canonical) series: {len(files)} seeds, "
+        f"{'Richardson' if fine_files else 'native grid'} ---"
+    )
     print(f"{'c':>6} {'ESS frac':>14} {'F_hard':>10} {'F_truth':>9} {'hard-tru':>9}")
     for row in series:
         gap = row["F"] - row["truth"] if row["truth"] is not None else np.nan
         tru = f"{row['truth']:>9.4f}" if row["truth"] is not None else f"{'-':>9}"
-        print(f"{row['c']:>6.3f} {row['ess_lo']:>6.3f}-{row['ess_hi']:<6.3f} "
-              f"{row['F']:>10.4f} {tru} {gap:>9.4f}")
+        print(
+            f"{row['c']:>6.3f} {row['ess_lo']:>6.3f}-{row['ess_hi']:<6.3f} "
+            f"{row['F']:>10.4f} {tru} {gap:>9.4f}"
+        )
     return series
 
 
@@ -537,15 +698,30 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
         cm = round(1.0 - r["c"], 4)
         if abs(r["c"] - 0.5) < 1e-6 or cm in sampled:
             continue
-        mirrored.append(dict(c=cm, raw=r["raw"], raw_err=r["raw_err"],
-                             corr=r["corr"], corr_err=r["corr_err"],
-                             truth=r["truth"], n=r["n"]))
+        mirrored.append(
+            dict(
+                c=cm,
+                raw=r["raw"],
+                raw_err=r["raw_err"],
+                corr=r["corr"],
+                corr_err=r["corr_err"],
+                truth=r["truth"],
+                n=r["n"],
+            )
+        )
     return mirrored
 
 
-def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
-          out: Path, hard: list[dict] | None = None,
-          corrected_label: str = "Laplace-corrected") -> None:
+def _plot(
+    curve,
+    ref_c,
+    ref_F_persite,
+    ref_F_soft_persite,
+    flag_c,
+    out: Path,
+    hard: list[dict] | None = None,
+    corrected_label: str = "Laplace-corrected",
+) -> None:
     """House-standard overlay + residual pair.
 
     Roles: TI truth = REFERENCE_INK line; our sampler = SAMPLER_HUE, with the
@@ -567,8 +743,16 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
     import matplotlib.pyplot as plt
 
     from discrete_flow_sampler.diagnostics.figure_style import (
-        FULL_WIDTH_IN, HARD_DELTA_HUE, MUTED, REFERENCE_INK, SAMPLER_HUE,
-        SAVEFIG_DPI, parameter_ramp, style_axes, use_house_style)
+        FULL_WIDTH_IN,
+        HARD_DELTA_HUE,
+        MUTED,
+        REFERENCE_INK,
+        SAMPLER_HUE,
+        SAVEFIG_DPI,
+        parameter_ramp,
+        style_axes,
+        use_house_style,
+    )
 
     use_house_style()
     rows = [r for r in curve if not np.isnan(r["raw"])]
@@ -588,26 +772,54 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
     # 2.7 in: the SHORT 2.4 in box plus the strip the below-panel figure
     # legend needs (prints 6.9 cm vs 6.1 cm, +0.8 cm).
     fig, (ax, axr) = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.7))
-    ax.plot(ref_c, ref_F_persite, color=REFERENCE_INK, lw=1.4,
-            label="TI truth")
-    ax.plot(ref_c, ref_F_soft_persite, color=raw_hue, lw=1.0,
-            linestyle="--", label="soft, Laplace reference")
+    ax.plot(ref_c, ref_F_persite, color=REFERENCE_INK, lw=1.4, label="TI truth")
+    ax.plot(
+        ref_c,
+        ref_F_soft_persite,
+        color=raw_hue,
+        lw=1.0,
+        linestyle="--",
+        label="soft, Laplace reference",
+    )
     # Capped bars, not a shaded band. Each abscissa here is a SEPARATELY
     # TRAINED window (eleven of them, six trained plus their Z2 reflections),
     # so there is no curve in c for a ribbon to be the envelope of: the marks
     # are deliberately unjoined for the same reason. Bands are the house
     # default only for uncertainty along a continuous x (figure_style).
-    ax.errorbar(cs, raw, yerr=raw_e, fmt="o", color=raw_hue, mfc="none",
-                capsize=2, lw=1.0, label="raw")
-    ax.errorbar(cs, corr, yerr=corr_e, fmt="s", color=SAMPLER_HUE,
-                capsize=2, lw=1.0, label=corrected_label)
+    ax.errorbar(
+        cs,
+        raw,
+        yerr=raw_e,
+        fmt="o",
+        color=raw_hue,
+        mfc="none",
+        capsize=2,
+        lw=1.0,
+        label="raw",
+    )
+    ax.errorbar(
+        cs,
+        corr,
+        yerr=corr_e,
+        fmt="s",
+        color=SAMPLER_HUE,
+        capsize=2,
+        lw=1.0,
+        label=corrected_label,
+    )
     # The hard sampler's own read of the same object: no offset, no
     # correction, the limit the soft route reaches for (HARD_DELTA_HUE).
     if hard:
-        ax.errorbar([h["c"] for h in hard], [h["F"] for h in hard],
-                    yerr=[h["F_err"] for h in hard], fmt="^",
-                    color=HARD_DELTA_HUE, capsize=2, lw=1.0,
-                    label="hard, mean log")
+        ax.errorbar(
+            [h["c"] for h in hard],
+            [h["F"] for h in hard],
+            yerr=[h["F_err"] for h in hard],
+            fmt="^",
+            color=HARD_DELTA_HUE,
+            capsize=2,
+            lw=1.0,
+            label="hard, mean log",
+        )
     ax.set_xlabel("composition $c$")
     ax.set_ylabel(r"$\beta F/d$ (nats per site)")
 
@@ -619,28 +831,48 @@ def _plot(curve, ref_c, ref_F_persite, ref_F_soft_persite, flag_c,
         axr.plot(cs, acorr_res, "s-", color=SAMPLER_HUE, lw=1.0)
         if hard:
             with_truth = [h for h in hard if h["truth"] is not None]
-            axr.plot([h["c"] for h in with_truth],
-                     [h["F"] - h["truth"] for h in with_truth], "^-",
-                     color=HARD_DELTA_HUE, lw=1.0)
+            axr.plot(
+                [h["c"] for h in with_truth],
+                [h["F"] - h["truth"] for h in with_truth],
+                "^-",
+                color=HARD_DELTA_HUE,
+                lw=1.0,
+            )
         axr.set_xlabel("composition $c$")
         axr.set_ylabel(r"$\beta F/d$ residual (nats per site)")
 
-    for axis, ys in ((ax, corr), (axr, acorr_res if all(t is not None for t in truth) else None)):
+    for axis, ys in (
+        (ax, corr),
+        (axr, acorr_res if all(t is not None for t in truth) else None),
+    ):
         if ys is None:
             continue
         ring_c = [c for c in cs if round(c, 4) in flagged]
         ring_y = [y for c, y in zip(cs, ys) if round(c, 4) in flagged]
         if ring_c:
-            axis.scatter(ring_c, ring_y, s=140, facecolors="none",
-                         edgecolors=MUTED, linewidths=1.1, zorder=4)
+            axis.scatter(
+                ring_c,
+                ring_y,
+                s=140,
+                facecolors="none",
+                edgecolors=MUTED,
+                linewidths=1.1,
+                zorder=4,
+            )
     # The ring alone marks the provisional windows; the caption says why
     # (a ne64-trained point, or a retrain still owed). An in-panel word
     # collides with the legend at these tail positions.
 
     for i, axis in enumerate((ax, axr)):
         style_axes(axis)
-        axis.text(0.02, 1.02, f"({chr(97 + i)})", transform=axis.transAxes,
-                  fontweight="bold", va="bottom")
+        axis.text(
+            0.02,
+            1.02,
+            f"({chr(97 + i)})",
+            transform=axis.transAxes,
+            fontweight="bold",
+            va="bottom",
+        )
     # Panel (b) reuses (a)'s marker/hue identities, so one four-entry row
     # names everything for both panels.
     handles, labels = ax.get_legend_handles_labels()

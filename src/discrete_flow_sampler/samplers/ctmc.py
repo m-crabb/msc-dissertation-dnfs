@@ -38,6 +38,7 @@ Caller contract
   silently fall back to a model-only weight, because that would change
   semantics under the same flag.
 """
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor
@@ -65,14 +66,12 @@ def _compute_xi_t_general(
 
     if outflow_rates is None:
         outflow_rates = model(state, t)
-    outflow_sum = outflow_rates.sum(dim=-1)                            # (B,)
+    outflow_sum = outflow_rates.sum(dim=-1)  # (B,)
 
-    flip_signs = 1.0 - 2.0 * torch.eye(
-        n_sites, device=state.device, dtype=state.dtype
-    )
-    flip_neighbours = state.unsqueeze(1) * flip_signs.unsqueeze(0)     # (B, d, d)
+    flip_signs = 1.0 - 2.0 * torch.eye(n_sites, device=state.device, dtype=state.dtype)
+    flip_neighbours = state.unsqueeze(1) * flip_signs.unsqueeze(0)  # (B, d, d)
     flat_neighbours = flip_neighbours.reshape(batch_size * n_sites, n_sites)
-    t_per_neighbour = t.repeat_interleave(n_sites)                     # (B*d,)
+    t_per_neighbour = t.repeat_interleave(n_sites)  # (B*d,)
 
     # Rate of returning to x from each flipped neighbour, i.e.
     # R_t(x, x_flip_i) under the paper's first-index-is-destination
@@ -80,7 +79,7 @@ def _compute_xi_t_general(
     rates_at_flipped = model(flat_neighbours, t_per_neighbour).reshape(
         batch_size, n_sites, n_sites
     )
-    return_rates = rates_at_flipped.diagonal(dim1=1, dim2=2)           # (B, d)
+    return_rates = rates_at_flipped.diagonal(dim1=1, dim2=2)  # (B, d)
 
     log_p_tilde_at_state = target.log_p_tilde_t(state, t)
     log_p_tilde_at_flips = target.log_p_tilde_t(
@@ -88,10 +87,10 @@ def _compute_xi_t_general(
     ).reshape(batch_size, n_sites)
     neighbour_ratio = (
         log_p_tilde_at_flips - log_p_tilde_at_state.unsqueeze(-1)
-    ).exp()                                                            # (B, d)
+    ).exp()  # (B, d)
 
-    inflow_sum = (return_rates * neighbour_ratio).sum(dim=-1)          # (B,)
-    dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)        # (B,)
+    inflow_sum = (return_rates * neighbour_ratio).sum(dim=-1)  # (B,)
+    dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)  # (B,)
 
     return dt_log_p_tilde_at_state + outflow_sum - inflow_sum
 
@@ -111,18 +110,18 @@ def xi_t_lenet_from_scores(
     `xi_t_swap_from_scores`.
     """
     vocab_size = G_t.shape[-1]
-    G_plus     = F.relu(G_t)
+    G_plus = F.relu(G_t)
     neg_G_plus = F.relu(-G_t)
 
     log_p_neighbours = _log_p_tilde_at_neighbours(state, t, target, vocab_size)
     log_p_x = target.log_p_tilde_t(state, t)
     log_ratio = log_p_neighbours - log_p_x[:, None, None]
     log_ratio = log_ratio.clamp(max=log_ratio_clamp(target))
-    neighbour_ratio = log_ratio.exp()                                   # (B, D, S)
+    neighbour_ratio = log_ratio.exp()  # (B, D, S)
 
-    outflow_sum = G_plus.sum(dim=(-2, -1))                             # (B,)
-    inflow_sum  = (neg_G_plus * neighbour_ratio).sum(dim=(-2, -1))     # (B,)
-    dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)        # (B,)
+    outflow_sum = G_plus.sum(dim=(-2, -1))  # (B,)
+    inflow_sum = (neg_G_plus * neighbour_ratio).sum(dim=(-2, -1))  # (B,)
+    dt_log_p_tilde_at_state = target.dt_log_p_tilde_t(state, t)  # (B,)
 
     return dt_log_p_tilde_at_state + outflow_sum - inflow_sum
 
@@ -226,10 +225,10 @@ def _euler_step_lenet(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor
     `xi_t_lenet_from_scores`).
     """
     G_t = model(state, t_per_batch)
-    R_t = F.relu(G_t)                                      # (B, D, S)
+    R_t = F.relu(G_t)  # (B, D, S)
 
-    step_probs = (R_t * step_dt).clamp(0.0, 1.0)           # (B, D, S)
-    stay_prob = (1.0 - step_probs.sum(dim=-1)).clamp(0.0, 1.0)   # (B, D)
+    step_probs = (R_t * step_dt).clamp(0.0, 1.0)  # (B, D, S)
+    stay_prob = (1.0 - step_probs.sum(dim=-1)).clamp(0.0, 1.0)  # (B, D)
     cat_probs = torch.cat([step_probs, stay_prob.unsqueeze(-1)], dim=-1)
     # cat_probs: (B, D, S+1); last slot is stay.
 
@@ -374,19 +373,16 @@ def sample_ctmc(
     if return_all_states:
         trajectory = torch.empty(
             (len(ts), batch_size, n_sites),
-            dtype=state.dtype, device=state.device,
+            dtype=state.dtype,
+            device=state.device,
         )
         trajectory[0] = state
     cv_integrand = (
-        torch.empty(
-            (len(ts), batch_size), dtype=state.dtype, device=state.device
-        )
+        torch.empty((len(ts), batch_size), dtype=state.dtype, device=state.device)
         if return_cv_integrand
         else None
     )
-    model_is_locally_equivariant = getattr(
-        model, "is_locally_equivariant", False
-    )
+    model_is_locally_equivariant = getattr(model, "is_locally_equivariant", False)
 
     for step in range(len(ts) - 1):
         t_curr = ts[step]
@@ -400,12 +396,13 @@ def sample_ctmc(
             # (B, D) rates for non-LE, or pre-relu G_t for LE, preserving
             # both forward [G]_+ and reverse [-G]_+ rates.
             if model_is_locally_equivariant:
-                xi_t = xi_t_lenet_from_scores(
-                    step_scores, state, t_per_batch, target
-                )
+                xi_t = xi_t_lenet_from_scores(step_scores, state, t_per_batch, target)
             else:
                 xi_t = compute_xi_t(
-                    state, t_per_batch, model, target,
+                    state,
+                    t_per_batch,
+                    model,
+                    target,
                     outflow_rates=step_scores,
                 )
             if accumulate_log_weights:
@@ -423,9 +420,7 @@ def sample_ctmc(
                 state, log_weights, resampling.ess_threshold_fraction
             )
             if fired:
-                smc_stats.log_z_increment = (
-                    smc_stats.log_z_increment + log_z_increment
-                )
+                smc_stats.log_z_increment = smc_stats.log_z_increment + log_z_increment
                 smc_stats.n_events += 1
                 smc_stats.event_steps.append(step)
         # Recorded after the checkpoint so the slice is the ensemble that
@@ -438,9 +433,7 @@ def sample_ctmc(
         # The loop covered slots 0..T-2 (each step's forward is at the
         # slot it STARTED from); the final state never gets an Euler step,
         # so its slot is the one fresh model call of the whole grid.
-        cv_integrand[-1] = compute_xi_t(
-            state, ts[-1].expand(batch_size), model, target
-        )
+        cv_integrand[-1] = compute_xi_t(state, ts[-1].expand(batch_size), model, target)
         return trajectory, cv_integrand
     if return_all_states and resampling is not None:
         return trajectory, smc_stats

@@ -13,6 +13,7 @@ Pinned invariants:
 Tests use D=2 and small grids so the suite stays under the existing
 ~3s baseline.
 """
+
 from types import SimpleNamespace
 
 import pytest
@@ -50,6 +51,7 @@ def _tiny_train_cfg(
 
 def _read_csv_loss_column(csv_path):
     import csv
+
     with csv_path.open() as f:
         reader = csv.DictReader(f)
         return [float(row["loss"]) for row in reader]
@@ -57,6 +59,7 @@ def _read_csv_loss_column(csv_path):
 
 def _read_csv_rows(csv_path):
     import csv
+
     with csv_path.open() as f:
         return list(csv.DictReader(f))
 
@@ -70,25 +73,29 @@ def test_train_runs_outer_inner_without_error(tmp_path):
     model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=20, inner_steps_per_outer=10,
-        batch_size=8, outer_batch_size=8,
+        n_steps=20,
+        inner_steps_per_outer=10,
+        batch_size=8,
+        outer_batch_size=8,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=4)
     eval_cfg = SimpleNamespace(eval_every=10, n_eval_samples=8)
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="control_variate",
     )
 
     log_path = tmp_path / "training_log.csv"
     assert log_path.exists()
     losses = _read_csv_loss_column(log_path)
-    assert len(losses) == 20, (
-        f"expected 20 inner-step rows in log, got {len(losses)}"
-    )
+    assert len(losses) == 20, f"expected 20 inner-step rows in log, got {len(losses)}"
     assert (tmp_path / "checkpoints" / "final.pt").exists()
     assert (tmp_path / "checkpoints" / "latest.pt").exists()
     # Step-tagged checkpoints are opt-in; without `checkpoint_every` the
@@ -130,14 +137,12 @@ def test_gradient_group_norms_partition_every_parameter():
 
     got = _gradient_group_norms(model)
     for name, value in scale.items():
-        assert got[f"grad_norm_{name}"] == pytest.approx(
-            value * counts[name] ** 0.5
-        )
+        assert got[f"grad_norm_{name}"] == pytest.approx(value * counts[name] ** 0.5)
     reconstructed = sum(value * value for value in got.values()) ** 0.5
-    expected = sum(
-        parameter.grad.square().sum().item()
-        for parameter in model.parameters()
-    ) ** 0.5
+    expected = (
+        sum(parameter.grad.square().sum().item() for parameter in model.parameters())
+        ** 0.5
+    )
     assert reconstructed == pytest.approx(expected)
 
 
@@ -146,8 +151,10 @@ def test_opt_in_gradient_group_log_matches_total_preclip_norm(tmp_path):
     target = IsingTarget(D=2, sigma=0.1)
     model = MLPRateMatrix(d=target.d, hidden_dim=16, n_layers=2)
     train_cfg = _tiny_train_cfg(
-        n_steps=4, inner_steps_per_outer=2,
-        batch_size=4, outer_batch_size=4,
+        n_steps=4,
+        inner_steps_per_outer=2,
+        batch_size=4,
+        outer_batch_size=4,
     )
     train_cfg.log_gradient_group_norms = True
 
@@ -183,8 +190,11 @@ def test_gradient_group_logging_is_trajectory_passive(tmp_path):
         target = IsingTarget(D=2, sigma=0.1)
         model = MLPRateMatrix(d=target.d, hidden_dim=16, n_layers=2)
         train_cfg = _tiny_train_cfg(
-            n_steps=4, inner_steps_per_outer=2,
-            batch_size=4, outer_batch_size=4, seed=29,
+            n_steps=4,
+            inner_steps_per_outer=2,
+            batch_size=4,
+            outer_batch_size=4,
+            seed=29,
         )
         train_cfg.log_gradient_group_norms = enabled
         train(
@@ -196,9 +206,7 @@ def test_gradient_group_logging_is_trajectory_passive(tmp_path):
             output_dir=output_dir,
             use_wandb=False,
         )
-        return torch.load(
-            output_dir / "checkpoints" / "final.pt", weights_only=True
-        )
+        return torch.load(output_dir / "checkpoints" / "final.pt", weights_only=True)
 
     plain = run(tmp_path / "plain", False)
     instrumented = run(tmp_path / "instrumented", True)
@@ -224,17 +232,23 @@ def test_train_periodic_checkpoints_are_step_tagged(tmp_path):
     model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=20, inner_steps_per_outer=10,
-        batch_size=8, outer_batch_size=8,
+        n_steps=20,
+        inner_steps_per_outer=10,
+        batch_size=8,
+        outer_batch_size=8,
     )
     train_cfg.checkpoint_every = 10
     ctmc_cfg = SimpleNamespace(n_euler_steps=4)
     eval_cfg = SimpleNamespace(eval_every=10, n_eval_samples=8)
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="control_variate",
     )
 
@@ -259,16 +273,23 @@ def test_train_loss_decreases_on_d2(tmp_path):
     model = MLPRateMatrix(d=n_sites, hidden_dim=32, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=200, inner_steps_per_outer=50,
-        batch_size=32, outer_batch_size=64, lr=5e-3,
+        n_steps=200,
+        inner_steps_per_outer=50,
+        batch_size=32,
+        outer_batch_size=64,
+        lr=5e-3,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=10)
     eval_cfg = SimpleNamespace(eval_every=200, n_eval_samples=8)
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="control_variate",
     )
     losses = _read_csv_loss_column(tmp_path / "training_log.csv")
@@ -276,9 +297,7 @@ def test_train_loss_decreases_on_d2(tmp_path):
     quarter = len(losses) // 4
     early = sum(losses[:quarter]) / quarter
     late = sum(losses[-quarter:]) / quarter
-    assert late < 0.5 * early, (
-        f"loss did not halve: early={early:.4f}, late={late:.4f}"
-    )
+    assert late < 0.5 * early, f"loss did not halve: early={early:.4f}, late={late:.4f}"
 
 
 def test_train_naive_mc_mode_runs(tmp_path):
@@ -290,16 +309,22 @@ def test_train_naive_mc_mode_runs(tmp_path):
     model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=20, inner_steps_per_outer=10,
-        batch_size=8, outer_batch_size=8,
+        n_steps=20,
+        inner_steps_per_outer=10,
+        batch_size=8,
+        outer_batch_size=8,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=4)
     eval_cfg = SimpleNamespace(eval_every=10, n_eval_samples=8)
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="naive_mc",
     )
     losses = _read_csv_loss_column(tmp_path / "training_log.csv")
@@ -314,16 +339,22 @@ def test_train_no_curriculum_leaves_target_sigma_unchanged(tmp_path):
     model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=20, inner_steps_per_outer=10,
-        batch_size=8, outer_batch_size=8,
+        n_steps=20,
+        inner_steps_per_outer=10,
+        batch_size=8,
+        outer_batch_size=8,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=4)
     eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="control_variate",
     )
 
@@ -338,8 +369,11 @@ def test_train_piecewise_curriculum_updates_sigma_and_lr(tmp_path):
     model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=20, inner_steps_per_outer=10,
-        batch_size=8, outer_batch_size=8, lr=1e-2,
+        n_steps=20,
+        inner_steps_per_outer=10,
+        batch_size=8,
+        outer_batch_size=8,
+        lr=1e-2,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=4)
     eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
@@ -349,9 +383,13 @@ def test_train_piecewise_curriculum_updates_sigma_and_lr(tmp_path):
     )
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="control_variate",
         sigma_curriculum=curriculum,
     )
@@ -374,16 +412,22 @@ def test_train_outer_batch_size_falls_back_to_batch_size(tmp_path):
     model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=10, inner_steps_per_outer=5,
-        batch_size=12, outer_batch_size=None,
+        n_steps=10,
+        inner_steps_per_outer=5,
+        batch_size=12,
+        outer_batch_size=None,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=4)
     eval_cfg = SimpleNamespace(eval_every=10, n_eval_samples=8)
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="control_variate",
     )
     assert (tmp_path / "training_log.csv").exists()
@@ -414,15 +458,19 @@ def test_train_piecewise_lambda_curriculum_tightens_penalty(tmp_path):
     switching on outer-cycle boundaries like the σ curriculum."""
     torch.manual_seed(0)
     target = IsingTarget(
-        D=2, sigma=0.1, target_composition=0.5,
+        D=2,
+        sigma=0.1,
+        target_composition=0.5,
         composition_penalty_strength=10.0,
     )
     n_sites = target.D * target.D
     model = MLPRateMatrix(d=n_sites, hidden_dim=16, n_layers=2)
 
     train_cfg = _tiny_train_cfg(
-        n_steps=20, inner_steps_per_outer=10,
-        batch_size=8, outer_batch_size=8,
+        n_steps=20,
+        inner_steps_per_outer=10,
+        batch_size=8,
+        outer_batch_size=8,
     )
     ctmc_cfg = SimpleNamespace(n_euler_steps=4)
     eval_cfg = SimpleNamespace(eval_every=20, n_eval_samples=8)
@@ -432,9 +480,13 @@ def test_train_piecewise_lambda_curriculum_tightens_penalty(tmp_path):
     )
 
     train(
-        model=model, target=target,
-        train_cfg=train_cfg, ctmc_cfg=ctmc_cfg, eval_cfg=eval_cfg,
-        output_dir=tmp_path, use_wandb=False,
+        model=model,
+        target=target,
+        train_cfg=train_cfg,
+        ctmc_cfg=ctmc_cfg,
+        eval_cfg=eval_cfg,
+        output_dir=tmp_path,
+        use_wandb=False,
         estimator_mode="control_variate",
         lambda_curriculum=lambda_curriculum,
     )

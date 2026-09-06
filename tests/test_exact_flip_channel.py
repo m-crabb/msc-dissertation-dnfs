@@ -34,13 +34,13 @@ from dataclasses import asdict
 import pytest
 import torch
 
-from discrete_flow_sampler.constraints.exact_field_channel import (
-    ExactFieldFlipModel)
+from discrete_flow_sampler.constraints.exact_field_channel import ExactFieldFlipModel
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from discrete_flow_sampler.targets.ising import IsingTarget
 from discrete_flow_sampler.targets.cluster_expansion import (
-    BinaryExpansionSpec, ClusterExpansionTarget)
-
+    BinaryExpansionSpec,
+    ClusterExpansionTarget,
+)
+from discrete_flow_sampler.targets.ising import IsingTarget
 
 D_SIDE = 3  # 9 sites: big enough for a torus, small enough to enumerate
 
@@ -48,17 +48,23 @@ D_SIDE = 3  # 9 sites: big enough for a torus, small enough to enumerate
 @pytest.fixture()
 def target():
     return IsingTarget(
-        D=D_SIDE, sigma=0.13, device="cpu",
-        target_composition=0.4, composition_penalty_strength=50.0,
+        D=D_SIDE,
+        sigma=0.13,
+        device="cpu",
+        target_composition=0.4,
+        composition_penalty_strength=50.0,
     )
 
 
 def build_pair(target, seed=0):
     """(base, wrapped) leTF models with identical construction RNG."""
+
     def fresh():
         torch.manual_seed(seed)
         return LeTFRateMatrix(
-            d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2)
+            d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2
+        )
+
     return fresh(), ExactFieldFlipModel(fresh(), target)
 
 
@@ -88,7 +94,8 @@ def test_gain_one_matches_brute_force_log_ratio(target):
         brute = target.log_prob(flipped) - base_lp
         flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
         assert torch.allclose(
-            added[torch.arange(x.shape[0]), i, flip_slot], brute, atol=1e-4)
+            added[torch.arange(x.shape[0]), i, flip_slot], brute, atol=1e-4
+        )
 
 
 def test_current_token_slot_stays_zero(target):
@@ -118,7 +125,8 @@ def test_channel_follows_live_lambda(target):
     brute = target.log_prob(flipped) - base_lp
     flip_slot = (1 - ((x[:, 0] + 1) / 2)).long()
     assert torch.allclose(
-        after[torch.arange(x.shape[0]), 0, flip_slot], brute, atol=1e-4)
+        after[torch.arange(x.shape[0]), 0, flip_slot], brute, atol=1e-4
+    )
 
 
 def test_wrapper_is_transparent_to_the_dispatchers(target):
@@ -128,25 +136,38 @@ def test_wrapper_is_transparent_to_the_dispatchers(target):
 
 def build_conditioned_pair(target, seed=0):
     """(base, wrapped) AMORTISED leTF models, identical construction RNG."""
+
     def fresh():
         torch.manual_seed(seed)
         return LeTFRateMatrix(
-            d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2,
-            condition_on_composition=True)
+            d=target.d,
+            vocab_size=2,
+            hidden_dim=32,
+            n_layers=1,
+            n_heads=2,
+            condition_on_composition=True,
+        )
+
     return fresh(), ExactFieldFlipModel(fresh(), target)
 
 
 def build_composition_gain_pair(target, seed=0):
     """Legacy and c-gain wrappers whose shared tensors are identical."""
+
     def fresh():
         torch.manual_seed(seed)
         return LeTFRateMatrix(
-            d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2,
-            condition_on_composition=True)
+            d=target.d,
+            vocab_size=2,
+            hidden_dim=32,
+            n_layers=1,
+            n_heads=2,
+            condition_on_composition=True,
+        )
+
     return (
         ExactFieldFlipModel(fresh(), target),
-        ExactFieldFlipModel(
-            fresh(), target, composition_conditioned_gain=True),
+        ExactFieldFlipModel(fresh(), target, composition_conditioned_gain=True),
     )
 
 
@@ -191,10 +212,7 @@ def test_composition_gain_adds_centred_bilinear_correction(target):
     t = torch.tensor([0.0, 0.25, 0.5, 1.0])
     c = torch.tensor([0.25, target.target_composition, 0.5, 0.75])
     added = wrapped(x, t, c) - wrapped.model(x, t, c)
-    expected_gain = (
-        0.2 + 0.3 * t
-        + (c - target.target_composition) * (0.4 - 0.1 * t)
-    )
+    expected_gain = 0.2 + 0.3 * t + (c - target.target_composition) * (0.4 - 0.1 * t)
     expected = expected_gain.unsqueeze(1) * wrapped.exact_field(x, composition=c)
     flip_slot = (1 - ((x + 1) / 2)).long().unsqueeze(-1)
     assert torch.allclose(added.gather(-1, flip_slot).squeeze(-1), expected)
@@ -203,10 +221,10 @@ def test_composition_gain_adds_centred_bilinear_correction(target):
 def test_composition_gain_requires_conditioned_model_and_runtime_c(target):
     torch.manual_seed(0)
     unconditioned = LeTFRateMatrix(
-        d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2)
+        d=target.d, vocab_size=2, hidden_dim=32, n_layers=1, n_heads=2
+    )
     with pytest.raises(ValueError, match="composition-conditioned gain"):
-        ExactFieldFlipModel(
-            unconditioned, target, composition_conditioned_gain=True)
+        ExactFieldFlipModel(unconditioned, target, composition_conditioned_gain=True)
 
     _, wrapped = build_composition_gain_pair(target)
     x = random_states(target.d, n=4)
@@ -239,8 +257,8 @@ def test_per_row_composition_matches_brute_force(target):
             brute = target.log_prob(flipped) - base_lp
             flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
             assert torch.allclose(
-                added[torch.arange(x.shape[0]), i, flip_slot], brute,
-                atol=1e-4)
+                added[torch.arange(x.shape[0]), i, flip_slot], brute, atol=1e-4
+            )
 
 
 def test_amortised_adapter_stack_end_to_end(target):
@@ -250,7 +268,8 @@ def test_amortised_adapter_stack_end_to_end(target):
     Guards the integration gap the specialist twins never exercised."""
     from discrete_flow_sampler.composition import expand_b_major
     from discrete_flow_sampler.models.composition_conditioned import (
-        CompositionConditioned)
+        CompositionConditioned,
+    )
 
     _, wrapped = build_conditioned_pair(target)
     with torch.no_grad():
@@ -266,8 +285,7 @@ def test_amortised_adapter_stack_end_to_end(target):
 
 
 def test_efc_twins_differ_from_parents_in_flag_and_name_only():
-    from experiments.constrained_soft_02.configs import (
-        CONFIGS, LAMBDA_SWEEP_PARENTS)
+    from experiments.constrained_soft_02.configs import CONFIGS, LAMBDA_SWEEP_PARENTS
 
     assert len(LAMBDA_SWEEP_PARENTS) == 8  # 2 lattices x 4 lambdas
     for parent_name in LAMBDA_SWEEP_PARENTS:
@@ -287,13 +305,17 @@ def test_efc_twins_differ_from_parents_in_flag_and_name_only():
 # quadratic form cannot express; the channel must read the target's own
 # flip log-ratio and match brute force on it exactly as it does on Ising.
 
+
 @pytest.fixture()
 def alloy_target():
     spec = BinaryExpansionSpec.from_json("data/ce/cuau_fcc_2x2x4.json")
     beta = 1.0 / (8.617333262e-5 * 500.0)
     return ClusterExpansionTarget(
-        spec, beta, device="cpu",
-        target_composition=0.5, composition_penalty_strength=10.0,
+        spec,
+        beta,
+        device="cpu",
+        target_composition=0.5,
+        composition_penalty_strength=10.0,
     )
 
 
@@ -306,8 +328,11 @@ def test_base_flip_log_ratio_matches_brute_force(which, target, alloy_target):
         flipped = x.clone()
         flipped[:, i] = -flipped[:, i]
         torch.testing.assert_close(
-            tgt.base_flip_log_ratio(x)[:, i], tgt.base_log_prob(flipped) - base,
-            atol=1e-4, rtol=0)
+            tgt.base_flip_log_ratio(x)[:, i],
+            tgt.base_log_prob(flipped) - base,
+            atol=1e-4,
+            rtol=0,
+        )
 
 
 def test_alloy_gain_one_matches_brute_force_log_ratio(alloy_target):
@@ -324,7 +349,8 @@ def test_alloy_gain_one_matches_brute_force_log_ratio(alloy_target):
         brute = alloy_target.log_prob(flipped) - base_lp
         flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
         torch.testing.assert_close(
-            added[torch.arange(x.shape[0]), i, flip_slot], brute, atol=1e-4, rtol=0)
+            added[torch.arange(x.shape[0]), i, flip_slot], brute, atol=1e-4, rtol=0
+        )
 
 
 def test_unconstrained_target_channel_is_the_bare_energy_log_ratio():
@@ -345,4 +371,7 @@ def test_unconstrained_target_channel_is_the_bare_energy_log_ratio():
         flip_slot = (1 - ((x[:, i] + 1) / 2)).long()
         torch.testing.assert_close(
             added[torch.arange(x.shape[0]), i, flip_slot],
-            unconstrained.log_prob(flipped) - base_lp, atol=1e-4, rtol=0)
+            unconstrained.log_prob(flipped) - base_lp,
+            atol=1e-4,
+            rtol=0,
+        )

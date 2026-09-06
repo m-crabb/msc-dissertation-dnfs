@@ -29,6 +29,7 @@ Example:
     python -m experiments.constrained_soft_02.analysis.composition_marginal_overlay_8x8 \
         --coupling sc --matched-base
 """
+
 import argparse
 from pathlib import Path
 
@@ -37,11 +38,20 @@ import numpy as np
 import torch
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    ANALYTIC_GUIDE, FONT_SIZE_ANNOTATION, FONT_SIZE_LABEL, FULL_WIDTH_IN,
-    REFERENCE_INK, SAMPLER_HUE, SAVEFIG_DPI, seed_band, style_axes,
-    use_house_style)
+    ANALYTIC_GUIDE,
+    FONT_SIZE_ANNOTATION,
+    FONT_SIZE_LABEL,
+    FULL_WIDTH_IN,
+    REFERENCE_INK,
+    SAMPLER_HUE,
+    SAVEFIG_DPI,
+    seed_band,
+    style_axes,
+    use_house_style,
+)
 from discrete_flow_sampler.diagnostics.metrics import (
-    composition_fraction_up as composition)
+    composition_fraction_up as composition,
+)
 from discrete_flow_sampler.diagnostics.metrics import marginal_tvd
 from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
@@ -53,7 +63,7 @@ D_SIDE, N_SITES, LAM = 8, 64, 50.0
 TRAINED_COMPOSITIONS = (0.25, 0.375, 0.50)
 SEEDS = (42, 43, 44, 45)
 COUPLINGS = {"s010": 0.1, "sc": SIGMA_C}
-N_EVAL = 5000            # replicate size = the neural draw count
+N_EVAL = 5000  # replicate size = the neural draw count
 N_FLOOR_BOOTSTRAP = 200
 ENERGY_SUPPORT = (torch.arange(N_SITES + 1) * 4.0 - 2.0 * N_SITES) / N_SITES
 COMPOSITION_SUPPORT = torch.arange(N_SITES + 1).float() / N_SITES
@@ -68,7 +78,9 @@ def energy_level_index(target, x):
 
 
 def energy_pmf(target, x, weights):
-    return torch.zeros(N_SITES + 1).index_add_(0, energy_level_index(target, x), weights)
+    return torch.zeros(N_SITES + 1).index_add_(
+        0, energy_level_index(target, x), weights
+    )
 
 
 def composition_pmf(target, x, weights):
@@ -83,7 +95,9 @@ def load_reference(sigma, c_target, target):
     for run_dir in sorted(VCSGC_RESULTS.glob(pattern)):
         spins = torch.from_numpy(np.load(run_dir / "spins.npy")).float()
         potential = torch.from_numpy(np.load(run_dir / "potential.npy")).float()
-        assert torch.allclose(-target.base_log_prob(spins), potential, atol=1e-3), run_dir
+        assert torch.allclose(-target.base_log_prob(spins), potential, atol=1e-3), (
+            run_dir
+        )
         frames.append(spins)
     if not frames:
         raise FileNotFoundError(f"no VC-SGC chains match {pattern}")
@@ -98,7 +112,9 @@ def reference_tv_floor(reference, pmf_of, seed=0):
     the same benchmark. Pool uncertainty is a separate chain-aware diagnostic.
     """
     generator = torch.Generator().manual_seed(seed)
-    pool_pmf = pmf_of(reference, torch.full((reference.shape[0],), 1.0 / reference.shape[0]))
+    pool_pmf = pmf_of(
+        reference, torch.full((reference.shape[0],), 1.0 / reference.shape[0])
+    )
     tvs = []
     for _ in range(N_FLOOR_BOOTSTRAP):
         indices = torch.randint(reference.shape[0], (N_EVAL,), generator=generator)
@@ -115,7 +131,9 @@ def load_seed_runs(config, eval_dir):
         if not matches:
             continue
         run_dir = matches[-1]
-        samples = torch.load(run_dir / eval_dir / "samples.pt", weights_only=True).float()
+        samples = torch.load(
+            run_dir / eval_dir / "samples.pt", weights_only=True
+        ).float()
         log_w = torch.load(run_dir / eval_dir / "log_weights.pt", weights_only=True)
         runs.append((samples, torch.softmax(log_w, dim=0)))
     return runs
@@ -136,17 +154,38 @@ def populated_window(support, *pmfs, pad_levels=2):
 
 
 def plot_panel(ax, support, ref_pmf, seed_pmfs, tv, floor, label):
-    ax.step(support, ref_pmf, where="mid", color=REFERENCE_INK, lw=1.4, zorder=3,
-            label="VC-SGC chains")
+    ax.step(
+        support,
+        ref_pmf,
+        where="mid",
+        color=REFERENCE_INK,
+        lw=1.4,
+        zorder=3,
+        label="VC-SGC chains",
+    )
     seed_band(ax, support, seed_pmfs, SAMPLER_HUE, "soft DNFS, IS-weighted")
     ax.set_xlim(*populated_window(support, ref_pmf, *seed_pmfs))
-    ax.text(0.02, 0.97, label, transform=ax.transAxes, fontsize=FONT_SIZE_LABEL,
-            fontweight="bold", va="top")
+    ax.text(
+        0.02,
+        0.97,
+        label,
+        transform=ax.transAxes,
+        fontsize=FONT_SIZE_LABEL,
+        fontweight="bold",
+        va="top",
+    )
     # Right-hand shoulder: the marginals peak at the centre and the label
     # owns the top-left, so the only empty strip is the upper right below
     # the label line.
-    ax.text(0.98, 0.80, f"TV {tv:.3f}\nfloor {floor:.3f}", transform=ax.transAxes,
-            fontsize=FONT_SIZE_ANNOTATION, ha="right", va="top")
+    ax.text(
+        0.98,
+        0.80,
+        f"TV {tv:.3f}\nfloor {floor:.3f}",
+        transform=ax.transAxes,
+        fontsize=FONT_SIZE_ANNOTATION,
+        ha="right",
+        va="top",
+    )
     style_axes(ax)
 
 
@@ -154,16 +193,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--coupling", choices=list(COUPLINGS), default="sc")
     parser.add_argument("--eval_dir", choices=["eval", "eval_ema"], default="eval")
-    parser.add_argument("--matched-base", action="store_true",
-                        help="off-centre windows read the *_house_mb families")
+    parser.add_argument(
+        "--matched-base",
+        action="store_true",
+        help="off-centre windows read the *_house_mb families",
+    )
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
     sigma = COUPLINGS[args.coupling]
     target = IsingTarget(D=D_SIDE, sigma=sigma, bias=0.0)
     config_suffix = "_sc" if args.coupling == "sc" else ""
-    rows = (("energy", energy_pmf, ENERGY_SUPPORT, "energy per site $E/d$"),
-            ("composition", composition_pmf, COMPOSITION_SUPPORT, "composition $c$"))
+    rows = (
+        ("energy", energy_pmf, ENERGY_SUPPORT, "energy per site $E/d$"),
+        ("composition", composition_pmf, COMPOSITION_SUPPORT, "composition $c$"),
+    )
 
     use_house_style()
     fig, axes = plt.subplots(2, len(TRAINED_COMPOSITIONS), figsize=(FULL_WIDTH_IN, 3.9))
@@ -181,21 +225,43 @@ def main():
             tv = float(np.mean([marginal_tvd(pmf, ref_pmf) for pmf in seed_pmfs]))
             floor = reference_tv_floor(reference, marginal)
             ax = axes[row, col]
-            plot_panel(ax, support, ref_pmf, seed_pmfs, tv, floor,
-                       f"({next(panel_labels)}) $c_\\mathrm{{target}} = {c_target:g}$")
+            plot_panel(
+                ax,
+                support,
+                ref_pmf,
+                seed_pmfs,
+                tv,
+                floor,
+                f"({next(panel_labels)}) $c_\\mathrm{{target}} = {c_target:g}$",
+            )
             if key == "composition":
-                ax.plot(COMPOSITION_SUPPORT, envelope_pmf(c_target), color=ANALYTIC_GUIDE,
-                        lw=1.0, ls="--", label="analytic envelope", zorder=2)
+                ax.plot(
+                    COMPOSITION_SUPPORT,
+                    envelope_pmf(c_target),
+                    color=ANALYTIC_GUIDE,
+                    lw=1.0,
+                    ls="--",
+                    label="analytic envelope",
+                    zorder=2,
+                )
             if row == 1:
                 ax.set_xlabel(xlabel)
-            print(f"{args.coupling} c={c_target} {key:11} TV {tv:.4f} floor {floor:.4f} "
-                  f"seeds {len(seed_pmfs)} ref frames {reference.shape[0]}")
+            print(
+                f"{args.coupling} c={c_target} {key:11} TV {tv:.4f} floor {floor:.4f} "
+                f"seeds {len(seed_pmfs)} ref frames {reference.shape[0]}"
+            )
         axes[0, col].set_xlabel(rows[0][3], fontsize=FONT_SIZE_ANNOTATION)
     axes[0, 0].set_ylabel("probability mass")
     axes[1, 0].set_ylabel("probability mass")
     handles, labels = axes[1, -1].get_legend_handles_labels()
-    fig.legend(handles, labels, frameon=False, ncol=3, loc="lower center",
-               fontsize=FONT_SIZE_ANNOTATION)
+    fig.legend(
+        handles,
+        labels,
+        frameon=False,
+        ncol=3,
+        loc="lower center",
+        fontsize=FONT_SIZE_ANNOTATION,
+    )
     fig.tight_layout(rect=(0, 0.07, 1, 1))
 
     out = args.out or (RESULTS / f"soft_results_cell_8x8_{args.coupling}.png")

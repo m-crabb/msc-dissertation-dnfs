@@ -15,6 +15,7 @@ the samplers closed-form flip and swap energy changes. Three things must hold:
    same slice constant. That pins the beta = 2 sigma convention so the
    free-energy estimator returns F/d in the expansion's own energy units.
 """
+
 import json
 import math
 from pathlib import Path
@@ -60,7 +61,9 @@ def test_log_prob_is_minus_beta_energy():
     spec = BinaryExpansionSpec.from_json(DATA / "cuau_fcc_2x2x4.json")
     target = ClusterExpansionTarget(spec, beta=BETA_500K)
     x = _random_state(spec.n_sites, 5)
-    assert torch.allclose(target.log_prob(x), -BETA_500K * spec.energy(x).float(), atol=1e-4)
+    assert torch.allclose(
+        target.log_prob(x), -BETA_500K * spec.energy(x).float(), atol=1e-4
+    )
     assert target.d == spec.n_sites
     assert target.sigma == pytest.approx(BETA_500K / 2)
 
@@ -94,7 +97,9 @@ def test_flip_change_matches_materialised_flips():
 
 def test_fixed_composition_swap_log_ratio_is_the_generic_fallback():
     spec = BinaryExpansionSpec.from_json(DATA / "cuau_fcc_2x2x4.json")
-    target = FixedCompositionClusterExpansionTarget(spec, beta=BETA_500K, target_composition=0.25)
+    target = FixedCompositionClusterExpansionTarget(
+        spec, beta=BETA_500K, target_composition=0.25
+    )
     x = target.sample_base(6, device="cpu")
     target.assert_on_manifold(x)
     t = torch.tensor([0.0, 0.3, 0.7, 1.0, 0.5, 0.9])
@@ -106,12 +111,18 @@ def test_fixed_composition_swap_log_ratio_is_the_generic_fallback():
 
 def test_slice_base_and_constant():
     spec = BinaryExpansionSpec.from_json(DATA / "cuau_fcc_2x2x4.json")
-    target = FixedCompositionClusterExpansionTarget(spec, beta=BETA_500K, target_composition=0.25)
+    target = FixedCompositionClusterExpansionTarget(
+        spec, beta=BETA_500K, target_composition=0.25
+    )
     x = target.sample_base(200, device="cpu")
     assert torch.all(((x + 1) / 2).sum(1) == 4)
-    assert target.base_log_eta(x)[0].item() == pytest.approx(-math.log(math.comb(16, 4)))
+    assert target.base_log_eta(x)[0].item() == pytest.approx(
+        -math.log(math.comb(16, 4))
+    )
     with pytest.raises(ValueError):
-        FixedCompositionClusterExpansionTarget(spec, beta=BETA_500K, target_composition=0.3)
+        FixedCompositionClusterExpansionTarget(
+            spec, beta=BETA_500K, target_composition=0.3
+        )
 
 
 # --- 3. Ising is the pair-only special case -----------------------------------
@@ -119,23 +130,34 @@ def test_slice_base_and_constant():
 
 def test_ising_torus_as_an_expansion_is_the_existing_target():
     side, sigma, composition = 4, 0.3, 0.5
-    ising = FixedCompositionIsingTarget(D=side, sigma=sigma, target_composition=composition)
+    ising = FixedCompositionIsingTarget(
+        D=side, sigma=sigma, target_composition=composition
+    )
     # log p = sigma x^T A x = 2 sigma sum_<ij> s_i s_j, so E = -sum_<ij> s_i s_j
     # (one unit of coupling per undirected edge) at beta = 2 sigma.
-    edges = [(i, j) for i in range(side * side) for j in range(i + 1, side * side)
-             if ising.A[i, j] > 0]
+    edges = [
+        (i, j)
+        for i in range(side * side)
+        for j in range(i + 1, side * side)
+        if ising.A[i, j] > 0
+    ]
     spec = BinaryExpansionSpec(
-        n_sites=side * side, constant=0.0,
+        n_sites=side * side,
+        constant=0.0,
         terms=[{"order": 2, "coefficient": -1.0, "tuples": edges}],
         nearest_neighbour_pairs=edges,
     )
-    ce = FixedCompositionClusterExpansionTarget(spec, beta=2 * sigma, target_composition=composition)
+    ce = FixedCompositionClusterExpansionTarget(
+        spec, beta=2 * sigma, target_composition=composition
+    )
     x = ising.sample_base(8, device="cpu")
     t = torch.rand(8)
     pairs = upper_tri_pairs(side * side, device="cpu")
     assert torch.allclose(ce.log_prob(x), ising.log_prob(x), atol=1e-5)
     assert torch.allclose(ce.log_p_tilde_t(x, t), ising.log_p_tilde_t(x, t), atol=1e-5)
-    assert torch.allclose(ce.swap_log_ratio(x, t, pairs), ising.swap_log_ratio(x, t, pairs), atol=1e-5)
+    assert torch.allclose(
+        ce.swap_log_ratio(x, t, pairs), ising.swap_log_ratio(x, t, pairs), atol=1e-5
+    )
     assert torch.equal(ce.A, ising.A)
     # and the free-energy estimator convention carries over unchanged
     log_w = torch.randn(50)

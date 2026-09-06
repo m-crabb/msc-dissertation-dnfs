@@ -33,6 +33,7 @@ Example:
         --cells S2_d10_camort_l50_letf_ne128_anneal \\
                 S2_d10_cgrid_l50_letf_ne128_anneal
 """
+
 import argparse
 import json
 from pathlib import Path
@@ -49,8 +50,14 @@ REPORTED = ["ess_fraction", "composition_mean"]
 # creep into an "amortised vs specialist" claim, and they belong on the page
 # where a reader can check them.
 SPECIALIST_COLUMNS = [
-    "composition", "seed", "n_euler_steps", "model_kind", "hidden_dim",
-    "n_steps", "run", *REPORTED,
+    "composition",
+    "seed",
+    "n_euler_steps",
+    "model_kind",
+    "hidden_dim",
+    "n_steps",
+    "run",
+    *REPORTED,
 ]
 AMORTISED_COLUMNS = ["cell", "held_out", *SPECIALIST_COLUMNS]
 
@@ -186,9 +193,7 @@ def _aggregate(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     return aggregated.sort_values(keys).reset_index(drop=True)
 
 
-def build_table(
-    amortised: pd.DataFrame, specialists: pd.DataFrame
-) -> pd.DataFrame:
+def build_table(amortised: pd.DataFrame, specialists: pd.DataFrame) -> pd.DataFrame:
     """Join the two sides on composition; missing sides stay as NaN.
 
     An outer join on purpose: the held-out compositions have no specialist by
@@ -198,9 +203,7 @@ def build_table(
     comparator rows, so the budget the amortised model is being compared
     against is always on the page.
     """
-    amortised_agg = _aggregate(
-        amortised, ["cell", "composition", "n_euler_steps"]
-    )
+    amortised_agg = _aggregate(amortised, ["cell", "composition", "n_euler_steps"])
     specialist_agg = _aggregate(specialists, ["composition", "n_euler_steps"])
     if amortised_agg.empty:
         table = specialist_agg.assign(cell=None)
@@ -208,7 +211,9 @@ def build_table(
         table = amortised_agg
     else:
         table = amortised_agg.merge(
-            specialist_agg, on="composition", how="outer",
+            specialist_agg,
+            on="composition",
+            how="outer",
             suffixes=("_amortised", "_specialist"),
         )
     table["held_out"] = table["composition"].isin(HELD_OUT_COMPOSITIONS)
@@ -219,7 +224,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--results-dir", default="results/02_constrained_soft")
     parser.add_argument(
-        "--cells", nargs="+",
+        "--cells",
+        nargs="+",
         default=[
             "S2_d10_camort_l50_letf_ne128_anneal",
             "S2_d10_cgrid_l50_letf_ne128_anneal",
@@ -234,18 +240,20 @@ def main():
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Comparators must (default) or must not carry the λ anneal — "
-             "match whichever recipe the amortised cell was cloned from "
-             "(D=10 anneals, D=4 does not)",
+        "match whichever recipe the amortised cell was cloned from "
+        "(D=10 anneals, D=4 does not)",
     )
-    parser.add_argument(
-        "--out", help="Optional CSV path for the per-run detail rows"
-    )
+    parser.add_argument("--out", help="Optional CSV path for the per-run detail rows")
     args = parser.parse_args()
 
     results_dir = Path(args.results_dir)
     specialists = collect_specialists(
-        results_dir, D=args.D, sigma=args.sigma, penalty=args.penalty,
-        require_anneal=args.require_anneal, model_kind=args.model_kind,
+        results_dir,
+        D=args.D,
+        sigma=args.sigma,
+        penalty=args.penalty,
+        require_anneal=args.require_anneal,
+        model_kind=args.model_kind,
     )
     amortised = collect_amortised(results_dir, args.cells)
 

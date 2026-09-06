@@ -36,6 +36,7 @@ import sys
 
 import pytest
 import torch
+from scripts.warm_start_swap_head import _resize_grid_rows, build_transfer
 
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
@@ -45,7 +46,6 @@ from discrete_flow_sampler.constraints.swap_readout import (
     swap2,
 )
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
-from scripts.warm_start_swap_head import _resize_grid_rows, build_transfer
 
 HIDDEN_DIM, N_HEADS, N_LAYERS = 8, 2, 2
 
@@ -55,8 +55,12 @@ def _head(lattice_side, kind="masked_attention", seed=0):
     torch.manual_seed(seed)
     d = lattice_side * lattice_side
     backbone = LeTFRateMatrix(
-        d=d, vocab_size=2, hidden_dim=HIDDEN_DIM, n_layers=N_LAYERS,
-        n_heads=N_HEADS, use_sdpa_readout=False,
+        d=d,
+        vocab_size=2,
+        hidden_dim=HIDDEN_DIM,
+        n_layers=N_LAYERS,
+        n_heads=N_HEADS,
+        use_sdpa_readout=False,
     )
     if kind == "mask_one":
         head = LeTFMaskOneSwapHead(backbone)
@@ -90,6 +94,7 @@ def _state(d, seed=1):
 # --------------------------------------------------------------------------
 # What is size-dependent at all: the premise the whole transfer rests on.
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "kind,expected",
@@ -133,6 +138,7 @@ def test_size_dependent_tensors_are_exactly_the_known_set(kind, expected):
 # Identity: L -> L must be a no-op.
 # --------------------------------------------------------------------------
 
+
 def test_identity_transfer_is_bit_exact_on_every_tensor():
     transfer, source, _, interpolated, _ = _transfer(4, 4)
     assert interpolated == [], "identity must not resample anything"
@@ -162,6 +168,7 @@ def test_identity_transfer_is_bit_exact_for_the_mask_one_head():
 # --------------------------------------------------------------------------
 # Cross-size: shapes, coverage, and what must NOT move.
 # --------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("kind", ["masked_attention", "mask_one"])
 def test_cross_size_transfer_loads_with_strict_true(kind):
@@ -203,6 +210,7 @@ def test_mask_one_transfer_carries_its_live_attention_readout():
 # The conditioning row: present in the causal-stack tables, not a site.
 # --------------------------------------------------------------------------
 
+
 def test_conditioning_row_is_carried_across_verbatim():
     transfer, source, _, _, _ = _transfer(4, 8)
     for key in transfer:
@@ -233,6 +241,7 @@ def test_conditioning_row_is_not_mixed_into_any_site_row():
 # Properties of the resampler itself, on bare grids (no model needed).
 # --------------------------------------------------------------------------
 
+
 def test_constant_field_resamples_to_the_same_constant():
     """Partition of unity: a featureless table must stay featureless."""
     rows = torch.full((64, 5), 0.37)
@@ -252,9 +261,7 @@ def test_a_single_site_bump_stays_local():
     rows = torch.zeros(side_src * side_src, 1)
     rows[row * side_src + col] = 1.0
 
-    grid = _resize_grid_rows(rows, side_src**2, side_dst**2).reshape(
-        side_dst, side_dst
-    )
+    grid = _resize_grid_rows(rows, side_src**2, side_dst**2).reshape(side_dst, side_dst)
 
     peak = divmod(int(grid.abs().argmax()), side_dst)
     # Source pixel centre r maps between destination rows 2r and 2r+1.
@@ -262,7 +269,7 @@ def test_a_single_site_bump_stays_local():
     assert peak[1] in (2 * col, 2 * col + 1)
     # Bulk of the absolute mass inside the 6x6 window around the image of the
     # bump: bicubic's negative lobes reach 2 destination pixels, no further.
-    window = grid[2 * row - 2:2 * row + 4, 2 * col - 2:2 * col + 4]
+    window = grid[2 * row - 2 : 2 * row + 4, 2 * col - 2 : 2 * col + 4]
     assert window.abs().sum() > 0.9 * grid.abs().sum()
 
 
@@ -281,9 +288,9 @@ def test_resampling_is_periodic_on_the_torus():
     plain = _resize_grid_rows(grid.reshape(-1, 3), 64, 256)
     shifted_source = grid.roll(1, dims=0).reshape(-1, 3)
     shifted_then_resized = _resize_grid_rows(shifted_source, 64, 256)
-    resized_then_shifted = plain.reshape(side_dst, side_dst, 3).roll(
-        scale, dims=0
-    ).reshape(-1, 3)
+    resized_then_shifted = (
+        plain.reshape(side_dst, side_dst, 3).roll(scale, dims=0).reshape(-1, 3)
+    )
 
     assert torch.allclose(shifted_then_resized, resized_then_shifted, atol=1e-5)
 
@@ -306,6 +313,7 @@ def test_resampling_commutes_with_the_180_degree_raster_reversal():
 # --------------------------------------------------------------------------
 # The load-bearing correctness property: blindness must survive the transfer.
 # --------------------------------------------------------------------------
+
 
 def _warm_started_head(side_src=3, side_dst=6):
     transfer, _, _, _, _ = _transfer(side_src, side_dst)
@@ -371,8 +379,7 @@ def test_warm_started_head_differs_from_fresh_initialisation():
     ]
     assert len(randomly_initialised) > 0.5 * len(warm_sd)
     unchanged = [
-        k for k in randomly_initialised
-        if torch.equal(warm_sd[k], fresh_sd[k])
+        k for k in randomly_initialised if torch.equal(warm_sd[k], fresh_sd[k])
     ]
     assert unchanged == []
 
@@ -386,17 +393,14 @@ def test_warm_started_head_keeps_exact_state_swap_antisymmetry():
 
     for site_i, site_j in [(0, 35), (2, 3), (10, 25)]:
         swapped = head(swap2(spins, site_i, site_j), time)
-        assert torch.equal(
-            scores[0, site_i, site_j], -swapped[0, site_i, site_j]
-        )
+        assert torch.equal(scores[0, site_i, site_j], -swapped[0, site_i, site_j])
 
 
 def test_warm_started_head_keeps_exact_index_antisymmetry_and_zero_diagonal():
     head = _warm_started_head()
     scores = head(_state(36), torch.rand(1))
     assert torch.equal(scores, -scores.transpose(1, 2))
-    assert torch.equal(torch.diagonal(scores, dim1=1, dim2=2),
-                       torch.zeros(1, 36))
+    assert torch.equal(torch.diagonal(scores, dim1=1, dim2=2), torch.zeros(1, 36))
 
 
 def test_warm_started_head_produces_finite_gradients():
@@ -410,6 +414,7 @@ def test_warm_started_head_produces_finite_gradients():
 # --------------------------------------------------------------------------
 # Why the archived d64 -> d256 post-mortem cannot be right.
 # --------------------------------------------------------------------------
+
 
 def test_attention_readout_is_dead_weight_on_the_masked_attention_head():
     """The band heads replace the backbone's single-site readout entirely.
@@ -430,6 +435,7 @@ def test_attention_readout_is_dead_weight_on_the_masked_attention_head():
 # --------------------------------------------------------------------------
 # The runner wiring.
 # --------------------------------------------------------------------------
+
 
 def test_same_size_init_from_reproduces_the_source_head_exactly(tmp_path):
     """The pre-existing same-size --init-from path must stay byte-identical."""
@@ -456,9 +462,16 @@ def test_cli_passes_init_from_through(monkeypatch):
     seen = {}
     monkeypatch.setattr(hard_run, "train", lambda cfg, **kw: seen.update(kw))
     monkeypatch.setattr(
-        sys, "argv",
-        ["run.py", "--cfg", "H2_d16_c50_s010_letf_ma_10k", "--no-wandb",
-         "--init-from", "some/transfer.pt"],
+        sys,
+        "argv",
+        [
+            "run.py",
+            "--cfg",
+            "H2_d16_c50_s010_letf_ma_10k",
+            "--no-wandb",
+            "--init-from",
+            "some/transfer.pt",
+        ],
     )
     hard_run.main()
     assert seen["init_from"] == "some/transfer.pt"

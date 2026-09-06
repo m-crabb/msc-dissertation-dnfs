@@ -68,6 +68,7 @@ they are an infrastructure artefact, not a head. The relaunches carry the
 Per-site energy follows the chapter's convention E/d = -log p~(x) /
 (2 sigma d). Neural cells aggregate mean +- SD over the three seeds.
 """
+
 import argparse
 import json
 import sys
@@ -79,18 +80,33 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
-from discrete_flow_sampler.diagnostics.flops import (
-    chain_per_effective_sample, ising_energy_eval_flops, kawasaki_run_flops,
-    measured_forward_flops, neural_sampling_flops_per_sample,
-    per_effective_sample)
-from discrete_flow_sampler.diagnostics.metrics import (
-    correlation_profile_error, energy_wasserstein2, integrated_autocorr,
-    magnetisation_profile_error)
 # The lattice-generic half of the 8x8 fill, imported rather than restated.
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-    _sci, aggregate, fmt, gfn_registry_config_for,
-    is_composition_exact, flop_billing_config, reference_standard_error,
-    registry_config_for, sampling_floor_from_reference)
+    _sci,
+    aggregate,
+    flop_billing_config,
+    fmt,
+    gfn_registry_config_for,
+    is_composition_exact,
+    reference_standard_error,
+    registry_config_for,
+    sampling_floor_from_reference,
+)
+
+from discrete_flow_sampler.diagnostics.flops import (
+    chain_per_effective_sample,
+    ising_energy_eval_flops,
+    kawasaki_run_flops,
+    measured_forward_flops,
+    neural_sampling_flops_per_sample,
+    per_effective_sample,
+)
+from discrete_flow_sampler.diagnostics.metrics import (
+    correlation_profile_error,
+    energy_wasserstein2,
+    integrated_autocorr,
+    magnetisation_profile_error,
+)
 
 L = 16
 D_SITES = L * L
@@ -190,6 +206,7 @@ DEGENERATE_SEEDS = {
 
 # --- the reference --------------------------------------------------------
 
+
 def split_pooled_into_chains(pooled, n_chains):
     """Recover chain blocks from the single pooled reference tensor.
 
@@ -200,7 +217,7 @@ def split_pooled_into_chains(pooled, n_chains):
     toward zero. Any remainder is dropped rather than smeared.
     """
     block = len(pooled) // n_chains
-    return [pooled[i * block:(i + 1) * block] for i in range(n_chains)]
+    return [pooled[i * block : (i + 1) * block] for i in range(n_chains)]
 
 
 def load_reference(directory, sigma_key):
@@ -215,10 +232,12 @@ def load_reference(directory, sigma_key):
     provenance = json.loads((directory / "provenance.json").read_text())
     assert abs(provenance["sigma"] - SIGMA[sigma_key]) < 1e-9, (
         f"{directory.name} records sigma={provenance['sigma']}, not "
-        f"{SIGMA[sigma_key]}: couplings must never be mixed in one column")
+        f"{SIGMA[sigma_key]}: couplings must never be mixed in one column"
+    )
     pooled = torch.load(directory / "samples.pt", weights_only=True).float()
-    assert is_composition_exact(pooled, D_SITES // 2), \
+    assert is_composition_exact(pooled, D_SITES // 2), (
         f"{directory.name}: reference left the c=0.5 slice"
+    )
     return split_pooled_into_chains(pooled, provenance["n_chains"]), provenance
 
 
@@ -230,9 +249,11 @@ def chain_trial_counts(provenance, lattice_edge=L):
     total (kawasaki_run_flops' own convention). The site factor is derived,
     not hard-coded, so another rung built this way cannot be mis-billed.
     """
-    per_chain = ((provenance["burn_in_sweeps"]
-                  + provenance["sampling_sweeps_per_chain"])
-                 * lattice_edge * lattice_edge)
+    per_chain = (
+        (provenance["burn_in_sweeps"] + provenance["sampling_sweeps_per_chain"])
+        * lattice_edge
+        * lattice_edge
+    )
     return [per_chain] * provenance["n_chains"]
 
 
@@ -245,8 +266,7 @@ def reference_row(chains, chain_energies, trial_counts):
     """
     taus = [max(1.0, integrated_autocorr(e.numpy())) for e in chain_energies]
     per_chain = [
-        chain_per_effective_sample(kawasaki_run_flops(n_trials),
-                                   chain.shape[0], tau)
+        chain_per_effective_sample(kawasaki_run_flops(n_trials), chain.shape[0], tau)
         for chain, tau, n_trials in zip(chains, taus, trial_counts)
     ]
     return {
@@ -259,6 +279,7 @@ def reference_row(chains, chain_energies, trial_counts):
 
 # --- cells ----------------------------------------------------------------
 
+
 def find_cells(results_dir, sigma_key, arm, eval_subdir="eval_ema"):
     """Healthy run dirs for one head at one coupling, seed order.
 
@@ -269,25 +290,25 @@ def find_cells(results_dir, sigma_key, arm, eval_subdir="eval_ema"):
     blank row instead of aborting the fill.
     """
     found = []
-    for run_dir in sorted(Path(results_dir).glob(
-            CELL_GLOB.format(d=D_SITES, sigma=sigma_key, arm=arm))):
+    for run_dir in sorted(
+        Path(results_dir).glob(CELL_GLOB.format(d=D_SITES, sigma=sigma_key, arm=arm))
+    ):
         # The glob's `{arm}_*` already anchors the token on the left; this
         # anchors it on the right, so `thp` cannot match `thp2`.
         if f"_{arm}_" not in run_dir.name:
             continue
         if (run_dir / "cv_inversion_halt.json").exists():
-            print(f"dropped (cv-inversion tripwire halt): {run_dir.name}",
-                  file=sys.stderr)
+            print(
+                f"dropped (cv-inversion tripwire halt): {run_dir.name}", file=sys.stderr
+            )
             continue
         if not (run_dir / eval_subdir / "samples.pt").exists():
             # Still training (or a partial pull): not landed, not a cell.
-            print(f"skipped (no {eval_subdir} yet): {run_dir.name}",
-                  file=sys.stderr)
+            print(f"skipped (no {eval_subdir} yet): {run_dir.name}", file=sys.stderr)
             continue
         seed = int(run_dir.name.split("_seed")[1][:2])
         if (arm, sigma_key, seed) in DEGENERATE_SEEDS:
-            print(f"dropped (degenerate seed): {run_dir.name}",
-                  file=sys.stderr)
+            print(f"dropped (degenerate seed): {run_dir.name}", file=sys.stderr)
             continue
         found.append(run_dir)
     return found
@@ -300,39 +321,48 @@ def has_excluded_seed(arm, sigma_key):
 
 def energy_per_site(target, states, chunk=4096):
     """Chunked: the sigma = 0.1 reference pool is 1.4e5 states at d=256."""
-    parts = [-target.log_prob(states[i:i + chunk]) / (2 * target.sigma * D_SITES)
-             for i in range(0, states.shape[0], chunk)]
+    parts = [
+        -target.log_prob(states[i : i + chunk]) / (2 * target.sigma * D_SITES)
+        for i in range(0, states.shape[0], chunk)
+    ]
     return torch.cat(parts)
 
 
-def neural_cell(run_dir, target, reference, reference_energy, flops_per_raw,
-                eval_subdir="eval"):
+def neural_cell(
+    run_dir, target, reference, reference_energy, flops_per_raw, eval_subdir="eval"
+):
     """One seed's row. The per-raw-sample bill is the caller's, as in the
     8x8 fill: a swap cell pays per_forward x n_euler Euler forwards, a GFN
     cell one cached rollout plus a target eval."""
     run_dir = Path(run_dir)
     metrics = json.loads((run_dir / eval_subdir / "metrics.json").read_text())
-    samples = torch.load(run_dir / eval_subdir / "samples.pt",
-                         weights_only=True).float()
-    log_w = torch.load(run_dir / eval_subdir / "log_weights.pt",
-                       weights_only=True)
+    samples = torch.load(
+        run_dir / eval_subdir / "samples.pt", weights_only=True
+    ).float()
+    log_w = torch.load(run_dir / eval_subdir / "log_weights.pt", weights_only=True)
     weights = torch.softmax(log_w, dim=0)
     ess = metrics["ess_fraction"]
     w_ref = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
     return {
         "ESS": ess,
         "dMag": magnetisation_profile_error(
-            samples, weights, reference, L, reference_weights=w_ref),
+            samples, weights, reference, L, reference_weights=w_ref
+        ),
         "dCorr": correlation_profile_error(
-            samples, weights, reference, L, reference_weights=w_ref),
+            samples, weights, reference, L, reference_weights=w_ref
+        ),
         "EW2": energy_wasserstein2(
-            energy_per_site(target, samples), weights, reference_energy,
-            reference_weights=w_ref),
+            energy_per_site(target, samples),
+            weights,
+            reference_energy,
+            reference_weights=w_ref,
+        ),
         "FLOP/es": per_effective_sample(flops_per_raw, ess),
     }
 
 
 # --- LaTeX ----------------------------------------------------------------
+
 
 def latex_table(table, n_draws=5000):
     """Emit the table body, bolding the best neural cell in each column.
@@ -342,6 +372,7 @@ def latex_table(table, n_draws=5000):
     across heads, a bolded error cell marks the smallest number measured,
     not a separation from the others. The caption says so.
     """
+
     def key_for(arm, sigma_label):
         if arm == "reference":
             return f"reference_{sigma_label}"
@@ -364,15 +395,20 @@ def latex_table(table, n_draws=5000):
 
     best = {}
     for sigma_label in SIGMA_LABELS:
-        arms = [a for a, _ in (r for r in LATEX_ROWS if r)
-                if a in ARMS and key_for(a, sigma_label) in table]
+        arms = [
+            a
+            for a, _ in (r for r in LATEX_ROWS if r)
+            if a in ARMS and key_for(a, sigma_label) in table
+        ]
         if not arms:
             continue
         best[(sigma_label, "ESS")] = max(
-            arms, key=lambda a: table[key_for(a, sigma_label)]["ESS"][0])
+            arms, key=lambda a: table[key_for(a, sigma_label)]["ESS"][0]
+        )
         for column in ERROR_COLUMNS + ("FLOP/es",):
             best[(sigma_label, column)] = min(
-                arms, key=lambda a: table[key_for(a, sigma_label)][column][0])
+                arms, key=lambda a: table[key_for(a, sigma_label)][column][0]
+            )
 
     lines = []
     for row in LATEX_ROWS:
@@ -386,9 +422,15 @@ def latex_table(table, n_draws=5000):
         for sigma_label in SIGMA_LABELS:
             key = key_for(arm, sigma_label)
             entry = table.get(key)
-            ess = "/" if arm in ("reference", "floor") else (
-                f"${entry['ESS'][0]:.3f} \\pm {entry['ESS'][1]:.3f}$"
-                if entry else "--")
+            ess = (
+                "/"
+                if arm in ("reference", "floor")
+                else (
+                    f"${entry['ESS'][0]:.3f} \\pm {entry['ESS'][1]:.3f}$"
+                    if entry
+                    else "--"
+                )
+            )
             flops = "--" if arm == "floor" else cell(key, "FLOP/es", sci=True)
             if best.get((sigma_label, "ESS")) == arm:
                 ess = f"$\\mathbf{{{ess.strip('$')}}}$"
@@ -407,21 +449,26 @@ def latex_table(table, n_draws=5000):
 
 # --- driver ---------------------------------------------------------------
 
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--results-dir", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard")
-    parser.add_argument("--reference-dir", type=Path,
-                        default=REPO_ROOT / "results")
-    parser.add_argument("--eval-subdir", default="eval_ema",
-                        choices=("eval", "eval_ema"))
+    parser.add_argument(
+        "--results-dir", type=Path, default=REPO_ROOT / "results" / "03_hard"
+    )
+    parser.add_argument("--reference-dir", type=Path, default=REPO_ROOT / "results")
+    parser.add_argument(
+        "--eval-subdir", default="eval_ema", choices=("eval", "eval_ema")
+    )
     parser.add_argument("--n-splits", type=int, default=64)
     parser.add_argument("--n-floor-replicates", type=int, default=200)
-    parser.add_argument("--out", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard" / "w3_16x16_house")
-    parser.add_argument("--latex", action="store_true",
-                        help="emit the tab:eval-hard-16x16 body instead of "
-                             "the console summary")
+    parser.add_argument(
+        "--out", type=Path, default=REPO_ROOT / "results" / "03_hard" / "w3_16x16_house"
+    )
+    parser.add_argument(
+        "--latex",
+        action="store_true",
+        help="emit the tab:eval-hard-16x16 body instead of the console summary",
+    )
     args = parser.parse_args(argv)
 
     from experiments.constrained_hard_03.run import build_target_and_head
@@ -429,56 +476,69 @@ def main(argv=None):
     table, n_draws = {}, 5000
     for sigma_label in SIGMA_LABELS:
         chains, provenance = load_reference(
-            args.reference_dir / f"kawasaki_ref_d256_{sigma_label}",
-            sigma_label)
+            args.reference_dir / f"kawasaki_ref_d256_{sigma_label}", sigma_label
+        )
         reference = torch.cat(chains)
 
         # One target per coupling, built from a landed cell's OWN config so
         # the coupling on the neural side provably matches the reference's.
-        probe = next((find_cells(args.results_dir, sigma_label, a,
-                                 args.eval_subdir)
-                      for a in ARMS if find_cells(args.results_dir,
-                                                  sigma_label, a,
-                                                  args.eval_subdir)), None)
+        probe = next(
+            (
+                find_cells(args.results_dir, sigma_label, a, args.eval_subdir)
+                for a in ARMS
+                if find_cells(args.results_dir, sigma_label, a, args.eval_subdir)
+            ),
+            None,
+        )
         if not probe:
             print(f"no landed cells at {sigma_label}; skipping", file=sys.stderr)
             continue
-        target, _ = build_target_and_head(registry_config_for(probe[0]),
-                                          device="cpu")
+        target, _ = build_target_and_head(registry_config_for(probe[0]), device="cpu")
         assert abs(target.sigma - provenance["sigma"]) < 1e-9, (
             f"{sigma_label}: cells train at sigma={target.sigma} against a "
-            f"reference at {provenance['sigma']}")
+            f"reference at {provenance['sigma']}"
+        )
 
         chain_energies = [energy_per_site(target, c) for c in chains]
         reference_energy = torch.cat(chain_energies)
 
         table[f"reference_{sigma_label}"] = {
-            **reference_row(chains, chain_energies,
-                            chain_trial_counts(provenance, L)),
-            **{k: (v, 0.0) for k, v in reference_standard_error(
-                chains, L, args.n_splits, seed=0,
-                chain_energies=chain_energies).items()},
+            **reference_row(chains, chain_energies, chain_trial_counts(provenance, L)),
+            **{
+                k: (v, 0.0)
+                for k, v in reference_standard_error(
+                    chains, L, args.n_splits, seed=0, chain_energies=chain_energies
+                ).items()
+            },
         }
 
         for arm in ARMS:
-            run_dirs = find_cells(args.results_dir, sigma_label, arm,
-                                  args.eval_subdir)
+            run_dirs = find_cells(args.results_dir, sigma_label, arm, args.eval_subdir)
             if not run_dirs:
                 print(f"no cells for {arm} at {sigma_label}", file=sys.stderr)
                 continue
             cfg = registry_config_for(run_dirs[0])
             # Billed separable for a masked-attention head; see
             # house_table_8x8.flop_billing_config.
-            _, head = build_target_and_head(
-                flop_billing_config(cfg), device="cpu")
+            _, head = build_target_and_head(flop_billing_config(cfg), device="cpu")
             per_forward = measured_forward_flops(
-                head, (reference[:1], torch.full((1,), 0.5)))
+                head, (reference[:1], torch.full((1,), 0.5))
+            )
             n_draws = cfg.eval.n_eval_samples
             flops_per_raw = neural_sampling_flops_per_sample(
-                per_forward, cfg.ctmc.n_euler_steps, D_SITES)
-            rows = [neural_cell(d, target, reference, reference_energy,
-                                flops_per_raw, eval_subdir=args.eval_subdir)
-                    for d in run_dirs]
+                per_forward, cfg.ctmc.n_euler_steps, D_SITES
+            )
+            rows = [
+                neural_cell(
+                    d,
+                    target,
+                    reference,
+                    reference_energy,
+                    flops_per_raw,
+                    eval_subdir=args.eval_subdir,
+                )
+                for d in run_dirs
+            ]
             cell = aggregate(rows)
             cell["per_forward_flops"] = per_forward
             cell["n_seeds"] = len(run_dirs)
@@ -486,28 +546,42 @@ def main(argv=None):
             table[f"{arm}_{sigma_label}"] = cell
 
         for gfn_arm in GFN_ARMS:
-            from experiments.constrained_hard_03.run_gfn import (
-                build_target_and_policy)
+            from experiments.constrained_hard_03.run_gfn import build_target_and_policy
 
             name = GFN_CELL_NAME[sigma_label].format(
-                objective=gfn_arm.removeprefix("gfn_"))
-            run_dirs = [args.results_dir / f"{name}_seed{seed}_{GFN_TAG[gfn_arm]}"
-                        for seed in SEEDS]
-            if not all((d / args.eval_subdir / "metrics.json").is_file()
-                       for d in run_dirs):
-                print(f"no landed cells for {gfn_arm} at {sigma_label}",
-                      file=sys.stderr)
+                objective=gfn_arm.removeprefix("gfn_")
+            )
+            run_dirs = [
+                args.results_dir / f"{name}_seed{seed}_{GFN_TAG[gfn_arm]}"
+                for seed in SEEDS
+            ]
+            if not all(
+                (d / args.eval_subdir / "metrics.json").is_file() for d in run_dirs
+            ):
+                print(
+                    f"no landed cells for {gfn_arm} at {sigma_label}", file=sys.stderr
+                )
                 continue
             gfn_cfg = gfn_registry_config_for(run_dirs[0])
             assert abs(gfn_cfg.sigma - target.sigma) < 1e-9, (
                 f"{name}: trains at sigma={gfn_cfg.sigma} against the "
-                f"reference's {target.sigma}")
+                f"reference's {target.sigma}"
+            )
             _, policy = build_target_and_policy(gfn_cfg, "cpu")
-            flops_per_raw = (measured_forward_flops(policy.sample, (1,))
-                             + ising_energy_eval_flops(D_SITES))
-            rows = [neural_cell(d, target, reference, reference_energy,
-                                flops_per_raw, eval_subdir=args.eval_subdir)
-                    for d in run_dirs]
+            flops_per_raw = measured_forward_flops(
+                policy.sample, (1,)
+            ) + ising_energy_eval_flops(D_SITES)
+            rows = [
+                neural_cell(
+                    d,
+                    target,
+                    reference,
+                    reference_energy,
+                    flops_per_raw,
+                    eval_subdir=args.eval_subdir,
+                )
+                for d in run_dirs
+            ]
             cell = aggregate(rows)
             cell["per_sample_flops"] = flops_per_raw
             cell["n_seeds"] = len(run_dirs)
@@ -515,9 +589,16 @@ def main(argv=None):
             table[f"{gfn_arm}_{sigma_label}"] = cell
 
         table[f"floor{n_draws}_{sigma_label}"] = {
-            k: (v, 0.0) for k, v in sampling_floor_from_reference(
-                reference, L, n_draws, args.n_floor_replicates, seed=0,
-                reference_energy=reference_energy).items()}
+            k: (v, 0.0)
+            for k, v in sampling_floor_from_reference(
+                reference,
+                L,
+                n_draws,
+                args.n_floor_replicates,
+                seed=0,
+                reference_energy=reference_energy,
+            ).items()
+        }
 
     if args.latex:
         print(latex_table(table, n_draws))
@@ -527,12 +608,14 @@ def main(argv=None):
             summary = "  ".join(
                 f"{c}={fmt(*entry[c], sci=(c == 'FLOP/es'))}"
                 for c in ("ESS",) + ERROR_COLUMNS + ("FLOP/es",)
-                if c in entry and isinstance(entry[c], tuple))
+                if c in entry and isinstance(entry[c], tuple)
+            )
             print(f"{key:28} {summary}")
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / f"table_{args.eval_subdir}.json").write_text(
-        json.dumps(table, indent=2, default=str))
+        json.dumps(table, indent=2, default=str)
+    )
     return table
 
 

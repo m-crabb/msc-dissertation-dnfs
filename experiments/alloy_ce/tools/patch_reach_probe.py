@@ -26,6 +26,7 @@ import json
 import math
 
 import torch
+from experiments.constrained_hard_03.configs import cuau_sigma
 
 from discrete_flow_sampler.constraints.two_hole_patch_swap_head import (
     TwoHolePatchSwapHead,
@@ -40,7 +41,6 @@ from discrete_flow_sampler.targets.cluster_expansion import (
     BinaryExpansionSpec,
     FixedCompositionClusterExpansionTarget,
 )
-from experiments.constrained_hard_03.configs import cuau_sigma
 
 
 def ordered_states(spec, phase):
@@ -50,13 +50,14 @@ def ordered_states(spec, phase):
     sublattice for L1_2. (n_states, n_sites) in {-1, +1}."""
     positions = torch.tensor(spec.positions, dtype=torch.float64)
     distances = torch.cdist(positions, positions)
-    nearest = distances[distances > 1e-6].min()                         # raw, no wrap needed
-    cube_edge = nearest * math.sqrt(2.0)                                # fcc: a = sqrt(2) d_nn
-    parity = torch.round(2 * positions / cube_edge).long() % 2          # (n, 3)
+    nearest = distances[distances > 1e-6].min()  # raw, no wrap needed
+    cube_edge = nearest * math.sqrt(2.0)  # fcc: a = sqrt(2) d_nn
+    parity = torch.round(2 * positions / cube_edge).long() % 2  # (n, 3)
     if phase == "l10":
         states = []
         for axis in range(3):
-            s = torch.where(parity[:, axis] == 0, 1.0, -1.0); states += [s, -s]
+            s = torch.where(parity[:, axis] == 0, 1.0, -1.0)
+            states += [s, -s]
         return torch.stack(states)
     sublattice = parity[:, 0] * 2 + parity[:, 1]
     return torch.stack([torch.where(sublattice == k, 1.0, -1.0) for k in range(4)])
@@ -68,9 +69,14 @@ def near_ordered_states(spec, phase, n_swaps, n_states, generator):
     refs = ordered_states(spec, phase)
     out = []
     for i in range(n_states):
-        x = refs[torch.randint(0, len(refs), (1,), generator=generator)].clone().flatten()
+        x = (
+            refs[torch.randint(0, len(refs), (1,), generator=generator)]
+            .clone()
+            .flatten()
+        )
         for _ in range(n_swaps):
-            plus = torch.nonzero(x > 0).flatten(); minus = torch.nonzero(x < 0).flatten()
+            plus = torch.nonzero(x > 0).flatten()
+            minus = torch.nonzero(x < 0).flatten()
             a = plus[torch.randint(0, len(plus), (1,), generator=generator)]
             b = minus[torch.randint(0, len(minus), (1,), generator=generator)]
             x[a], x[b] = -1.0, 1.0
@@ -101,7 +107,9 @@ def r_squared(prediction, truth, mask):
     return float(1.0 - residual / total)
 
 
-def fit_head(head, target, pairs, train_states, held_out_states, steps, batch, lr, seed):
+def fit_head(
+    head, target, pairs, train_states, held_out_states, steps, batch, lr, seed
+):
     generator = torch.Generator().manual_seed(seed)
     optimiser = torch.optim.Adam(head.parameters(), lr=lr)
     held_delta, held_unlike = unlike_pair_targets(target, held_out_states, pairs)
@@ -116,11 +124,18 @@ def fit_head(head, target, pairs, train_states, held_out_states, steps, batch, l
         optimiser.step()
         if step % 200 == 0 or step == steps - 1:
             with torch.no_grad():
-                held = gather_pair_scores(head(held_out_states, torch.ones(held_out_states.shape[0])), pairs)
-                print(f"    step {step:5d} train mse {loss.item():.4f} "
-                      f"held-out R^2 {r_squared(held, held_delta, held_unlike):.3f}", flush=True)
+                held = gather_pair_scores(
+                    head(held_out_states, torch.ones(held_out_states.shape[0])), pairs
+                )
+                print(
+                    f"    step {step:5d} train mse {loss.item():.4f} "
+                    f"held-out R^2 {r_squared(held, held_delta, held_unlike):.3f}",
+                    flush=True,
+                )
     with torch.no_grad():
-        held = gather_pair_scores(head(held_out_states, torch.ones(held_out_states.shape[0])), pairs)
+        held = gather_pair_scores(
+            head(held_out_states, torch.ones(held_out_states.shape[0])), pairs
+        )
     return r_squared(held, held_delta, held_unlike)
 
 
@@ -140,44 +155,76 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default=None)
     parser.add_argument(
-        "--states", default="uniform",
+        "--states",
+        default="uniform",
         help="'uniform' (the base), or 'l10+K' / 'l12+K': the ordered phase "
-             "with K random unlike swaps applied (near-ordered, domain-wall states)",
+        "with K random unlike swaps applied (near-ordered, domain-wall states)",
     )
     args = parser.parse_args(argv)
 
     spec = BinaryExpansionSpec.from_json(args.spec)
     beta = 2.0 * cuau_sigma(args.temperature)
-    target = FixedCompositionClusterExpansionTarget(spec, beta=beta, target_composition=args.composition)
+    target = FixedCompositionClusterExpansionTarget(
+        spec, beta=beta, target_composition=args.composition
+    )
     generator = torch.Generator().manual_seed(args.seed)
     if args.states == "uniform":
-        train_states = random_slice_states(args.n_train, spec.n_sites, target.n_plus_target, generator)
-        held_out_states = random_slice_states(args.n_held_out, spec.n_sites, target.n_plus_target, generator)
+        train_states = random_slice_states(
+            args.n_train, spec.n_sites, target.n_plus_target, generator
+        )
+        held_out_states = random_slice_states(
+            args.n_held_out, spec.n_sites, target.n_plus_target, generator
+        )
     else:
         phase, n_swaps = args.states.split("+")
-        train_states = near_ordered_states(spec, phase, int(n_swaps), args.n_train, generator)
-        held_out_states = near_ordered_states(spec, phase, int(n_swaps), args.n_held_out, generator)
+        train_states = near_ordered_states(
+            spec, phase, int(n_swaps), args.n_train, generator
+        )
+        held_out_states = near_ordered_states(
+            spec, phase, int(n_swaps), args.n_held_out, generator
+        )
     pairs = upper_tri_pairs(spec.n_sites, train_states.device)
     held_delta, held_unlike = unlike_pair_targets(target, held_out_states, pairs)
-    print(f"{args.spec}: {spec.n_sites} sites, c={args.composition}, T={args.temperature} K, states={args.states}, "
-          f"held-out Delta std {held_delta[held_unlike].std():.3f} over {int(held_unlike.sum())} unlike pairs")
+    print(
+        f"{args.spec}: {spec.n_sites} sites, c={args.composition}, T={args.temperature} K, states={args.states}, "
+        f"held-out Delta std {held_delta[held_unlike].std():.3f} over {int(held_unlike.sum())} unlike pairs"
+    )
 
     results = {}
     for shells in args.shells:
         torch.manual_seed(args.seed)
-        geometry = bravais_patch_geometry(spec.positions, spec.cell, patch_shells=shells)
-        backbone = LeTFRateMatrix(
-            d=spec.n_sites, vocab_size=2, hidden_dim=args.hidden_dim, n_layers=3, n_heads=4,
+        geometry = bravais_patch_geometry(
+            spec.positions, spec.cell, patch_shells=shells
         )
-        head = TwoHolePatchSwapHead(backbone, geometry=geometry, feature_dim=args.feature_dim)
-        print(f"  shells={shells}: window {head.n_patch} sites, pooled balls {geometry.level_sizes}")
+        backbone = LeTFRateMatrix(
+            d=spec.n_sites,
+            vocab_size=2,
+            hidden_dim=args.hidden_dim,
+            n_layers=3,
+            n_heads=4,
+        )
+        head = TwoHolePatchSwapHead(
+            backbone, geometry=geometry, feature_dim=args.feature_dim
+        )
+        print(
+            f"  shells={shells}: window {head.n_patch} sites, pooled balls {geometry.level_sizes}"
+        )
         results[shells] = fit_head(
-            head, target, pairs, train_states, held_out_states,
-            args.steps, args.batch, args.lr, args.seed,
+            head,
+            target,
+            pairs,
+            train_states,
+            held_out_states,
+            args.steps,
+            args.batch,
+            args.lr,
+            args.seed,
         )
     print("held-out R^2 by shells:", {k: round(v, 3) for k, v in results.items()})
     if args.out:
-        json.dump({"args": vars(args), "held_out_r2": results}, open(args.out, "w"), indent=2)
+        json.dump(
+            {"args": vars(args), "held_out_r2": results}, open(args.out, "w"), indent=2
+        )
 
 
 if __name__ == "__main__":

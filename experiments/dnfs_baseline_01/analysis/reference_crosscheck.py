@@ -16,6 +16,7 @@ Reads: results/01_baseline/gibbs_ref_d10_sigma{0.1,0.22305}.pt.
 Writes: results/01_baseline/reference_crosscheck.json + printed agree/disagree summary.
 
 """
+
 import json
 from pathlib import Path
 
@@ -87,15 +88,18 @@ def main() -> None:
 
         row = {
             "exact_E": exact_energy,
-            "gibbs_E": e_gibbs, "gibbs_E_se": se_g,
-            "wolff_E": e_wolff, "wolff_E_se": se_w,
-            "gibbs_absM": m_gibbs, "gibbs_absM_se": sm_g,
-            "wolff_absM": m_wolff, "wolff_absM_se": sm_w,
+            "gibbs_E": e_gibbs,
+            "gibbs_E_se": se_g,
+            "wolff_E": e_wolff,
+            "wolff_E_se": se_w,
+            "gibbs_absM": m_gibbs,
+            "gibbs_absM_se": sm_g,
+            "wolff_absM": m_wolff,
+            "wolff_absM_se": sm_w,
             "tv_energy_wolff_vs_gibbs": tv_wolff_gibbs,
             "tv_energy_wolff_vs_wolff": tv_wolff_wolff,
             "agree_E": abs(e_gibbs - e_wolff) < 3 * (se_g**2 + se_w**2) ** 0.5,
-            "agree_absM": abs(m_gibbs - m_wolff)
-            < 3 * (sm_g**2 + sm_w**2) ** 0.5,
+            "agree_absM": abs(m_gibbs - m_wolff) < 3 * (sm_g**2 + sm_w**2) ** 0.5,
             "agree_tv": tv_wolff_gibbs < 3 * max(tv_wolff_wolff, 1e-3),
             "wolff_E_vs_exact_sigmas": abs(e_wolff - exact_energy) / se_w,
             "gibbs_E_vs_exact_sigmas": abs(e_gibbs - exact_energy) / se_g,
@@ -104,16 +108,24 @@ def main() -> None:
 
         print(f"\n== {label} (sigma={spec['sigma']}, N={n}) ==")
         print(f"  exact E/d            {exact_energy:+.4f}")
-        print(f"  Gibbs E/d            {e_gibbs:+.4f} +- {se_g:.4f}"
-              f"  ({row['gibbs_E_vs_exact_sigmas']:.1f} SE from exact)")
-        print(f"  Wolff E/d            {e_wolff:+.4f} +- {se_w:.4f}"
-              f"  ({row['wolff_E_vs_exact_sigmas']:.1f} SE from exact)")
+        print(
+            f"  Gibbs E/d            {e_gibbs:+.4f} +- {se_g:.4f}"
+            f"  ({row['gibbs_E_vs_exact_sigmas']:.1f} SE from exact)"
+        )
+        print(
+            f"  Wolff E/d            {e_wolff:+.4f} +- {se_w:.4f}"
+            f"  ({row['wolff_E_vs_exact_sigmas']:.1f} SE from exact)"
+        )
         print(f"  Gibbs |M|/d          {m_gibbs:.4f} +- {sm_g:.4f}")
         print(f"  Wolff |M|/d          {m_wolff:.4f} +- {sm_w:.4f}")
-        print(f"  TV(E) Wolff-Gibbs    {tv_wolff_gibbs:.4f}"
-              f"   [Wolff-Wolff scale {tv_wolff_wolff:.4f}]")
+        print(
+            f"  TV(E) Wolff-Gibbs    {tv_wolff_gibbs:.4f}"
+            f"   [Wolff-Wolff scale {tv_wolff_wolff:.4f}]"
+        )
         verdicts = [k for k in ("agree_E", "agree_absM", "agree_tv") if not row[k]]
-        print(f"  verdict: {'AGREE' if not verdicts else 'DISAGREE on ' + ', '.join(verdicts)}")
+        print(
+            f"  verdict: {'AGREE' if not verdicts else 'DISAGREE on ' + ', '.join(verdicts)}"
+        )
 
     out = RESULTS / "reference_crosscheck.json"
     out.write_text(json.dumps(report, indent=2))

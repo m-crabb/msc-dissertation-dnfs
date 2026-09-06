@@ -13,6 +13,7 @@ Invariants pinned here:
     4) zero-rate trajectories still produce finite log-weights when a
        target is supplied (xi_t reduces to dt_log_p_tilde, which is finite).
 """
+
 import pytest
 import torch
 
@@ -155,7 +156,8 @@ def test_return_all_states_is_incompatible_with_log_weights():
     with pytest.raises(ValueError, match="return_all_states"):
         sample_ctmc(
             ConstantRateModel(flip_rate=0.2),
-            x0, ts,
+            x0,
+            ts,
             return_all_states=True,
             return_log_weights=True,
             target=target,
@@ -168,6 +170,7 @@ def test_sample_ctmc_lenet_path_runs_and_preserves_state_set():
     accuracy (training-loop integration tests handle that); just shape
     + support."""
     from discrete_flow_sampler.models.lemlp import LeMLPRateMatrix
+
     torch.manual_seed(0)
     D = 4
     model = LeMLPRateMatrix(d=D, vocab_size=2, hidden_dim=16, n_summands=2)

@@ -9,6 +9,7 @@ These encode "what correct looks like" for the hard-constraint MCMC baseline:
      c=0.5 slice at D=4 (the correctness gate that licenses calling later
      failures "dynamics", not bugs).
 """
+
 import numpy as np
 import torch
 
@@ -85,7 +86,7 @@ def test_kawasaki_stationary_matches_exact_enum_d4():
     d = D * D
     target = IsingTarget(D=D, sigma=sigma, bias=0.0)
 
-    states = enumerate_states(d)                        # (65536, 16) ±1
+    states = enumerate_states(d)  # (65536, 16) ±1
     log_pi = exact_log_probs(target, states)
     slice_states, log_pi_cond = conditional_pmf_at_composition(states, log_pi, d // 2)
     # Exact slice energies in float64 to match the chain's float64 accumulator
@@ -103,7 +104,7 @@ def test_kawasaki_stationary_matches_exact_enum_d4():
     rng = np.random.default_rng(7)
     x = init_random_at_composition(d, 0.5, rng)
     energy_trace, _, _ = run_chain(x, D, sigma, 2_000_000, 7)
-    samples = energy_trace[100_000::5]                  # burn-in + thin
+    samples = energy_trace[100_000::5]  # burn-in + thin
 
     emp = np.round(samples, 6)
     emp_level_p = np.array([(emp == lv).mean() for lv in levels])
@@ -117,8 +118,9 @@ def test_left_minus_right_labels_mode():
     D = 6
     assert left_minus_right(init_phase_separated(D, 0), D) == 2.0
     assert left_minus_right(init_phase_separated(D, 1), D) == -2.0
-    checker = np.array([1 if (i + i // D) % 2 == 0 else -1 for i in range(D * D)],
-                       dtype=np.int64)
+    checker = np.array(
+        [1 if (i + i // D) % 2 == 0 else -1 for i in range(D * D)], dtype=np.int64
+    )
     assert abs(left_minus_right(checker, D)) < 1e-9
 
 

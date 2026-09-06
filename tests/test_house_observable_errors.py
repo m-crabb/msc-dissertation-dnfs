@@ -6,6 +6,7 @@ Written before the implementation. Three properties pin the definitions:
     reference that the UNweighted sampler does not);
   * EW2 of a pure shift equals the shift (1-D W2 is the shift for translations).
 """
+
 import torch
 
 from discrete_flow_sampler.diagnostics.metrics import (
@@ -70,12 +71,17 @@ def test_weighted_reference_equals_duplicated_reference():
     duplicated = torch.cat([unique, unique[:2]])
     ref_w = torch.tensor([2.0, 2.0, 1.0, 1.0, 1.0, 1.0]) / 8
     for metric in (magnetisation_profile_error, correlation_profile_error):
-        assert abs(
-            metric(x, w, duplicated, D)
-            - metric(x, w, unique, D, reference_weights=ref_w)
-        ) < 1e-5
-    assert abs(
-        energy_wasserstein2(x.sum(-1), w, duplicated.sum(-1))
-        - energy_wasserstein2(x.sum(-1), w, unique.sum(-1),
-                              reference_weights=ref_w)
-    ) < 1e-5
+        assert (
+            abs(
+                metric(x, w, duplicated, D)
+                - metric(x, w, unique, D, reference_weights=ref_w)
+            )
+            < 1e-5
+        )
+    assert (
+        abs(
+            energy_wasserstein2(x.sum(-1), w, duplicated.sum(-1))
+            - energy_wasserstein2(x.sum(-1), w, unique.sum(-1), reference_weights=ref_w)
+        )
+        < 1e-5
+    )

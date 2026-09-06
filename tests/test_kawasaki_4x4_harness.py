@@ -3,6 +3,7 @@ atom->site mapping and the CE embedding must reproduce the
 FixedCompositionIsingTarget energy (in differences, so constant offsets
 cancel), and a short chain must conserve composition at every snapshot.
 """
+
 import numpy as np
 import pytest
 import torch
@@ -15,6 +16,7 @@ from experiments.constrained_hard_03.kawasaki_4x4 import (
     site_index_map,
     spins_from_symbols,
 )
+
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 

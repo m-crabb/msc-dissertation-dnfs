@@ -10,10 +10,10 @@ would be unattributable — the exact failure mode that cost the first
 capacity arm its reading (hidden_dim varied with the learning rate frozen
 at a value tuned for the narrow net).
 """
+
 from dataclasses import replace
 
 import pytest
-
 from experiments.constrained_hard_03.configs import CONFIGS
 
 
@@ -34,18 +34,21 @@ FMO2_BASE = "H2_d256_scr5k_fmo2"
 FMO2_ARM_DECLARATIONS = {
     "H2_d256_scr5k_fmo2_h128": dict(model={"hidden_dim": 32}),
     "H2_d256_scr5k_fmo2_h128_lr03": dict(
-        model={"hidden_dim": 32}, train={"lr": 1e-3},
+        model={"hidden_dim": 32},
+        train={"lr": 1e-3},
     ),
     "H2_d256_scr5k_fmo2_lr03": dict(train={"lr": 1e-3}),
     "H2_d256_scr5k_fmo2_L3": dict(model={"n_layers": 2}),
     "H2_d256_scr5k_fmo2_L3_lr03": dict(
-        model={"n_layers": 2}, train={"lr": 1e-3},
+        model={"n_layers": 2},
+        train={"lr": 1e-3},
     ),
     "H2_d256_scr5k_fmo2_clip2000": dict(
         train={"grad_clip_max_norm": 500.0},
     ),
     "H2_d256_scr5k_fmo2_ne512_b512": dict(
-        ctmc={"n_euler_steps": 128}, train={"batch_size": 128},
+        ctmc={"n_euler_steps": 128},
+        train={"batch_size": 128},
     ),
     "H2_d256_scr20k_fmo2": dict(train={"n_steps": 5_000}),
     # The batch-only decomposition arm — the
@@ -115,7 +118,8 @@ def test_ma_h128_bridge_arm_covaries_lr_with_width():
     # graph is measured not to fit an A100-80GB in one backward.
     assert arm.train.loss_microbatch_size == 64
     rebuilt = _reset(
-        arm, name=base.name,
+        arm,
+        name=base.name,
         model={"hidden_dim": 32},
         train={"lr": 1e-3, "loss_microbatch_size": None},
     )
@@ -309,9 +313,7 @@ def test_d256_fmo2_ladder_is_the_rescue_recipe_with_head_family_the_only_mechani
         head_kind=rescue.head_kind,
         ema_decay=rescue.ema_decay,
         site_orderings=rescue.site_orderings,
-        eval=replace(
-            ladder.eval, eval_sample_chunk=rescue.eval.eval_sample_chunk
-        ),
+        eval=replace(ladder.eval, eval_sample_chunk=rescue.eval.eval_sample_chunk),
     )
     assert rebuilt == rescue
 
@@ -370,9 +372,7 @@ def test_clip2000_continuation_mirrors_cv2_continuation_except_declared_fields()
     )
     rebuilt = replace(
         rebuilt,
-        eval=replace(
-            rebuilt.eval, eval_sample_chunk=cv2.eval.eval_sample_chunk
-        ),
+        eval=replace(rebuilt.eval, eval_sample_chunk=cv2.eval.eval_sample_chunk),
     )
     assert rebuilt == cv2
 
@@ -453,9 +453,7 @@ def test_d64_grid_arms_mirror_the_matching_control_except_the_grid():
     }.items():
         arm = CONFIGS[arm_name]
         assert arm.ctmc.n_euler_steps == n_euler_steps
-        rebuilt = _reset(
-            arm, name=control.name, ctmc={"n_euler_steps": 128}
-        )
+        rebuilt = _reset(arm, name=control.name, ctmc={"n_euler_steps": 128})
         assert rebuilt == control
 
 
@@ -476,9 +474,7 @@ def test_d64_boundary_shock_arm_mirrors_its_d256_sibling_knobs():
     the same two TrainCfg knobs, so the two reads differ by lattice size and
     nothing else in the boundary treatment."""
     d64 = CONFIGS["H2_d64_c50_s223_letf_fmo2_50k_curr_rw"]
-    d256 = CONFIGS[
-        "H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw"
-    ]
+    d256 = CONFIGS["H2_d256_c50_s223_letf_fmo2_50k_curr_b512_ne512_naive_rw"]
     for arm in (d64, d256):
         assert arm.train.rewarmup_on_stage is True
         assert arm.train.stage_best_checkpoints is True

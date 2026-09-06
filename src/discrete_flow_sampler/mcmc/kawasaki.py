@@ -39,8 +39,9 @@ import numpy as np
 
 try:
     from numba import njit
+
     HAS_NUMBA = True
-except ImportError:                                   # pragma: no cover
+except ImportError:  # pragma: no cover
     HAS_NUMBA = False
 
     def njit(*args, **kwargs):
@@ -65,14 +66,18 @@ def neighbour_sum(x, i, D):
 def _is_adjacent(i, j, D):
     r = i // D
     c = i % D
-    return (j == ((r - 1) % D) * D + c or j == ((r + 1) % D) * D + c
-            or j == r * D + (c - 1) % D or j == r * D + (c + 1) % D)
+    return (
+        j == ((r - 1) % D) * D + c
+        or j == ((r + 1) % D) * D + c
+        or j == r * D + (c - 1) % D
+        or j == r * D + (c + 1) % D
+    )
 
 
 @njit(cache=True)
 def kawasaki_delta_log_prob(x, i, j, D, sigma):
     """Δlog_prob_ising for swapping opposite-spin sites i and j."""
-    diff = x[j] - x[i]                                # = x_i' - x_i = -(x_j' - x_j)
+    diff = x[j] - x[i]  # = x_i' - x_i = -(x_j' - x_j)
     delta_quadratic = 2.0 * diff * (neighbour_sum(x, i, D) - neighbour_sum(x, j, D))
     if _is_adjacent(i, j, D):
         delta_quadratic -= 2.0 * diff * diff
@@ -244,7 +249,7 @@ def run_local_swap_chain_snapshots(x, D, sigma, n_steps, seed, thin):
         i = np.random.randint(d)
         j = neighbour_site(i, np.random.randint(4), D)
         if x[i] == x[j]:
-            continue                          # identity proposal: rejected
+            continue  # identity proposal: rejected
         delta = kawasaki_delta_log_prob(x, i, j, D, sigma)
         if delta >= 0.0 or np.random.random() < np.exp(delta):
             spin_i = x[i]

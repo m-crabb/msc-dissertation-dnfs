@@ -35,11 +35,13 @@ What correct looks like, independent of implementation:
    the trainer reuses it, so `cv_var_ratio` is exactly 1.0 and the two
    variance columns are exactly equal.
 """
+
 import csv
 from types import SimpleNamespace
 
 import pytest
 import torch
+from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
 
 from discrete_flow_sampler.constraints.swap_readout import LeTFMaskOneSwapHead
 from discrete_flow_sampler.models.lemlp import LeMLPRateMatrix
@@ -63,9 +65,6 @@ from discrete_flow_sampler.targets.ising import (
     FixedCompositionIsingTarget,
     IsingTarget,
 )
-
-from experiments.dnfs_baseline_01.configs import CurriculumStageCfg
-
 
 # --------------------------------------------------------------------------
 # Fixtures
@@ -110,13 +109,22 @@ def test_swap_reuse_bit_identical_to_sequential_grid(multi_event):
 
     torch.manual_seed(11)
     trajectory_off = sample_swap_ctmc(
-        head, x0, TS, return_all_states=True, target=target,
+        head,
+        x0,
+        TS,
+        return_all_states=True,
+        target=target,
         multi_event=multi_event,
     )
     torch.manual_seed(11)
     trajectory_on, integrand = sample_swap_ctmc(
-        head, x0, TS, return_all_states=True, target=target,
-        multi_event=multi_event, return_cv_integrand=True,
+        head,
+        x0,
+        TS,
+        return_all_states=True,
+        target=target,
+        multi_event=multi_event,
+        return_cv_integrand=True,
     )
 
     # (a) Samples untouched: the flag consumes no RNG and changes no state.
@@ -124,7 +132,11 @@ def test_swap_reuse_bit_identical_to_sequential_grid(multi_event):
 
     # (b) The integrand IS the sequential grid recompute, bit for bit.
     want_c_t, want_integrand = compute_c_t_grid_swap(
-        TS, trajectory_off, target, head, mode="control_variate",
+        TS,
+        trajectory_off,
+        target,
+        head,
+        mode="control_variate",
         chunk_rows=None,
     )
     assert integrand.shape == (len(TS), 8)
@@ -144,12 +156,14 @@ def test_flip_reuse_bit_identical_to_grid(fixture):
     x0 = target.sample_base(8, device="cpu")
 
     torch.manual_seed(11)
-    trajectory_off = sample_ctmc(
-        model, x0, TS, return_all_states=True, target=target
-    )
+    trajectory_off = sample_ctmc(model, x0, TS, return_all_states=True, target=target)
     torch.manual_seed(11)
     trajectory_on, integrand = sample_ctmc(
-        model, x0, TS, return_all_states=True, target=target,
+        model,
+        x0,
+        TS,
+        return_all_states=True,
+        target=target,
         return_cv_integrand=True,
     )
 
@@ -181,7 +195,11 @@ def test_swap_reuse_guards():
         )  # no target
     with pytest.raises(ValueError, match="return_cv_integrand"):
         sample_swap_ctmc(
-            head, x0, TS, return_all_states=True, target=target,
+            head,
+            x0,
+            TS,
+            return_all_states=True,
+            target=target,
             return_cv_integrand=True,
             resampling=ResamplingConfig(ess_threshold_fraction=0.5),
         )
@@ -194,12 +212,14 @@ def test_flip_reuse_guards():
     with pytest.raises(ValueError, match="return_cv_integrand"):
         sample_ctmc(model, x0, TS, target=target, return_cv_integrand=True)
     with pytest.raises(ValueError, match="return_cv_integrand"):
-        sample_ctmc(
-            model, x0, TS, return_all_states=True, return_cv_integrand=True
-        )
+        sample_ctmc(model, x0, TS, return_all_states=True, return_cv_integrand=True)
     with pytest.raises(ValueError, match="return_cv_integrand"):
         sample_ctmc(
-            model, x0, TS, return_all_states=True, target=target,
+            model,
+            x0,
+            TS,
+            return_all_states=True,
+            target=target,
             return_cv_integrand=True,
             resampling=ResamplingConfig(ess_threshold_fraction=0.5),
         )
@@ -239,9 +259,7 @@ def test_flip_eval_log_weights_bit_exact_vs_fresh_forward_reference(fixture):
     torch.manual_seed(13)
     want_x, want_w = _reference_sample_ctmc_log_weights(model, x0, TS, target)
     torch.manual_seed(13)
-    got_x, got_w = sample_ctmc(
-        model, x0, TS, return_log_weights=True, target=target
-    )
+    got_x, got_w = sample_ctmc(model, x0, TS, return_log_weights=True, target=target)
     assert torch.equal(got_x, want_x)
     assert torch.equal(got_w, want_w)
 
@@ -265,22 +283,33 @@ def _swap_head(init_seed: int) -> LeTFMaskOneSwapHead:
 
 def _swap_train_cfg(c_t_from_rollout: bool, **extra):
     return SimpleNamespace(
-        n_steps=4, batch_size=8, outer_batch_size=8, inner_steps_per_outer=2,
-        lr=1e-3, seed=0, replay_buffer_cycles=2, grad_clip_max_norm=500.0,
-        warmup_steps=0, resume_every_outer=1, c_t_grid_chunk_rows=None,
-        c_t_from_rollout=c_t_from_rollout, **extra,
+        n_steps=4,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=2,
+        grad_clip_max_norm=500.0,
+        warmup_steps=0,
+        resume_every_outer=1,
+        c_t_grid_chunk_rows=None,
+        c_t_from_rollout=c_t_from_rollout,
+        **extra,
     )
 
 
-def _run_swap(run_dir, c_t_from_rollout, estimator_mode="control_variate",
-              **extra):
+def _run_swap(run_dir, c_t_from_rollout, estimator_mode="control_variate", **extra):
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)
     train_swap(
-        _swap_head(init_seed=0), target,
+        _swap_head(init_seed=0),
+        target,
         _swap_train_cfg(c_t_from_rollout, **extra),
         SimpleNamespace(n_euler_steps=8),
         SimpleNamespace(eval_every=2, n_eval_samples=16),
-        run_dir, use_wandb=False, estimator_mode=estimator_mode,
+        run_dir,
+        use_wandb=False,
+        estimator_mode=estimator_mode,
         sigma_curriculum=TWO_STAGE_CURRICULUM,
     )
 
@@ -313,9 +342,7 @@ def test_swap_trainer_reuse_skips_the_grid_recompute(tmp_path, monkeypatch):
             "in control_variate mode"
         )
 
-    monkeypatch.setattr(
-        swap_training, "compute_c_t_grid_swap", _must_not_be_called
-    )
+    monkeypatch.setattr(swap_training, "compute_c_t_grid_swap", _must_not_be_called)
     _run_swap(tmp_path / "reuse", c_t_from_rollout=True)
     assert len(_log_rows(tmp_path / "reuse")) == 4
 
@@ -323,7 +350,8 @@ def test_swap_trainer_reuse_skips_the_grid_recompute(tmp_path, monkeypatch):
 def test_swap_trainer_reuse_with_resampling_refuses(tmp_path):
     with pytest.raises(ValueError, match="c_t_from_rollout"):
         _run_swap(
-            tmp_path / "clash", c_t_from_rollout=True,
+            tmp_path / "clash",
+            c_t_from_rollout=True,
             rollout_resample_ess_fraction=0.5,
         )
 
@@ -332,8 +360,7 @@ def test_swap_trainer_naive_mode_free_rider(tmp_path):
     """Naive mode with the knob: the grid still runs (its integrand is
     target-only), but the variance bookkeeping reuses it — the ratio must
     be EXACTLY 1.0, the two variance columns exactly equal."""
-    _run_swap(tmp_path / "naive", c_t_from_rollout=True,
-              estimator_mode="naive_mc")
+    _run_swap(tmp_path / "naive", c_t_from_rollout=True, estimator_mode="naive_mc")
     for row in _log_rows(tmp_path / "naive"):
         assert float(row["cv_var_ratio"]) == 1.0
         assert row["var_dt_log_p_tilde"] == row["var_estimator_integrand"]
@@ -345,23 +372,31 @@ def test_swap_trainer_naive_mode_free_rider(tmp_path):
 
 def _flip_train_cfg(c_t_from_rollout: bool, **extra):
     return SimpleNamespace(
-        n_steps=4, batch_size=8, outer_batch_size=8, inner_steps_per_outer=2,
-        lr=1e-3, seed=0, replay_buffer_cycles=1,
-        c_t_from_rollout=c_t_from_rollout, **extra,
+        n_steps=4,
+        batch_size=8,
+        outer_batch_size=8,
+        inner_steps_per_outer=2,
+        lr=1e-3,
+        seed=0,
+        replay_buffer_cycles=1,
+        c_t_from_rollout=c_t_from_rollout,
+        **extra,
     )
 
 
-def _run_flip(run_dir, c_t_from_rollout, estimator_mode="control_variate",
-              **extra):
+def _run_flip(run_dir, c_t_from_rollout, estimator_mode="control_variate", **extra):
     target = IsingTarget(D=2, sigma=0.1)
     torch.manual_seed(0)
     model = LeMLPRateMatrix(d=4, vocab_size=2, hidden_dim=16, n_summands=2)
     train(
-        model=model, target=target,
+        model=model,
+        target=target,
         train_cfg=_flip_train_cfg(c_t_from_rollout, **extra),
         ctmc_cfg=SimpleNamespace(n_euler_steps=8),
         eval_cfg=SimpleNamespace(eval_every=2, n_eval_samples=8),
-        output_dir=run_dir, use_wandb=False, estimator_mode=estimator_mode,
+        output_dir=run_dir,
+        use_wandb=False,
+        estimator_mode=estimator_mode,
     )
 
 
@@ -388,7 +423,8 @@ def test_flip_trainer_reuse_skips_the_grid_recompute(tmp_path, monkeypatch):
 def test_flip_trainer_reuse_with_resampling_refuses(tmp_path):
     with pytest.raises(ValueError, match="c_t_from_rollout"):
         _run_flip(
-            tmp_path / "clash", c_t_from_rollout=True,
+            tmp_path / "clash",
+            c_t_from_rollout=True,
             rollout_resample_ess_fraction=0.5,
         )
 
@@ -396,8 +432,7 @@ def test_flip_trainer_reuse_with_resampling_refuses(tmp_path):
 def test_flip_trainer_naive_mode_free_rider(tmp_path):
     # No cv_var_ratio column here — the CV-inversion observer is
     # swap-trainer-only; exact equality of the parents is the same pin.
-    _run_flip(tmp_path / "naive", c_t_from_rollout=True,
-              estimator_mode="naive_mc")
+    _run_flip(tmp_path / "naive", c_t_from_rollout=True, estimator_mode="naive_mc")
     for row in _log_rows(tmp_path / "naive"):
         assert row["var_dt_log_p_tilde"] == row["var_estimator_integrand"]
 
@@ -415,6 +450,8 @@ def test_optimised_recipe_flips_only_the_declared_flags():
 
     from experiments.constrained_hard_03.configs import (
         CONFIGS as HARD_CONFIGS,
+    )
+    from experiments.constrained_hard_03.configs import (
         optimised_recipe,
     )
 
@@ -430,6 +467,4 @@ def test_optimised_recipe_flips_only_the_declared_flags():
     for field in fields(base.train):
         if field.name == "c_t_from_rollout":
             continue
-        assert getattr(optimised.train, field.name) == getattr(
-            base.train, field.name
-        )
+        assert getattr(optimised.train, field.name) == getattr(base.train, field.name)

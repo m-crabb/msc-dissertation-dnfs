@@ -57,6 +57,7 @@ its pair-Delta-E bill; the network-pass ratio charges the neural side its
 backbone rows against Kawasaki's per-trial bill (its elementary operation
 and its energy evaluation coincide).
 """
+
 import argparse
 import json
 import math
@@ -64,7 +65,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-
 from experiments.constrained_hard_03.demo_4x4 import (
     OBSERVABLE_NAMES,
     n_eff_observable,
@@ -72,6 +72,7 @@ from experiments.constrained_hard_03.demo_4x4 import (
     phi_mass_on_support,
     phi_support,
 )
+
 from discrete_flow_sampler.diagnostics.metrics import (
     ess_from_log_weights,
     integrated_autocorr,
@@ -81,11 +82,11 @@ from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 OPERATING_POINTS = {"sc": 0.223, "s010": 0.10}
 LATTICE_SIDE = 8
-BURN_IN_FLOOR_SWEEPS = 10_000          # burn-in = max(1e4, 20 * tau_int)
+BURN_IN_FLOOR_SWEEPS = 10_000  # burn-in = max(1e4, 20 * tau_int)
 BURN_IN_TAU_MULTIPLE = 20
-BLOCK_LENGTH_TAU_MULTIPLE = 10         # batch-means block length >= 10 tau
+BLOCK_LENGTH_TAU_MULTIPLE = 10  # batch-means block length >= 10 tau
 MIN_BLOCKS = 20
-GO_POINT_MARGIN = 1.5                  # per-currency point margin
+GO_POINT_MARGIN = 1.5  # per-currency point margin
 COVERAGE_BALANCE_TOLERANCE = 0.1
 
 
@@ -114,15 +115,21 @@ def batch_means_tau_int(trace, min_blocks=MIN_BLOCKS):
     if trace_var == 0.0:
         return 1.0, 1, n
     max_block_length = n // min_blocks
-    block_length = max(1, min(int(math.ceil(
-        BLOCK_LENGTH_TAU_MULTIPLE * integrated_autocorr(trace)
-    )), max_block_length))
+    block_length = max(
+        1,
+        min(
+            int(math.ceil(BLOCK_LENGTH_TAU_MULTIPLE * integrated_autocorr(trace))),
+            max_block_length,
+        ),
+    )
     tau = None
     for _ in range(20):
         n_blocks = n // block_length
-        block_means = trace[: n_blocks * block_length].reshape(
-            n_blocks, block_length
-        ).mean(axis=1)
+        block_means = (
+            trace[: n_blocks * block_length]
+            .reshape(n_blocks, block_length)
+            .mean(axis=1)
+        )
         tau = block_length * block_means.var(ddof=1) / trace_var
         certified_length = int(math.ceil(BLOCK_LENGTH_TAU_MULTIPLE * tau))
         if block_length >= certified_length:
@@ -139,9 +146,7 @@ def batch_means_tau_int(trace, min_blocks=MIN_BLOCKS):
 
 def kawasaki_burn_in_sweeps(tau_int_sweeps):
     """Competitor burn-in: max(1e4 sweeps, 20 * tau_int(energy))."""
-    return int(max(
-        BURN_IN_FLOOR_SWEEPS, BURN_IN_TAU_MULTIPLE * tau_int_sweeps
-    ))
+    return int(max(BURN_IN_FLOOR_SWEEPS, BURN_IN_TAU_MULTIPLE * tau_int_sweeps))
 
 
 # ---------------------------------------------------------------------------
@@ -159,13 +164,13 @@ def ratio_with_ci(n_eff_num, se_num, cost_num, n_eff_den, se_den, cost_den):
     strictly positive ratio whose margin bar is multiplicative (1.5x).
     """
     point = (n_eff_num / cost_num) / (n_eff_den / cost_den)
-    se_log = math.sqrt(
-        (se_num / n_eff_num) ** 2 + (se_den / n_eff_den) ** 2
-    )
+    se_log = math.sqrt((se_num / n_eff_num) ** 2 + (se_den / n_eff_den) ** 2)
     lo = point * math.exp(-1.96 * se_log)
     hi = point * math.exp(+1.96 * se_log)
     return {
-        "point": float(point), "lo": float(lo), "hi": float(hi),
+        "point": float(point),
+        "lo": float(lo),
+        "hi": float(hi),
         "excludes_parity": bool(lo > 1.0 or hi < 1.0),
     }
 
@@ -192,14 +197,22 @@ def ratio_with_f_ci(n_eff_num, cost_num, r_num, n_eff_den, cost_den, r_den):
     lo = point / f_distribution.ppf(0.975, r_den, r_num)
     hi = point * f_distribution.ppf(0.975, r_num, r_den)
     return {
-        "point": float(point), "lo": float(lo), "hi": float(hi),
+        "point": float(point),
+        "lo": float(lo),
+        "hi": float(hi),
         "excludes_parity": bool(lo > 1.0 or hi < 1.0),
     }
 
 
-def frozen_verdict(energy_eval_ratio, network_pass_ratio, floor_not_worse,
-                   coverage_ok, gate_holds, beats_local_variant,
-                   wins_at_floor=None):
+def frozen_verdict(
+    energy_eval_ratio,
+    network_pass_ratio,
+    floor_not_worse,
+    coverage_ok,
+    gate_holds,
+    beats_local_variant,
+    wins_at_floor=None,
+):
     """The three-way outcome rule, applied mechanically.
 
     Inputs are the sigma_c ratios vs the BEST tuned Kawasaki variant (each a
@@ -213,44 +226,65 @@ def frozen_verdict(energy_eval_ratio, network_pass_ratio, floor_not_worse,
     shortfall) return "PARTIAL" with an *_unenumerated narrative rather
     than being forced into the nearest bucket.
     """
+
     def margin_passes(ratio):
         return ratio["excludes_parity"] and ratio["point"] >= GO_POINT_MARGIN
 
-    margins = [margin_passes(energy_eval_ratio),
-               margin_passes(network_pass_ratio)]
+    margins = [margin_passes(energy_eval_ratio), margin_passes(network_pass_ratio)]
     points = [energy_eval_ratio["point"], network_pass_ratio["point"]]
     pending = [] if floor_not_worse is not None else ["floor_not_worse"]
 
     if all(margins) and coverage_ok and gate_holds:
         if pending:
-            return {"verdict": "PROVISIONAL", "pending": pending,
-                    "narrative": "go_pending_floor"}
+            return {
+                "verdict": "PROVISIONAL",
+                "pending": pending,
+                "narrative": "go_pending_floor",
+            }
         if floor_not_worse:
             return {"verdict": "GO", "pending": [], "narrative": "go"}
-        return {"verdict": "PARTIAL", "pending": [],
-                "narrative": "sigma_c_only_unenumerated"}
+        return {
+            "verdict": "PARTIAL",
+            "pending": [],
+            "narrative": "sigma_c_only_unenumerated",
+        }
     if all(margins) and not coverage_ok:
-        return {"verdict": "PARTIAL", "pending": pending,
-                "narrative": "coverage_shortfall_unenumerated"}
+        return {
+            "verdict": "PARTIAL",
+            "pending": pending,
+            "narrative": "coverage_shortfall_unenumerated",
+        }
     if all(p < 1.0 for p in points):
         if wins_at_floor:
-            return {"verdict": "PARTIAL", "pending": pending,
-                    "narrative": "floor_only"}
+            return {"verdict": "PARTIAL", "pending": pending, "narrative": "floor_only"}
         if beats_local_variant:
-            return {"verdict": "PARTIAL", "pending": pending,
-                    "narrative": "move_set_does_the_work"}
-        return {"verdict": "NO-GO", "pending": pending,
-                "narrative": "diagnosis_section"}
+            return {
+                "verdict": "PARTIAL",
+                "pending": pending,
+                "narrative": "move_set_does_the_work",
+            }
+        return {
+            "verdict": "NO-GO",
+            "pending": pending,
+            "narrative": "diagnosis_section",
+        }
     if sum(margins) == 1:
-        return {"verdict": "PARTIAL", "pending": pending,
-                "narrative": "one_currency"}
-    if (energy_eval_ratio["excludes_parity"]
-            and network_pass_ratio["excludes_parity"]
-            and all(p > 1.0 for p in points)):
-        return {"verdict": "PARTIAL", "pending": pending,
-                "narrative": "real_but_marginal"}
-    return {"verdict": "PARTIAL", "pending": pending,
-            "narrative": "inconclusive_unenumerated"}
+        return {"verdict": "PARTIAL", "pending": pending, "narrative": "one_currency"}
+    if (
+        energy_eval_ratio["excludes_parity"]
+        and network_pass_ratio["excludes_parity"]
+        and all(p > 1.0 for p in points)
+    ):
+        return {
+            "verdict": "PARTIAL",
+            "pending": pending,
+            "narrative": "real_but_marginal",
+        }
+    return {
+        "verdict": "PARTIAL",
+        "pending": pending,
+        "narrative": "inconclusive_unenumerated",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -264,17 +298,14 @@ def reference_block(probe_root, point, target):
     reference contaminates every downstream N_eff, so the numbers the
     analysis reads are re-derived, not trusted)."""
     summary = json.loads(
-        (probe_root / "reference" / point / "reference_summary.json")
-        .read_text()
+        (probe_root / "reference" / point / "reference_summary.json").read_text()
     )
     if not summary["passed"]:
         raise RuntimeError(
             f"reference/{point} failed its R-hat validity bar; "
             "these moments are not trustworthy."
         )
-    chain_dirs = sorted(
-        (probe_root / "reference" / point).glob("chain_*")
-    )
+    chain_dirs = sorted((probe_root / "reference" / point).glob("chain_*"))
     traces = {}
     phi_pooled = None
     for chain_dir in chain_dirs:
@@ -287,11 +318,13 @@ def reference_block(probe_root, point, target):
     moments = {}
     for name in OBSERVABLE_NAMES:
         chains = np.stack(traces[name])
-        pooled = chains[:, chains.shape[1] // 2:].reshape(-1)
+        pooled = chains[:, chains.shape[1] // 2 :].reshape(-1)
         stored = summary["post_discard_moments"][name]
         recomputed_mean, recomputed_var = pooled.mean(), pooled.var()
-        if not (np.isclose(recomputed_mean, stored["mean"], atol=1e-6)
-                and np.isclose(recomputed_var, stored["var"], rtol=1e-5)):
+        if not (
+            np.isclose(recomputed_mean, stored["mean"], atol=1e-6)
+            and np.isclose(recomputed_var, stored["var"], rtol=1e-5)
+        ):
             raise RuntimeError(
                 f"reference/{point}/{name}: recomputed moments "
                 f"({recomputed_mean:.6f}, {recomputed_var:.6f}) disagree "
@@ -302,7 +335,8 @@ def reference_block(probe_root, point, target):
         if name == "phi":
             phi_pooled = pooled
     phi_hist = phi_mass_on_support(
-        phi_pooled, np.full(phi_pooled.size, 1.0 / phi_pooled.size),
+        phi_pooled,
+        np.full(phi_pooled.size, 1.0 / phi_pooled.size),
         LATTICE_SIDE,
     )
     return {
@@ -331,10 +365,12 @@ def neural_replicate_rows(run_dir, target, n_euler_steps):
     rows = []
     for replicate_dir in sorted(run_dir.glob("eval_replicate_s*")):
         metrics = json.loads((replicate_dir / "metrics.json").read_text())
-        samples = torch.load(replicate_dir / "samples.pt",
-                             map_location="cpu", weights_only=True)
-        log_w = torch.load(replicate_dir / "log_weights.pt",
-                           map_location="cpu", weights_only=True)
+        samples = torch.load(
+            replicate_dir / "samples.pt", map_location="cpu", weights_only=True
+        )
+        log_w = torch.load(
+            replicate_dir / "log_weights.pt", map_location="cpu", weights_only=True
+        )
         n_samples = samples.shape[0]
         assert n_samples == metrics["n_eval_samples"]
         recomputed_ess = ess_from_log_weights(log_w).item()
@@ -346,35 +382,36 @@ def neural_replicate_rows(run_dir, target, n_euler_steps):
             )
         weights = torch.softmax(log_w, dim=0)
         estimates = {
-            name: (weights * observable_values(name, samples.float(),
-                                               target)).sum().item()
+            name: (weights * observable_values(name, samples.float(), target))
+            .sum()
+            .item()
             for name in OBSERVABLE_NAMES
         }
         phi_values = observable_values("phi", samples.float(), target).numpy()
         weights_np = weights.numpy()
-        rows.append({
-            "replicate_seed": metrics["replicate_seed"],
-            "estimates": estimates,
-            "is_ess_fraction": metrics["ess_fraction"],
-            "n_samples": int(n_samples),
-            "backbone_rows": int(n_samples * n_euler_steps),
-            "pair_delta_e_evals": int(n_samples * n_euler_steps * n_pairs),
-            "dt_logp_evals": int(n_samples * n_euler_steps),
-            "phi_mass_positive": float(weights_np[phi_values > 0].sum()),
-            "phi_mass_negative": float(weights_np[phi_values < 0].sum()),
-            "phi_mass_zero": float(weights_np[phi_values == 0].sum()),
-            # Weighted vs unweighted second moment: the guard against the
-            # symmetry trap — a Z2-symmetric but mode-collapsed sampler
-            # scores a spuriously high N_eff on the phi MEAN (truth 0 by
-            # symmetry); E[phi^2] matching the reference variance is what
-            # certifies genuine mode coverage. The unweighted moment shows
-            # what the raw process visits before weights correct it.
-            "phi_sq_weighted": float((weights_np * phi_values ** 2).sum()),
-            "phi_sq_unweighted": float((phi_values ** 2).mean()),
-            "phi_hist": phi_mass_on_support(
-                phi_values, weights_np, LATTICE_SIDE
-            ),
-        })
+        rows.append(
+            {
+                "replicate_seed": metrics["replicate_seed"],
+                "estimates": estimates,
+                "is_ess_fraction": metrics["ess_fraction"],
+                "n_samples": int(n_samples),
+                "backbone_rows": int(n_samples * n_euler_steps),
+                "pair_delta_e_evals": int(n_samples * n_euler_steps * n_pairs),
+                "dt_logp_evals": int(n_samples * n_euler_steps),
+                "phi_mass_positive": float(weights_np[phi_values > 0].sum()),
+                "phi_mass_negative": float(weights_np[phi_values < 0].sum()),
+                "phi_mass_zero": float(weights_np[phi_values == 0].sum()),
+                # Weighted vs unweighted second moment: the guard against the
+                # symmetry trap — a Z2-symmetric but mode-collapsed sampler
+                # scores a spuriously high N_eff on the phi MEAN (truth 0 by
+                # symmetry); E[phi^2] matching the reference variance is what
+                # certifies genuine mode coverage. The unweighted moment shows
+                # what the raw process visits before weights correct it.
+                "phi_sq_weighted": float((weights_np * phi_values**2).sum()),
+                "phi_sq_unweighted": float((phi_values**2).mean()),
+                "phi_hist": phi_mass_on_support(phi_values, weights_np, LATTICE_SIDE),
+            }
+        )
     return rows
 
 
@@ -398,7 +435,7 @@ def kawasaki_chain_rows(probe_root, point, variant, target):
         # tau on the second half (clearly post-transient) so the transient
         # cannot inflate its own discard window
         tau_snapshots, block_length, n_blocks = batch_means_tau_int(
-            energy_trace[energy_trace.size // 2:]
+            energy_trace[energy_trace.size // 2 :]
         )
         tau_sweeps = tau_snapshots * snapshot_sweeps
         burn_in = kawasaki_burn_in_sweeps(tau_sweeps)
@@ -412,21 +449,23 @@ def kawasaki_chain_rows(probe_root, point, variant, target):
         kept_energy = energy_trace[kept]
         sokal_tau_snapshots = integrated_autocorr(kept_energy)
         phi_values = observable_values("phi", kept_states, target).numpy()
-        rows.append({
-            "chain_index": meta["chain_index"],
-            "init_kind": meta["init_kind"],
-            "init_side": meta["init_side"],
-            "estimates": estimates,
-            "energy_evals": int(meta["n_proposals"]),
-            "burn_in_sweeps": int(burn_in),
-            "tau_int_batch_means_sweeps": float(tau_sweeps),
-            "tau_int_batch_block_length": int(block_length),
-            "tau_int_sokal_trial_steps": float(
-                sokal_tau_snapshots * data["snapshot_interval_proposals"]
-            ),
-            "n_kept_snapshots": int(kept.sum()),
-            "phi_trace_post_burn_in": phi_values,
-        })
+        rows.append(
+            {
+                "chain_index": meta["chain_index"],
+                "init_kind": meta["init_kind"],
+                "init_side": meta["init_side"],
+                "estimates": estimates,
+                "energy_evals": int(meta["n_proposals"]),
+                "burn_in_sweeps": int(burn_in),
+                "tau_int_batch_means_sweeps": float(tau_sweeps),
+                "tau_int_batch_block_length": int(block_length),
+                "tau_int_sokal_trial_steps": float(
+                    sokal_tau_snapshots * data["snapshot_interval_proposals"]
+                ),
+                "n_kept_snapshots": int(kept.sum()),
+                "phi_trace_post_burn_in": phi_values,
+            }
+        )
     if not rows:
         raise FileNotFoundError(f"no chains under {variant_dir}")
     return rows
@@ -447,10 +486,12 @@ def n_eff_block(rows, cost_key, moments):
         estimates = [r["estimates"][name] for r in rows]
         n_eff, se = n_eff_observable(estimates, ref_mean, ref_var)
         block["observables"][name] = {
-            "reference_mean": ref_mean, "reference_var": ref_var,
+            "reference_mean": ref_mean,
+            "reference_var": ref_var,
             "estimate_mean": float(np.mean(estimates)),
             "estimates": [float(e) for e in estimates],
-            "n_eff": n_eff, "n_eff_se": se,
+            "n_eff": n_eff,
+            "n_eff_se": se,
             "n_eff_per_1e6": n_eff / (mean_cost / 1e6),
             "n_eff_se_per_1e6": se / (mean_cost / 1e6),
         }
@@ -506,13 +547,13 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
         neural_effective_draws += row["is_ess_fraction"] * row["n_samples"]
     pooled_neural /= len(neural_rows)
 
-    mode_seeded = [r for r in kawasaki_rows
-                   if r["init_kind"] == "phase_separated"]
+    mode_seeded = [r for r in kawasaki_rows if r["init_kind"] == "phase_separated"]
     min_length = min(r["phi_trace_post_burn_in"].size for r in mode_seeded)
-    rhat_phi_mode_seeded = float(split_half_gelman_rubin(
-        np.stack([r["phi_trace_post_burn_in"][:min_length]
-                  for r in mode_seeded])
-    ))
+    rhat_phi_mode_seeded = float(
+        split_half_gelman_rubin(
+            np.stack([r["phi_trace_post_burn_in"][:min_length] for r in mode_seeded])
+        )
+    )
     pooled_kawasaki = np.zeros_like(reference["phi_hist"])
     kawasaki_effective_draws = 0.0
     for row in kawasaki_rows:
@@ -526,9 +567,7 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
 
     tv_neural = total_variation(pooled_neural, reference["phi_hist"])
     tv_kawasaki = total_variation(pooled_kawasaki, reference["phi_hist"])
-    floor_neural = tv_noise_floor(
-        reference["phi_hist"], neural_effective_draws, rng
-    )
+    floor_neural = tv_noise_floor(reference["phi_hist"], neural_effective_draws, rng)
     floor_kawasaki = tv_noise_floor(
         reference["phi_hist"], kawasaki_effective_draws, rng
     )
@@ -542,12 +581,12 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
     return {
         "neural_balance_per_replicate": [float(b) for b in balances],
         "neural_balance_mean": balance_mean,
-        "neural_phi_sq_weighted_mean": float(np.mean(
-            [r["phi_sq_weighted"] for r in neural_rows]
-        )),
-        "neural_phi_sq_unweighted_mean": float(np.mean(
-            [r["phi_sq_unweighted"] for r in neural_rows]
-        )),
+        "neural_phi_sq_weighted_mean": float(
+            np.mean([r["phi_sq_weighted"] for r in neural_rows])
+        ),
+        "neural_phi_sq_unweighted_mean": float(
+            np.mean([r["phi_sq_unweighted"] for r in neural_rows])
+        ),
         "reference_phi_var": reference["moments"]["phi"][1],
         "neural_phi_tv_vs_reference": tv_neural,
         "kawasaki_phi_tv_vs_reference": tv_kawasaki,
@@ -576,15 +615,17 @@ def run_n_euler_steps(run_dir, fallback):
     run's own config.json rather than trusting a CLI default to match."""
     config_path = run_dir / "config.json"
     if config_path.exists():
-        return int(json.loads(config_path.read_text())["ctmc"]
-                   ["n_euler_steps"])
+        return int(json.loads(config_path.read_text())["ctmc"]["n_euler_steps"])
     return fallback
 
 
 def analyse_point(point, probe_root, run_dir, n_euler_steps):
     sigma = OPERATING_POINTS[point]
     target = FixedCompositionIsingTarget(
-        D=LATTICE_SIDE, sigma=sigma, target_composition=0.5, bias=0.0,
+        D=LATTICE_SIDE,
+        sigma=sigma,
+        target_composition=0.5,
+        bias=0.0,
         device="cpu",
     )
     reference = reference_block(probe_root, point, target)
@@ -601,8 +642,7 @@ def analyse_point(point, probe_root, run_dir, n_euler_steps):
     # evaluation, on these same runs.
     best_variant = max(
         kawasaki,
-        key=lambda v:
-            kawasaki[v]["n_eff"]["observables"]["energy"]["n_eff_per_1e6"],
+        key=lambda v: kawasaki[v]["n_eff"]["observables"]["energy"]["n_eff_per_1e6"],
     )
 
     neural = None
@@ -613,12 +653,8 @@ def analyse_point(point, probe_root, run_dir, n_euler_steps):
         neural = {
             "rows": rows,
             "n_eff_per_pass": n_eff_block(rows, "backbone_rows", moments),
-            "n_eff_per_energy_eval": n_eff_block(
-                rows, "pair_delta_e_evals", moments
-            ),
-            "coverage": coverage_block(
-                rows, kawasaki[best_variant]["rows"], reference
-            ),
+            "n_eff_per_energy_eval": n_eff_block(rows, "pair_delta_e_evals", moments),
+            "coverage": coverage_block(rows, kawasaki[best_variant]["rows"], reference),
         }
 
     ratios = None
@@ -635,28 +671,33 @@ def analyse_point(point, probe_root, run_dir, n_euler_steps):
                 per_pass = neural["n_eff_per_pass"]["observables"][name]
                 currencies = {}
                 for currency, neural_cost in (
-                    ("network_pass",
-                     neural["n_eff_per_pass"]["mean_cost"]),
-                    ("energy_eval",
-                     neural["n_eff_per_energy_eval"]["mean_cost"]),
+                    ("network_pass", neural["n_eff_per_pass"]["mean_cost"]),
+                    ("energy_eval", neural["n_eff_per_energy_eval"]["mean_cost"]),
                 ):
                     currencies[currency] = {
                         "delta": ratio_with_ci(
-                            per_pass["n_eff"], per_pass["n_eff_se"],
+                            per_pass["n_eff"],
+                            per_pass["n_eff_se"],
                             neural_cost,
-                            k["n_eff"], k["n_eff_se"], kawasaki_cost,
+                            k["n_eff"],
+                            k["n_eff_se"],
+                            kawasaki_cost,
                         ),
                         "f": ratio_with_f_ci(
-                            per_pass["n_eff"], neural_cost,
+                            per_pass["n_eff"],
+                            neural_cost,
                             n_neural_replicates,
-                            k["n_eff"], kawasaki_cost, n_chains,
+                            k["n_eff"],
+                            kawasaki_cost,
+                            n_chains,
                         ),
                     }
                 per_observable[name] = currencies
             ratios[versus] = per_observable
 
     return {
-        "point": point, "sigma": sigma,
+        "point": point,
+        "sigma": sigma,
         "reference": {
             "moments": {k: list(v) for k, v in moments.items()},
             "rhat_post_discard": reference["rhat_post_discard"],
@@ -666,15 +707,16 @@ def analyse_point(point, probe_root, run_dir, n_euler_steps):
             variant: {
                 "n_eff": kawasaki[variant]["n_eff"],
                 "chains": [
-                    {k: v for k, v in row.items()
-                     if k != "phi_trace_post_burn_in"}
+                    {k: v for k, v in row.items() if k != "phi_trace_post_burn_in"}
                     for row in kawasaki[variant]["rows"]
                 ],
             }
             for variant in kawasaki
         },
         "best_kawasaki_variant": best_variant,
-        "neural": None if neural is None else {
+        "neural": None
+        if neural is None
+        else {
             "n_eff_per_pass": neural["n_eff_per_pass"],
             "n_eff_per_energy_eval": neural["n_eff_per_energy_eval"],
             "coverage": neural["coverage"],
@@ -689,7 +731,8 @@ def analyse_point(point, probe_root, run_dir, n_euler_steps):
 
 def markdown_tables(point_result):
     lines = [
-        f"## {point_result['point']} (sigma = {point_result['sigma']})", "",
+        f"## {point_result['point']} (sigma = {point_result['sigma']})",
+        "",
         "| sampler | observable | reference | estimate | N_eff +/- SE "
         "| currency | mean cost | N_eff / 1e6 units |",
         "|---|---|---|---|---|---|---|---|",
@@ -708,20 +751,25 @@ def markdown_tables(point_result):
     neural = point_result["neural"]
     if neural is not None:
         emit("neural (ma head)", neural["n_eff_per_pass"], "backbone_rows")
-        emit("neural (ma head)", neural["n_eff_per_energy_eval"],
-             "pair_delta_e_evals")
+        emit("neural (ma head)", neural["n_eff_per_energy_eval"], "pair_delta_e_evals")
     for variant in ("local", "nonlocal"):
-        emit(f"kawasaki {variant}",
-             point_result["kawasaki"][variant]["n_eff"], "energy_evals")
+        emit(
+            f"kawasaki {variant}",
+            point_result["kawasaki"][variant]["n_eff"],
+            "energy_evals",
+        )
     lines.append("")
     lines.append(
         f"best kawasaki variant (N_eff(energy)/eval): "
         f"**{point_result['best_kawasaki_variant']}**"
     )
     if point_result["ratios_vs_kawasaki"] is not None:
-        lines += ["", "| vs | observable | currency | ratio "
-                  "| 95% CI (delta) | 95% CI (F) | excl. parity delta/F |",
-                  "|---|---|---|---|---|---|---|"]
+        lines += [
+            "",
+            "| vs | observable | currency | ratio "
+            "| 95% CI (delta) | 95% CI (F) | excl. parity delta/F |",
+            "|---|---|---|---|---|---|---|",
+        ]
         for versus, per_obs in point_result["ratios_vs_kawasaki"].items():
             for name, currencies in per_obs.items():
                 for currency, ratio in currencies.items():
@@ -738,7 +786,9 @@ def markdown_tables(point_result):
     if neural is not None:
         cov = neural["coverage"]
         lines += [
-            "", "### Coverage axis", "",
+            "",
+            "### Coverage axis",
+            "",
             f"- Z2 balance (weighted mass phi>0 vs phi<0): "
             f"{cov['neural_balance_mean']:.4f} "
             f"(per-replicate {['%.3f' % b for b in cov['neural_balance_per_replicate']]})",
@@ -780,11 +830,13 @@ def main(argv=None):
     parser.add_argument(
         "--headline-run-dir",
         default="results/03_hard/"
-                "H2_d64_c50_s223_letf_ma_100k_curr_seed42_20260722-124315",
+        "H2_d64_c50_s223_letf_ma_100k_curr_seed42_20260722-124315",
     )
-    parser.add_argument("--floor-run-dir", default=None,
-                        help="floor-cell run dir once its replicate draws "
-                             "exist")
+    parser.add_argument(
+        "--floor-run-dir",
+        default=None,
+        help="floor-cell run dir once its replicate draws exist",
+    )
     parser.add_argument("--n-euler-steps", type=int, default=128)
     parser.add_argument("--out", default="results/03_hard/probe_8x8_headline")
     args = parser.parse_args(argv)
@@ -797,8 +849,7 @@ def main(argv=None):
     results["sc"] = analyse_point(
         "sc", probe_root, Path(args.headline_run_dir), args.n_euler_steps
     )
-    floor_run_dir = (Path(args.floor_run_dir)
-                     if args.floor_run_dir else None)
+    floor_run_dir = Path(args.floor_run_dir) if args.floor_run_dir else None
     results["s010"] = analyse_point(
         "s010", probe_root, floor_run_dir, args.n_euler_steps
     )
@@ -809,15 +860,16 @@ def main(argv=None):
     for ci_method in ("delta", "f"):
         floor_not_worse = None
         if floor["neural"] is not None:
-            floor_ratios = floor["ratios_vs_kawasaki"][
-                floor["best_kawasaki_variant"]]["energy"]
+            floor_ratios = floor["ratios_vs_kawasaki"][floor["best_kawasaki_variant"]][
+                "energy"
+            ]
             # "not worse" = not significantly below parity in either currency
             floor_not_worse = all(
-                not (r[ci_method]["hi"] < 1.0)
-                for r in floor_ratios.values()
+                not (r[ci_method]["hi"] < 1.0) for r in floor_ratios.values()
             )
         headline_ratios = headline["ratios_vs_kawasaki"][
-            headline["best_kawasaki_variant"]]["energy"]
+            headline["best_kawasaki_variant"]
+        ]["energy"]
         local_ratios = headline["ratios_vs_kawasaki"]["local"]["energy"]
         verdicts[ci_method] = frozen_verdict(
             energy_eval_ratio=headline_ratios["energy_eval"][ci_method],
@@ -871,18 +923,24 @@ def main(argv=None):
     lines += ["", "### Open choices", ""]
     lines += [f"- {r}" for r in verdict["open_rulings"]]
     lines += [
-        "", "### One-event Euler step check", "",
+        "",
+        "### One-event Euler step check",
+        "",
         "- one-event Euler step (multi_event=false): events/site/step "
         "<= 1/64 ~= 0.016 < 0.1 structurally",
         "- lambda_dt clip fraction 0.0 at every training-eval row of the "
         "headline run (training_log.csv); log-ratio clamp never engaged",
     ]
     (out_dir / "probe_8x8_headline.md").write_text("\n".join(lines) + "\n")
-    print(f"[probe-analysis] wrote {out_dir}/probe_8x8_headline.{{json,md}}",
-          flush=True)
+    print(
+        f"[probe-analysis] wrote {out_dir}/probe_8x8_headline.{{json,md}}", flush=True
+    )
     for ci_method, v in verdict["per_ci_method"].items():
-        print(f"[probe-analysis] verdict ({ci_method}): {v['verdict']} "
-              f"({v['narrative']})", flush=True)
+        print(
+            f"[probe-analysis] verdict ({ci_method}): {v['verdict']} "
+            f"({v['narrative']})",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

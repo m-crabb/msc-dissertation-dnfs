@@ -36,6 +36,7 @@ beside FLOP/es. Per-raw cost is intensive and identical across couplings
     pixi run -e dev python -m \\
         experiments.constrained_hard_03.bench_eval_wallclock_d64
 """
+
 import argparse
 import json
 import sys
@@ -47,15 +48,22 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-    ARMS, GFN_ARMS, GFN_CELL_NAME, CELL_NAME, flop_billing_config)
+    ARMS,
+    CELL_NAME,
+    GFN_ARMS,
+    GFN_CELL_NAME,
+    flop_billing_config,
+)
 from experiments.constrained_hard_03.configs import CONFIGS
 from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 from experiments.constrained_hard_03.gfn_launch_bench import _timed
 from experiments.constrained_hard_03.run import build_target_and_head
 from experiments.constrained_hard_03.run_gfn import (
-    _eval_autocast, build_target_and_policy)
-from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
+    _eval_autocast,
+    build_target_and_policy,
+)
 
+from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 
 # Nine arms compile in one process; the default per-function cache of 8
 # would silently time later arms in eager mode against compiled siblings.
@@ -64,25 +72,28 @@ torch._dynamo.config.cache_size_limit = 64
 
 def bench_swap_arm(arm, device, warmup, reps, chunk_override=None):
     """One fp32 eval chunk of the arm's swap CTMC, timed."""
-    cfg_s010 = flop_billing_config(
-        CONFIGS[CELL_NAME["s010"].format(arm=arm)])
+    cfg_s010 = flop_billing_config(CONFIGS[CELL_NAME["s010"].format(arm=arm)])
     cfg_s220 = CONFIGS[CELL_NAME["s220"].format(arm=arm)]
-    assert (cfg_s010.ctmc.n_euler_steps == cfg_s220.ctmc.n_euler_steps
-            and cfg_s010.eval.eval_sample_chunk
-            == cfg_s220.eval.eval_sample_chunk), \
-        f"{arm}: per-raw eval cost differs across couplings; time both"
+    assert (
+        cfg_s010.ctmc.n_euler_steps == cfg_s220.ctmc.n_euler_steps
+        and cfg_s010.eval.eval_sample_chunk == cfg_s220.eval.eval_sample_chunk
+    ), f"{arm}: per-raw eval cost differs across couplings; time both"
     target, head = build_target_and_head(cfg_s010, device)
     head.eval()
-    ts = torch.linspace(0.0, 1.0, cfg_s010.ctmc.n_euler_steps + 1,
-                        device=device)
+    ts = torch.linspace(0.0, 1.0, cfg_s010.ctmc.n_euler_steps + 1, device=device)
     chunk = chunk_override or cfg_s010.eval.eval_sample_chunk
 
     def draw():
         with torch.no_grad():
             x_initial = target.sample_base(chunk, device=device)
-            sample_swap_ctmc(head, x_initial, ts, return_log_weights=True,
-                             target=target,
-                             multi_event=cfg_s010.ctmc.use_matching_step)
+            sample_swap_ctmc(
+                head,
+                x_initial,
+                ts,
+                return_log_weights=True,
+                target=target,
+                multi_event=cfg_s010.ctmc.use_matching_step,
+            )
 
     seconds = _timed(draw, warmup=warmup, reps=reps, device=device)
     return {
@@ -90,8 +101,7 @@ def bench_swap_arm(arm, device, warmup, reps, chunk_override=None):
         "batch": chunk,
         "precision": "fp32",
         "n_euler_steps": cfg_s010.ctmc.n_euler_steps,
-        "separable_band_scores": getattr(
-            cfg_s010, "separable_band_scores", False),
+        "separable_band_scores": getattr(cfg_s010, "separable_band_scores", False),
         "compile_head": cfg_s010.compile_head,
         "seconds_per_chunk": seconds,
         "seconds_per_raw_sample": seconds / chunk,
@@ -101,8 +111,7 @@ def bench_swap_arm(arm, device, warmup, reps, chunk_override=None):
 def bench_gfn_arm(gfn_arm, device, warmup, reps, chunk_override=None):
     """One bf16-autocast eval chunk of the cached AR rollout + IS scoring."""
     objective = gfn_arm.removeprefix("gfn_")
-    cfg = GFN_CONFIGS[GFN_CELL_NAME.format(sigma_label="s010",
-                                           objective=objective)]
+    cfg = GFN_CONFIGS[GFN_CELL_NAME.format(sigma_label="s010", objective=objective)]
     target, policy = build_target_and_policy(cfg, device)
     policy.eval()
     chunk = chunk_override or cfg.eval_sample_chunk
@@ -124,36 +133,48 @@ def bench_gfn_arm(gfn_arm, device, warmup, reps, chunk_override=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--allow-cpu", action="store_true",
-                        help="smoke the script off-venue; timings from a "
-                             "CPU run certify wiring, never a column")
+    parser.add_argument(
+        "--allow-cpu",
+        action="store_true",
+        help="smoke the script off-venue; timings from a "
+        "CPU run certify wiring, never a column",
+    )
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--reps", type=int, default=10)
-    parser.add_argument("--smoke", action="store_true",
-                        help="wiring check only: chunk 8, warmup 0, one rep, "
-                             "no JSON written")
-    parser.add_argument("--out", type=Path,
-                        default=REPO_ROOT / "results" / "03_hard"
-                        / "eval_wallclock_bench_d64" / "wallclock.json")
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="wiring check only: chunk 8, warmup 0, one rep, no JSON written",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=REPO_ROOT
+        / "results"
+        / "03_hard"
+        / "eval_wallclock_bench_d64"
+        / "wallclock.json",
+    )
     args = parser.parse_args(argv)
     if not torch.cuda.is_available() and not args.allow_cpu:
         sys.exit("no CUDA device: run on the venue (or --allow-cpu)")
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    device_name = (torch.cuda.get_device_name(0) if device == "cuda"
-                   else "cpu")
+    device_name = torch.cuda.get_device_name(0) if device == "cuda" else "cpu"
     print(f"device: {device} ({device_name})")
 
     warmup, reps = (0, 1) if args.smoke else (args.warmup, args.reps)
     chunk_override = 8 if args.smoke else None
-    bench = {"device": device_name, "warmup": warmup, "reps": reps,
-             "arms": {}}
-    for arm, fn in ({a: bench_swap_arm for a in ARMS}
-                    | {g: bench_gfn_arm for g in GFN_ARMS}).items():
+    bench = {"device": device_name, "warmup": warmup, "reps": reps, "arms": {}}
+    for arm, fn in (
+        {a: bench_swap_arm for a in ARMS} | {g: bench_gfn_arm for g in GFN_ARMS}
+    ).items():
         row = fn(arm, device, warmup, reps, chunk_override)
         bench["arms"][arm] = row
-        print(f"  {arm:9} B={row['batch']} {row['precision']}: "
-              f"{row['seconds_per_chunk']*1e3:.1f} ms/chunk = "
-              f"{row['seconds_per_raw_sample']*1e6:.1f} us/sample")
+        print(
+            f"  {arm:9} B={row['batch']} {row['precision']}: "
+            f"{row['seconds_per_chunk'] * 1e3:.1f} ms/chunk = "
+            f"{row['seconds_per_raw_sample'] * 1e6:.1f} us/sample"
+        )
 
     if args.smoke:
         print("smoke only: no JSON written")

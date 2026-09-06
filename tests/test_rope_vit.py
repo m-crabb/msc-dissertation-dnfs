@@ -57,17 +57,26 @@ ATOL = 1e-5
 def _backbone(lattice_side, patch_size=1, hidden_dim=8, n_heads=2, n_layers=2, seed=0):
     torch.manual_seed(seed)
     return RoPEViTRateMatrix(
-        d=lattice_side * lattice_side, vocab_size=2, hidden_dim=hidden_dim,
-        n_layers=n_layers, n_heads=n_heads, patch_size=patch_size,
+        d=lattice_side * lattice_side,
+        vocab_size=2,
+        hidden_dim=hidden_dim,
+        n_layers=n_layers,
+        n_heads=n_heads,
+        patch_size=patch_size,
     ).eval()
 
 
 def _fimo2(backbone, lattice_side, seed=1):
     torch.manual_seed(seed)
     return FactorisedSwapHead(
-        backbone, bilinear_rank=3, factor_dim=4, global_feature_dim=6,
-        position_dim=5, interior_band="prefix",
-        site_orderings=("row", "col"), lattice_side=lattice_side,
+        backbone,
+        bilinear_rank=3,
+        factor_dim=4,
+        global_feature_dim=6,
+        position_dim=5,
+        interior_band="prefix",
+        site_orderings=("row", "col"),
+        lattice_side=lattice_side,
     ).eval()
 
 
@@ -91,6 +100,7 @@ def _site(lattice_side, row, col):
 
 
 # ---------------------------------------------------------------- primitive
+
 
 def test_rope_dot_depends_only_on_signed_periodic_offset():
     lattice_side, head_dim = 8, 8
@@ -125,6 +135,7 @@ def test_rope_angles_are_integer_multiples_of_2pi_over_L():
 
 # -------------------------------------------------------- layer vs dense ref
 
+
 def _dense_reference(layer: RoPELatticeAttention, x: torch.Tensor) -> torch.Tensor:
     """The obvious dense formulation the gathered implementation must equal:
     every site query scores the cond key unrotated, every site key rotated
@@ -141,7 +152,11 @@ def _dense_reference(layer: RoPELatticeAttention, x: torch.Tensor) -> torch.Tens
     def heads_of(t):
         return t.view(batch, seq_len, heads, head_dim).transpose(1, 2)
 
-    q, k, v = heads_of(layer.q_proj(x)), heads_of(layer.k_proj(x)), heads_of(layer.v_proj(x))
+    q, k, v = (
+        heads_of(layer.q_proj(x)),
+        heads_of(layer.k_proj(x)),
+        heads_of(layer.v_proj(x)),
+    )
     angles = layer.site_angles.view(1, 1, d, -1)
     q_sites = apply_rope(q[:, :, 1:], angles)
     k_sites = apply_rope(k[:, :, 1:], angles)
@@ -186,21 +201,25 @@ def _dense_reference(layer: RoPELatticeAttention, x: torch.Tensor) -> torch.Tens
 def test_attention_layer_matches_dense_reference(lattice_side, patch_size, causal):
     torch.manual_seed(3)
     layer = RoPELatticeAttention(
-        hidden_dim=8, n_heads=2, lattice_side=lattice_side,
-        patch_size=patch_size, causal=causal,
+        hidden_dim=8,
+        n_heads=2,
+        lattice_side=lattice_side,
+        patch_size=patch_size,
+        causal=causal,
     )
-    x = torch.randn(2, 1 + lattice_side ** 2, 8)
+    x = torch.randn(2, 1 + lattice_side**2, 8)
     assert (layer(x) - _dense_reference(layer, x)).abs().max().item() < 1e-5
 
 
 # ------------------------------------------------------------- head contract
+
 
 @pytest.mark.parametrize("lattice_side", [4, 8])
 @pytest.mark.parametrize("patch_size", [1, 2])
 @torch.no_grad()
 def test_causal_streams_blind_exactly_as_letf(lattice_side, patch_size):
     backbone = _backbone(lattice_side, patch_size)
-    d = lattice_side ** 2
+    d = lattice_side**2
     x = _state(d)
     t = torch.rand(1)
     prefix, suffix = causal_stream_summaries(backbone, x, t)
@@ -216,12 +235,15 @@ def test_causal_streams_blind_exactly_as_letf(lattice_side, patch_size):
             f"suffix leaks x_{site}"
         )
         if site < d - 1:
-            assert (prefix_f[:, site + 1:] - prefix[:, site + 1:]).abs().max() > 1e-7, (
+            assert (
+                prefix_f[:, site + 1 :] - prefix[:, site + 1 :]
+            ).abs().max() > 1e-7, (
                 "prefix stream is inert -- blindness test has no teeth"
             )
 
 
 # ------------------------------------------------------------- equivariance
+
 
 def _bidirectional_body(backbone, stack, x, t, mask_sites=()):
     """Non-causal body through `stack` (a RoPEStack(causal=False) sharing the
@@ -234,7 +256,11 @@ def _bidirectional_body(backbone, stack, x, t, mask_sites=()):
 
 
 def _all_shifts(lattice_side, step=1):
-    return [(r, c) for r in range(0, lattice_side, step) for c in range(0, lattice_side, step)]
+    return [
+        (r, c)
+        for r in range(0, lattice_side, step)
+        for c in range(0, lattice_side, step)
+    ]
 
 
 @pytest.mark.parametrize("lattice_side", [4, 8])
@@ -243,11 +269,13 @@ def test_bidirectional_body_equivariant_under_every_torus_shift(lattice_side):
     backbone = _backbone(lattice_side, patch_size=1)
     torch.manual_seed(5)
     stack = RoPEStack(8, 2, 2, lattice_side, patch_size=1, causal=False).eval()
-    x = _state(lattice_side ** 2)
+    x = _state(lattice_side**2)
     t = torch.rand(1)
     body = _bidirectional_body(backbone, stack, x, t)
     for shift in _all_shifts(lattice_side):
-        shifted = _bidirectional_body(backbone, stack, _roll_sites(x, lattice_side, shift), t)
+        shifted = _bidirectional_body(
+            backbone, stack, _roll_sites(x, lattice_side, shift), t
+        )
         drift = (shifted - _roll_sites(body, lattice_side, shift)).abs().max().item()
         assert drift < ATOL, f"shift {shift}: {drift:.2e}"
 
@@ -258,15 +286,19 @@ def test_patch_two_body_equivariant_under_patch_multiple_shifts_only(lattice_sid
     backbone = _backbone(lattice_side, patch_size=2)
     torch.manual_seed(5)
     stack = RoPEStack(8, 2, 2, lattice_side, patch_size=2, causal=False).eval()
-    x = _state(lattice_side ** 2)
+    x = _state(lattice_side**2)
     t = torch.rand(1)
     body = _bidirectional_body(backbone, stack, x, t)
     for shift in _all_shifts(lattice_side, step=2):
-        shifted = _bidirectional_body(backbone, stack, _roll_sites(x, lattice_side, shift), t)
+        shifted = _bidirectional_body(
+            backbone, stack, _roll_sites(x, lattice_side, shift), t
+        )
         drift = (shifted - _roll_sites(body, lattice_side, shift)).abs().max().item()
         assert drift < ATOL, f"shift {shift}: {drift:.2e}"
     # Pinned aliasing: a one-site shift re-partitions the patches.
-    shifted = _bidirectional_body(backbone, stack, _roll_sites(x, lattice_side, (0, 1)), t)
+    shifted = _bidirectional_body(
+        backbone, stack, _roll_sites(x, lattice_side, (0, 1)), t
+    )
     assert (shifted - _roll_sites(body, lattice_side, (0, 1))).abs().max().item() > 1e-4
 
 
@@ -276,7 +308,7 @@ def test_masked_pair_oracle_is_exactly_pair_equivariant():
     against omega_i - omega_j: the O(d^2)-pass oracle. Masking commutes with
     the roll, so the pair score field shifts with the lattice."""
     lattice_side = 4
-    d = lattice_side ** 2
+    d = lattice_side**2
     backbone = _backbone(lattice_side, patch_size=1)
     torch.manual_seed(5)
     stack = RoPEStack(8, 2, 2, lattice_side, patch_size=1, causal=False).eval()
@@ -307,11 +339,12 @@ def test_masked_pair_oracle_is_exactly_pair_equivariant():
 
 # ------------------------------------------------------- fimo2 on the backbone
 
+
 @pytest.mark.parametrize("lattice_side", [4, 8])
 @pytest.mark.parametrize("patch_size", [1, 2])
 @torch.no_grad()
 def test_fimo2_on_rope_backbone_blind_and_antisymmetric(lattice_side, patch_size):
-    d = lattice_side ** 2
+    d = lattice_side**2
     backbone = _backbone(lattice_side, patch_size)
     head = _fimo2(backbone, lattice_side)
     x = _state(d)
@@ -329,7 +362,12 @@ def test_fimo2_on_rope_backbone_blind_and_antisymmetric(lattice_side, patch_size
             flipped = x.clone()
             for s in sites:
                 flipped[0, s] *= -1
-            drift = (head.compute_pair_context(flipped, t)[:, i, j] - H[:, i, j]).abs().max().item()
+            drift = (
+                (head.compute_pair_context(flipped, t)[:, i, j] - H[:, i, j])
+                .abs()
+                .max()
+                .item()
+            )
             assert drift < ATOL, f"H[{i},{j}] leaks {sites}: {drift:.2e}"
         if x[0, i] != x[0, j]:
             G_swapped = head(swap2(x, i, j), t)
@@ -340,23 +378,28 @@ def test_swap_kolmogorov_loss_finite_and_trains_backbone():
     lattice_side = 4
     backbone = _backbone(lattice_side, patch_size=2).train()
     head = _fimo2(backbone, lattice_side).train()
-    target = FixedCompositionIsingTarget(D=lattice_side, sigma=0.223, target_composition=0.5)
+    target = FixedCompositionIsingTarget(
+        D=lattice_side, sigma=0.223, target_composition=0.5
+    )
     x = _state(16, batch=4)
     t = torch.rand(x.shape[0])
     loss = loss_swap(x, t, 0.0, head, target)
     assert torch.isfinite(loss)
     loss.backward()
-    stack_grads = [p.grad for p in backbone.fwd_stack.parameters() if p.grad is not None]
+    stack_grads = [
+        p.grad for p in backbone.fwd_stack.parameters() if p.grad is not None
+    ]
     assert stack_grads and any(g.abs().sum() > 0 for g in stack_grads)
 
 
 # ------------------------------------------------------------ shapes / API
 
+
 @pytest.mark.parametrize("lattice_side", [4, 8])
 @pytest.mark.parametrize("patch_size", [1, 2])
 @torch.no_grad()
 def test_flip_forward_shapes_and_hollow_diagonal(lattice_side, patch_size):
-    d = lattice_side ** 2
+    d = lattice_side**2
     backbone = _backbone(lattice_side, patch_size)
     x = _state(d, batch=3)
     t = torch.rand(3)
@@ -371,17 +414,30 @@ def test_flip_forward_shapes_and_hollow_diagonal(lattice_side, patch_size):
 def test_backbone_has_no_absolute_position_parameters_and_same_interface():
     backbone = _backbone(4, patch_size=2)
     assert not [n for n, _ in backbone.named_parameters() if "pos_embed" in n]
-    for attribute in ("d", "hidden_dim", "vocab_size", "token_embedder", "time_embedder",
-                      "fwd_stack", "bwd_stack", "attention_readout", "output_norm", "omega",
-                      "is_locally_equivariant"):
+    for attribute in (
+        "d",
+        "hidden_dim",
+        "vocab_size",
+        "token_embedder",
+        "time_embedder",
+        "fwd_stack",
+        "bwd_stack",
+        "attention_readout",
+        "output_norm",
+        "omega",
+        "is_locally_equivariant",
+    ):
         assert hasattr(backbone, attribute), attribute
     with pytest.raises(ValueError):
-        RoPEViTRateMatrix(d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2, patch_size=3)
+        RoPEViTRateMatrix(
+            d=16, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2, patch_size=3
+        )
     with pytest.raises(ValueError):
         RoPEViTRateMatrix(d=12, vocab_size=2, hidden_dim=8, n_layers=1, n_heads=2)
 
 
 # ------------------------------------------------------------- config wire
+
 
 @pytest.mark.parametrize("patch_size", [1, 2])
 def test_rope_cells_mirror_fimo2_rung_except_backbone(patch_size):
@@ -417,7 +473,9 @@ def test_rope_ma_cells_are_their_ma_twin_plus_the_backbone_position_code():
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import (
-        CONFIGS, _MAROPE_PARENT, _MAROPE_TWINS,
+        _MAROPE_PARENT,
+        _MAROPE_TWINS,
+        CONFIGS,
     )
     from experiments.constrained_hard_03.run import build_target_and_head
 

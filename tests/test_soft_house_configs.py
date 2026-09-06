@@ -19,11 +19,12 @@ recipe-parity audit in executable form:
 5. The eager gate twin gives back compile_model ONLY — it exists to
    measure the compile loss gap, same logic.
 """
+
 from dataclasses import asdict
 
+from experiments.constrained_soft_02.configs import CONFIGS, SOFT_HOUSE_WINDOWS
+
 from discrete_flow_sampler.targets.ising import SIGMA_C
-from experiments.constrained_soft_02.configs import (
-    CONFIGS, SOFT_HOUSE_WINDOWS)
 
 PARENT = "S2_d8_c03_l50_letf_ne128"
 D_SITES = 64
@@ -42,11 +43,11 @@ def test_house_cells_differ_from_parent_in_declared_set_only():
             name = f"S2_d8_{c_tag}_l50_letf_ne128_house{sigma_suffix}"
             cell = asdict(CONFIGS[name])
             top = _diff(parent, cell)
-            assert top == {"name", "ising", "model", "train", "ema_decay"}, (
-                name, top)
+            assert top == {"name", "ising", "model", "train", "ema_decay"}, (name, top)
             ising = _diff(parent["ising"], cell["ising"])
             expected_ising = {"target_composition"} | (
-                {"sigma"} if sigma_suffix else set())
+                {"sigma"} if sigma_suffix else set()
+            )
             assert ising == expected_ising, (name, ising)
             assert cell["ising"]["target_composition"] == c_target
             assert _diff(parent["model"], cell["model"]) == RECIPE_MODEL_DIFF
@@ -83,8 +84,11 @@ def test_sc_anneal_arm_adds_the_schedule_to_nochan_only():
     anneal = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"])
     assert _diff(nochan, anneal) == {"name", "lambda_curriculum"}
     stages = anneal["lambda_curriculum"]["stages"]
-    assert [(s["start_step"], s["composition_penalty_strength"])
-            for s in stages] == [(0, 10.0), (10_000, 25.0), (20_000, 50.0)]
+    assert [(s["start_step"], s["composition_penalty_strength"]) for s in stages] == [
+        (0, 10.0),
+        (10_000, 25.0),
+        (20_000, 50.0),
+    ]
 
 
 def test_matched_base_twins_give_back_base_composition_only():
@@ -99,12 +103,10 @@ def test_matched_base_twins_give_back_base_composition_only():
             if c_target == 0.50:
                 assert mb_name not in CONFIGS, mb_name
                 continue
-            house = asdict(
-                CONFIGS[f"S2_d8_{c_tag}_l50_letf_ne128_house{sigma_suffix}"])
+            house = asdict(CONFIGS[f"S2_d8_{c_tag}_l50_letf_ne128_house{sigma_suffix}"])
             twin = asdict(CONFIGS[mb_name])
             assert _diff(house, twin) == {"name", "ising"}, mb_name
-            assert _diff(house["ising"], twin["ising"]) == {
-                "base_composition"}, mb_name
+            assert _diff(house["ising"], twin["ising"]) == {"base_composition"}, mb_name
             assert twin["ising"]["base_composition"] == c_target
 
 
@@ -133,15 +135,15 @@ def test_lambda_twins_give_back_penalty_strength_only():
     else -- a second lever would confound the lambda trade the chapter
     reads off them."""
     for lam, lam_tag, sigma_suffix in (
-            (10.0, "l10", ""), (10.0, "l10", "_sc"),
-            (100.0, "l100", ""), (100.0, "l100", "_sc")):
-        house = asdict(
-            CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{sigma_suffix}"])
-        twin = asdict(CONFIGS[
-            f"S2_d8_c0500_{lam_tag}_letf_ne128_house{sigma_suffix}"])
+        (10.0, "l10", ""),
+        (10.0, "l10", "_sc"),
+        (100.0, "l100", ""),
+        (100.0, "l100", "_sc"),
+    ):
+        house = asdict(CONFIGS[f"S2_d8_c0500_l50_letf_ne128_house{sigma_suffix}"])
+        twin = asdict(CONFIGS[f"S2_d8_c0500_{lam_tag}_letf_ne128_house{sigma_suffix}"])
         assert _diff(house, twin) == {"name", "ising"}, (lam_tag, sigma_suffix)
-        assert _diff(house["ising"], twin["ising"]) == {
-            "composition_penalty_strength"}
+        assert _diff(house["ising"], twin["ising"]) == {"composition_penalty_strength"}
         assert twin["ising"]["composition_penalty_strength"] == lam
 
 
@@ -181,8 +183,7 @@ def test_amort_specialist_house_family_matched_recipe_and_windows():
     base = asdict(CONFIGS["S2_d4_c0500_50k_l50_letf_house"])
     assert _diff(parent, base) == {"name", "model", "train", "ema_decay"}
     assert _diff(parent["model"], base["model"]) == RECIPE_MODEL_DIFF
-    assert _diff(parent["train"], base["train"]) == (
-        RECIPE_TRAIN_DIFF | {"n_steps"})
+    assert _diff(parent["train"], base["train"]) == (RECIPE_TRAIN_DIFF | {"n_steps"})
     assert base["train"]["n_steps"] == 50_000
     assert base["ema_decay"] == 0.9999
     for c_target, c_tag in ((0.25, "c0250"), (0.375, "c0375")):
@@ -203,15 +204,13 @@ def test_amort_null_house_isolates_conditioning_machinery():
     null = asdict(CONFIGS["S2_d4_cnull_50k_l50_letf_house"])
     assert _diff(parent, null) == {"name", "model", "train", "ema_decay"}
     assert _diff(parent["model"], null["model"]) == RECIPE_MODEL_DIFF
-    assert _diff(parent["train"], null["train"]) == (
-        RECIPE_TRAIN_DIFF | {"n_steps"})
+    assert _diff(parent["train"], null["train"]) == (RECIPE_TRAIN_DIFF | {"n_steps"})
     assert null["train"]["n_steps"] == 50_000
 
     specialist = asdict(CONFIGS["S2_d4_c0500_50k_l50_letf_house"])
     machinery = _diff(specialist, null)
     assert machinery == {"name", "model", "composition"}, machinery
-    assert _diff(specialist["model"], null["model"]) == {
-        "condition_on_composition"}
+    assert _diff(specialist["model"], null["model"]) == {"condition_on_composition"}
     assert null["model"]["condition_on_composition"] is True
     assert null["composition"]["half_width"] == 0.0
 
@@ -228,8 +227,7 @@ def test_camort_sigma_ladder_twin_adds_the_ladder_only():
     stages = twin.curriculum.stages
     assert stages[0].start_step == 0 and stages[0].sigma == 0.1
     assert stages[-1].sigma == SIGMA_C
-    assert all(s.start_step % twin.train.inner_steps_per_outer == 0
-               for s in stages)
+    assert all(s.start_step % twin.train.inner_steps_per_outer == 0 for s in stages)
     assert stages[-1].start_step < twin.train.n_steps
 
 

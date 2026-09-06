@@ -1,11 +1,12 @@
-import torch
 import pytest
+import torch
 
-from discrete_flow_sampler.targets.ising import IsingTarget
-from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
 from discrete_flow_sampler.diagnostics.metrics import (
-    enumerate_states, exact_log_probs,
+    enumerate_states,
+    exact_log_probs,
 )
+from discrete_flow_sampler.mcmc.gibbs import gibbs_sample
+from discrete_flow_sampler.targets.ising import IsingTarget
 
 
 @pytest.fixture
@@ -25,7 +26,10 @@ def test_record_energy_trace_shape(target_d4):
     Kth sweep. Used as the mixing diagnostic for the D=10 long-chain reference.
     """
     spins, trace = gibbs_sample(
-        target_d4, n_chains=8, n_sweeps=20, record_energy_every=5,
+        target_d4,
+        n_chains=8,
+        n_sweeps=20,
+        record_energy_every=5,
     )
     assert spins.shape == (8, 16)
     assert trace.shape == (20 // 5 + 1, 8)
@@ -54,7 +58,7 @@ def test_matches_exact_on_small_lattice():
     """
     torch.manual_seed(0)
     target = IsingTarget(D=2, sigma=0.1)
-    states = enumerate_states(D=4)             # 2^4 = 16 states
+    states = enumerate_states(D=4)  # 2^4 = 16 states
     log_p_exact = exact_log_probs(target, states.float())
     p_exact = log_p_exact.exp()
 
@@ -79,7 +83,10 @@ def test_constrained_matches_exact_on_small_lattice():
     """
     torch.manual_seed(0)
     target = IsingTarget(
-        D=2, sigma=0.1, target_composition=0.3, composition_penalty_strength=5.0,
+        D=2,
+        sigma=0.1,
+        target_composition=0.3,
+        composition_penalty_strength=5.0,
     )
     states = enumerate_states(D=4)
     log_p_exact = exact_log_probs(target, states.float())
@@ -107,7 +114,10 @@ def test_constrained_chain_converges_to_target_composition():
     """
     torch.manual_seed(0)
     target = IsingTarget(
-        D=4, sigma=0.1, target_composition=0.3, composition_penalty_strength=50.0,
+        D=4,
+        sigma=0.1,
+        target_composition=0.3,
+        composition_penalty_strength=50.0,
     )
     samples = gibbs_sample(target, n_chains=2000, n_sweeps=300)
     composition = ((samples + 1.0) * 0.5).mean(dim=-1)
@@ -127,7 +137,10 @@ def test_penalty_inactive_matches_unconstrained():
 
     torch.manual_seed(0)
     inactive = IsingTarget(
-        D=4, sigma=0.1, target_composition=0.3, composition_penalty_strength=0.0,
+        D=4,
+        sigma=0.1,
+        target_composition=0.3,
+        composition_penalty_strength=0.0,
     )
     out_inactive = gibbs_sample(inactive, n_chains=64, n_sweeps=20)
 

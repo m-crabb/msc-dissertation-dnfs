@@ -2,6 +2,7 @@
 stream the draw in `eval_sample_chunk` slices (the unchunked 5000-sample eval
 OOM'd all three d=64 sigma_c seeds) and `eval_only` must recover
 the eval/ artefacts from a completed run dir's checkpoint."""
+
 import json
 import shutil
 from dataclasses import asdict, replace
@@ -36,8 +37,7 @@ def _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4):
             n_eval_samples=n_eval_samples,
             eval_sample_chunk=eval_sample_chunk,
         ),
-        model=ModelCfg(kind="letf", hidden_dim=16, n_layers=2, n_heads=2,
-                       vocab_size=2),
+        model=ModelCfg(kind="letf", hidden_dim=16, n_layers=2, n_heads=2, vocab_size=2),
         estimator="control_variate",
         head_kind="mask_one",
         wandb_project="test",
@@ -118,9 +118,7 @@ def test_final_eval_unchunked_when_chunk_is_none(tmp_path):
 def test_eval_only_recovers_eval_artefacts_from_run_dir(tmp_path, monkeypatch):
     torch.manual_seed(0)
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = tmp_path / "tiny_hard_eval_seed7_test"
     (run_dir / "checkpoints").mkdir(parents=True)
     seeded = replace(cfg, train=replace(cfg.train, seed=7))
@@ -144,9 +142,7 @@ def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
     time the dataclass grows a knob)."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = tmp_path / "legacy"
     (run_dir / "checkpoints").mkdir(parents=True)
     saved = asdict(cfg)
@@ -182,17 +178,17 @@ def test_final_eval_smc_writes_own_dir_and_smc_metrics(tmp_path, suffix):
         head, target, cfg, Path(tmp_path), tau=1.0, eval_dir_suffix=suffix
     )
 
-    assert not (tmp_path / "eval").exists()          # plain-IS dir untouched
+    assert not (tmp_path / "eval").exists()  # plain-IS dir untouched
     eval_dir = tmp_path / f"eval_smc_tau1{suffix}"
     samples = torch.load(eval_dir / "samples.pt")
     pooled_log_weights = torch.load(eval_dir / "log_weights.pt")
     assert samples.shape == (10, 16)
     assert pooled_log_weights.shape == (10,)
     assert torch.isfinite(pooled_log_weights).all()
-    assert ((samples == 1).float().mean(dim=1) == 0.5).all()   # on-manifold
+    assert ((samples == 1).float().mean(dim=1) == 0.5).all()  # on-manifold
     assert metrics["smc_tau"] == 1.0
     assert metrics["n_resample_events"] > 0
-    assert len(metrics["chunk_stats"]) == 3                    # slices 4/4/2
+    assert len(metrics["chunk_stats"]) == 3  # slices 4/4/2
     assert 0.0 < metrics["ess_fraction"] <= 1.0
     assert 1 <= metrics["n_unique_samples"] <= 10
     assert metrics == json.loads((eval_dir / "metrics.json").read_text())
@@ -222,9 +218,7 @@ def test_eval_only_smc_tau_runs_smc_variant_only(tmp_path, monkeypatch):
     artefacts without re-drawing the expensive plain-IS eval."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = tmp_path / "tiny_hard_eval_seed7_smc"
     (run_dir / "checkpoints").mkdir(parents=True)
     seeded = replace(cfg, train=replace(cfg.train, seed=7))
@@ -248,9 +242,7 @@ def test_eval_only_replicate_seed_writes_replicate_dir_and_preserves_eval(
     the frozen eval/ dir the headline numbers were read from."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = tmp_path / "tiny_hard_eval_seed7_rep"
     (run_dir / "checkpoints").mkdir(parents=True)
     seeded = replace(cfg, train=replace(cfg.train, seed=7))
@@ -275,9 +267,7 @@ def test_eval_only_replicate_seeds_differ_and_reproduce(tmp_path, monkeypatch):
     rests on."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = tmp_path / "tiny_hard_eval_seed7_reps"
     (run_dir / "checkpoints").mkdir(parents=True)
     seeded = replace(cfg, train=replace(cfg.train, seed=7))
@@ -304,9 +294,7 @@ def test_eval_only_rejects_config_drift(tmp_path, monkeypatch):
     """A run dir whose recorded config no longer matches CONFIGS must fail
     loudly rather than silently eval under the wrong settings."""
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = tmp_path / "drifted"
     (run_dir / "checkpoints").mkdir(parents=True)
     drifted = replace(cfg, ctmc=CTMCCfg(n_euler_steps=99))
@@ -349,9 +337,7 @@ def test_eval_only_ema_reads_the_ema_checkpoint_into_a_suffixed_dir(
     """
     torch.manual_seed(0)
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = _run_dir_with_both_checkpoints(tmp_path, cfg)
 
     eval_only(run_dir, n_euler_override=4, use_ema=True)
@@ -380,9 +366,7 @@ def test_eval_only_ema_without_a_grid_override_guards_only_frozen_numbers(
     that same call is the recovery path and must land the canonical
     eval_ema/, exactly as eval_only recovers a died eval/."""
     cfg = _tiny_cfg()
-    monkeypatch.setattr(
-        "experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg}
-    )
+    monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = _run_dir_with_both_checkpoints(tmp_path, cfg)
 
     # Recovery: no frozen EMA eval exists, so the draw is allowed and lands

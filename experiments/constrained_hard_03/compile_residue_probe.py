@@ -34,6 +34,7 @@ seed to read whether the leak separates them), plus a fresh-init control.
 Venue: the training GPU (A100) for inductor-parity with the failed runs;
 the script itself is device-agnostic so the D=4-scale smoke runs on CPU.
 """
+
 import argparse
 import json
 import sys
@@ -70,9 +71,11 @@ def context_drift_eager(head, states, t_value, d, n_pairs=8):
         return None
     t = torch.full((states.shape[0],), t_value, device=states.device)
     generator = torch.Generator().manual_seed(0)
-    pairs = [(int(a), int(b)) for a, b in
-             torch.randint(0, d, (n_pairs, 2), generator=generator)
-             if a != b]
+    pairs = [
+        (int(a), int(b))
+        for a, b in torch.randint(0, d, (n_pairs, 2), generator=generator)
+        if a != b
+    ]
     H = inner.compute_pair_context(states, t)
     drift = 0.0
     for i, j in pairs:
@@ -117,12 +120,12 @@ def probe_one(cfg, checkpoint, states, label, device, t_values=(0.5, 1.0)):
                 "parity_p99": gap.flatten().quantile(0.99).item(),
             }
             for mode in ("eager", "compiled"):
-                vmax, vmean = antisymmetry_violation(
-                    heads[mode], states, t_value, d)
+                vmax, vmean = antisymmetry_violation(heads[mode], states, t_value, d)
                 report[key][f"antisym_max_{mode}"] = vmax
                 report[key][f"antisym_mean_{mode}"] = vmean
             report[key]["context_drift_eager"] = context_drift_eager(
-                heads["eager"], states, t_value, d)
+                heads["eager"], states, t_value, d
+            )
     return report
 
 
@@ -130,9 +133,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", type=Path, required=True)
     parser.add_argument(
-        "--run-dirs", required=True,
+        "--run-dirs",
+        required=True,
         help="comma-separated run dir names; final.pt + config.json + "
-             "eval/samples.pt are read from each")
+        "eval/samples.pt are read from each",
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--n-states", type=int, default=256)
     parser.add_argument("--out", type=Path, default=None)
@@ -147,24 +152,33 @@ def main(argv=None):
         cfg = CONFIGS[json.loads((run_dir / "config.json").read_text())["name"]]
         checkpoint = torch.load(
             run_dir / "checkpoints" / "final.pt",
-            map_location=args.device, weights_only=True)
+            map_location=args.device,
+            weights_only=True,
+        )
         samples = torch.load(
-            run_dir / "eval" / "samples.pt",
-            map_location=args.device, weights_only=True
+            run_dir / "eval" / "samples.pt", map_location=args.device, weights_only=True
         ).float()[: args.n_states]
-        reports.append(probe_one(
-            cfg, checkpoint, samples, f"{name} [trained states]", args.device))
+        reports.append(
+            probe_one(cfg, checkpoint, samples, f"{name} [trained states]", args.device)
+        )
 
         target, _ = build_target_and_head(cfg, device=args.device)
         base_states = target.sample_base(args.n_states, device=args.device)
-        reports.append(probe_one(
-            cfg, checkpoint, base_states.float(),
-            f"{name} [uniform on-manifold]", args.device))
+        reports.append(
+            probe_one(
+                cfg,
+                checkpoint,
+                base_states.float(),
+                f"{name} [uniform on-manifold]",
+                args.device,
+            )
+        )
 
     # Fresh-init control on the last cfg: the residue scale before training.
     _, _ = build_target_and_head(cfg, device=args.device)
-    reports.append(probe_one(
-        cfg, None, base_states.float(), "fresh init [uniform]", args.device))
+    reports.append(
+        probe_one(cfg, None, base_states.float(), "fresh init [uniform]", args.device)
+    )
 
     text = json.dumps(reports, indent=2)
     print(text)

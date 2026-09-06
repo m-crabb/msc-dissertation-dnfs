@@ -88,7 +88,7 @@ def test_systematic_uniform_weights_keeps_every_particle_once():
 
 def test_resample_if_needed_no_fire_leaves_inputs_and_rng_untouched():
     state = torch.randn(8, 4)
-    log_weights = torch.zeros(8)                    # ESS = B -> never below τ·B
+    log_weights = torch.zeros(8)  # ESS = B -> never below τ·B
     rng_before = torch.get_rng_state()
     new_state, new_log_w, increment, fired = resample_if_needed(
         state, log_weights, ess_threshold_fraction=0.5
@@ -145,7 +145,11 @@ def test_swap_sampler_never_firing_config_is_bit_exact_parity():
     torch.manual_seed(7)
     x0 = tgt.sample_base(16, device="cpu")
     x_smc, log_w_smc, stats = sample_swap_ctmc(
-        head, x0, ts, return_log_weights=True, target=tgt,
+        head,
+        x0,
+        ts,
+        return_log_weights=True,
+        target=tgt,
         resampling=ResamplingConfig(ess_threshold_fraction=0.0),
     )
     assert stats.n_events == 0 and stats.event_steps == []
@@ -163,11 +167,15 @@ def test_swap_sampler_aggressive_resampling_contract_and_manifold():
     # τ=1.0 fires whenever the weights are not exactly uniform, i.e. at
     # (almost) every checkpoint after the first weight update.
     x_final, log_w, stats = sample_swap_ctmc(
-        head, x0, ts, return_log_weights=True, target=tgt,
+        head,
+        x0,
+        ts,
+        return_log_weights=True,
+        target=tgt,
         resampling=ResamplingConfig(ess_threshold_fraction=1.0),
     )
     assert x_final.shape == (32, 16) and log_w.shape == (32,)
-    tgt.assert_on_manifold(x_final)      # resampling only duplicates slice rows
+    tgt.assert_on_manifold(x_final)  # resampling only duplicates slice rows
     assert stats.n_events > 0
     assert len(stats.event_steps) == stats.n_events
     assert torch.isfinite(stats.log_z_increment)
@@ -183,8 +191,11 @@ def test_flip_sampler_resampling_contract():
     x0 = torch.randint(0, 2, (16, 4)).float() * 2 - 1
     ts = torch.linspace(0.0, 1.0, 25)
     x_final, log_w, stats = sample_ctmc(
-        ConstantRateModel(flip_rate=0.5), x0, ts,
-        return_log_weights=True, target=target,
+        ConstantRateModel(flip_rate=0.5),
+        x0,
+        ts,
+        return_log_weights=True,
+        target=target,
         resampling=ResamplingConfig(ess_threshold_fraction=1.0),
     )
     assert x_final.shape == (16, 4) and log_w.shape == (16,)
@@ -221,34 +232,31 @@ def test_smc_log_z_matches_enumeration_on_2x2_slice():
     n_plus = ((slice_states + 1) * 0.5).sum(dim=-1)
     slice_states = slice_states[n_plus == tgt.n_plus_target]
     n_slice = slice_states.shape[0]
-    exact_log_z_ratio = (
-        torch.logsumexp(
-            tgt.log_p_tilde_t(slice_states, torch.ones(n_slice)), dim=0
-        )
-        - torch.logsumexp(
-            tgt.log_p_tilde_t(slice_states, torch.zeros(n_slice)), dim=0
-        )
-    )
+    exact_log_z_ratio = torch.logsumexp(
+        tgt.log_p_tilde_t(slice_states, torch.ones(n_slice)), dim=0
+    ) - torch.logsumexp(tgt.log_p_tilde_t(slice_states, torch.zeros(n_slice)), dim=0)
 
     ts = torch.linspace(0.0, 1.0, 48)
     n_particles = 1024
 
     torch.manual_seed(123)
     x0 = tgt.sample_base(n_particles, device="cpu")
-    _, log_w_plain = sample_swap_ctmc(
-        head, x0, ts, return_log_weights=True, target=tgt
-    )
+    _, log_w_plain = sample_swap_ctmc(head, x0, ts, return_log_weights=True, target=tgt)
     plain_estimate = log_mean_exp(log_w_plain)
 
     torch.manual_seed(456)
     x0 = tgt.sample_base(n_particles, device="cpu")
     _, log_w_final, stats = sample_swap_ctmc(
-        head, x0, ts, return_log_weights=True, target=tgt,
+        head,
+        x0,
+        ts,
+        return_log_weights=True,
+        target=tgt,
         resampling=ResamplingConfig(ess_threshold_fraction=1.0),
     )
     smc_estimate = smc_log_z_estimate(stats, log_w_final)
 
-    assert stats.n_events > 0          # the product form is actually exercised
+    assert stats.n_events > 0  # the product form is actually exercised
     assert torch.isclose(plain_estimate, exact_log_z_ratio, atol=0.1)
     assert torch.isclose(smc_estimate, exact_log_z_ratio, atol=0.1)
 
@@ -266,14 +274,16 @@ def test_resampling_lifts_final_segment_ess():
 
     torch.manual_seed(21)
     x0 = tgt.sample_base(n_particles, device="cpu")
-    _, log_w_plain = sample_swap_ctmc(
-        head, x0, ts, return_log_weights=True, target=tgt
-    )
+    _, log_w_plain = sample_swap_ctmc(head, x0, ts, return_log_weights=True, target=tgt)
 
     torch.manual_seed(22)
     x0 = tgt.sample_base(n_particles, device="cpu")
     _, log_w_final, stats = sample_swap_ctmc(
-        head, x0, ts, return_log_weights=True, target=tgt,
+        head,
+        x0,
+        ts,
+        return_log_weights=True,
+        target=tgt,
         resampling=ResamplingConfig(ess_threshold_fraction=0.5),
     )
     ess_plain = ess_from_log_weights(log_w_plain)

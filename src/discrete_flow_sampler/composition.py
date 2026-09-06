@@ -4,6 +4,7 @@ Shared by soft-penalty and fixed-composition targets and the composition-
 conditioned model adapter. Expanded batches repeat each original row
 contiguously (b-major order).
 """
+
 import torch
 from torch import Tensor
 
@@ -63,9 +64,7 @@ def draw_composition(
         index = int(torch.randint(len(values), (1,), generator=generator).item())
         composition = float(values[index])
     else:
-        offset = (
-            2.0 * torch.rand((), generator=generator).item() - 1.0
-        ) * half_width
+        offset = (2.0 * torch.rand((), generator=generator).item() - 1.0) * half_width
         composition = centre + offset
 
     if quantise_to is not None:

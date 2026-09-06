@@ -9,10 +9,10 @@ agrees with eager at fp32 tolerance. The soft route reuses this ModelCfg
 and `run.train`, so the flag serves both chapters. Default False = every
 archived cell byte-identical.
 """
+
 from types import SimpleNamespace
 
 import torch
-
 from experiments.dnfs_baseline_01.configs import ModelCfg
 from experiments.dnfs_baseline_01.run import _build_model
 
@@ -26,9 +26,7 @@ def test_compile_model_default_off():
 @torch.no_grad()
 def test_compile_model_flag_matches_uncompiled_and_keeps_state_dict():
     target = IsingTarget(D=2, sigma=0.1)
-    plain_cfg = SimpleNamespace(
-        model=ModelCfg(kind="lemlp", hidden_dim=16, n_layers=2)
-    )
+    plain_cfg = SimpleNamespace(model=ModelCfg(kind="lemlp", hidden_dim=16, n_layers=2))
 
     torch.manual_seed(0)
     plain_model = _build_model(plain_cfg, target)
@@ -39,8 +37,7 @@ def test_compile_model_flag_matches_uncompiled_and_keeps_state_dict():
     want = plain_model(x, t)
 
     compiled_cfg = SimpleNamespace(
-        model=ModelCfg(kind="lemlp", hidden_dim=16, n_layers=2,
-                       compile_model=True)
+        model=ModelCfg(kind="lemlp", hidden_dim=16, n_layers=2, compile_model=True)
     )
     torch.manual_seed(0)
     compiled_model = _build_model(compiled_cfg, target)
@@ -71,12 +68,8 @@ def test_optimised_recipe_flips_only_the_declared_flags():
     for field in fields(base.model):
         if field.name == "compile_model":
             continue
-        assert getattr(optimised.model, field.name) == getattr(
-            base.model, field.name
-        )
+        assert getattr(optimised.model, field.name) == getattr(base.model, field.name)
     for field in fields(base.train):
         if field.name == "c_t_from_rollout":
             continue
-        assert getattr(optimised.train, field.name) == getattr(
-            base.train, field.name
-        )
+        assert getattr(optimised.train, field.name) == getattr(base.train, field.name)

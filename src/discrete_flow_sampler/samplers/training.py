@@ -25,6 +25,7 @@ identified in the training-loop investigation.
 Eval: existing full t=0->1 IS-trajectory + ESS, gated on the inner-step
 counter so `eval_every` keeps its meaning.
 """
+
 import csv
 import json
 import time
@@ -91,9 +92,7 @@ def _append_replay_buffer(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Append one outer batch and return the retained replay-buffer view."""
     return (
-        _retain_chunks(
-            x_chunks, x_traj.reshape(-1, x_traj.shape[-1]), max_cycles
-        ),
+        _retain_chunks(x_chunks, x_traj.reshape(-1, x_traj.shape[-1]), max_cycles),
         _retain_chunks(t_idx_chunks, t_idx_buffer, max_cycles),
     )
 
@@ -171,9 +170,7 @@ def _gradient_group_norms(model) -> dict[str, float]:
     norm keeps the opt-in diagnostic to one multi-tensor reduction per group
     rather than launching a reduction for every transformer tensor.
     """
-    grouped: dict[str, list[torch.Tensor]] = {
-        name: [] for name in _GRADIENT_GROUPS
-    }
+    grouped: dict[str, list[torch.Tensor]] = {name: [] for name in _GRADIENT_GROUPS}
     reference = None
     for name, parameter in model.named_parameters():
         if parameter.grad is None:
@@ -221,9 +218,7 @@ def _gradient_group_norms(model) -> dict[str, float]:
     }
 
 
-def _rate_diagnostics(
-    model, x, t, step_dt: float, *, target=None
-) -> dict[str, float]:
+def _rate_diagnostics(model, x, t, step_dt: float, *, target=None) -> dict[str, float]:
     """Cheap eval-time diagnostics for CTMC rate scale.
 
     ESS alone cannot distinguish a no-op sampler (rates near zero) from a
@@ -247,7 +242,7 @@ def _rate_diagnostics(
     if getattr(model, "is_locally_equivariant", False):
         rates = F.relu(model(x, t)).sum(dim=-1)  # (B, d), per-site outflow
     else:
-        rates = model(x, t)                      # (B, d), per-site outflow
+        rates = model(x, t)  # (B, d), per-site outflow
 
     flip_prob = rates * step_dt
     metrics = {
@@ -260,17 +255,13 @@ def _rate_diagnostics(
     }
 
     if target is not None and getattr(model, "is_locally_equivariant", False):
-        log_p_neighbours = _log_p_tilde_at_neighbours(
-            x, t, target, model.vocab_size
-        )
+        log_p_neighbours = _log_p_tilde_at_neighbours(x, t, target, model.vocab_size)
         log_p_x = target.log_p_tilde_t(x, t)
         log_ratio = log_p_neighbours - log_p_x[:, None, None]
         metrics["log_ratio_clamp_frac"] = (
             (log_ratio > log_ratio_clamp(target)).float().mean().item()
         )
-        metrics["log_ratio_p99"] = torch.quantile(
-            log_ratio.reshape(-1), 0.99
-        ).item()
+        metrics["log_ratio_p99"] = torch.quantile(log_ratio.reshape(-1), 0.99).item()
 
     return metrics
 
@@ -381,9 +372,7 @@ def train(
         # and its size-invariant threshold.
         from discrete_flow_sampler.samplers.optim import StableAdamW
 
-        optimiser = StableAdamW(
-            model.parameters(), lr=train_cfg.lr, weight_decay=1e-4
-        )
+        optimiser = StableAdamW(model.parameters(), lr=train_cfg.lr, weight_decay=1e-4)
     else:
         raise ValueError(f"unknown optimiser {optimiser_kind!r}")
 
@@ -402,7 +391,8 @@ def train(
     # to avoid init contamination or a restarted warmup (see ema.py).
     ema = (
         ExponentialMovingAverage(model.parameters(), ema_decay, warmup=True)
-        if ema_decay > 0 else None
+        if ema_decay > 0
+        else None
     )
     if ema is not None and resume_state is not None:
         saved_ema = resume_state.get("ema")
@@ -441,9 +431,7 @@ def train(
             f"rollout batch, and 1.0 already fires at every checkpoint."
         )
     rollout_resampling = (
-        ResamplingConfig(
-            ess_threshold_fraction=float(rollout_resample_ess_fraction)
-        )
+        ResamplingConfig(ess_threshold_fraction=float(rollout_resample_ess_fraction))
         if rollout_resample_ess_fraction is not None
         else None
     )
@@ -514,9 +502,7 @@ def train(
         if resume_state is not None and truncate_log_to_step(log_path, start_step)
         else "w"
     )
-    log_gradient_groups = bool(
-        getattr(train_cfg, "log_gradient_group_norms", False)
-    )
+    log_gradient_groups = bool(getattr(train_cfg, "log_gradient_group_norms", False))
     gradient_log_path = output_dir / "gradient_group_log.csv"
     gradient_log_mode = None
     if log_gradient_groups:
@@ -528,7 +514,8 @@ def train(
         )
     gradient_log_context = (
         gradient_log_path.open(gradient_log_mode, newline="")
-        if log_gradient_groups else nullcontext(None)
+        if log_gradient_groups
+        else nullcontext(None)
     )
     with (
         log_path.open(log_mode, newline="") as log_file,
@@ -537,13 +524,26 @@ def train(
         writer = csv.writer(log_file)
         if log_mode == "w":
             writer.writerow(
-                ["step", "loss", "ess", "var_dt_log_p_tilde",
-                 "var_estimator_integrand", "grad_norm",
-                 "rate_site_mean", "rate_site_p99", "flip_prob_site_p99",
-                 "flip_prob_clipped_frac", "log_ratio_clamp_frac",
-                 "log_ratio_p99", "sigma_current", "lr_current",
-                 "wall_clock_step_s", "composition_current",
-                 "composition_half_width", "rollout_resample_events"]
+                [
+                    "step",
+                    "loss",
+                    "ess",
+                    "var_dt_log_p_tilde",
+                    "var_estimator_integrand",
+                    "grad_norm",
+                    "rate_site_mean",
+                    "rate_site_p99",
+                    "flip_prob_site_p99",
+                    "flip_prob_clipped_frac",
+                    "log_ratio_clamp_frac",
+                    "log_ratio_p99",
+                    "sigma_current",
+                    "lr_current",
+                    "wall_clock_step_s",
+                    "composition_current",
+                    "composition_half_width",
+                    "rollout_resample_events",
+                ]
             )
         gradient_writer = None
         if gradient_log_file is not None:
@@ -574,15 +574,14 @@ def train(
         composition_replay_chunks: list[torch.Tensor] = []
         c_t_replay_chunks: list[torch.Tensor] = []
         replay_sigma = float(target.sigma)
-        replay_lambda = float(
-            getattr(target, "composition_penalty_strength", 0.0)
-        )
+        replay_lambda = float(getattr(target, "composition_penalty_strength", 0.0))
         current_intended_lr = float(train_cfg.lr)
         warmup_steps = int(getattr(train_cfg, "warmup_steps", 0))
 
         centre_composition = (
             torch.full((1,), float(composition_centre), device=device)
-            if amortised else None
+            if amortised
+            else None
         )
 
         def _bound(composition):
@@ -624,18 +623,14 @@ def train(
                 if lr_now is not None:
                     current_intended_lr = float(lr_now)
             if lambda_idx >= 0:
-                target.set_composition_penalty_strength(
-                    lambda_stages[lambda_idx][1]
-                )
+                target.set_composition_penalty_strength(lambda_stages[lambda_idx][1])
             while (
                 composition_stages
                 and composition_idx + 1 < len(composition_stages)
                 and step >= composition_stages[composition_idx + 1][0]
             ):
                 composition_idx += 1
-                _start, half_width_now, lr_now = (
-                    composition_stages[composition_idx]
-                )
+                _start, half_width_now, lr_now = composition_stages[composition_idx]
                 if lr_now is not None:
                     current_intended_lr = float(lr_now)
 
@@ -647,12 +642,10 @@ def train(
                 chunk.to(device) for chunk in resume_state["x_replay_chunks"]
             ]
             t_idx_replay_chunks = [
-                chunk.to(device)
-                for chunk in resume_state["t_idx_replay_chunks"]
+                chunk.to(device) for chunk in resume_state["t_idx_replay_chunks"]
             ]
             composition_replay_chunks = [
-                chunk.to(device)
-                for chunk in resume_state["composition_replay_chunks"]
+                chunk.to(device) for chunk in resume_state["composition_replay_chunks"]
             ]
             c_t_replay_chunks = [
                 chunk.to(device) for chunk in resume_state["c_t_replay_chunks"]
@@ -677,7 +670,9 @@ def train(
                 x_diag = target.sample_base(outer_batch, device=device)
                 t_diag = torch.zeros(outer_batch, device=device)
                 init_diag = _rate_diagnostics(
-                    model_diag, x_diag, t_diag,
+                    model_diag,
+                    x_diag,
+                    t_diag,
                     step_dt=1.0 / max(n_grid - 1, 1),
                     target=target,
                 )
@@ -688,9 +683,7 @@ def train(
                 json.dumps(init_diag, indent=2)
             )
             if use_wandb:
-                wandb.log(
-                    {f"init/{k}": v for k, v in init_diag.items()}, step=0
-                )
+                wandb.log({f"init/{k}": v for k, v in init_diag.items()}, step=0)
 
         for outer in range(start_outer, n_outer):
             # Update σ before rebuilding the buffer so inner-step samples are
@@ -709,8 +702,10 @@ def train(
                         current_intended_lr = float(lr_now)
                     if sigma_now != replay_sigma:
                         _clear_replay(
-                            x_replay_chunks, t_idx_replay_chunks,
-                            composition_replay_chunks, c_t_replay_chunks,
+                            x_replay_chunks,
+                            t_idx_replay_chunks,
+                            composition_replay_chunks,
+                            c_t_replay_chunks,
                         )
                         replay_sigma = sigma_now
                     if use_wandb:
@@ -739,8 +734,10 @@ def train(
                         current_intended_lr = float(lr_now)
                     if lambda_now != replay_lambda:
                         _clear_replay(
-                            x_replay_chunks, t_idx_replay_chunks,
-                            composition_replay_chunks, c_t_replay_chunks,
+                            x_replay_chunks,
+                            t_idx_replay_chunks,
+                            composition_replay_chunks,
+                            c_t_replay_chunks,
                         )
                         replay_lambda = lambda_now
                     if use_wandb:
@@ -763,9 +760,7 @@ def train(
                     and step >= composition_stages[composition_idx + 1][0]
                 ):
                     composition_idx += 1
-                    _start, half_width_now, lr_now = (
-                        composition_stages[composition_idx]
-                    )
+                    _start, half_width_now, lr_now = composition_stages[composition_idx]
                     if lr_now is not None:
                         _set_optimizer_lr(optimiser, lr_now)
                         current_intended_lr = float(lr_now)
@@ -788,9 +783,7 @@ def train(
                     composition_values,
                     quantise_to=target.composition_quantum,
                 )
-                cycle_composition = torch.full(
-                    (1,), composition_now, device=device
-                )
+                cycle_composition = torch.full((1,), composition_now, device=device)
             else:
                 cycle_composition = None
             model_cycle, bind_cycle = _bound(cycle_composition)
@@ -810,10 +803,14 @@ def train(
                 x_initial = target.sample_base(outer_batch, device=device)
                 with torch.no_grad():
                     rollout_result = sample_ctmc(
-                        model_cycle, x_initial, t_grid, return_all_states=True,
-                        target=target, resampling=rollout_resampling,
+                        model_cycle,
+                        x_initial,
+                        t_grid,
+                        return_all_states=True,
+                        target=target,
+                        resampling=rollout_resampling,
                         return_cv_integrand=reuse_rollout_integrand,
-                    )                                          # (T, M, D)
+                    )  # (T, M, D)
                     if reuse_rollout_integrand:
                         x_traj, integrand_per_t = rollout_result
                         rollout_resample_events = float("nan")
@@ -832,18 +829,19 @@ def train(
                         # annealed density of the composition this cycle
                         # actually drew.
                         x_traj, rollout_smc_stats = rollout_result
-                        rollout_resample_events = float(
-                            rollout_smc_stats.n_events
-                        )
+                        rollout_resample_events = float(rollout_smc_stats.n_events)
                     if reuse_rollout_integrand:
                         # c_t = mean_m ξ_t (Eq. 8) — the same reduction
                         # compute_c_t_grid applies, on the same values.
                         c_t_grid = integrand_per_t.mean(dim=-1)
                     else:
                         c_t_grid, integrand_per_t = compute_c_t_grid(
-                            t_grid, x_traj, target, model_cycle,
+                            t_grid,
+                            x_traj,
+                            target,
+                            model_cycle,
                             mode=estimator_mode,
-                        )                                      # (T,), (T, M)
+                        )  # (T,), (T, M)
 
                     # Per-outer variance bookkeeping. Average within-slot
                     # variance: keeps the column comparable across t (each
@@ -855,23 +853,17 @@ def train(
                     if c_t_from_rollout and estimator_mode == "naive_mc":
                         naive_per_t = integrand_per_t
                     else:
-                        t_grid_per_state = t_grid.repeat_interleave(
-                            outer_batch
-                        )
-                        x_traj_flat = x_traj.reshape(
-                            n_grid * outer_batch, n_dims
-                        )
+                        t_grid_per_state = t_grid.repeat_interleave(outer_batch)
+                        x_traj_flat = x_traj.reshape(n_grid * outer_batch, n_dims)
                         naive_per_t = target.dt_log_p_tilde_t(
-                            x_traj_flat, t_grid_per_state,
+                            x_traj_flat,
+                            t_grid_per_state,
                         ).reshape(n_grid, outer_batch)
                     var_dt_log_p_tilde = naive_per_t.var(dim=-1).mean().item()
-                    var_estimator_integrand = (
-                        integrand_per_t.var(dim=-1).mean().item()
-                    )
+                    var_estimator_integrand = integrand_per_t.var(dim=-1).mean().item()
 
-            t_idx_buffer = (
-                torch.arange(n_grid, device=device)
-                .repeat_interleave(outer_batch)
+            t_idx_buffer = torch.arange(n_grid, device=device).repeat_interleave(
+                outer_batch
             )
             # Flatten and retain the most recent outer trajectory batches for
             # uniform inner-step sampling. `c_t_grid` intentionally remains
@@ -887,9 +879,7 @@ def train(
             if amortised:
                 composition_buffer = _retain_chunks(
                     composition_replay_chunks,
-                    torch.full(
-                        (n_grid * outer_batch,), composition_now, device=device
-                    ),
+                    torch.full((n_grid * outer_batch,), composition_now, device=device),
                     replay_buffer_cycles,
                 )
                 # x_traj flattens t-major, matching t_idx_buffer above, so the
@@ -912,38 +902,41 @@ def train(
                 if warmup_steps > 0:
                     if step < warmup_steps:
                         warmup_scale = (step + 1) / warmup_steps
-                        _set_optimizer_lr(
-                            optimiser, current_intended_lr * warmup_scale
-                        )
+                        _set_optimizer_lr(optimiser, current_intended_lr * warmup_scale)
                     elif step == warmup_steps:
                         _set_optimizer_lr(optimiser, current_intended_lr)
 
                 # INNER STEP -- N uniform draws from buffer (paper line 7).
                 sample_idx = torch.randint(
-                    buffer_size, (inner_batch,), device=device,
+                    buffer_size,
+                    (inner_batch,),
+                    device=device,
                 )
-                x_sample = x_buffer[sample_idx]                    # (N, D)
-                t_idx_sample = t_idx_buffer[sample_idx]            # (N,)
-                t_sample = t_grid[t_idx_sample]                    # (N,)
+                x_sample = x_buffer[sample_idx]  # (N, D)
+                t_idx_sample = t_idx_buffer[sample_idx]  # (N,)
+                t_sample = t_grid[t_idx_sample]  # (N,)
                 if amortised:
                     # Each state's own baseline. A specialist run keeps the
                     # latest-grid lookup so archived runs still reproduce.
-                    c_t_sample = c_t_buffer[sample_idx]            # (N,)
+                    c_t_sample = c_t_buffer[sample_idx]  # (N,)
                     batch_composition = composition_buffer[sample_idx]
                 else:
-                    c_t_sample = c_t_grid[t_idx_sample]            # (N,)
+                    c_t_sample = c_t_grid[t_idx_sample]  # (N,)
                     batch_composition = None
                 model_batch, bind_batch = _bound(batch_composition)
 
                 with bind_batch:
                     loss_value = kolmogorov_loss(
-                        x_sample, t_sample, c_t_sample, model_batch, target,
+                        x_sample,
+                        t_sample,
+                        c_t_sample,
+                        model_batch,
+                        target,
                     )
                 optimiser.zero_grad()
                 loss_value.backward()
                 gradient_group_norms = (
-                    _gradient_group_norms(model)
-                    if log_gradient_groups else None
+                    _gradient_group_norms(model) if log_gradient_groups else None
                 )
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     model.parameters(),
@@ -972,15 +965,21 @@ def train(
                     model_eval, bind_eval = _bound(centre_composition)
                     with torch.no_grad():
                         eval_grid = torch.linspace(
-                            0.0, 1.0, n_grid, device=device,
+                            0.0,
+                            1.0,
+                            n_grid,
+                            device=device,
                         )
                         with bind_eval:
                             x_eval_initial = target.sample_base(
                                 eval_cfg.n_eval_samples, device=device
                             )
                             _, log_weights = sample_ctmc(
-                                model_eval, x_eval_initial, eval_grid,
-                                return_log_weights=True, target=target,
+                                model_eval,
+                                x_eval_initial,
+                                eval_grid,
+                                return_log_weights=True,
+                                target=target,
                             )
                             ess_value = ess_from_log_weights(log_weights).item()
                         with _bound(batch_composition)[1]:
@@ -994,39 +993,44 @@ def train(
                     torch.save(model.state_dict(), ckpt_dir / "latest.pt")
 
                 writer.writerow(
-                    [step, loss_value.item(), ess_value,
-                     var_dt_log_p_tilde, var_estimator_integrand,
-                     grad_norm.item(), rate_diag["rate_site_mean"],
-                     rate_diag["rate_site_p99"],
-                     rate_diag["flip_prob_site_p99"],
-                     rate_diag["flip_prob_clipped_frac"],
-                     rate_diag["log_ratio_clamp_frac"],
-                     rate_diag["log_ratio_p99"],
-                     float(target.sigma), optimiser.param_groups[0]["lr"],
-                     wall_clock_step_s, composition_now, half_width_now,
-                     rollout_resample_events]
+                    [
+                        step,
+                        loss_value.item(),
+                        ess_value,
+                        var_dt_log_p_tilde,
+                        var_estimator_integrand,
+                        grad_norm.item(),
+                        rate_diag["rate_site_mean"],
+                        rate_diag["rate_site_p99"],
+                        rate_diag["flip_prob_site_p99"],
+                        rate_diag["flip_prob_clipped_frac"],
+                        rate_diag["log_ratio_clamp_frac"],
+                        rate_diag["log_ratio_p99"],
+                        float(target.sigma),
+                        optimiser.param_groups[0]["lr"],
+                        wall_clock_step_s,
+                        composition_now,
+                        half_width_now,
+                        rollout_resample_events,
+                    ]
                 )
                 log_file.flush()
                 if gradient_writer is not None:
-                    reconstructed = sum(
-                        value * value
-                        for value in gradient_group_norms.values()
-                    ) ** 0.5
+                    reconstructed = (
+                        sum(value * value for value in gradient_group_norms.values())
+                        ** 0.5
+                    )
                     grad_norm_value = grad_norm.item()
                     clip_max_norm = float(
                         getattr(train_cfg, "grad_clip_max_norm", 500.0)
                     )
-                    clip_scale = min(
-                        1.0, clip_max_norm / (grad_norm_value + 1e-6)
-                    )
+                    clip_scale = min(1.0, clip_max_norm / (grad_norm_value + 1e-6))
                     gradient_writer.writerow(
                         [
                             step,
                             gradient_group_norms["grad_norm_gains"],
                             gradient_group_norms["grad_norm_omega"],
-                            gradient_group_norms[
-                                "grad_norm_composition_embedder"
-                            ],
+                            gradient_group_norms["grad_norm_composition_embedder"],
                             gradient_group_norms["grad_norm_trunk"],
                             reconstructed,
                             clip_scale,
@@ -1057,10 +1061,7 @@ def train(
                     if step % eval_cfg.eval_every == 0:
                         log_dict["train/ess"] = ess_value
                         log_dict.update(
-                            {
-                                f"train/{key}": value
-                                for key, value in rate_diag.items()
-                            }
+                            {f"train/{key}": value for key, value in rate_diag.items()}
                         )
                         # Exact-field gains are the live mechanism under test
                         # in the soft amortised runs. Keep them in W&B at
@@ -1092,9 +1093,7 @@ def train(
                     and step > 0
                     and step % checkpoint_every == 0
                 ):
-                    torch.save(
-                        model.state_dict(), ckpt_dir / f"step_{step:06d}.pt"
-                    )
+                    torch.save(model.state_dict(), ckpt_dir / f"step_{step:06d}.pt")
 
                 step += 1
 
@@ -1109,9 +1108,7 @@ def train(
                         "step": step,
                         "model": model.state_dict(),
                         "optimiser": optimiser.state_dict(),
-                        "x_replay_chunks": [
-                            chunk.cpu() for chunk in x_replay_chunks
-                        ],
+                        "x_replay_chunks": [chunk.cpu() for chunk in x_replay_chunks],
                         "t_idx_replay_chunks": [
                             chunk.cpu() for chunk in t_idx_replay_chunks
                         ],

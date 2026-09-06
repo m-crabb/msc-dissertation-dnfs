@@ -21,6 +21,7 @@ Two stages:
   local -- assembles neural_estimates.json + Kawasaki npzs + exact moments
            into the demo tables (CPU only).
 """
+
 import argparse
 import json
 import math
@@ -28,7 +29,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-
 from experiments.constrained_hard_03.configs import CONFIGS
 from experiments.constrained_hard_03.gate_4x4 import (
     _energy,
@@ -51,8 +51,10 @@ from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 from discrete_flow_sampler.seeding import seed_everything
 
 DEMO_CELLS = [
-    "H2_d16_c50_s010_letf_ma_10k", "H2_d16_c50_s223_letf_ma_10k",
-    "H2_d16_c50_s010_letf_mo_10k", "H2_d16_c50_s223_letf_mo_10k",
+    "H2_d16_c50_s010_letf_ma_10k",
+    "H2_d16_c50_s223_letf_ma_10k",
+    "H2_d16_c50_s010_letf_mo_10k",
+    "H2_d16_c50_s223_letf_mo_10k",
 ]
 OBSERVABLE_NAMES = ["energy", "nn_correlation", "diagonal_correlation", "phi"]
 DEMO_SIGMAS = (0.10, 0.223)
@@ -102,8 +104,7 @@ def n_eff_observable(estimates, exact_mean, exact_var):
     leave_one_out_mse = (squared_errors.sum() - squared_errors) / (n_replicates - 1)
     jackknife = exact_var / leave_one_out_mse
     se = math.sqrt(
-        (n_replicates - 1) / n_replicates
-        * ((jackknife - jackknife.mean()) ** 2).sum()
+        (n_replicates - 1) / n_replicates * ((jackknife - jackknife.mean()) ** 2).sum()
     )
     return float(n_eff), float(se)
 
@@ -126,8 +127,9 @@ class BackbonePassRowCounter:
         self._handle.remove()
 
 
-def neural_cell_estimates(results_dir, cfg_name, seeds, n_samples, n_replicates,
-                          device):
+def neural_cell_estimates(
+    results_dir, cfg_name, seeds, n_samples, n_replicates, device
+):
     """Per (training seed x eval replicate): IS-weighted observable estimates,
     IS-ESS (secondary diagnostic), and the measured fwd_stack-row cost. Also
     the gate fidelity block per training seed (run_gate reused verbatim)."""
@@ -140,16 +142,18 @@ def neural_cell_estimates(results_dir, cfg_name, seeds, n_samples, n_replicates,
         print(f"[demo] {cfg_name} seed {seed}: {run_dir.name}", flush=True)
         head, target = load_run(run_dir, device)
         fidelity_metrics = run_gate(head, target, n_samples, n_euler_steps, seed)
-        fidelity.append({
-            "seed": seed,
-            "energy_tv": fidelity_metrics["energy_tv"],
-            "ess_fraction": fidelity_metrics["ess_fraction"],
-            "max_level_excess": fidelity_metrics["max_level_excess"],
-            "antisym_violation": fidelity_metrics["antisym_violation"],
-            "energy_centres": fidelity_metrics["energy_centres"],
-            "hist_dnfs": fidelity_metrics["hist_dnfs"],
-            "hist_exact": fidelity_metrics["hist_exact"],
-        })
+        fidelity.append(
+            {
+                "seed": seed,
+                "energy_tv": fidelity_metrics["energy_tv"],
+                "ess_fraction": fidelity_metrics["ess_fraction"],
+                "max_level_excess": fidelity_metrics["max_level_excess"],
+                "antisym_violation": fidelity_metrics["antisym_violation"],
+                "energy_centres": fidelity_metrics["energy_centres"],
+                "hist_dnfs": fidelity_metrics["hist_dnfs"],
+                "hist_exact": fidelity_metrics["hist_exact"],
+            }
+        )
         for replicate in range(n_replicates):
             replicate_seed = 10_000 + 100 * seed + replicate
             counter = BackbonePassRowCounter(head.backbone)
@@ -163,21 +167,26 @@ def neural_cell_estimates(results_dir, cfg_name, seeds, n_samples, n_replicates,
             counter.close()
             weights = torch.softmax(log_w, dim=0)
             estimates = {
-                name: (weights * observable_values(name, samples, target))
-                .sum().item()
+                name: (weights * observable_values(name, samples, target)).sum().item()
                 for name in OBSERVABLE_NAMES
             }
-            replicate_rows.append({
-                "seed": seed, "replicate": replicate,
-                "estimates": estimates,
-                "backbone_rows": counter.rows,
-                "is_ess_fraction": (
-                    ess_from_log_weights(log_w).item() / n_samples
-                ),
-            })
-    return {"cfg": cfg_name, "sigma": float(cfg.ising.sigma),
-            "head_kind": cfg.head_kind, "n_samples": n_samples,
-            "replicates": replicate_rows, "fidelity": fidelity}
+            replicate_rows.append(
+                {
+                    "seed": seed,
+                    "replicate": replicate,
+                    "estimates": estimates,
+                    "backbone_rows": counter.rows,
+                    "is_ess_fraction": (ess_from_log_weights(log_w).item() / n_samples),
+                }
+            )
+    return {
+        "cfg": cfg_name,
+        "sigma": float(cfg.ising.sigma),
+        "head_kind": cfg.head_kind,
+        "n_samples": n_samples,
+        "replicates": replicate_rows,
+        "fidelity": fidelity,
+    }
 
 
 def gpu_stage(results_dir, out_path, seeds, n_samples, n_replicates, device):
@@ -205,9 +214,7 @@ def phi_mass_on_support(phi_values, weights, D):
     """Weighted mass of per-sample phi values on the exact support grid."""
     half = D * D // 2
     indices = np.rint((np.asarray(phi_values) * half + half) / 2).astype(int)
-    return np.bincount(
-        indices, weights=np.asarray(weights), minlength=half + 1
-    )
+    return np.bincount(indices, weights=np.asarray(weights), minlength=half + 1)
 
 
 def exact_phi_pmf(target):
@@ -246,12 +253,15 @@ def phi_hist_stage(results_dir, out_path, seeds, n_samples, device):
             phi = observable_values("phi", samples, target).cpu().numpy()
             mass += phi_mass_on_support(phi, weights, D)
         mass /= len(seeds)
-        payload.append({
-            "cfg": cfg_name, "sigma": float(cfg.ising.sigma),
-            "head_kind": cfg.head_kind,
-            "phi_support": phi_support(D).tolist(),
-            "phi_mass": mass.tolist(),
-        })
+        payload.append(
+            {
+                "cfg": cfg_name,
+                "sigma": float(cfg.ising.sigma),
+                "head_kind": cfg.head_kind,
+                "phi_support": phi_support(D).tolist(),
+                "phi_mass": mass.tolist(),
+            }
+        )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2))
@@ -297,14 +307,16 @@ def kawasaki_cell_estimates(kawasaki_dir, sigma, target, burn_in_trials):
         }
         energy_series = observable_values("energy", kept_spins, target).numpy()
         tau_int_snapshots = integrated_autocorr(energy_series)
-        rows.append({
-            "seed": int(data["seed"]),
-            "estimates": estimates,
-            "energy_evals": int(data["n_trial_steps"]),
-            "tau_int_trial_steps": (
-                tau_int_snapshots * float(data["snapshot_interval"])
-            ),
-        })
+        rows.append(
+            {
+                "seed": int(data["seed"]),
+                "estimates": estimates,
+                "energy_evals": int(data["n_trial_steps"]),
+                "tau_int_trial_steps": (
+                    tau_int_snapshots * float(data["snapshot_interval"])
+                ),
+            }
+        )
     if not rows:
         raise FileNotFoundError(
             f"no Kawasaki npz with sigma={sigma} under {kawasaki_dir}"
@@ -329,20 +341,24 @@ def assemble(neural_json, kawasaki_dir, out_dir, burn_in_trials=20_000):
         moments = exact_moments(target)
         samplers = {
             cell["cfg"]: {
-                "kind": cell["head_kind"], "currency": "backbone_rows",
+                "kind": cell["head_kind"],
+                "currency": "backbone_rows",
                 "rows": cell["replicates"],
             }
-            for cell in neural if abs(cell["sigma"] - sigma) < 1e-9
+            for cell in neural
+            if abs(cell["sigma"] - sigma) < 1e-9
         }
         samplers[f"kawasaki_sigma{sigma}"] = {
-            "kind": "kawasaki_mchammer", "currency": "energy_evals",
+            "kind": "kawasaki_mchammer",
+            "currency": "energy_evals",
             "rows": kawasaki_cell_estimates(
                 kawasaki_dir, sigma, target, burn_in_trials
             ),
         }
         for sampler_name, sampler in samplers.items():
             cost_key = (
-                "backbone_rows" if sampler["currency"] == "backbone_rows"
+                "backbone_rows"
+                if sampler["currency"] == "backbone_rows"
                 else "energy_evals"
             )
             mean_cost = float(np.mean([r[cost_key] for r in sampler["rows"]]))
@@ -350,17 +366,23 @@ def assemble(neural_json, kawasaki_dir, out_dir, burn_in_trials=20_000):
                 exact_mean, exact_var = moments[name]
                 estimates = [r["estimates"][name] for r in sampler["rows"]]
                 n_eff, se = n_eff_observable(estimates, exact_mean, exact_var)
-                table.append({
-                    "sigma": sigma, "sampler": sampler_name,
-                    "head_kind": sampler["kind"], "observable": name,
-                    "exact_mean": exact_mean, "exact_var": exact_var,
-                    "estimate_mean": float(np.mean(estimates)),
-                    "n_replicates": len(estimates),
-                    "n_eff": n_eff, "n_eff_se": se,
-                    "currency": sampler["currency"],
-                    "mean_cost": mean_cost,
-                    "n_eff_per_1e6": n_eff / (mean_cost / 1e6),
-                })
+                table.append(
+                    {
+                        "sigma": sigma,
+                        "sampler": sampler_name,
+                        "head_kind": sampler["kind"],
+                        "observable": name,
+                        "exact_mean": exact_mean,
+                        "exact_var": exact_var,
+                        "estimate_mean": float(np.mean(estimates)),
+                        "n_replicates": len(estimates),
+                        "n_eff": n_eff,
+                        "n_eff_se": se,
+                        "currency": sampler["currency"],
+                        "mean_cost": mean_cost,
+                        "n_eff_per_1e6": n_eff / (mean_cost / 1e6),
+                    }
+                )
     (out_dir / "neff_table.json").write_text(json.dumps(table, indent=2))
     _write_markdown_tables(table, neural, out_dir)
     print(f"[demo] wrote {out_dir}/neff_table.json + markdown tables", flush=True)
@@ -392,9 +414,7 @@ def _write_markdown_tables(table, neural, out_dir):
                 f"| {cell['cfg']} | {f['seed']} | {f['energy_tv']:.4f} "
                 f"| {f['ess_fraction']:.3f} | {f['max_level_excess']:.4f} |"
             )
-    (out_dir / "observables_table.md").write_text(
-        "\n".join(fidelity_lines) + "\n"
-    )
+    (out_dir / "observables_table.md").write_text("\n".join(fidelity_lines) + "\n")
 
 
 def main(argv=None):
@@ -405,10 +425,10 @@ def main(argv=None):
     parser.add_argument("--n-samples", type=int, default=5000)
     parser.add_argument("--n-replicates", type=int, default=5)
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--neural-json",
-                        default="results/03_hard/demo_4x4/neural_estimates.json")
-    parser.add_argument("--kawasaki-dir",
-                        default="results/03_hard/demo_4x4/kawasaki")
+    parser.add_argument(
+        "--neural-json", default="results/03_hard/demo_4x4/neural_estimates.json"
+    )
+    parser.add_argument("--kawasaki-dir", default="results/03_hard/demo_4x4/kawasaki")
     parser.add_argument("--out", default="results/03_hard/demo_4x4")
     args = parser.parse_args(argv)
     seeds = [int(s) for s in args.seeds.split(",")]
@@ -416,13 +436,18 @@ def main(argv=None):
         gpu_stage(
             args.results_dir,
             Path(args.out) / "neural_estimates.json",
-            seeds, args.n_samples, args.n_replicates, args.device,
+            seeds,
+            args.n_samples,
+            args.n_replicates,
+            args.device,
         )
     elif args.stage == "phi":
         phi_hist_stage(
             args.results_dir,
             Path(args.out) / "phi_hists.json",
-            seeds, args.n_samples, args.device,
+            seeds,
+            args.n_samples,
+            args.device,
         )
     else:
         assemble(args.neural_json, args.kawasaki_dir, args.out)
