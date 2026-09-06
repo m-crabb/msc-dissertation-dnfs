@@ -1,5 +1,11 @@
 """The whole of app:logp-scatters as ONE 3x2 figure, one row per paradigm.
 
+ARCHIVED FIGURE (6 September 2026). The rationale below is historical:
+DNFS path weights cannot generally be inverted into an endpoint log-density.
+For configuration-probability validation use scripts/configuration_calibration_4x4.py
+and scripts/plot_configuration_calibration_4x4.py instead. This script remains
+only to reproduce the retired image, whose density interpretation was incorrect.
+
 Replaces the three separate floats (hard / unconstrained / soft) that the
 appendix carried until s76. Two reasons, in order of importance:
 

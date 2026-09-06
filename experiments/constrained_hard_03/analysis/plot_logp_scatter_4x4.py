@@ -1,5 +1,11 @@
 """Per-configuration exact-recovery scatter at the 4x4 gate (app:logp-scatters).
 
+ARCHIVED FIGURE (6 September 2026). The rationale below is historical:
+DNFS path weights cannot generally be inverted into an endpoint log-density.
+For configuration-probability validation use scripts/configuration_calibration_4x4.py
+and scripts/plot_configuration_calibration_4x4.py instead. This script remains
+only to reproduce the retired image, whose density interpretation was incorrect.
+
 The house tables deliberately exclude TV/KL over configurations; the agreed
 replacement at enumerable sizes is this scatter: estimated sampler
 log-density against the exactly enumerated conditional, one point per drawn
