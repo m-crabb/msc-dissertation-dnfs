@@ -1,8 +1,8 @@
 #!/bin/zsh
-# 64-site Cu-Au revival arms on the two-hole patch head (s122 night, 2026-09-04), Modal A100-80GB,
-# tag 20260904-cuau64-revive. First thp wave: c25 ordered at ESS 0.17-0.20, c50 gave up gradually
-# from 818 K down (see the configs.py comment). Arms: ladder x2 (l14 at 50k / 100k), trajectory
-# (ne256), both (100k_l14_ne256); c25 gets ne256 alone. c50 seeds 42,43; c25 seed 42.
+# 64-site Cu-Au two-hole patch revival (s122 night, 2026-09-04), Modal A100-80GB,
+# tag 20260904-cuau64-revive. First thp: c25 ordered at ESS 0.17-0.20; c50 declined from
+# 818 K down (configs.py). Arms: ladder x2 (l14 at 50k / 100k), trajectory (ne256), both
+# (100k_l14_ne256); c50 seeds 42,43. c25 gets ne256 alone, seed 42.
 cd /Users/mitchcrabb/Documents/Imperial/Modules/Dissertation/msc-dissertation-dnfs
 M=.pixi/envs/dev/bin/modal
 T=20260904-cuau64-revive

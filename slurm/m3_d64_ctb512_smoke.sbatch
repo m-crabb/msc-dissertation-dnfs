@@ -15,8 +15,8 @@
 # c_t over the full 512-row set, resume carriage) on GPU BEFORE the d256
 # mechanism cell if a100 scheduling blocks it — the unit tests
 # (test_c_t_batch.py) already pin the semantics, so this carries NO quality
-# band; it is an integration smoke. Fixed --tag so a resubmission resumes
-# into the same run dir. 12 h wall is deliberate headroom over the ~25-min
+# band; it is an integration smoke. Fixed tag keeps resume location.
+# 12 h wall is deliberate headroom over the ~25-min
 # class estimate (a30 runs ~2x the a100 estimates).
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache

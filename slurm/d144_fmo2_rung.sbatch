@@ -7,9 +7,8 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# The 12x12 rung (2026-08-15) — the volume nobody has run. 8x8 trains to
-# Var[log w]/site 0.0040; 16x16 sits at 0.0707, an 18x per-site gap across a
-# single 4x volume step, and the wall between them has never been bracketed.
+# 12x12 rung (2026-08-15), previously unrun: 8x8 Var[log w]/site 0.0040
+# versus 16x16 0.0707, an unbracketed 18x per-site gap over 4x volume.
 #
 # Read on Var[log w]/site, with ESS reported alongside and expected to be
 # HONEST at this size: the lognormal identity ESS/N = exp(-Var) reproduces
@@ -27,8 +26,7 @@
 # n_euler=288 = 2d, the clip-safe budget the config builder itself states
 # and the 8x8 rung honours; the multi-event step because Lambda ~ d^2/2 has
 # outgrown the one-event step's clip budget at this volume. Both are pinned
-# in test_configs against the 8x8 twin. Fixed --tag so a resubmission
-# resumes into the same run dir.
+# in test_configs against the 8x8 twin. Fixed tag preserves resume location.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

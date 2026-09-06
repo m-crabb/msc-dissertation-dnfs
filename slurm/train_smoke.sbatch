@@ -7,17 +7,15 @@
 #SBATCH --time=01:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Minutes-scale training smoke (--smoke: 4 steps, 8 Euler steps, 64 eval
-# samples) whose real purpose is verifying wandb logging works from a DoC
-# compute node.
+# Verify wandb logging from a DoC compute node: --smoke uses 4 training
+# steps, 8 Euler steps and 64 eval samples.
 
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 
-# wandb auth: run `wandb login <KEY>` ONCE on the cluster beforehand (the
-# ~/.netrc append route proved unreliable — see docs/imperial-doc-cluster.md
-# §5a). No key belongs in this file. To prove the pipeline with no key at
-# all, uncomment the next line (logs locally; `wandb sync` later):
+# Run `wandb login <KEY>` once on the cluster; appending ~/.netrc proved
+# unreliable (docs/imperial-doc-cluster.md §5a). Keep keys out of this file.
+# For key-free local logging, uncomment below; `wandb sync` uploads later:
 # export WANDB_MODE=offline
 
 REPO=/vol/gpudata/mc625-dnfs/msc-dissertation-dnfs

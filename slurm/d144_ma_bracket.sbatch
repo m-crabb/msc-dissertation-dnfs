@@ -18,8 +18,7 @@
 # sigma=0.10; stage-tail loss/var_dt_log_p_tilde lands day one against the
 # 8x8/16x16 yardsticks 0.033 / 0.119).
 #
-# Seed is $1 (default 42); this is a headline scaling-curve point, so it
-# runs at two seeds (42, 43) as separate submissions of this file.
+# Seed $1 defaults to 42; headline scaling point uses separate seeds 42, 43.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

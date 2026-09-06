@@ -7,6 +7,8 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
+# Historical proposal: 2026-08-15 next-session record marks this arm killed
+# by measured OOM before launch (75.9 GiB backward at the recipe batch).
 # mask_one screen arm (2026-08-15): the best 8x8 head on record (0.00129
 # Var[log w]/site at 100k, 2.2x under the masked-attention twin) has never
 # touched 16x16. It runs the stage-1 screen frame (flat sigma=0.10, 5k

@@ -1,9 +1,8 @@
 #!/bin/zsh
-# 64-site Cu-Au hard cells on the two-hole patch head (s122, 2026-09-03), Modal A100-80GB,
-# tag 20260903-cuau64-thp. Replaces the mask-one wave killed at step 9k (3.76 s/step measured;
-# the patch cell benched at 0.048 s/step one-shell, registered with two shells). Both compositions,
-# seeds 42-44, no channel, in-training eval 256 draws. Gate: logged ESS vs the mask-one cells'
-# first 9k steps (tag 20260903-cuau64-house, still on the volume).
+# 64-site Cu-Au two-hole patch cells (s122, 2026-09-03), Modal A100-80GB, tag 20260903-cuau64-thp.
+# Replaces mask-one killed at step 9k (3.76 s/step); patch benchmark: 0.048 s/step one-shell,
+# registered with two shells. Both compositions, seeds 42-44, no channel, 256 in-training
+# eval draws. Gate: logged ESS vs mask-one's first 9k steps (20260903-cuau64-house, still on volume).
 cd /Users/mitchcrabb/Documents/Imperial/Modules/Dissertation/msc-dissertation-dnfs
 M=.pixi/envs/dev/bin/modal
 T=20260903-cuau64-thp

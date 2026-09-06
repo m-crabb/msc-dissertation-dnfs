@@ -11,8 +11,8 @@
 # — name and bilinear_rank are the only config deltas (pinned in test), so
 # the rank read at the fab8 rung's measured 0.27 deficit stays
 # single-variable. Bands frozen in the cell comment (configs.py): >= 0.60
-# raw = rank binds at scale; <= 0.55 = rank refuted at scale too. Fixed
-# --tag so a resubmission resumes into the same run dir.
+# raw = rank binds at scale; <= 0.55 = rank refuted at scale too.
+# Fixed tag preserves resume location.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

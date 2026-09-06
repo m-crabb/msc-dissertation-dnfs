@@ -7,14 +7,12 @@
 #SBATCH --time=3-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# The 16x16 rung (hard.tex §5.6 plan of record): masked-attention head on the
-# vertex-disjoint matching step, 50k sigma-ladder recipe, seed 42 (the d64
-# ladder's seed). Fixed --tag so a resubmission lands in the SAME run dir and
-# train_swap resumes from checkpoints/resume.pt instead of starting over.
+# 16x16 rung (hard.tex §5.6): masked attention, vertex-disjoint matching,
+# 50k sigma ladder, seed 42 as at d64. Fixed tag reuses the run directory;
+# train_swap resumes from checkpoints/resume.pt.
 #
-# sbatch does not load ~/.bashrc, so pixi is addressed by absolute path.
-# WANDB_MODE=offline: cluster wandb login is pending key rotation; logs land
-# in wandb/ inside the repo for a later `wandb sync`.
+# Absolute pixi path avoids sbatch's missing ~/.bashrc. Offline W&B logs
+# stay in repo wandb/ for later sync; key rotation was pending at launch.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

@@ -7,11 +7,9 @@
 #SBATCH --time=00:30:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Pre-launch smoke of the 16x16 rung cell on the launch partition: --smoke
-# shrinks to 4 steps / 8 Euler steps / 64 eval samples, so this verifies the
-# d=256 masked-attention head + matching-step training path + eval chunking
-# end to end on the real GPU before the 3-day job is committed. Output goes
-# to a scratch dir so the real results tree never sees a smoke artefact.
+# Pre-launch A100 smoke: d256 masked attention, matching-step training and
+# eval chunking; 4 steps / 8 Euler steps / 64 eval samples. Scratch output
+# keeps smoke artefacts outside the results tree.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

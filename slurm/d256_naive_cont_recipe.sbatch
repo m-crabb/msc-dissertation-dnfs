@@ -15,14 +15,9 @@
 # bought. Bands frozen in the cell comment (configs.py) BEFORE this launch:
 # CONTINUATION-OWNS / ESTIMATOR-OWNS / SPLIT.
 #
-# Venue deliberately matched: the CV continuation ran on this same a100
-# partition (A100-80GB), so the split is read across one variable and not
-# across hardware as well. Same walltime envelope as its twin for the same
-# reason.
+# Match the CV twin's A100-80GB partition and walltime to control venue.
 #
-# Fixed --tag so a resubmission resumes into the same run dir; resume.pt
-# takes precedence over --init-from by design, which is the desired
-# restart semantics.
+# Fixed tag reuses the run directory; resume.pt overrides the loaded init.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

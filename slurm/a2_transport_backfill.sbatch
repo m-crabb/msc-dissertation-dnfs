@@ -8,12 +8,10 @@
 #SBATCH --nice=1000
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# A2: the eval-measured transport backfill that unblocks bucket C2 of the
-# writeup workorder. The one-event transport counters
+# A2 transport backfill for writeup bucket C2. One-event transport counters
 # (jumps_per_site_proposed / _accepted / _state_changing, run.py:276-282)
-# shipped in 97a4b6d AFTER every in-flight eval had already been launched,
-# so the d256 transport claim currently rests on ESTIMATED rather than
-# measured per-site jump rates. These three passes measure them.
+# shipped in 97a4b6d after the in-flight evals launched. These three passes
+# measure the per-site jump rates previously estimated for the d256 claim.
 #
 # Why --eval-ne at each cell's OWN native grid: the override's real job
 # here is to divert the artefacts into a side dir (eval_ne<k>/) so the
@@ -25,10 +23,9 @@
 # eval/, and a wide gap would be an FP-nondeterminism finding rather than
 # a transport one.
 #
-# Three passes in ONE job, not an array: the per-user submission cap is 8
-# and six family arms already hold slots. Sequential costs wall clock, not
-# a slot. ~2h + ~2h + ~0.5h at the measured d256 rate (~29 min at ne128,
-# linear in grid), so 9h is generous headroom including cold import.
+# Three sequential passes share one slot under the 8-job cap (six family
+# arms occupied slots). Budget: ~2h + ~2h + ~0.5h at the measured d256 rate
+# (~29 min at ne128, linear in grid); 9h includes cold-import headroom.
 #
 # --nice=1000 for the same reason as rw_stage_best_eval.sbatch: five
 # deadline-gating a100 arms are PENDING and the 3-GPU per-user cap goes to

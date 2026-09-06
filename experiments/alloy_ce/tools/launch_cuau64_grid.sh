@@ -1,9 +1,8 @@
 #!/bin/zsh
-# 64-site Cu-Au cells on MetaDNS's temperature grid (s123, 2026-09-04), Modal A100-80GB,
-# tag 20260904-cuau64-grid. The revival wave left 500 K at c=0.5 dead on every ladder x
-# trajectory arm, so the 64-site rows are reported at MetaDNS's 1200 K and 680 K with the
-# ladder stopped there (configs.py comments), 500 K printed as the limit. Hard c25/c50 on the
-# two-hole patch head, free A1 on the flip head; three seeds each (18 cells, ~$1 each).
+# 64-site Cu-Au MetaDNS grid (s123, 2026-09-04), Modal A100-80GB, tag 20260904-cuau64-grid.
+# Revival left c=0.5 dead at 500 K on every ladder x trajectory arm; report 1200 / 680 K
+# with the ladder stopped there (configs.py), 500 K as the limit. Hard c25/c50 use the
+# two-hole patch head, free A1 the flip head; three seeds each (18 cells, ~$1 each).
 cd /Users/mitchcrabb/Documents/Imperial/Modules/Dissertation/msc-dissertation-dnfs
 M=.pixi/envs/dev/bin/modal
 T=20260904-cuau64-grid

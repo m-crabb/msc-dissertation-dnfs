@@ -15,8 +15,7 @@
 # measured at d64) and prices the question where interiors are long enough.
 # Bands frozen in the cell comment (configs.py) BEFORE launch: MEANINGFUL
 # raw >= 0.60; STRONG raw >= 0.70; NEGATIVE raw <= 0.55 -> A-prime refuted
-# at scale, R1 (fint) the only live interior repair. Fixed --tag so a
-# resubmission resumes into the same run dir.
+# at scale, R1 (fint) the only live interior repair. Fixed tag keeps resume.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

@@ -7,13 +7,9 @@
 #SBATCH --time=02:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Timed mchammer MCMC baselines on a cluster CPU. `--gres=gpu:0` is required,
-# not cosmetic: the a30 partition assigns a GPU by default even to a job that
-# never touches CUDA, so without it this job queues behind — and idles — a
-# scarce accelerator. These are the wall-clock-per-effective-sample numbers
-# quoted against DNFS, so they come from the same node class as the DNFS runs.
-# One job covers both legs; each (composition, seed) cell takes seconds to
-# minutes, so a single 2 h allocation is generous.
+# Timed CPU mchammer baselines on the DNFS node class for wall-clock comparisons.
+# --gres=gpu:0 prevents a30's default GPU allocation from reserving an idle GPU.
+# Both legs share 2h; each (composition, seed) cell takes seconds to minutes.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 

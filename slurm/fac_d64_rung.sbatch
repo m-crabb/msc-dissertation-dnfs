@@ -7,13 +7,11 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Factorised-head d64 scaling rung (2026-08-13, user GO after the 4x4
-# verdict): ONE cell, seed 42, single-variable twin of the archived MA 50k
-# curriculum rung — head_kind plus the declared dual-eval EMA instrument
-# are the only differences (EMA never touches training; eval/ raw stays
-# the primary, eval_ema/ records alongside). Submitted WITHOUT nice so it
-# outranks the nice'd walkback topups. Fixed --tag so a resubmission
-# resumes into the same run dir (EMA shadow travels in resume.pt).
+# Factorised-head d64 rung (2026-08-13, user GO after 4x4 verdict): seed 42
+# twin of archived MA 50k curriculum; only head_kind and dual-eval EMA differ.
+# EMA never touches training; eval/ raw remains primary, eval_ema/ alongside.
+# Submitted WITHOUT nice to outrank nice'd walkback topups. Fixed tag keeps
+# the resume location; resume.pt carries the EMA shadow.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

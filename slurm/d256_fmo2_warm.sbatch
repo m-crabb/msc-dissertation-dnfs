@@ -7,22 +7,19 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 #
-# Cross-volume transfer at 16x16 (2026-08-15), ARM SELECTED BY $1:
-#   coarse -> n_euler 128, the grid every archived 16x16 cell ran (0.5d)
-#   fine   -> n_euler 512, the clip-safe 2d budget the builder states
+# Historical cross-volume transfer at 16x16 (2026-08-15), $1 selects:
+#   coarse -> n_euler 128, the archived 16x16 grid (0.5d)
+#   fine   -> n_euler 512, the builder's clip-safe 2d budget
+# FINE CANCELLED 2026-08-15 (configs.py amendment 2026-08-19): never ran;
+# do not relaunch. Recipe ne512 endpoint NULL and eval-grid sweep superseded it.
 # The two differ in that field ALONE (pinned in test_configs), so the
 # resolution read is separable from the transfer they share.
 #
-# Why the pair exists. The 16x16 warm-start arm has never actually been run:
-# the archived phase-2 cell continued 16x16 from a 16x16 checkpoint, which
-# tests an estimator switch and not transfer. And a resolution sweep on a
-# frozen 16x16 checkpoint found Var[log w] still falling monotonically at
-# the largest grid tested (19.44 -> 15.57 over 128 -> 384), which is what an
-# under-resolved grid looks like — but a frozen-checkpoint sweep can only
-# ask how an ALREADY-TRAINED model behaves when re-rolled finer. It cannot
-# separate "the grid is coarse" from "the model was fitted to a coarse
-# grid", because a model trained under a biased discretisation learns to
-# compensate that bias. Only the fine TRAINING arm tests the second reading.
+# Original rationale: phase-2 continued 16x16 from 16x16, testing estimator
+# switch rather than transfer. Frozen-checkpoint Var[log w] fell 19.44 ->
+# 15.57 over grids 128 -> 384. Re-rolling cannot separate coarse scoring
+# from a model fitted to coarse-grid bias; the proposed fine-training arm
+# addressed the latter question (subsequently cancelled above).
 #
 # Source: the 8x8 fmo2 run's EMA parameters (per-site 0.00328, the best 8x8
 # model in the archive), resampled onto the larger torus by the warm-start
@@ -36,9 +33,7 @@
 # Var[log w]/site — the ESS column at this volume is at its finite-N floor
 # and inverted against Var on the archived arms.
 #
-# Fixed --tag per arm so a resubmission resumes into the same run dir;
-# resume.pt takes precedence over --init-from, so a resumed job continues
-# rather than restarting from the transfer.
+# Fixed tags reuse each run directory; resume.pt overrides the loaded init.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

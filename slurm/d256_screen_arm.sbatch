@@ -7,15 +7,11 @@
 #SBATCH --time=0-12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Generic 16x16 arm runner (2026-08-15): CFG is $1, SEED is $2 (default
-# 42), TAG is $3 (defaults to the screen tag for compatibility with the
-# original screen dispatches). One sbatch for the whole family because
-# every arm is the same shape one declared variable apart (pinned in
-# test_screen_pins); per-arm identity lives in the cell registry, not
-# here. Submit with a job name so squeue stays readable:
+# 16x16 arm runner (2026-08-15): $1=CFG, $2=SEED (42), $3=TAG (original
+# screen default retained). Registry arms vary declared fields, pinned in
+# test_screen_pins. Historical dispatch example with a readable job name:
 #   sbatch -J scr5k-ma slurm/d256_screen_arm.sbatch H2_d256_scr5k_ma 42
-# Fixed --tag (cfg+seed derived) so a resubmission after preemption
-# reuses the run dir and a completed run is skipped rather than repeated.
+# Config, seed and fixed tag reuse the run directory; raw metrics skip training.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

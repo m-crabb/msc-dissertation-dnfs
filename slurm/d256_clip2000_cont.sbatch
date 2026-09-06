@@ -19,9 +19,7 @@
 # divergence risk a cold unclipped run takes (the clip=20000 smoke arm
 # never escaped rung 0). Null band = the rescue's own flatness continuing
 # (stage-tail FVU 0.137 +- 0.005, eval Var/site 0.0707 at N=5000).
-# Fixed --tag so a resubmission resumes into the same run dir; resume.pt
-# takes precedence over --init-from, which is the desired restart
-# semantics.
+# Fixed tag reuses the run directory; resume.pt overrides the loaded init.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

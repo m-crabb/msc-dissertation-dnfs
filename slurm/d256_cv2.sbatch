@@ -13,9 +13,8 @@
 # the trained checkpoint before launch: CV integrand-variance ratio 0.140
 # (reduces 7x; it ADDED variance on the diverged model). Bands frozen in the
 # cell comment (configs.py): PASS = train-ESS > 15/256 sustained+rising over
-# the final 5k AND eval ess_fraction >= 0.05. Fixed --tag so a resubmission
-# resumes into the same run dir; resume.pt takes precedence over --init-from
-# by design, which is the desired restart semantics.
+# the final 5k AND eval ess_fraction >= 0.05.
+# Fixed tag reuses the run directory; resume.pt overrides the loaded init.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

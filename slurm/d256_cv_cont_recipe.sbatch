@@ -14,9 +14,8 @@
 # (halt_on_cv_inversion_after=2000, window 10): a sustained
 # controlled/naive integrand-variance inversion halts the run, which is
 # the designed cost-capped negative verdict. Bands frozen in the cell
-# comment (configs.py) BEFORE this launch. Fixed --tag so a resubmission
-# resumes into the same run dir; resume.pt takes precedence over
-# --init-from by design, which is the desired restart semantics.
+# comment (configs.py) BEFORE this launch.
+# Fixed tag reuses the run directory; resume.pt overrides the loaded init.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline

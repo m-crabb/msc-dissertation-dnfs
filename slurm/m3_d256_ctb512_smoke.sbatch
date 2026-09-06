@@ -7,10 +7,10 @@
 #SBATCH --time=16:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# M3 mechanism cell (M-campaign Task 3, plan 2026-08-14; USER CALL session
-# close: launch WITHOUT waiting for cv2's band — reads against the ARCHIVED
-# naive 50k run's first 12k at matched steps). The smoke12k Arm-B naive
-# recipe with c_t_batch 128 -> 512 the ONLY declared change (cell comment
+# M3 mechanism cell (M-campaign Task 3, plan 2026-08-14): user authorised
+# launch WITHOUT waiting for cv2's band; compare ARCHIVED naive 50k run's
+# first 12k at matched steps. Smoke12k Arm-B naive recipe with c_t_batch
+# 128 -> 512 the ONLY declared change (cell comment
 # in configs.py; twin-ness pinned by
 # test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields). c_t's
 # per-slot standard error halves (variance /4) while the inner batch and

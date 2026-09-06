@@ -7,19 +7,15 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# c_t transfer-function cell. Every variance lever in flight (Stein CV, the
-# c_t EMA, the enlarged c_t rollout) reduces c_t NOISE, but the quantity
-# that has to fall ~7.9x for a usable d256 is per-site Var[log w]. The slope
-# between the two has never been measured: all 21 archived d64 cells run
-# control_variate, so there is no naive arm at any healthy size in either
-# direction.
+# c_t transfer-function cell: Stein CV, c_t EMA and enlarged rollout reduce
+# c_t noise; usable d256 needs ~7.9x lower per-site Var[log w]. The transfer
+# slope was unmeasured: all 21 archived d64 cells used control_variate,
+# leaving no naive arm at a healthy size.
 #
-# This is the archived MA 50k curriculum twin with estimator
-# control_variate -> naive_mc the ONLY declared change (twin-ness pinned by
-# test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator). It measures the
-# transfer where the control variate is known to WORK (a healthy run),
-# rather than where it inverted (the diverged d256) — the confound that
-# makes the archived d256 naive-vs-CV comparison uninterpretable.
+# Archived MA 50k curriculum twin; control_variate -> naive_mc is the ONLY
+# declared change (test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator).
+# Measures transfer in a healthy CV run; CV inversion confounds the archived
+# diverged-d256 naive-vs-CV comparison.
 #
 # PRE-REGISTERED OUTCOMES (twin ESS 0.7806; the naive integrand variance
 # 26.0 is already logged as the CV runs' own Var[dt log p tilde] column, so

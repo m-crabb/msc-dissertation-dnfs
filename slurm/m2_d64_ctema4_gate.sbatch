@@ -7,16 +7,14 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# M2 no-regression gate (M-campaign Task 2, plan 2026-08-14; USER CALL
-# session close: launch WITHOUT waiting for cv2's band — the gate reads
-# against the ARCHIVED MA twin, so attribution is clean regardless). The
-# archived d64 MA 50k curriculum recipe with c_t_ema_halflife_cycles=4 the
-# ONLY declared change (cell comment in configs.py; twin-ness pinned by
+# M2 no-regression gate (M-campaign Task 2, plan 2026-08-14): user authorised
+# launch WITHOUT waiting for cv2's band; comparator is the ARCHIVED MA twin.
+# Archived d64 MA 50k curriculum, only c_t_ema_halflife_cycles=4 changed
+# (cell comment in configs.py; twin-ness pinned by
 # test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields). Frozen band:
 # NO-REGRESSION = final eval ESS frac >= 0.755 (the archived MA twin's seed
 # spread 0.755/0.769/0.781); below that the across-cycle smoothing is not
-# free. Seed 42 = the d64 ladder's standing seed. Fixed --tag so a
-# resubmission resumes into the same run dir.
+# free. Seed 42 is the d64 ladder's standing seed; fixed tag keeps resume.
 # Scheduling: d64 50k is the 1.3 h A100 class (~2x wall on a30); 2-day
 # request matches the fmo2/fab16 d64 rungs' headroom. a30 because a100
 # stays reserved for the d256 strategy — per the priority-inversion rule

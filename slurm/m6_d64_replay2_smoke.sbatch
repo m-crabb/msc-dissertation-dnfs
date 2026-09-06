@@ -15,8 +15,7 @@
 # against the archived MA twin's first 12k steps: INSENSITIVE (final
 # train-ESS within +-10% relative at matched steps) rules staleness out as
 # a d256 confound; SENSITIVE either way buys a full 50k arm and a re-think
-# of the buffer window in the d256 recipe. Fixed --tag so a resubmission
-# resumes into the same run dir.
+# of the buffer window in the d256 recipe. Fixed tag keeps resume location.
 # Scheduling: ~25 min class on the plan's estimate; 12 h wall request is
 # deliberate headroom (the a30 nodes run ~2x the a100 estimates that priced
 # Task 6's neighbours). a30 because a100 stays reserved for cv2 — per the

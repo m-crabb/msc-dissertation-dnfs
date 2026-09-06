@@ -7,12 +7,9 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=slurm/logs/%x_%j.out
 
-# Capacity, first variation ever (2026-08-15). hidden_dim=32 is set once in
-# the shared cell builder and EVERY cell at EVERY volume has used it, so it
-# has never appeared in a cell diff. This is the 8x8 fmo2 rung with
-# hidden_dim 32 -> 128 as the only change (pinned in test_configs; n_heads
-# and n_layers deliberately do not move, so head_dim rides 8 -> 32 as a
-# consequence rather than as a second knob).
+# First capacity variation (2026-08-15): all earlier volumes used the shared
+# hidden_dim=32. This 8x8 fmo2 twin changes only hidden_dim 32 -> 128 (pinned
+# in test_configs); n_heads/n_layers stay fixed, implying head_dim 8 -> 32.
 #
 # Motivation is the rank argument, not the fit statistic. The head must
 # produce the d x d pair field, and parameters per pair-field entry fall
@@ -25,13 +22,11 @@
 # without), and the 16x16 value quoted for it came from the run killed for
 # divergence rather than the health-clean one. It is not used here.
 #
-# THIS ARM IS THE NULL AND IS EXPECTED TO BE NEUTRAL. Rank headroom at 8x8
-# is already 32/(64/8) = 4x, so capacity should not bind at this volume; a
-# GAIN here would mean the rank argument mis-locates the constraint, which
-# is why the null is worth its GPU. It also serves as the matched-capacity
-# transfer source for a larger rung, which is why it runs at 8x8 first — a
-# cross-volume warm start resamples positional tables but cannot bridge a
-# hidden_dim change, since every weight matrix changes shape.
+# NULL ARM, EXPECTED NEUTRAL: 8x8 rank headroom is 32/(64/8) = 4x; a GAIN
+# would mean the rank argument mis-locates the constraint. Also the matched-
+# capacity transfer source for a larger rung: cross-volume warm start
+# resamples positional tables but cannot bridge hidden_dim changes because
+# every weight matrix changes shape.
 #
 # Compare against the 8x8 fmo2 rung: raw 0.00459 / EMA 0.00328 per site.
 # a30 rather than a100: 8x8 at 128 Euler steps is small, and the a100 slots
