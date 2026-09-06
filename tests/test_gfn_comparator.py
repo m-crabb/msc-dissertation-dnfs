@@ -24,8 +24,6 @@ transformer policy at d=256), and an enumeration oracle is a stronger
 correctness authority than a reference implementation.
 """
 
-import math
-
 import pytest
 import torch
 

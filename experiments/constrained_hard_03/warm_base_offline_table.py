@@ -46,7 +46,6 @@ import numpy as np
 from warm_base_reference import (
     BlockOccupancyBase,
     UniformSliceBase,
-    nn_correlation,
     quadratic_form,
     torus_adjacency,
 )
@@ -219,7 +218,6 @@ def print_downstream(results: dict) -> None:
     print(f"{'d':>5}|{'base':<26}|{'nn_base':>9}|{'requirement':>12}|"
           f"{'cut vs uniform':>15}|{'supply/req @0.93':>18}")
     for d, res in results.items():
-        uniform_req = 2 * (res["nn_target"] - res["rows"]["uniform"]["nn_base"])
         exact_uniform_nn = UniformSliceBase(res["side"], res["n_up"]).exact_nn_correlation()
         exact_req = 2 * (res["nn_target"] - exact_uniform_nn)
         print(f"{d:>5}|{'uniform, exact -1/(d-1)':<26}|{exact_uniform_nn:>9.4f}|"

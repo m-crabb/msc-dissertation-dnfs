@@ -1,4 +1,4 @@
-import pandas as pd, glob, sys, numpy as np
+import pandas as pd, glob
 pd.set_option("display.width", 250); pd.set_option("display.max_columns", 40); pd.set_option("display.float_format", lambda v: f"{v:.3g}")
 cells = {
  "hard_c25": "results/03_hard/H2_cuau16_c25_*seed42*",

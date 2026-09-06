@@ -238,16 +238,7 @@ def test_conditional_pmf_z2_symmetric_at_c_half():
     states = enumerate_states(D_total)
     log_pi = exact_log_probs(target, states.float())
     _, log_pi_cond = conditional_pmf_at_composition(states, log_pi, n_plus_target=2)
-    # Z_2 symmetry: every state x on the slice has -x also on the slice
-    # (because n_plus(-x) = D - n_plus(x), which equals 2 iff n_plus(x) = 2).
-    # Sorting the conditional probabilities should give the same multiset
-    # as the reverse-ordered version (since the slice is closed under x → -x
-    # and each pair has equal probability).
-    sorted_probs = torch.sort(log_pi_cond.exp())[0]
-    # paired structure: the conditional pmf at c=0.5 should split into
-    # (x, -x) pairs with equal prob, so the sorted multiset equals itself
-    # under reversal trivially; the strong claim is that pairing x with -x
-    # gives matching probs.
+    # At half composition, x and -x share the slice and have equal probability.
     n_plus = ((states + 1) // 2).sum(dim=-1)
     slice_idx = torch.where(n_plus == 2)[0]
     slice_states = states[slice_idx]

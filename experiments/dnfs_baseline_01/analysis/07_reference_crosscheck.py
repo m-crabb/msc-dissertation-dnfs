@@ -19,7 +19,6 @@ Writes: results/01_baseline/reference_crosscheck.json + printed verdict.
 import json
 from pathlib import Path
 
-import numpy as np
 import torch
 
 from discrete_flow_sampler.mcmc.wolff import wolff_sample

@@ -11,7 +11,6 @@ p_add (the double-counted convention makes it 1 - exp(-4 sigma); using
 """
 
 import itertools
-import math
 
 import numpy as np
 import pytest

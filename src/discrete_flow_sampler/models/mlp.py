@@ -7,8 +7,8 @@ Concept (paper Sec. 3, Eq. (4)):
     naïvely emitted one rate per site (the flip rate); the rate matrix
     collapsed to shape (B, D**2).
 
-Status (post-2026-05-07 redo, framing clarified by Zijing 2026-05-08):
-    Stages 1 and 2 now use `LeMLPRateMatrix` (`models/lemlp.py`). This
+Baseline role:
+    Stages 1 and 2 use `LeMLPRateMatrix` (`models/lemlp.py`). This
     module is retained for `stage_0_*` configs as a *high-variance*
     baseline.
 
@@ -64,13 +64,8 @@ class MLPRateMatrix(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
 
-        # Input is the spin state (d entries) concatenated with a scalar time:
-        # one extra feature, hence d + 1.
         state_plus_time_dim = d + 1
 
-        # Build the layer stack as: one input projection, (n_layers - 1)
-        # hidden blocks, one readout projection. Counting `n_layers` as the
-        # number of hidden (Linear, ReLU) blocks matches the paper's wording.
         layers: list[nn.Module] = [
             nn.Linear(state_plus_time_dim, hidden_dim),
             nn.ReLU(),
@@ -78,9 +73,7 @@ class MLPRateMatrix(nn.Module):
         for _ in range(n_layers - 1):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.ReLU())
-        # Readout: raw flip-rate scores. Non-negativity is enforced later by
-        # softplus in forward(), not by an activation here -- stacking ReLU on
-        # top of softplus would clip the expressive range of the rates.
+        # Keep scores unrestricted before softplus so rates can approach zero.
         layers.append(nn.Linear(hidden_dim, d))
 
         self.net = nn.Sequential(*layers)
@@ -96,15 +89,7 @@ class MLPRateMatrix(nn.Module):
             rates: (B, d) tensor with rates[b, i] = flip rate for site i in
                    batch element b. All entries >= 0.
         """
-        # Glue the scalar time onto the end of each state vector, so every
-        # batch element gets a (d + 1)-vector input. Unsqueezing turns
-        # t : (B,) into (B, 1) so it concatenates along the feature axis.
         state_and_time = torch.cat([x, t.unsqueeze(-1)], dim=-1)  # (B, d + 1)
-
-        # MLP outputs raw real-valued scores per site -- can be negative.
         flip_logits = self.net(state_and_time)  # (B, d)
-
-        # Softplus maps R -> R_{>= 0}, smoothly. Required because the output
-        # is interpreted as a CTMC rate (non-negative by definition).
         flip_rates = F.softplus(flip_logits)  # (B, d), >= 0
         return flip_rates

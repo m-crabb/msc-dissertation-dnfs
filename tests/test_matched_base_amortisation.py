@@ -36,7 +36,7 @@ Failure modes these tests exist to catch:
 """
 import json
 import math
-from dataclasses import asdict, replace
+from dataclasses import asdict
 
 import pytest
 import torch

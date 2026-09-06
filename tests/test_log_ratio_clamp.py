@@ -41,7 +41,6 @@ drift from the code, and pin the contract that the loss and the control
 variate must clamp identically — a mismatch there would bias the CV against
 the objective it is supposed to be a control for, with no visible symptom.
 """
-import math
 
 import pytest
 import torch

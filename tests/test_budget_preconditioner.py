@@ -39,8 +39,6 @@ through late in generation."""
 from itertools import combinations, product as cartesian_product
 from math import comb, exp, isclose, log
 
-import pytest
-
 RING_SIGMA = 0.4          # strong enough that the energy tilt matters
 SMALL_RING = 6            # 3^6 = 729 masked patterns: fully exhaustive
 SMALL_RING_PLUSSES = 3

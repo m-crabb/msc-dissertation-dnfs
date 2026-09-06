@@ -16,8 +16,7 @@ import argparse
 from pathlib import Path
 
 from discrete_flow_sampler.diagnostics.figure_style import (
-    REFERENCE_INK, SAMPLER_HUE, NEURAL_COMPARATOR_HUE, CLASSICAL_HUE,
-    CLASSICAL_ALT_HUE, MUTED, GRID, use_house_style)
+    SAMPLER_HUE, NEURAL_COMPARATOR_HUE, use_house_style)
 import matplotlib.pyplot as plt
 import pandas as pd
 

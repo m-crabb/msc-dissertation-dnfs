@@ -28,7 +28,6 @@ Contracts frozen here, each guarding a specific failure:
    init-contamination failure through the back door; resetting only the
    counter would restart the warmup schedule mid-run (ema.py docstring).
 """
-import csv
 from types import SimpleNamespace
 
 import pytest

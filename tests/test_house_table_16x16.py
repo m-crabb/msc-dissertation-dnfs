@@ -41,7 +41,6 @@ wrong number that the 8x8 tests cannot catch.
 """
 import json
 
-import numpy as np
 import pytest
 import torch
 

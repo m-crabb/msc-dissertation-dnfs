@@ -29,7 +29,6 @@ Contracts these tests freeze, each guarding a specific failure:
    the rerun of tab:soft-lambda-sweep readable as "the channel did this".
 """
 
-import itertools
 from dataclasses import asdict
 
 import pytest

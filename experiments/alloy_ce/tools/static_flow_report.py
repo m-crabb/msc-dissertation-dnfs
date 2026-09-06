@@ -1,5 +1,5 @@
 """Report the CPU desk-check cells: train-ESS trajectory, eval ESS, samples vs the static (identity-flow) reference."""
-import glob, itertools, json, re, sys, torch, pandas as pd
+import glob, itertools, json, sys, torch, pandas as pd
 from discrete_flow_sampler.targets.cluster_expansion import BinaryExpansionSpec
 K_B = 8.617333262e-5; d = 16
 spec = BinaryExpansionSpec.from_json("data/ce/cuau_fcc_2x2x4.json")

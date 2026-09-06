@@ -63,9 +63,8 @@ class ExponentialMovingAverage:
                 parameter.copy_(backup)
 
     def state_dict(self):
-        # Clone: on CPU, .cpu()/.to() are no-ops returning the SAME tensor,
-        # so an un-cloned snapshot would alias the live shadow and be
-        # silently mutated by every later update().
+        # Clone because .cpu() can alias live CPU tensors; snapshots must
+        # remain unchanged by later updates.
         return {
             "updates": self.updates,
             "shadow": [tensor.detach().cpu().clone() for tensor in self.shadow],
@@ -80,7 +79,7 @@ class ExponentialMovingAverage:
 
 
 class CTGridEMA:
-    """Per-slot EMA of the c_t grid across outer cycles (M2, 2026-08-14).
+    """Per-slot EMA of the c_t grid across outer cycles.
 
     Why this exists: the swap Kolmogorov residual regresses xi_t toward
     c_t, which stands in for dt log Z_t (DNFS Alg. 1; `swap_training.py`).
@@ -90,8 +89,7 @@ class CTGridEMA:
     ~ sqrt(110/128) ~= 0.93 nats (run-support case D2), 125x noisier than
     the d64 record's CV-stabilised target.
 
-    WHAT c_t HAS TO BE, and it is not what an earlier version of this
-    docstring claimed. DNFS Eq. (8) defines c_t as dt log Z_t, and its
+    DNFS Eq. (8) defines c_t as dt log Z_t, and its
     Lemma 1 (the discrete Stein identity) delivers E[xi_t] = dt log Z_t
     for ANY admissible rate matrix at ANY training stage -- but only under
     p_t, the ANNEALING TARGET, because Lemma 1 needs the expectation taken
@@ -124,22 +122,11 @@ class CTGridEMA:
     MEAN (not just its mean square) would measure it for free, since
     `residual_swap` already computes xi - c on the inner batch.
 
-    Contracts the trainer relies on:
-
-    * First-cycle passthrough: the state is seeded AT the first raw grid
-      after construction (or `reset`), never at zeros — the
-      init-contamination failure the parameter EMA's warmup schedule
-      exists to prevent is avoided by construction.
-    * Fixed-point invariance: a constant integrand sequence is reproduced
-      exactly; a step change is tracked with the advertised halflife.
-    * `reset()` on every curriculum sigma transition: c_t is a function of
-      sigma, so smoothing must never mix estimates across a boundary.
-    * Checkpoint contract: `state_dict`/`load_state_dict` carry the state
-      (or its absence) so a preempted run's continuation is bit-exact —
-      the same contract test_swap_training_resume.py pins for the base
-      trainer state. The state is stored on CPU for node portability and
-      re-homed at the next `update`; see that method for why the fold,
-      not the load, is where the live device becomes known.
+    The first grid after construction or `reset()` seeds the state directly.
+    Constant inputs remain unchanged; changes are smoothed with the configured
+    halflife. Reset at every curriculum sigma transition to avoid mixing
+    estimates from different targets. Checkpoints preserve the state on CPU;
+    the next `update()` moves it to the incoming grid's device.
     """
 
     def __init__(self, n_grid: int, halflife_cycles: float):
@@ -156,21 +143,15 @@ class CTGridEMA:
 
     @staticmethod
     def is_enabled(halflife_cycles: float) -> bool:
-        """Knob semantics: 0.0 (the default, and every archived run's
-        implicit value) is OFF — byte-identical archived behaviour."""
+        """Enable smoothing only for a positive halflife; zero disables it."""
         return halflife_cycles > 0
 
     def update(self, c_t_grid):
         """Fold one outer cycle's raw grid in; return the smoothed grid.
 
-        The device is adopted from the incoming grid, which is what makes
-        the restore path correct: `state_dict` stores on CPU so resume.pt
-        stays portable across nodes, and — unlike the parameter EMA, which
-        re-homes at load time off `parameter.device` — this class holds no
-        parameters to read a live device from. The fold is the first point
-        where one is known, so it re-homes here. Without it a GPU run that
-        resumes from a checkpoint dies on the next outer cycle with a
-        device-mismatch RuntimeError.
+        Adopt the incoming grid's device when restoring CPU checkpoint state.
+        This class has no model parameters from which to infer a device at
+        load time.
         """
         if self.state is None:
             self.state = c_t_grid.clone()
@@ -181,8 +162,7 @@ class CTGridEMA:
         return self.state
 
     def reset(self):
-        """Drop the state (curriculum sigma transition): the next cycle
-        passes through raw, re-seeding at the new sigma's c_t."""
+        """Clear the state so the next grid seeds a new curriculum stage."""
         self.state = None
 
     def state_dict(self):

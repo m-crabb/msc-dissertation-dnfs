@@ -150,7 +150,6 @@ def main(argv=None):
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=300)
     print(f"[scatter] wrote {args.out}")
-    return summary
 
 
 if __name__ == "__main__":

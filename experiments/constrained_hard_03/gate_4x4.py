@@ -42,7 +42,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import torch
-from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
+from experiments.constrained_hard_03.configs import CONFIGS
 
 from discrete_flow_sampler.constraints.swap_readout import swap2
 from discrete_flow_sampler.diagnostics.metrics import (

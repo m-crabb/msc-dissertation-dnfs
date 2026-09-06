@@ -28,7 +28,6 @@ noise, and reusing 19's blocks keeps "at the floor" meaning the same
 thing in this chapter's figure and table.
 """
 import argparse
-import json
 from pathlib import Path
 
 from discrete_flow_sampler.diagnostics.figure_style import (

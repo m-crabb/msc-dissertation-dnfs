@@ -28,7 +28,6 @@ from scipy.stats import chisquare
 from warm_base_reference import (
     BlockOccupancyBase,
     UniformSliceBase,
-    log_binom,
     nn_correlation,
     torus_adjacency,
 )

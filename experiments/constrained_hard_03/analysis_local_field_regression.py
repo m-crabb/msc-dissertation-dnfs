@@ -27,7 +27,6 @@ from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
 
 
 def enumerate_slice(d, n_plus):
-    states = torch.full((0, d), -1.0)
     rows = []
     for ups in itertools.combinations(range(d), n_plus):
         row = torch.full((d,), -1.0)

@@ -291,8 +291,6 @@ def validate_4x4():
     """Run the REAL chain pipeline at 4x4 and score it against enumeration --
     the validate-at-D=4 rule: prove the instrument where the answer is exact
     before spending it where the answer is the deliverable."""
-    import torch
-
     from discrete_flow_sampler.diagnostics.metrics import (
         conditional_pmf_at_composition, enumerate_states, exact_log_probs,
     )

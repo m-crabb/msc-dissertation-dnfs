@@ -27,7 +27,6 @@ import torch
 from discrete_flow_sampler.samplers.budget_masked import (
     MaskedConditionalNet,
     feasibility_clamped_p_plus,
-    masked_state_features,
     preconditioner_logit_diff,
     rollout_budget_masked,
     wdce_cross_entropy,

@@ -8,7 +8,6 @@ table, not a gate.
 """
 import csv, glob, json, os, re, sys
 import torch
-from collections import defaultdict
 from datetime import datetime
 
 ROOT = "results/03_hard"

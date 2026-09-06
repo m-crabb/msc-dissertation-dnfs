@@ -189,7 +189,6 @@ def icet_oracle(ce_file, side):
     ce = ClusterExpansion.read(ce_file)
     atoms = Atoms("Cu", cell=[2.5, 2.5, 20], pbc=True).repeat((side, side, 1))
     calc = ClusterExpansionCalculator(atoms, ce)
-    n = len(atoms)
 
     def energy(spins):
         # calculate_total returns the cell total on the padded-cell scale the

@@ -134,7 +134,6 @@ def lookup_r_squared(target_col, keys, fit_mask):
 def analyse(run_dir, t_value):
     model, target = load_run(Path(run_dir))
     d, A = target.d, target.A
-    lam = target.composition_penalty_strength
     c_star = target.target_composition
     x = enumerate_states(d).float()   # ±1 spins, int64 -> float for matmuls
     t = torch.full((x.shape[0],), t_value)

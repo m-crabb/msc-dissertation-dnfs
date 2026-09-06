@@ -360,10 +360,6 @@ def test_slice_free_energy_recovers_the_enumerated_slice_normaliser():
 def test_transfer_rows_carry_the_free_energy_with_the_bound_sign():
     """The estimate is an upper bound on F, so on the enumerable 4x4 slice it
     must sit at or above the exact slice free energy at every stop time."""
-    from experiments.constrained_hard_03.probe_zero_shot_transfer import (
-        slice_free_energy_per_site,
-    )
-
     head = _head()
     rows = transfer_grid(
         head, D=D, sigma=SIGMA, compositions=(0.5,), stop_times=(0.4538, 1.0),

@@ -90,9 +90,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
     magnetisation_profile_error)
 # The lattice-generic half of the 8x8 fill, imported rather than restated.
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
-    _sci, aggregate, config_drift, fmt, gfn_registry_config_for,
+    _sci, aggregate, fmt, gfn_registry_config_for,
     is_composition_exact, flop_billing_config, reference_standard_error,
-    registry_config_for, run_dir_config, sampling_floor_from_reference)
+    registry_config_for, sampling_floor_from_reference)
 
 L = 16
 D_SITES = L * L

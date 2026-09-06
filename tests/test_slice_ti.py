@@ -16,11 +16,8 @@ double-counted adjacency); these tests pin every link against the exact
 4x4 enumeration the gate already trusts.
 """
 
-import math
-
 import numpy as np
 import pytest
-import torch
 
 from discrete_flow_sampler.diagnostics.metrics import enumerate_states, exact_log_probs
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget

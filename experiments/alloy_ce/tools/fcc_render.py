@@ -19,7 +19,7 @@ Usage: pixi run -e dev python -m experiments.alloy_ce.tools.fcc_render \\
 import argparse, itertools
 import matplotlib.pyplot as plt, torch
 from discrete_flow_sampler.diagnostics.figure_style import (
-    FULL_WIDTH_IN, FONT_SIZE_ANNOTATION, FONT_SIZE_TITLE, GRID, MUTED, SAVEFIG_DPI, SPIN_DOWN_COLOUR,
+    FULL_WIDTH_IN, FONT_SIZE_ANNOTATION, FONT_SIZE_TITLE, GRID, SAVEFIG_DPI, SPIN_DOWN_COLOUR,
     SPIN_UP_COLOUR, use_house_style)
 from discrete_flow_sampler.targets.cluster_expansion import BinaryExpansionSpec
 from experiments.alloy_ce.tools.patch_reach_probe import ordered_states

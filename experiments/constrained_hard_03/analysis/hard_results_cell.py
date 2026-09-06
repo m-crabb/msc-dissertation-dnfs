@@ -344,7 +344,7 @@ def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
                 color=REFERENCE_INK)
     every = [p for _, pmfs in per_head for p in pmfs] + [reference_pmf]
     ax.set_xlim(*_occupied_limits(support, *every))
-    ax.xaxis.set_major_locator(MaxNLocator(nbins=2 if title is not None else 4))
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
     ax.set_xlabel(xlabel, fontsize=FONT_SIZE_LABEL)
     style_axes(ax)
 

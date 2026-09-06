@@ -292,8 +292,6 @@ def main() -> None:
     if len(Ds) > 1 or len(lambdas) > 1:
         raise SystemExit(f"expected one D and one lambda; got D={Ds} lambda={lambdas}")
     D, d, lam = Ds[0], records[0]["d"], lambdas[0]
-    sigma = sigmas[0]
-    two_sigma = 2.0 * sigma
     print(f"=== F(c) compare : D={D} sigma={sigmas} lambda={lam} "
           f"n_euler={n_eulers} ess_floor={args.ess_floor} n_boot={args.n_boot} ===")
     if len(n_eulers) > 1:

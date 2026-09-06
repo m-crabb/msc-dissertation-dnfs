@@ -11,7 +11,6 @@ Tests pinned here:
     2) Random rate matrix on a real Ising target -> residual non-zero.
     3) loss(...) == residual(...).pow(2).mean().
 """
-import pytest
 import torch
 
 from discrete_flow_sampler.samplers.kolmogorov import loss, residual_general
