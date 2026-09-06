@@ -70,10 +70,7 @@ ARMS = {
     "dh": "doubly-hollow oracle",
     "mo": "mask-one head",
     "ma": "masked-attention head",
-    # The sweep ladder, one rung below its 8x8 column. Labels are kept
-    # word-for-word identical to house_table_8x8.ARMS so a reader holding
-    # the two tables side by side is comparing rows, not decoding two
-    # naming schemes for the same architecture.
+    # Keep sweep-ladder labels identical to house_table_8x8.ARMS.
     "mamo2": "masked-attention band, two sweeps",
     "mamo2ef": "masked-attention band, two sweeps + exact field",
     "iv": "prefix-sum band, one sweep",
@@ -82,19 +79,11 @@ ARMS = {
     "thp": "two-hole patch head",
     "mal": "masked-attention head, whole-lattice window",
 }
-# Arms whose cells carry their OWN recipe suffix and campaign tag rather than
-# the wave-2 defaults. `mal` is the window probe (2026-08-28): the
-# masked-attention head with `attention_window="lattice"` its single declared
-# change, so its row reads against the `ma` row as the window and nothing
-# else. It ran under its own tag because it is not part of the wave-2 house
-# campaign.
-# The five ladder arms ran as one 30-run gate campaign (2026-08-28) whose
-# single tag spans BOTH couplings, so an arm key names their runs without
-# ambiguity. This is deliberately NOT the (arm, coupling) keying that
-# house_table_8x8.ARM_PROVENANCE carries: there the ladder's two columns
-# were two campaigns under two tags (20260828-rasterord-d64 at sigma_c,
-# 20260828-rasterfloor-d64 at the floor) and an arm key could not name
-# both. Here that distinction does not exist in the data.
+# Recipe suffix and campaign tag overrides. The `mal` window probe
+# (2026-08-28) changes only `attention_window="lattice"` from `ma`.
+# The five ladder arms share one 30-run campaign tag across both couplings.
+# Unlike house_table_8x8.ARM_PROVENANCE, this map needs only the arm key:
+# the 8x8 ladder uses separate critical and floor campaign tags.
 ARM_PROVENANCE = {
     # The oracle's six runs went out as single-run DoC jobs under their own
     # tag (2026-08-29); the CONFIG is a wave-2 cell, so the suffix stays w2.
@@ -311,10 +300,7 @@ def main(argv=None):
                     cfg.ctmc.n_euler_steps))
             cell = aggregate(rows)
             cell["held"] = (arm, sigma_label) in HELD
-            # Derived from the config rather than a hand-kept set (the
-            # EAGER_REFILL set left with the factorised rows): the oracle is
-            # the one cell whose recipe forces compile off, and its caption
-            # dagger should survive any future arm that shares the constraint.
+            # Derive the eager caption marker from the recipe's compile constraint.
             cell["eager"] = not cfg.compile_head
             cell["per_forward_flops"] = per_forward
             table[f"{arm}_{sigma_label}"] = cell

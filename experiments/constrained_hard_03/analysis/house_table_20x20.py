@@ -74,8 +74,7 @@ from discrete_flow_sampler.diagnostics.flops import (
 from discrete_flow_sampler.diagnostics.metrics import (
     correlation_profile_error, energy_wasserstein2,
     magnetisation_profile_error)
-# The lattice-generic half, imported rather than restated -- same idiom as
-# house_table_16x16 importing from house_table_8x8.
+# Shared reference statistics and FLOP provenance.
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
     _sci, aggregate, flop_billing_config, fmt, is_composition_exact,
     reference_standard_error, registry_config_for,
@@ -95,11 +94,8 @@ REFERENCE_DIRS = {
     "s220": REPO_ROOT / "results" / "kawasaki_ref_d400_sc",
 }
 
-# Row token -> label; ARM_CONFIGS maps each row to its FULL config name per
-# coupling. At the rungs below an arm is one short token and the run dir is
-# rebuilt from a template; here the two couplings are two campaigns whose
-# names differ structurally (50k flat vs 100k_curr), so each cell is pinned
-# to its registry name and cannot drift.
+# ARM_CONFIGS pins each (row, coupling) to its registry name: the campaigns
+# use different recipes, 50k flat at s010 and 100k_curr at s220.
 ARMS = {
     "thp2_w4": "two-hole patch head, $R=2$",
     "thp3_w4": "two-hole patch head, $R=3$",

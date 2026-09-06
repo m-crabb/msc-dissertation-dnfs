@@ -116,19 +116,9 @@ ARMS = {
     "ivmo2ef": "prefix-sum band, two sweeps + exact field",
     "thp": "two-hole patch head",
 }
-# Arms whose runs carry their OWN campaign tag rather than the wave-2
-# default. The five ladder arms were built by replacing the wave-2 `ma`
-# critical cell's knobs, so they share its name and recipe exactly and
-# differ only in provenance -- but a table row must say which run backs it,
-# because a config name alone is ambiguous once a cell has been run under
-# more than one campaign. Same idiom as house_table_4x4's ARM_PROVENANCE.
-#
-# KEYED BY (arm, coupling), NOT BY ARM. The ladder's two columns were run in
-# separate campaigns under separate tags -- sigma_c under
-# 20260828-rasterord-d64 (s83) and the floor under
-# 20260828-rasterfloor-d64 (s84) -- so an arm-keyed map would look for the
-# floor cells under the sigma_c tag, find nothing, and print `--`
-# indefinitely with no error to say why.
+# Campaign overrides are keyed by (arm, coupling): the ladder's critical
+# and floor columns ran under separate tags. A config name alone does not
+# identify a campaign; using an arm-only key would miss the floor runs.
 ARM_PROVENANCE = {
     **{(arm, "s220"): "20260828-rasterord-d64"
        for arm in ("mamo2", "mamo2ef", "iv", "ivmo2", "ivmo2ef")},
@@ -663,11 +653,8 @@ def main(argv=None):
             tag = ARM_PROVENANCE.get((arm, sigma_label), TAG)
             run_dirs = [args.results_dir / f"{name}_seed{seed}_{tag}"
                         for seed in SEEDS]
-            # An arm enrolled from a later campaign may not exist at every
-            # coupling yet. Print "--" for the missing condition instead of
-            # failing the fill, so the table can be reviewed before its
-            # remaining cells are run; latex_table already renders a missing
-            # key as "--" throughout the row.
+            # Later campaigns may cover only one coupling. Missing cells
+            # remain absent; latex_table renders them as "--".
             if not all((d / "eval" / "metrics.json").is_file()
                        for d in run_dirs):
                 continue
