@@ -86,7 +86,7 @@ def sample_remote(task):
 
 @app.function(volumes={"/results": volume}, timeout=4 * 60 * 60)
 def finish_remote(tasks):
-    """Cloud-side orchestration survives closing the CLI or the Codex session."""
+    """Complete sampling and plotting remotely after the local CLI closes."""
     from scripts.plot_configuration_calibration_4x4 import plot
 
     for task in tasks:
@@ -95,8 +95,7 @@ def finish_remote(tasks):
     remote.mkdir(parents=True, exist_ok=True)
     (remote / "manifest.json").write_text(json.dumps(tasks, indent=2) + "\n")
     volume.commit()
-    # Collect on the cloud worker, not the local entrypoint: the local process
-    # can disappear without interrupting submission or the final plot.
+    # Collect remotely so local disconnection cannot interrupt the final plot.
     stage = Path(tempfile.mkdtemp(prefix="calibration-report-"))
     (stage / "counts").mkdir()
     (stage / "inputs").symlink_to("/calibration_inputs", target_is_directory=True)

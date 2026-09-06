@@ -1,4 +1,4 @@
-"""The whole of app:logp-scatters as ONE 3x2 figure, one row per paradigm.
+"""Archived 3x2 scatter for app:logp-scatters, one row per paradigm.
 
 ARCHIVED FIGURE (6 September 2026). The rationale below is historical:
 DNFS path weights cannot generally be inverted into an endpoint log-density.
@@ -6,37 +6,18 @@ For configuration-probability validation use scripts/configuration_calibration_4
 and scripts/plot_configuration_calibration_4x4.py instead. This script remains
 only to reproduce the retired image, whose density interpretation was incorrect.
 
-Replaces the three separate floats (hard / unconstrained / soft) that the
-appendix carried until s76. Two reasons, in order of importance:
-
-  * IT IS THE BETTER EXHIBIT. The appendix exists to compare per-configuration
-    recovery ACROSS the three constraint paradigms at the one size where an
-    exact reference exists. Three floats on three pages make that comparison a
-    page-turning exercise; three rows on one page make it immediate, and the
-    shared vertical axis means a wider cloud is visibly a wider cloud rather
-    than something the reader has to infer from two quoted standard deviations.
-  * IT FITS ON ONE PAGE. Three floats each carry a section head, a paragraph
-    and a caption -- about 4.8 in of the 9.72 in text height in furniture
-    alone, which forces the figures below the size at which a scatter's
-    diagonal stays readable. One float pays that overhead once.
-
-The data comes from each chapter's own script via its `panel_series()`, never
-re-derived here, so this figure and the per-chapter ones can never disagree:
+The shared-axis layout fits all three paradigms on one appendix page.
+Each chapter's `panel_series()` supplies the data:
 
     experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py
     experiments/dnfs_baseline_01/analysis/10_logp_scatter_4x4.py
     experiments/constrained_soft_02/analysis/23_logp_scatter_4x4.py
 
-WHAT THE ROWS DO NOT SHARE, and why that is correct rather than sloppy.
-The hard row's horizontal axis is the enumerated CONDITIONAL over the
-C(16,8) = 12,870 feasible states, because that chapter conditions on a fixed
-composition; the other two enumerate all 2^16 states, the unconstrained one
-under the plain Ising log-density and the soft one under the penalised one.
-And the soft row's two panels are COMPOSITIONS (c = 0.50, 0.80) where the
-upper two rows' are COUPLINGS (sigma = 0.1, sigma_c): the soft 4x4 family is
-run at a single coupling, so two sigma panels there would print the same
-distribution twice. Every panel is therefore titled in its own terms and the
-caption states the axis difference.
+The hard row enumerates the conditional over C(16,8) = 12,870 feasible states.
+The other rows enumerate all 2^16 states under the plain or penalised Ising
+log-density. Soft panels vary composition (c = 0.50, 0.80) at a single coupling;
+hard and unconstrained panels vary coupling (sigma = 0.1, sigma_c). Panel titles
+and the caption distinguish these axes.
 """
 import argparse
 import importlib
@@ -65,8 +46,7 @@ def main(argv=None):
                         help="output PNG path (the Overleaf assets file)")
     args = parser.parse_args(argv)
 
-    # Style annex: in-figure labels 9pt, annotations 8pt. Figure is authored at
-    # the printed width (6.3 in = \textwidth) so the point sizes are true.
+    # Render at the printed width (6.3 in) to preserve label sizes.
     plt.rcParams.update({"font.size": 9, "axes.labelsize": 9,
                          "xtick.labelsize": 8, "ytick.labelsize": 8,
                          "legend.fontsize": 7})
@@ -75,10 +55,7 @@ def main(argv=None):
     rows = [(name, importlib.import_module(path).panel_series())
             for name, path in ROWS]
 
-    # ONE pair of limits for all six panels, so a unit of log-density is the
-    # same distance in every panel and a wider cloud is visibly a wider cloud.
-    # Per-panel limits (what the standalone scripts use) make the rows
-    # incomparable, which is the one thing this figure exists to do.
+    # Shared limits keep the same scale across all six panels.
     #
     # Taken from the PLOTTED points, not from each panel's own `lims`: the
     # hard panels set theirs from the full enumerated support, whose
@@ -101,8 +78,7 @@ def main(argv=None):
             ax.set_ylim(shared_lims)
             ax.set_title(panel["title"], fontsize=9, pad=3)
             ax.set_xlabel(panel["xlabel"], labelpad=1)
-        # Row identity on the left panel; the shared quantity goes once, in
-        # the middle row, so the three names read as a column of labels.
+        # Label each row on the left; the shared quantity uses fig.supylabel.
         axes[row, 0].set_ylabel(row_name, fontweight="bold", labelpad=2)
         if len(panels[0]["series"]) > 1:
             axes[row, 0].legend(loc="upper left", frameon=False,
