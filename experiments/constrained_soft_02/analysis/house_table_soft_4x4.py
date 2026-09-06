@@ -19,7 +19,7 @@ tables; the s108 first cut with TV / Z2 / std(c) / dF columns is retired).
                the channel recipe pre-house, the only 4x4 lambda=100 cells
                with the channel); every seed reported, mean +- SD.
   FLOP/es   -- measured eager forward at the run's architecture x n_euler
-               / frozen ESS, as the 8x8 fill (analysis/24).
+               / frozen ESS, as the 8x8 fill (house_table_soft_8x8.py).
   couplings -- sigma=0.1 and sigma_c halves; a half with no runs on disk
                prints as skipped.
   conditioned -- the 10k conditioned twin (matched base, spine draw over

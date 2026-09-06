@@ -1,7 +1,6 @@
-"""Fill pass for tab:eval-soft-8x8 (the s95 revamped soft house table).
+"""House evaluation table for tab:eval-soft-8x8.
 
-Same conventions as the 10x10 fill (house_table_soft_10x10.py), rebuilt for
-the revamp (plan 2026-08-30-soft-chapter-revamp-efc):
+Uses the 10x10 conventions (house_table_soft_10x10.py):
 
   lattice   -- 8x8 (d=64), the hard chapter's record size, so the
                cross-route comparison is matched-size at both couplings.
@@ -54,8 +53,7 @@ import numpy as np
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-# Run by path (numeric filenames can't be modules), so the `experiments`
-# package imports below need the repo root.
+# Support experiments-package imports when invoked by file path.
 sys.path.insert(0, str(REPO_ROOT))
 
 from discrete_flow_sampler.diagnostics.flops import (  # noqa: E402
