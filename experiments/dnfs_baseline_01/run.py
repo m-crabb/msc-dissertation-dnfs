@@ -680,15 +680,29 @@ def _sub_config(cls, values: dict):
 def _rebuild_from_run_dir(run_dir: Path):
     """(cfg, target, device) for a finished run, from `config.json` alone.
 
-    The returned cfg carries only the sub-configs the eval paths read
-    (`ising`, `model`, `ctmc`, `eval`); the curricula are training-time
-    schedules and are deliberately not replayed. That means the target is
-    rebuilt at the *final* σ and λ — the operating point the run ended at,
-    which is what the recorded eval numbers belong to.
+    Saved `ising` can hold the initial σ or λ. Resolve each saved curriculum's
+    terminal value before building both the target and the eval config: a
+    rescore must use the same density as the final training draw. Training
+    validates increasing stages with every start_step < n_steps, so the last
+    stage is active at completion. This is the final target, not a recovery
+    of the operating point of an interrupted or intermediate checkpoint.
+
+    For an alloy σ = β/2; retaining its initial value would score a 500 K
+    final draw at the 1200 K starting temperature. Absent curricula retain
+    the saved fixed-target values. No saved config is rewritten.
     """
     cfg_dict = json.loads((run_dir / "config.json").read_text())
     device = "cuda" if torch.cuda.is_available() else "cpu"
     ising = _sub_config(IsingCfg, cfg_dict["ising"])
+    for curriculum_key, value_key in (
+        ("curriculum", "sigma"),
+        ("lambda_curriculum", "composition_penalty_strength"),
+    ):
+        curriculum = cfg_dict.get(curriculum_key)
+        if curriculum is not None:
+            ising = replace(
+                ising, **{value_key: curriculum["stages"][-1][value_key]}
+            )
     target = _construct_target(ising, device=device)
     cfg = SimpleNamespace(
         ising=ising,

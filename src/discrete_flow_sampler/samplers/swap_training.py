@@ -289,13 +289,16 @@ def train_swap(
             if saved_ema is not None:
                 ema.load_state_dict(saved_ema)
             else:
-                # Pre-EMA checkpoint on an EMA-armed cell: the freshly
-                # constructed shadow sits at the RESUME weights, which is
-                # the init-contamination failure in miniature — say so
-                # loudly rather than silently degrading the instrument.
+                # A missing historical average cannot be reconstructed.
+                # Start a new warmup-corrected shadow at the restored model,
+                # never at the caller's unrelated initialisation.
+                ema = ExponentialMovingAverage(
+                    head.parameters(), ema_decay, warmup=True
+                )
                 print(
                     "[train_swap] WARNING: resume.pt has no EMA state; "
-                    "shadow re-seeded at resume weights", flush=True,
+                    "shadow re-seeded at resume weights; EMA history and "
+                    "warmup restart", flush=True,
                 )
 
     if start_step >= train_cfg.n_steps:

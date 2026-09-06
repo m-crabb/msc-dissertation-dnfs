@@ -263,6 +263,34 @@ def _composition_metrics(cfg: HardStageCfg, samples: torch.Tensor) -> dict:
     )
 
 
+def _eval_output_dir(
+    run_dir: Path, cfg: HardStageCfg, multi_event: bool,
+    eval_dir_suffix: str = "", replicate_seed: int | None = None,
+    smc_tau: float | None = None,
+) -> Path:
+    """Keep every draw's selection in its path and refuse archived evidence.
+
+    Partial draws also count: replacing their tensors before writing metrics
+    can leave an apparently complete directory containing mixed generations.
+    Recovery must use an empty destination after preserving the partial draw.
+    """
+    prefix = "eval" if smc_tau is None else f"eval_smc_tau{smc_tau:g}"
+    step_suffix = "" if multi_event == cfg.ctmc.use_matching_step else (
+        "_multi_event" if multi_event else "_one_event"
+    )
+    replicate_suffix = (
+        "" if replicate_seed is None else f"_replicate_s{replicate_seed}"
+    )
+    eval_dir = run_dir / f"{prefix}{step_suffix}{replicate_suffix}{eval_dir_suffix}"
+    if any((eval_dir / name).exists() for name in (
+        "samples.pt", "log_weights.pt", "metrics.json"
+    )):
+        raise FileExistsError(
+            f"refusing to overwrite existing eval artefacts in {eval_dir}"
+        )
+    return eval_dir
+
+
 def final_eval(
     head, target, cfg: HardStageCfg, run_dir: Path,
     multi_event: bool | None = None, replicate_seed: int | None = None,
@@ -286,22 +314,13 @@ def final_eval(
     baseline is never clobbered."""
     if multi_event is None:
         multi_event = cfg.ctmc.use_matching_step
+    eval_dir = _eval_output_dir(
+        run_dir, cfg, multi_event, eval_dir_suffix, replicate_seed
+    )
     eval_samples, eval_log_weights, _, transport_stats = _chunked_eval_draw(
         head, target, cfg, multi_event=multi_event, smc_tau=None
     )
 
-    canonical_step = multi_event == cfg.ctmc.use_matching_step
-    step_suffix = (
-        "" if canonical_step
-        else ("_multi_event" if multi_event else "_one_event")
-    )
-    # Probe replicate draws (S7 amendment DECIDE-1: a replicate is a fresh
-    # eval seed off the one converged checkpoint) land in their own dir so
-    # the frozen eval/ the headline numbers were read from is never touched.
-    replicate_suffix = (
-        "" if replicate_seed is None else f"_replicate_s{replicate_seed}"
-    )
-    eval_dir = run_dir / f"eval{step_suffix}{replicate_suffix}{eval_dir_suffix}"
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(eval_log_weights.cpu(), eval_dir / "log_weights.pt")
@@ -346,6 +365,7 @@ def final_eval_smc(
     run_dir: Path,
     tau: float = 0.5,
     multi_event: bool | None = None,
+    eval_dir_suffix: str = "",
 ) -> dict:
     """SMC-resampled end-of-run eval, written ALONGSIDE the plain-IS eval/
     (never over it — the S7 preregistration keeps the pure-IS numbers as
@@ -355,7 +375,10 @@ def final_eval_smc(
     grid), plus adaptive systematic resampling at threshold `tau` inside
     each chunk (`samplers.resampling`). Saved log_weights.pt holds the
     pooled per-sample weights ℓ (see `_chunked_eval_draw`), so
-    `logmeanexp(ℓ)` is the unbiased SMC log-Z estimate — the Eq. 37
+    `exp(logmeanexp(ℓ))` is the SMC Z estimate (unbiased under valid
+    importance-weight and resampling assumptions); its logarithm is
+    generally biased by Jensen's inequality. Finite Euler steps and rate
+    clipping are not certified by that identity. The Eq. 37
     Jensen-LB form is NOT valid on these weights. `n_unique_samples`
     tracks ancestry collapse: resampling duplicates rows, so pooled ESS
     overstates independent-sample count when this drops well below
@@ -363,16 +386,13 @@ def final_eval_smc(
     so sweeps never clobber each other."""
     if multi_event is None:
         multi_event = cfg.ctmc.use_matching_step
+    eval_dir = _eval_output_dir(
+        run_dir, cfg, multi_event, eval_dir_suffix, smc_tau=tau
+    )
     eval_samples, pooled_log_weights, chunk_stats, _ = _chunked_eval_draw(
         head, target, cfg, multi_event=multi_event, smc_tau=tau
     )
 
-    canonical_step = multi_event == cfg.ctmc.use_matching_step
-    dir_name = f"eval_smc_tau{tau:g}" + (
-        "" if canonical_step
-        else ("_multi_event" if multi_event else "_one_event")
-    )
-    eval_dir = run_dir / dir_name
     eval_dir.mkdir(exist_ok=True)
     torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
     torch.save(pooled_log_weights.cpu(), eval_dir / "log_weights.pt")
@@ -426,8 +446,19 @@ def train(
     # Persist the resolved config (incl. the effective head_kind) so the run
     # is reproducible from the directory alone. Written once: on a resumed
     # attempt the original file is the record of what the run started as.
-    if not (run_dir / "config.json").exists():
-        (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
+    config_path = run_dir / "config.json"
+    resume_path = run_dir / "checkpoints" / "resume.pt"
+    if resume_path.exists() and not config_path.exists():
+        raise ValueError(f"cannot resume {run_dir} without its original config.json")
+    if config_path.exists():
+        saved = json.loads(config_path.read_text())
+        _backfill_missing_defaults(saved, HardStageCfg)
+        if json.loads(json.dumps(asdict(cfg))) != saved:
+            raise ValueError(
+                f"config.json in {run_dir} does not match requested config"
+            )
+    else:
+        config_path.write_text(json.dumps(asdict(cfg), indent=2))
     # Every d256 wall clock in the dissertation comes through this runner, and
     # until now none of them recorded which GPU produced it.
     write_host_metadata(run_dir)
@@ -463,14 +494,14 @@ def train(
     seed_everything(seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     target, head = build_target_and_head(cfg, device)
-    if init_from is not None:
+    if init_from is not None and not resume_path.exists():
         # Warm-start: partial state dict built by
         # scripts/warm_start_swap_head.py (cross-size transfer -- shape-
         # identical keys copied, positional tables interpolated). strict=False
         # because the transfer deliberately omits reinitialised keys (e.g.
         # the dead attention_readout table); the printed report is the record
-        # of exactly what loaded. A resume.pt takes precedence over this
-        # (train_swap loads it after), which is the desired restart semantics.
+        # of exactly what loaded. On resume, train_swap restores the full
+        # state; the original parent is no longer needed or loaded here.
         transfer = torch.load(init_from, map_location=device, weights_only=True)
         missing, unexpected = head.load_state_dict(transfer, strict=False)
         print(f"[init_from] {init_from}: loaded {len(transfer)} keys, "
@@ -614,7 +645,8 @@ def eval_only(
     stage_best: int | None = None,
 ) -> dict:
     """Re-run the end-of-run eval for a completed run dir (config.json +
-    checkpoints/final.pt), writing the eval/ artefacts in place. Recovery
+    checkpoints/final.pt), writing into an empty eval destination. Existing
+    samples, weights or metrics are refused, including partial draws. Recovery
     path for runs whose training finished but whose final eval died before
     the chunked `final_eval` landed (the 2026-07-06 d=64 OOMs), and — with
     `multi_event=True` — the --compare-multi-event probe (same checkpoint,
@@ -655,10 +687,9 @@ def eval_only(
     from the wrong weights, and nothing in the artefacts records which
     file was read. Naming the checkpoint removes the footgun.
 
-    `use_ema` without `n_euler_override` is refused: the artefacts would
-    land in eval_ema/, the directory the TRAINING run owns and the frozen
-    EMA numbers are read from, and an eval-only re-draw must never
-    overwrite a frozen number.
+    An EMA draw into an empty eval_ema/ is allowed for recovery. Existing
+    frozen EMA outputs are refused; SMC, step contrasts and replicates retain
+    both their own suffix and the EMA checkpoint identity.
 
     With `stage_best` set, the draw reads `checkpoints/best_stage<k>.pt`
     and writes eval_stage<k>/ -- the checkpoint-SELECTION read the rw
@@ -674,6 +705,9 @@ def eval_only(
     if (
         use_ema
         and n_euler_override is None
+        and smc_tau is None
+        and replicate_seed is None
+        and multi_event is None
         and (Path(run_dir) / "eval_ema" / "metrics.json").exists()
     ):
         # Refused only when a frozen EMA eval is actually there: eval_ema/
@@ -732,7 +766,8 @@ def eval_only(
     )
     if smc_tau is not None:
         eval_metrics = final_eval_smc(
-            head, target, cfg, run_dir, tau=smc_tau, multi_event=multi_event
+            head, target, cfg, run_dir, tau=smc_tau, multi_event=multi_event,
+            eval_dir_suffix=eval_dir_suffix,
         )
     else:
         eval_metrics = final_eval(

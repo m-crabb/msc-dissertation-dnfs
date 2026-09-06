@@ -10,8 +10,9 @@ object is the blind score S. The soft target's exact flip log-ratio is
 
 with h_i = (A x)_i the local field and c_null_i the hole-excluded
 composition — exactly odd in x_i with a hollow coefficient, so the
-architecture's representable set contains the truth and every R^2 below has
-a ceiling of 1. The equilibrium blind score is therefore spanned by TWO
+architecture's representable set contains this equilibrium log-ratio. That
+does not force the trained flow score to equal it. The equilibrium blind
+score is spanned by TWO
 closed-form columns: the LOCAL field h_i (the hard chapter's channel) and
 the GLOBAL-but-closed-form penalty offset (c_null_i - c*), which is the
 soft-specific channel — a single scalar per (state, site) that any head
@@ -22,30 +23,34 @@ This script asks how much of each trained specialist's S is
   (b) the penalty offset alone,        r2_penalty
   (c) their span = the exact channel,  r2_channel   <- the headline column
   (d) + local/global quadratics,       r2_quadratic
-  (e) ANY function of the 4 neighbour spins and the hole-excluded up-count
-      (held-out lookup, so a fine key cannot buy R^2 by memorising),
+  (e) a cell-mean fit over site, 4 neighbour spins and hole-excluded up-count
+      (held-out lookup, with finite fit-cell counts),
                                        r2_any_local_count
-  (f) and whether the remainder that no such function explains follows the
-      hole-excluded bond sum B_null (the blind global energy), the same
-      "is the non-local part just energy" question the hard script asks.
+  (f) and whether its held-out residual follows the hole-excluded bond sum
+      B_null (the blind global energy). This residual includes lookup
+      estimation error; it does not by itself certify nonlocal structure.
 
-Enumerates ALL 2^16 states (the soft process is unconstrained), so R^2 is
-exact over the state space. Two weightings are reported for the linear
+Enumerates ALL 2^16 states (the soft process is unconstrained), so the linear
+regressions cover the full state space, up to numerical error. The lookup
+scores still depend on the fit split and unseen-cell fallback. Two
+weightings are reported for the linear
 designs: UNIFORM over states, mirroring the hard instrument, and
 p~_t-WEIGHTED, because the soft sampler concentrates near c* and a head is
 only trained where the rollout goes — a channel that looks half-useless
 uniformly but complete under p~_t is still a paying channel. The lookup
-tiers are uniform-only: reweighting 4,096 cell means by p~_t leaves many
+tiers are uniform-only: reweighting up to 4,096 cell means by p~_t leaves many
 cells with tiny effective counts and the held-out R^2 becomes an estimate
 of weight noise rather than capacity (decision 2026-08-29).
 
-How to read the verdict: the hard 4x4 regression put the linear field at
-roughly half the variance with the remainder non-local, and the channel
+How to read the verdict: the archived hard 4x4 regression put the linear
+field at roughly half the variance, and the channel
 paid at 8x8. If r2_channel here is well above that, the case for wiring
 sigma*h and the lambda-offset into a soft head as fixed channels with
 learned gains is STRONGER than the one that already paid; if the gap
-(e)-(c) is large, the specialists have learned genuinely non-local
-structure the channel cannot supply. CPU, minutes.
+(e)-(c) is large, the lookup captures dependence beyond the linear channel,
+including local nonlinearity. It is not evidence of nonlocality. Archived
+lookup scores used colliding site keys and centred residual variance;
+recomputed lookup scores are not numerically interchangeable. CPU, minutes.
 """
 
 import argparse
@@ -116,8 +121,13 @@ def r_squared(target_col, design, weights=None):
 
 
 def lookup_r_squared(target_col, keys, fit_mask):
-    """Best fit by ANY function of the integer `keys`: cell means fitted on
-    `fit_mask`, scored held-out, unseen cells predict the global mean."""
+    """Held-out cell-mean fit; unseen keys predict the fit-set global mean.
+
+    R^2 = 1 - sum(residual^2) / sum((held_y - mean(held_y))^2).
+    Unlike an in-sample fit with an intercept, held-out residuals need not
+    have zero mean: centring them would hide prediction bias. The result
+    measures this split's predictions, not an exact local-capacity bound.
+    """
     unique, inverse = torch.unique(keys, return_inverse=True)
     fit = fit_mask.float()
     sums = torch.zeros(len(unique)).index_add_(0, inverse, target_col * fit)
@@ -126,7 +136,27 @@ def lookup_r_squared(target_col, keys, fit_mask):
         counts > 0, sums / counts.clamp(min=1), target_col[fit_mask].mean())
     held = ~fit_mask
     residual = target_col[held] - means[inverse][held]
-    return float(1.0 - residual.var() / target_col[held].var()), residual
+    total = (target_col[held] - target_col[held].mean()).square().sum()
+    return float(1.0 - residual.square().sum() / total), residual
+
+
+def local_lookup_keys(states, adjacency):
+    """Flattened integer keys for (site, neighbours), optionally plus count.
+
+    On the 4x4 lattice a global-position neighbour mask is in [0, 2^d),
+    even though each site has only 16 local patterns. Thus site * 2^d +
+    mask is injective; site * 16 + mask wrongly merges distinct sites.
+    Appending the hole-excluded count uses radix d because it is in [0, d).
+    Integer masks avoid introducing float rounding into these identities.
+    """
+    d = states.shape[1]
+    up = (states > 0).long()
+    powers = 2 ** torch.arange(d, device=states.device)
+    pattern = up @ ((adjacency > 0).long() * powers).T
+    site = torch.arange(d, device=states.device)
+    local = site * 2**d + pattern
+    count = up.sum(1, keepdim=True) - up
+    return local.reshape(-1), (local * d + count).reshape(-1)
 
 
 def analyse(run_dir, t_value):
@@ -165,22 +195,14 @@ def analyse(run_dir, t_value):
     w_state = (log_pt - log_pt.logsumexp(0)).exp()
     w = w_state.repeat_interleave(d).float()
 
-    out = {"run": Path(run_dir).name, "t": t_value, "S_std": float(S.std())}
+    out = {"run": Path(run_dir).name, "t": t_value, "S_std": float(S.std()),
+           "lookup_protocol": "site_bitmask_heldout_sse_v2"}
     for name, design in designs.items():
         out[name] = r_squared(S, design)
         out[name + "_wt"] = r_squared(S, design, weights=w)
 
-    # any function of (site, 4-neighbour pattern, hole-excluded up-count):
-    # everything the closed forms plus arbitrary LOCAL nonlinearity can
-    # reach; what it cannot explain is structurally non-local.
-    neigh = (A > 0)                                               # (d, d)
-    bits = (x.unsqueeze(1) > 0).float() * neigh.float().unsqueeze(0)
-    order = 2.0 ** torch.arange(d)
-    pattern = (bits * order).sum(-1)                              # (N, d)
-    n_hollow = (c_hollow * d).round()                             # 0..d-1
-    site = torch.arange(d).expand(x.shape[0], d)
-    keys_local = (site * 16 + pattern).reshape(-1).long()
-    keys_count = (keys_local * d + n_hollow.reshape(-1)).long()
+    # Held-out cell means include local nonlinearity and optional count.
+    keys_local, keys_count = local_lookup_keys(x, A)
     fit_mask = torch.rand(
         S.shape[0], generator=torch.Generator().manual_seed(0)) < 0.5
     out["r2_any_local"], _ = lookup_r_squared(S, keys_local, fit_mask)
@@ -188,6 +210,8 @@ def analyse(run_dir, t_value):
         S, keys_count, fit_mask)
     held = ~fit_mask
     B_h, h_h = B_f[held], h_f[held]
+    # Legacy JSON key retained; this is a residual association, not proof
+    # that the residual is purely nonlocal.
     out["nonlocal_share_explained_by_B"] = r_squared(
         residual, torch.stack(
             [torch.ones_like(B_h), B_h, B_h**2, B_h * h_h, B_h**2 * h_h], 1))

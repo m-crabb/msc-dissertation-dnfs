@@ -22,6 +22,7 @@ The contract these tests pin:
 import csv
 from pathlib import Path
 
+import pytest
 import torch
 
 from discrete_flow_sampler.constraints.swap_readout import DoublyHollowSwapHead
@@ -169,6 +170,34 @@ def test_retry_on_completed_run_is_noop(tmp_path):
     )
     for key in final_before:
         assert torch.equal(final_before[key], final_after[key]), key
+
+
+@pytest.mark.parametrize("ema_field", ["absent", "none"])
+def test_legacy_resume_seeds_missing_ema_from_restored_weights(tmp_path, ema_field):
+    """Without a saved shadow, completion recovery must use resumed weights.
+
+    This is a declared fallback, not recovery of the historical EMA average.
+    A different caller initialisation must never leak into final_ema.pt.
+    """
+    run_dir = tmp_path / "legacy"
+    checkpoint_dir = run_dir / "checkpoints"
+    checkpoint_dir.mkdir(parents=True)
+    restored_head = _head(init_seed=0)
+    state = {
+        "step": 4,
+        "model": restored_head.state_dict(),
+        "optimiser": torch.optim.AdamW(restored_head.parameters()).state_dict(),
+    }
+    if ema_field == "none":
+        state["ema"] = None
+    torch.save(state, checkpoint_dir / "resume.pt")
+
+    _run(run_dir, n_steps=4, head=_head(init_seed=999), ema_decay=0.9999)
+
+    recovered_ema = torch.load(checkpoint_dir / "final_ema.pt", weights_only=True)
+    assert recovered_ema.keys() == state["model"].keys()
+    for key, expected in state["model"].items():
+        assert torch.equal(recovered_ema[key], expected), key
 
 
 def test_resume_truncates_orphan_log_rows(tmp_path):

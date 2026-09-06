@@ -3,6 +3,7 @@ stream the draw in `eval_sample_chunk` slices (the unchunked 5000-sample eval
 OOM'd all three d=64 sigma_c seeds, 2026-07-06) and `eval_only` must recover
 the eval/ artefacts from a completed run dir's checkpoint."""
 import json
+import shutil
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -168,7 +169,8 @@ def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
     assert metrics["n_eval_samples"] == 10
 
 
-def test_final_eval_smc_writes_own_dir_and_smc_metrics(tmp_path):
+@pytest.mark.parametrize("suffix", ["", "_ema", "_stage6"])
+def test_final_eval_smc_writes_own_dir_and_smc_metrics(tmp_path, suffix):
     """SMC eval must land beside — never over — the plain-IS artefacts, and
     at τ=1.0 (fires whenever weights aren't exactly uniform) the resampling
     machinery is actually exercised at toy scale."""
@@ -176,10 +178,12 @@ def test_final_eval_smc_writes_own_dir_and_smc_metrics(tmp_path):
     cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4)
     target, head = build_target_and_head(cfg, "cpu")
 
-    metrics = final_eval_smc(head, target, cfg, Path(tmp_path), tau=1.0)
+    metrics = final_eval_smc(
+        head, target, cfg, Path(tmp_path), tau=1.0, eval_dir_suffix=suffix
+    )
 
     assert not (tmp_path / "eval").exists()          # plain-IS dir untouched
-    eval_dir = tmp_path / "eval_smc_tau1"
+    eval_dir = tmp_path / f"eval_smc_tau1{suffix}"
     samples = torch.load(eval_dir / "samples.pt")
     pooled_log_weights = torch.load(eval_dir / "log_weights.pt")
     assert samples.shape == (10, 16)
@@ -287,8 +291,12 @@ def test_eval_only_replicate_seeds_differ_and_reproduce(tmp_path, monkeypatch):
     second = torch.load(run_dir / "eval_replicate_s102" / "log_weights.pt")
     assert not torch.equal(first, second)
 
-    eval_only(run_dir, replicate_seed=101)
-    rerun = torch.load(run_dir / "eval_replicate_s101" / "log_weights.pt")
+    replay_dir = tmp_path / "replay"
+    replay_dir.mkdir()
+    shutil.copytree(run_dir / "checkpoints", replay_dir / "checkpoints")
+    shutil.copy2(run_dir / "config.json", replay_dir / "config.json")
+    eval_only(replay_dir, replicate_seed=101)
+    rerun = torch.load(replay_dir / "eval_replicate_s101" / "log_weights.pt")
     assert torch.equal(rerun, first)
 
 

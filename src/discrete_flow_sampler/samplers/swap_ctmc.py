@@ -454,14 +454,15 @@ def mean_per_slice(values: Tensor, slice_idx: Tensor, n_slices: int) -> Tensor:
     THE CORRECTION THIS ENCODES (2026-09-05). On a slice mixture the
     residual for a row on slice C needs ∂_t log Z_t^{(C)}: swap dynamics
     hold every slice's mass fixed, so only each slice's conditional
-    evolves and no mixture-level ∂_t log Z_t exists for the residual to
-    use. E_{p_t^{(C)}}[ξ_t] = ∂_t log Z_t^{(C)} within a slice for any
+    evolves; a single mixture-level ∂_t log Z_t cannot generally serve
+    every slice's residual. E_{p_t^{(C)}}[ξ_t] = ∂_t log Z_t^{(C)} for any
     rates (Stein), so the estimator is a within-slice mean. The pooled
     mean over all rows (the pre-fix reduction) left every row an offset
     ∂_t log Z_t^{(C)} − mean_C ∂_t log Z_t^{(C)}, ~2 nats at d16 and ~18
     nats at d256 from the binomial base constant alone; with c_t detached
-    that offset reaches the gradient as 2·Δ·E_q[∇ξ_t], which is zero
-    on-policy and not zero over a replay buffer of past models' states.
+    that offset reaches the gradient as 2·Δ·E_q[∇ξ_t]. With exact ratios,
+    E_{p_t^{(C)}}[∇ξ_t] = 0 by Stein cancellation; it need not vanish
+    under the current model law or replayed past model laws.
 
     K == 1 is `values.mean(dim=-1)` bit-for-bit (the archived specialist
     path). A slice with no rows (~K·(1−1/K)^M, negligible at M ≥ 128)

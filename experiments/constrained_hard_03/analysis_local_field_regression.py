@@ -8,11 +8,13 @@ partner (the i-j bond is invariant under the swap). So the equilibrium
 log-ratio is a rank-1, linear, hole-subtracted per-site field difference.
 
 This script asks how much of each trained head's S is (a) that linear field,
-(b) any function of the two holes' neighbourhood spins (best local fit, a
-lookup table per pair over the <=8 neighbour spins), and (c) the remainder,
-which is by construction non-local. Enumerates the whole fixed-composition
-slice (C(16,8) = 12,870 states), so the R^2 values are exact over the state
-space, not sample estimates. CPU, seconds.
+(b) a held-out cell-mean lookup per pair over the <=8 neighbour spins, and
+(c) the lookup residual's association with exterior energy. Enumerates the
+whole fixed-composition slice (C(16,8) = 12,870 states), so the linear fits
+cover that space up to numerical error. Lookup scores still depend on the
+fit split, finite cell counts and unseen-cell fallback; their residuals
+are not by construction non-local. Archived lookup scores used centred
+residual variance; recomputed scores use held-out SSE/SST. CPU, seconds.
 """
 
 import argparse
@@ -51,9 +53,13 @@ def r_squared(target, design):
 
 
 def lookup_r_squared(target, keys, fit_mask):
-    """Best fit by ANY function of the integer `keys` (N,): cell means fitted
-    on `fit_mask`, scored on its complement (held-out R^2, so a fine key
-    cannot buy R^2 by memorising). Unseen cells predict the global mean."""
+    """Held-out cell means; unseen keys predict the fit-set global mean.
+
+    R^2 = 1 - sum(residual^2) / sum((held_y - mean(held_y))^2).
+    Held-out residuals need not average zero, so their centred variance
+    would hide prediction bias. This split-dependent fit is not an exact
+    bound on the capacity of arbitrary local functions.
+    """
     unique, inverse = torch.unique(keys, return_inverse=True)
     fit = fit_mask.float()
     sums = torch.zeros(len(unique)).index_add_(0, inverse, target * fit)
@@ -61,7 +67,8 @@ def lookup_r_squared(target, keys, fit_mask):
     means = torch.where(counts > 0, sums / counts.clamp(min=1), target[fit_mask].mean())
     held = ~fit_mask
     residual = target[held] - means[inverse][held]
-    return float(1.0 - residual.var() / target[held].var()), len(unique), residual
+    total = (target[held] - target[held].mean()).square().sum()
+    return float(1.0 - residual.square().sum() / total), len(unique), residual
 
 
 def analyse(run_dir, t_value, device="cpu"):
@@ -97,7 +104,7 @@ def analyse(run_dir, t_value, device="cpu"):
     with_exterior_energy = torch.cat(
         [local_quadratic, torch.stack([E_ext, E_ext * delta_h, E_ext**2, E_ext**2 * delta_h], 1)], 1
     )
-    # best local fit: lookup over the neighbourhood spins of i and j (holes excluded)
+    # Lookup over the neighbourhood spins of i and j (holes excluded).
     neigh_mask = ((A[i_idx] + A[j_idx]) > 0).float()                 # (P, d)
     neigh_mask[torch.arange(len(i_idx)), i_idx] = 0
     neigh_mask[torch.arange(len(i_idx)), j_idx] = 0
@@ -108,10 +115,9 @@ def analyse(run_dir, t_value, device="cpu"):
     keys = (pair_id * 2**d + pattern)[differing].long()
     fit_mask = torch.rand(S.shape[0], generator=torch.Generator().manual_seed(0)) < 0.5
     local_r2, n_cells, local_residual = lookup_r_squared(S, keys, fit_mask)
-    # the non-local remainder: is it the exterior energy? regress the held-out
-    # residual of the best local fit on a polynomial in E_ext (and Delta h
-    # interactions) -- the share of what NO local function can explain that a
-    # single blind global bond sum does.
+    # Regress the held-out lookup residual on exterior energy and Delta h.
+    # This association also includes lookup estimation error; the legacy
+    # JSON key below is retained without asserting a purely nonlocal share.
     held = ~fit_mask
     E_h, dh_h = E_ext[held], delta_h[held]
     energy_design = torch.stack(
@@ -120,6 +126,7 @@ def analyse(run_dir, t_value, device="cpu"):
     residual_on_energy = r_squared(local_residual, energy_design)
     return {
         "run": Path(run_dir).name, "t": t_value,
+        "lookup_protocol": "pair_bitmask_heldout_sse_v2",
         "r2_linear_field": r_squared(S, linear_field),
         "r2_local_quadratic": r_squared(S, local_quadratic),
         "r2_with_exterior_energy": r_squared(S, with_exterior_energy),
