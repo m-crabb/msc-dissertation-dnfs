@@ -354,24 +354,15 @@ def train(
             checkpoint lands on disk (Modal passes `volume.commit` so the
             checkpoint survives a preemption that skips the death-flush).
 
-    Preemption resume: every `train_cfg.resume_every_outer` outer cycles
-    (default 10) the full outer-boundary state is checkpointed to
-    `checkpoints/resume.pt`; if that file exists on entry, training restores
-    it and continues instead of starting over. The outer boundary is the only
-    valid checkpoint instant — mid-cycle the replay buffer and c_t grid are
-    half-rebuilt. What travels, and why each piece has to: model weights and
-    AdamW moments (a fresh optimiser would re-warm its second-moment estimate
-    and take a different-sized first step), the step counter (every curriculum
-    is keyed on it), the torch RNG states (or the continuation diverges at the
-    first draw despite identical weights), and all four replay-chunk lists
-    (with `replay_buffer_cycles > 1` the buffer holds past outer trajectories
-    reconstructible from nothing else — and for an amortised run each retained
-    state carries its own composition and its own c_t baseline, so dropping
-    those two lists would train states against baselines they never came
-    with: a wrong number, not a crash). Curriculum stage indices are NOT
-    stored — they are derivable from the step counter because every ladder
-    uses absolute `start_step`s — and the optimiser LR travels inside the
-    optimiser state dict, warmup scaling included.
+    Preemption resume: save `checkpoints/resume.pt` every
+    `train_cfg.resume_every_outer` outer cycles (default 10); restore it on
+    entry. Only outer boundaries have a complete replay buffer and c_t grid.
+    The payload preserves weights, AdamW moments, step, Torch RNG states and
+    all four replay-chunk lists: past trajectories cannot be reconstructed,
+    and amortised states must retain their own compositions and c_t baselines.
+    Fresh moments or RNG states would change the continuation. Curriculum
+    indices derive from step and absolute `start_step`s; optimiser state
+    carries the exact LR, including warmup scaling.
 
     Amortisation and ∂_t log Z_t: the annealing path makes Z_t a function of
     the target composition, so the `c_t` baseline is only valid for the
@@ -392,10 +383,8 @@ def train(
             model.parameters(), lr=train_cfg.lr, weight_decay=1e-4
         )
     elif optimiser_kind == "stable_adamw":
-        # The normalised/trust-region update the amortisation forensics
-        # recommend over a raw-gradient clip (see samplers/optim.py for the
-        # algorithm and why the update-RMS threshold is the size-invariant
-        # object the clip threshold is not).
+        # Per-tensor update-RMS clipping; see optim.py for the algorithm
+        # and its size-invariant threshold.
         from discrete_flow_sampler.samplers.optim import StableAdamW
 
         optimiser = StableAdamW(
@@ -404,25 +393,19 @@ def train(
     else:
         raise ValueError(f"unknown optimiser {optimiser_kind!r}")
 
-    # Restore before anything else reads model or optimiser state. The weights
-    # loaded here are also what the RNG restore further down is paired with:
-    # together they are the run, and half of either is a different run.
+    # Restore weights and optimiser before other setup reads them; restore
+    # their paired RNG state last, below.
     resume_state = load_resume_state(ckpt_dir, map_location=target.device)
     if resume_state is not None:
         model.load_state_dict(resume_state["model"])
         optimiser.load_state_dict(resume_state["optimiser"])
     start_step = int(resume_state["step"]) if resume_state is not None else 0
 
-    # EMA dual-eval instrument (ported from the swap trainer for the
-    # soft-chapter revamp, s95): a warmup-corrected parameter shadow over
-    # the TOP-LEVEL module, so a channel-wrapped model contributes its gain
-    # parameters too (tests/test_flip_trainer_ema.py pins the coverage).
-    # Passive observer: updated after each optimiser step, never read by
-    # training, so runs differing only in ema_decay train bit-identically.
-    # Built after the resume restore above — the shadow's own state then
-    # overwrites the fresh clone, carrying counter AND shadow across
-    # preemption (re-initialising either re-creates the init-contamination
-    # failure the warmup schedule exists to kill; see ema.py).
+    # Warmup-corrected EMA covers the top-level module, including wrapper
+    # gains (tests/test_flip_trainer_ema.py). Updated after each optimiser
+    # step and never read by training: ema_decay leaves updates bit-identical.
+    # Construct after weight restoration, then restore both shadow and counter
+    # to avoid init contamination or a restarted warmup (see ema.py).
     ema = (
         ExponentialMovingAverage(model.parameters(), ema_decay, warmup=True)
         if ema_decay > 0 else None
@@ -622,15 +605,10 @@ def train(
             )
 
         if resume_state is not None:
-            # Fast-forward all three ladders EXPLICITLY rather than letting
-            # the transition loops below replay them: those loops call
-            # `_clear_replay` on a σ or λ change, which would destroy the
-            # very chunks being restored two blocks down. The optimiser LR is
-            # deliberately not set here -- `load_state_dict` above already
-            # carries the exact value, warmup scaling included -- but
-            # `current_intended_lr` still has to advance, because it is what
-            # the warmup ramp multiplies and what a LATER stage boundary
-            # would otherwise be measured against.
+            # Fast-forward all three ladders without replaying transitions
+            # that clear retained chunks. Keep the restored optimiser LR
+            # (including warmup scaling), but advance current_intended_lr
+            # for the warmup ramp and later stage boundaries.
             while (
                 curriculum
                 and curriculum_idx + 1 < len(curriculum)
@@ -691,16 +669,10 @@ def train(
             # the continuation is about to consume.
             restore_rng_state(resume_state)
 
-        # Pre-training stiff-sampler / init-basin diagnostic. Computed at t=0
-        # before the first optimiser step; RNG state is saved and restored so
-        # the diagnostic does not perturb training-trajectory randomness.
-        # The logged `flip_prob_clipped_frac` here is the only place the
-        # init-time stiffness signal is captured -- the in-loop diagnostic
-        # only ever sees the post-first-update model.
-        # Skipped on resume: it describes step 0, it is already on disk, and
-        # recomputing it against the resumed weights would both overwrite the
-        # real init record and answer a different question than the file name
-        # claims.
+        # Diagnose stiffness/init basin at t=0 before the first update,
+        # preserving RNG state. This is the only init-time clip-fraction
+        # record; in-loop diagnostics see updated weights. Skip on resume
+        # to preserve the original init record.
         if resume_state is None:
             rng_state_cpu = torch.get_rng_state()
             rng_state_cuda = (
@@ -1132,12 +1104,10 @@ def train(
 
                 step += 1
 
-            # END OF OUTER CYCLE -- the only instant at which the training
-            # state is self-consistent (the buffer and c_t grid are whole,
-            # and the next cycle rebuilds both from scratch), so the only
-            # instant at which a resume checkpoint is valid. Also fires on
-            # the last cycle so a run killed between its final inner step
-            # and `final.pt` is recoverable without redoing anything.
+            # Resume checkpoints require an outer boundary: buffer and c_t
+            # are complete, and the next cycle rebuilds both. Save the last
+            # cycle too, so interruption before final.pt needs no repeated
+            # updates.
             if (outer + 1) % resume_every_outer == 0 or outer == n_outer - 1:
                 save_resume_state(
                     ckpt_dir,

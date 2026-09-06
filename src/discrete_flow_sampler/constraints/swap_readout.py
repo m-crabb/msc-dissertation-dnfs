@@ -132,15 +132,12 @@ class DoublyHollowSwapHead(nn.Module):
     token difference. The diagonal (i == j) and same-spin pairs vanish
     automatically because omega_{x_i} - omega_{x_j} = 0 there.
 
-    The loop runs over UNORDERED pairs (2026-08-26). `_masked_body` zeroes the
-    embeddings of every site in `mask_sites`, an order-independent set of
-    unconditional overrides, so the (j, i) pass recomputed the (i, j) pass
-    bit-for-bit: the old ordered-pair loop paid 2x for it. One pass now
-    supplies both entries, H[:, j] against omega_i - omega_j for G[i, j] and
-    H[:, i] against omega_j - omega_i for G[j, i], which are the same two
-    expressions on the same tensor -- hence bit-identical output, and no
-    opt-in flag (tests/test_swap_head_vectorised.py pins mask_one against
-    this head at exact equality, so a drift here would show up there too).
+    `_masked_body` applies order-independent embedding overrides, so one
+    pass per unordered pair replaces two bit-identical masked passes:
+    H[:, j] against omega_i - omega_j gives G[i, j], and H[:, i] against
+    omega_j - omega_i gives G[j, i]. Output is bit-identical to the ordered
+    loop; tests/test_swap_head_vectorised.py pins mask_one to this oracle
+    at exact equality.
     """
 
     def __init__(self, backbone: LeTFRateMatrix):
@@ -208,9 +205,8 @@ class LeTFMaskOneSwapHead(nn.Module):
         return torch.cat(rows, dim=0).permute(1, 0, 2)  # (B, d, d)
 
     def forward_looped(self, x: Tensor, t: Tensor) -> Tensor:
-        """Sequential reference: one masked body pass per anchor. ~d x slower
-        than forward; kept as the readable form of the math and the oracle
-        forward must match (tests/test_swap_head_vectorised.py)."""
+        """Sequential oracle: one masked pass per anchor, ~d x slower than
+        forward (tests/test_swap_head_vectorised.py)."""
         m = self.backbone
         x_idx = ((x + 1) / 2).long()
         om = m.omega(x_idx)  # (B, d, h)

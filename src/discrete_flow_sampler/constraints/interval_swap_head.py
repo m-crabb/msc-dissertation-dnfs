@@ -1,7 +1,6 @@
 """Three-interval (leave-two-out) swap head: all-pairs H_ij in ONE body pass.
 
-Direction (b) of the pair-equivariant spike (2026-07-07). The readout is
-unchanged from swap_readout.py (the pair form of DNFS Prop. 2 / Eq. (9)):
+Uses swap_readout.py's pair form of DNFS Prop. 2 / Eq. (9):
 
     G_swap(i, j | x) = < H_ij(x_{-{i,j}}),  omega_{x_i} - omega_{x_j} >
 
@@ -202,7 +201,7 @@ class IntervalSwapHead(nn.Module):
         site_orderings: tuple[str, ...] = ("row",),
         lattice_side: int | None = None,
     ):
-        """exterior_combiner (2026-08-23): "mlp" is the archived head, the
+        """exterior_combiner: "mlp" is the archived head, the
         per-pair readout over [prefix, suffix, band, positions]. "bilinear"
         moves the deep exterior OUT of that MLP and into a rank-R product
 
@@ -243,11 +242,9 @@ class IntervalSwapHead(nn.Module):
             )
         self.exterior_combiner = exterior_combiner
         self.bilinear_rank = bilinear_rank
-        # Memory lever, opt-in (2026-08-26): run the per-pair band and readout
-        # on the d(d-1)/2 unordered pairs instead of the d^2 grid, then mirror
-        # (`scatter_symmetric_pairs`). A plain bool -- no parameter, no buffer,
-        # no RNG draw -- so a flag-off head is byte-identical to the archived
-        # one and the two paths differ only in GEMM shape.
+        # Opt-in band/readout on d(d-1)/2 unordered pairs, then mirror via
+        # scatter_symmetric_pairs. No parameter, buffer or RNG draw: flag-off
+        # heads stay byte-identical to archived ones; only GEMM shape differs.
         self.gather_triu_pairs = gather_triu_pairs
         self.site_orderings = tuple(site_orderings)
         self.position_dim = position_dim

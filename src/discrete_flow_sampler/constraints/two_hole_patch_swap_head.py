@@ -51,7 +51,7 @@ term by construction:
   NOT tied over C4v (the patch MLP is not either), so the head is exactly
   translation-equivariant and only approximately rotation-equivariant.
 
-Label parity, which the first draft got wrong. The physical rate of the
+Label parity: the physical rate of the
 unordered pair {i, j} is one number, so G must be label-SYMMETRIC and
 S_ij = G_ij / (x_i - x_j) label-ODD: the exact Kawasaki rate has S_ij
 proportional to the partner-excluded field DIFFERENCE h~_j - h~_i. A

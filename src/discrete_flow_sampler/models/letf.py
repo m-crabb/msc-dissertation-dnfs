@@ -328,15 +328,10 @@ class LeTFRateMatrix(nn.Module):
     SUMMED into the existing conditioning tensor rather than prepended as a
     second token.
 
-    Why summed, not a second token: the hollowness argument in this module's
-    header rests on the slice trick `fwd_x[:, :-1]` / `bwd_x[:, 1:]`, whose
-    index arithmetic assumes exactly ONE conditioning token at position 0. A
-    second token would shift every position, desynchronise
-    `AttentionReadout.pos_embed` (sized `data_dim`) and the (d, 2d) joint
-    mask, and put the load-bearing hollow property at risk for no gain.
-    Summing changes nothing structurally: hollowness only requires the
-    injected conditioning to be independent of x_i, and c is independent of
-    x entirely.
+    Summing preserves the single conditioning token at position 0 required
+    by `fwd_x[:, :-1]` / `bwd_x[:, 1:]`, `AttentionReadout.pos_embed`
+    (sized `data_dim`) and the (d, 2d) joint mask. Hollowness is preserved
+    because c is independent of x.
     """
 
     is_locally_equivariant: bool = True
@@ -408,10 +403,8 @@ class LeTFRateMatrix(nn.Module):
         Unconditioned: TimestepEmbedder(t) alone, exactly as before.
         Conditioned: plus the composition embedding, summed.
 
-        Both arms return the same shape, so every downstream consumer — the
-        two causal stacks, and the readout's triple injection — is unaware
-        that conditioning gained a second channel. That is the whole reason
-        this design is cheap.
+        Both arms preserve the shape used by the causal stacks and the
+        readout's triple injection.
 
         Args:
             t: (B,) diffusion time in [0, 1].

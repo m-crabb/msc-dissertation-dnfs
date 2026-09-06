@@ -63,14 +63,10 @@ class _CausalBlock(nn.Module):
     def forward_step(self, h_step: torch.Tensor, cache: dict) -> torch.Tensor:
         """One-token forward against cached keys/values (KV-cache path).
 
-        EXACT REWRITE of `forward` restricted to the newest position: the
-        projections run on `self.attention`'s own in_proj/out_proj weights,
-        so there is one set of parameters and two evaluation orders — the
-        separable-band precedent. Causality is automatic (the cache holds
-        only positions <= the current one), so no mask is materialised.
-        Cost per step is O(L) attention against the cache instead of the
-        naive path's O(L^2) full re-encode; over a d-step rollout that is
-        O(d^2) attention in place of O(d^3).
+        Reuses `forward`'s in_proj/out_proj weights at the newest position.
+        The cache holds only positions <= the current one, so no mask is
+        needed. Attention costs O(L) per step instead of O(L^2) for a full
+        re-encode: O(d^2) over a d-step rollout instead of O(d^3).
         """
         attention = self.attention
         batch, _, hidden_dim = h_step.shape

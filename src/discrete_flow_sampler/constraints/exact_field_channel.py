@@ -72,9 +72,8 @@ class ExactFieldSwapHead(nn.Module):
     def exact_field(self, x: Tensor) -> Tensor:
         """sigma * Delta_ij for i < j, mirrored to G[j,i] = -G[i,j]: the target's
         all-pairs swap log-ratio at t=1 (target.base_swap_log_ratio)."""
-        # The target supplies its own closed form (Ising: the field
-        # difference; cluster expansion: -beta Delta E_swap, Eq. 3), so the
-        # channel is exact on every binary target that defines it (s117).
+        # Target-supplied closed form: Ising field difference or cluster
+        # expansion -beta Delta E_swap (Eq. 3), for binary targets.
         upper = torch.triu(self.target.base_swap_log_ratio(x), diagonal=1)
         return upper - upper.transpose(1, 2)
 
@@ -200,15 +199,13 @@ class ExactFieldFlipModel(nn.Module):
             target.target_composition if composition is None
             else composition.unsqueeze(-1)                      # (B, 1)
         )
-        # Unconstrained target (no penalty, no c*): the channel is the bare
-        # energy log-ratio. Guarded explicitly because c* is None there and
-        # the penalty arithmetic below would raise (s117 baseline twins).
+        # No penalty or c*: use the bare energy log-ratio, avoiding
+        # undefined penalty arithmetic when c* is None.
         if lam == 0.0 or c_star is None:
             return target.base_flip_log_ratio(x)
         c_hollow = ((x + 1.0) * 0.5).mean(-1, keepdim=True) - (x + 1.0) / (2.0 * d)
-        # The energy term is the target's own closed form (Ising: -4 sigma
-        # x_i h_i; cluster expansion: -beta Delta E_i), so the channel is
-        # exact on every binary target that defines it (s117, 2026-09-02).
+        # Target-supplied energy term: Ising -4 sigma x_i h_i or cluster
+        # expansion -beta Delta E_i, for binary targets.
         return target.base_flip_log_ratio(x) + x * (
             2.0 * lam * (c_hollow - c_star)
             + lam / d

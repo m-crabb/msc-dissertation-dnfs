@@ -1,20 +1,12 @@
 """Adapter presenting a composition-conditioned model through `(x, t)`.
 
-The samplers, the ∂_t log Z_t estimator and the residual losses all call the
-rate model as `model(x, t)`. An amortised model needs a third input, the
-target composition c. Rather than thread that argument through every one of
-those call sites — which would churn signatures shared with the
-fixed-composition route — the trainer binds c into this adapter and hands the
-adapter over wherever a model is expected.
+The trainer binds target composition c for samplers, the ∂_t log Z_t
+estimator and residual losses that call `model(x, t)`. The adapter forwards
+`(x, t, c)` to either a single-site flip rate matrix or a pair-swap head.
 
-The adapter is deliberately signature-agnostic: it forwards `(x, t, c)` to
-whatever it wraps, so it serves a single-site flip rate matrix and a
-pair-swap head alike, both of which are called as `f(x, t)` today.
-
-It is NOT an `nn.Module`. It holds a reference, so the trainer keeps building
-the optimiser and the checkpoints from the underlying model — wrapping in a
-Module would prefix every `state_dict` key and break checkpoint
-compatibility with the eval scripts.
+This is not an `nn.Module`: optimisers and checkpoints use the underlying
+model, preserving parameter names without a wrapper's `state_dict` prefix
+and keeping eval-script checkpoint compatibility.
 """
 from torch import Tensor
 

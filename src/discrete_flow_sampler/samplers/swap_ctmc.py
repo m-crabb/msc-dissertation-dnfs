@@ -280,20 +280,15 @@ def sample_swap_ctmc(
         stores (state, t) pairs and c_t is a per-slot mean, so only the
         per-slot marginal has to be right.
 
-    `return_cv_integrand=True` (optimisation B1, decided 2026-08-24;
-    requires `return_all_states=True`, `target`, and resampling OFF)
-    additionally returns the (T, B) per-slot CV integrand ξ_t
-    (Eq. 8, swap form) so the outer step can build the c_t grid without
-    re-running the head: step k already computed head(x_k, t_k) on
-    exactly the tensors slot k needs, so ξ_t is accumulated from the
-    step's own pair scores via `xi_t_swap_from_scores`; only the final
-    slot needs one fresh head call. BIT-IDENTICAL to the sequential
-    (chunk_rows=None) `compute_c_t_grid_swap` on the returned trajectory
-    — same tensors, same arithmetic, no RNG consumed (pinned by
-    tests/test_cv_integrand_reuse.py). At d256 this removes 127 of 128
-    c_t-grid head forwards per outer cycle (~7-8 h eager per 16x16 CV
-    run). Resampling is excluded because the reuse is certified only for
-    the plain buffer rollout. Return becomes (trajectory, cv_integrand).
+    `return_cv_integrand=True` requires `return_all_states=True`, `target`
+    and resampling OFF: reuse is certified only for plain buffer rollouts.
+    Return (trajectory, cv_integrand), adding (T, B) per-slot ξ_t (Eq. 8,
+    swap form) via `xi_t_swap_from_scores` on the Euler step's pair scores;
+    only the final slot needs a fresh head call. Bit-identical to sequential
+    (chunk_rows=None) `compute_c_t_grid_swap`: same tensors/arithmetic, no
+    extra RNG consumption (tests/test_cv_integrand_reuse.py). At d256 this
+    removes 127 of 128 c_t-grid head forwards per outer cycle (~7-8 h eager
+    per 16x16 CV run).
     """
     if return_log_weights and target is None:
         raise ValueError("sample_swap_ctmc(return_log_weights=True) requires `target`.")

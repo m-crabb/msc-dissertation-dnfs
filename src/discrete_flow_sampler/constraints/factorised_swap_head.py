@@ -54,8 +54,7 @@ per-pair work drops from O(d) to a d-free constant:
   is nonlinear across terms and would force H to be materialised, defeating
   the factorisation; scale control lives per-term instead.
 
-What is and is not per-pair, stated honestly because the first draft of
-this head overclaimed it: the bilinear and time terms are per-site objects
+The bilinear and time terms are per-site objects
 whose readout distributes (<a_i * b_j, w_i - w_j> = <a_i * w_i, b_j> -
 <a_i, b_j * w_j>, and <tau, w_i - w_j> = <tau, w_i> - <tau, w_j>), but the
 global term does NOT distribute -- LN and rho are nonlinear in psi_i +
@@ -66,8 +65,8 @@ psi_j -- so it is a fixed-width per-pair map over a materialised
 still O(d^2) against masked attention's O(d^3): what the factorisation
 removes is the per-pair pooling over the lattice, not per-pair work.
 
-Half of that per-pair work is redundant, and `gather_triu_pairs` (opt-in,
-default OFF, 2026-08-26) drops it: the global term is exactly symmetric in
+`gather_triu_pairs` (opt-in, default OFF) halves that per-pair work:
+the global term is exactly symmetric in
 (i, j), so LN and rho run on the d(d-1)/2 pairs with i < j and the result
 is mirrored back (`interval_swap_head.scatter_symmetric_pairs`). A memory
 lever for D=16 (d=256), where that slab is what threatens the card.
@@ -83,7 +82,7 @@ was removed. H is defined on i < j and mirrored down (H_ji := H_ij, the
 label-symmetry convention); the score's upper triangle is mirrored as
 G[j,i] = -G[i,j], so index antisymmetry is an identity.
 
-Interior band on the narrow path (opt-in via `interior_band`, 2026-08-23):
+Interior band (opt-in via `interior_band`):
 the global term is the one per-pair nonlinearity this head pays for, and it
 runs at band width, so the interval head's prefix-sum band or the
 masked-attention head's attention band (both blind by index exclusion,
@@ -126,7 +125,7 @@ only the factor maps are per-ordering. `("row",)` is byte-identical to the
 single-ordering head: no extra modules, no persistent state, archived
 checkpoints load unchanged.
 
-Rejected alternatives, for the record: full-context site features combined
+Full-context site features combined
 into pairs break blindness at layer one, and repairing them by explicit
 antisymmetrisation costs one swapped forward per ordered pair -- that is
 `swap_readout.antisymmetrise`, the O(d^2)-pass test oracle, not a head. A
@@ -276,10 +275,8 @@ class FactorisedSwapHead(nn.Module):
         self.use_bilinear = use_bilinear
         self.use_global = use_global
         self.site_orderings = site_orderings
-        # Memory lever, opt-in (2026-08-26): run the global term's per-pair
-        # LN + MLP on the d(d-1)/2 unordered pairs. A plain bool -- no
-        # parameter, no buffer, no RNG draw -- so a flag-off head is
-        # byte-identical to the archived one.
+        # Opt-in LN + MLP on d(d-1)/2 unordered pairs. No parameter, buffer
+        # or RNG draw: flag-off heads stay byte-identical to archived ones.
         self.gather_triu_pairs = gather_triu_pairs
         hidden = backbone.hidden_dim
 

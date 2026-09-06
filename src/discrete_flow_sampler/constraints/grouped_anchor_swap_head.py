@@ -1,7 +1,6 @@
 """Grouped-anchor swap head: mask a GROUP of sites per pass, not a single one.
 
-Motivation (2026-07-22, after the stencil verdict). The head
-family had only ever been sampled at its two endpoints: `LeTFMaskOneSwapHead`
+The 2026-07-22 endpoint comparison: `LeTFMaskOneSwapHead`
 runs **d** masked body passes (one anchor site each, ESS frac 0.9103 at the
 d=64 sigma_c rung), and the one-pass heads (`interval_swap_head.py`,
 `masked_attention_swap_head.py`) run **zero** extra passes (0.78-0.80).
@@ -27,23 +26,23 @@ so exact state-swap antisymmetry G(i,j|x) = -G(i,j|Swap2(x,i,j)) and free
 trivial-swap vanishing (x_i = x_j => G = 0) follow at random init, untrained,
 exactly as for the other heads.
 
-WHY THIS IS THE SIMPLEST CORRECTNESS ARGUMENT IN THE FAMILY. Masking happens
-at the INPUT (an unconditional embedding override, independent of the true
-token), so no masked site's value enters any computed quantity at any depth.
+Masking happens at the INPUT (an unconditional embedding override,
+independent of the true token), so no masked site's value enters any
+computed quantity at any depth.
 The two-hop leak that forces the one-pass heads' band content to be shallow --
 one attention layer mixes x_i into every token, so masking only at a readout
 layer still leaks via x_i -> token k -> H_ij -- simply does not arise. There
 is no band, no collar, no straddle exclusion by index arithmetic, and no
 prefix-sum cancellation residue: blindness is bit-exact and structural.
 
-THE TRADE, STATED HONESTLY. Each pass destroys the content of d/k sites when
+Each pass destroys the content of d/k sites when
 only x_i and x_j had to go, so H_ij sees less than mask_one's H_ij does. What
 it keeps is full DEPTH and full GLOBAL MIXING over the surviving sites -- the
 exact opposite trade to the one-pass heads, which keep every site's content
 but cap band depth at 1 and never mix prefix with suffix outside the 2-layer
 pair readout. At d=64, k=8 masks 12.5% of sites per pass.
 
-GROUP SHAPE IS A DESIGN DECISION, NOT A DETAIL. d = D*D is a raster-flattened
+d = D*D is a raster-flattened
 lattice, so on an 8x8 grid the naive choices are both lines: "strided" (site %
 k) with k=8 is a whole COLUMN, "contiguous" is a whole ROW. Either cuts the
 correlation structure along a line, removing a coherent slab of the lattice.
@@ -61,8 +60,7 @@ and `group_chunk_size` bounds the transient exactly as mask_one's
 `anchor_chunk_size` does, since the stacked pass builds a
 (n_groups*B, n_heads, d, 2d) readout attention buffer.
 
-WHY D=16 NEEDS THIS -- COMPUTE, NOT MEMORY. The memory framing is tempting and
-wrong, so state it precisely: mask_one's readout buffer is
+At D=16, mask_one's readout buffer is
 (A*B, n_heads, d, 2d) with A = `anchor_chunk_size`, NOT A = d. Chunking
 already bounds it, and test_swap_head_vectorised.py exercises exactly that at
 d=256 with a ragged tail chunk. What chunking cannot bound is the NUMBER of

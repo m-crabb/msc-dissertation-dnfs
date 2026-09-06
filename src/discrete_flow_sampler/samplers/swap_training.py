@@ -8,20 +8,13 @@ single-site Kolmogorov loss. There is no soft composition penalty on this
 route -- the swap move set enforces n_plus == N_A exactly, so `lambda_curriculum`
 and its stage handling are dropped entirely.
 
-Diagnostic-columns decision (mirrors `training._rate_diagnostics`): the
-per-site columns (`rate_site_mean`, `rate_site_p99`, `flip_prob_site_p99`,
-`flip_prob_clipped_frac`) have no clean one-to-one swap analogue -- a swap
-event is a joint choice over i<j pairs, not an independent per-site flip --
-so they are renamed to `rate_pair_mean`/`rate_pair_p99` and the clip signal
-becomes `lambda_dt_clipped_frac` (see `_swap_rate_diagnostics`). The
-`log_ratio_clamp_frac` column is reused unchanged: same meaning (fraction of
-neighbour log-ratios saturating `SWAP_LOG_RATIO_CLAMP`), evaluated at the
-swap neighbour set instead of the single-flip one. `log_ratio_p99` is
-dropped since neither the base instructions nor the amendment ask for it.
-`rollout_resample_events` counts the outer cycle's ESS-triggered SMC
-resampling events and reads NaN whenever the flag is off, so a run's log
-says whether the trigger ever fired (see
-`TrainCfg.rollout_resample_ess_fraction`).
+Pair diagnostics replace the flip trainer's per-site columns with
+`rate_pair_mean`, `rate_pair_p99` and `lambda_dt_clipped_frac`: each event
+jointly chooses an i<j pair (see `_swap_rate_diagnostics`).
+`log_ratio_clamp_frac` still measures saturation at the neighbour-ratio cap,
+here `SWAP_LOG_RATIO_CLAMP`; `log_ratio_p99` is omitted.
+`rollout_resample_events` counts outer-cycle ESS-triggered SMC events and
+reads NaN when disabled (`TrainCfg.rollout_resample_ess_fraction`).
 """
 import csv
 import json
@@ -107,7 +100,7 @@ def _p99(values: torch.Tensor) -> float:
 
 
 def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, float]:
-    """Eval-time diagnostics for the swap-CTMC rate scale (AMENDMENT).
+    """Eval-time diagnostics for the swap-CTMC rate scale.
 
     Mirrors `training._rate_diagnostics` for the pair-rate matrix. Gathers
     forward rates at the SAME i<j pairs `_euler_step_swap` uses, so the
@@ -343,9 +336,8 @@ def train_swap(
     )
     cv_var_ratio_history: list[float] = []
     loss_microbatch_size = getattr(train_cfg, "loss_microbatch_size", None)
-    # M2 (2026-08-14): per-slot EMA of the c_t grid across outer cycles.
-    # Default 0.0 = OFF = the archived runs' implicit setting, byte-
-    # identical; see TrainCfg.c_t_ema_halflife_cycles and ema.CTGridEMA.
+    # Per-slot c_t EMA across outer cycles. Default 0.0 preserves the
+    # archived path; see TrainCfg.c_t_ema_halflife_cycles and ema.CTGridEMA.
     c_t_ema_halflife = float(getattr(train_cfg, "c_t_ema_halflife_cycles", 0.0))
     c_t_ema = (
         CTGridEMA(n_grid, c_t_ema_halflife)
@@ -371,12 +363,9 @@ def train_swap(
                 f"outer_batch rollout rows, so a smaller c_t_batch would "
                 f"starve it."
             )
-    # M7a (2026-08-14): batched c_t grid calls. None = the per-slot
-    # sequential loop (byte-identical archived behaviour); when set, the
-    # (n_grid x n_rollout) integrand evaluations run flattened in
-    # row-chunks of at most this size. Validation lives in
-    # compute_c_t_grid_swap so every caller gets it; parity vs the
-    # sequential path is the M7a gate (tests/test_c_t_grid_chunk.py).
+    # Chunk flattened (n_grid x n_rollout) integrand rows; None preserves
+    # the archived per-slot loop. compute_c_t_grid_swap validates the cap;
+    # tests/test_c_t_grid_chunk.py is the M7a sequential-parity gate.
     c_t_grid_chunk_rows = getattr(train_cfg, "c_t_grid_chunk_rows", None)
     # ESS-triggered SMC resampling inside the buffer-rebuild rollout (LEAPS
     # Alg. 1 lines 11-14, whose trajectories Alg. 2 line 5 trains on). None
@@ -511,12 +500,9 @@ def train_swap(
         stage_ess_stage = -1
 
         if resume_state is not None:
-            # Fast-forward the curriculum EXPLICITLY rather than letting the
-            # stage loop below replay every transition: its transition code
-            # clears the replay buffer on sigma changes, which would destroy
-            # the restored chunks. The optimiser lr is deliberately not
-            # touched -- load_state_dict above already carries the exact lr
-            # (including warmup scaling at the boundary).
+            # Fast-forward without replaying sigma transitions that clear
+            # restored chunks. Keep the loaded optimiser LR, including
+            # warmup scaling at the boundary.
             while (
                 curriculum
                 and curriculum_idx + 1 < len(curriculum)

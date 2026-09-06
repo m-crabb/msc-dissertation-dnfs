@@ -1,6 +1,6 @@
 """Exclusion-mask band-attention swap head: direction (a), the reported head.
 
-Decision record (2026-07-07, explainability-first comparison): direction (b)
+The 2026-07-07 comparison: direction (b)
 (`interval_swap_head.py`, prefix-sum band) passed all three spike kill
 criteria first, but its band assembly cancels the hole terms by SUBTRACTION,
 leaving an fp residue that needs a numerics caveat wherever the head is
@@ -102,9 +102,7 @@ def _masked_exponential(scores: Tensor, mask: Tensor) -> Tensor:
     bits -- measured 2.98e-8, a residue exactly like the one this head was
     chosen over the interval head to avoid (module docstring).
 
-    Blindness is worth more than the shift, because the shift is replaceable
-    and blindness is not. Its only job is keeping `exp` inside the float's
-    exponent budget, and that budget is measurable: fp32 overflows near +88
+    The shift controls the exponent range: fp32 overflows near +88
     and a product of two halves underflows near -87, against a trained 4x4
     checkpoint's measured score range of [-6.65, 10.69]. `band_score_range`
     reports the live figure so the margin is monitored rather than assumed.

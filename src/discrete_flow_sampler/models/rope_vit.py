@@ -1,5 +1,4 @@
-"""Periodic-RoPE, patch-key leTF backbone: a drop-in for `LeTFRateMatrix`
-whose position code is the torus itself (2026-08-23 hail mary).
+"""Periodic-RoPE, patch-key leTF backbone with torus position encoding.
 
 The defect this answers. `letf.py` carries free ABSOLUTE position embeddings
 (one learned vector per site, in every causal block and in the readout), so
@@ -24,7 +23,7 @@ however, take their blindness from the raster CAUSAL sweep, and the prefix
 set {x_<k} is not shift-covariant, so the causal streams this backbone hands
 them are NOT equivariant. What the heads gain is a relative, periodic
 position code in place of d free vectors; the sweep's raster asymmetry is
-untouched. This is stated here so the claim in any writeup stays honest.
+untouched.
 
 Patch keys, the d-scaling lever. ViT/DeiT tokenise the image into p x p
 patches; done naively on the causal sweep that breaks the slice trick (a

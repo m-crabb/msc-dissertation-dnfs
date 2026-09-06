@@ -104,14 +104,11 @@ def xi_t_lenet_from_scores(
 ) -> Tensor:
     """ξ_t for a locally equivariant model from an already-computed G_t.
 
-    Local equivariance (paper Eq. 20) means G(x_i, i | y_i) = -G(y_i, i | x),
-    so the forward rate is [G]_+ and the return rate at each flipped
-    neighbour is [-G]_+ of the SAME tensor — ξ_t is a single-forward
-    quantity. The Euler step evaluates the model at exactly the (state, t)
-    this integrand needs, so `sample_ctmc` passes the step's G_t here
-    instead of re-running the model (the swap sampler makes the same move
-    via `xi_t_swap_from_scores`); bit-identical because it is the same
-    deterministic forward on the same tensors.
+    Local equivariance (paper Eq. 20), G(x_i, i | y_i) = -G(y_i, i | x),
+    gives forward/return rates [G]_+ / [-G]_+ from one tensor.
+    `sample_ctmc` reuses its Euler-step G_t at the same (state, t), yielding
+    bit-identical ξ_t for a deterministic model. The swap counterpart is
+    `xi_t_swap_from_scores`.
     """
     vocab_size = G_t.shape[-1]
     G_plus     = F.relu(G_t)
@@ -136,9 +133,7 @@ def _compute_xi_t_lenet(
     model,
     target,
 ) -> Tensor:
-    """ξ_t for a locally equivariant model — single forward pass, then
-    delegates to `xi_t_lenet_from_scores` (which callers holding the Euler
-    step's G_t use directly to skip this forward)."""
+    """Single-forward LE ξ_t; reuse existing G_t via `xi_t_lenet_from_scores`."""
     return xi_t_lenet_from_scores(model(state, t), state, t, target)
 
 
@@ -298,17 +293,13 @@ def sample_ctmc(
             the Euler step's own forward for BOTH model kinds (non-LE: the
             outflow rates pass through; LE: the step returns the pre-relu
             G_t and `xi_t_lenet_from_scores` recovers both rate signs).
-        return_cv_integrand: optimisation B1-flip (decided 2026-08-24;
-            requires `return_all_states=True`, `target`, resampling OFF).
-            Additionally returns the (T, B) per-slot CV integrand ξ_t
-            (paper Eq. 8) accumulated from each Euler step's own forward
-            — only the final slot needs one fresh model call — so the
-            outer step can build the c_t grid without re-running the
-            model on states it just visited. BIT-IDENTICAL to
-            `log_z_estimators.compute_c_t_grid` (control_variate) on the
-            returned trajectory: same tensors, same arithmetic, no RNG
-            consumed (tests/test_cv_integrand_reuse.py). Return becomes
-            (trajectory, cv_integrand).
+        return_cv_integrand: requires `return_all_states=True`, `target`,
+            resampling OFF. Return (trajectory, cv_integrand), adding the
+            (T, B) per-slot ξ_t (paper Eq. 8) from each Euler-step forward;
+            only the final slot needs a fresh model call. Bit-identical to
+            `log_z_estimators.compute_c_t_grid` (control_variate) on that
+            trajectory: same tensors/arithmetic, no extra RNG consumption
+            (tests/test_cv_integrand_reuse.py).
 
     Returns:
         x_final: (B, d). The state at time `ts[-1]`.
@@ -405,12 +396,9 @@ def sample_ctmc(
         new_state, step_scores = _euler_step(model, state, t_per_batch, step_dt)
 
         if accumulate_log_weights or return_cv_integrand:
-            # ξ_t per paper Eq. 8 evaluated at x_t (left endpoint of the
-            # Euler interval -- standard forward Euler), reusing the Euler
-            # step's own forward: the non-LE step returns the (B, D) rate
-            # vector compute_xi_t accepts as a passthrough; the LE step
-            # returns the pre-relu G_t, from which xi_t_lenet_from_scores
-            # recovers both [G]_+ and the reverse rate [-G]_+.
+            # Eq. 8 ξ_t at the Euler interval's left endpoint x_t. Reuse
+            # (B, D) rates for non-LE, or pre-relu G_t for LE, preserving
+            # both forward [G]_+ and reverse [-G]_+ rates.
             if model_is_locally_equivariant:
                 xi_t = xi_t_lenet_from_scores(
                     step_scores, state, t_per_batch, target
