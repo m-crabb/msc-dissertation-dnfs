@@ -47,10 +47,15 @@ D256_TEMPLATE = ("H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3"
                  "_seed{seed}_20260826-d256-sc")
 D64_TEMPLATE = ("H2_d64_c50_s220_letf_thp_50k_curr_w2"
                 "_seed{seed}_20260825-hard-w2-d64")
+# Per-slice c_t baseline (fix bbb169c, 5-Sep-2026). The 20260831-camort-d64
+# twin pooled the baseline across composition slices; its ESS read within
+# 0.008 of this one on every slice, but only this run is scored.
 CAMORT_TEMPLATE = ("H2_d64_camort_s220_letf_thp_50k_curr"
-                   "_seed{seed}_20260831-camort-d64")
+                   "_seed{seed}_20260905-camort-d64-perslice")
 # The 16x16 amortised confirmation (s104): one seed by design, thp2 on the same
-# five-slice mixture; c = 0.25 is outside the mixture there too.
+# five-slice mixture; c = 0.25 is outside the mixture there too. Still the
+# pooled-baseline run: its per-slice twin (tag 20260905-camort-d256-perslice)
+# is on the DoC queue and replaces this template when it lands.
 D256_CAMORT_TEMPLATE = ("H2_d256_camort_s220_letf_thp2_100k_curr"
                         "_seed{seed}_20260831-camort-d256")
 

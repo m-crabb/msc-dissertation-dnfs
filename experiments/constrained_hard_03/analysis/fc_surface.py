@@ -14,8 +14,9 @@ point (icet ThermodynamicIntegrationEnsemble) or one chain per (phi, T) in
 VC-SGC; here the whole temperature ray at fixed composition falls out of the
 weights the sampler already computes. That asymmetry is the exhibit.
 
-Inputs (already on disk, tag 20260831-camort-d64, checkpoint final_ema.pt,
-ne128): each seed's `zero_shot_fc.json`, seven stop times k/127 for
+Inputs (already on disk, tag 20260905-camort-d64-perslice, checkpoint
+final_ema.pt, ne128; the 20260831 twin pooled the c_t baseline across slices
+and read the same surface to 3e-4 nats/site, but is no longer printed): each seed's `zero_shot_fc.json`, seven stop times k/127 for
 k = 16, 32, 58, 76, 95, 111, 127 by seven compositions. Reference: mchammer TI at
 the same couplings (`fc_ref_d8_k{K}.npz` from 07_fc_mchammer_reference.py, run
 per stop time; `fc_ref_d8_sc.npz` is the printed t = 1 truth on five
@@ -76,12 +77,13 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SIGMA_C = 0.22034339675488573
 STOP_GRID = 127  # ne128: ts = k / 127
 # The two amortised rungs. The 16x16 twin (one seed, tag 20260831-camort-d256,
-# probed 3-Sep on Modal with the same stop-time grid) has no TI reference yet;
+# probed 3-Sep on Modal with the same stop-time grid; still the pooled-baseline
+# run until its per-slice DoC re-run lands) has no TI reference yet;
 # its SRO cross comes from the pooled certified Kawasaki draws instead of the
 # 8x8's per-chain npz files.
 RUNGS = {
     8: dict(D=64, seeds=(42, 43, 44), ti_prefix="fc_ref_d8",
-            template="H2_d64_camort_s220_letf_thp_50k_curr_seed{seed}_20260831-camort-d64"),
+            template="H2_d64_camort_s220_letf_thp_50k_curr_seed{seed}_20260905-camort-d64-perslice"),
     16: dict(D=256, seeds=(42,), ti_prefix="fc_ref_d16",
              template="H2_d256_camort_s220_letf_thp2_100k_curr_seed{seed}_20260831-camort-d256"),
 }
