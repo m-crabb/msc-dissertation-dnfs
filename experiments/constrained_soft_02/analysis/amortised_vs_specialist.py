@@ -28,7 +28,7 @@ averaged away, and an amortised (ne128) row compared against an ne64
 specialist is a comparison across two budgets — say so when quoting it.
 
 Example:
-    python -m experiments.constrained_soft_02.analysis.10_amortised_vs_specialist \\
+    python -m experiments.constrained_soft_02.analysis.amortised_vs_specialist \\
         --results-dir results/02_constrained_soft \\
         --cells S2_d10_camort_l50_letf_ne128_anneal \\
                 S2_d10_cgrid_l50_letf_ne128_anneal

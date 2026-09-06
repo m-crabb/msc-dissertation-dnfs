@@ -13,8 +13,9 @@ two cached WOLFF references, and prints the table's observable cells:
             reference. A neural cell at or below this floor is indistinguishable
             from the reference at N = 5000.
   FLOP/es -- neural: measured eager forward x n_euler / ESS; reference: the
-            recounted pool build from the .flops.json sidecar (08
-            --recount-flops) over its effective record count.
+            recounted pool build from the .flops.json sidecar
+            (wolff_reference_pool.py --recount-flops) over its effective
+            record count.
 
 Per-site energy follows the chapter's convention E/d = -log p~(x) / (2 sigma d)
 (metrics.internal_energy_estimate).
@@ -135,7 +136,8 @@ def reference_flops_per_es(reference: torch.Tensor, n_chains: int,
     effective record count, tau_int taken as the larger of the energy and
     magnetisation reads (the slowest tabled observable, in record units)."""
     if not sidecar_path.exists():
-        return None  # recount not run (08 --recount-flops); cell stays blank
+        # Missing wolff_reference_pool.py --recount-flops; leave the cell blank.
+        return None
     sidecar = json.loads(sidecar_path.read_text())
     n_records = reference.shape[0] // n_chains
     tau_int = slowest_observable_tau_int(reference.view(n_records, n_chains, -1), target)

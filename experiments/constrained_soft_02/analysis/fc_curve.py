@@ -30,7 +30,7 @@ bars and the vcSGC-TI reference at D=10 are a later pass.
 
 Example (the s95 8x8 house family; --eval_dir eval_ema reads the dual
 eval's shadow-weight draw, archived pre-EMA cells keep the default):
-    python -m experiments.constrained_soft_02.analysis.06_fc_curve \
+    python -m experiments.constrained_soft_02.analysis.fc_curve \
         --results_dir results/02_constrained_soft \
         --configs S2_d8_c0250_l50_letf_ne128_house \
                   S2_d8_c0375_l50_letf_ne128_house \
@@ -167,7 +167,7 @@ def _plot(curve, has_exact, n_euler, out: Path) -> None:
 
     The seed spread is drawn as a shaded band rather than capped bars: this
     panel joins its points into a curve in c, so the uncertainty is an
-    envelope along that curve. (The thesis's F(c) figure, analysis/08, keeps
+    envelope along that curve. (The thesis's F(c) figure, fc_compare.py, keeps
     capped bars because it draws its windows as discrete marks -- see the
     uncertainty grammar in figure_style.)
     """

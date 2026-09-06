@@ -21,7 +21,7 @@ import json
 import pytest
 
 grid = importlib.import_module(
-    "experiments.constrained_soft_02.analysis.11_cost_vs_quality"
+    "experiments.constrained_soft_02.analysis.cost_vs_quality"
 )
 
 

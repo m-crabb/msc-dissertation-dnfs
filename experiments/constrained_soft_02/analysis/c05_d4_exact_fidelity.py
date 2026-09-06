@@ -1,6 +1,6 @@
 """d=4 constrained Ising at c_target=0.5: exact distribution vs DNFS IS-weighted.
 
-Mirrors `01_c03_d4_exact_fidelity.py` but adds two diagnostics specific to
+Mirrors `c03_d4_exact_fidelity.py` but adds two diagnostics specific to
 the c_target=0.5:
 
   1. **Conditional p(log p̃ | c = 0.5)** — the c-marginal is uninformative

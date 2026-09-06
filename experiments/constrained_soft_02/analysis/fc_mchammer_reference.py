@@ -31,10 +31,10 @@ so F_exact(c) = -log sum_{c(x)=c} p(x) is available and the TI curve is checked
 against it bit-for-comparable.
 
 Example:
-    python -m experiments.constrained_soft_02.analysis.07_fc_mchammer_reference \
+    python -m experiments.constrained_soft_02.analysis.fc_mchammer_reference \
         --D 4 --sigma 0.1 --compositions 0.5 0.625 --seeds 0 1 --validate
 
-    python -m experiments.constrained_soft_02.analysis.07_fc_mchammer_reference \
+    python -m experiments.constrained_soft_02.analysis.fc_mchammer_reference \
         --D 10 --sigma 0.1 \
         --compositions 0.30 0.35 0.40 0.45 0.50 0.55 0.60 0.65 0.70 \
         --seeds 0 1 2 --n_steps 200000 --out results/02_constrained_soft/fc_ref_d10.npz

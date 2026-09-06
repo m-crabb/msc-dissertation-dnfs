@@ -18,7 +18,7 @@ Inputs (already on disk, tag 20260905-camort-d64-perslice, checkpoint
 final_ema.pt, ne128; the 20260831 twin pooled the c_t baseline across slices
 and read the same surface to 3e-4 nats/site, but is no longer printed): each seed's `zero_shot_fc.json`, seven stop times k/127 for
 k = 16, 32, 58, 76, 95, 111, 127 by seven compositions. Reference: mchammer TI at
-the same couplings (`fc_ref_d8_k{K}.npz` from 07_fc_mchammer_reference.py, run
+the same couplings (`fc_ref_d8_k{K}.npz` from fc_mchammer_reference.py, run
 per stop time; `fc_ref_d8_sc.npz` is the printed t = 1 truth on five
 compositions). Compositions 0.3125 and 0.4375 are mirrored to 0.6875 and
 0.5625 under the target family's exact Z2 symmetry (the printed F(c) figure

@@ -14,7 +14,7 @@ two-panel results-cell figure at the headline 10x10 size:
       exactly what the Kawasaki chains of the hard chapter cannot do.
 
 Reference = the certified Wolff cluster pool (the chapter's ground truth; 
-built by 08_wolff_reference_pool.py, R-hat <= 1.002). The pool
+built by wolff_reference_pool.py, R-hat <= 1.002). The pool
 file is keyed by the RUN's own coupling, so legacy runs meet the legacy pool
 and sigma_c retrains meet the 0.220343 pool -- couplings are never mixed.
 

@@ -35,7 +35,7 @@ so differences down a column are the model's response to c, not draw noise.
 run's recorded result and must not be overwritten by this diagnostic.
 
 Usage (needs the GPU env; ~90 s per composition per checkpoint):
-    python -m experiments.constrained_soft_02.analysis.14_obedience_vs_training \
+    python -m experiments.constrained_soft_02.analysis.obedience_vs_training \
         --run-dir results/02_constrained_soft/<run_dir>
 """
 

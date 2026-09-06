@@ -25,7 +25,7 @@ from discrete_flow_sampler.diagnostics.metrics import enumerate_states
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 comparator = importlib.import_module(
-    "experiments.constrained_soft_02.analysis.12_filter_row_comparator"
+    "experiments.constrained_soft_02.analysis.filter_row_comparator"
 )
 
 D = 3          # 3x3 = 9 sites; enumerable in milliseconds

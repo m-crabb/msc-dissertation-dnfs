@@ -30,5 +30,5 @@ echo "node=$(hostname) run_dir=$RUN_DIR"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 "$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_soft_02.analysis.14_obedience_vs_training \
+    experiments.constrained_soft_02.analysis.obedience_vs_training \
     --run-dir "$RUN_DIR"

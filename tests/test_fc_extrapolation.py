@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pytest
 
-fc = importlib.import_module("experiments.constrained_soft_02.analysis.08_fc_compare")
+fc = importlib.import_module("experiments.constrained_soft_02.analysis.fc_compare")
 
 
 def test_soft_extrapolation_cancels_error_proportional_to_step(monkeypatch, tmp_path):

@@ -46,7 +46,7 @@ time, which is charitable to filtering — an unconstrained sampler at this size
 is no more expensive per draw than the constrained one.
 
 Example:
-    python -m experiments.constrained_soft_02.analysis.12_filter_row_comparator \\
+    python -m experiments.constrained_soft_02.analysis.filter_row_comparator \\
         --D 4 --lam 50 --reference-s-per-eff 0.00100
 """
 import argparse

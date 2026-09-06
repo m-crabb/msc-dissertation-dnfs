@@ -34,7 +34,7 @@ advantage. The same cells on a cluster CPU ran ~3x slower, which would have
 flattered DNFS.
 
 Example:
-    python -m experiments.constrained_soft_02.analysis.11_cost_vs_quality \\
+    python -m experiments.constrained_soft_02.analysis.cost_vs_quality \\
         --results-dir results/02_constrained_soft --D 10
 """
 import argparse

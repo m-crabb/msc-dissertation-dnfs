@@ -1,7 +1,7 @@
 [
   ".pixi/envs/dev/bin/python",
   "-m",
-  "experiments.constrained_soft_02.analysis.08_fc_compare",
+  "experiments.constrained_soft_02.analysis.fc_compare",
   "--reference",
   "results/02_constrained_soft/fc_ref_d8_sc.npz",
   "--configs",

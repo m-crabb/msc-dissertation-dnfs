@@ -26,7 +26,7 @@ block-bootstrap replicate of the chains shows against the pooled chains, so "at
 the floor" means the same thing as in the unconstrained and hard cells.
 
 Example:
-    python -m experiments.constrained_soft_02.analysis.25_composition_marginal_overlay_8x8 \
+    python -m experiments.constrained_soft_02.analysis.composition_marginal_overlay_8x8 \
         --coupling sc --matched-base
 """
 import argparse

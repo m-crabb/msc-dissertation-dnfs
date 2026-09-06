@@ -23,7 +23,7 @@ import pandas as pd
 import pytest
 
 table = importlib.import_module(
-    "experiments.constrained_soft_02.analysis.10_amortised_vs_specialist"
+    "experiments.constrained_soft_02.analysis.amortised_vs_specialist"
 )
 
 

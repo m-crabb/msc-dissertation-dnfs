@@ -18,7 +18,7 @@ unchanged (the mirror is a relabelling of the same distribution) and the
 JSON marks `mirror_of`. The four held-out compositions are NOT rows here:
 this table is amortised-vs-specialist at matched compute, and a held-out
 point has no comparator -- interpolation is the slope table's claim
-(15_obedience_slope_table, scored against the revamp-grid exact reference
+(obedience_slope_table, scored against the revamp-grid exact reference
 0.9950, never the archived 0.976).
 
 Rows assembled from artefacts on disk, per --eval_dir (house dual-eval

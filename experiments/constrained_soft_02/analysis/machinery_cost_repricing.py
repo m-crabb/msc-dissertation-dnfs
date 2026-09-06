@@ -28,7 +28,7 @@ train (ESS fraction < 0.1); the script asserts that veto rather than
 reporting around it.
 
 Usage:
-    python -m experiments.constrained_soft_02.analysis.17_machinery_cost_repricing
+    python -m experiments.constrained_soft_02.analysis.machinery_cost_repricing
 """
 
 from __future__ import annotations

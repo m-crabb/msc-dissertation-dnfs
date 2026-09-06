@@ -1,7 +1,7 @@
 """DNFS soft vs mchammer vcSGC at matched kappa=lambda: weighted thermodynamics.
 
 This is the apples-to-apples DNFS-vs-vcSGC comparison the F(c) overlay
-(`08_fc_compare.py`) deliberately left off its plot. Both samplers target the SAME
+(`fc_compare.py`) deliberately left off its plot. Both samplers target the SAME
 semigrand object here: the soft/penalised 2D Ising at penalty strength lambda is
 exactly mchammer's variance-constrained semigrand-canonical (vcSGC) ensemble at
 kappa = lambda, phi_1 = -2*c_target (validated 2026-06-13; the mapping now
@@ -39,7 +39,7 @@ as its bar. Local CPU, no Modal, no new training.
 
 Example (the s95 8x8 house family; --eval_dir eval_ema reads the dual
 eval's shadow-weight draw, archived pre-EMA d10 cells keep the default):
-    python -m experiments.constrained_soft_02.analysis.09_fc_weighted_thermo \
+    python -m experiments.constrained_soft_02.analysis.fc_weighted_thermo \
         --results_dir results/02_constrained_soft \
         --configs S2_d8_c0250_l50_letf_ne128_house \
                   S2_d8_c0375_l50_letf_ne128_house \

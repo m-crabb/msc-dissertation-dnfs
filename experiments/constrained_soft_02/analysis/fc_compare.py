@@ -5,7 +5,7 @@ free-energy-per-site axis, and the figure carries three curves (no new runs):
 
   1. **Ground truth** - the canonical (fixed-composition) free energy. At D=10
      this is the native mchammer thermodynamic-integration reference built by
-     `07_fc_mchammer_reference.py` (results/.../fc_ref_d10.npz); at D<=4 it is
+     `fc_mchammer_reference.py` (results/.../fc_ref_d10.npz); at D<=4 it is
      the exact enumeration `run.py` already stores as
      `free_energy_per_site_exact`.
   2. **DNFS soft, raw** - the soft/vcSGC ensemble's free energy as DNFS measures
@@ -51,7 +51,7 @@ approximation; the exact discrete deconvolution is a later refinement.
 Example (the s95 8x8 house family against the D=8 TI reference;
 --eval_dir eval_ema reads the dual eval's shadow-weight draw, archived
 pre-EMA d10 cells keep the default):
-    python -m experiments.constrained_soft_02.analysis.08_fc_compare \
+    python -m experiments.constrained_soft_02.analysis.fc_compare \
         --results_dir results/02_constrained_soft \
         --reference results/02_constrained_soft/fc_ref_d8.npz \
         --configs S2_d8_c0250_l50_letf_ne128_house \
@@ -235,7 +235,7 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--results_dir", type=Path, default=Path("results/02_constrained_soft"))
     p.add_argument("--reference", type=Path, default=None,
-                   help="npz from 07_fc_mchammer_reference (D=10 ground truth); "
+                   help="npz from fc_mchammer_reference (D=10 ground truth); "
                         "omit at D<=4 to use the exact-enumeration column")
     p.add_argument("--configs", nargs="+", required=True,
                    help="config-name stems (without _seed..); one per composition window")

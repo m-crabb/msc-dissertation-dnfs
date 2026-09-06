@@ -26,7 +26,7 @@ and a regular five-point grid {0.30, 0.40, 0.50, 0.60, 0.70}. Whichever grid
 a prose number came from, it should be reproducible from this file's output.
 
 Usage:
-    python -m experiments.constrained_soft_02.analysis.16_lambda_vs_obedience_reference
+    python -m experiments.constrained_soft_02.analysis.lambda_vs_obedience_reference
 """
 
 from __future__ import annotations

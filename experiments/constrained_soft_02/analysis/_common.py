@@ -1,4 +1,4 @@
-"""Run-dir discovery shared by the F(c) analysis scripts (06/08/09).
+"""Run-dir discovery shared by fc_curve, fc_compare and fc_weighted_thermo.
 
 One definition instead of three identical clones: discovery has real logic
 (timestamped vs bare run-dir forms, eval-completeness filter) and a silent

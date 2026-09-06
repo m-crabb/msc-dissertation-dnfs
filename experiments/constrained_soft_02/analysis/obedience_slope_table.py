@@ -29,7 +29,7 @@ Health threshold is the pre-registered G3 band (slope in [0.9, 1.1]) so the
 count is not tuned to the data it summarises.
 
 Usage:
-    python -m experiments.constrained_soft_02.analysis.15_obedience_slope_table
+    python -m experiments.constrained_soft_02.analysis.obedience_slope_table
 """
 
 from __future__ import annotations
