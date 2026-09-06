@@ -1,6 +1,6 @@
 """Fill pass for tab:eval-soft-8x8 (the s95 revamped soft house table).
 
-Same conventions as the 10x10 fill (19_house_table_soft.py), rebuilt for
+Same conventions as the 10x10 fill (house_table_soft_10x10.py), rebuilt for
 the revamp (plan 2026-08-30-soft-chapter-revamp-efc):
 
   lattice   -- 8x8 (d=64), the hard chapter's record size, so the

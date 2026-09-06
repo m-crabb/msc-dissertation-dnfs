@@ -45,8 +45,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
 from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-# Run by path (numeric filenames can't be modules), so the `experiments`
-# package import inside family_flops_per_forward needs the repo root.
+# Support experiments-package imports when invoked by file path.
 import sys
 sys.path.insert(0, str(REPO_ROOT))
 RESULTS = REPO_ROOT / "results" / "01_baseline"

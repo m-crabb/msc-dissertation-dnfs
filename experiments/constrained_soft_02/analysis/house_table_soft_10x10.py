@@ -1,7 +1,7 @@
 """Fill pass for tab:eval-soft-10x10 (the soft chapter's house evaluation table).
 
 Same cells and conventions as the unconstrained fill
-(`dnfs_baseline_01/analysis/06_house_table_unconstrained.py`): frozen
+(`dnfs_baseline_01/analysis/house_table_unconstrained_10x10.py`): frozen
 eval/ess_fraction re-read, dMag (MDNS Eq. 26), dCorr (MDNS Eq. 28) and EW2 on
 importance-reweighted samples against the reference, and a reference row that
 prints the reference's own sampling floor under each column.
@@ -66,8 +66,7 @@ from discrete_flow_sampler.diagnostics.metrics import (
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-# Run by path (numeric filenames can't be modules), so the `experiments`
-# package import inside specialist_flops_per_forward needs the repo root.
+# Support experiments-package imports when invoked by file path.
 sys.path.insert(0, str(REPO_ROOT))
 SOFT_RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
 VCSGC_RESULTS = REPO_ROOT / "results" / "mchammer_vcsgc"

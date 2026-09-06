@@ -18,13 +18,13 @@ the headline 10x10 size, lambda=50, c_target=0.50, sigma=0.1:
 
 Reference = the pooled mchammer VC-SGC chains at matched kappa=lambda (the
 chapter's like-for-like ensemble, sec:fc), order-checked against the
-validated embedding exactly as in 19_house_table_soft. The caption quotes
+validated embedding exactly as in house_table_soft_10x10. The caption quotes
 each panel's total-variation distance beside the reference's own sampling
-floor. The floor is 19's construction verbatim -- N_EVAL-frame BLOCK
+floor. The floor is the table's construction verbatim -- N_EVAL-frame BLOCK
 bootstrap replicates of the pool scored against the pool -- NOT the
 chain-resampling bootstrap the unconstrained chapter uses: with only 4
 VC-SGC chains a chain-level resample is too coarse to price sampling
-noise, and reusing 19's blocks keeps "at the floor" meaning the same
+noise, and reusing the table's blocks keeps "at the floor" meaning the same
 thing in this chapter's figure and table.
 """
 import argparse
@@ -44,8 +44,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 VCSGC_RESULTS = REPO_ROOT / "results" / "mchammer_vcsgc"
 L, SIGMA = 10, 0.1
 D_SITES = L * L
-N_EVAL = 5000            # replicate size = the neural draw count (19's floor)
-FLOOR_BLOCK = 10         # frames per bootstrap block (19's BLOCK)
+N_EVAL = 5000            # replicate size = the neural draw count (the table's floor)
+FLOOR_BLOCK = 10         # frames per bootstrap block (the table's BLOCK)
 N_FLOOR_BOOTSTRAP = 200
 
 
@@ -82,7 +82,7 @@ def composition_pmf(x: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
 
 
 def load_reference(penalty_strength: float, c_target: float) -> torch.Tensor:
-    """Pooled post-burn-in VC-SGC frames, order-checked (19's assert)."""
+    """Pooled post-burn-in VC-SGC frames, order-checked (the table's assert)."""
     frames = []
     pattern = f"D{L}_s{SIGMA}_l{penalty_strength:.1f}_c{c_target:.2f}_seed*"
     for run_dir in sorted(VCSGC_RESULTS.glob(pattern)):
@@ -97,7 +97,7 @@ def load_reference(penalty_strength: float, c_target: float) -> torch.Tensor:
 
 
 def reference_tv_floor(reference: torch.Tensor, pmf_of, seed: int = 0) -> float:
-    """19's block bootstrap, read as TV: N_EVAL-frame replicates of the pool
+    """The table's block bootstrap, read as TV: N_EVAL-frame replicates of the pool
     scored against the whole pool -- the sampling noise a perfect sampler
     would show at the neural draw count."""
     generator = torch.Generator().manual_seed(seed)
