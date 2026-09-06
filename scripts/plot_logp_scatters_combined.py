@@ -10,8 +10,8 @@ The shared-axis layout fits all three paradigms on one appendix page.
 Each chapter's `panel_series()` supplies the data:
 
     experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py
-    experiments/dnfs_baseline_01/analysis/10_logp_scatter_4x4.py
-    experiments/constrained_soft_02/analysis/23_logp_scatter_4x4.py
+    experiments/dnfs_baseline_01/analysis/plot_logp_scatter_4x4.py
+    experiments/constrained_soft_02/analysis/plot_logp_scatter_4x4.py
 
 The hard row enumerates the conditional over C(16,8) = 12,870 feasible states.
 The other rows enumerate all 2^16 states under the plain or penalised Ising
@@ -32,11 +32,11 @@ import matplotlib.pyplot as plt
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-# Module names begin with a digit, so they cannot be imported by name.
+# Load each paradigm's panel provider through the shared interface.
 ROWS = (
     ("Hard", "experiments.constrained_hard_03.analysis.plot_logp_scatter_4x4"),
-    ("Unconstrained", "experiments.dnfs_baseline_01.analysis.10_logp_scatter_4x4"),
-    ("Soft", "experiments.constrained_soft_02.analysis.23_logp_scatter_4x4"),
+    ("Unconstrained", "experiments.dnfs_baseline_01.analysis.plot_logp_scatter_4x4"),
+    ("Soft", "experiments.constrained_soft_02.analysis.plot_logp_scatter_4x4"),
 )
 
 

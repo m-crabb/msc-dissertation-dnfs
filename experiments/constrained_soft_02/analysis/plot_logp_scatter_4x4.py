@@ -9,7 +9,7 @@ only to reproduce the retired image, whose density interpretation was incorrect.
 The third and last section of the appendix: the hard chapter's counterpart is
 experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py and the
 unconstrained one is experiments/dnfs_baseline_01/analysis/
-10_logp_scatter_4x4.py. This script deliberately mirrors both so the three
+plot_logp_scatter_4x4.py. This script deliberately mirrors both so the three
 figures read alike.
 
 The estimator is the importance-weight identity

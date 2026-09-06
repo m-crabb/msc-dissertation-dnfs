@@ -15,8 +15,8 @@ import torch
 @pytest.mark.parametrize(
     "module_name",
     [
-        "experiments.dnfs_baseline_01.analysis.10_logp_scatter_4x4",
-        "experiments.constrained_soft_02.analysis.23_logp_scatter_4x4",
+        "experiments.dnfs_baseline_01.analysis.plot_logp_scatter_4x4",
+        "experiments.constrained_soft_02.analysis.plot_logp_scatter_4x4",
     ],
 )
 def test_archived_scatter_command_saves_and_returns(module_name, monkeypatch, tmp_path):
