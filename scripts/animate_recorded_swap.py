@@ -1,4 +1,4 @@
-"""Animate the five stored states of the report's 20x20 swap trajectory.
+"""Animate recorded grid states of the README's 24x24 swap trajectory.
 
 Reads the recorded arrays only: no checkpoint loading, sampling or interpolation.
 The rate panel uses one colour scale across all times. These are proposal-path
@@ -31,12 +31,20 @@ def main():
     parser.add_argument(
         "--recorded",
         type=Path,
-        default=Path("assets/hard_rate_field_strip_20x20.npz"),
+        default=Path("assets/hard_rate_field_strip_24x24.npz"),
     )
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--frame-ms",
+        type=int,
+        default=None,
+        help="frame duration (default: 80 ms for dense recordings, 1200 ms otherwise)",
+    )
     args = parser.parse_args()
     if args.out.suffix.lower() != ".gif":
         parser.error("--out must have a .gif extension")
+    if args.frame_ms is not None and args.frame_ms < 10:
+        parser.error("--frame-ms must be at least 10")
 
     with np.load(args.recorded, allow_pickle=False) as data:
         metadata = json.loads(str(data["metadata"]))
@@ -59,7 +67,7 @@ def main():
     fig.text(
         0.5,
         0.865,
-        "Five recorded snapshots from one neural swap trajectory",
+        f"{len(times)} recorded states from one neural swap trajectory",
         ha="center",
         fontsize=12,
         color=REFERENCE_INK,
@@ -113,8 +121,7 @@ def main():
     fig.text(
         0.5,
         0.04,
-        "Recorded times only; intermediate swaps are not shown. "
-        "Loop restarts at t = 0.",
+        "Recorded grid states; no interpolation. Loop restarts at t = 0.",
         ha="center",
         fontsize=10,
         color=REFERENCE_INK,
@@ -130,11 +137,13 @@ def main():
         frames.append(
             Image.fromarray(np.asarray(fig.canvas.buffer_rgba()).copy()).convert("RGB")
         )
+    frame_ms = args.frame_ms or (80 if len(frames) > 10 else 1200)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     frames[0].save(
         args.out,
         save_all=True,
         append_images=frames[1:],
-        duration=[1200] * (len(frames) - 1) + [2400],
+        duration=[frame_ms] * (len(frames) - 1) + [2400],
         loop=0,
         disposal=2,
     )
