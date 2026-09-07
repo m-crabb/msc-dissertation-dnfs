@@ -9,6 +9,8 @@ from the experiment guides.
 | Task | Entrypoints |
 | --- | --- |
 | Recorded swap animation | [animate_recorded_swap.py](animate_recorded_swap.py) — stored arrays only |
+| Pretrained sampling | [sample_checkpoint.py](sample_checkpoint.py) — bundled configs and weights; [commands](../checkpoints/README.md) |
+| Record a swap trajectory | [record_swap_trajectory.py](record_swap_trajectory.py) — one raw checkpoint draw and anchor rates |
 | Ising phase illustration | [plot_ising_phases.py](plot_ising_phases.py) |
 | Configuration calibration | [configuration_calibration_4x4.py](configuration_calibration_4x4.py), [plot_configuration_calibration_4x4.py](plot_configuration_calibration_4x4.py), [Modal producer](modal_configuration_calibration_4x4.py) |
 | Historical scatter comparison | [plot_logp_scatters_combined.py](plot_logp_scatters_combined.py) |
@@ -28,5 +30,5 @@ recorded-animation example is self-contained:
 pixi run -e dev python -m scripts.animate_recorded_swap --out /tmp/recorded_swap.gif
 ```
 
-The five saved times are displayed without interpolation. For a static version
+The 129 saved 24×24 grid states are displayed without interpolation. For a static version
 and the original draw selection, see [visual provenance](../assets/readme/README.md).

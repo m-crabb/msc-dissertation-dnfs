@@ -1,27 +1,28 @@
-"""One trajectory of the trained swap process, base to terminal state, with the learned rate
-field drawn at a few grid times: what the generator looks like, as a picture.
+"""One trajectory of the trained swap process, base to terminal state, with the
+learned rate field drawn at a few grid times.
 
 Approved 20x20 figure, without rerunning the model:
     python -m experiments.constrained_hard_03.analysis.rate_field_strip
         --recorded assets/hard_rate_field_strip_20x20.npz --out figure.pdf
 The archive includes the displayed frames and checkpoint/rollout provenance.
+For the dense README recording, use hard_rate_field_strip_24x24.npz with
+--recorded-stride 32 to display five times.
 
-Three rows per displayed time t_k of ONE rollout of the trained head from a uniform-on-slice
-base state:
+Three rows per displayed time t_k of ONE rollout from a uniform-on-slice base:
   1. the state x_{t_k}, with a fixed anchor site marked;
-  2. the learned one-way rate [G(a, j | x, t)]_+ the sampler puts on swapping the anchor a with
-     every other site j (zero on like-spin partners by antisymmetry; G is index-antisymmetric,
-     so the pair's rate is the relu of its upper-triangle entry) -- the non-local rate
-     field of tab:rate-field, site by site;
-  3. the closed-form channel sigma * Delta_aj(x) of eq:swap-log-ratio for the same anchor,
-     Delta_aj = 2 (x_j - x_a)(h~_a - h~_j) with the hole-excluded fields -- the linear part the
-     regression table scores the head against, drawn signed.
+  2. the learned one-way rate [G(a, j | x, t)]_+ for swapping anchor a with site j
+     (zero on like-spin partners by antisymmetry; G is index-antisymmetric, so
+     the pair's rate is the relu of its upper-triangle entry) -- the non-local
+     rate field of tab:rate-field, site by site;
+  3. the closed-form channel sigma * Delta_aj(x) of eq:swap-log-ratio,
+     Delta_aj = 2 (x_j - x_a)(h~_a - h~_j), using hole-excluded fields -- the
+     linear part the regression table scores the head against, drawn signed.
 The closed form describes the terminal target, not the time-t path ratio,
 which has another factor t. It is not a rate: learned swaps may raise energy.
 
-Colour follows the job: the rate is a magnitude (one hue, light -> dark, the sampler blue);
-the channel is signed (two poles about a neutral mid-grey); the state uses the house spin
-colours. Runs on CPU in seconds at 8x8 (one head forward per displayed time, plus the rollout).
+The rate is a magnitude (light -> dark sampler blue); the channel is signed
+(two poles about neutral mid-grey); the state uses the house spin colours.
+Runs on CPU in seconds at 8x8 (one head forward per displayed time, plus rollout).
 """
 
 import argparse
@@ -63,7 +64,7 @@ def channel_for_anchor(x, anchor, A, sigma):
 
 
 def plot_strip(columns, side, anchor, out):
-    """State, learned rate and terminal log ratio; explanatory text lives in the caption.
+    """State, learned rate and terminal log ratio; explanations live in the caption.
 
     Each row uses a common scale across time. The two fields have different
     units and separate colour scales. Read unordered-pair rates before calling
@@ -153,6 +154,12 @@ def main():
         help="render a saved figure archive without sampling a checkpoint",
     )
     parser.add_argument(
+        "--recorded-stride",
+        type=int,
+        default=1,
+        help="display every Nth archived frame (default: all)",
+    )
+    parser.add_argument(
         "--anchor",
         type=int,
         default=None,
@@ -164,6 +171,8 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=Path, default=Path("rate_field_strip.png"))
     args = parser.parse_args()
+    if args.recorded_stride < 1:
+        parser.error("--recorded-stride must be positive")
     if args.recorded is not None:
         if args.run_dir is not None:
             parser.error("choose a run directory or --recorded, not both")
@@ -172,10 +181,10 @@ def main():
             columns = [
                 dict(t=t, x=x, rate=rate, channel=channel)
                 for t, x, rate, channel in zip(
-                    data["times"],
-                    data["states"],
-                    data["rates"],
-                    data["channels"],
+                    data["times"][:: args.recorded_stride],
+                    data["states"][:: args.recorded_stride],
+                    data["rates"][:: args.recorded_stride],
+                    data["channels"][:: args.recorded_stride],
                     strict=True,
                 )
             ]
@@ -231,15 +240,20 @@ def main():
     x_end, rate_end = columns[-1]["x"], columns[-1]["rate"]
     adjacent = A[anchor] > 0
     unlike = x_end != x_end[anchor]
+    correlation = np.corrcoef(
+        rate_end.numpy(), torch.relu(columns[-1]["channel"]).numpy()
+    )[0, 1]
     print(
-        f"anchor {anchor} (row {anchor // side}, col {anchor % side}); Lambda along the strip: "
+        f"anchor {anchor} (row {anchor // side}, col {anchor % side}); "
+        "Lambda along the strip: "
         + ", ".join(f"{c['total_rate']:.1f}" for c in columns)
     )
     print(
         f"t=1: rate on the anchor's {int((adjacent & unlike).sum())} unlike neighbours "
-        f"{rate_end[adjacent].sum():.3f} vs {int((~adjacent & unlike).sum())} unlike distant sites "
+        f"{rate_end[adjacent].sum():.3f} vs {int((~adjacent & unlike).sum())} "
+        "unlike distant sites "
         f"{rate_end[~adjacent].sum():.3f}; corr(rate, relu(channel)) = "
-        f"{np.corrcoef(rate_end.numpy(), torch.relu(columns[-1]['channel']).numpy())[0, 1]:.2f}"
+        f"{correlation:.2f}"
     )
     print(f"saved {args.out}")
 

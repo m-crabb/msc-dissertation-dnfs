@@ -21,6 +21,25 @@ are also stored in historical run names. In names, baseline/soft `d8` usually
 means an 8×8 lattice, whereas hard `d64` means 64 sites. Read the saved config
 for the actual geometry, coupling, composition, curriculum and head.
 
+## Start with training or sampling
+
+The [checkpoint guide](../checkpoints/README.md) provides four bundled pretrained
+models and copy-paste sampling commands, including the 24×24 README model.
+For example:
+
+```bash
+pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_hard_4x4 \
+  --n-samples 64 --batch-size 8 --seed 0 --out results/demo-hard-4x4
+pixi run -e dev python -m experiments.constrained_hard_03.run \
+  --cfg H2_d16_c50_s010_letf_dh --smoke --seed 42 --no-wandb \
+  --tag readme-smoke --output-dir results/demo-training
+```
+
+The second command is a four-step pipeline check. Remove `--smoke` and use a new
+tag for the configured 2,000-step run. Each family guide above has full-budget
+training and fresh-sampling examples. Training includes end-of-run evaluation;
+the bundled-checkpoint helper allows smaller standalone draws into a new directory.
+
 ## Read a run
 
 A typical learned run is named `<cfg>_seed<seed>_<tag>` and contains:
@@ -40,7 +59,8 @@ A typical learned run is named `<cfg>_seed<seed>_<tag>` and contains:
 Archive contents vary by trainer and transfer history. A metrics file does not
 establish that samples, weights, checkpoints or the exact training revision are
 available. Production archives under `results/` are not distributed in Git;
-the small inputs and recorded README trajectory under `data/` and `assets/` are.
+the selected inference bundles under `checkpoints/`, small inputs under `data/`
+and recorded README trajectory under `assets/` are.
 
 ## Reproduce an exhibit
 
@@ -61,7 +81,8 @@ For a self-contained rendering example using the committed trajectory:
 ```bash
 pixi run -e dev python -m scripts.animate_recorded_swap --out /tmp/recorded_swap.gif
 pixi run -e dev python -m experiments.constrained_hard_03.analysis.rate_field_strip \
-  --recorded assets/hard_rate_field_strip_20x20.npz --out /tmp/recorded_swap.pdf
+  --recorded assets/hard_rate_field_strip_24x24.npz --recorded-stride 32 \
+  --out /tmp/recorded_swap.pdf
 ```
 
 Both commands read stored frames. The [visual provenance](../assets/readme/README.md)

@@ -18,6 +18,31 @@ sweeps use the baseline entrypoint's `--sweep --run-dir` interface. A single
 end-of-training evaluation of an amortised cell covers its window centre;
 per-composition results require the separate sweep.
 
+## Train and sample
+
+Train a 10,000-step critical 4×4 specialist at composition 0.5 and penalty 50,
+or sample from the bundled checkpoint:
+
+```bash
+pixi run -e dev python -m experiments.constrained_soft_02.run \
+  --cfg S2_d4_c0500_10k_l50_letf_house_sc --seed 42 --no-wandb \
+  --tag readme --output-dir results/demo-soft-training
+pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_soft_4x4 \
+  --n-samples 64 --batch-size 8 --seed 0 --out results/demo-soft-4x4
+```
+
+The shared baseline entrypoint redraws your own trained soft run (archives its
+previous `eval/` first), using the sample count in its saved config:
+
+```bash
+pixi run -e dev python -m experiments.dnfs_baseline_01.run --eval-only --redraw \
+  --run-dir results/demo-soft-training/S2_d4_c0500_10k_l50_letf_house_sc_seed42_readme \
+  --redraw-seed 0
+```
+
+These draws can include off-composition states. See the
+[checkpoint guide](../../checkpoints/README.md) for importance-weighted estimates.
+
 | Workflow | Entrypoints |
 | --- | --- |
 | Main comparison tables | [4×4](analysis/house_table_soft_4x4.py), [8×8](analysis/house_table_soft_8x8.py), [10×10](analysis/house_table_soft_10x10.py) |
