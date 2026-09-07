@@ -54,12 +54,13 @@ D64_TEMPLATE = "H2_d64_c50_s220_letf_thp_50k_curr_w2_seed{seed}_20260825-hard-w2
 CAMORT_TEMPLATE = (
     "H2_d64_camort_s220_letf_thp_50k_curr_seed{seed}_20260905-camort-d64-perslice"
 )
-# The 16x16 amortised confirmation: one seed by design, thp2 on the same
-# five-slice mixture; c = 0.25 is outside the mixture there too. This is the
-# pooled-c_t-baseline run; its per-slice twin (tag
-# 20260905-camort-d256-perslice) replaces this template once its run dir exists.
+# The 16x16 amortised confirmation: thp2 on the same five-slice mixture,
+# c = 0.25 outside the mixture there too; three seeds under the per-slice
+# c_t baseline (DoC, 2026-09-06). The pooled-baseline single seed
+# (tag 20260831-camort-d256; EMA mixture eval 0.712 vs 0.748-0.776 here)
+# is archived, never scored again.
 D256_CAMORT_TEMPLATE = (
-    "H2_d256_camort_s220_letf_thp2_100k_curr_seed{seed}_20260831-camort-d256"
+    "H2_d256_camort_s220_letf_thp2_100k_curr_seed{seed}_20260905-camort-d256-perslice"
 )
 
 # The cross-chapter composition spine: fractions
@@ -145,7 +146,7 @@ def main(argv=None):
     d256 = load_rows(args.results_dir, D256_TEMPLATE)
     d64 = load_rows(args.results_dir, D64_TEMPLATE)
     camort = load_rows(args.results_dir, CAMORT_TEMPLATE)
-    camort_d256 = load_rows(args.results_dir, D256_CAMORT_TEMPLATE, seeds=(42,))
+    camort_d256 = load_rows(args.results_dir, D256_CAMORT_TEMPLATE)
     if d256 is None:
         sys.exit("d256 probe JSONs missing; nothing to emit")
 
@@ -159,7 +160,7 @@ def main(argv=None):
     }
     if camort_d256 is not None:
         columns["d256_camort_sc"] = (camort_d256, 1.0)
-        print("% d256 camort column INCLUDED (single seed)")
+        print("% d256 camort column INCLUDED (three seeds)")
     columns["d64_sc"] = (d64, 1.0)
     if camort is not None:
         columns["d64_camort_sc"] = (camort, 1.0)

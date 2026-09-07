@@ -1,11 +1,13 @@
 """Figure `hard_composition_transfer`: ESS across composition slices for the amortised
-and centre-trained hard samplers at 8x8 (dense 63-slice probe) and 16x16 (sparse probe).
-Existing evaluations only; no sampling or training. Run templates come from
-`zero_shot_tables`, so both exhibits move together when a run tag changes.
+and centre-trained hard samplers at 8x8 and 16x16, both on the dense 63-slice
+probe (c = k/64: every slice at 8x8, every fourth at 16x16) over three training
+seeds. Existing evaluations only; no sampling or training. Run templates come
+from `zero_shot_tables`, so both exhibits move together when a run tag changes.
 
-The dense 8x8 probe and sparse 16x16 probe are different evaluation runs.
-Show measured compositions directly, without mirroring the learned sampler:
-the target's spin-flip symmetry does not establish model equivariance.
+The centre-trained curves are the sparse six-composition probes of
+`tab:zero-shot-composition`. Show measured compositions directly, without
+mirroring the learned sampler: the target's spin-flip symmetry does not
+establish model equivariance.
 """
 
 import json
@@ -94,7 +96,7 @@ for ax in axes:
     )
 axes[0].set_ylabel("ESS fraction")
 axes[0].set_title(r"(a) $8\times8$: three training seeds", loc="left", fontsize=9)
-axes[1].set_title(r"(b) $16\times16$: one amortised seed", loc="left", fontsize=9)
+axes[1].set_title(r"(b) $16\times16$: three training seeds", loc="left", fontsize=9)
 record["d64_amortised"] = curve(
     axes[0],
     CAMORT_TEMPLATE,
@@ -113,7 +115,12 @@ record["d64_specialist"] = curve(
     "--",
 )
 record["d256_amortised"] = curve(
-    axes[1], D256_CAMORT_TEMPLATE, (42,), "zero_shot_fc.json", SAMPLER_HUE, "Amortised"
+    axes[1],
+    D256_CAMORT_TEMPLATE,
+    (42, 43, 44),
+    "zero_shot_fc_grid.json",
+    SAMPLER_HUE,
+    "Amortised",
 )
 record["d256_specialist"] = curve(
     axes[1],
@@ -123,22 +130,6 @@ record["d256_specialist"] = curve(
     NEURAL_COMPARATOR_HUE,
     "Centre-trained, zero-shot",
     "--",
-)
-axes[1].annotate(
-    "0.31",
-    (0.4375, 0.313),
-    xytext=(-22, -15),
-    textcoords="offset points",
-    fontsize=8,
-    color=SAMPLER_HUE,
-)
-axes[1].annotate(
-    "0.069",
-    (0.75, 0.069),
-    xytext=(5, 8),
-    textcoords="offset points",
-    fontsize=8,
-    color=SAMPLER_HUE,
 )
 handles, labels = axes[0].get_legend_handles_labels()
 fig.legend(

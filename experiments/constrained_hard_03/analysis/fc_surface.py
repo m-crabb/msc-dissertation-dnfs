@@ -77,9 +77,10 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SIGMA_C = 0.22034339675488573
 STOP_GRID = 127  # ne128: ts = k / 127
-# The two amortised rungs. The 16x16 twin (one seed, tag 20260831-camort-d256,
-# probed with the same stop-time grid; the pooled-c_t-baseline run) has no
-# TI reference; its SRO cross comes from the pooled certified Kawasaki draws
+# The two amortised rungs, both three seeds under the per-slice c_t baseline.
+# The 16x16 rung (DoC, 2026-09-06; probed on Modal in four composition shards
+# of the k/64 grid, concatenated into zero_shot_fc_grid.json) has no TI
+# reference; its SRO cross comes from the pooled certified Kawasaki draws
 # instead of the 8x8's per-chain npz files.
 RUNGS = {
     8: dict(
@@ -90,9 +91,9 @@ RUNGS = {
     ),
     16: dict(
         D=256,
-        seeds=(42,),
+        seeds=(42, 43, 44),
         ti_prefix="fc_ref_d16",
-        template="H2_d256_camort_s220_letf_thp2_100k_curr_seed{seed}_20260831-camort-d256",
+        template="H2_d256_camort_s220_letf_thp2_100k_curr_seed{seed}_20260905-camort-d256-perslice",
     ),
 }
 
@@ -293,7 +294,10 @@ def plot_dfdc(surface: dict, out: Path, D: int) -> None:
     for hue, k in zip(parameter_ramp(SAMPLER_HUE, len(ks)), ks):
         cs = sorted(c for c, kk in surface if kk == k)
         per_seed = np.array([surface[(c, k)]["F"] for c in cs]).T  # (seeds, c)
-        step = 1.0 / D
+        # Slice spacing of the probed grid: 1/64 at both rungs (every slice at
+        # 8x8, every fourth site at 16x16), so read it off the grid rather
+        # than assuming one site.
+        step = min(np.diff(cs))
         interior = [
             i
             for i in range(1, len(cs) - 1)
