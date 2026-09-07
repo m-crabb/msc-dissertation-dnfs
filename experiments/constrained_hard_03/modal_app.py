@@ -558,45 +558,6 @@ def bench(argv: str = "", isolate: bool = True):
     bench_remote.remote(argv=argv, isolate=isolate)
 
 
-@app.function(gpu="A100-80GB", timeout=2 * 60 * 60)
-def bench_cell_remote(argv: str = ""):
-    """Run `bench_cell_step` (the per-phase decomposition of one registered
-    cell) on the production GPU. `argv` is its space-separated CLI string;
-    several rows separated by ";" run back to back, each in a FRESH
-    SUBPROCESS for the same reason `bench_remote` isolates its rows -- the
-    dynamo recompile budget and `set_float32_matmul_precision` are
-    per-process, so a lever row must not inherit the row before it. cwd is
-    the repo root because the cluster-expansion cells load their exported
-    coefficients by a path relative to it (`data/ce/cuau_fcc_4x4x4.json`)."""
-    import os
-    import subprocess
-    import sys
-
-    # PYTHONUNBUFFERED: a mask-one row at 64 sites takes tens of minutes and
-    # block-buffered stdout would withhold every phase line until it ended,
-    # leaving a long row indistinguishable from a hung container.
-    env = {**os.environ, "PYTHONPATH": PROJECT_DIR, "PYTHONUNBUFFERED": "1"}
-    for one in argv.split(";"):
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "experiments.constrained_hard_03.bench_cell_step",
-                *one.split(),
-            ],
-            cwd=PROJECT_DIR,
-            env=env,
-            check=True,
-        )
-        print(flush=True)
-
-
-@app.local_entrypoint()
-def bench_cell(argv: str = ""):
-    """Blocking local CLI entry so the phase tables stream back."""
-    bench_cell_remote.remote(argv=argv)
-
-
 @app.function(gpu="A100-80GB", volumes={"/results": volume}, timeout=2 * 60 * 60)
 def training_flops_remote(argv: str = ""):
     """Run the training-FLOP measurement harness (measure_training_flops)
@@ -768,42 +729,6 @@ def gate(
         cells=cells,
         out=out,
     )
-
-
-@app.function(gpu="A100-80GB", volumes={"/results": volume}, timeout=60 * 60)
-def residue_probe_remote(run_dirs: str, n_states: int = 256):
-    """Forward-only compile-vs-eager residue probe on trained checkpoints
-    on the volume; method in compile_residue_probe.py. Use the training
-    A100-80GB class to measure Inductor's effect on cancellation residue;
-    CPU or L4 results answer a different venue question."""
-    import sys
-
-    sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.compile_residue_probe import (
-        main as probe_main,
-    )
-
-    probe_main(
-        [
-            "--results-dir",
-            "/results",
-            "--run-dirs",
-            run_dirs,
-            "--device",
-            "cuda",
-            "--n-states",
-            str(n_states),
-            "--out",
-            "/results/compile_residue_probe/report.json",
-        ]
-    )
-    volume.commit()
-
-
-@app.local_entrypoint()
-def residue_probe(run_dirs: str, n_states: int = 256):
-    """Blocking local CLI entry so the per-checkpoint reports stream back."""
-    residue_probe_remote.remote(run_dirs=run_dirs, n_states=n_states)
 
 
 @app.function(gpu="A100-80GB", timeout=45 * 60)

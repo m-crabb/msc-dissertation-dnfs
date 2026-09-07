@@ -71,8 +71,7 @@ current code; they do not establish bit-for-bit historical training reproduction
 | Exact small-system checks | [gate_4x4.py](gate_4x4.py), [gate_camort_4x4.py](gate_camort_4x4.py), [demo_4x4.py](demo_4x4.py) |
 | Kawasaki comparison and reference | [probe_kawasaki_8x8.py](probe_kawasaki_8x8.py), [probe_analysis_8x8.py](probe_analysis_8x8.py), [plot_probe_8x8.py](plot_probe_8x8.py), [generate_kawasaki_reference_d256.py](generate_kawasaki_reference_d256.py) |
 | Transport and local-field diagnostics | [analysis_transport_decomposition.py](analysis_transport_decomposition.py), [analysis_local_field_regression.py](analysis_local_field_regression.py) |
-| Importance-weight ranking | [analysis_weight_variance_ranking.py](analysis_weight_variance_ranking.py) — executes and writes its CSV when run; no help parser |
-| Compute measurements | [bench_cell_step.py](bench_cell_step.py), [bench_eval_wallclock_d64.py](bench_eval_wallclock_d64.py), [measure_training_flops.py](measure_training_flops.py), [compile_gate.py](compile_gate.py) |
+| Compute measurements | [measure_training_flops.py](measure_training_flops.py), [compile_gate.py](compile_gate.py) |
 | Warm-base experiments | [warm_base_reference.py](warm_base_reference.py), [warm_base_offline_table.py](warm_base_offline_table.py), [warm_base_t_grid.py](warm_base_t_grid.py) |
 | Neural comparators | [run_gfn.py](run_gfn.py), [mdns_vs_dnfs_4x4.py](mdns_vs_dnfs_4x4.py), [mdns_budget_gate_4x4.py](mdns_budget_gate_4x4.py) |
 

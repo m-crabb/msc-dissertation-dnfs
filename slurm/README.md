@@ -151,7 +151,6 @@ existing archives; keep original outputs and verify each entrypoint's contract.
 | [retry_gfn_d256.sh](retry_gfn_d256.sh) | Historical GFlowNet retry wrapper |
 | [gfn_d64_launch_bench.sbatch](gfn_d64_launch_bench.sbatch) | 8×8 GFlowNet benchmark launch |
 | [gfn_d256_launch_bench.sbatch](gfn_d256_launch_bench.sbatch) | 16×16 GFlowNet benchmark launch |
-| [bench_eval_wallclock_d64.sbatch](bench_eval_wallclock_d64.sbatch) | 8×8 evaluation wall-clock benchmark |
 | [bench_thp_compile.sbatch](bench_thp_compile.sbatch) | Two-hole patch compilation benchmark |
 | [bench_thp_venue_control.sbatch](bench_thp_venue_control.sbatch) | Two-hole patch venue control |
 | [fmo2_bench_d256.sbatch](fmo2_bench_d256.sbatch) | 16×16 factorised-head benchmark |

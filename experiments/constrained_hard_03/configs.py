@@ -5608,7 +5608,7 @@ for _c_tag in ("c25", "c50"):
 # Two-hole patch twins of the 64-site cells. The mask-one
 # head at 64 sites measured 3.76 s/step on an A100 (in-training eval 66% of
 # it, inner update 0.67 s) and was killed at step 9k; the patch cell measured
-# 0.048 s/step with a one-shell window (bench_cell_step.py). Two declared
+# 0.048 s/step with a one-shell window (per-phase A100 bench). Two declared
 # deviations besides the head: the in-training eval draws 256, not 5000 -- a
 # diagnostic-only cut (the final eval still draws 5000) -- and the window is
 # TWO neighbour shells (18 sites): the expansion's pair terms reach 9.3 A,
