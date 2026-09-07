@@ -1,9 +1,15 @@
-"""fig:hard-clean-8x8 / fig:hard-clean-16x16 -- the hard chapter's results cells.
+"""fig:hard-clean-ladder (and the older per-rung cells): the hard results cells.
 
 Every results chapter carries the same two-panel results cell (energy
-marginal on exact levels + a Z2-ODD order-parameter marginal), and the hard
-body carries that cell at BOTH 8x8 and 16x16. This one script builds both
-rungs; `--lattice-edge` picks the rung.
+marginal on exact levels + a Z2-ODD order-parameter marginal). The hard
+body printed that cell at 8x8 and 16x16 as two separate figures until
+2026-09-07; it now prints ONE critical-coupling grid, `--layout grid`:
+columns are the four rungs (8, 16, 20, 24), rows are the two marginals,
+and each column carries the patch head at the radius its house table
+prints (GRID_CELLS). The per-rung `--lattice-edge` cells remain for the
+appendix and for a single-rung read. Only sigma_c is gridded: the 24x24
+rung was run at the critical coupling alone, and the sigma = 0.1 rows sit
+at the floor in every table.
 
 WHAT CHANGES FROM THE OTHER TWO CHAPTERS' CELLS, and why it is not a port.
 
@@ -110,6 +116,18 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # older archive and must never share a panel with it.
 SIGMA = {"s010": 0.1, "s220": 0.22034339675488573}
 SIGMA_LABEL = {"s010": r"$\sigma = 0.1$", "s220": r"$\sigma = \sigma_c$"}
+
+# The grid's column per rung: (head token, a run-dir token the cell must ALSO
+# carry). The 20x20 fp32 and bf16-trained twins share the thp3 token and only
+# the fp32 row is printed bold-eligible in tab:eval-hard-20x20, so the fp32
+# `_w4_` twin is pinned; 24x24 exists only as the bf16-trained cell.
+GRID_RUNGS = (8, 16, 20, 24)
+GRID_CELLS = {
+    8: ("thp", None, "$R=1$"),
+    16: ("thp2", None, "$R=2$"),
+    20: ("thp3", "_w4_", "$R=3$"),
+    24: ("thp4", None, "$R=4$"),
+}
 
 # Head label -> the run-dir token that identifies it, per rung.
 HEAD_LABEL = {
@@ -219,7 +237,14 @@ def load_reference(lattice_edge, sigma_key, burn_in_fraction=0.2):
         chains = [torch.from_numpy(np.load(p)["spins"]).float() for p in paths]
         return [c[int(len(c) * burn_in_fraction) :] for c in chains]
 
-    directory = REPO_ROOT / "results" / f"kawasaki_ref_d256_{sigma_key}"
+    # Certified single-tensor pools: d256 is split by coupling key, the two
+    # larger sigma_c pools carry the `_sc` suffix (kawasaki_ref_d256_sc is
+    # the mislabelled 0.22305 pool and is never read here).
+    d = lattice_edge * lattice_edge
+    suffix = (
+        sigma_key if lattice_edge == 16 else {"s010": "s010", "s220": "sc"}[sigma_key]
+    )
+    directory = REPO_ROOT / "results" / f"kawasaki_ref_d{d}_{suffix}"
     provenance = json.loads((directory / "provenance.json").read_text())
     stated = provenance["sigma"]
     assert abs(stated - SIGMA[sigma_key]) < 1e-9, (
@@ -285,13 +310,16 @@ def is_tripwire_truncated(run_dir):
     return (run_dir / "cv_inversion_halt.json").exists()
 
 
-def load_cells(results_dir, lattice_edge, sigma_key, head, eval_subdir):
+def load_cells(
+    results_dir, lattice_edge, sigma_key, head, eval_subdir, require_token=None
+):
     """Every healthy seed of one head at one coupling, as samples + IS weights.
 
     Matched on the run-dir naming the w2/w3 waves use, so a cell trained at
     another coupling or another size cannot enter the panel. Tripwire-halted
     cells are dropped and named on stderr rather than silently, so a rung
-    that loses a seed says so.
+    that loses a seed says so. `require_token` pins one twin where the head
+    token alone is ambiguous (the 20x20 fp32/bf16 pair).
     """
     d = lattice_edge * lattice_edge
     pattern = f"H2_d{d}_c50_{sigma_key}_letf_{head}_*"
@@ -299,6 +327,8 @@ def load_cells(results_dir, lattice_edge, sigma_key, head, eval_subdir):
     for run_dir in sorted(Path(results_dir).glob(pattern)):
         # `thp` must not match `thp2`: the token is delimited by underscores.
         if f"_{head}_" not in run_dir.name:
+            continue
+        if require_token is not None and require_token not in run_dir.name:
             continue
         metrics_path = run_dir / eval_subdir / "metrics.json"
         if not metrics_path.exists():
@@ -399,9 +429,13 @@ def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
     style_axes(ax)
 
 
-def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None):
-    """`title`: when given (the row layout), the TVD/floor read goes into the panel
-    title after it instead of an in-axes annotation, which collides at row height."""
+def _panel(
+    ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None, n_ticks=4
+):
+    """`title`: when given (the row and grid layouts), the TVD/floor read goes
+    into the panel title after it instead of an in-axes annotation, which
+    collides at row height; an empty string prints the read alone. `n_ticks`
+    caps the x locator: the grid's narrow panels take three."""
     ax.plot(
         support,
         reference_pmf,
@@ -420,7 +454,8 @@ def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None
         ]
         read = f"TVD {np.mean(tvds):.3f}, floor {floor:.3f}"
         if title is not None:
-            ax.set_title(f"{title}\n{read}", fontsize=FONT_SIZE_ANNOTATION, loc="left")
+            heading = f"{title}\n{read}" if title else read
+            ax.set_title(heading, fontsize=FONT_SIZE_ANNOTATION, loc="left")
         else:
             ax.annotate(
                 f"TVD {np.mean(tvds):.3f}   floor {floor:.3f}",
@@ -440,7 +475,7 @@ def _panel(ax, support, reference_pmf, seed_pmfs, floor, xlabel, hue, title=None
     ax.set_xlim(*_occupied_limits(support, reference_pmf, *seed_pmfs))
     # Cap tick density: the default locator puts six labels on the narrow
     # sigma_c energy window and they run together at print width.
-    ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=n_ticks))
     ax.set_xlabel(xlabel, fontsize=FONT_SIZE_LABEL)
     style_axes(ax)
 
@@ -598,9 +633,114 @@ def build(
     )
 
 
+def build_grid(results_dir, eval_subdir, out_path, n_replicates, sigma_key="s220"):
+    """The critical-coupling ladder: 2 rows (energy, phi) x 4 columns (rungs).
+
+    Each column is the single-head cell of its rung -- seed band, TVD and
+    floor in the column title -- so the read is the same as the per-rung
+    figures, side by side. What the grid adds is the trend the tables carry
+    only as numbers: the energy marginal drifting off the reference as the
+    lattice grows while phi stays near its floor. Panels do NOT share an
+    x-axis: E/d and phi both narrow with size (the occupied window is set
+    per panel, as in the single cells), so a shared axis would flatten the
+    large rungs into spikes. Widths follow the print: four columns across
+    the text width, two rows at the row layout's panel height."""
+    use_house_style()
+    n_cols = len(GRID_RUNGS)
+    figure, grid = plt.subplots(
+        2,
+        n_cols,
+        figsize=(FIGSIZE_FULL_2X2[0], 3.6),
+        gridspec_kw=dict(wspace=0.5, hspace=0.7),
+    )
+    summary = {}
+    for col, lattice_edge in enumerate(GRID_RUNGS):
+        head, require_token, radius = GRID_CELLS[lattice_edge]
+        d = lattice_edge * lattice_edge
+        chains = load_reference(lattice_edge, sigma_key)
+        pool = torch.cat(chains)
+        cells = load_cells(
+            results_dir, lattice_edge, sigma_key, head, eval_subdir, require_token
+        )
+        n_draws = cells[0]["samples"].shape[0] if cells else 5000
+        energy_ref = energy_pmf(pool, lattice_edge)
+        phi_ref = phi_pmf(pool, lattice_edge)
+        e_floor = energy_floor(chains, lattice_edge, n_draws, n_replicates)
+        p_floor = phi_floor(chains, lattice_edge, n_draws, n_replicates)
+        energy_seeds = [
+            energy_pmf(c["samples"], lattice_edge, c["weights"]) for c in cells
+        ]
+        phi_seeds = [phi_pmf(c["samples"], lattice_edge, c["weights"]) for c in cells]
+        title = f"${lattice_edge}\\times{lattice_edge}$, {radius}"
+        _panel(
+            grid[0, col],
+            energy_support(lattice_edge) / d,
+            energy_ref,
+            energy_seeds,
+            e_floor,
+            "$E/d$",
+            SAMPLER_HUE,
+            title,
+            n_ticks=3,
+        )
+        _panel(
+            grid[1, col],
+            phi_support(lattice_edge),
+            phi_ref,
+            phi_seeds,
+            p_floor,
+            r"$\phi$",
+            SAMPLER_HUE,
+            "",
+            n_ticks=3,
+        )
+        tvd = lambda seeds, ref: [  # noqa: E731
+            marginal_tvd(torch.from_numpy(p), torch.from_numpy(ref)) for p in seeds
+        ]
+        summary[lattice_edge] = {
+            "cells": [c["name"] for c in cells],
+            "n_draws": n_draws,
+            "energy_tvd_mean_sd": [
+                round(float(np.mean(tvd(energy_seeds, energy_ref))), 4),
+                round(float(np.std(tvd(energy_seeds, energy_ref))), 4),
+            ],
+            "energy_floor": round(e_floor, 4),
+            "phi_tvd_mean_sd": [
+                round(float(np.mean(tvd(phi_seeds, phi_ref))), 4),
+                round(float(np.std(tvd(phi_seeds, phi_ref))), 4),
+            ],
+            "phi_floor": round(p_floor, 4),
+        }
+    grid[0, 0].set_ylabel("probability mass", fontsize=FONT_SIZE_LABEL)
+    grid[1, 0].set_ylabel("probability mass", fontsize=FONT_SIZE_LABEL)
+    handles, labels = grid[0, 0].get_legend_handles_labels()
+    figure.legend(
+        handles,
+        labels,
+        fontsize=FONT_SIZE_ANNOTATION,
+        frameon=False,
+        loc="lower center",
+        ncol=2,
+        bbox_to_anchor=(0.5, -0.06),
+    )
+    figure.savefig(out_path, dpi=SAVEFIG_DPI, bbox_inches="tight")
+    print(
+        json.dumps(
+            {
+                "figure": str(out_path),
+                "eval": eval_subdir,
+                "sigma": sigma_key,
+                "n_replicates": n_replicates,
+                **{str(k): v for k, v in summary.items()},
+            },
+            indent=2,
+        )
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--lattice-edge", type=int, choices=(8, 16), required=True)
+    parser.add_argument("--lattice-edge", type=int, choices=(8, 16, 20, 24))
     parser.add_argument(
         "--heads",
         default="thp",
@@ -614,13 +754,21 @@ def main():
     parser.add_argument("--results-dir", default=str(REPO_ROOT / "results" / "03_hard"))
     parser.add_argument("--n-replicates", type=int, default=64)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--layout", choices=("2x2", "row"), default="2x2")
+    parser.add_argument("--layout", choices=("2x2", "row", "grid"), default="2x2")
     parser.add_argument(
         "--couplings",
         default="s010,s220",
         help="comma-separated coupling keys; 's220' alone gives the critical-only cell",
     )
     args = parser.parse_args()
+    if args.layout == "grid":
+        build_grid(
+            args.results_dir, args.eval_subdir, Path(args.out), args.n_replicates
+        )
+        return
+    assert args.lattice_edge is not None, (
+        "--lattice-edge is required outside --layout grid"
+    )
     build(
         args.results_dir,
         args.lattice_edge,
