@@ -12,11 +12,11 @@ weights support target expectations and free-energy estimation.
 Training minimises a squared Kolmogorov-forward residual, using a discrete Stein
 control variate to estimate the log-normaliser derivative.
 
-![Five recorded snapshots of a 20×20 neural swap trajectory, alongside learned swap rates from a marked site.](assets/readme/recorded_swap.gif)
+![A recorded 24×24 neural swap trajectory, alongside learned swap rates from a marked site.](assets/readme/recorded_swap.gif)
 
-**Composition is fixed throughout the path:** all five recorded states contain
-200 sites of each species. This is one raw proposal trajectory from the retained
-EMA checkpoint, shown at five times; intermediate swaps are not stored here.
+**Composition is fixed throughout the path:** all 129 recorded grid states contain
+288 sites of each species. This is one raw proposal trajectory from the bundled
+24×24 EMA checkpoint, recorded over 128 matching steps without interpolation.
 The rate panel uses a common scale across frames.
 [Static figure and provenance](assets/readme/README.md).
 
@@ -76,6 +76,48 @@ Training and evaluation examples are described in the [experiment guide](experim
 The test suite covers analytic residuals, estimator checks, equivariance,
 locality, exact composition and checkpoint/resume behaviour.
 
+## Sample from pretrained checkpoints
+
+Four small [checkpoint bundles](checkpoints/README.md) are included in Git:
+unconstrained, soft and hard 4×4 Ising models, plus the hard 24×24 model above.
+Each includes its saved configuration, original weights and SHA-256 manifest.
+From the repository root, after setup:
+
+```bash
+# Fast CPU example: 64 fixed-composition proposals and their importance weights.
+pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_hard_4x4 \
+  --n-samples 64 --batch-size 8 --seed 0 --out results/demo-hard-4x4
+
+# The README model; keep batches small on CPU.
+pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_hard_24x24 \
+  --n-samples 8 --batch-size 1 --seed 0 --out results/demo-hard-24x24
+```
+
+Each command creates `samples.pt`, `log_weights.pt` and `metadata.json` in a new
+output directory. These are raw proposal draws; use the importance weights for
+target expectations. The [checkpoint guide](checkpoints/README.md) includes a
+weighted-estimate example, all four sampling commands and animation reproduction.
+
+## Train a sampler
+
+For a short end-to-end check, then a 2,000-step hard 4×4 training example:
+
+```bash
+pixi run -e dev python -m experiments.constrained_hard_03.run \
+  --cfg H2_d16_c50_s010_letf_dh --smoke --seed 42 --no-wandb \
+  --tag readme-smoke --output-dir results/demo-training
+pixi run -e dev python -m experiments.constrained_hard_03.run \
+  --cfg H2_d16_c50_s010_letf_dh --seed 42 --no-wandb \
+  --tag readme --output-dir results/demo-training
+```
+
+The family READMEs provide [baseline](experiments/dnfs_baseline_01/README.md),
+[soft](experiments/constrained_soft_02/README.md),
+[24×24 hard](experiments/constrained_hard_03/README.md) and
+[Cu–Au](experiments/alloy_ce/README.md) training examples. Full training budgets
+can be substantial; these commands illustrate the current recipes, rather than
+promise bit-for-bit recovery of historical runs.
+
 ## Repository layout
 
 See the [source guide](src/README.md) for the module-by-module map, and the
@@ -94,6 +136,7 @@ experiments/     Configurations, trainers, analysis and experiment guides
 scripts/         Shared baselines, comparisons and figure tools
 slurm/           Historical cluster launchers and campaign index
 assets/          Small retained figure inputs and README visuals
+checkpoints/     Four pretrained examples, saved configs and checksum manifests
 data/           Exported cluster expansions and reference database
 icet-ce/         Cluster-expansion fitting and energy-prediction workflow
 notebooks/       Familiarisation and cross-check notebooks
@@ -101,7 +144,7 @@ tests/           Correctness and regression checks
 ```
 
 Production runs are stored locally under `results/` and are not tracked. A Git
-checkout therefore supports code inspection, tests and the recorded animation;
+checkout therefore supports code inspection, tests, pretrained sampling and the animation;
 most report analyses also require the original run archives and references.
 Some historical checkpoints, samples and exact training revisions remain
 unavailable. The guides preserve these distinctions and the withdrawn campaign

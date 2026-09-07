@@ -2,15 +2,62 @@
 
 [Project overview](../../README.md)
 
-## Recorded swap trajectory
+## Recorded 24×24 swap trajectory
 
-[Animation](recorded_swap.gif) · [Static report figure](hard_rate_field_strip_20x20.png)
+[Animation](recorded_swap.gif) · [Static strip](hard_rate_field_strip_24x24.png) ·
+[Checkpoint bundle](../../checkpoints/README.md)
+
+![Five times from the 24×24 trajectory, with configuration, learned anchor-swap rate and terminal log-ratio channel.](hard_rate_field_strip_24x24.png)
+
+The animation renders all 129 integration-grid states and learned anchor rates
+stored in [hard_rate_field_strip_24x24.npz](../hard_rate_field_strip_24x24.npz).
+The static strip displays steps 0, 32, 64, 96 and 128 from that same trajectory.
+This is a new README illustration, recorded from the bundled checkpoint on
+7 September 2026; it is not a copied dissertation figure or a new evaluation result.
+
+| Property | Recorded value |
+| --- | --- |
+| System | 24×24 periodic Ising lattice, composition 0.5; 288 sites of each species |
+| Coupling | `sigma = 0.22034339675488573` |
+| Run | `H2_d576_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w5bf16_seed42_20260903-d576-sc` |
+| Checkpoint | `final_ema.pt`, two-hole patch head, radius 3 |
+| Checkpoint SHA-256 | `ace63eba799f714a8c39281a0b5798d60906ef228c55d879061be5df331e08da` |
+| Rollout | Seed `20260907`, one raw draw; no selection or resampling |
+| Integration | 128 matching intervals, fp32, CPU, one thread; PyTorch version stored in archive |
+| Stored states | Steps 0–128 inclusive; times 0–1 |
+| Marked anchor | Site 300, zero-based row/column (12, 12) |
+| Playback | 80 ms per grid frame, 2.4 s at the terminal state, then restart |
+
+Frames are recorded grid states with no interpolation. A matching step can
+contain several disjoint swaps; playback is not a physical timescale. The
+terminal state is a proposal draw, not an importance-resampled target draw.
+The rate panel uses the upper-triangle pair convention and a common scale
+across all frames. The static strip's third row is the signed terminal-target
+log ratio, not a transition rate or the time-dependent path ratio.
+
+Render both visuals from the committed recording:
+
+```bash
+pixi run -e dev python -m scripts.animate_recorded_swap --out /tmp/recorded_swap.gif
+pixi run -e dev python -m experiments.constrained_hard_03.analysis.rate_field_strip \
+  --recorded assets/hard_rate_field_strip_24x24.npz --recorded-stride 32 \
+  --out /tmp/recorded_swap.png
+```
+
+To record the trajectory again, follow the
+[checkpoint guide](../../checkpoints/README.md#recreate-the-readme-animation).
+The recorder saves the checkpoint/config hashes, seed, batch size (one),
+precision, thread count and PyTorch version with the arrays.
+
+## Historical 20×20 report trajectory
+
+[Static report figure](hard_rate_field_strip_20x20.png)
 
 ![Five times from the recorded trajectory, with configuration, learned anchor-swap rate and terminal log-ratio channel.](hard_rate_field_strip_20x20.png)
 
-The animation renders the five states and learned rates already stored in
+The earlier README animation used the five states and learned rates stored in
 [hard_rate_field_strip_20x20.npz](../hard_rate_field_strip_20x20.npz). No model is
-loaded and no intermediate states are invented. The GIF holds each stored time
+loaded and no intermediate states are invented. With this five-frame input, the renderer holds each stored time
 for 1.2 seconds and the terminal state for 2.4 seconds; its loop then restarts at
 the initial state. Playback duration is illustrative, not a physical timescale.
 The static PNG is copied unchanged from the report at revision `a644a34`.
@@ -37,7 +84,8 @@ path ratio.
 Render the animation or static strip from the committed archive:
 
 ```bash
-pixi run -e dev python -m scripts.animate_recorded_swap --out /tmp/recorded_swap.gif
+pixi run -e dev python -m scripts.animate_recorded_swap \
+  --recorded assets/hard_rate_field_strip_20x20.npz --out /tmp/recorded_swap_20x20.gif
 pixi run -e dev python -m experiments.constrained_hard_03.analysis.rate_field_strip \
   --recorded assets/hard_rate_field_strip_20x20.npz --out /tmp/recorded_swap.pdf
 ```
