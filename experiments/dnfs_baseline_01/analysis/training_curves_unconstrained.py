@@ -66,7 +66,8 @@ def load_family(run_dirs: list[Path]) -> dict:
     return {
         "steps": steps,
         "ess_fractions": per_seed,
-        "sigma": config["ising"]["sigma"],
+        # a curriculum run stores its starting coupling under ising.sigma
+        "sigma": curriculum["stages"][-1]["sigma"] if curriculum else config["ising"]["sigma"],
         "final_stage_start": final_stage_start,
     }
 

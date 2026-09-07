@@ -252,18 +252,26 @@ def log_density_marginal(
     }
 
 
+def final_sigma(config: dict) -> float:
+    """Coupling of the frozen eval: the last curriculum stage, else ising.sigma."""
+    curriculum = config.get("curriculum")
+    return curriculum["stages"][-1]["sigma"] if curriculum else config["ising"]["sigma"]
+
+
 def load_point(run_dirs: list[Path]) -> dict:
     """Everything one coupling needs: target, Wolff pool, per-seed evals."""
-    ising_cfg = json.loads((run_dirs[0] / "config.json").read_text())["ising"]
-    target = IsingTarget(
-        D=ising_cfg["D"], sigma=ising_cfg["sigma"], bias=ising_cfg["bias"]
-    )
+    config = json.loads((run_dirs[0] / "config.json").read_text())
+    ising_cfg = config["ising"]
+    # A curriculum run stores its STARTING coupling under ising.sigma; the
+    # frozen eval is at the final stage's coupling, which keys the pool.
+    sigma = final_sigma(config)
+    target = IsingTarget(D=ising_cfg["D"], sigma=sigma, bias=ising_cfg["bias"])
     pool = torch.load(
-        RESULTS / f"wolff_ref_d10_sigma{ising_cfg['sigma']:g}.pt", weights_only=True
+        RESULTS / f"wolff_ref_d10_sigma{sigma:g}.pt", weights_only=True
     )
     return {
         "target": target,
-        "sigma": ising_cfg["sigma"],
+        "sigma": sigma,
         "ref_samples": pool["samples"].float(),
         "n_chains": pool["n_chains"],
         "seed_runs": load_seed_runs(run_dirs),

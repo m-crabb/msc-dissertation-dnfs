@@ -56,7 +56,7 @@ SEEDS = (42, 43, 44, 45)
 COUPLINGS = {  # label -> (run-dir glob, sigma, LaTeX column header)
     "s010": ("stage_4_d10_budget_seed{seed}_*", 0.1, r"$\sigma=0.1$"),
     "sc": (
-        "stage_4_d10_critical_paper_curriculum_sc_seed{seed}_*",
+        "stage_4_d10_sc_hardrecipe_efc_seed{seed}_*",
         0.220343,
         r"$\sigma_c$",
     ),

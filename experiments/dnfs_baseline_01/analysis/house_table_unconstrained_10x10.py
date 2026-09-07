@@ -77,7 +77,7 @@ OPERATING_POINTS = {
     ),
     "sigma_c": dict(
         sigma=SIGMA_C,
-        runs="stage_4_d10_critical_paper_curriculum_sc_seed4*_20260824-wave1-sc",
+        runs="stage_4_d10_sc_hardrecipe_efc_seed4*_20260907-d10-hardrecipe",
         reference="wolff_ref_d10_sigma0.220343.pt",
     ),
 }
