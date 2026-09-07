@@ -26,6 +26,7 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
 """
 
 import os
+import time
 
 import modal
 from experiments.dnfs_baseline_01.configs import CONFIGS
@@ -120,18 +121,33 @@ def _validate_cfg_name(cfg_name: str) -> None:
     # A100 for Stage 4 leTF re-launch (attention-bound; 2x faster wall-clock
     # vs L4 at d=100). Earlier MLP/leconv stages ran fine on L4; if cost
     # matters for non-attention runs, downgrade per-launch by editing here.
-    gpu="A100-80GB",  # b512 at d=256 needs the 80 GB card
+    # Launch-time lever (the decorator is evaluated where `modal run`
+    # executes): the 80 GB card by default because b512 at d=256 needs it
+    # and the hard-recipe ladder's 8x8/16x16 siblings ran on it, so a
+    # same-recipe cell keeps the venue homogeneous. Running apps keep their
+    # spawn-time spec.
+    gpu=os.environ.get("DNFS_TRAIN_GPU", "A100-80GB"),
     volumes={"/results": volume},
     secrets=[wandb_secret],
     # 24h is generous for D=10; tighten if cost matters.
     timeout=24 * 60 * 60,
     # Note: `nonpreemptible=True` is not supported for GPU workloads on Modal
-    # (rejected at deploy time). Long runs may preempt-and-auto-retry; clean up
-    # truncated wandb runs (`_step < n_steps - 1`) post-completion.
+    # (rejected at deploy time). Long runs preempt-and-auto-retry; the retry
+    # resumes from `checkpoints/resume.pt` only when the caller minted a
+    # stable `tag` (see train_remote's docstring).
 )
-def train_remote(cfg_name: str, seed: int = 42):
+def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     """Run a single training config on Modal and persist artefacts to the
-    volume. Importable but typically launched via `modal run`."""
+    volume. Importable but typically launched via `modal run`.
+
+    `tag` replaces the run dir's timestamp suffix (see `run.train`); "" is
+    the "no tag" sentinel because Modal's CLI cannot pass None. A preemption
+    re-runs this function with identical inputs, so a tag fixed at spawn
+    lands the retry in the SAME run dir, where `checkpoints/resume.pt` lets
+    it continue from the last outer-cycle boundary. Without one the retry
+    mints a fresh timestamped sibling and restarts from step 0: the
+    2-Sep hard-recipe 8x8/16x16 seeds each left two dirs this way.
+    """
     import sys
 
     # /repo is the mount point of `add_local_dir`. Inserting it onto sys.path
@@ -140,7 +156,16 @@ def train_remote(cfg_name: str, seed: int = 42):
     from experiments.dnfs_baseline_01.configs import CONFIGS
     from experiments.dnfs_baseline_01.run import train
 
-    train(CONFIGS[cfg_name], seed=seed, output_dir="/results")
+    train(
+        CONFIGS[cfg_name],
+        seed=seed,
+        output_dir="/results",
+        tag=tag or None,
+        # A preemption gets no chance to flush, so the resume checkpoint is
+        # committed to the volume the moment it is written; otherwise the
+        # retry finds nothing and restarts from step 0.
+        on_checkpoint=volume.commit,
+    )
     # commit() makes the artefacts visible to subsequent `modal volume get`
     # calls. Without this, the volume is reverted on container shutdown.
     volume.commit()
@@ -244,9 +269,15 @@ def compile_bench(cfg_name: str = "stage_4_d10", n_steps: int = 400, tail: int =
 
 @app.local_entrypoint()
 def main(cfg_name: str, seed: int = 42):
-    """Local CLI entry: spawns `train_remote` as a remote Modal call."""
+    """Local CLI entry: spawns `train_remote` as a remote Modal call.
+
+    The tag is minted HERE, once, so a preemption retry lands in the same
+    run dir; `batch_seeds` takes it from the caller for the same reason.
+    """
     _validate_cfg_name(cfg_name)
-    train_remote.remote(cfg_name=cfg_name, seed=seed)
+    train_remote.remote(
+        cfg_name=cfg_name, seed=seed, tag=time.strftime("%Y%m%d-%H%M%S")
+    )
 
 
 @app.local_entrypoint()
@@ -315,13 +346,18 @@ def batch_eval(
 
 
 @app.local_entrypoint()
-def batch_seeds(cfg_name: str, seeds: str = "42"):
+def batch_seeds(cfg_name: str, seeds: str = "42", tag: str = ""):
     """Spawn one config across multiple seeds in parallel.
 
-    Example: `--cfg-name stage_4_d10_paper_probe_warmup --seeds "42,43,44,45"`.
+    Example: `--cfg-name stage_4_d10_sc_hardrecipe_efc --seeds "42,43,44,45"
+    --tag 20260907-d10-hardrecipe`. Pass a tag: it is what makes a
+    preemption retry resume instead of restarting.
     """
     _validate_cfg_name(cfg_name)
     seed_list = [int(s.strip()) for s in seeds.split(",") if s.strip()]
     for seed in seed_list:
-        train_remote.spawn(cfg_name=cfg_name, seed=seed)
-    print(f"spawned {len(seed_list)} jobs: cfg={cfg_name}, seeds={seed_list}")
+        train_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
+    print(
+        f"spawned {len(seed_list)} jobs: cfg={cfg_name}, seeds={seed_list} "
+        f"tag={tag or '<timestamp>'}"
+    )

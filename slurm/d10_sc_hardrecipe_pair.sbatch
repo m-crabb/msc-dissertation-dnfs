@@ -19,6 +19,10 @@
 #       stage_4_d10_sc_hardrecipe_efc 42 43
 # Fixed --tag so a resubmission reuses the run dirs; the baseline runner has
 # no mid-run resume, so a preempted job restarts both seeds from step 0.
+# Moved to Modal 2026-09-07: the pairs sat pending on the 3-GPU cap for four
+# days behind the 24x24 GFN array. Relaunched unpacked, one seed per
+# A100-80GB, tag 20260907-d10-hardrecipe via
+# dnfs_baseline_01.modal_app::batch_seeds; kept here as the recipe record.
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
 export WANDB_MODE=offline
