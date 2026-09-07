@@ -1,10 +1,14 @@
 """Kawasaki failure-mode sweep → dissertation §5.1 figures.
 
 Produces:
-  (1) failure_curves.png — τ_int and ESS vs σ for D∈{8,16} (the sizes the thesis
-      trains a neural sampler at, drawn solid) and D∈{24,32} (sizes it never
-      trains at, drawn dotted: the classical chain extrapolated past the reach
-      of the learned one), with σ=0.1 (the DNFS operating point) and σ_c marked.
+  (1) failure_curves.png — τ_int and ESS vs σ for D∈{8,16,24} (sizes the thesis
+      trains a neural sampler at, drawn solid) and D=32 (never trained at, drawn
+      dotted: the classical chain extrapolated past the reach of the learned
+      one), with σ=0.1 (the DNFS operating point) and σ_c marked. 24 moved from
+      dotted to solid on 2026-09-07 once the 24x24 rung was in print; the
+      linestyle is decided at plot time from TRAINED_D, so the cached
+      `trained_at` flags (written 2026-08-26) are stale metadata, not the
+      style's source.
       Critical slowing-down: mixing is fine at the subcritical operating point
       and degrades sharply as σ enters the ordered, constrained low-T regime —
       worsening with system size, which is the scaling claim the figure exists
@@ -75,8 +79,8 @@ from discrete_flow_sampler.targets.ising import SIGMA_C
 SIGMA_CRITICAL = SIGMA_C  # exact = log(1+sqrt(2))/4 = 0.220343
 CURVE_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26]  # monotonic τ_int regime
 ERGO_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26, 0.32, 0.40]
-TRAINED_D = [8, 16]     # the lattices this thesis trains a neural sampler at
-EXTRAPOLATED_D = [24, 32]  # never trained at: the classical chain run on alone
+TRAINED_D = [8, 16, 24]  # the lattices this thesis trains a neural sampler at
+EXTRAPOLATED_D = [32]    # never trained at: the classical chain run on alone
 DEMO_D = TRAINED_D + EXTRAPOLATED_D
 ERGO_D = 24
 # R̂ is a between-chain statistic, so a band on it means repeating the whole
@@ -224,9 +228,8 @@ def failure_curves(payload=None):
     payload = payload or json.loads(CURVE_CACHE.read_text())
     rows = {(row["D"], round(row["sigma"], 6)): row for row in payload["rows"]}
     n_chains = payload["protocol"]["n_chains"]
-    # Blue and gold keep the two trained sizes on the hues the previous version
-    # of this figure used for them; purple and red extend the set for the two
-    # untrained sizes.
+    # Blue and gold keep 8 and 16 on the hues the previous version of this
+    # figure used for them; purple and red extend the set for 24 and 32.
     colours = dict(zip(DEMO_D, [fs.SAMPLER_HUE, fs.CLASSICAL_HUE,
                                 fs.CLASSICAL_ALT_HUE, fs.HARD_DELTA_HUE]))
 
