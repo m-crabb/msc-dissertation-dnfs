@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Experiment guide](../experiments/README.md)
 
-This index covers all 97 retained shell launchers in this directory. They record
+This index covers all 98 retained shell launchers in this directory. They record
 specific campaigns, including unsuccessful, cancelled and superseded experiments.
 The seven Cu–Au launch/pull wrappers are indexed separately in the
 [alloy tools guide](../experiments/alloy_ce/tools/README.md#historical-launch-and-transfer-wrappers).
@@ -147,6 +147,7 @@ existing archives; keep original outputs and verify each entrypoint's contract.
 | [gfn_d64_wave.sbatch](gfn_d64_wave.sbatch) | 8×8 GFlowNet wave |
 | [gfn_d256_wave.sbatch](gfn_d256_wave.sbatch) | 16×16 GFlowNet wave |
 | [gfn_d400_wave.sbatch](gfn_d400_wave.sbatch) | 20×20 GFlowNet wave |
+| [gfn_d576_critical.sbatch](gfn_d576_critical.sbatch) | 24×24 critical TB GFlowNet, seeds 42–44, in-job compile gate |
 | [retry_gfn_d256.sh](retry_gfn_d256.sh) | Historical GFlowNet retry wrapper |
 | [gfn_d64_launch_bench.sbatch](gfn_d64_launch_bench.sbatch) | 8×8 GFlowNet benchmark launch |
 | [gfn_d256_launch_bench.sbatch](gfn_d256_launch_bench.sbatch) | 16×16 GFlowNet benchmark launch |
