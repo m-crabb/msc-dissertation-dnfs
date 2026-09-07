@@ -34,8 +34,8 @@ def test_registry_keys_match_cell_names_and_objectives():
     # plus the budget-doubled fldb diagnostic = 1; plus the
     # standalone-flow arm = 1; plus the 16x16 rung: d256 `_par`
     # centres at both couplings x both arms = 4; plus the 20x20 rung:
-    # d400 `_par` centres, same shape = 4.
-    assert len(GFN_CONFIGS) == 48
+    # d400 `_par` centres, same shape = 4; d576 critical centres = 2.
+    assert len(GFN_CONFIGS) == 50
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
@@ -98,7 +98,7 @@ def test_compile_policy_off_at_d16_on_at_d64_and_above():
     # still gated by the GPU numerical-parity check at the launch bench
     # run at each cell's own size on the venue stack.
     for cell in GFN_CONFIGS.values():
-        assert cell.compile_policy is (cell.D in (8, 16, 20))
+        assert cell.compile_policy is (cell.D in (8, 16, 20, 24))
 
 
 def test_build_optimiser_splits_log_z_group():
@@ -595,3 +595,28 @@ def test_d400_cells_are_d256_twins_plus_lattice_and_resize():
                 if asdict(d256)[field] != asdict(d400)[field]
             }
             assert diff == {"name", "D", "hidden_dim"}, diff
+
+
+def test_d576_critical_policy_matches_house_capacity_and_curriculum():
+    from experiments.constrained_hard_03.configs import CONFIGS
+    from experiments.constrained_hard_03.run import build_target_and_head
+    from experiments.constrained_hard_03.run_gfn import (
+        _stage_sigma,
+        build_target_and_policy,
+    )
+
+    cell = GFN_CONFIGS["GFN_d576_c50_s220_tb_100k_par"]
+    _, policy = build_target_and_policy(cell, "cpu")
+    n_params = sum(p.numel() for p in policy.parameters())
+    assert n_params == 184_834
+    for arm in ("thp3", "thp4"):
+        house = CONFIGS[
+            f"H2_d576_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w5bf16"
+        ]
+        _, head = build_target_and_head(house, "cpu")
+        anchor = sum(p.numel() for p in head.parameters())
+        assert abs(n_params - anchor) / anchor < 0.03
+        assert cell.n_steps == house.train.n_steps
+        for stage in house.curriculum.stages:
+            assert _stage_sigma(cell, stage.start_step) == stage.sigma
+    assert _stage_sigma(cell, 99_999) == SIGMA_C

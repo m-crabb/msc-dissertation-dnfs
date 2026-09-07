@@ -152,6 +152,7 @@ _RUNG_GATE_CELLS = {
     "d64": "GFN_d64_c50_s220_{objective}_50k_par",
     "d256": "GFN_d256_c50_s220_{objective}_100k_par",
     "d400": "GFN_d400_c50_s220_{objective}_100k_par",
+    "d576": "GFN_d576_c50_s220_{objective}_100k_par",
 }
 
 

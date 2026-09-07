@@ -468,3 +468,24 @@ GFN_CONFIGS.update(
         )
     }
 )
+
+
+# Critical-only 24x24 rung. Hidden 76 gives 184,834 policy parameters,
+# within 2.9% of both measured house anchors (R=3: 189,184; R=4: 190,208).
+# Hidden 72 gives 168,194 (-11%); hidden 80 gives 202,242 (+6--7%).
+# Keep the d400 100k budget, absolute sigma ladder, optimiser and evaluation
+# protocol. Only TB is scheduled; FLDB is registered for the size/venue gate.
+GFN_CONFIGS.update(
+    {
+        cell.name: cell
+        for objective in GFN_OBJECTIVES
+        for cell in (
+            replace(
+                _gfn_d400_parity_cell(objective, "s220"),
+                name=f"GFN_d576_c50_s220_{objective}_100k_par",
+                D=24,
+                hidden_dim=76,
+            ),
+        )
+    }
+)
