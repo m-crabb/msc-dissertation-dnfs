@@ -1,0 +1,13 @@
+{
+  "family": "baseline",
+  "source_run": "stage_4_d4_critical_sc_seed42_20260824-wave1-sc",
+  "source_directory": "results/configuration_calibration_4x4/inputs/stage_4_d4_critical_sc_seed42_20260824-wave1-sc",
+  "checkpoint": "checkpoints/final.pt",
+  "sha256": {
+    "config.json": "ef9a593077299617bdc0e216f3c31d918799c3763bcc837de0e507acbe5f487b",
+    "checkpoints/final.pt": "9f49215024f1a2e7727a129751e212f97bd7d9a6d8b3b2b0bcf82f5213e7665c"
+  },
+  "selection": "Seed 42 example; retained final weights, not selected by a new sampling score.",
+  "purpose": "Inference example, not an optimizer/resume checkpoint or a full reproduction archive.",
+  "license": "MIT"
+}

@@ -25,6 +25,7 @@ verify. Useful starting points:
 | Dynamics and residuals | [flip CTMC](test_ctmc.py), [flip residual](test_kolmogorov.py), [swap CTMC](test_swap_ctmc.py), [swap residual](test_swap_kolmogorov.py) |
 | Estimators and composition | [log-normaliser](test_log_z_estimators.py), [resampling](test_resampling.py), [fixed composition](test_fixed_composition_target.py), [per-slice estimates](test_c_t_per_slice.py) |
 | Training and checkpoint continuity | [flip training](test_training.py), [flip resume](test_training_resume.py), [swap training](test_swap_training.py), [swap resume](test_swap_training_resume.py), [EMA](test_ema.py) |
+| Distributed examples | [checkpoint sampling, integrity and recorded trajectory](test_checkpoint_examples.py) |
 | Classical and neural comparators | [Gibbs](test_oracles_gibbs.py), [Wolff](test_wolff.py), [Kawasaki](test_kawasaki.py), [masked diffusion](test_budget_masked_sampler.py), [GFlowNet](test_gfn_comparator.py) |
 | Experiment integration and reports | [configuration wiring](test_configs.py), [checkpoint selection](test_eval_checkpoint_selection.py), [figure entrypoints](test_figure_entry_points.py), [hard result tables](test_hard_results_cell.py) |
 

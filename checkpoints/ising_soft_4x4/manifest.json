@@ -1,0 +1,13 @@
+{
+  "family": "soft",
+  "source_run": "S2_d4_c0500_10k_l50_letf_house_sc_seed42_20260902-softhouse-d16-10k",
+  "source_directory": "results/configuration_calibration_4x4/inputs/S2_d4_c0500_10k_l50_letf_house_sc_seed42_20260902-softhouse-d16-10k",
+  "checkpoint": "checkpoints/final.pt",
+  "sha256": {
+    "config.json": "2ab360c5e53e11361b0869797ba69e4e29c015dcef42be280d42357e668ce89a",
+    "checkpoints/final.pt": "75bdb183fac96b9a6d279fc50e36a5acff61cd9eccfedde52b15c8f32874e26c"
+  },
+  "selection": "Seed 42 example; retained final weights, not selected by a new sampling score.",
+  "purpose": "Inference example, not an optimizer/resume checkpoint or a full reproduction archive.",
+  "license": "MIT"
+}

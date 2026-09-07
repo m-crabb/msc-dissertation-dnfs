@@ -1,0 +1,13 @@
+{
+  "family": "hard",
+  "source_run": "H2_d576_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w5bf16_seed42_20260903-d576-sc",
+  "source_directory": "results/03_hard/H2_d576_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w5bf16_seed42_20260903-d576-sc",
+  "checkpoint": "checkpoints/final_ema.pt",
+  "sha256": {
+    "config.json": "1ea5a8639c9224ad54c720ebf2df738cb547a9e92b150dc2a67d39234b3a6730",
+    "checkpoints/final_ema.pt": "ace63eba799f714a8c39281a0b5798d60906ef228c55d879061be5df331e08da"
+  },
+  "selection": "Seed 42 example; retained final weights, not selected by a new sampling score.",
+  "purpose": "Inference example, not an optimizer/resume checkpoint or a full reproduction archive.",
+  "license": "MIT"
+}

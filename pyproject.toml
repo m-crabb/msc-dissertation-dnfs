@@ -20,7 +20,7 @@ packages = ["src/discrete_flow_sampler"]
 # Hatch does not read .git/info/exclude, where local research notes are ignored.
 include = [
     "/src", "/tests", "/experiments", "/scripts", "/slurm",
-    "/assets", "/data", "/icet-ce", "/notebooks",
+    "/assets", "/checkpoints", "/data", "/icet-ce", "/notebooks",
     "/README.md", "/LICENSE", "/LICENSES", "/THIRD_PARTY_NOTICES.md",
     "/pyproject.toml", "/pixi.lock", "/.gitignore", "/.gitattributes",
 ]

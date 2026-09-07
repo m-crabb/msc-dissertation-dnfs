@@ -1,0 +1,67 @@
+{
+  "name": "stage_4_d4_critical_sc",
+  "ising": {
+    "D": 4,
+    "sigma": 0.22034339675488573,
+    "bias": 0.0,
+    "target_composition": null,
+    "composition_penalty_strength": 0.0,
+    "base_composition": 0.5,
+    "log_ratio_clamp": 5.0
+  },
+  "train": {
+    "n_steps": 10000,
+    "batch_size": 128,
+    "lr": 0.001,
+    "seed": 42,
+    "inner_steps_per_outer": 100,
+    "outer_batch_size": null,
+    "replay_buffer_cycles": 8,
+    "grad_clip_max_norm": 500.0,
+    "loss_microbatch_size": null,
+    "warmup_steps": 500,
+    "optimiser": "adamw",
+    "rewarmup_on_stage": false,
+    "flush_replay_on_stage": true,
+    "halt_on_cv_inversion_after": null,
+    "halt_cv_inversion_window": 10,
+    "stage_best_checkpoints": false,
+    "checkpoint_every": null,
+    "resume_every_outer": 10,
+    "c_t_ema_halflife_cycles": 0.0,
+    "c_t_batch": null,
+    "c_t_grid_chunk_rows": null,
+    "c_t_from_rollout": true,
+    "rollout_resample_ess_fraction": null
+  },
+  "ctmc": {
+    "n_euler_steps": 50,
+    "time_grid": "uniform",
+    "use_matching_step": false
+  },
+  "eval": {
+    "eval_every": 200,
+    "n_eval_samples": 5000,
+    "eval_sample_chunk": null,
+    "n_eval_samples_training": null,
+    "eval_autocast_bf16": false
+  },
+  "model": {
+    "kind": "let",
+    "hidden_dim": 64,
+    "n_layers": 3,
+    "kernel_schedule": [],
+    "hollow_global_context": false,
+    "n_heads": 4,
+    "use_sdpa_readout": false,
+    "vocab_size": 2,
+    "condition_on_composition": false,
+    "patch_size": 1,
+    "compile_model": true
+  },
+  "estimator": "control_variate",
+  "curriculum": null,
+  "lambda_curriculum": null,
+  "composition": null,
+  "wandb_project": "dnfs-baseline"
+}

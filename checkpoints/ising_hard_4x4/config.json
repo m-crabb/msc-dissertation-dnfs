@@ -1,0 +1,44 @@
+{
+  "name": "H2_d16_c50_s010_letf_dh",
+  "ising": {
+    "D": 4,
+    "sigma": 0.1,
+    "bias": 0.0,
+    "target_composition": 0.5,
+    "composition_penalty_strength": 0.0,
+    "base_composition": 0.5
+  },
+  "train": {
+    "n_steps": 2000,
+    "batch_size": 128,
+    "lr": 0.001,
+    "seed": 42,
+    "inner_steps_per_outer": 100,
+    "outer_batch_size": null,
+    "replay_buffer_cycles": 8,
+    "grad_clip_max_norm": 500.0,
+    "warmup_steps": 500
+  },
+  "ctmc": {
+    "n_euler_steps": 100,
+    "time_grid": "uniform"
+  },
+  "eval": {
+    "eval_every": 200,
+    "n_eval_samples": 512
+  },
+  "model": {
+    "kind": "letf",
+    "hidden_dim": 32,
+    "n_layers": 2,
+    "kernel_schedule": [],
+    "hollow_global_context": false,
+    "n_heads": 4,
+    "vocab_size": 2
+  },
+  "estimator": "control_variate",
+  "curriculum": null,
+  "lambda_curriculum": null,
+  "wandb_project": "dnfs-constraints",
+  "head_kind": "mask_one"
+}
