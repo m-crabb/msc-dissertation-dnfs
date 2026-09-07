@@ -173,3 +173,66 @@ def test_every_arm_names_a_real_config_at_both_couplings():
         for sigma_label, config_name in per_sigma.items():
             assert config_name in CONFIGS, config_name
             assert f"_{sigma_label}_" in config_name, config_name
+
+
+def test_gfn_cells_name_registered_configs_at_both_couplings():
+    """The GFN rows are pinned by name, like the swap arms; a renamed cell
+    would otherwise print as a permanently blank row."""
+    from experiments.constrained_hard_03.analysis.house_table_20x20 import (
+        GFN_ARMS,
+        GFN_CELL_NAME,
+        GFN_TAG,
+        SIGMA_LABELS,
+    )
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+
+    assert set(GFN_TAG) == set(GFN_ARMS)
+    for sigma_label in SIGMA_LABELS:
+        for gfn_arm in GFN_ARMS:
+            name = GFN_CELL_NAME[sigma_label].format(
+                objective=gfn_arm.removeprefix("gfn_")
+            )
+            assert name in GFN_CONFIGS, name
+            assert GFN_CONFIGS[name].D == L, name
+
+
+def test_gfn_rows_stay_outside_the_bold_comparison():
+    """The 8x8/16x16 rule carried up: a GFN cell holding the best number in
+    a column must not take the bold, which marks the best SWAP cell. `best`
+    runs over ARMS, which the GFN arms are not in."""
+    from experiments.constrained_hard_03.analysis import house_table_20x20 as h20
+
+    assert not set(h20.GFN_ARMS) & set(h20.ARMS)
+    printed = [row[0] for row in h20.LATEX_ROWS if row]
+    assert set(h20.GFN_ARMS) <= set(printed)
+
+    def entry(ess, flops):
+        return {
+            "ESS": (ess, 0.001),
+            "dMag": (0.05, 0.01),
+            "dCorr": (0.05, 0.01),
+            "EW2": (0.05, 0.01),
+            "FLOP/es": (flops, 0.0),
+        }
+
+    table = {
+        "thp2_w4_s220": entry(0.70, 1.0e11),
+        "gfn_tb_s220": entry(0.74, 1.0e8),
+    }
+    body = h20.latex_table(table)
+    swap_line = next(line for line in body.splitlines() if "$R=2$" in line)
+    gfn_line = next(line for line in body.splitlines() if "trajectory balance" in line)
+    assert "\\mathbf{0.700" in swap_line and "\\mathbf{1.0" in swap_line
+    assert "\\mathbf" not in gfn_line
+    fldb_line = next(line for line in body.splitlines() if "forward-looking" in line)
+    assert fldb_line.count("--") == 10
+
+
+def test_gfn_rows_take_the_caller_s_raw_bill_not_an_euler_grid():
+    """A GFN cell prices one rollout plus one target eval; routed through
+    the Euler-grid formula it would be billed n_euler times over."""
+    import inspect
+
+    from experiments.constrained_hard_03.analysis.house_table_20x20 import neural_cell
+
+    assert "flops_raw" in inspect.signature(neural_cell).parameters
