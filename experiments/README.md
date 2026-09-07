@@ -1,7 +1,7 @@
 # Experiment guide
 
 [Project overview](../README.md) · [Launcher index](../slurm/README.md) ·
-[Shared scripts](../scripts/README.md)
+[Shared scripts](../scripts/README.md) · [Source guide](../src/README.md)
 
 The dissertation follows three sampling regimes and then applies them to a
 Cu–Au cluster expansion. The numbered directories record this progression;

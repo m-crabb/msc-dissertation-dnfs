@@ -33,6 +33,8 @@ The [experiment guide](experiments/README.md) explains entrypoints, saved runs
 and figure reproduction. The [launcher index](slurm/README.md) groups the retained
 cluster campaigns; [shared scripts](scripts/README.md) cover classical baselines
 and comparisons across experiments.
+The [source guide](src/README.md) maps every core module and follows the flip and
+swap training paths; the [test guide](tests/README.md) groups the main checks.
 
 ## A result: free energy across compositions
 
@@ -76,6 +78,10 @@ locality, exact composition and checkpoint/resume behaviour.
 
 ## Repository layout
 
+See the [source guide](src/README.md) for the module-by-module map, and the
+[data](data/README.md) and [notebook](notebooks/README.md) guides for retained inputs
+and exploratory work.
+
 ```text
 src/discrete_flow_sampler/
   targets/       Ising, Potts and cluster-expansion targets
@@ -110,7 +116,10 @@ descriptions.
 
 ## License
 
-A release licence has not yet been selected.
+Original code and documentation are released under the [MIT License](LICENSE),
+copyright © 2026 Mitchell Crabb. Third-party inputs, adapted tutorial material
+and derived tutorial outputs retain their upstream notices and terms; see
+[third-party notices](THIRD_PARTY_NOTICES.md) and [LICENSES/](LICENSES/).
 
 ## Citation
 

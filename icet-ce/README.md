@@ -6,9 +6,15 @@ reference energies come from ASE's EMT potential, and only pair and triplet
 terms are included.
 
 ```bash
+cd icet-ce                      # from the repository root, in the Pixi environment
 python fit_cluster_expansion.py   # -> cluster_expansion.ce, cluster_expansion.png
 python predict_energy.py          # occupation matrix (1 = Au, 0 = Cu) -> energy
 ```
+
+These commands regenerate the retained toy model/plot and read the model from
+the current directory. For the dissertation's FCC Cu–Au model, see the
+[alloy guide](../experiments/alloy_ce/README.md) and
+[exported-data guide](../data/README.md).
 
 `build()` surrounds the grid with vacancy sites (`X`) because icet always applies
 periodic boundary conditions and silently ignores `pbc=False`.

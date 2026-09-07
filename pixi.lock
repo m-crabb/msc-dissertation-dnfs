@@ -2496,7 +2496,7 @@ packages:
 - pypi: ./
   name: discrete-flow-sampler
   version: 0.1.0
-  sha256: e3edaac5ecc1dd605da8aa54a1c6395e5cb1f012c076a5e99f4a20d99a71c723
+  sha256: ad8dcf34bd255249e3d83a1b481bd17b76646e9a09c232eaa2b6a47dd81e5be1
   requires_dist:
   - icet>=3.2,<4
   requires_python: '>=3.11'
