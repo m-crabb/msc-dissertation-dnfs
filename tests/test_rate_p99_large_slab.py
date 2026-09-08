@@ -3,13 +3,13 @@
 `torch.quantile` caps its input at 2**24 = 16,777,216 elements. The swap
 trainer's `rate_pair_p99` reads the whole pair-rate slab, shape
 (outer_batch, d(d-1)/2), which at d=256 and the production outer batch of
-512 is 16,711,680 -- **99.6% of that cap**, a margin of 65,536 elements.
+512 is 16,711,680 -- 99.6% of that cap, a margin of 65,536 elements.
 d=400 is the first rung over it (40,857,600, 2.4x the cap), and the 20x20
 probe hit `RuntimeError: quantile() input tensor is too large` in the
 step-0 init diagnostic, before its first optimiser step.
 
 These tests pin the fix's two obligations, which pull in opposite
-directions: it must WORK above the cap, and it must not move a single
+directions: it must work above the cap, and it must not move a single
 number below it -- every reported d256 figure was produced by the
 `torch.quantile` path and the 16x16 house table is filled from those runs.
 """

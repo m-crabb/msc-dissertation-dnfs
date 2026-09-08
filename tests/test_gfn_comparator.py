@@ -1,7 +1,7 @@
 """Correctness gates for the GFlowNet comparator (hard chapter).
 
-Written BEFORE the implementation (tests-first convention). The comparator is
-a fixed-raster-order GFlowNet over the fixed-composition Ising slice:
+The comparator is a fixed-raster-order GFlowNet over the fixed-composition
+Ising slice:
 
   * Construction chain: sites assigned in raster order, so each state (prefix)
     has exactly one parent and P_B == 1. The exactly-N_A constraint is enforced
@@ -15,13 +15,12 @@ a fixed-raster-order GFlowNet over the fixed-composition Ising slice:
     reparameterised by the prefix partial energy R_tilde(s); with P_B == 1 the
     balance is  logFres(s_i) + log P_F(x_i|s_i) - delta_i = logFres(s_{i+1}),
     terminal residual logFres(s_d) == 0 because the complete prefix's partial
-    energy IS the full energy.
+    energy is the full energy.
 
-The gates below are enumeration-exact (2x2 and 4x4 lattices), which is why the
-losses are hand-rolled rather than imported from torchgfn: the library's
-state-map abstraction re-encodes every prefix (O(d^3) attention for a
-transformer policy at d=256), and an enumeration oracle is a stronger
-correctness authority than a reference implementation.
+The gates below are enumeration-exact (2x2 and 4x4 lattices). The losses are
+hand-rolled rather than imported from torchgfn because that library's state-map
+abstraction re-encodes every prefix (O(d^3) attention for a transformer policy
+at d=256).
 """
 
 import pytest
@@ -116,10 +115,9 @@ def test_sample_log_prob_matches_parallel_scoring():
 
 
 def test_kv_cache_step_features_match_full_encode():
-    # The cached sampler is an EXACT REWRITE of the naive prefix re-encode
-    # (the separable-band precedent: same function, cheaper evaluation), so
-    # the per-step cached feature must equal the full causal pass's feature
-    # at that position — this pins the manual attention (in_proj/out_proj on
+    # The cached sampler is an exact rewrite of the naive prefix re-encode, so
+    # the per-step cached feature must equal the full causal pass's feature at
+    # that position, pinning the manual attention (in_proj/out_proj on
     # nn.MultiheadAttention's own weights) to the module it rewrites.
     target = _target(D=4, c=0.5)
     policy = _policy(target, n_heads=2)
@@ -150,7 +148,7 @@ def test_sample_with_and_without_kv_cache_agree():
 
 
 def test_slice_probabilities_normalise_exactly():
-    # A masked AR factorisation is a proper distribution ON THE SLICE for any
+    # A masked AR factorisation is a proper distribution on the slice for any
     # logits: sum over the enumerated slice must be exactly 1, untrained.
     target = _target(D=2, c=0.5)
     policy = _policy(target)
@@ -329,9 +327,8 @@ def _standalone_policy(target):
 
 def test_standalone_flow_residual_depends_only_on_its_prefix():
     """The FL-DB loss reads flow_residuals[:, i] as log F_res of the prefix
-    BEFORE site i. A standalone module that peeked at later sites would be
-    a different (wrong) flow function: perturbing any site j >= i must
-    leave residual i exactly unchanged."""
+    before site i, so a module that peeked at later sites would be a different
+    flow function: perturbing any site j >= i leaves residual i unchanged."""
     target = _target(D=4, c=0.5)
     policy = _standalone_policy(target)
     x, _ = policy.sample(4)
@@ -345,11 +342,10 @@ def test_standalone_flow_residual_depends_only_on_its_prefix():
 
 
 def test_standalone_flow_gradients_do_not_touch_the_trunk():
-    """The point of the standalone module (beyond matching the torchgfn
-    convention): flow gradients must not flow into the shared trunk. Under
-    the shared-trunk readout they do — which is the shielding mechanism the
-    flow-lr arms surfaced. Backward through the residuals alone must
-    leave every trunk/policy parameter without gradient."""
+    """Flow gradients must not reach the shared trunk (under the shared-trunk
+    readout they do, which is the shielding mechanism the flow-lr arms
+    surfaced): backward through the residuals alone leaves every trunk/policy
+    parameter without gradient."""
     target = _target(D=4, c=0.5)
     policy = _standalone_policy(target)
     x, _ = policy.sample(4)
@@ -364,9 +360,9 @@ def test_standalone_flow_gradients_do_not_touch_the_trunk():
 
 
 def test_fldb_training_recovers_exact_distribution_with_standalone_flow():
-    """The 2x2 convergence gate, standalone parameterisation: the loss
-    algebra is parameterisation-independent, so the exact conditionals
-    must still be recovered."""
+    """The 2x2 convergence gate, standalone parameterisation: the loss algebra
+    is parameterisation-independent, so the exact conditionals are still
+    recovered."""
     torch.manual_seed(42)
     target = _target(D=2, sigma=0.3, c=0.5)
     policy = _standalone_policy(target)

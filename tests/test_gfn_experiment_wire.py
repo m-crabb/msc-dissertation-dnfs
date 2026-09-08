@@ -24,30 +24,25 @@ def test_registry_keys_match_cell_names_and_objectives():
     for name, cell in GFN_CONFIGS.items():
         assert name == cell.name
         assert cell.objective in GFN_OBJECTIVES
-    # Both arms at both house couplings, twice (the correctness wave at
-    # hidden 128/3 flat lr; the parity wave `_par`), plus the
-    # fair-tuning grid: 3x3 lr x epsilon minus the centre (= the `_par`
-    # cell itself) x both arms at sigma_c only = 16 `_swp` cells; plus the
-    # 8x8 rung: d64 `_par` centres at both couplings + the 4-arm
-    # sigma_c star per objective = 12 d64 cells; plus the flow-lr
-    # fairness pair (fldb sigma_c centre + flow_head lr 1e-1/1e-2) = 2;
-    # plus the budget-doubled fldb diagnostic = 1; plus the
-    # standalone-flow arm = 1; plus the 16x16 rung: d256 `_par`
-    # centres at both couplings x both arms = 4; plus the 20x20 rung:
-    # d400 `_par` centres, same shape = 4; d576 critical centres = 2.
+    # Both arms at both house couplings, twice (correctness wave at hidden
+    # 128/3 flat lr; parity wave `_par`); fair-tuning grid 3x3 lr x epsilon
+    # minus the centre, both arms at sigma_c = 16 `_swp`; 8x8 rung d64 `_par`
+    # centres at both couplings + the 4-arm sigma_c star per objective = 12;
+    # flow-lr fairness pair = 2; budget-doubled fldb diagnostic = 1;
+    # standalone-flow arm = 1; 16x16 d256 `_par` centres = 4; 20x20 d400 = 4;
+    # d576 critical centres = 2.
     assert len(GFN_CONFIGS) == 50
 
 
 def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
     # The parity wave: the first-wave cells carried a ~6x parameter advantage
-    # over the wave-2 d16 heads (597.6k vs 79.5k-101k). Parity is measured
-    # in PARAMETERS, not copied hyperparameters — hidden 64 / 2 layers puts
-    # the policy at 101,378 params, within 0.4% of the masked-attention
-    # head's 100,960 — plus the house batch 128. TB additionally splits
-    # log_z into its own ~100x lr group: at a flat Adam lr of 1e-3 a scalar
-    # moves at most ~lr/step, so log Z (init 0, exact slice value 10.81 at
-    # sigma_c) arithmetically could not converge inside 10k steps —
-    # measured tail slope +7e-4/step.
+    # over the wave-2 d16 heads (597.6k vs 79.5k-101k). Parity is measured in
+    # parameters, not copied hyperparameters — hidden 64 / 2 layers puts the
+    # policy at 101,378 params, within 0.4% of the masked-attention head's
+    # 100,960 — plus the house batch 128. TB additionally splits log_z into
+    # its own ~100x lr group: at a flat Adam lr of 1e-3 a scalar moves at most
+    # ~lr/step, so log Z (init 0, exact slice value 10.81 at sigma_c) could
+    # not converge inside 10k steps — measured tail slope +7e-4/step.
     parity = {n: c for n, c in GFN_CONFIGS.items() if n.endswith("_par") and c.D == 4}
     assert len(parity) == 4
     for name, cell in parity.items():
@@ -69,11 +64,10 @@ def test_parity_cells_match_house_d16_sizing_and_split_lr_z():
 
 
 def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
-    # Fair-tuning grid: each `_swp` cell must be its sigma_c `_par` arm
-    # with ONLY name, learning_rate and epsilon changed — same sizing,
-    # same lr_Z (the sweep axes are the NETWORK lr and the behaviour mix;
-    # lr_Z stays at the frozen 0.1), same sigma, same budget. A drifted
-    # field here would make the whole grid unreadable as a sweep.
+    # Fair-tuning grid: each `_swp` cell must be its sigma_c `_par` arm with
+    # only name, learning_rate and epsilon changed — same sizing, same lr_Z
+    # (the sweep axes are the network lr and the behaviour mix; lr_Z stays at
+    # the frozen 0.1), same sigma, same budget.
     from dataclasses import fields
 
     sweep = {n: c for n, c in GFN_CONFIGS.items() if n.endswith("_swp") and c.D == 4}
@@ -93,10 +87,9 @@ def test_sweep_cells_are_par_twins_plus_declared_lr_epsilon():
 
 
 def test_compile_policy_off_at_d16_on_at_d64_and_above():
-    # Archived cells never retro-flip: every d16 cell stays eager exactly
-    # as it ran. The d64+ cells ship compiled from the start,
-    # still gated by the GPU numerical-parity check at the launch bench
-    # run at each cell's own size on the venue stack.
+    # Archived cells never retro-flip: every d16 cell stays eager as it ran.
+    # The d64+ cells ship compiled, gated by the GPU numerical-parity check at
+    # the launch bench run at each cell's own size on the venue stack.
     for cell in GFN_CONFIGS.values():
         assert cell.compile_policy is (cell.D in (8, 16, 20, 24))
 
@@ -131,11 +124,11 @@ def test_log_z_carries_no_weight_decay_and_reaches_the_d256_scale():
     constant-sign gradient Adam's normalised step saturates at magnitude 1
     and the decay term wd*theta balances it at theta = 1/wd -- 100 at the
     default wd = 0.01. That sits above every d64 slice log Z (44 / 54) and
-    BELOW the d256 slice (~183 at sigma = 0.1, ~230 at sigma_c): the first
+    below the d256 slice (~183 at sigma = 0.1, ~230 at sigma_c): the first
     16x16 TB wave (tag 20260831-gfn-d256) stalled with log Z pinned at
     100.0 +- 0.1 on all six seeds and a ~73-nat residual the policy cannot
-    close. log Z is a normaliser, not a weight: no decay, and
-    it must be able to reach the 256-site scale."""
+    close. log Z is a normaliser, not a weight: no decay, and it must reach
+    the 256-site scale."""
     import torch
     from experiments.constrained_hard_03.run_gfn import (
         build_optimiser,
@@ -174,8 +167,7 @@ def test_fldb_cells_carry_the_flow_head():
 
 def _tiny_cell(objective):
     # 2x2 lattice, seconds-scale: exercises the full train->eval->artefact
-    # path, not convergence (the 2x2 convergence gate lives in
-    # test_gfn_comparator.py).
+    # path, not convergence (that gate lives in test_gfn_comparator.py).
     base = GFN_CONFIGS[f"GFN_d16_c50_s010_{objective}_10k"]
     return replace(
         base,
@@ -235,19 +227,19 @@ def test_train_gfn_writes_house_artefact_set(tmp_path):
 
 
 def test_d64_cells_carry_the_house_recipe_levers():
-    # The 8x8 rung: centre = the 4x4 parity recipe at the wave-2 d64
-    # budget. Sizing stays hidden 64/2/4 (104,450 params at D=8, within
-    # 3.5% of the ma head's 108,256 — parity is measured params); the
-    # house levers (warmup/clip/EMA/bf16 eval/in-training eval) are
-    # matched field by field to H2_d64_*_w2's train/eval blocks.
+    # The 8x8 rung: centre = the 4x4 parity recipe at the wave-2 d64 budget.
+    # Sizing stays hidden 64/2/4 (104,450 params at D=8, within 3.5% of the ma
+    # head's 108,256 — parity is measured params); the house levers
+    # (warmup/clip/EMA/bf16 eval/in-training eval) are matched field by field
+    # to H2_d64_*_w2's train/eval blocks.
     d64 = {n: c for n, c in GFN_CONFIGS.items() if c.D == 8}
     # 12 rung cells + 2 flr arms + 100k diagnostic + sfh arm.
     assert len(d64) == 16
     for name, cell in d64.items():
         assert cell.hidden_dim == 64 and cell.n_layers == 2
-        # The one exception to the matched 50k budget is the DECLARED
-        # budget-doubled diagnostic (its whole point is the moved budget;
-        # its own twin test pins that nothing else moved).
+        # The one exception to the matched 50k budget is the declared
+        # budget-doubled diagnostic; its own twin test pins that nothing
+        # else moved.
         expected_steps = 100_000 if "_100k_" in name else 50_000
         assert cell.n_steps == expected_steps and cell.batch_size == 128
         assert cell.warmup_steps == 500
@@ -263,7 +255,7 @@ def test_d64_cells_carry_the_house_recipe_levers():
             assert all(s == SIGMA_C for s in cell.sigma_stages[6:])
         else:
             assert cell.sigma_stages == ()  # s010 trains flat, like w2
-    # The star: sigma_c only, and each arm is its centre with ONLY name,
+    # The star: sigma_c only, and each arm is its centre with only name,
     # learning_rate and epsilon changed (same twin rule as the d16 grid).
     from dataclasses import fields
 
@@ -365,12 +357,12 @@ def test_completed_run_short_circuits(tmp_path):
 
 
 def test_build_optimiser_splits_flow_head_group():
-    """The FL-DB analogue of the log_z split: the flow head's output
-    must reach the tens-of-nats completion-entropy scale and Adam moves it
-    ~lr per step, so at the shared lr the d64 centres were still climbing
-    at 50k. The split must move EXACTLY the flow head's parameters, and
-    asking for it on a policy without a flow head is a misconfiguration
-    that must raise, not silently train nothing at the fast lr."""
+    """The FL-DB analogue of the log_z split: the flow head's output must
+    reach the tens-of-nats completion-entropy scale and Adam moves it ~lr per
+    step, so at the shared lr the d64 centres were still climbing at 50k. The
+    split must move exactly the flow head's parameters, and asking for it on a
+    policy without a flow head must raise rather than silently train nothing
+    at the fast lr."""
     import pytest
     from experiments.constrained_hard_03.run_gfn import (
         build_optimiser,
@@ -399,9 +391,9 @@ def test_build_optimiser_splits_flow_head_group():
 
 
 def test_warmup_never_touches_the_flow_head_group():
-    """Same exemption rationale as log_z: the split lr exists to unstarve
-    the normaliser, and re-throttling it for the ramp would re-create a
-    mild version of the failure at the start of every run."""
+    """Same exemption as log_z: the split lr exists to unstarve the
+    normaliser, so re-throttling it for the ramp would re-create a mild
+    version of the failure at the start of every run."""
     from experiments.constrained_hard_03.run_gfn import (
         apply_lr_warmup,
         build_optimiser,
@@ -418,10 +410,9 @@ def test_warmup_never_touches_the_flow_head_group():
 
 
 def test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever():
-    """The flr arms exist to test ONE diagnosis (the flow head is
-    lr-starved), so they must be the fldb sigma_c parity centre with the
-    flow-head lr as the only moved field -- any second difference would
-    confound the reading."""
+    """The flr arms test one diagnosis (the flow head is lr-starved), so they
+    must be the fldb sigma_c parity centre with the flow-head lr as the only
+    moved field."""
     from dataclasses import asdict
 
     centre = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_par"]
@@ -439,10 +430,9 @@ def test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever():
 
 
 def test_fldb_100k_diagnostic_is_the_centre_twin_plus_budget():
-    """The budget-doubled arm settles slow-vs-broken and must move ONLY
-    n_steps off the fldb sigma_c centre; any second lever would
-    confound the reading. (The sigma ladder dilates WITH n_steps by the
-    equal-share rule — that is the same field, not a second lever.)"""
+    """The budget-doubled arm settles slow-vs-broken and must move only
+    n_steps off the fldb sigma_c centre. The sigma ladder dilates with n_steps
+    by the equal-share rule, which is the same field, not a second lever."""
     from dataclasses import asdict
 
     centre = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_par"]
@@ -459,9 +449,9 @@ def test_fldb_100k_diagnostic_is_the_centre_twin_plus_budget():
 
 
 def test_sfh_cell_is_the_fldb_centre_twin_plus_the_standalone_flow():
-    """The standalone-flow arm answers ONE question (does the
-    torchgfn-conventional parameterisation change FLDB's convergence) and
-    must move only that field off the centre."""
+    """The standalone-flow arm asks whether the torchgfn-conventional
+    parameterisation changes FLDB's convergence, so it must move only that
+    field off the centre."""
     from dataclasses import asdict
 
     centre = GFN_CONFIGS["GFN_d64_c50_s220_fldb_50k_par"]
@@ -482,8 +472,8 @@ def test_d256_parity_cells_measured_params_within_anchor_band():
     re-sized: the d64 sizing (hidden 64) lands at 116,738 params, 12.6%
     under the chapter's thp2 head (133,632) and 15.1% under the ma cell
     (137,440) — outside the precedent band (+0.4% at d16, -3.5% at d64).
-    hidden 68 restores it, and sits at parity with BOTH candidate anchors
-    at once, so the anchor choice cannot be motivated. The flow head is
+    hidden 68 restores it, and sits at parity with both candidate anchors at
+    once, so the anchor choice cannot be motivated. The flow head is
     excluded from the count, matching the d16/d64 parity audits (it is a
     declared delta on the fldb family, not part of the policy)."""
     from discrete_flow_sampler.models.raster_gfn_policy import RasterGFNPolicy
@@ -519,14 +509,12 @@ def test_d256_sigma_c_cells_mirror_the_house_100k_ladder():
 
 
 def test_d256_cells_are_d64_twins_plus_declared_levers():
-    """The 16x16 cells are the d64 recipe with only the declared
-    rung levers moved: lattice size, the parity re-size (hidden 68), and —
-    on the sigma_c cells only — the house d256 budget (100k) with its
-    dilated ladder. The in-training eval cadence is also a declared lever
-    at this rung (house d256 regime 500/256 rather than the d64 wave's
-    200/512, for within-rung parity with the swap-head rows the GFN cells
-    join in tab:eval-hard-16x16). Anything else moving would break recipe
-    parity with the 8x8 wave."""
+    """The 16x16 cells are the d64 recipe with only the declared rung levers
+    moved: lattice size, the parity re-size (hidden 68), and — on the sigma_c
+    cells only — the house d256 budget (100k) with its dilated ladder. The
+    in-training eval cadence is a declared lever at this rung too (house d256
+    regime 500/256 rather than the d64 wave's 200/512, for within-rung parity
+    with the swap-head rows the GFN cells join in tab:eval-hard-16x16)."""
     from dataclasses import asdict
 
     house_eval_cadence = {"eval_every", "n_eval_samples_training"}
@@ -578,8 +566,8 @@ def test_d400_parity_cells_measured_params_within_anchor_band():
 
 
 def test_d400_cells_are_d256_twins_plus_lattice_and_resize():
-    """The 20x20 cells are the d256 recipe with exactly two levers
-    moved: the lattice (D=20) and the parity re-size (hidden 72). Budgets,
+    """The 20x20 cells are the d256 recipe with exactly two levers moved:
+    the lattice (D=20) and the parity re-size (hidden 72). Budgets,
     the sigma ladder (the house reuses the d256 ladder unrescaled at d400,
     absolute start-steps) and the house eval cadence all ride unchanged."""
     from dataclasses import asdict

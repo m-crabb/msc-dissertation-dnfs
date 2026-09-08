@@ -1,31 +1,27 @@
-"""The window arm: the masked-attention head over the WHOLE LATTICE, not the interval.
+"""The window arm: the masked-attention head over the whole lattice rather
+than the interval.
 
-WHAT CHANGES AND WHY IT IS NEARLY FREE. The head already computes every
-band-feature family for every pair and then masks before the softmax, so the
-whole-lattice variant moves ONE predicate and adds no FLOPs, no parameter,
-no buffer and no RNG draw. A term at slot k with support offsets O is
-visible to the pair (i, j) when
+The head already computes every band-feature family for every pair and masks
+before the softmax, so the whole-lattice variant moves one predicate and adds
+no FLOPs, no parameter, no buffer and no RNG draw. A term at slot k with
+support offsets O is visible to the pair (i, j) when
 
-    interval:  k + min(O) > i  AND  k + max(O) < j      (strictly inside)
+    interval:  k + min(O) > i  and  k + max(O) < j      (strictly inside)
     lattice:   for every o in O,  k + o != i  and  k + o != j
                (equivalently: its support does not touch either hole)
 
-THE LEGALITY RULE. What
-blindness requires is NOT that features be per-site or depth-0; it is that
-exclusion remove EVERY term touching a hole, decided from the INDICES alone
-so it is value-independent. Both windows satisfy that; they differ only in
-how much of the lattice survives the mask.
+Blindness does not require features to be per-site or depth-0; it requires
+exclusion to remove every term touching a hole, decided from the indices alone
+so it is value-independent. Both windows satisfy that and differ only in how
+much of the lattice survives the mask.
 
-WHAT THE ARM IS FOR. It is the single-variable test of the WINDOW at fixed
-feature family and fixed weights, against the masked-attention head already
-in the house table. It is one of two cells left unbuilt in the head construction's
-2 x 2 x 2 (feature family x window x weights).
-
-IT IS NOT SIMPLY THE MORE GENERAL HEAD, and this is the reason to measure
-rather than assume: normalising the softmax over ~d terms instead of ~|j-i|
-dilutes whatever mass the interval deserves, and a learned soft mask
-approximates the hard interval indicator without containing it. So the
-lattice window can lose, and the experiment is what settles it.
+The arm is the single-variable test of the window at fixed feature family and
+fixed weights, against the masked-attention head already in the house table:
+one of two cells left unbuilt in the head construction's 2 x 2 x 2 (feature
+family x window x weights). It is not simply the more general head — the
+softmax now normalises over ~d terms instead of ~|j-i|, diluting whatever mass
+the interval deserves, and a learned soft mask approximates the hard interval
+indicator without containing it — so the lattice window can lose.
 """
 
 import pytest
@@ -72,7 +68,7 @@ def test_interval_window_is_the_default_and_is_byte_identical():
 
 @pytest.mark.parametrize("window", ["interval", "lattice"])
 def test_pair_context_is_blind_to_both_holes(window):
-    """THE guarantee, under both windows: changing x_i or x_j must not move
+    """The guarantee, under both windows: changing x_i or x_j must not move
     the context of the pair (i, j). Under the lattice window this is a real
     test rather than a formality -- almost every term is visible, so an
     off-by-one in the touch predicate would leak a hole immediately."""
@@ -105,7 +101,7 @@ def test_lattice_window_sees_strictly_more_than_the_interval():
     lattice.load_state_dict(interval.state_dict())
     a = interval.compute_pair_context(x, t)
     b = lattice.compute_pair_context(x, t)
-    # Adjacent pair: the open interval (i, i+1) is EMPTY.
+    # Adjacent pair: the open interval (i, i+1) is empty.
     assert (b[:, 3, 4] - a[:, 3, 4]).abs().max().item() > 1e-3
 
 
@@ -158,9 +154,9 @@ def test_lattice_window_is_blind_with_the_stencil_family_too():
 
 
 def test_mal_gate_cells_are_their_ma_twins_plus_the_window():
-    """The twin relationship the window arm is read through: each `mal` gate cell
-    must differ from its `ma` sibling in `attention_window` and NOTHING
-    else, so a window effect is chargeable to the window."""
+    """The twin relationship the window arm is read through: each `mal` gate
+    cell differs from its `ma` sibling in `attention_window` alone, so a
+    window effect is chargeable to the window."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import _MAL_TWINS, CONFIGS
@@ -212,7 +208,7 @@ def test_relative_pair_position_defaults_off_and_is_byte_identical():
 
 @pytest.mark.parametrize("window", ["interval", "lattice"])
 def test_relative_pair_position_keeps_every_guarantee(window):
-    """The relative code changes only WHICH position vector the query reads,
+    """The relative code changes only which position vector the query reads,
     so blindness, index antisymmetry and swap antisymmetry must all survive
     exactly -- under both windows, since the two flags compose."""
     d = 16
@@ -246,9 +242,9 @@ def test_relative_pair_position_keeps_every_guarantee(window):
 
 
 def test_relative_code_is_shared_by_translation_equivalent_pairs():
-    """THE POINT of the arm: pairs related by a torus shift must index the
-    SAME embedding row, which is what the absolute code cannot express and
-    the patch head gets by construction."""
+    """The point of the arm: pairs related by a torus shift index the same
+    embedding row, which the absolute code cannot express and the patch head
+    gets by construction."""
     head = _head(d=16, lattice_side=4, pair_position_mode="relative")
     disp = head.pair_displacement
     # (0,1) and (4,5) differ by one row shift on a 4x4 torus; same displacement.

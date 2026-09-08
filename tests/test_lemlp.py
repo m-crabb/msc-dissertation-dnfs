@@ -1,6 +1,6 @@
 """Tests for the locally equivariant MLP rate-matrix (stages 1-2).
 
-These pin "what correct looks like" for LeMLPRateMatrix:
+Pinned here for LeMLPRateMatrix:
     1) shape contract (B, D) -> (B, D, S);
     2) output non-trivial — the network depends on inputs (rules out a
        degenerate constant network that would pass every other check

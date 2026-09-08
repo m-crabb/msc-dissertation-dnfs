@@ -1,11 +1,11 @@
 """Per-slice c_t on composition mixtures (hard amortisation).
 
-WHAT CORRECT LOOKS LIKE. On a slice mixture the Kolmogorov residual (Eq. 10)
-for a row on slice C needs ∂_t log Z_t^{(C)}, that slice's OWN normaliser
-derivative: swap dynamics hold every slice's mass fixed, so only the
-conditional on each slice evolves and there is no single mixture-level
-∂_t log Z_t the residual could use. The control-variate estimate (Eq. 8)
-c_t = mean_m ξ_t(x_m) is unbiased WITHIN a slice for any rates (Stein), so
+On a slice mixture the Kolmogorov residual (Eq. 10) for a row on slice C
+needs ∂_t log Z_t^{(C)}, that slice's own normaliser derivative: swap
+dynamics hold every slice's mass fixed, so only the conditional on each
+slice evolves and there is no single mixture-level ∂_t log Z_t the residual
+could use. The control-variate estimate (Eq. 8) c_t = mean_m ξ_t(x_m) is
+unbiased within a slice for any rates (Stein), so
 the correction is a within-slice mean plus a (time, slice) lookup. An
 earlier version of the hard trainer pooled the mean over every rollout row and
 handed every replay row that one scalar, leaving each row an offset
@@ -112,7 +112,7 @@ def test_single_slice_reduction_is_bitwise_the_plain_mean():
 
 
 def _exact_slice_conditional(target, states, t):
-    """p_t^{(C)} over the enumerated states of ONE slice at time t."""
+    """p_t^{(C)} over the enumerated states of one slice at time t."""
     t_col = torch.full((states.shape[0],), t)
     log_p_tilde = target.log_p_tilde_t(states, t_col)
     return torch.softmax(log_p_tilde, dim=0)
@@ -172,7 +172,7 @@ def test_c_t_grid_shape_is_unchanged_for_a_single_slice_target():
 
 
 # --------------------------------------------------------------------------
-# The trainer: every replay row gets ITS slice's baseline
+# The trainer: every replay row gets its own slice's baseline
 # --------------------------------------------------------------------------
 
 

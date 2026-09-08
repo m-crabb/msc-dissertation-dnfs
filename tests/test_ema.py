@@ -32,7 +32,7 @@ def test_state_dict_round_trip_continues_bit_exactly():
     assert restored.updates == ema.updates
 
     # Continue both for a few more updates: identical trajectories require
-    # both the shadow values AND the warmup counter to have survived.
+    # both the shadow values and the warmup counter to have survived.
     for _ in range(5):
         with torch.no_grad():
             parameter.mul_(1.01)

@@ -2,12 +2,12 @@
 
 The channel adds gain(t) * sigma * Delta_ij to any swap head's score matrix,
 where sigma * Delta_ij is the closed-form Kawasaki energy change of swapping
-i and j (the equilibrium log-ratio at t=1). What "correct" means:
+i and j (the equilibrium log-ratio at t=1). Pinned here:
 
-1. gain initialised at zero => the wrapped head is BIT-identical to its base
+1. gain initialised at zero => the wrapped head is bit-identical to its base
    (every archived cell is untouched when the flag is off or at init);
 2. the channel matrix equals the brute-force log p(swap2(x,i,j)) - log p(x)
-   for EVERY pair i < j (the loss reads i < j only; the energy change is
+   for every pair i < j (the loss reads i < j only; the energy change is
    label-symmetric and the mirror supplies the heads' index convention),
    adjacent ones included (the i-j bond is swap-invariant and
    must not be counted -- the failure mode the A_ij term guards);

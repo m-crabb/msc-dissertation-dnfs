@@ -1,16 +1,14 @@
 """Replay-buffer flushing at curriculum sigma boundaries.
 
-What correct looks like, written before the flag existed:
-
-- DEFAULT (``flush_replay_on_stage`` absent or True) reproduces every
+- Default (``flush_replay_on_stage`` absent or True) reproduces every
   archived run: crossing a sigma boundary empties the retention window, so
-  the outer cycle that follows the boundary trains on ONE cycle of states
+  the outer cycle that follows the boundary trains on one cycle of states
   and the window has to refill over ``replay_buffer_cycles`` cycles.
-- FLAG OFF retains the window across the boundary: the buffer never
+- Flag off retains the window across the boundary: the buffer never
   shrinks, because the loss recomputes both target terms at the live sigma
   (samplers/swap_kolmogorov.loss_swap), so a retained state is an
-  evaluation point under the NEW target rather than a stale label.
-- The flag governs the STATES only. ``c_t`` is a function of sigma, so its
+  evaluation point under the new target rather than a stale label.
+- The flag governs the states only. ``c_t`` is a function of sigma, so its
   cross-cycle EMA must reset at the boundary either way; a run that skipped
   that reset would be smoothing two different quantities together.
 

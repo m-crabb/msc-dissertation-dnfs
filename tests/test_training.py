@@ -218,13 +218,13 @@ def test_gradient_group_logging_is_trajectory_passive(tmp_path):
 def test_train_periodic_checkpoints_are_step_tagged(tmp_path):
     """`checkpoint_every=N` saves loadable step-tagged checkpoints.
 
-    Why this exists: a run whose late-training loss enters an
-    excursion/recovery cycle ends with a `final.pt` that samples an
-    arbitrary phase of that cycle, so eval on it can understate the model
-    the run actually reached. Step-tagged checkpoints let eval select the
-    healthiest state by a rule fixed before the run. Tags land at steps
-    that are positive multiples of N (step 0 is the random init and is
-    excluded), zero-padded so lexicographic order is step order.
+    A run whose late-training loss enters an excursion/recovery cycle ends
+    with a `final.pt` that samples an arbitrary phase of that cycle, so eval
+    on it can understate the model the run actually reached. Step-tagged
+    checkpoints let eval select the healthiest state by a rule fixed before
+    the run. Tags land at steps that are positive multiples of N (step 0 is
+    the random init and is excluded), zero-padded so lexicographic order is
+    step order.
     """
     torch.manual_seed(0)
     target = IsingTarget(D=2, sigma=0.1)

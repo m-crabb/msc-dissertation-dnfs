@@ -5,7 +5,7 @@ the implementation under test:
 
 1. Brute-force enumeration: for mn <= 16 sites the partition function is an
    exact sum over 2^(mn) states, computed here directly from the bond list.
-   This validates the closed form at square AND non-square shapes, and on
+   This validates the closed form at square and non-square shapes, and on
    both sides of criticality (the gamma_0 = 2K + ln tanh K angle changes
    sign at K_c, and the sign handling of the Z4 product is the classic bug).
 2. DNFS Table 2 (paper, App. E.1.2): the printed "Optimal Value" rows for
@@ -33,7 +33,7 @@ def _enumerate_log_partition(n_rows: int, n_cols: int, bond_coupling: float):
     """Exact log Z and per-site internal energy by summing over all states.
 
     Energy convention: beta*H = -K * sum_{<ij>} s_i s_j over each unordered
-    torus edge ONCE (K = bond_coupling). Returns (log_Z, E_per_site) with
+    torus edge once (K = bond_coupling). Returns (log_Z, E_per_site) with
     E_per_site = -<sum_pairs s_i s_j> / (n_rows * n_cols), the DNFS Table 2
     unit (energy in units of J per site).
     """
@@ -92,13 +92,13 @@ def test_dnfs_table2_sigma01_row():
 
 
 def test_dnfs_table2_critical_row_is_at_exact_criticality_not_022305():
-    """FINDING: DNFS Table 2's 'Optimal Value' row labelled
-    sigma = 0.22305 was computed at EXACT criticality sigma = ln(1+sqrt(2))/4
-    = 0.220343, not at the labelled coupling. All three printed values match
-    the exact-critical evaluation to printed precision and none matches the
-    evaluation at 0.22305 (F -2.1165, E -1.5104, S 0.2704 there). Downstream
-    consequence: the replication's sigma_c energy comparisons must use the
-    exact values AT the operating coupling — against those, the measured
+    """DNFS Table 2's 'Optimal Value' row labelled sigma = 0.22305 was
+    computed at exact criticality sigma = ln(1+sqrt(2))/4 = 0.220343, not at
+    the labelled coupling. All three printed values match the exact-critical
+    evaluation to printed precision and none matches the evaluation at
+    0.22305 (F -2.1165, E -1.5104, S 0.2704 there). So the replication's
+    sigma_c energy comparisons must use the exact values at the operating
+    coupling — against those, the measured
     E/D ~ -1.508 sits ~0.002 from truth, not the ~0.03 'replication gap'
     read against the paper's misplaced comparator."""
     exact_critical_sigma = math.log(1.0 + math.sqrt(2.0)) / 4.0

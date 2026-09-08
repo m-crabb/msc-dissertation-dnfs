@@ -53,7 +53,7 @@ def test_stencil_bench_head_routes_stencil_band():
 
 def test_naive_bench_head_is_the_doubly_hollow_oracle():
     """The naive rung has no trained cell (mask_one is bit-exact equal, so
-    it never ships) — its bench claim is the ORACLE's cost, so the pin is
+    it never ships) — its bench claim is the oracle's cost, so the pin is
     class identity + shared backbone rather than a cell schema."""
     from discrete_flow_sampler.constraints.swap_readout import (
         DoublyHollowSwapHead,
@@ -72,7 +72,7 @@ def test_site_orderings_reach_the_raster_bench_heads(head_kind):
 
     Until 2026-08-29 `site_orderings` was forwarded to the factorised branch
     alone, so `--head-kind interval --site-orderings row,col` built a
-    ONE-sweep head, exited 0, and printed `site_orderings=row,col` in the
+    one-sweep head, exited 0, and printed `site_orderings=row,col` in the
     run banner. A cost table filled from that would have priced `ivmo2` /
     `mamo2` at their one-sweep parents' cost and made the second backbone
     pass look free. Mirrors test_raster_head_orderings'
@@ -106,7 +106,7 @@ def test_one_sweep_stays_the_default_on_the_bench(head_kind):
 
 
 def test_reported_peak_memory_excludes_the_resident_baseline():
-    """A config benched after others must report its OWN peak.
+    """A config benched after others must report its own peak.
 
     `reset_peak_memory_stats()` resets the peak but not the allocator, so
     `max_memory_allocated()` still counts whatever was alive at reset.
@@ -134,15 +134,12 @@ def test_reported_peak_memory_excludes_the_resident_baseline():
 
 
 def test_masked_attention_shares_the_interval_forward_code_object():
-    """The fact the compile-isolation fix exists for.
-
-    torch.compile caches per forward CODE OBJECT, not per module, so heads
+    """torch.compile caches per forward code object, not per module, so heads
     that inherit a forward share one `recompile_limit` budget across the
     whole process. `MaskedAttentionSwapHead` (and therefore the stencil
     family) inherits `IntervalSwapHead.forward`, which is why benching an MA
     row could silently de-optimise a later interval row. If a future MA head
-    overrides forward this assertion should be updated, not deleted -- the
-    grouping is what the isolation protocol is sized against.
+    overrides forward, update this assertion rather than deleting it.
     """
     from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
     from discrete_flow_sampler.constraints.masked_attention_swap_head import (
@@ -158,7 +155,7 @@ def test_compiled_configs_reset_dynamo_before_compiling():
     Without the reset the budget is spent across configurations: a fresh head
     costs two cache entries (the lazily set `_causal_mask` invalidates the
     first trace), so the fifth interval-family configuration in a process
-    exhausts the default limit of 8 and every later one runs EAGER while
+    exhausts the default limit of 8 and every later one runs eager while
     still printing compile=True. Measured on an A100 2026-08-29: 26.4 ms /
     2.96 GB against 10.1 ms / 1.76 GB for the same interval d=256 B=32 row.
     """

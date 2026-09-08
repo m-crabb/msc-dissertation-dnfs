@@ -1,16 +1,15 @@
-"""Falsification tests for the exclusion-mask band-attention swap head.
+"""Tests for the exclusion-mask band-attention swap head.
 
-Ported from test_interval_swap_head.py (the probes are aggregator-agnostic
-by design) with the bars TIGHTENED: exclusion happens before the softmax, so
-hole terms never enter any computed quantity and blindness/antisymmetry are
-asserted at exactly 0.0 -- not the interval head's ATOL, which priced its
-fp cancellation residue. A nonzero residual here is a leak, not noise.
+Ported from test_interval_swap_head.py (the probes are aggregator-agnostic)
+with the bars tightened: exclusion happens before the softmax, so hole terms
+never enter any computed quantity and blindness/antisymmetry are asserted at
+exactly 0.0 rather than the interval head's atol, which priced its fp
+cancellation residue. A nonzero residual here is a leak, not noise.
 
-Two (a)-specific additions: empty visible sets (adjacent pairs, bands
-shorter than an offset) must yield exact-zero band blocks AND finite
-gradients -- the fully-masked-softmax row is the one place this head could
-NaN, and the finite EXCLUDED_SCORE_FILL + index-mask overwrite is the
-designed guard.
+Two additions here: empty visible sets (adjacent pairs, bands shorter than an
+offset) must yield exact-zero band blocks and finite gradients. The
+fully-masked-softmax row is the one place this head could NaN; the finite
+EXCLUDED_SCORE_FILL plus index-mask overwrite is the guard.
 """
 
 import pytest
@@ -85,12 +84,11 @@ PROBE_PAIRS = [(0, 8), (3, 4), (0, 1), (7, 8), (2, 5)]
 @torch.no_grad()
 @pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 def test_pair_context_blind_to_both_holes_exactly(gather_triu_pairs):
-    """K1 core, exact form: H_ij must not move AT ALL under any change to
-    x_i or x_j. Excluded terms carry softmax weight +0.0, so the residual
-    is zero in exact arithmetic AND in floating point -- assert equality.
-
-    Both assembly paths: the triu-pair gather drops the pairs nobody reads,
-    and exclusion stays index arithmetic, so the EXACT bar must still hold."""
+    """H_ij must not move under any change to x_i or x_j. Excluded terms carry
+    softmax weight +0.0, so the residual is zero in exact arithmetic and in
+    floating point -- assert equality. Both assembly paths: the triu-pair
+    gather drops the pairs nobody reads, and exclusion stays index arithmetic,
+    so the exact bar still holds."""
     head = _head(d=9, gather_triu_pairs=gather_triu_pairs)
     x = _state(d=9)
     t = torch.rand(1)
@@ -109,8 +107,8 @@ def test_pair_context_blind_to_both_holes_exactly(gather_triu_pairs):
 
 @torch.no_grad()
 def test_band_summaries_blind_exactly():
-    """Sharper probe, directly on the band (the component that differs from
-    the interval head): flip either hole, band[:, i, j] must be identical."""
+    """Directly on the band (the component that differs from the interval
+    head): flip either hole, band[:, i, j] must be identical."""
     head = _head(d=9)
     x = _state(d=9)
     t = torch.rand(1)
@@ -144,8 +142,8 @@ def test_band_empty_visible_sets_are_exact_zero():
 
 @torch.no_grad()
 def test_pair_context_sensitive_to_context():
-    """Anti-triviality control: a head blind to EVERYTHING passes the
-    blindness probes. H_ij must actually depend on each visible interval."""
+    """Anti-triviality control: a head blind to everything passes the blindness
+    probes. H_ij must actually depend on each visible interval."""
     head = _head(d=9)
     x = _state(d=9)
     t = torch.rand(1)
@@ -159,8 +157,8 @@ def test_pair_context_sensitive_to_context():
 
 @torch.no_grad()
 def test_blindness_probe_has_teeth():
-    """Negative control for the TEST: an unmasked-body context must register
-    loudly under the same flip probe, pinning the probe's sensitivity."""
+    """Negative control for the test: an unmasked-body context must register
+    under the same flip probe, pinning the probe's sensitivity."""
     head = _head(d=9)
     x = _state(d=9)
     t = torch.rand(1)
@@ -175,9 +173,9 @@ def test_blindness_probe_has_teeth():
 @torch.no_grad()
 @pytest.mark.parametrize("d,offsets", [(9, (1, 3)), (16, (1, 4))])
 def test_antisymmetric_at_init_exactly(d, offsets):
-    """K1, exact form: G(i,j|x) = -G(i,j|Swap2(x,i,j)) with residual 0.0.
-    H is exactly blind and the omega difference negates exactly, so the
-    einsum negates term-by-term -- no tolerance needed."""
+    """G(i,j|x) = -G(i,j|Swap2(x,i,j)) with residual 0.0: H is exactly blind
+    and the omega difference negates exactly, so the einsum negates
+    term-by-term."""
     head = _head(d=d, offsets=offsets)
     x = _state(d=d)
     t = torch.rand(1)
@@ -203,7 +201,7 @@ def test_trivial_swap_vanishes_exactly():
 
 @torch.no_grad()
 def test_index_antisymmetry_pinned_exactly():
-    """G[j,i] == -G[i,j]: pins the label-SYMMETRY convention (H_ji := H_ij),
+    """G[j,i] == -G[i,j]: pins the label-symmetry convention (H_ji := H_ij)
     inherited from the interval head. Exact for the same reason as the
     state-swap antisymmetry."""
     head = _head(d=9)
@@ -215,9 +213,9 @@ def test_index_antisymmetry_pinned_exactly():
 
 @torch.no_grad()
 def test_shapes_finite_and_pair_gather():
-    """Drop-in contract: batched shapes, finiteness (including the
-    fully-masked adjacent-pair rows -- the NaN risk this head must guard),
-    and the upper-triangle gather the sampler/loss actually consume."""
+    """Batched shapes, finiteness (including the fully-masked adjacent-pair
+    rows, the NaN risk) and the upper-triangle gather the sampler and loss
+    consume."""
     d, batch = 9, 3
     head = _head(d=d)
     torch.manual_seed(7)
@@ -241,11 +239,11 @@ def test_shapes_finite_and_pair_gather():
 
 
 def test_head_parameters_receive_grad_and_grads_finite():
-    """Every head-owned module live in the graph -- including the new band
-    query/key projections -- with FINITE gradients despite the fully-masked
-    rows in the batch (adjacent pairs are forced into the fixture: an -inf
-    fill would send NaN through the softmax backward even where the forward
-    output is discarded). attention_readout stays pinned dead."""
+    """Every head-owned module live in the graph, band query/key projections
+    included, with finite gradients despite the fully-masked rows in the batch
+    (adjacent pairs are forced into the fixture: an -inf fill would send NaN
+    through the softmax backward even where the forward output is discarded).
+    attention_readout stays pinned dead."""
     head = _head(d=9)
     x = _state(d=9)
     x[0, 3], x[0, 4] = 1.0, -1.0  # active adjacent pair => empty band row
@@ -300,10 +298,10 @@ def _stencil_head(d=16, offsets=(1, 4), lattice_side=4, seed=42):
 
 @torch.no_grad()
 def test_stencil_band_blind_exactly():
-    """The stencil family must not break the head's reason for existing: with
-    it live, band[:, i, j] stays EXACTLY unchanged under any flip of x_i / x_j.
-    Visibility (k - side > i AND k + side < j) is index arithmetic, so every
-    excluded centre carries softmax weight +0.0 -- the exact-0.0 bar holds."""
+    """With the stencil family live, band[:, i, j] stays exactly unchanged
+    under any flip of x_i / x_j. Visibility (k - side > i and k + side < j) is
+    index arithmetic, so every excluded centre carries softmax weight +0.0 and
+    the exact-0.0 bar holds."""
     head = _stencil_head()
     x = _state(d=16)
     t = torch.rand(1)
@@ -323,9 +321,9 @@ def test_stencil_band_blind_exactly():
 @torch.no_grad()
 def test_stencil_collar_and_coverage():
     """The ±side reach leaves a collar (~side sites round each hole) with no
-    stencil coverage; the family is exact zero for any pair whose interior
+    stencil coverage: the family is exact zero for any pair whose interior
     holds no admissible centre, and nonzero once a wide pair does. Stencil is
-    the LAST band-feature family, so its block is the trailing F channels."""
+    the last band-feature family, so its block is the trailing F channels."""
     head = _stencil_head()
     F = head.band_stencil_features[-1].out_features
     x = _state(d=16)
@@ -345,10 +343,10 @@ def test_stencil_collar_and_coverage():
 
 @torch.no_grad()
 def test_stencil_visibility_is_exact_index_arithmetic():
-    """Sharp visibility probe on the stencil block for pair (0, 15), side 4:
-    centre k is live iff 4 < k < 11. A hole flip must not move it (blindness),
-    a flip of a touched interior site MUST (teeth), and a flip of a site no
-    live centre touches must NOT -- pinning the k±side straddle exclusion."""
+    """Visibility probe on the stencil block for pair (0, 15), side 4: centre k
+    is live iff 4 < k < 11. A hole flip must not move it, a flip of a touched
+    interior site must, and a flip of a site no live centre touches must not --
+    pinning the k±side straddle exclusion."""
     head = _stencil_head()
     F = head.band_stencil_features[-1].out_features
     x = _state(d=16)
@@ -365,9 +363,9 @@ def test_stencil_visibility_is_exact_index_arithmetic():
 
 @torch.no_grad()
 def test_stencil_empty_centre_range_is_zero_and_finite():
-    """Boundary term-range guard: centres exist only for side <= k < d - side,
-    so d = 2*side leaves NO centre. The family must be all-zero and finite --
-    the fully-masked-softmax NaN trap this head is built to avoid."""
+    """Centres exist only for side <= k < d - side, so d = 2*side leaves none.
+    The family must be all-zero and finite: the fully-masked-softmax NaN
+    trap."""
     head = _stencil_head(d=4, offsets=(1, 2), lattice_side=2)
     F = head.band_stencil_features[-1].out_features
     band = head.band_summaries(_state(d=4), torch.rand(1))
@@ -377,8 +375,8 @@ def test_stencil_empty_centre_range_is_zero_and_finite():
 
 @torch.no_grad()
 def test_stencil_antisymmetric_at_init_exactly():
-    """K1 for the stencil variant: exact blindness => exact state-swap
-    antisymmetry G(i,j|x) = -G(i,j|Swap2(x,i,j)), residual 0.0."""
+    """Stencil variant: exact blindness => exact state-swap antisymmetry
+    G(i,j|x) = -G(i,j|Swap2(x,i,j)), residual 0.0."""
     head = _stencil_head()
     x = _state(d=16)
     t = torch.rand(1)
@@ -391,8 +389,8 @@ def test_stencil_antisymmetric_at_init_exactly():
 
 
 def test_stencil_off_adds_nothing():
-    """Byte-identity guard: the default head is unchanged -- no stencil module,
-    so every existing MA cell builds the head it always did."""
+    """The default head is unchanged: no stencil module, so every existing MA
+    cell builds the head it always did."""
     torch.manual_seed(0)
     backbone = LeTFRateMatrix(
         d=16,
@@ -409,9 +407,9 @@ def test_stencil_off_adds_nothing():
 
 
 def test_stencil_head_parameters_receive_finite_grad():
-    """Every head-owned module -- including the stencil MLP and its
-    query/key projections -- must be live in the graph with finite grads,
-    even with a forced empty-band adjacent pair in the batch."""
+    """Every head-owned module, stencil MLP and its query/key projections
+    included, is live in the graph with finite grads, even with a forced
+    empty-band adjacent pair in the batch."""
     head = _stencil_head()
     head.train()
     x = _state(d=16)
@@ -425,10 +423,10 @@ def test_stencil_head_parameters_receive_finite_grad():
 
 
 def test_blindness_holds_at_tuned_band_capacity():
-    """The band-capacity knobs (2026-07-08) must not perturb the
-    exclusion logic: H_ij stays EXACTLY unchanged under any flip of x_i /
-    x_j at non-default widths and offsets, including an offset (4) that is
-    neither row nor column adjacency."""
+    """The band-capacity knobs (2026-07-08) must not perturb the exclusion
+    logic: H_ij stays exactly unchanged under any flip of x_i / x_j at
+    non-default widths and offsets, including an offset (4) that is neither row
+    nor column adjacency."""
     torch.manual_seed(0)
     backbone = LeTFRateMatrix(
         d=16,
@@ -455,13 +453,11 @@ def test_blindness_holds_at_tuned_band_capacity():
 
 
 def test_readout_score_scale_is_an_exact_score_multiplier():
-    """muP readout compensation (2026-08-18): `readout_score_scale` must be
-    EXACTLY a scalar multiplier on the pair scores G — a float, not a
-    parameter, so it creates no weights, consumes no RNG (a scaled head is
-    the archived head bit-for-bit in state_dict), and every blindness /
-    antisymmetry property proven above transfers by linearity of the
-    scale. The default 1.0 is the archived readout: the multiply is
-    skipped entirely, so existing cells stay byte-identical in forward."""
+    """muP readout compensation (2026-08-18): `readout_score_scale` is exactly
+    a scalar multiplier on the pair scores G — a float, not a parameter, so it
+    creates no weights and consumes no RNG (a scaled head matches the archived
+    head in state_dict), and blindness/antisymmetry transfer by linearity. The
+    default 1.0 skips the multiply, so existing cells are unchanged."""
     head = _head()
     torch.manual_seed(42)  # identical RNG stream -> identical weights
     backbone = LeTFRateMatrix(

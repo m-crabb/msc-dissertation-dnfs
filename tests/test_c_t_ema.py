@@ -1,38 +1,34 @@
 """Tests for the c_t grid EMA.
 
-What correct looks like, independent of implementation:
+Properties pinned:
 
-1. **Off is byte-identical.** `c_t_ema_halflife_cycles = 0.0` (the default,
-   and the value every archived run implicitly carries) must leave the
-   training trajectory untouched — the knob defaults to OFF, so the
-   falsification record of every archived cell stays valid.
-2. **No init contamination.** The EMA must pass the FIRST outer cycle's
-   raw c_t grid through exactly (re-seeded at it), never mix in a zero or
-   stale initial state — the failure mode `ema.py`'s warmup schedule exists
-   to prevent, avoided here by construction.
-3. **Fixed point is unchanged.** A constant integrand sequence must be
-   reproduced exactly at every cycle: smoothing is pure variance reduction
-   on a drifting target, not a shift of what it converges to (the Eq.-8
-   identity E[xi] = dt log Z_t holds for the model's own law, so recent
-   cycles estimate the same slowly-drifting quantity).
-4. **Tracking lag is the advertised halflife.** After a step change in the
-   target, the state must close >= half the gap within `halflife` cycles.
-5. **Curriculum transitions reset.** c_t = d_t log Z_t is a function of
-   sigma; smoothing must never mix estimates across a sigma boundary. At
-   the transition cycle the logged `c_t_ema_rms_delta` must be exactly 0.0
-   (passthrough), growing again afterwards.
-6. **Resume bit-exactness.** The EMA state and its validity must travel in
-   resume.pt: an interrupt-and-resume under the EMA must reproduce the
-   uninterrupted run's training log bit-for-bit (excluding wall-clock),
-   the same contract test_swap_training_resume.py pins for the base state.
-7. **Resume re-homes onto the live device.** resume.pt is deliberately
-   device-portable (the state is stored on CPU, as replay chunks and the
-   parameter shadow are), so a restored state must end up back on whatever
-   device the run is using before it is folded into the next cycle's grid.
-   Unlike the parameter EMA there are no parameters to read a device from,
-   so the contract is checked at the fold. This is the only contract in
-   this file that CPU-only runs cannot falsify — it is the resume path of
-   every GPU cell that arms the knob.
+1. Off is byte-identical: `c_t_ema_halflife_cycles = 0.0` (the default, and
+   the value every archived run implicitly carries) leaves the training
+   trajectory untouched.
+2. No init contamination: the EMA passes the first outer cycle's raw c_t grid
+   through exactly (re-seeded at it), never mixing in a zero or stale initial
+   state — the failure mode `ema.py`'s warmup schedule exists to prevent,
+   avoided here by construction.
+3. Fixed point unchanged: a constant integrand sequence is reproduced exactly
+   at every cycle. Smoothing is variance reduction on a drifting target, not a
+   shift of what it converges to (the Eq.-8 identity E[xi] = dt log Z_t holds
+   for the model's own law, so recent cycles estimate the same slowly-drifting
+   quantity).
+4. Tracking lag is the advertised halflife: after a step change in the target,
+   the state closes >= half the gap within `halflife` cycles.
+5. Curriculum transitions reset. c_t = d_t log Z_t is a function of sigma, so
+   smoothing never mixes estimates across a sigma boundary: at the transition
+   cycle the logged `c_t_ema_rms_delta` is exactly 0.0 (passthrough), growing
+   again afterwards.
+6. Resume bit-exactness: the EMA state and its validity travel in resume.pt,
+   so an interrupt-and-resume reproduces the uninterrupted run's training log
+   bit-for-bit (excluding wall-clock).
+7. Resume re-homes onto the live device. resume.pt is device-portable (the
+   state is stored on CPU, as replay chunks and the parameter shadow are), so
+   a restored state must end up back on the run's device before it is folded
+   into the next cycle's grid. Unlike the parameter EMA there are no
+   parameters to read a device from, so this is checked at the fold; it is the
+   only contract here that CPU-only runs cannot falsify.
 """
 
 import csv
@@ -63,10 +59,8 @@ TWO_STAGE_CURRICULUM = (
 
 
 def _head(init_seed: int) -> LeTFMaskOneSwapHead:
-    # Mask-one, not the doubly-hollow oracle: the c_t EMA contracts are
-    # head-agnostic, and the O(d^2)-pass head costs ~15x per call for no
-    # extra coverage here (first version of this file used it; 95s for the
-    # file against the suite's 80s total).
+    # Mask-one, not the doubly-hollow oracle: the contracts are head-agnostic
+    # and the O(d^2)-pass head costs ~15x per call (95 s for this file alone).
     torch.manual_seed(init_seed)
     return LeTFMaskOneSwapHead(
         LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
@@ -195,10 +189,10 @@ def _accelerator() -> str | None:
 
 
 def test_state_dict_roundtrip_re_homes_off_cpu():
-    """Contract 7. state_dict() stores on CPU for portability, so a resumed
+    """Contract 7: state_dict() stores on CPU for portability, so a resumed
     run on an accelerator must not be left folding a CPU state into a device
-    grid. Exercised through torch.save/torch.load because that (not a bare
-    dict handoff) is what resume.pt actually does."""
+    grid. Exercised through torch.save/torch.load, which is what resume.pt
+    does."""
     device = _accelerator()
     if device is None:
         import pytest

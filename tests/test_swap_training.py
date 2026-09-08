@@ -106,7 +106,7 @@ def test_train_swap_logs_swap_rate_diagnostics_and_preserves_composition(tmp_pat
 
 
 def test_train_swap_use_matching_step_threads_through_sampler(tmp_path, monkeypatch):
-    """CTMCCfg.use_matching_step=True must reach EVERY trajectory simulation
+    """CTMCCfg.use_matching_step=True must reach every trajectory simulation
     in the training loop — the buffer rebuild and the in-training eval draw
     alike. The 16x16 rung trains on the matching step at n_euler=128, which
     is only clip-safe because the matching step decouples trajectory length
@@ -206,7 +206,7 @@ def test_train_swap_eval_sample_chunk_bounds_head_batch(tmp_path):
 
 
 def test_train_swap_in_training_eval_draw_size(tmp_path):
-    """`n_eval_samples_training` shrinks ONLY the in-training diagnostic ESS
+    """`n_eval_samples_training` shrinks only the in-training diagnostic ESS
     draws (the objective is the one final n_eval_samples eval in run.py, which
     train_swap does not perform); the default None preserves the current
     behaviour of drawing the full n_eval_samples every eval."""
@@ -254,7 +254,7 @@ def test_train_swap_in_training_eval_draw_size(tmp_path):
 
 def test_train_swap_eval_autocast_bf16_flag(tmp_path):
     """`eval_autocast_bf16` must default False (fp32 eval, behaviour
-    unchanged) and, when set, run ONLY the in-training eval head calls under
+    unchanged) and, when set, run only the in-training eval head calls under
     bf16 autocast -- training forward/backward stays fp32 (gradients are
     Tier-3, untouchable)."""
     from experiments.dnfs_baseline_01.configs import EvalCfg
@@ -268,7 +268,7 @@ def test_train_swap_eval_autocast_bf16_flag(tmp_path):
         train_cfg, ctmc_cfg, eval_cfg = _tiny_cfgs()
         eval_cfg.eval_autocast_bf16 = flag_on
 
-        # The head's OUTPUT dtype is fp32 even under autocast (the readout's
+        # The head's output dtype is fp32 even under autocast (the readout's
         # final op promotes), so detect autocast state, not tensor dtype.
         autocast_states = []
         hook = head.register_forward_pre_hook(
@@ -330,7 +330,7 @@ def test_train_swap_logs_c_t_offset_rms(tmp_path):
 
 
 def test_train_swap_logs_grad_sqnorm_slice_mean(tmp_path):
-    """When micro-batching is on, the mean squared norm of the UNWEIGHTED
+    """When micro-batching is on, the mean squared norm of the unweighted
     per-slice gradients is logged each step — the E|g_b|^2 ingredient of the
     McCandlish gradient-noise-scale pair, whose |g_N| partner is the already
     logged pre-clip grad_norm. With micro-batching off the column is NaN:

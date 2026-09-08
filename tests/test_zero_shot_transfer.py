@@ -1,32 +1,33 @@
 """Zero-shot transfer probe: what a trained swap sampler delivers off-target.
 
-Two axes, both evaluated on an UNCHANGED trained head:
+Two axes, both evaluated on an unchanged trained head:
 
   * coupling.     On the fixed-composition slice base_log_eta is a constant
                   (-log C(d, N_A)), so the geometric path
                   log p~_t = (1-t)*base_log_eta + t*log_prob has its (1-t)
                   term cancel out of every ratio, leaving log p~_t ∝ t*sigma*xAx.
-                  The path IS a coupling anneal: stopping at t* lands exactly on
+                  The path is a coupling anneal: stopping at t* lands exactly on
                   the target at coupling t*·sigma. No retraining, no new base.
   * composition.  Swapping the target's slice changes sample_base and the
                   slice constant. The head never sees c except through x, so it
                   transfers unchanged; the IS weights re-target by construction.
 
-Both are EXACT whatever the model does — the learned rates are only a proposal,
+Both are exact whatever the model does — the learned rates are only a proposal,
 and xi_t is evaluated against whichever target is handed in. Only the efficiency
-(ESS) varies. That is what makes this probe safe to run before any new training.
+(ESS) varies, which is what makes this probe safe to run before any new
+training.
 
-What these tests pin, in order of how much the probe rests on them:
+What these tests pin:
 
-1. `running_log_weights` reconstructs, from ONE sampler pass, the weights a
-   truncated run would have produced at every grid time. This is the whole
-   reason the probe is cheap (one pass per composition, not one per stopping
-   time), and it is a mechanical claim, not a statistical one.
+1. `running_log_weights` reconstructs, from one sampler pass, the weights a
+   truncated run would have produced at every grid time. This is what makes the
+   probe cheap (one pass per composition, not one per stopping time), and it is
+   a mechanical claim, not a statistical one.
 2. The early-stopped weighted ensemble targets p~_{t*}, checked at 4x4 against
-   exact enumeration of the slice. This is the claim the physics rests on.
+   exact enumeration of the slice.
 3. The same holds on a slice the model was never trained on.
 4. Draws never leave the requested manifold — a transferred composition must be
-   delivered bit-exactly, or the "constraint is free" story is false.
+   delivered bit-exactly.
 
 4x4 is used throughout because the fixed-c slice is enumerable there
 (C(16,8) = 12,870 at half filling), so every claim is checked against exact
@@ -86,7 +87,7 @@ def test_running_weights_match_a_truncated_run(stop_index):
     This is the claim that makes the probe one pass instead of len(stop_times)
     passes. If it fails, every stopping time needs its own run.
 
-    NOT bit-exact, and the tolerance is the point rather than a concession:
+    Not bit-exact, and the tolerance is the point rather than a concession:
     `cumsum` and the sampler's sequential `log_weights += xi*dt` sum the same
     float32 increments in different orders, which lands ~5e-7 apart. That is
     associativity, not a different quantity — a genuine off-by-one or a wrong
@@ -111,7 +112,7 @@ def test_running_weights_match_a_truncated_run(stop_index):
 
 
 def test_running_weights_start_at_zero():
-    """At t=0 the ensemble IS the base, so the weight integral is empty. A
+    """At t=0 the ensemble is the base, so the weight integral is empty. A
     non-zero weight here would mean the cumsum is off by one step and every
     reported stopping time is shifted."""
     head, target = _head(), _target()
@@ -126,7 +127,7 @@ def test_running_weights_start_at_zero():
 
 @pytest.mark.parametrize("stop_time", [0.4538, 1.0])
 def test_early_stopped_weights_target_the_intermediate_coupling(stop_time):
-    """Self-normalised IS at t* must reproduce the EXACT slice expectation at
+    """Self-normalised IS at t* must reproduce the exact slice expectation at
     coupling t*·sigma, not at sigma.
 
     t* = 0.4538 is the stopping time that lands on sigma = 0.1 for a sigma_c
@@ -160,8 +161,8 @@ def test_early_stopped_weights_target_the_intermediate_coupling(stop_time):
 
     assert abs(float(estimate) - exact["mean_quadratic"]) < tolerance
 
-    # And the intermediate target must be genuinely DIFFERENT from the endpoint,
-    # or the test above passes for the wrong reason.
+    # And the intermediate target must be genuinely different from the
+    # endpoint, or the test above passes for the wrong reason.
     if stop_time < 1.0:
         endpoint = exact_slice_statistics(
             D=D, sigma=SIGMA, composition=0.5, stop_time=1.0
@@ -174,7 +175,7 @@ def test_early_stopped_weights_target_the_intermediate_coupling(stop_time):
 
 def test_transfer_to_an_unseen_composition_targets_that_slice():
     """The head is untouched; only the target's slice moves. The weighted
-    ensemble must land on the exact conditional of the NEW slice."""
+    ensemble must land on the exact conditional of the new slice."""
     head = _head()
     target = _target(composition=0.375)  # 6 of 16 up — never the training slice
     ts = torch.linspace(0.0, 1.0, N_EULER)
@@ -250,7 +251,7 @@ def test_stop_time_zero_is_the_uniform_slice():
 
 def test_transfer_grid_covers_both_axes_and_reports_the_coupling():
     """The wrapper's contract: one row per (composition, stop_time), each
-    carrying the PHYSICAL coupling t*·sigma rather than the bare stop time,
+    carrying the physical coupling t*·sigma rather than the bare stop time,
     because that is the number a reference chain is generated at."""
     head = _head()
     rows = transfer_grid(
@@ -275,15 +276,15 @@ def test_transfer_grid_covers_both_axes_and_reports_the_coupling():
 
 
 def test_training_side_drift_is_reported_not_fatal():
-    """A finished cell whose TRAINING config has since moved must still be
+    """A finished cell whose training config has since moved must still be
     probeable: no optimiser runs here, so the training subtree cannot reach the
     sampled measure. The drift is returned so the caller logs it rather than
     swallowing it.
 
     Live case this encodes: `halt_on_cv_inversion_after` was cleared to None
-    after the thp2 sigma_c cells had started. It is a cold-CV screening halt that
-    never fired on them, and run.py's whole-config launch guard would refuse
-    every one of those checkpoints over it.
+    after the thp2 sigma_c cells had started. It is a cold-CV screening halt
+    that never fired on them, and run.py's whole-config launch guard would
+    refuse every one of those checkpoints over it.
     """
     saved = {
         "name": "cell",
@@ -331,7 +332,7 @@ def test_drift_in_what_is_sampled_is_fatal(field, value):
 
 
 def test_slice_free_energy_recovers_the_enumerated_slice_normaliser():
-    """A perfect sampler's mean running log-weight IS log Z_t (Jensen is tight
+    """A perfect sampler's mean running log-weight is log Z_t (Jensen is tight
     at zero residual), so feeding the enumerated log Z_t of the annealing
     density must give back -log Z_slice(t sigma)/d exactly -- including the
     (1 - t) log C(d, n_plus) slice constant that the base contributes at t < 1

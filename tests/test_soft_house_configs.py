@@ -1,23 +1,18 @@
-"""What correct looks like for the 8x8 soft house family.
+"""The 8x8 soft house family, built by `soft_house_recipe` over the printed
+ne128 parent. These tests are the recipe-parity audit in executable form:
 
-The family is built by
-`soft_house_recipe` over the printed ne128 parent. These tests are the
-recipe-parity audit in executable form:
-
-1. DECLARED DIFFS ONLY. Every house cell differs from
-   S2_d8_c03_l50_letf_ne128 in exactly the declared set — composition,
-   sigma (the _sc half), the four recipe levers — and NOTHING else. A
-   stray lever here would put a second undeclared change under every
-   before/after claim the revamped chapter makes.
-2. REPRESENTABILITY + MIRROR ECONOMY. Every trained c* is an integer site
-   count at d=64, and no trained composition duplicates another under the
-   Z2 mirror c -> 1-c (a trained 0.75 would re-buy 0.25's information).
-3. SIGMA_C IS IMPORTED, NEVER RETYPED (the sigma_c migration rule): the _sc
+1. Every house cell differs from S2_d8_c03_l50_letf_ne128 in exactly the
+   declared set — composition, sigma (the _sc half), the four recipe levers —
+   and nothing else, or a second undeclared change sits under every
+   before/after claim the chapter makes.
+2. Every trained c* is an integer site count at d=64, and no trained
+   composition duplicates another under the Z2 mirror c -> 1-c (a trained 0.75
+   would re-buy 0.25's information).
+3. sigma_c is imported, never retyped (the sigma_c migration rule): the _sc
    cells carry targets.ising.SIGMA_C to the last bit.
-4. The nochan control gives back the channel flag ONLY — it exists to
-   isolate the channel at sigma_c, so any other difference voids it.
-5. The eager gate twin gives back compile_model ONLY — it exists to
-   measure the compile loss gap, same logic.
+4. The nochan control gives back the channel flag only; it isolates the channel
+   at sigma_c, so any other difference voids it.
+5. The eager gate twin gives back compile_model only, for the compile loss gap.
 """
 
 from dataclasses import asdict
@@ -72,14 +67,12 @@ def test_sc_cells_carry_exact_sigma_c():
 
 
 def test_sc_anneal_arm_adds_the_schedule_to_nochan_only():
-    """The three-fates trio at sigma_c: parent (nochan), anneal, channel.
-
-    The anneal arm is the nochan control PLUS the chapter's declared
-    lambda schedule (10/25/50 at 0/10k/20k) and NOTHING else -- it must
-    differ from nochan by the schedule alone, or the deferred-vs-
-    discharged comparison in fig:penalty-variance carries a second
-    change. (It differs from the channel-on house cell by exactly two
-    levers as a consequence: channel off, schedule on.)"""
+    """The three-fates trio at sigma_c: parent (nochan), anneal, channel. The
+    anneal arm is the nochan control plus the chapter's declared lambda schedule
+    (10/25/50 at 0/10k/20k) and nothing else, or the deferred-vs-discharged
+    comparison in fig:penalty-variance carries a second change. It therefore
+    differs from the channel-on house cell by two levers: channel off, schedule
+    on."""
     nochan = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"])
     anneal = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"])
     assert _diff(nochan, anneal) == {"name", "lambda_curriculum"}
@@ -92,11 +85,10 @@ def test_sc_anneal_arm_adds_the_schedule_to_nochan_only():
 
 
 def test_matched_base_twins_give_back_base_composition_only():
-    """The matched-base wave: base_composition = c* at the off-centre
-    windows, one declared lever against the run house twin — any second
-    difference would put the uplift claim under two changes. No centre
-    twin exists: Bernoulli(0.5) is already the matched base at c* = 0.5,
-    so the centre rows anchor both columns unchanged."""
+    """The matched-base wave: base_composition = c* at the off-centre windows,
+    one declared lever against the run house twin. No centre twin exists —
+    Bernoulli(0.5) is already the matched base at c* = 0.5, so the centre rows
+    anchor both columns unchanged."""
     for c_target, c_tag in SOFT_HOUSE_WINDOWS:
         for sigma_suffix in ("", "_sc"):
             mb_name = f"S2_d8_{c_tag}_l50_letf_ne128_house_mb{sigma_suffix}"
@@ -119,9 +111,9 @@ def test_nochan_control_gives_back_channel_flag_only():
 
 
 def test_subcritical_nochan_control_mirrors_the_sc_one():
-    """Single-size completion: the {coupling} x {channel} 2x2 needs a
-    subcritical nochan cell that is one declared lever off the run house
-    centre cell, exactly as its sigma_c twin is off _house_sc."""
+    """The {coupling} x {channel} 2x2 needs a subcritical nochan cell one
+    declared lever off the run house centre cell, as its sigma_c twin is off
+    _house_sc."""
     house = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house"])
     control = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_nochan"])
     assert _diff(house, control) == {"name", "model"}
@@ -130,10 +122,9 @@ def test_subcritical_nochan_control_mirrors_the_sc_one():
 
 
 def test_lambda_twins_give_back_penalty_strength_only():
-    """The 8x8 lambda-trade twins (both lambdas, both couplings) are the
-    house centre cell with composition_penalty_strength moved and nothing
-    else -- a second lever would confound the lambda trade the chapter
-    reads off them."""
+    """The 8x8 lambda-trade twins (both lambdas, both couplings) are the house
+    centre cell with composition_penalty_strength moved and nothing else; a
+    second lever would confound the lambda trade read off them."""
     for lam, lam_tag, sigma_suffix in (
         (10.0, "l10", ""),
         (10.0, "l10", "_sc"),
@@ -156,12 +147,11 @@ def test_eager_gate_twin_gives_back_compile_only():
 
 
 def test_amortised_house_cell_is_parent_plus_recipe_only():
-    """The camort family re-run on fixed-lambda + channel, with
-    the anneal_offset_clip machinery retired. The cell must be the archived
-    fixed-lambda 50k amortised parent plus the four recipe levers and
-    NOTHING else — in particular no lambda_curriculum and no offset/clip
-    fields, since the wave's claim is that the plain recipe replaces that
-    whole confound family."""
+    """The camort family re-run on fixed-lambda + channel, with the
+    anneal_offset_clip machinery retired: the archived fixed-lambda 50k
+    amortised parent plus the four recipe levers and nothing else — in
+    particular no lambda_curriculum and no offset/clip fields, the wave's claim
+    being that the plain recipe replaces that confound family."""
     parent = asdict(CONFIGS["S2_d4_camort_50k_l50_letf"])
     cell = asdict(CONFIGS["S2_d4_camort_50k_l50_letf_house"])
     assert _diff(parent, cell) == {"name", "model", "train", "ema_decay"}
@@ -173,12 +163,11 @@ def test_amortised_house_cell_is_parent_plus_recipe_only():
 
 
 def test_amort_specialist_house_family_matched_recipe_and_windows():
-    """The tab:amort-4x4 comparator rows re-run on the SAME recipe as the
-    conditioned cell (the cnull block's own confound argument, applied
-    forward), at the revamp's window set {0.25, 0.375, 0.50} — every one an
-    integer site count at d=16, unlike the retired {0.30, 0.65, 0.80}. The
-    c05 cell is the plain 10k specialist at the amortised 50k budget plus
-    the recipe; the off-centre twins give back composition only."""
+    """The tab:amort-4x4 comparator rows re-run on the same recipe as the
+    conditioned cell, at the window set {0.25, 0.375, 0.50} — every one an
+    integer site count at d=16, unlike the retired {0.30, 0.65, 0.80}. The c05
+    cell is the plain 10k specialist at the amortised 50k budget plus the
+    recipe; the off-centre twins give back composition only."""
     parent = asdict(CONFIGS["S2_d4_c05_l50_letf"])
     base = asdict(CONFIGS["S2_d4_c0500_50k_l50_letf_house"])
     assert _diff(parent, base) == {"name", "model", "train", "ema_decay"}
@@ -196,10 +185,10 @@ def test_amort_specialist_house_family_matched_recipe_and_windows():
 
 def test_amort_null_house_isolates_conditioning_machinery():
     """The null control prices the conditioning path against its matched
-    specialist; both must share the house recipe or the price is the
-    recipe gap instead. vs the c05 house specialist the null differs in
-    the conditioning machinery alone: the model flag and the zero-width
-    composition config that feeds it."""
+    specialist; both must share the house recipe or the price is the recipe gap
+    instead. Against the c05 house specialist the null differs in the
+    conditioning machinery alone: the model flag and the zero-width composition
+    config that feeds it."""
     parent = asdict(CONFIGS["S2_d4_cnull_l50_letf"])
     null = asdict(CONFIGS["S2_d4_cnull_50k_l50_letf_house"])
     assert _diff(parent, null) == {"name", "model", "train", "ema_decay"}
@@ -216,11 +205,10 @@ def test_amort_null_house_isolates_conditioning_machinery():
 
 
 def test_camort_sigma_ladder_twin_adds_the_ladder_only():
-    """The dead sigma_c camort cell starts cold at sigma_c; the hard
-    chapter's amortised sigma_c cell trains on the d64 sigma ladder. The
-    twin must give back the ladder ALONE, end on the exact sigma_c, and
-    align every stage with the outer cycle (the trainer rejects it
-    otherwise)."""
+    """The dead sigma_c camort cell starts cold at sigma_c; the hard chapter's
+    amortised sigma_c cell trains on the d64 sigma ladder. The twin gives back
+    the ladder alone, ends on the exact sigma_c, and aligns every stage with the
+    outer cycle (the trainer rejects it otherwise)."""
     dead = asdict(CONFIGS["S2_d8_camort_l50_letf_ne128_house_sc"])
     twin = CONFIGS["S2_d8_camort_l50_letf_ne128_house_sc_curr"]
     assert _diff(dead, asdict(twin)) == {"name", "curriculum"}
@@ -232,10 +220,10 @@ def test_camort_sigma_ladder_twin_adds_the_ladder_only():
 
 
 def test_specialist_sigma_ladder_twin_matches_the_camort_ladder():
-    """The ladder camort cell trains where the cold one died, so its yield
-    ratio needs a specialist on the SAME ladder: one lever off the house
-    sigma_c specialist, and the identical stage tuple, or the ratio carries
-    the ladder as a second difference."""
+    """The ladder camort cell trains where the cold one died, so its yield ratio
+    needs a specialist on the same ladder: one lever off the house sigma_c
+    specialist, with the identical stage tuple, or the ratio carries the ladder
+    as a second difference."""
     specialist = asdict(CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"])
     twin = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_curr"]
     assert _diff(specialist, asdict(twin)) == {"name", "curriculum"}
@@ -244,11 +232,10 @@ def test_specialist_sigma_ladder_twin_matches_the_camort_ladder():
 
 
 def test_d4_10k_table_family_is_the_50k_cell_at_the_4x4_budget():
-    """tab:eval-soft-4x4 reads the 10k family: each subcritical cell is
-    its _50k_ twin with n_steps alone moved to the cross-chapter 4x4
-    budget, and each sigma_c cell moves sigma alone on top of that, to
-    the exact SIGMA_C, cold (no ladder), like every soft sigma_c
-    specialist."""
+    """tab:eval-soft-4x4 reads the 10k family: each subcritical cell is its
+    _50k_ twin with n_steps alone moved to the cross-chapter 4x4 budget, and
+    each sigma_c cell moves sigma alone on top of that, to the exact SIGMA_C,
+    cold (no ladder), like every soft sigma_c specialist."""
     for _, c_tag in SOFT_HOUSE_WINDOWS:
         budget_parent = asdict(CONFIGS[f"S2_d4_{c_tag}_50k_l50_letf_house"])
         cell = asdict(CONFIGS[f"S2_d4_{c_tag}_10k_l50_letf_house"])
@@ -264,11 +251,10 @@ def test_d4_10k_table_family_is_the_50k_cell_at_the_4x4_budget():
 
 def test_d4_10k_conditioned_twin_mirrors_the_8x8_construction():
     """The conditioned row of tab:eval-soft-4x4 sits at the table's own 10k
-    budget and is built from the 10k centre specialist exactly as the 8x8
-    conditioned cell is built from its specialist: matched base on, the
-    conditioning flag on, the discrete spine draw -- and nothing else, so
-    the row prices amortisation alone. Every spine value is an integer
-    site count at d=16 (4/6/8 sites)."""
+    budget and is built from the 10k centre specialist as the 8x8 conditioned
+    cell is built from its specialist: matched base on, the conditioning flag
+    on, the discrete spine draw and nothing else, so the row prices amortisation
+    alone. Every spine value is an integer site count at d=16 (4/6/8 sites)."""
     for sigma_suffix in ("", "_sc"):
         spec = asdict(CONFIGS[f"S2_d4_c0500_10k_l50_letf_house{sigma_suffix}"])
         cell = asdict(CONFIGS[f"S2_d4_camort_10k_l50_letf_house{sigma_suffix}"])

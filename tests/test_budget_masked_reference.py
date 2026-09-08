@@ -1,12 +1,12 @@
 """Exhaustive verification of the budget-masked reference-process derivation
 (the thesis's budget-masked-MDNS note): revealing a uniformly chosen masked
 site and assigning species A with probability b/m (b = remaining A-budget,
-m = masked sites) gives an assignment-conditional product that is the SAME
+m = masked sites) gives an assignment-conditional product that is the same
 constant N_A! N_B! / d! on every feasible trajectory, hence a terminal law
 uniform on the fixed-composition fibre and importance weights whose reference
 contribution cancels under self-normalisation. Also pins the failure mode the
 derivation exists to prevent: masking the *unconstrained* conditionals and
-renormalising at sampling time leaves a trajectory-DEPENDENT correction, so
+renormalising at sampling time leaves a trajectory-dependent correction, so
 keeping the unconstrained conditionals in the weights silently biases every
 estimate."""
 
@@ -69,7 +69,7 @@ def test_mask_and_renormalise_correction_is_trajectory_dependent():
     conditional q(A) and impose the budget only by refusing infeasible
     assignments (renormalising at the boundary states b=0 / b=m). The
     per-step feasible mass Z multiplies into a per-trajectory correction
-    that DIFFERS across trajectories, so weights computed with the
+    that differs across trajectories, so weights computed with the
     unconstrained conditionals are trajectory-wise wrong by a non-constant
     factor -- feasibility without the conditional measure."""
     n_sites, n_a = 4, 2

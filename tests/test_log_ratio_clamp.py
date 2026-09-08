@@ -1,14 +1,12 @@
 """The neighbour log-ratio clamp under a composition-penalised target.
 
-WHY THIS FILE EXISTS
---------------------
 `residual_lenet` (the loss) and `_compute_xi_t_lenet` (the control-variate
 integrand) both clamp
 
     log_ratio(x, i, tau) = log p̃_t(y) - log p̃_t(x),   y = x with site i -> tau
 
 at a ceiling, following DNFS App. E.1.1, which fixes it at 5. That constant
-was calibrated for an *unmodified* Ising target, whose single-flip neighbour
+was calibrated for an unmodified Ising target, whose single-flip neighbour
 log-ratios are O(a few). Adding the VCSGC-style composition penalty
 
     penalty(x) = lambda * d * (c(x) - c_target)^2,   c(x) = fraction of +1
@@ -19,27 +17,17 @@ changes that scale, because flipping one site moves c by exactly 1/d:
                             = -+ 2 * lambda * Delta  +  lambda / d
                                                        with Delta = c(x) - c_target
 
-and log p̃_t carries the penalty scaled by t (Eq. 4), so the penalty's
-contribution to the neighbour log-ratio is t * (-+ 2*lambda*Delta + lambda/d).
+and log p̃_t carries the penalty scaled by t (Eq. 4), so the penalty
+contributes t * (-+ 2*lambda*Delta + lambda/d) to the neighbour log-ratio. The
+ceiling binds as soon as Delta > ceiling / (2 * lambda * t), i.e. at t = 1 a
+threshold Delta* = ceiling / (2*lambda) that is independent of d. At lambda = 50
+and the paper's ceiling of 5 that is Delta* = 0.05 — smaller than the obedience
+error a conditioned sampler actually achieves, so the clamp binds during normal
+training rather than on rare outliers.
 
-The consequence, which is the load-bearing claim of the amortisation
-post-mortem: the ceiling binds as soon as
-
-    Delta > ceiling / (2 * lambda * t),
-
-i.e. at t = 1 a threshold Delta* = ceiling / (2*lambda) that is INDEPENDENT
-OF d. At lambda = 50 and the paper's ceiling of 5 that is Delta* = 0.05 —
-smaller than the obedience error a conditioned sampler actually achieves,
-so the clamp binds during normal training rather than on rare outliers.
-
-Binding is a BIAS, not noise: once the ceiling is active the inflow term is
-computed against exp(ceiling) instead of the true ratio, so no rate field
-makes the residual zero and the loss acquires an irreducible floor.
-
-These tests pin that arithmetic so the dissertation's claim cannot silently
-drift from the code, and pin the contract that the loss and the control
-variate must clamp identically — a mismatch there would bias the CV against
-the objective it is supposed to be a control for, with no visible symptom.
+Binding is a bias, not noise: once the ceiling is active the inflow term is
+computed against exp(ceiling) instead of the true ratio, so no rate field makes
+the residual zero and the loss acquires an irreducible floor.
 """
 
 import pytest
@@ -69,10 +57,9 @@ class _ConstantRateModel(torch.nn.Module):
     """Locally equivariant stand-in emitting a fixed G, so the only thing
     varying between assertions is the target's neighbour log-ratio.
 
-    Sign matters. `site_terms = [G]_+ - [-G]_+ * exp(log_ratio)`, so only the
-    NEGATIVE part of G multiplies the clamped ratio. A model emitting G > 0
-    everywhere has zero inflow term and is completely blind to the clamp —
-    which is why the tests below that exercise the ceiling pass `value < 0`.
+    `site_terms = [G]_+ - [-G]_+ * exp(log_ratio)`, so only the negative part
+    of G multiplies the clamped ratio; the tests that exercise the ceiling
+    pass `value < 0`.
     """
 
     is_locally_equivariant = True
@@ -94,8 +81,8 @@ class _ConstantRateModel(torch.nn.Module):
 
 
 def test_paper_default_is_five():
-    """The shipped default must remain the paper's App. E.1.1 value, so that
-    turning the knob is an explicit experimental act and never a silent
+    """The shipped default must remain the paper's App. E.1.1 value, so
+    turning the knob is an explicit experimental act rather than a silent
     change to the replication."""
     assert DEFAULT_LOG_RATIO_CLAMP == 5.0
     assert _target(lam=0.0).log_ratio_clamp == 5.0
@@ -108,7 +95,7 @@ def test_penalty_contribution_to_neighbour_log_ratio(lam, delta):
     log-ratio by exactly -+2*lambda*Delta + lambda/d relative to the
     unpenalised target.
 
-    Measured as a difference against a lambda = 0 target on the SAME state,
+    Measured as a difference against a lambda = 0 target on the same state,
     so the Ising part cancels and only the penalty term survives.
     """
     D = 4
@@ -129,7 +116,7 @@ def test_penalty_contribution_to_neighbour_log_ratio(lam, delta):
 
     plus_idx = ((x[0] + 1.0) * 0.5).long()  # 1 where site is +1
     # Flipping a +1 site to -1 lowers c; with Delta > 0 that moves toward
-    # target, so the penalty falls and the log-ratio RISES by 2*lambda*Delta.
+    # target, so the penalty falls and the log-ratio rises by 2*lambda*Delta.
     down_flips = shift[0, plus_idx == 1, 0]
     up_flips = shift[0, plus_idx == 0, 1]
 
@@ -146,11 +133,9 @@ def test_clamp_threshold_is_delta_star_and_is_d_independent(lam):
     """Delta* = ceiling / (2*lambda) predicts the onset of clamping, and the
     same Delta* holds at d = 16 and d = 100.
 
-    This is the claim that explains why the identical recipe survives at
-    4x4 and dies at 10x10 *without* invoking a d-dependent loss scale: the
-    threshold does not move with d, so what differs between the sizes is the
-    obedience error the model actually achieves, not the threshold it must
-    stay under.
+    The threshold does not move with d, so what differs between 4x4 and 10x10
+    under the same recipe is the obedience error the model achieves, not the
+    threshold it must stay under.
     """
     ceiling = DEFAULT_LOG_RATIO_CLAMP
     delta_star = ceiling / (2 * lam)
@@ -177,11 +162,11 @@ def test_clamp_threshold_is_delta_star_and_is_d_independent(lam):
 def test_loss_and_control_variate_clamp_identically():
     """`residual_lenet` and `_compute_xi_t_lenet` must use the same ceiling.
 
-    They are the objective and its control variate; if they disagreed, the
-    CV would be centred on a different quantity than the loss it corrects,
-    biasing training with no diagnostic that would show it. The two differ
-    only by the `- dt_log_Zt` shift, so passing dt_log_Zt = 0 makes them
-    equal by construction whenever the clamps match.
+    They are the objective and its control variate; disagreeing would centre
+    the CV on a different quantity than the loss it corrects, biasing training
+    with no diagnostic that would show it. The two differ only by the
+    `- dt_log_Zt` shift, so passing dt_log_Zt = 0 makes them equal by
+    construction whenever the clamps match.
     """
     D, lam = 4, 50.0
     d = D * D
@@ -199,8 +184,8 @@ def test_loss_and_control_variate_clamp_identically():
 
 def test_raising_the_clamp_changes_the_residual_only_where_it_bound():
     """Turning the knob is inert when nothing saturates and material when
-    something does — which is what makes `log_ratio_clamp_frac` readable as
-    an early warning rather than merely correlated with trouble."""
+    something does, which is what makes `log_ratio_clamp_frac` readable as an
+    early warning."""
     D, lam = 4, 50.0
     d = D * D
     model = _ConstantRateModel(d, value=-0.3)  # negative: see class docstring
@@ -217,12 +202,10 @@ def test_raising_the_clamp_changes_the_residual_only_where_it_bound():
     )
     assert torch.allclose(r5, r20, atol=1e-5)
 
-    # Delta = 0.25, five times Delta* = 0.05: the ceiling is load-bearing, and
-    # the size of the gap is the point. The true ratio at the favourable
-    # neighbours is exp(2*lambda*Delta) = exp(25), so relaxing the ceiling
-    # does not gently correct the residual — it swaps a bounded bias for an
-    # astronomically large term. Both regimes are unusable, which is why the
-    # deployable fix has to flatten the penalty rather than raise the ceiling.
+    # Delta = 0.25, five times Delta* = 0.05: the ceiling is load-bearing. The
+    # true ratio at the favourable neighbours is exp(2*lambda*Delta) = exp(25),
+    # so relaxing the ceiling swaps a bounded bias for an astronomically large
+    # term; the deployable fix flattens the penalty instead.
     n_plus = round(0.75 * d)
     disobedient = torch.cat([torch.ones(n_plus), -torch.ones(d - n_plus)])[
         None, :

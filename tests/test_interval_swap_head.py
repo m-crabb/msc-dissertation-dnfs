@@ -1,13 +1,12 @@
 """Falsification tests for the three-interval (leave-two-out) swap head.
 
-Written before the head bodies: these encode what correct looks like.
-The workhorse is the BLINDNESS
-probe -- flip a held-out spin and demand H_ij unchanged -- which is strictly
-stronger than antisymmetry (a symmetric leak survives the swap test but not
-the flip test), and it is paired with a sensitivity control (a head that
-ignores x entirely is perfectly blind) and a leaky negative control (proving
-the probe has teeth). No numeric oracle against DoublyHollowSwapHead: the
-architecture changed, so property tests + the D=4 gate are the bar.
+The workhorse is the blindness probe -- flip a held-out spin and demand H_ij
+unchanged -- which is strictly stronger than antisymmetry (a symmetric leak
+survives the swap test but not the flip test), and it is paired with a
+sensitivity control (a head that ignores x entirely is perfectly blind) and a
+leaky negative control (proving the probe has teeth). No numeric oracle
+against DoublyHollowSwapHead: the architecture changed, so property tests +
+the D=4 gate are the bar.
 """
 
 import pytest
@@ -108,11 +107,10 @@ def test_causal_summaries_blindness():
 @torch.no_grad()
 @pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 def test_pair_context_blind_to_both_holes(gather_triu_pairs):
-    """Blindness core: H_ij invariant under ANY change to x_i, x_j (not just swap).
-
-    Run on both assembly paths: the triu-pair gather re-indexes the per-pair
-    work, and blindness is a property of WHICH terms enter each pair's row,
-    so it must survive the re-indexing untouched."""
+    """Blindness core: H_ij invariant under any change to x_i, x_j (not just
+    swap). Run on both assembly paths: the triu-pair gather re-indexes the
+    per-pair work, and blindness is a property of which terms enter each
+    pair's row, so it must survive the re-indexing untouched."""
     head = _head(d=9, gather_triu_pairs=gather_triu_pairs)
     x = _state(d=9)
     t = torch.rand(1)
@@ -131,7 +129,7 @@ def test_pair_context_blind_to_both_holes(gather_triu_pairs):
 
 @torch.no_grad()
 def test_pair_context_sensitive_to_context():
-    """Anti-triviality control: a head blind to EVERYTHING passes the
+    """Anti-triviality control: a head blind to everything passes the
     blindness probes. H_ij must actually depend on each visible interval."""
     head = _head(d=9)
     x = _state(d=9)
@@ -146,7 +144,7 @@ def test_pair_context_sensitive_to_context():
 
 @torch.no_grad()
 def test_blindness_probe_has_teeth():
-    """Negative control for the TEST: an unmasked-body context (the leak the
+    """Negative control for the test: an unmasked-body context (the leak the
     mask-one head spends d passes preventing) must register loudly under the
     same flip probe, pinning the probe's sensitivity floor."""
     head = _head(d=9)
@@ -189,10 +187,9 @@ def test_trivial_swap_vanishes():
 
 @torch.no_grad()
 def test_index_antisymmetry_pinned():
-    """G[j,i] == -G[i,j]: pins the label-SYMMETRY convention (H_ji := H_ij).
-
-    Deliberate contrast with the mask-one head's pinned label ASYMMETRY --
-    the downstream i<j gather is indifferent, but the convention must not
+    """G[j,i] == -G[i,j]: pins the label-symmetry convention (H_ji := H_ij),
+    in deliberate contrast with the mask-one head's pinned label asymmetry.
+    The downstream i<j gather is indifferent, but the convention must not
     change silently.
     """
     head = _head(d=9)
@@ -231,7 +228,7 @@ def test_head_parameters_receive_grad():
     """Every head-owned module must be live in the graph (catches a band or
     position feature silently dropped from the readout concat), and the
     backbone's causal stacks must be live through P/S. attention_readout is
-    pinned DEAD: this head deliberately replaces it."""
+    pinned dead: this head deliberately replaces it."""
     head = _head(d=9)
     x = _state(d=9)
     head(x, torch.rand(1)).sum().backward()
@@ -253,11 +250,11 @@ def test_head_parameters_receive_grad():
 
 
 # --- bilinear exterior combiner ----------------------------------------------
-# The literal factorisation test: [prefix, suffix] leave the per-pair MLP for
-# a rank-R product added to H before context_norm. Pins: the default is
-# byte-identical to the archived head; the bilinear head keeps blindness and
-# exact index antisymmetry for both band aggregators; its MLP input is the
-# band and positions only; the factor maps receive gradient.
+# [prefix, suffix] leave the per-pair MLP for a rank-R product added to H
+# before context_norm. Pins: the default is byte-identical to the archived
+# head; the bilinear head keeps blindness and exact index antisymmetry for
+# both band aggregators; its MLP input is the band and positions only; the
+# factor maps receive gradient.
 from discrete_flow_sampler.constraints.masked_attention_swap_head import (
     MaskedAttentionSwapHead,
 )

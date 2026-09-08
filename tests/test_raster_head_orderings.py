@@ -1,60 +1,26 @@
-"""Falsification tests for multiple site orderings on the RASTER heads.
+"""Falsification tests for multiple site orderings on the raster heads.
 
-Written BEFORE the extension: these encode what correct looks like
-independently of how the extra streams are wired.
+`site_orderings` was factorised-head-only on a coverage argument: orderings
+shrink the region no bilinear term sees to the intersection of the per-ordering
+intervals, and the raster heads already tile the lattice (prefix, band, suffix
+partition everything but the two holes). Measurement refutes that -- `fimo2ef`
+carries a prefix band, so it tiles the lattice too, and it still loses 0.144 raw
+(disjoint) when its second ordering is removed. What survives is depth: deep
+band content would leak a hole's value through the two-hop path, so blindness
+forces the band to local, shallow features, while causal streams carry no such
+constraint and are deep and fully mixed within their intervals.
 
-WHY THIS EXISTS. `site_orderings` was factorised-head-only. The recorded
-reason was a coverage argument -- orderings shrink the region no bilinear
-term sees to the INTERSECTION of the per-ordering intervals, and the raster
-heads already tile the lattice (prefix, band, suffix partition everything but
-the two holes), so there was nothing left to shrink.
-
-THAT ARGUMENT IS REFUTED BY MEASUREMENT. `fimo2ef` carries a prefix band, so
-it tiles the lattice too, and it still loses 0.144 raw -- DISJOINT -- when its
-second ordering is removed. Coverage cannot be the mechanism.
-
-What survives is DEPTH. The band is constrained to be shallow: deep band
-content would leak a hole's value through the two-hop path, so blindness
-forces it to local, shallow features. Causal streams carry no such
-constraint -- causality does the work, so P_i and S_j are deep and fully
-mixed within their intervals. A second ordering therefore buys a DEEP read of
-a region the band can only read SHALLOWLY, and that is as true of the
-attention band as of the prefix sum.
-
-THE CONSTRUCTION, and why it is blind. For ordering o with permutation
-`order` (o-position -> site) and inverse `inv` (site -> o-position), the pair
-{i, j} occupies o-positions inv[i] and inv[j]. Feed
+The construction, and why it is blind. For ordering o with permutation `order`
+(o-position -> site) and inverse `inv` (site -> o-position), the pair {i, j}
+occupies o-positions inv[i] and inv[j]. Feed
 
     P^o at min(inv[i], inv[j])      S^o at max(inv[i], inv[j])
 
-computed by running the causal stacks on the PERMUTED sequence. P^o at the
-minimum has seen only sites earlier than BOTH holes in o; S^o at the maximum
-only sites later than both. So each is blind to x_i and x_j, for every
-ordering, by the same causality argument the row ordering already uses -- and
-because min and max of an UNORDERED pair are symmetric, label symmetry
-H_ji = H_ij survives for free.
-
-WHAT IS PINNED HARDEST BELOW:
-
-  * BLINDNESS, because it is the whole design rule and the new streams are a
-    new way to break it. An off-by-one in either slice, or using inv[i] where
-    min is meant, leaks a hole into its own context.
-
-  * THAT THE FLAG IS NOT INERT. 13 archived cells already carry
-    `site_orderings=('row','col')` on heads that IGNORE it, inherited through
-    `replace(...)`. Adding real support to those heads means a config that
-    used to be a no-op now CHANGES the model, so the test that the extra
-    ordering moves the output is a provenance guard as much as a correctness
-    one.
-
-  * THAT ('row',) IS BYTE-IDENTICAL to the archived head. Every masked-
-    attention and interval cell reported was trained without this, and the
-    single-ordering path must draw the same parameters in the same order.
-
-  * THAT THE ARM IS CHEAP IN PARAMETERS. An extra ordering adds NO modules --
-    it reuses the backbone's causal stacks on a permuted sequence -- so the
-    only parameter change is the pair readout's wider input. If that is not
-    exactly what the count moves by, something grew that should not have.
+computed by running the causal stacks on the permuted sequence. P^o at the
+minimum has seen only sites earlier than both holes in o; S^o at the maximum
+only sites later than both, so each is blind to x_i and x_j for every ordering,
+by the same causality argument the row ordering already uses. min and max of an
+unordered pair are symmetric, so label symmetry H_ji = H_ij survives for free.
 """
 
 import pytest
@@ -133,7 +99,7 @@ def _state(batch=2, seed=7):
 @pytest.mark.parametrize("head_kind", list(BUILDERS))
 @pytest.mark.parametrize("orderings", MULTI)
 def test_extra_orderings_stay_blind(head_kind, orderings):
-    """H_ij must not move when the tokens AT the holes move -- for EVERY pair,
+    """H_ij must not move when the tokens at the holes move -- for every pair,
     not a sampled few, because a permutation reorders which pairs are near a
     boundary and an off-by-one may only show at one of them."""
     head = BUILDERS[head_kind](orderings)
@@ -160,7 +126,7 @@ def test_extra_orderings_stay_blind(head_kind, orderings):
 @pytest.mark.parametrize("orderings", MULTI)
 def test_extra_orderings_keep_exact_antisymmetry(head_kind, orderings):
     """min/max over an unordered pair are symmetric, so label symmetry -- and
-    with it G[j,i] = -G[i,j] and a zero diagonal -- must hold at EXACTLY 0.0,
+    with it G[j,i] = -G[i,j] and a zero diagonal -- must hold at exactly 0.0,
     not to a tolerance."""
     head = BUILDERS[head_kind](orderings)
     G = head(_state(), torch.rand(2))
@@ -177,10 +143,10 @@ def test_extra_orderings_keep_exact_antisymmetry(head_kind, orderings):
 @pytest.mark.parametrize("head_kind", list(BUILDERS))
 @pytest.mark.parametrize("orderings", MULTI)
 def test_extra_orderings_change_the_scores(head_kind, orderings):
-    """PROVENANCE GUARD as much as a correctness one: 13 archived cells carry
+    """A provenance guard as much as a correctness one: 13 archived cells carry
     `site_orderings=('row','col')` on heads that ignored it. Once these heads
-    honour the field, a config that used to be a no-op changes the model, so
-    an inert implementation would be invisible exactly where it matters."""
+    honour the field, a config that used to be a no-op changes the model, so an
+    inert implementation would be invisible exactly where it matters."""
     single = BUILDERS[head_kind](("row",))
     multi = BUILDERS[head_kind](orderings)
     x, t = _state(), torch.rand(2)
@@ -204,10 +170,10 @@ def test_single_ordering_is_byte_identical_to_the_archived_head(head_kind):
 @pytest.mark.parametrize("head_kind", list(BUILDERS))
 @pytest.mark.parametrize("orderings", MULTI)
 def test_extra_orderings_add_only_the_readout_widening(head_kind, orderings):
-    """An extra ordering reuses the BACKBONE's causal stacks on a permuted
+    """An extra ordering reuses the backbone's causal stacks on a permuted
     sequence, so it owns no modules of its own. The only parameter change is
     the pair readout's first Linear taking 2*hidden more inputs per extra
-    ordering -- and its bias does not move. Anything else means a module grew
+    ordering, and its bias does not move. Anything else means a module grew
     that should not have, which would confound a lift with capacity."""
     single = BUILDERS[head_kind](("row",))
     multi = BUILDERS[head_kind](orderings)
@@ -221,9 +187,9 @@ def test_extra_orderings_add_only_the_readout_widening(head_kind, orderings):
 @pytest.mark.parametrize("head_kind", list(BUILDERS))
 @pytest.mark.parametrize("orderings", MULTI)
 def test_extra_orderings_register_no_persistent_state(head_kind, orderings):
-    """The permutations are index arithmetic, reproducible from the
-    constructor args, so they ride as NON-persistent buffers and never enter a
-    checkpoint -- the convention the factorised head already follows."""
+    """The permutations are index arithmetic, reproducible from the constructor
+    args, so they ride as non-persistent buffers and never enter a checkpoint --
+    the convention the factorised head already follows."""
     head = BUILDERS[head_kind](orderings)
     for key in head.state_dict():
         assert "_order" not in key, f"{key} leaked into the state_dict"
@@ -264,7 +230,7 @@ def test_unknown_ordering_is_refused():
 
 
 def test_config_flag_reaches_the_raster_heads():
-    """The field has ridden INERTLY on 13 cells. Once these heads honour it,
+    """The field has ridden inertly on 13 cells. Once these heads honour it,
     the config path must actually deliver it."""
     from dataclasses import replace
 
@@ -277,18 +243,16 @@ def test_config_flag_reaches_the_raster_heads():
 
 @pytest.mark.parametrize("head_kind", list(BUILDERS))
 def test_bilinear_exterior_refuses_extra_orderings(head_kind):
-    """The bilinear combiner cannot carry a second ordering, so asking for
-    both must raise rather than quietly return the one-ordering head.
+    """The bilinear combiner cannot carry a second ordering, so asking for both
+    must raise rather than quietly return the one-ordering head.
 
     `_ordering_exterior_rows` runs on the "mlp" branch alone and
-    `_bilinear_exterior` reads the row summaries, so under "bilinear" the
-    extra ordering is INVISIBLE, not merely inert: measured at d=16, mlp
-    gains 256 parameters and moves G by 1.2e-2 when "col" is added, while
-    bilinear gains 0 and returns a bit-identical G. Left unguarded, the
-    `ivmo2ef` + bilinear cell would read as the single-variable test of the
-    factorisation while also deleting the second ordering -- worth +0.154
-    raw and disjoint, the largest lever on this axis -- and the regression
-    would be attributed to the wrong knob.
+    `_bilinear_exterior` reads the row summaries, so under "bilinear" the extra
+    ordering is invisible, not merely inert: measured at d=16, mlp gains 256
+    parameters and moves G by 1.2e-2 when "col" is added, while bilinear gains 0
+    and returns a bit-identical G. Left unguarded, the `ivmo2ef` + bilinear cell
+    would read as the single-variable test of the factorisation while also
+    deleting the second ordering, worth +0.154 raw and disjoint.
     """
     with pytest.raises(ValueError, match="row ordering only"):
         BUILDERS[head_kind](("row", "col"), exterior_combiner="bilinear")
@@ -296,8 +260,8 @@ def test_bilinear_exterior_refuses_extra_orderings(head_kind):
 
 @pytest.mark.parametrize("head_kind", list(BUILDERS))
 def test_bilinear_exterior_still_builds_at_one_ordering(head_kind):
-    """The guard is about the COMBINATION; the archived `mab` / `ivb` cells
-    ran at ("row",) and must keep building unchanged."""
+    """The guard is about the combination; the archived `mab` / `ivb` cells ran
+    at ("row",) and must keep building unchanged."""
     head = BUILDERS[head_kind](("row",), exterior_combiner="bilinear")
     assert head.exterior_combiner == "bilinear"
     assert head(_state(), torch.rand(2)).isfinite().all()

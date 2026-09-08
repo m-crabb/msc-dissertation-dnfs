@@ -59,7 +59,7 @@ def test_residual_zero_for_trivial_transport():
 
 
 def test_residual_nonzero_for_random_model():
-    """Sanity: a random rate matrix on a real Ising target should NOT
+    """Sanity: a random rate matrix on a real Ising target should not
     satisfy Kolmogorov -- residual must be non-zero. This guards against
     a vacuous `test_residual_zero_*` (e.g. residual that always returns 0)."""
     target = IsingTarget(D=2, sigma=0.1)
@@ -127,7 +127,7 @@ def test_residual_lenet_zero_for_trivial_transport():
 
 def test_residual_lenet_nonzero_for_random_lemlp():
     """A randomly initialised LeMLPRateMatrix on a real Ising target
-    should NOT satisfy Kolmogorov — guards against a vacuous
+    should not satisfy Kolmogorov — guards against a vacuous
     `test_residual_lenet_zero_*`."""
     from discrete_flow_sampler.models.lemlp import LeMLPRateMatrix
 

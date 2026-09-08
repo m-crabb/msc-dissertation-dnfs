@@ -1,32 +1,22 @@
-"""What correct looks like for EMA dual-eval on the FLIP trainer, before it.
+"""EMA dual-eval on the flip trainer, ported from the swap trainer.
 
-Ported from the swap trainer for the soft chapter: the soft
-chassis's one missing instrument. ema_decay > 0 arms a warmup-corrected
-parameter shadow (discrete_flow_sampler.ema.ExponentialMovingAverage)
-updated after every optimiser step and saved as checkpoints/final_ema.pt;
-the run entry then evaluates BOTH weight sets (eval/ + eval_ema/).
+ema_decay > 0 arms a warmup-corrected parameter shadow
+(discrete_flow_sampler.ema.ExponentialMovingAverage) updated after every
+optimiser step and saved as checkpoints/final_ema.pt; the run entry then
+evaluates both weight sets (eval/ + eval_ema/). Contracts:
 
-Contracts frozen here, each guarding a specific failure:
-
-1. PASSIVE OBSERVER. Arming the shadow must not perturb training: the raw
-   final.pt is bit-identical with and without ema_decay. The hard chapter's
-   comparisons rely on "twins differing only in ema_decay train
-   bit-identically"; a shadow that consumed RNG or touched grads would
-   break every such comparison silently.
-2. ARMED IFF WRITTEN. final_ema.pt exists exactly when armed, and differs
+1. Passive observer: the raw final.pt is bit-identical with and without
+   ema_decay, so twins differing only in ema_decay train bit-identically.
+   A shadow that consumed RNG or touched grads would break that silently.
+2. Armed iff written: final_ema.pt exists exactly when armed, and differs
    from final.pt after a run whose weights moved — a shadow equal to the
-   raw weights is a no-op wiring bug, and a file written when disarmed
-   would change every archived cell's artefact inventory.
-3. WRAPPER COVERAGE. With the exact-field channel on, the shadow tracks
-   the WRAPPER's parameters: final_ema.pt carries gain_constant/gain_slope.
-   The EMA must be built over the top-level module — built over an inner
-   head it would silently exclude the gains, the parameters the soft
-   rescue turns on.
-4. RESUME. Preemption-resume carries shadow AND update counter:
+   raw weights is a no-op wiring bug.
+3. Wrapper coverage: with the exact-field channel on, the shadow tracks
+   the wrapper's parameters, so final_ema.pt carries gain_constant and
+   gain_slope. Built over an inner head it would exclude the gains.
+4. Resume: preemption-resume carries shadow and update counter, so an
    interrupted+resumed final_ema.pt is bit-identical to uninterrupted.
-   Re-initialising the shadow at resume-point weights would re-create the
-   init-contamination failure through the back door; resetting only the
-   counter would restart the warmup schedule mid-run (ema.py docstring).
+   Resetting only the counter would restart the warmup schedule mid-run.
 """
 
 from types import SimpleNamespace
@@ -178,12 +168,10 @@ def _stage_cfg(name, ema_decay):
 
 
 def test_run_entry_dual_eval_and_short_circuit(tmp_path):
-    """run.train writes eval/ AND eval_ema/ when armed (same metric schema,
-    so the house-table ingestion reads both interchangeably), writes NO
-    eval_ema/ when disarmed (archived artefact inventories unchanged), and
-    the finished-run short-circuit requires BOTH dirs — a fixed-tag
-    relaunch that finds eval/ but not eval_ema/ must fill the gap, not
-    skip (the GFN wave's short-circuit lesson, same trap)."""
+    """run.train writes eval/ and eval_ema/ when armed (same metric schema),
+    writes no eval_ema/ when disarmed, and the finished-run short-circuit
+    requires both dirs — a fixed-tag relaunch that finds eval/ but not
+    eval_ema/ must fill the gap, not skip."""
     import json
     import shutil
 

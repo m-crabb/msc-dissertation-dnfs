@@ -107,7 +107,7 @@ def test_constrained_matches_exact_on_small_lattice():
 def test_constrained_chain_converges_to_target_composition():
     """Penalty-aware heat-bath: a chain on the soft-constrained target must
     concentrate composition near c_target. The unconstrained Ising at σ=0.1 is
-    Z₂-symmetric ⇒ ⟨c₊⟩ = 0.5, so a penalty-BLIND sampler stays near 0.5 and
+    Z₂-symmetric ⇒ ⟨c₊⟩ = 0.5, so a penalty-blind sampler stays near 0.5 and
     fails this. With λ=50, d=16 the constrained distribution is tightly peaked
     (run composition_std ≈ 0.023), so the 2000-chain mean lands well within
     0.03 of c_target = 0.3.
@@ -127,9 +127,7 @@ def test_constrained_chain_converges_to_target_composition():
 def test_penalty_inactive_matches_unconstrained():
     """strength=0 must reproduce the unconstrained sampler byte-for-byte:
     same global-RNG stream, same log-odds. Pins that the Ising path is
-    untouched by the penalty branch. (The four pre-existing tests in this
-    file are the broader regression guard — they seed global RNG and assert
-    properties that only hold if the unconstrained path is unchanged.)
+    untouched by the penalty branch.
     """
     torch.manual_seed(0)
     plain = IsingTarget(D=4, sigma=0.1)

@@ -8,7 +8,7 @@ computed from different weights.
 
 `stage_best` is the instrument the rw cells are read with: whether
 the sigma_c stage's best-trailing-median-ESS checkpoint beats `final.pt`.
-The trainer saves those as RAW weights only (swap_training saves
+The trainer saves those as raw weights only (swap_training saves
 `head.state_dict()`, not the EMA shadow), so the EMA pairing must be
 refused rather than quietly reading `final_ema.pt`.
 """

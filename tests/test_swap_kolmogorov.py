@@ -45,7 +45,7 @@ def test_residual_swap_shape_and_finite():
 @torch.no_grad()
 def test_residual_swap_zero_mean_at_exact_dt_log_Z():
     # E_{p_t^C}[δ_t] = ∂_t log Z_t^C − dt_log_Zt = 0 when dt_log_Zt is exact,
-    # for ANY head. Bit-close on the 6-state 2×2 slice.
+    # for any head. Bit-close on the 6-state 2×2 slice.
     head, tgt = _head_and_target()
     for t_scalar in (0.1, 0.5, 0.9):
         slice_states, p_cond, dt_log_Z = _exact_slice(tgt, 2, t_scalar)
@@ -77,7 +77,7 @@ def test_loss_swap_is_nonneg_scalar():
 
 @torch.no_grad()
 def test_residual_mean_recovers_c_t_offset():
-    """−E_q[residual] IS Δ. Offsetting c_t by a known k must move the
+    """−E_q[residual] is Δ. Offsetting c_t by a known k must move the
     residual mean by exactly −k, for any head — this is the contract the
     whole diagnostic rests on."""
     from discrete_flow_sampler.samplers.swap_ctmc import compute_xi_t_swap
@@ -93,7 +93,7 @@ def test_residual_mean_recovers_c_t_offset():
 
 @torch.no_grad()
 def test_loss_swap_return_residual_matches_the_scalar_path():
-    """The opt-in residual must be the SANITISED one the loss squares, so the
+    """The opt-in residual must be the sanitised one the loss squares, so the
     diagnostic and the gradient see the same numbers."""
     head, tgt = _head_and_target()
     x = tgt.sample_base(8, device="cpu")
@@ -117,8 +117,8 @@ def test_c_t_offset_rms_recovers_per_slot_offsets():
 
 
 def test_c_t_offset_rms_does_not_cancel_across_slots():
-    """WHY the diagnostic is a per-slot RMS and not a signed batch mean: the
-    objective pays Δ_t^2 in EVERY slot, so equal-and-opposite offsets cost
+    """The diagnostic is a per-slot RMS, not a signed batch mean: the
+    objective pays Δ_t^2 in every slot, so equal-and-opposite offsets cost
     2.0 each while their signed average reads exactly 0.0 — a signed mean
     would report 'no mismatch' on a maximally mismatched run."""
     deltas = torch.tensor([2.0, -2.0])

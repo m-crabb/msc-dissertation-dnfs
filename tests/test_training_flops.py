@@ -1,9 +1,8 @@
 """Training-FLOP accounting: the derived count, and the measured extrapolation.
 
-The house table's FLOP/es column prices SAMPLING only, by design. Training cost
-is what the amortisation argument turns on — "one training run serves N targets"
-is unpriceable without it — so it gets its own two instruments, deliberately
-independent:
+The house table's FLOP/es column prices sampling only. Training cost is what
+the amortisation argument turns on — "one training run serves N targets" is
+unpriceable without it — so it gets its own two independent instruments:
 
   derived   `training_run_flops` multiplies a measured per-forward count by the
             forward count the loop structure implies.
@@ -20,15 +19,12 @@ number to be averaged away.
 What these tests pin:
 
 1. The fit recovers slope and intercept on exactly-linear data, and reports a
-   residual large enough to REFUSE data that is not linear. Extrapolation off a
-   silently bad fit is the failure mode that would produce a confident wrong
-   training cost.
+   residual large enough to refuse data that is not linear.
 2. The forward count matches the loop structure by hand, including the c_t grid
-   recompute being skipped in the mode the production cells actually run.
+   recompute being skipped in the mode the production cells run.
 3. Horizons that are not whole cycles, or that straddle the periodic
    in-training eval, are refused rather than fitted — both make total FLOPs a
-   step function of n_steps, and a line through steps is a plausible-looking
-   wrong answer.
+   step function of n_steps.
 """
 
 import math
@@ -63,7 +59,7 @@ def test_fit_recovers_an_exactly_linear_run():
 def test_fit_reports_a_large_residual_on_nonlinear_data():
     """The residual is the extrapolation's licence. If per-cycle cost drifts —
     a curriculum stage that changes shapes, an eval that fires irregularly — the
-    fit must SAY so rather than return a plausible slope."""
+    fit must say so rather than return a plausible slope."""
     horizons = (10, 20, 40)
     totals = [1.0e12 * n**1.5 for n in horizons]
     fit = fit_flop_scaling(horizons, totals)
@@ -82,7 +78,7 @@ def test_fit_needs_at_least_three_horizons():
 
 
 def test_forward_counts_follow_the_loop_structure():
-    """Per outer cycle: ONE rollout of n_euler head forwards, then
+    """Per outer cycle: one rollout of n_euler head forwards, then
     inner_steps_per_outer updates. Hand-checked against the production recipe
     (100k steps, inner 100, n_euler 128) — 1,000 cycles, 128,000 rollout
     forwards, 100,000 update forwards."""
@@ -175,11 +171,10 @@ def test_eval_every_none_falls_back_to_the_cycle():
 
 def test_measurement_curriculum_is_truncated_to_the_horizon():
     """The production ladder's later stages start beyond every measurement
-    horizon, and the trainer's validator correctly refuses such stages
-    (`curriculum start_step must be < n_steps`) — the failure that killed
-    the first live run (Modal, 2026-08-31). The harness must hand the
-    trainer only the stages the horizon can reach, which for every valid
-    horizon is exactly the first stage."""
+    horizon and the trainer's validator refuses them (`curriculum start_step
+    must be < n_steps`), which killed the first live run (Modal, 2026-08-31).
+    The harness hands the trainer only the stages the horizon can reach, which
+    for every valid horizon is the first stage."""
     from experiments.constrained_hard_03.configs import CONFIGS
     from experiments.constrained_hard_03.measure_training_flops import (
         curriculum_within,
@@ -195,15 +190,12 @@ def test_measurement_curriculum_is_truncated_to_the_horizon():
 
 
 def test_diagnostic_eval_flops_price_the_severable_instrument():
-    """The in-training frozen-ESS eval is instrumentation, not the
-    algorithm: frozen weights, no gradients, severable by turning
-    eval_every off. It is therefore priced as its OWN term, never folded
-    into training-proper — the d64 thp certification measured it at 37%
-    of the as-instrumented bill (gap reconciled to 0.8%), so silently
-    including or dropping it moves the appendix number by more than any
-    other single decision. No backward is charged (the draws are
-    no-grad), and draws scale the update-batch forward linearly (the
-    same assumption the eval-draw-set currency documents)."""
+    """The in-training frozen-ESS eval is instrumentation, not the algorithm:
+    frozen weights, no gradients, severable by turning eval_every off. It is
+    priced as its own term, never folded into training-proper — the d64 thp
+    certification measured it at 37% of the as-instrumented bill (gap
+    reconciled to 0.8%). No backward is charged (the draws are no-grad), and
+    draws scale the update-batch forward linearly."""
     from discrete_flow_sampler.diagnostics.flops import diagnostic_eval_flops
 
     # 50k steps, eval every 200 -> 250 evals; each draws 512 samples

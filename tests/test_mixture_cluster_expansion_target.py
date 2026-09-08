@@ -1,4 +1,4 @@
-"""What correct looks like for the slice-mixture target on a cluster expansion.
+"""The slice-mixture target on a cluster expansion.
 
 Same three algebraic facts as the Ising mixture (test_mixture_composition_target.py):
 swaps conserve n_plus row-wise, so `base_log_eta` read off x makes the per-slice

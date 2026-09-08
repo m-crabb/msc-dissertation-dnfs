@@ -66,7 +66,7 @@ def test_canonical_cells_build_an_antisymmetric_head(sites):
     with torch.no_grad():
         scores = head(x, t)
     assert scores.shape == (3, sites, sites)
-    # the swap potential is antisymmetric under the STATE swap (the head's
+    # the swap potential is antisymmetric under the state swap (the head's
     # defining property, not index transposition): G(i,j|x) = -G(i,j|Swap_ij x)
     unlike = (x[:, :, None] != x[:, None, :]).nonzero()[:6]
     for b, i, j in unlike.tolist():

@@ -86,9 +86,9 @@ def test_final_eval_matching_canonical_cell_writes_plain_eval_dir(tmp_path):
     """A cell that declares the matching step canonical (the 16x16 rung's
     CTMCCfg.use_matching_step=True) gets its matching-step artefacts in plain
     eval/ — the dir train() short-circuits on and the frozen-eval comparison
-    reads — with no multi_event argument needed: the default resolves to the
-    config's step. The one-event CONTRAST on such a cell lands in
-    eval_one_event/ so neither clobbers the other."""
+    reads — with no multi_event argument: the default resolves to the config's
+    step. The one-event contrast on such a cell lands in eval_one_event/ so
+    neither clobbers the other."""
     torch.manual_seed(0)
     cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4)
     cfg = replace(cfg, ctmc=replace(cfg.ctmc, use_matching_step=True))
@@ -136,10 +136,10 @@ def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
     tmp_path, monkeypatch
 ):
     """Run dirs written before a defaulted HardStageCfg field existed lack its
-    key in config.json; eval_only must treat the absence as "ran with the
-    then-default" instead of rejecting the dir as drifted (the strict guard
-    would otherwise break the recovery path for every historical run each
-    time the dataclass grows a knob)."""
+    key in config.json; eval_only treats the absence as "ran with the
+    then-default" instead of rejecting the dir as drifted, which would break the
+    recovery path for every historical run each time the dataclass grows a
+    knob."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
     monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
@@ -149,11 +149,10 @@ def test_eval_only_accepts_legacy_config_missing_defaulted_fields(
     del saved["anchor_chunk_size"]  # default None
     del saved["compile_head"]  # default False — fill must use the field default
     # Nested sub-config additions must backfill too: the real d=16 run dirs
-    # predate model.use_sdpa_readout and eval.eval_autocast_bf16,
-    # and a top-level-only fill left every one of them locked out. Both sit at
-    # their defaults in _tiny_cfg, so absence really does mean "then-default"
-    # here — deleting a key the cfg sets non-defaultly (eval_sample_chunk=4)
-    # would be real drift and must still be rejected.
+    # predate model.use_sdpa_readout and eval.eval_autocast_bf16, and a
+    # top-level-only fill locked every one of them out. Both sit at their
+    # defaults in _tiny_cfg; deleting a key the cfg sets non-defaultly
+    # (eval_sample_chunk=4) would be real drift and must still be rejected.
     del saved["model"]["use_sdpa_readout"]  # default False
     del saved["eval"]["eval_autocast_bf16"]  # default False
     (run_dir / "config.json").write_text(json.dumps(saved))
@@ -195,9 +194,9 @@ def test_final_eval_smc_writes_own_dir_and_smc_metrics(tmp_path, suffix):
 
 
 def test_final_eval_smc_tau_zero_is_bit_exact_plain_is(tmp_path):
-    """τ=0 never fires, consumes no extra RNG, and banks nothing — so the
-    pooled SMC weights must equal the plain-IS weights bit-for-bit under
-    the same seed. This pins the whole eval path, not just the sampler."""
+    """τ=0 never fires, consumes no extra RNG, and banks nothing, so the pooled
+    SMC weights equal the plain-IS weights bit-for-bit under the same seed —
+    pinning the whole eval path, not just the sampler."""
     cfg = _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4)
     target, head = build_target_and_head(cfg, "cpu")
 
@@ -236,10 +235,9 @@ def test_eval_only_smc_tau_runs_smc_variant_only(tmp_path, monkeypatch):
 def test_eval_only_replicate_seed_writes_replicate_dir_and_preserves_eval(
     tmp_path, monkeypatch
 ):
-    """Probe replicate draws (a neural replicate is an independent sampling
-    run with a fresh eval seed off the ONE converged checkpoint) must land in
-    eval_replicate_s<seed>/ and never create or touch
-    the frozen eval/ dir the headline numbers were read from."""
+    """Probe replicate draws (an independent sampling run with a fresh eval seed
+    off the one converged checkpoint) land in eval_replicate_s<seed>/ and never
+    create or touch the frozen eval/ dir the headline numbers came from."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
     monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
@@ -261,10 +259,9 @@ def test_eval_only_replicate_seed_writes_replicate_dir_and_preserves_eval(
 
 
 def test_eval_only_replicate_seeds_differ_and_reproduce(tmp_path, monkeypatch):
-    """Replicates must be genuinely independent draws (different seeds give
-    different weights) yet reproducible (same seed twice gives bit-identical
-    weights) — the two properties the probe's MSE-across-replicates estimate
-    rests on."""
+    """Replicates must be independent draws (different seeds give different
+    weights) yet reproducible (same seed twice gives bit-identical weights) —
+    the two properties the probe's MSE-across-replicates estimate rests on."""
     torch.manual_seed(0)
     cfg = _tiny_cfg()
     monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
@@ -305,15 +302,15 @@ def test_eval_only_rejects_config_drift(tmp_path, monkeypatch):
 
 
 def _run_dir_with_both_checkpoints(tmp_path, cfg, seed=7):
-    """A completed run dir carrying BOTH the raw and the EMA final weights,
-    as every training run writes them."""
+    """A completed run dir carrying both the raw and the EMA final weights, as
+    every training run writes them."""
     run_dir = tmp_path / "tiny_hard_eval_seed7_test"
     (run_dir / "checkpoints").mkdir(parents=True)
     seeded = replace(cfg, train=replace(cfg.train, seed=seed))
     (run_dir / "config.json").write_text(json.dumps(asdict(seeded)))
     _, raw_head = build_target_and_head(cfg, "cpu")
     torch.save(raw_head.state_dict(), run_dir / "checkpoints" / "final.pt")
-    # A DIFFERENT parameter vector, so a test can tell which file was loaded.
+    # A different parameter vector, so a test can tell which file was loaded.
     _, ema_head = build_target_and_head(cfg, "cpu")
     with torch.no_grad():
         for parameter in ema_head.parameters():
@@ -326,14 +323,11 @@ def test_eval_only_ema_reads_the_ema_checkpoint_into_a_suffixed_dir(
     tmp_path, monkeypatch
 ):
     """`use_ema` must load `final_ema.pt` — not `final.pt` — and land in
-    `eval_ema_ne<k>/`.
-
-    Why this exists: the EMA weights are the primary read for every d=256
+    `eval_ema_ne<k>/`. The EMA weights are the primary read for every d=256
     result (raw eval ESS at sigma_c is top-weight dominated and does not
-    resolve), but `eval_only` loaded only `final.pt`, so an EMA re-draw
-    needed a hand-staged copy of `final_ema.pt` renamed to `final.pt`. That
-    workaround is silent when it goes wrong: it produces a plausible number
-    from the wrong weights. Loading the file by name removes the footgun.
+    resolve); loading the file by name removes the hand-staged-copy workaround,
+    which failed silently by producing a plausible number from the wrong
+    weights.
     """
     torch.manual_seed(0)
     cfg = _tiny_cfg()
@@ -358,13 +352,12 @@ def test_eval_only_ema_reads_the_ema_checkpoint_into_a_suffixed_dir(
 def test_eval_only_ema_without_a_grid_override_guards_only_frozen_numbers(
     tmp_path, monkeypatch
 ):
-    """`use_ema` alone writes `eval_ema/` — the directory the TRAINING run
-    owns. When a frozen EMA eval is already there, re-drawing it must be
-    refused rather than silently clobbering a number the tables read. But
-    when the trainer died BETWEEN the raw and EMA evals (final_ema.pt on
-    disk, eval_ema/ never written — the d256 camort case),
-    that same call is the recovery path and must land the canonical
-    eval_ema/, exactly as eval_only recovers a died eval/."""
+    """`use_ema` alone writes `eval_ema/`, the directory the training run owns.
+    When a frozen EMA eval is already there, re-drawing it is refused rather
+    than clobbering a number the tables read. When the trainer died between the
+    raw and EMA evals (final_ema.pt on disk, eval_ema/ never written — the d256
+    camort case), the same call is the recovery path and lands the canonical
+    eval_ema/."""
     cfg = _tiny_cfg()
     monkeypatch.setattr("experiments.constrained_hard_03.run.CONFIGS", {cfg.name: cfg})
     run_dir = _run_dir_with_both_checkpoints(tmp_path, cfg)

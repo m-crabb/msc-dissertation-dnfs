@@ -1,11 +1,11 @@
 """Tests for the anchor-batched (vectorised) LeTFMaskOneSwapHead forward.
 
-Why this exists (2026-07-05): the original forward ran `for i in range(d)`
-sequential masked leTF passes -- ~d x the single-site head (56 s/forward at
-d=256), which made the D=8 sigma_c rung ~8 h/seed and D=16 infeasible. The d
-anchor passes are independent (they differ only in which site's embedding is
-zeroed), so they batch into the model batch dimension: build (n_anchors*B, d, h)
-with a diagonal zeroing mask, run ONE fwd/bwd-stack + readout pass, reshape to
+2026-07-05: the original forward ran `for i in range(d)` sequential masked
+leTF passes -- ~d x the single-site head (56 s/forward at d=256), which made
+the D=8 sigma_c rung ~8 h/seed and D=16 infeasible. The d anchor passes are
+independent (they differ only in which site's embedding is zeroed), so they
+batch into the model batch dimension: build (n_anchors*B, d, h) with a
+diagonal zeroing mask, run one fwd/bwd-stack + readout pass, reshape to
 (n_anchors, B, d, h), and read out against omega_{x_i} - omega_{x_j}
 vectorised. `anchor_chunk_size` caps how many anchors ride one pass, bounding
 the readout attention buffer (n_anchors*B, n_heads, d, 2d) at large d.

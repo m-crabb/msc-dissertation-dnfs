@@ -1,35 +1,30 @@
 """Falsification tests for cross-size warm starting of the swap head.
 
 The mechanism under test: take a swap head trained on an L_src x L_src torus
-and produce a state dict that loads into the SAME architecture built for an
+and produce a state dict that loads into the same architecture built for an
 L_dst x L_dst torus, so a large-lattice run starts inside a trained basin
 instead of at init noise.
 
 What makes the transfer legitimate is a structural fact about the
 architecture, pinned by `test_size_dependent_tensors_are_exactly_the_known_set`:
 every Linear/attention/LayerNorm tensor is (hidden_dim, hidden_dim)-shaped and
-so carries over verbatim, and the band-feature MLPs are indexed by RELATIVE
-offset -- the delta=L "column neighbour" family means column neighbour at
-both sizes. Only learned POSITIONAL tables depend on d. Those live on the
-L x L grid and are resampled.
+so carries over verbatim, and the band-feature MLPs are indexed by relative
+offset -- the delta=L "column neighbour" family means column neighbour at both
+sizes. Only learned positional tables depend on d; those live on the L x L grid
+and are resampled.
 
-The three failure modes these tests exist to catch:
+Three failure modes:
 
   * the conditioning row. Causal-stack tables are (1 + d, hidden): row 0 is
-    the prepended cond_t token, NOT a lattice site. Feeding it to the
-    resampler would smear a conditioning vector into the corner sites and
-    silently corrupt every downstream position.
+    the prepended cond_t token, not a lattice site. Feeding it to the
+    resampler would smear a conditioning vector into the corner sites.
   * the raster reversal. The bwd stack sees x.flip(1), so its table's site
-    rows are in REVERSED raster order -- a 180-degree rotation of the grid.
-    Resampling it as if it were an ordinary grid is only correct because the
-    resampler commutes with that rotation, which is asserted rather than
-    assumed.
+    rows are in reversed raster order -- a 180-degree rotation of the grid.
+    Resampling it as an ordinary grid is only correct because the resampler
+    commutes with that rotation, which is asserted rather than assumed.
   * blindness. The swap heads buy exact state-swap antisymmetry from a body
-    that is blind to the token VALUES at the two swapped sites. Position
-    embeddings are explicitly allowed to depend on POSITION, so resampling
-    them must not touch blindness -- but "must not" is worth falsifying,
-    because a warm-started head is a head no falsification suite has run on
-    before.
+    blind to the token values at the two swapped sites. Position embeddings
+    may depend on position, so resampling them must not touch blindness.
 """
 
 import sys
@@ -166,7 +161,7 @@ def test_identity_transfer_is_bit_exact_for_the_mask_one_head():
 
 
 # --------------------------------------------------------------------------
-# Cross-size: shapes, coverage, and what must NOT move.
+# Cross-size: shapes, coverage, and what must not move.
 # --------------------------------------------------------------------------
 
 
@@ -196,8 +191,7 @@ def test_mask_one_transfer_carries_its_live_attention_readout():
     """attention_readout is the mask_one head's compute path, not dead weight.
 
     Dropping it would leave the one module that actually reads the lattice at
-    fresh init on top of a fully transferred trunk -- the exact defect that
-    makes a warm start worse than useless.
+    fresh init on top of a fully transferred trunk.
     """
     transfer, source, _, _, _ = _transfer(4, 8, kind="mask_one")
     readout_keys = {k for k in source if "attention_readout" in k}
@@ -221,8 +215,8 @@ def test_conditioning_row_is_carried_across_verbatim():
 def test_conditioning_row_is_not_mixed_into_any_site_row():
     """Sentinel probe: a huge cond row over zero sites must leave sites zero.
 
-    This is the sharp version of the previous test -- carrying row 0 across
-    correctly is worthless if row 0 also leaked into the resampled block.
+    The sharp version of the previous test -- carrying row 0 across correctly
+    is worthless if row 0 also leaked into the resampled block.
     """
     source, target = _head(4, seed=1).state_dict(), _head(8, seed=2).state_dict()
     key = "backbone.fwd_stack.blocks.0.pos_embed"
@@ -276,10 +270,10 @@ def test_a_single_site_bump_stays_local():
 def test_resampling_is_periodic_on_the_torus():
     """A circular shift of the source shifts the destination, exactly.
 
-    This is the property that PINS circular padding. Under the default
-    edge-replicate behaviour a shifted field and a shifted resampling differ
-    at the boundary collar, because replicate invents a distinguished edge on
-    a lattice where every site is equivalent.
+    This is the property that pins circular padding. Under the default
+    edge-replicate behaviour a shifted field and a shifted resampling differ at
+    the boundary collar, because replicate invents a distinguished edge on a
+    lattice where every site is equivalent.
     """
     side_src, side_dst = 8, 16
     scale = side_dst // side_src
@@ -327,7 +321,7 @@ def _warm_started_head(side_src=3, side_dst=6):
 def test_pair_context_of_a_warm_started_head_is_blind_to_both_holes(pair):
     """H_ij must not move when the tokens at i and j change. Exactly.
 
-    The masked-attention band excludes hole terms BEFORE the softmax, so the
+    The masked-attention band excludes hole terms before the softmax, so the
     bar is equality, not a tolerance -- the same bar the head's own
     falsification suite holds it to at fresh init.
     """
@@ -348,9 +342,8 @@ def test_pair_context_of_a_warm_started_head_is_blind_to_both_holes(pair):
 def test_warm_started_blindness_probe_has_teeth():
     """The probe above must be capable of failing.
 
-    Flipping a site OUTSIDE the pair has to move H_ij; otherwise the
-    blindness assertions would be satisfied by a context that ignores the
-    state entirely, and would pin nothing.
+    Flipping a site outside the pair has to move H_ij; otherwise the blindness
+    assertions would be satisfied by a context that ignores the state entirely.
     """
     head = _warm_started_head()
     site_i, site_j, outside = 4, 20, 12
@@ -365,12 +358,12 @@ def test_warm_started_blindness_probe_has_teeth():
 
 
 def test_warm_started_head_differs_from_fresh_initialisation():
-    """Sanity: the transfer must actually change the destination weights.
+    """The transfer must actually change the destination weights.
 
     LayerNorm scales and shifts are excluded: they initialise to constant
     ones/zeros regardless of seed, so source and destination agree there for
-    reasons that have nothing to do with the transfer. Every RANDOMLY
-    initialised tensor must move.
+    reasons unrelated to the transfer. Every randomly initialised tensor must
+    move.
     """
     head, fresh = _warm_started_head(), _head(6, seed=5)
     warm_sd, fresh_sd = head.state_dict(), fresh.state_dict()
@@ -419,10 +412,10 @@ def test_warm_started_head_produces_finite_gradients():
 def test_attention_readout_is_dead_weight_on_the_masked_attention_head():
     """The band heads replace the backbone's single-site readout entirely.
 
-    Pinned because a 2026-08-13 post-mortem attributed a warm-started
-    d256 run's huge gradient norm to those tensors being freshly
-    initialised. They receive no gradient, so they cannot contribute to a
-    gradient norm at all, and the attribution cannot stand.
+    Pinned because a 2026-08-13 post-mortem attributed a warm-started d256
+    run's huge gradient norm to those tensors being freshly initialised. They
+    receive no gradient, so they cannot contribute to a gradient norm at all,
+    and the attribution cannot stand.
     """
     head = _head(4)
     head(_state(16), torch.rand(1)).pow(2).sum().backward()

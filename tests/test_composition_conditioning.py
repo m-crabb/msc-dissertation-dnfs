@@ -1,32 +1,31 @@
 """Tests for composition conditioning — the amortised sampler.
 
-An amortised sampler is conditioned on the target composition c, so one
-trained model serves many compositions instead of one specialist per
-composition. Two halves.
+An amortised sampler is conditioned on the target composition c, so one trained
+model serves many compositions instead of one specialist per composition. Two
+halves.
 
-TARGET — `IsingTarget.composition_batch(c)` binds a (B,) composition
-vector for the duration of a block, so `composition_penalty` becomes per-row:
+Target. `IsingTarget.composition_batch(c)` binds a (B,) composition vector for
+the duration of a block, so `composition_penalty` becomes per-row:
 
     penalty(x_b) = λ · d · (c₊(x_b) − c_b)²                [was: scalar c]
 
-The load-bearing property is the **b-major expansion rule**. Every
-batch-expanding call site in this codebase (`_log_p_tilde_at_neighbours`,
-`kolmogorov.residual_general`, `ctmc._compute_xi_t_general`) expands the
-batch axis b-major by an integer factor and rides `t` along with
-`t.repeat_interleave(k)`. A bound composition vector must ride along by
-exactly the same rule, or row b's penalty silently gets row b''s target
-composition — a bias that would never raise, only degrade.
+The load-bearing property is the b-major expansion rule. Every batch-expanding
+call site in this codebase (`_log_p_tilde_at_neighbours`,
+`kolmogorov.residual_general`, `ctmc._compute_xi_t_general`) expands the batch
+axis b-major by an integer factor and rides `t` along with
+`t.repeat_interleave(k)`. A bound composition vector must ride along by exactly
+the same rule, or row b's penalty silently gets row b''s target composition — a
+bias that would never raise, only degrade.
 
-MODEL — c is embedded by a second `TimestepEmbedder` and SUMMED into
-the existing `(B, 1, h)` conditioning tensor. Three properties matter:
+Model. c is embedded by a second `TimestepEmbedder` and summed into the existing
+`(B, 1, h)` conditioning tensor. Three properties matter:
 
   1. Hollowness (Def. 3) survives — c is independent of x entirely, so the
-     existing slice-and-mask argument is untouched. Re-tested here because
-     it is the property the whole leTF construction rests on.
+     existing slice-and-mask argument is untouched.
   2. Local equivariance (Eq. 20) survives, for the same reason.
   3. Zero-init ⇒ the c-channel is inert at initialisation, so an
      unconditioned specialist checkpoint warm-starts a conditioned model
-     with *identical* outputs. This is what makes "conditioning off" a free
+     with identical outputs. This is what makes "conditioning off" a free
      ablation rather than a second code path.
 """
 
@@ -70,16 +69,16 @@ def _penalty_by_loop(target, x, compositions):
 
 
 # --------------------------------------------------------------------------
-# TARGET — per-row composition
+# Target — per-row composition
 # --------------------------------------------------------------------------
 
 
 def test_unbound_penalty_is_unchanged_by_the_new_machinery():
-    """Regression guard: with nothing bound, every specialist run is untouched.
+    """With nothing bound, every specialist run is untouched.
 
     The six archived specialists in results/02_constrained_soft were trained
-    against the scalar-c penalty. If this test ever fails, previously
-    reported numbers are no longer reproducible from this code.
+    against the scalar-c penalty. If this test fails, previously reported
+    numbers are no longer reproducible from this code.
     """
     target = _soft_target(target_composition=0.3)
     x = _random_spins(8, target.d)
@@ -100,7 +99,7 @@ def test_bound_penalty_matches_per_row_scalar_evaluation():
 
 
 def test_bound_composition_expands_b_major():
-    """THE load-bearing rule: an expanded batch inherits its parent row's c.
+    """An expanded batch inherits its parent row's c.
 
     `x.repeat_interleave(k, dim=0)` is the expansion every neighbour helper
     performs. Row (b*k + j) must carry composition c[b] for every j — the
@@ -124,7 +123,7 @@ def test_bound_composition_expands_b_major():
 def test_bound_composition_rejects_non_divisible_batch():
     """A batch that is not an integer multiple of the bound vector is a bug.
 
-    Silently broadcasting here would mean some rows get the wrong target
+    Silently broadcasting here would give some rows the wrong target
     composition, which shows up only as a quietly worse ESS. Raise instead.
     """
     target = _soft_target()
@@ -152,8 +151,8 @@ def test_composition_batch_restores_scalar_on_exit_and_on_exception():
 def test_bound_composition_reaches_the_annealing_path():
     """The penalty is reached via log_prob → log_p_tilde_t / dt_log_p_tilde_t.
 
-    Binding must change both, and must NOT change either at t=0 (where the
-    path is pure base η, which stays composition-independent).
+    Binding must change both, and must not change either at t=0, where the
+    path is pure base η and stays composition-independent.
     """
     target = _soft_target(target_composition=0.5)
     x = _random_spins(4, target.d, seed=3)
@@ -181,9 +180,9 @@ def test_bound_composition_reaches_the_annealing_path():
 def test_neighbour_helper_respects_bound_composition():
     """Integration: the (B, d, S) neighbour expansion keeps rows aligned.
 
-    This is where the b-major rule is actually exercised in anger — the
-    helper reshapes to (B*d*S, d) and repeat_interleaves t by d*S. Compared
-    against a per-row loop with a scalar-c target, which is unambiguous.
+    This is where the b-major rule is exercised in anger — the helper reshapes
+    to (B*d*S, d) and repeat_interleaves t by d*S. Compared against a per-row
+    loop with a scalar-c target, which is unambiguous.
     """
     target = _soft_target()
     x = _random_spins(3, target.d, seed=4)
@@ -208,7 +207,7 @@ def test_neighbour_helper_respects_bound_composition():
 
 
 # --------------------------------------------------------------------------
-# MODEL — c summed into cond_t
+# Model — c summed into cond_t
 # --------------------------------------------------------------------------
 
 
@@ -229,9 +228,9 @@ def _conditioned_model(d=9, hidden_dim=16, seed=0):
 def _excite_composition_channel(model, scale=1.0):
     """Undo the zero-init so the c-channel actually influences the output.
 
-    At initialisation the composition embedding is identically zero by
-    design; a test of "does c matter?" must first put the model in the state
-    training would reach.
+    At initialisation the composition embedding is identically zero by design;
+    a test of "does c matter?" must first put the model in the state training
+    would reach.
     """
     with torch.no_grad():
         final_linear = model.comp_embedder.mlp[-1]
@@ -285,9 +284,8 @@ def test_conditioner_preserves_shared_initialisation_and_rng_stream():
         "comp_embedder.mlp.2.bias",
     }
 
-    # Do not obtain parity by moving the module: parameter registration order
-    # is how optimizer state is mapped on resume and must stay compatible with
-    # existing conditioned checkpoints.
+    # Parameter registration order is how optimizer state is mapped on resume,
+    # so parity must not be obtained by moving the module.
     names = [name for name, _ in conditioned.named_parameters()]
     assert names.index("comp_embedder.mlp.0.weight") < names.index(
         "fwd_stack.blocks.0.proj_in.weight"
@@ -295,7 +293,7 @@ def test_conditioner_preserves_shared_initialisation_and_rng_stream():
 
 
 def test_unconditioned_checkpoint_warm_starts_a_conditioned_model():
-    """The whole point of zero-init: a specialist checkpoint transfers exactly.
+    """The point of zero-init: a specialist checkpoint transfers exactly.
 
     Loading an unconditioned state_dict with strict=False leaves comp_embedder
     at its zero-init, so the conditioned model reproduces the specialist's

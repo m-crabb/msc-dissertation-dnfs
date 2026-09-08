@@ -37,9 +37,8 @@ def test_letf_constrained_cells_use_let_arch_and_penalty():
 
 
 def test_c05_d4_letf_cell_mirrors_c03_with_only_target_changed():
-    """c_target=0.5 cell at D=4: shape-identical to the
-    c=0.3 D=4 leTF cell except for `target_composition`. Pinned so any
-    future refactor of the c=0.5 cell stays paired with its c=0.3 sibling."""
+    """c_target=0.5 cell at D=4: shape-identical to the c=0.3 D=4 leTF cell
+    except for `target_composition`."""
     base = CONSTRAINED_CONFIGS["S2_d4_c03_l50_letf"]
     twin = CONSTRAINED_CONFIGS["S2_d4_c05_l50_letf"]
     assert twin.ising.target_composition == 0.5
@@ -79,11 +78,10 @@ def test_d4_critical_cell_mirrors_d4_with_only_sigma_changed():
 
 
 def test_letf_d10_ne128_cell_carries_stability_stack():
-    """leTF d=10 ne128 cell carries the stability stack (warmup=2000, ne=128).
-
-    Pre-stability-stack siblings (`S2_d10_c03_l50_letf` with ne=64, warmup=500)
-    were removed, so this test asserts the absolute values on the surviving
-    cell rather than the relative deviation from a removed baseline.
+    """leTF d=10 ne128 cell carries the stability stack (warmup=2000,
+    ne=128), asserted as absolute values: the pre-stability-stack siblings
+    (`S2_d10_c03_l50_letf` with ne=64, warmup=500) were removed, so there is
+    no surviving baseline to state a deviation against.
     """
     cfg = CONSTRAINED_CONFIGS["S2_d10_c03_l50_letf_ne128"]
     assert cfg.ctmc.n_euler_steps == 128
@@ -96,10 +94,9 @@ def test_letf_d10_ne128_cell_carries_stability_stack():
 
 def test_d10_c05_ne64_cell_is_report_witness():
     """D=10 c=0.5 headline cell: inherits the c=0.3 ne128 stability stack
-    (warmup=2000, lambda=50, let/h128) but runs the paper-faithful n_euler=64
-    grid rather than the unvalidated 128. c=0.3 is dropped from the report,
-    so this is the D=10 soft witness; pinned so a refactor keeps it paired
-    with its c=0.3 sibling on everything except target and n_euler."""
+    (warmup=2000, lambda=50, let/h128) but runs the paper-faithful
+    n_euler=64 grid rather than the unvalidated 128. c=0.3 is dropped from
+    the report, so this is the D=10 soft witness."""
     base = CONSTRAINED_CONFIGS["S2_d10_c03_l50_letf_ne128"]
     cfg = CONSTRAINED_CONFIGS["S2_d10_c05_l50_letf_ne64"]
     assert cfg.ising.target_composition == 0.5
@@ -312,7 +309,7 @@ def test_hard_ladder_covers_three_sigmas_plus_control():
 
 
 def test_hard_d64_cell_enables_tier2_flags():
-    """The D=8 scaling cell runs with the SDPA readout and bf16 IN-TRAINING
+    """The D=8 scaling cell runs with the SDPA readout and bf16 in-training
     evals only — run.py's final 5,000-sample eval stays fp32. The D=4 gate
     cells stay flag-off: enabling either flag is a per-cell decision, never
     a global default."""
@@ -327,9 +324,9 @@ def test_hard_d64_cell_enables_tier2_flags():
 
 
 def test_d64_25k_budget_probe_mirrors_base_cell_except_n_steps():
-    """The 25k budget probe must isolate ONE variable: same cell
-    as H2_d64_c50_s223_letf_mo in every respect except the training budget,
-    so a converged/stalled outcome is attributable to budget alone."""
+    """The 25k budget probe isolates one variable: the same cell as
+    H2_d64_c50_s223_letf_mo in every respect except the training budget, so
+    a converged/stalled outcome is attributable to budget alone."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -344,11 +341,12 @@ def test_d64_25k_budget_probe_mirrors_base_cell_except_n_steps():
 
 
 def test_d64_50k_curriculum_cell_mirrors_base_except_budget_and_ladder():
-    """The curriculum rung changes exactly TWO things vs the base
-    d=64 cell — budget (50k) and the sigma-plateau ladder — so its outcome is
+    """The curriculum rung changes exactly two things vs the base d=64 cell
+    — budget (50k) and the sigma-plateau ladder — so its outcome is
     attributable to those levers. The ladder is the proven baseline recipe
-    (stage_3 conv critical, itself 50k steps) with the final stage at the hard
-    cells' 0.223; boundaries must align with outer cycles for train_swap."""
+    (stage_3 conv critical, itself 50k steps) with the final stage at the
+    hard cells' 0.223; boundaries must align with outer cycles for
+    train_swap."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -445,10 +443,10 @@ def test_hard_cfg_band_capacity_knobs_reach_band_heads():
 
 
 def test_band_push_cells_mirror_ma_twin_except_declared_fields():
-    """Band-capacity push batch 1: each cell must be a
-    single-variable twin of H2_d64_c50_s223_letf_ma_50k_curr so its outcome
-    is attributable to the declared change alone (the discriminator changes
-    the head kind; the other two change exactly one capacity axis)."""
+    """Band-capacity push batch 1: each cell is a single-variable twin of
+    H2_d64_c50_s223_letf_ma_50k_curr, so its outcome is attributable to the
+    declared change alone (the discriminator changes the head kind; the
+    other two change exactly one capacity axis)."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -476,11 +474,11 @@ def test_band_push_cells_mirror_ma_twin_except_declared_fields():
 
 
 def test_m6_replay2_smoke_mirrors_ma_recipe_except_declared_fields():
-    """The replay2 12k smoke is the archived
-    MA curriculum recipe with exactly the declared deviations — the 12k
-    budget, the forced ladder truncation to the first three stages (the
-    validator rejects stages at or past n_steps), and replay_buffer_cycles
-    8 -> 2 — so its outcome attributes to the buffer window alone."""
+    """The replay2 12k smoke is the archived MA curriculum recipe with
+    exactly the declared deviations — the 12k budget, the forced ladder
+    truncation to the first three stages (the validator rejects stages at or
+    past n_steps), and replay_buffer_cycles 8 -> 2 — so its outcome
+    attributes to the buffer window alone."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -503,15 +501,15 @@ def test_m6_replay2_smoke_mirrors_ma_recipe_except_declared_fields():
 
 
 def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
-    """Horizon extension: the 50k curriculum
-    stops while both heads are still improving (loss -12.0% / -7.4% over the
-    final 10k steps, train ESS still climbing), so the 0.78/0.80 ceiling is
-    read off unconverged runs. These cells double the budget and change
-    NOTHING else — same sigma ladder, same lr drop, so the extra 50k steps all
-    land on the final sigma=0.223 plateau (20k -> 70k) rather than stretching
-    the anneal. n_steps must be the sole difference from the 50k twin, and the
-    stencil pair must differ from each other by use_stencil alone, or the
-    ablation ladder stops being attributable."""
+    """Horizon extension: the 50k curriculum stops while both heads are
+    still improving (loss -12.0% / -7.4% over the final 10k steps, train ESS
+    still climbing), so the 0.78/0.80 ceiling is read off unconverged runs.
+    These cells double the budget and change nothing else — same sigma
+    ladder, same lr drop, so the extra 50k steps all land on the final
+    sigma=0.223 plateau (20k -> 70k) rather than stretching the anneal.
+    n_steps must be the sole difference from the 50k twin, and the stencil
+    pair must differ from each other by use_stencil alone, or the ablation
+    ladder stops being attributable."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -537,9 +535,9 @@ def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
         )
         assert rebuilt == short_cell
 
-    # The ladder is deliberately NOT stretched: identical stage boundaries at
-    # both horizons, so the lr drop still fires at 20k and the final plateau
-    # absorbs the whole extra budget.
+    # The ladder is deliberately not stretched: identical stage boundaries
+    # at both horizons, so the lr drop still fires at 20k and the final
+    # plateau absorbs the whole extra budget.
     long_ma = CONFIGS["H2_d64_c50_s223_letf_ma_100k_curr"]
     assert long_ma.curriculum == CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr"].curriculum
     assert long_ma.curriculum.stages[-1].start_step == 30_000
@@ -552,15 +550,15 @@ def test_horizon_100k_cells_mirror_50k_twins_except_n_steps():
 
 
 def test_d256_rung_mirrors_ma_twin_except_declared_scale_fields():
-    """The 16x16 rung (hard.tex §5.6): the d64
-    masked-attention curriculum cell rescaled and nothing else — same head,
-    same 50k sigma ladder on absolute start_steps, same n_euler=128. That
-    Euler budget is only clip-safe at d=256 because the matching step is
-    declared canonical (CTMCCfg.use_matching_step; clip-safe one-event
-    extrapolates to ~390 steps), so the knob must be True and must be the
-    ONLY trajectory-step difference. Eval deltas are diagnostics-only —
-    cadence and in-training draw shrink because the per-pass cost is ~16x
-    the d64 cell's; the final eval keeps the 5000-draw protocol."""
+    """The 16x16 rung (hard.tex §5.6): the d64 masked-attention curriculum
+    cell rescaled and nothing else — same head, same 50k sigma ladder on
+    absolute start_steps, same n_euler=128. That Euler budget is only
+    clip-safe at d=256 because the matching step is declared canonical
+    (CTMCCfg.use_matching_step; clip-safe one-event extrapolates to ~390
+    steps), so the knob must be True and must be the only trajectory-step
+    difference. Eval deltas are diagnostics-only — cadence and in-training
+    draw shrink because the per-pass cost is ~16x the d64 cell's; the final
+    eval keeps the 5000-draw protocol."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -592,12 +590,12 @@ def test_d256_rung_mirrors_ma_twin_except_declared_scale_fields():
 
 
 def test_grouped_anchor_cells_mirror_ma_twin_except_declared_fields():
-    """Grouped-anchor batch 1: each cell must be a
-    single-variable twin of H2_d64_c50_s223_letf_ma_50k_curr apart from the
-    head selection and its declared knobs, so the result reads against the
-    existing ladder rungs rather than against a different recipe. ga16 differs
-    from ga8 by k alone (the cost dial) and ga8_contig by grouping alone (the
-    dispersal control) -- both must hold, or neither comparison is clean."""
+    """Grouped-anchor batch 1: each cell is a single-variable twin of
+    H2_d64_c50_s223_letf_ma_50k_curr apart from the head selection and its
+    declared knobs, so the result reads against the existing ladder rungs.
+    ga16 differs from ga8 by k alone (the cost dial) and ga8_contig by
+    grouping alone (the dispersal control); both must hold, or neither
+    comparison is clean."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -630,14 +628,13 @@ def test_grouped_anchor_cells_mirror_ma_twin_except_declared_fields():
 
 def test_build_swap_head_wires_the_grouped_anchor_knobs():
     """head_kind='grouped_anchor' must reach the head with cfg.ising.D as the
-    lattice side (so 'diagonal' can disperse across the raster), and must fail
-    loudly rather than silently defaulting when n_groups is unset.
+    lattice side (so 'diagonal' can disperse across the raster), and must
+    fail loudly rather than silently defaulting when n_groups is unset.
 
-    All three launch cells are built, not just ga8: `site_groups` REFUSES an
-    n_groups it cannot balance on the raster, so constructing each cell's head
-    is what turns "this k is legal at this D" from an assumption into a test.
-    A cell whose k the head rejects would otherwise fail at run start, on the
-    GPU, after the job had been paid for."""
+    All three launch cells are built, not just ga8: `site_groups` refuses an
+    n_groups it cannot balance on the raster, so constructing each cell's
+    head is what turns "this k is legal at this D" from an assumption into a
+    test."""
     from dataclasses import replace
 
     import pytest
@@ -662,12 +659,10 @@ def test_build_swap_head_wires_the_grouped_anchor_knobs():
         assert (head.n_groups, head.grouping) == (n_groups, grouping)
         assert head.group_of_site.shape == (cfg.ising.D**2,)
 
-    # The dispersal the ga8 cell is actually buying, asserted rather than
-    # gestured at: on the D x D raster with n_groups = D, each group must hit
-    # every row exactly once and every column exactly once (the Latin-square
-    # diagonal). This is a property of the RASTER, so it holds only if
-    # lattice_side arrived as cfg.ising.D -- a different side reshapes the
-    # grid and the one-per-row-and-column structure dies.
+    # The dispersal the ga8 cell buys: on the D x D raster with
+    # n_groups = D, each group hits every row and every column exactly once
+    # (the Latin-square diagonal). That is a property of the raster, so it
+    # holds only if lattice_side arrived as cfg.ising.D.
     cfg = CONFIGS["H2_d64_c50_s223_letf_ga8_50k_curr"]
     head = build_swap_head(cfg, _backbone(cfg))
     side = cfg.ising.D
@@ -683,9 +678,9 @@ def test_build_swap_head_wires_the_grouped_anchor_knobs():
 
 
 def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():
-    """4x4 demo cells: single-variable twins of the
-    2k dh ladder — only name, head_kind and n_steps may differ, so head and
-    budget effects in the demo stay attributable."""
+    """4x4 demo cells: single-variable twins of the 2k dh ladder — only
+    name, head_kind and n_steps may differ, so head and budget effects in
+    the demo stay attributable."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -710,10 +705,9 @@ def test_demo_4x4_cells_mirror_dh_ladder_except_declared_fields():
 
 
 def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
-    """Factorised-head 4x4 gate: single-variable twins of the
-    MA demo cells — only name, head_kind and the declared factorised knobs
-    may differ, so the head effect stays attributable to the declared
-    change. The knob dict below is also the gate's arm table."""
+    """Factorised-head 4x4 gate: single-variable twins of the MA demo cells
+    — only name, head_kind and the declared factorised knobs may differ. The
+    knob dict below is also the gate's arm table."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -757,10 +751,10 @@ def test_factorised_gate_cells_mirror_ma_twin_except_declared_fields():
 
 
 def test_fab8_d64_rung_mirrors_ma_curriculum_twin_except_declared_fields():
-    """d64 scaling rung: the factorised cell must be a
-    single-variable twin of the archived MA 50k-curriculum rung — only
-    name, head_kind and the declared dual-eval EMA instrument may differ,
-    so the transfer read stays attributable to the head."""
+    """d64 scaling rung: the factorised cell is a single-variable twin of
+    the archived MA 50k-curriculum rung — only name, head_kind and the
+    declared dual-eval EMA instrument may differ, so the transfer read stays
+    attributable to the head."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -774,9 +768,9 @@ def test_fab8_d64_rung_mirrors_ma_curriculum_twin_except_declared_fields():
 
 
 def test_fab16_d64_rung_mirrors_fab8_rung_except_rank():
-    """Rank-at-scale arm: the fab16 d64 cell must differ from
-    the fab8 rung in name and bilinear_rank ALONE, so the rank read at the
-    0.27-deficit operating point stays single-variable."""
+    """Rank-at-scale arm: the fab16 d64 cell differs from the fab8 rung in
+    name and bilinear_rank alone, so the rank read at the 0.27-deficit
+    operating point stays single-variable."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -789,8 +783,8 @@ def test_fab16_d64_rung_mirrors_fab8_rung_except_rank():
 
 
 def test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings():
-    """Multi-order causal streams at scale: the fmo2 d64 cell
-    must differ from the fab8 rung in name and site_orderings ALONE, so the
+    """Multi-order causal streams at scale: the fmo2 d64 cell differs from
+    the fab8 rung in name and site_orderings alone, so the
     interior-coverage read at the 0.27-deficit operating point stays
     single-variable."""
     from dataclasses import replace
@@ -805,12 +799,11 @@ def test_fmo2_d64_rung_mirrors_fab8_rung_except_orderings():
 
 
 def test_d256_cv2_cell_mirrors_naive_rescue_except_declared_fields():
-    """Estimator switch: the cv2 cell must be the naive
-    rescue's shape with exactly the declared deltas — estimator back to the
-    control variate, 20k flat-sigma_c steps in place of the 50k ladder
-    (training continues from the naive checkpoint via --init-from), lr
-    pinned to the ladder's final 3e-4, and the dual-eval EMA instrument —
-    so the estimator read stays attributable."""
+    """Estimator switch: the cv2 cell is the naive rescue's shape with
+    exactly the declared deltas — estimator back to the control variate, 20k
+    flat-sigma_c steps in place of the 50k ladder (training continues from
+    the naive checkpoint via --init-from), lr pinned to the ladder's final
+    3e-4, and the dual-eval EMA instrument."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -833,14 +826,15 @@ def test_d256_cv2_cell_mirrors_naive_rescue_except_declared_fields():
 
 
 def test_d144_fmo2_rung_mirrors_d64_fmo2_rung_except_volume_scaled_fields():
-    """The 12x12 rung. 8x8 trains to Var/site 0.0040 and 16x16
-    sits at 0.0707; no volume in between has ever been run, so the wall is
-    unbracketed. This cell must be the 8x8 factorised rung with ONLY the
+    """The 12x12 rung. 8x8 trains to Var/site 0.0040 and 16x16 sits at
+    0.0707; no volume in between has ever been run, so the wall is
+    unbracketed. This cell is the 8x8 factorised rung with only the
     volume-forced deltas: the lattice side, the multi-event step (the
     one-event step clips once Lambda ~ d^2/2 outgrows the budget), the
     clip-safe 2d Euler grid the shared builder's own rule asks for, and the
     eval chunk the factorised head's memory allows. Head, sigma ladder,
-    batch, lr, replay depth and seed stay verbatim, so volume is the read."""
+    batch, lr, replay depth and seed stay verbatim, so volume is the
+    read."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -867,12 +861,12 @@ def test_d144_fmo2_rung_mirrors_d64_fmo2_rung_except_volume_scaled_fields():
 
 
 def test_d64_fmo2_h128_mirrors_fmo2_rung_except_hidden_dim():
-    """Capacity arm: hidden_dim 32 -> 128 the ONLY change
-    against the 8x8 factorised rung. hidden_dim is set once in the shared
-    cell builder and every cell at every volume has used 32, so it has never
-    appeared in a cell diff; this pin makes the first variation of it
-    single-variable. n_heads and n_layers must NOT move with it — head_dim
-    riding 8 -> 32 is the consequence of widening, not a second knob."""
+    """Capacity arm: hidden_dim 32 -> 128 the only change against the 8x8
+    factorised rung. hidden_dim is set once in the shared cell builder and
+    every cell at every volume has used 32, so it has never appeared in a
+    cell diff; this pin makes the first variation of it single-variable.
+    n_heads and n_layers must not move with it — head_dim riding 8 -> 32 is
+    the consequence of widening, not a second knob."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -894,13 +888,13 @@ def test_d256_fmo2_warm_mirrors_cv2_continuation_shape_except_head():
     """Cross-volume transfer arm. The archived cv2 continuation cell
     continued 16x16 from a 16x16 checkpoint, which cannot test transfer at
     all; this one starts from an 8x8 factorised model resampled onto the
-    larger torus. It must share the continuation SHAPE with that archived
-    cell — no curriculum, flat sigma_c, lr at the ladder's final 3e-4, the
+    larger torus. It shares the continuation shape with that archived cell —
+    no curriculum, flat sigma_c, lr at the ladder's final 3e-4, the
     dual-eval EMA riding — so the schedule is not a second variable, and
-    differ in the head and the eval chunk the factorised head's memory
+    differs in the head and the eval chunk the factorised head's memory
     allows. n_euler stays at the 128 every archived 16x16 cell used even
     though the builder's clip-safe rule asks 2d = 512 here: training on a
-    finer grid AND from a transfer would confound them, and the resolution
+    finer grid and from a transfer would confound them, and the resolution
     axis is read afterwards off the frozen checkpoint instead."""
     from dataclasses import replace
 
@@ -925,13 +919,13 @@ def test_d256_fmo2_warm_mirrors_cv2_continuation_shape_except_head():
 
 
 def test_d256_fmo2_warm_ne512_differs_from_its_twin_in_the_grid_alone():
-    """Resolution-at-training arm. A frozen-checkpoint sweep can
-    only ask how an already-trained model behaves when re-rolled on a finer
-    grid; it cannot separate "the grid is coarse" from "the model was fitted
-    to a coarse grid", since a model trained under a biased discretisation
-    learns to compensate that bias. This arm trains at 2d = 512, the
-    clip-safe budget this module's builder states, against a 128 twin that
-    is what every archived 16x16 cell ran. n_euler_steps must be the ONLY
+    """Resolution-at-training arm. A frozen-checkpoint sweep can only ask
+    how an already-trained model behaves when re-rolled on a finer grid; it
+    cannot separate "the grid is coarse" from "the model was fitted to a
+    coarse grid", since a model trained under a biased discretisation learns
+    to compensate that bias. This arm trains at 2d = 512, the clip-safe
+    budget this module's builder states, against a 128 twin that is what
+    every archived 16x16 cell ran. n_euler_steps must be the only
     difference, so any gain is attributable to the grid rather than to the
     cross-volume transfer the pair shares."""
     from dataclasses import replace
@@ -947,15 +941,15 @@ def test_d256_fmo2_warm_ne512_differs_from_its_twin_in_the_grid_alone():
 
 
 def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
-    """Walk-back-to-8x8 slate. The three experiment chapters
-    shared no non-enumerable lattice size — baseline and soft ran 10x10,
-    hard ran 8x8 and 16x16 — so 8x8 (d = 64 sites, the lattice the hard
-    cells name d64) becomes the shared cross-chapter comparison size, and
-    10x10 keeps its paper-replication role. This cell must be a D=8 twin of
-    the d10 critical paper-curriculum record: EVERY knob except the lattice
-    side copied — same sigma ladder and LR drops, same 200k budget, same
-    ne64 — so any difference against the d10 four-seed family is
-    attributable to lattice size alone."""
+    """Walk-back-to-8x8 slate. The three experiment chapters shared no
+    non-enumerable lattice size — baseline and soft ran 10x10, hard ran 8x8
+    and 16x16 — so 8x8 (d = 64 sites, the lattice the hard cells name d64)
+    becomes the shared cross-chapter comparison size, and 10x10 keeps its
+    paper-replication role. This cell is a D=8 twin of the d10 critical
+    paper-curriculum record: every knob except the lattice side copied —
+    same sigma ladder and LR drops, same 200k budget, same ne64 — so any
+    difference against the d10 four-seed family is attributable to lattice
+    size alone."""
     from dataclasses import replace
 
     base = BASELINE_CONFIGS["stage_4_d10_critical_paper_curriculum"]
@@ -966,15 +960,15 @@ def test_walkback_d8_baseline_twin_mirrors_d10_except_lattice_side():
 
 
 def test_d16_unconstrained_control_mirrors_d8_walkback_except_declared():
-    """Unconstrained 16x16 control: the d8 walkback cell with
-    exactly three declared changes — lattice side, the 50k budget, and the
-    compressed sigma ladder (the hard chapter's frame: stages every 5k,
-    lr 1e-3 -> 3e-4 on reaching 0.205, final 40% at sigma_c). Everything
-    else (engine, batch, replay, clip, ne64, CV estimator, the full
-    5000-draw eval protocol) is the archived unconstrained recipe, so the
-    d256 read is chargeable to size and the cross-family read to
-    machinery. The 5000-draw evals size the CARD (dense readout ~9.8 GiB
-    scores at d=256 — A100, not L4), deliberately not the recipe."""
+    """Unconstrained 16x16 control: the d8 walkback cell with exactly three
+    declared changes — lattice side, the 50k budget, and the compressed
+    sigma ladder (the hard chapter's frame: stages every 5k, lr 1e-3 -> 3e-4
+    on reaching 0.205, final 40% at sigma_c). Everything else (engine,
+    batch, replay, clip, ne64, CV estimator, the full 5000-draw eval
+    protocol) is the archived unconstrained recipe, so the d256 read is
+    chargeable to size and the cross-family read to machinery. The
+    5000-draw evals size the card (dense readout ~9.8 GiB scores at d=256 —
+    A100, not L4), deliberately not the recipe."""
     from dataclasses import replace
 
     base = BASELINE_CONFIGS["stage_4_d8_critical_paper_curriculum"]
@@ -1040,12 +1034,12 @@ def test_c05_ne128_anneal_control_mirrors_ne64_anneal_euler_only():
 
 
 def test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields():
-    """c_t EMA no-regression cell: it must be the archived MA 50k curriculum
-    twin with c_t_ema_halflife_cycles 0.0 -> 4.0 the ONLY declared change —
-    no horizon, ladder, or instrument deltas — so the no-regression read
+    """c_t EMA no-regression cell: the archived MA 50k curriculum twin with
+    c_t_ema_halflife_cycles 0.0 -> 4.0 the only declared change — no
+    horizon, ladder, or instrument deltas — so the no-regression read
     against the archived twin's seed spread (expected >= 0.755 of
     0.755-0.781) attributes to the c_t EMA alone. The dual-eval EMA
-    instrument is deliberately NOT ridden: the comparison is
+    instrument is deliberately not ridden: the comparison is
     raw-vs-archived-twin, and a pure twin keeps the read clean."""
     from dataclasses import replace
 
@@ -1069,15 +1063,14 @@ def test_m2_ctema4_gate_mirrors_ma_twin_except_declared_fields():
 
 def test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator():
     """c_t transfer-function cell: the c_t EMA, the decoupled c_t batch and
-    the cv2 continuation all reduce c_t NOISE, but the quantity that has to
-    fall ~8x for a usable
-    d256 is per-site Var[log w]. Nobody has measured the transfer between
-    them — every one of the 21 archived d64 cells runs control_variate, so
-    the slope is unmeasured in BOTH directions at every healthy size.
+    the cv2 continuation all reduce c_t noise, but the quantity that has to
+    fall ~8x for a usable d256 is per-site Var[log w]. The transfer between
+    them is unmeasured — every one of the 21 archived d64 cells runs
+    control_variate.
 
     This cell is the archived MA 50k curriculum twin with the estimator
-    control_variate -> naive_mc as the ONLY declared change, so the
-    difference in final Var[log w]/site IS the transfer function, measured
+    control_variate -> naive_mc as the only declared change, so the
+    difference in final Var[log w]/site is the transfer function, measured
     where the control variate is known to work (a healthy run) rather than
     where it inverted (the diverged d256).
 
@@ -1087,7 +1080,7 @@ def test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator():
       c_t noise does not drive log-weight variance -> ESS ~ 0.78
       transfer linear in c_t standard error        -> ESS ~ 0.25
       transfer linear in c_t variance              -> ESS ~ 0.001
-      training destabilises                        -> the CV is a STABILITY
+      training destabilises                        -> the CV is a stability
         crutch, not only a variance reducer, which would mean the archived
         d256 naive rescue ran 50k steps without one.
     """
@@ -1099,7 +1092,7 @@ def test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator():
     cell = CONFIGS["H2_d64_c50_s223_letf_ma_50k_curr_naive"]
     assert cell.estimator == "naive_mc"
     assert twin.estimator == "control_variate"
-    # The later c_t knobs must all be OFF: this cell has to be a pure
+    # The later c_t knobs must all be off: this cell is a pure
     # single-variable read against an archived twin that predates them.
     assert cell.train.c_t_ema_halflife_cycles == 0.0
     assert cell.train.c_t_batch is None
@@ -1109,12 +1102,12 @@ def test_ctv_naive_twin_mirrors_ma_twin_except_the_estimator():
 
 
 def test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields():
-    """Decoupled c_t batch cell: the d256 12k smoke must be the smoke12k
-    naive recipe with c_t_batch=512 the ONLY declared change, so the read
-    against the archived naive 50k run's first 12k (train-ESS median on the
+    """Decoupled c_t batch cell: the d256 12k smoke is the smoke12k naive
+    recipe with c_t_batch=512 the only declared change, so the read against
+    the archived naive 50k run's first 12k (train-ESS median on the
     sigma=0.17 rung, var_estimator_integrand) attributes to the decoupled
-    c_t rollout batch alone. Never bundled with the c_t EMA: attribution
-    stays clean one lever per cell."""
+    c_t rollout batch alone. Never bundled with the c_t EMA: one lever per
+    cell."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1135,7 +1128,7 @@ def test_m3_ctb512_smoke_mirrors_naive_arm_except_declared_fields():
 def test_m3_ctb512_d64_smoke_mirrors_ma_recipe_except_declared_fields():
     """d64 plumbing smoke for the decoupled c_t batch: the d64 MA
     curriculum recipe at the 12k smoke horizon (the forced ladder truncation
-    of every smoke arm) with c_t_batch=512 the ONLY mechanism change —
+    of every smoke arm) with c_t_batch=512 the only mechanism change —
     validates the enlarged-rollout plumbing (buffer prefix, c_t over the
     full set, resume) on a 25-min a30 job before the d256 cell."""
     from dataclasses import replace
@@ -1157,18 +1150,17 @@ def test_m3_ctb512_d64_smoke_mirrors_ma_recipe_except_declared_fields():
 
 
 def test_swap_route_never_reads_the_ising_log_ratio_clamp_field():
-    """Dead-field pin. Every hard-route
-    config.json carries `ising.log_ratio_clamp` (default 5.0), but the swap
-    path clamps at the hardcoded SWAP_LOG_RATIO_CLAMP = 30.0 and the
-    fixed-composition target never even receives the field — the config
-    value is single-site-route-only and CANNOT govern any hard-chapter run.
-    Behavioural proof: perturbing the target's attribute to an absurd value
-    must leave the swap residual bit-identical. The value is left unplumbed
-    deliberately: making the swap clamp configurable would trip eval_only's
-    config-drift guard on every archived run dir (stored 5.0 vs CONFIGS),
-    a blast radius the never-firing clamp (0 of 141,000 logged rows across
-    six d64-d256 runs; physical bound ~7.14 nats at sigma_c) does not earn.
-    This pin keeps the trap documented instead."""
+    """Dead-field pin. Every hard-route config.json carries
+    `ising.log_ratio_clamp` (default 5.0), but the swap path clamps at the
+    hardcoded SWAP_LOG_RATIO_CLAMP = 30.0 and the fixed-composition target
+    never receives the field — the config value is single-site-route-only
+    and cannot govern any hard-chapter run. Behavioural proof: perturbing
+    the target's attribute to an absurd value leaves the swap residual
+    bit-identical. The value is left unplumbed deliberately: making the swap
+    clamp configurable would trip eval_only's config-drift guard on every
+    archived run dir (stored 5.0 vs CONFIGS), which the never-firing clamp
+    (0 of 141,000 logged rows across six d64-d256 runs; physical bound ~7.14
+    nats at sigma_c) does not earn."""
     import torch
 
     from discrete_flow_sampler.constraints.swap_readout import (
@@ -1197,16 +1189,14 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
     independent — the training grid (keystone) and the c_t estimator
     (cvcont) — plus capacity twins. Each arm is only interpretable if it
     differs from its comparator by the fields its configs.py comment
-    declares and no others,
-    so every relationship in the family is pinned here by rebuilding the
-    comparator from the arm and asserting equality.
+    declares and no others, so every relationship in the family is pinned
+    here by rebuilding the comparator from the arm and asserting equality.
 
-    `loss_microbatch_size` is deliberately NOT a declared deviation
-    anywhere in the family: the keystone parent already carries it, so 128
-    is the lineage setting and it is gradient-exact
-    (test_loss_microbatch_parity pins the identity for arbitrary per-row
-    c_t, which is why the control variate cannot disturb it — c_t is
-    computed in the outer no_grad rollout, not inside the loss)."""
+    `loss_microbatch_size` is deliberately not a declared deviation anywhere
+    in the family: the keystone parent already carries it, so 128 is the
+    lineage setting and it is gradient-exact (test_loss_microbatch_parity
+    pins the identity for arbitrary per-row c_t; c_t is computed in the
+    outer no_grad rollout, not inside the loss)."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1254,9 +1244,9 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
     )
 
     # arm_b vs the keystone: the estimator, the horizon and the cold-start
-    # tripwire are the three declared changes. arm_a and arm_b then carry the SAME
-    # budget shape — 30k of ladder plus 40k at sigma_c — so the only thing
-    # separating them is when the control variate joins.
+    # tripwire are the three declared changes. arm_a and arm_b then carry the
+    # same budget shape — 30k of ladder plus 40k at sigma_c — so the only
+    # thing separating them is when the control variate joins.
     assert arm_b.estimator == "control_variate"
     assert arm_b.train.n_steps == 70_000
     assert arm_b.train.halt_on_cv_inversion_after == 5000
@@ -1326,9 +1316,9 @@ def test_ne128_cv_family_arms_are_one_variable_twins_of_their_comparators():
 
 
 def test_interior_separation_cells_are_single_variable_twins():
-    """Exterior-vs-interior separation: the 4x4 interval cell
-    differs from the MA demo cell by head_kind alone, and each d64 band rung
-    differs from the fmo2 rung by the declared interior knobs alone."""
+    """Exterior-vs-interior separation: the 4x4 interval cell differs from
+    the MA demo cell by head_kind alone, and each d64 band rung differs from
+    the fmo2 rung by the declared interior knobs alone."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1356,9 +1346,9 @@ def test_interior_separation_cells_are_single_variable_twins():
 
 
 def test_bilinear_exterior_cells_change_only_the_combiner():
-    """Literal factorisation test: mab / ivb differ from the
-    archived MA / interval cells by exterior_combiner alone (plus the EMA
-    instrument at d64, which never touches training)."""
+    """Literal factorisation test: mab / ivb differ from the archived MA /
+    interval cells by exterior_combiner alone (plus the EMA instrument at
+    d64, which never touches training)."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1412,8 +1402,7 @@ def test_wave1_sigma_c_twins_mirror_their_archived_parents():
     stage move to the exact SIGMA_C, the sigma ladder below the endpoint
     stays verbatim — plus the two declared optimised_recipe flags
     (compile_model, c_t_from_rollout; the standing rule for every new
-    cell). Pinned so the retrain twins can never drift
-    from the cells whose printed rows they replace."""
+    cell)."""
     from dataclasses import replace
 
     from discrete_flow_sampler.targets.ising import SIGMA_C
@@ -1457,7 +1446,7 @@ def test_amort_specialist_twins_mirror_c05_except_composition():
     """4x4 specialist twins for tab:amort-4x4: the conditioned rows at
     c = 0.30/0.70/0.80 each get a specialist comparator. The recipe is
     byte-identical to the c=0.50 specialist -- target_composition is the
-    ONLY change -- and optimised_recipe is deliberately NOT applied: every
+    only change -- and optimised_recipe is deliberately not applied: every
     row these compare against is eager, and one recipe per table governs
     over the standing cost rule."""
     from dataclasses import replace
@@ -1476,10 +1465,10 @@ def test_amort_specialist_twins_mirror_c05_except_composition():
 
 
 def test_flat_window_ablation_mirrors_conditioned_cell_except_curriculum():
-    """Uniform-from-start ablation of the widening curriculum: the
-    printed conditioned cell justified its widening by analogy with the
+    """Uniform-from-start ablation of the widening curriculum: the printed
+    conditioned cell justified its widening by analogy with the
     sigma/lambda curricula, never by ablation. This twin draws c from the
-    FULL final window from step 0 -- half_width 0.30, no curriculum -- and
+    full final window from step 0 -- half_width 0.30, no curriculum -- and
     everything else is byte-identical, so any difference vs the printed
     conditioned rows is attributable to the widening schedule alone."""
     from dataclasses import replace
@@ -1501,13 +1490,13 @@ def test_flat_window_ablation_mirrors_conditioned_cell_except_curriculum():
 
 
 def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
-    """Wave-2 house-table fill: every cell in the 4x4/8x8 fresh matrix
-    must be the declared transform of its archived namesake and NOTHING else
-    -- the s220 cells move sigma from the legacy 0.223 to the exact SIGMA_C
-    (cell sigma AND curriculum endpoint, ladder reused-not-rescaled), every
-    cell takes the optimised recipe (compile_head + c_t_from_rollout),
-    and the d64 cells carry the dual-eval EMA instrument. Any other field
-    drifting would make the retrained table unattributable to the sigma
+    """Wave-2 house-table fill: every cell in the 4x4/8x8 fresh matrix is
+    the declared transform of its archived namesake and nothing else -- the
+    s220 cells move sigma from the legacy 0.223 to the exact SIGMA_C (cell
+    sigma and curriculum endpoint, ladder reused-not-rescaled), every cell
+    takes the optimised recipe (compile_head + c_t_from_rollout), and the
+    d64 cells carry the dual-eval EMA instrument. Any other field drifting
+    would make the retrained table unattributable to the sigma
     correction."""
     from dataclasses import replace
 
@@ -1522,10 +1511,10 @@ def test_wave2_house_cells_mirror_archived_twins_except_declared_fields():
             train=replace(cell.train, c_t_from_rollout=False),
         )
 
-    # --- d16: archived twins exist at BOTH sigma labels. The fmo2ef arm has
-    # NO archived namesake at any size (ef never ran on the global chassis),
-    # so it pins against the archived plain-fmo2 parent with the ef flag the
-    # one extra declared delta. ------------------------------------------------
+    # --- d16: archived twins exist at both sigma labels. The fmo2ef arm
+    # has no archived namesake at any size (ef never ran on the global
+    # chassis), so it pins against the archived plain-fmo2 parent with the
+    # ef flag the one extra declared delta. -----------------------------
     for arm, archived_arm, extra in (
         ("mo", "mo", {}),
         ("ma", "ma", {}),
@@ -1628,11 +1617,9 @@ def test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef():
     0.637-0.831 against the archived namesake's 0.926-0.938 with
     indistinguishable training curves. The archived-vs-w2 config diff has
     exactly two live deltas (sigma 0.223 -> SIGMA_C, and the optimised
-    recipe), and each twin
-    must walk exactly ONE of them back: `_w2sig` = the full w2 cell at the
-    archived legacy sigma 0.223; `_eager` = the w2 cell with only the two
-    recipe flags off. Any other field drifting re-confounds the
-    sigma-vs-recipe attribution the twins exist to separate."""
+    recipe), and each twin walks exactly one of them back: `_w2sig` = the
+    full w2 cell at the archived legacy sigma 0.223; `_eager` = the w2 cell
+    with only the two recipe flags off."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1667,11 +1654,9 @@ def test_hold_twins_isolate_sigma_from_recipe_for_fimo2ef():
 def test_hold_round2_twins_isolate_compile_and_ef():
     """Second-round twins: the first pair localised the fimo2ef sigma_c
     depression to the recipe x exact-criticality x ef corner but not which
-    recipe flag carries it, nor whether the ef channel is truly necessary.
-    `_cmpl` walks back c_t_from_rollout ALONE (compile kept); `_w2rec` is
-    the plain fimo2 chassis with the ef channel ALONE walked back. Any
-    other field drifting re-confounds exactly the attribution each twin
-    exists to make."""
+    recipe flag carries it, nor whether the ef channel is necessary.
+    `_cmpl` walks back c_t_from_rollout alone (compile kept); `_w2rec` is
+    the plain fimo2 chassis with the ef channel alone walked back."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1696,13 +1681,11 @@ def test_hold_round2_twins_isolate_compile_and_ef():
 
 
 def test_decision_c_cells_are_compile_only_walks_of_the_w2_cells():
-    """Decision (c): factorised arms at exact sigma_c train eager —
-    the hold investigation localised a ~40% catastrophic-seed rate to
-    factorised x compile_head x SIGMA_C and exonerated everything else.
-    Each `_w2e` cell must be its w2 namesake with compile_head=False the
-    ONE deviation (c_t_from_rollout stays on — it was exonerated); any
-    other drift would make the eager refill unattributable to the compile
-    decision."""
+    """Decision (c): factorised arms at exact sigma_c train eager — the hold
+    investigation localised a ~40% catastrophic-seed rate to factorised x
+    compile_head x SIGMA_C and exonerated everything else. Each `_w2e` cell
+    is its w2 namesake with compile_head=False the one deviation
+    (c_t_from_rollout stays on — it was exonerated)."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1726,12 +1709,12 @@ def test_wave2_house_cells_build_their_heads():
     instantiate every arm (the ef cells need the target for the field
     channel's adjacency), so a knob typo fails here and not on the GPU.
 
-    The census is DERIVED from `_WAVE2_ARM_KNOBS` (each arm contributes four
+    The census is derived from `_WAVE2_ARM_KNOBS` (each arm contributes four
     cells: the d16 gate at both couplings, the d64 sigma_c rung and the d64
     floor) rather than matched on the `_w2` suffix. A suffix match silently
     swept in the RoPE-backbone probes, which share the wave-2 parent and its
-    name but are not house cells -- and would in any case be built here on
-    the wrong backbone, since this harness hands every cell a plain leTF."""
+    name but are not house cells -- and would in any case be built on the
+    wrong backbone, since this harness hands every cell a plain leTF."""
     from experiments.constrained_hard_03.configs import (
         _WAVE2_ARM_KNOBS,
         CONFIGS,
@@ -1769,23 +1752,21 @@ def test_wave2_house_cells_build_their_heads():
 def test_d256_house_cells_are_declared_transforms_of_arm_b():
     """16x16 house-table fill: the eight `_w3` cells must be _ARM_B -- the
     d256 lineage chassis -- transformed by exactly the fields their
-    configs.py block declares, and nothing else. Declared, per
-    cell: the head knobs; the coupling (SIGMA_C at the cell AND the ladder
-    endpoint, ladder reused-not-rescaled, or flat 0.10 with NO curriculum);
-    the horizon (100k on the sigma_c arms, all of the extra 30k landing on
-    the final plateau because the ladder's start_steps are absolute; 50k at
-    the floor); the optimised recipe; loss_microbatch_size, off on the
-    thp arms where single-shot is 40% faster and fits at 24.9 GB and kept
-    at 128 on the two pair-slab arms; gather_triu_pairs on the two heads
-    that read it; the archived MA eval chunk; and
-    halt_on_cv_inversion_after cleared to None. That last one is a DECLARED
-    deviation, not drift: the tripwire is _ARM_B's cost-capped negative
-    result as a cold-CV SCREENING cell, and on a production house cell it is
-    a silent truncation -- it stopped the ma and fimo2ef sigma=0.1 arms at
-    step 5000 of 50000 on trailing cv_var_ratios of only 1.08-1.76, whose
-    evals then read ESS 0.0009 and looked exactly like divergence. Any other
-    field drifting would make the row unattributable to the head and the
-    coupling."""
+    configs.py block declares, and nothing else. Declared, per cell: the
+    head knobs; the coupling (SIGMA_C at the cell and the ladder endpoint,
+    ladder reused-not-rescaled, or flat 0.10 with no curriculum); the
+    horizon (100k on the sigma_c arms, all of the extra 30k landing on the
+    final plateau because the ladder's start_steps are absolute; 50k at the
+    floor); the optimised recipe; loss_microbatch_size, off on the thp arms
+    where single-shot is 40% faster and fits at 24.9 GB and kept at 128 on
+    the two pair-slab arms; gather_triu_pairs on the two heads that read it;
+    the archived MA eval chunk; and halt_on_cv_inversion_after cleared to
+    None. That last one is a declared deviation, not drift: the tripwire is
+    _ARM_B's cost-capped negative result as a cold-CV screening cell, and on
+    a production house cell it is a silent truncation -- it stopped the ma
+    and fimo2ef sigma=0.1 arms at step 5000 of 50000 on trailing
+    cv_var_ratios of only 1.08-1.76, whose evals then read ESS 0.0009 and
+    looked exactly like divergence."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1803,10 +1784,10 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
             "site_orderings": ("row", "col"),
             "gather_triu_pairs": True,
         },
-        # site_orderings PINNED to ('row',). The cell inherits
-        # ('row','col') from the fmo2 parent, and it rode INERTLY while the
-        # raster heads ignored the field. They no longer do, so the pin is
-        # what keeps these two ARCHIVED cells the single-ordering heads they
+        # site_orderings pinned to ('row',). The cell inherits
+        # ('row','col') from the fmo2 parent, which rode inertly while the
+        # raster heads ignored the field; they no longer do, so the pin is
+        # what keeps these two archived cells the single-ordering heads they
         # were trained as. thp/thp2 need no pin: the patch head still does
         # not read the field.
         "ma": {
@@ -1857,7 +1838,7 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
             assert (final.start_step, final.lr) == (b_final.start_step, b_final.lr), (
                 name
             )
-            # Decision (c) is scoped to factorised x exact sigma_c ONLY.
+            # Decision (c) is scoped to factorised x exact sigma_c only.
             assert cell.compile_head == (arm != "fimo2ef"), name
         else:
             assert cell.curriculum is None, name
@@ -1886,14 +1867,13 @@ def test_d256_house_cells_are_declared_transforms_of_arm_b():
 def test_d256_house_twins_isolate_the_radius_and_the_coupling():
     """The two twin relationships the 16x16 fill is read through.
 
-    (1) thp vs thp2 at either coupling differ ONLY in the patch radius, so
+    (1) thp vs thp2 at either coupling differ only in the patch radius, so
     the R=1/R=2 comparison is chargeable to the head's one architectural
     knob. (2) Each floor cell is its sigma_c sibling with the coupling and
     its schedule walked back -- sigma, curriculum, n_steps -- plus, on
-    fimo2ef ALONE, the decision-(c) compile deviation, which is scoped to
+    fimo2ef alone, the decision-(c) compile deviation, which is scoped to
     exact sigma_c because the compiled factorised cells at the 0.10 floor
-    were healthy. Any third difference would confound the floor row with a
-    recipe change."""
+    were healthy."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -1926,13 +1906,13 @@ def test_d256_house_twins_isolate_the_radius_and_the_coupling():
 
 
 def test_d256_fimo2ef_head_matches_the_smaller_fimo2ef_cells():
-    """The fimo2ef chassis must be the SAME head at 4x4, 8x8 and 16x16, or
+    """The fimo2ef chassis must be the same head at 4x4, 8x8 and 16x16, or
     the house table's fimo2ef column is three different architectures. Every
     head-shaping field is pinned across the three sizes; the two legitimate
-    size-scoped differences are asserted explicitly rather than allowed to
-    pass silently -- gather_triu_pairs is a d256 memory lever (bit-class
-    equivalent, ~1e-7 fp32) that archived cells deliberately do not carry,
-    and pair_offsets is (1, D), the lattice's own row/column adjacency."""
+    size-scoped differences are asserted explicitly -- gather_triu_pairs is
+    a d256 memory lever (bit-class equivalent, ~1e-7 fp32) that archived
+    cells deliberately do not carry, and pair_offsets is (1, D), the
+    lattice's own row/column adjacency."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
     d256 = CONFIGS["H2_d256_c50_s220_letf_fimo2ef_100k_curr_b512_ne128_cv2_w3"]
@@ -1972,10 +1952,10 @@ def test_d256_fimo2ef_head_matches_the_smaller_fimo2ef_cells():
 def test_d256_house_cells_build_their_heads():
     """Construction check for the nineteen 16x16 house cells -- the eight
     original arms plus the ten raster-ladder cells and the floor `masep`
-    anchor: build_swap_head must instantiate every arm at d=256
-    (the ef arms need the target for the field channel's adjacency, and the
-    gather and separable flags must survive the constructors), so a knob typo
-    fails here and not eighteen hours into a GPU run."""
+    anchor: build_swap_head must instantiate every arm at d=256 (the ef arms
+    need the target for the field channel's adjacency, and the gather and
+    separable flags must survive the constructors), so a knob typo fails
+    here and not on the GPU."""
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
@@ -2002,17 +1982,17 @@ def test_d256_house_cells_build_their_heads():
 def test_d256_house_cells_never_carry_the_cold_cv_tripwire():
     """Production house cells must reach their full budget.
 
-    `halt_on_cv_inversion_after` is a designed cost-capped NEGATIVE RESULT
+    `halt_on_cv_inversion_after` is a designed cost-capped negative result
     for the cold-CV screening arms, where a sustained controlled/naive
     integrand-variance inversion is the answer being bought. The d256 house
     cells inherit their parent `_ARM_B` wholesale (that is what makes a row
-    attributable to the head and the coupling), and the tripwire rode
-    across with it and silently truncated the `ma` and `fimo2ef` sigma=0.1
-    arms at step 5000 of 50000 on trailing cv_var_ratios of 1.08-1.76. The
-    evals that followed read ESS 0.00094 / 0.00087 / 0.00021 and were very
-    nearly recorded as divergence. An early-inverted CV is a reason to watch
-    a production run, not to kill it -- the healthy thp2 twin at the same
-    size and coupling opened at cv_var_ratio 1.86 and reached eval ESS 0.998.
+    attributable to the head and the coupling), and the tripwire rode across
+    with it and silently truncated the `ma` and `fimo2ef` sigma=0.1 arms at
+    step 5000 of 50000 on trailing cv_var_ratios of 1.08-1.76. The evals
+    that followed read ESS 0.00094 / 0.00087 / 0.00021 and were very nearly
+    recorded as divergence. An early-inverted CV is a reason to watch a
+    production run, not to kill it -- the healthy thp2 twin at the same size
+    and coupling opened at cv_var_ratio 1.86 and reached eval ESS 0.998.
     """
     from experiments.constrained_hard_03.configs import CONFIGS
 
@@ -2029,25 +2009,23 @@ def test_d400_radius_cells_are_declared_transforms_of_arm_b():
     """20x20 radius probe: the two `_w4` cells must be _ARM_B -- the same
     d256 lineage chassis the 16x16 rung is built on -- transformed by
     exactly the fields their configs.py block declares, and nothing else.
+    The rung changes one physical thing, the lattice, and one architectural
+    thing, the patch radius; any other drift stops a d400-vs-d256 read being
+    chargeable to the size and an R=3-vs-R=2 read to the radius.
 
-    WHY THIS TEST AND NOT A FRESH BUILDER. The rung changes one physical
-    thing, the lattice, and one architectural thing, the patch radius. If
-    any other field drifts, a d400-vs-d256 read stops being chargeable to
-    the size and an R=3-vs-R=2 read stops being chargeable to the radius --
-    which is the entire question the six jobs are being spent on. Declared,
-    per cell: `ising.D = 20` and the flat 0.10 coupling with NO curriculum
-    (the floor convention -- a ladder at the easy target would measure the
-    curriculum); the head knobs; 50k steps; the optimised recipe; the
-    cold-CV tripwire cleared as on every production cell; and
-    loss_microbatch_size OFF, which is a MEASUREMENT not a guess -- profiled
-    on a Modal A100-80GB (the same card class as the DoC a100
+    Declared, per cell: `ising.D = 20` and the flat 0.10 coupling with no
+    curriculum (the floor convention -- a ladder at the easy target would
+    measure the curriculum); the head knobs; 50k steps; the optimised
+    recipe; the cold-CV tripwire cleared as on every production cell; and
+    loss_microbatch_size off, which is measured rather than guessed --
+    profiled on a Modal A100-80GB (the same card class as the DoC a100
     partition) at 58.25 GB peak for R=2 and 63.41 GB for R=3 over 512 rows,
     against a d256 R=2 control that reproduced its recorded 24.93 GB
     exactly.
 
-    NETWORK SIZE IS HELD FIXED ON PURPOSE. `model` must be byte-identical to
-    the d256 parent: the probe asks what the lattice and the radius do, so
-    width and depth are not allowed to move underneath them."""
+    `model` must be byte-identical to the d256 parent: the probe asks what
+    the lattice and the radius do, so width and depth are not allowed to
+    move underneath them."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -2101,7 +2079,7 @@ def test_d400_radius_cells_are_declared_transforms_of_arm_b():
 
 def test_d400_radius_cells_isolate_the_radius():
     """The twin relationship the probe is read through: the two `_w4` cells
-    differ in `patch_radius` and in NOTHING else, so an R=3-vs-R=2 gap at
+    differ in `patch_radius` and in nothing else, so an R=3-vs-R=2 gap at
     20x20 is chargeable to the head's one architectural knob -- the same
     reading the 16x16 rung gets from its thp/thp2 pair."""
     from dataclasses import replace
@@ -2115,19 +2093,19 @@ def test_d400_radius_cells_isolate_the_radius():
 
 
 def test_d400_critical_cells_are_their_floor_siblings_at_sigma_c():
-    """20x20 sigma_c rung: each critical cell must be its OWN
-    sigma = 0.10 sibling transformed by exactly three declared fields --
-    the coupling, the ladder and the horizon -- and nothing else.
+    """20x20 sigma_c rung: each critical cell must be its own sigma = 0.10
+    sibling transformed by exactly three declared fields -- the coupling,
+    the ladder and the horizon -- and nothing else.
 
-    WHY THIS IS THE RIGHT PARENT. The floor cell already carries every d400
+    The floor cell is the right parent because it already carries every d400
     decision that was argued and measured: the lattice, the head knobs, the
     held-fixed backbone, batch 512, n_euler 128, the single-shot backward
     (58.25 / 63.41 GB peak, profiled) and the cleared cold-CV tripwire.
-    Rebuilding from _ARM_B instead would re-open all of them. Chaining off
-    the floor cell means a critical-vs-floor read at d400 is chargeable to
-    the COUPLING, which is the entire question the rung is being spent on.
+    Rebuilding from _ARM_B instead would re-open all of them, and chaining
+    off the floor cell makes a critical-vs-floor read at d400 chargeable to
+    the coupling.
 
-    THE THREE DEVIATIONS ARE THE d256 CRITICAL CONVENTION, not new choices:
+    The three deviations are the d256 critical convention, not new choices:
     exact SIGMA_C, `_D64_SIGMA_LADDER_SC`, and 100k steps -- the same triple
     `_d256_house_critical_cell` applies one rung down."""
     from dataclasses import replace
@@ -2163,21 +2141,20 @@ def test_d400_critical_cells_are_their_floor_siblings_at_sigma_c():
 
 
 def test_d400_critical_ladder_is_reused_not_rescaled():
-    """The ladder must be the SHARED d64 object with its endpoint at
+    """The ladder must be the shared d64 object with its endpoint at
     SIGMA_C, not a d400 copy.
 
-    WHY IT MATTERS THAT IT IS NOT RESCALED. `start_step` is ABSOLUTE, so
-    lengthening the cell from 50k to 100k does not stretch the schedule: the
-    boundaries stay at 0/5k/10k/15k/20k/25k/30k and the extra 50k lands
-    entirely on the final sigma_c plateau. lr is the stage value times a
-    fixed-step warmup ramp and is never normalised by n_steps, so the first
-    50k steps of a 100k cell are schedule-identical to a 50k cell's.
+    `start_step` is absolute, so lengthening the cell from 50k to 100k does
+    not stretch the schedule: the boundaries stay at 0/5k/10k/15k/20k/25k/30k
+    and the extra 50k lands entirely on the final sigma_c plateau. lr is the
+    stage value times a fixed-step warmup ramp and is never normalised by
+    n_steps, so the first 50k steps of a 100k cell are schedule-identical to
+    a 50k cell's.
 
-    WHY IT IS LATTICE-INDEPENDENT AND MAY CROSS RUNGS AT ALL. The ladder
-    varies only `sigma` and `lr`; no stage field mentions D or d. That is
-    what licenses a d64-authored curriculum on a 20x20 cell, and it is
-    asserted rather than assumed because a lattice-dependent stage appearing
-    later would silently make the d256 and d400 critical cells
+    The ladder varies only `sigma` and `lr`; no stage field mentions D or d.
+    That is what licenses a d64-authored curriculum on a 20x20 cell, and it
+    is asserted rather than assumed because a lattice-dependent stage
+    appearing later would silently make the d256 and d400 critical cells
     incomparable."""
     from experiments.constrained_hard_03.configs import (
         _D64_SIGMA_LADDER,
@@ -2213,7 +2190,7 @@ def test_d400_critical_ladder_is_reused_not_rescaled():
 
 def test_d400_critical_cells_isolate_the_radius():
     """The R=3-vs-R=2 read at sigma_c, mirroring the floor rung's own twin
-    test. The radius was a NULL at the floor -- tied on ESS, at floor on
+    test. The radius was a null at the floor -- tied on ESS, at floor on
     every error column, +16% FLOP/es for nothing -- but that null was
     measured where every cell sat on the sampling ceiling, so it licenses
     nothing about sigma_c. Same lesson as the saturated 4x4 gate and the
@@ -2235,7 +2212,7 @@ def test_d400_radius_cells_build_their_heads():
     rather than after an a100 queue wait. Also pins the pooled-level count:
     the patch head derives its radii as powers of two whose box fits the
     torus, so D=20 earns a fourth level (1, 2, 4, 8) that D=16 does not --
-    free extra context that comes with the rung and is NOT a declared knob.
+    free extra context that comes with the rung and is not a declared knob.
     """
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
@@ -2263,10 +2240,10 @@ def test_d400_radius_cells_build_their_heads():
 
 
 def test_d576_cells_are_the_d400_r3_bf16_cell_moved_to_the_lattice():
-    """24x24 sigma_c rung: the R=3 cell must be the d400 R=3
-    bf16 critical cell transformed by exactly two declared fields -- the
-    lattice and the loss microbatch -- so a d576-vs-d400 read is chargeable
-    to the lattice (the microbatch is gradient-exact, pinned by
+    """24x24 sigma_c rung: the R=3 cell is the d400 R=3 bf16 critical cell
+    transformed by exactly two declared fields -- the lattice and the loss
+    microbatch -- so a d576-vs-d400 read is chargeable to the lattice (the
+    microbatch is gradient-exact, pinned by
     tests/test_loss_microbatch_parity.py, and rides for memory only: bf16
     single-shot at R=3 projects from 41.6 GB at d400 to ~86 GB at d576).
     Everything the 20x20 wave settled -- radius 3, sigma_c, the reused
@@ -2297,7 +2274,7 @@ def test_d576_cells_isolate_the_radius():
     anchor because it was the measured winner at d400 sigma_c (EMA ESS
     0.789-0.810 against R=2's 0.633-0.731, disjoint over six seeds); R=4 is
     the one continuation of the knob that has now paid at two rungs.
-    Capacity is deliberately NOT moved alongside it."""
+    Capacity is deliberately not moved alongside it."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -2312,10 +2289,11 @@ def test_d576_cells_isolate_the_radius():
 
 def test_d576_cells_build_their_heads():
     """Construction at the real lattice: both radii must instantiate at
-    d=576 (R=4 needs 2R+1 = 9 <= 24), and the pooled levels must NOT gain
-    one this rung -- powers of two whose box fits the torus give (1, 2, 4, 8)
-    at D=24 exactly as at D=20, since r=16 would need 33 <= D. So the only
-    thing that grows with this lattice is the relative-position embedding."""
+    d=576 (R=4 needs 2R+1 = 9 <= 24), and the pooled levels must not gain
+    one this rung -- powers of two whose box fits the torus give
+    (1, 2, 4, 8) at D=24 exactly as at D=20, since r=16 would need 33 <= D.
+    So the only thing that grows with this lattice is the relative-position
+    embedding."""
     from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
     from discrete_flow_sampler.models.letf import LeTFRateMatrix
@@ -2341,18 +2319,16 @@ def test_d576_cells_build_their_heads():
 
 
 def test_every_new_probe_cell_rides_the_optimised_recipe():
-    """Standing rule: every NEW cell goes out on the optimised recipe --
-    `compile_head=True` and `train.c_t_from_rollout=True`. Archived cells and
-    their eager twins are never retro-flipped, and the ONE exception is
-    decision (c), factorised arms at the EXACT critical coupling, which train
-    eager because factorised x compile x sigma_c produced catastrophic seeds
-    at ~40% (5/12 against 0/21 elsewhere, Fisher p=0.0033).
+    """Standing rule: every new cell goes out on the optimised recipe --
+    `compile_head=True` and `train.c_t_from_rollout=True`. Archived cells
+    and their eager twins are never retro-flipped, and the one exception is
+    decision (c), factorised arms at the exact critical coupling, which
+    train eager because factorised x compile x sigma_c produced catastrophic
+    seeds at ~40% (5/12 against 0/21 elsewhere, Fisher p=0.0033).
 
     None of these cells is factorised -- `mal` is masked attention, `thp2`
     and `thp3` are patch heads -- so the exception does not reach them and
-    every one must be compiled. This is a cheap pin on a rule that is easy to
-    lose when a cell is built by `replace`-ing a parent rather than by
-    calling `optimised_recipe` directly."""
+    every one must be compiled."""
     from experiments.constrained_hard_03.configs import CONFIGS
 
     probes = [
@@ -2376,7 +2352,7 @@ def test_every_new_probe_cell_rides_the_optimised_recipe():
 def test_arm_b_cells_are_single_variable_and_the_control_is_matched():
     """Bond-carrying global term, 4x4 cells.
 
-    Each cell must be its `fimo2ef` parent transformed by EXACTLY the fields
+    Each cell must be its `fimo2ef` parent transformed by exactly the fields
     its configs.py block declares -- bonds, bonds-minus-the-second-ordering,
     or a widened global term -- and the widened control must actually match
     the bond cell's parameter count. The matched control exists because a
@@ -2385,11 +2361,11 @@ def test_arm_b_cells_are_single_variable_and_the_control_is_matched():
     not a control.
 
     Also pins decision (c), which is easy to lose when a cell is built by
-    `replace`-ing a parent: the exception is d16-SPECIFIC and this gate is
-    d16, so the sigma_c arms must train EAGER (compile x factorised x sigma_c
-    gave catastrophic seeds at ~40% there, 5/12 against 0/21) while the floor
-    arms keep the full optimised recipe. Getting this wrong would not crash
-    -- it would spend nine runs and read as a null."""
+    `replace`-ing a parent: the exception is d16-specific and this gate is
+    d16, so the sigma_c arms must train eager (compile x factorised x
+    sigma_c gave catastrophic seeds at ~40% there, 5/12 against 0/21) while
+    the floor arms keep the full optimised recipe. Getting this wrong would
+    not crash -- it would spend nine runs and read as a null."""
     from dataclasses import replace
 
     import torch
@@ -2420,21 +2396,21 @@ def test_arm_b_cells_are_single_variable_and_the_control_is_matched():
         widened = counts[(sigma_label, "fimo2efw_10k_wide")]
         assert abs(bonds - widened) / bonds < 0.001, (bonds, widened)
         # fiefb (one ordering + bonds) drops an ordering, so it must be
-        # strictly CHEAPER than fimo2efb -- the cost story the cell exists to tell.
+        # strictly cheaper than fimo2efb -- the cost story the cell tells.
         assert counts[(sigma_label, "fiefb_10k_bond1o")] < bonds
 
 
 def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
-    """The 8x8 bond rung: three arms that differ by ONE field each along
-    the chain baseline -> b3 -> b2, so a lift can be attributed.
+    """The 8x8 bond rung: three arms that differ by one field each along the
+    chain baseline -> b3 -> b2, so a lift can be attributed.
 
     baseline (2 orderings, no bonds) -> b3 (1 ordering, no bonds) prices the
     second causal ordering; b3 -> b2 (1 ordering, + bonds) prices the bond
     family against it. b2 alone against the baseline cannot separate them,
     which is exactly the gap the 4x4 cells left.
 
-    Also pins the recipe: decision (c) is d16-SPECIFIC, so unlike the 4x4
-    cells these train COMPILED (at d64 compiled is marginally higher with
+    Also pins the recipe: decision (c) is d16-specific, so unlike the 4x4
+    cells these train compiled (at d64 compiled is marginally higher with
     zero catastrophic seeds, and eager costs ~50% more per step)."""
     from dataclasses import replace
 
@@ -2454,8 +2430,8 @@ def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
     assert len(_ARM_B_D64_ARMS) == 3, (
         "three bond-rung arms; baseline is an existing cfg"
     )
-    # b1 keeps the parent's two orderings and adds bonds -- the uncontaminated
-    # "do bonds help" question the b2/b3 pair cannot ask.
+    # b1 keeps the parent's two orderings and adds bonds -- the
+    # uncontaminated "do bonds help" question the b2/b3 pair cannot ask.
     assert b1.site_orderings == parent.site_orderings and b1.global_bond_features
     for cell, knobs in (
         (b1, _ARM_B_D64_ARMS["fimo2efb_50k_curr_bond"]),
@@ -2465,30 +2441,26 @@ def test_arm_b_d64_triangle_isolates_bonds_from_the_ordering():
         undone = {field: getattr(parent, field) for field in knobs}
         assert replace(cell, name=parent.name, **undone) == parent, cell.name
         assert cell.compile_head and cell.train.c_t_from_rollout, cell.name
-    # b2 and b3 differ in the BOND FLAG ALONE -- the comparison the rung exists
-    # for, and the one that stays valid whatever card they run on.
+    # b2 and b3 differ in the bond flag alone -- the comparison the rung
+    # exists for, and the one that stays valid whatever card they run on.
     assert replace(b2, name=b3.name, global_bond_features=False) == b3
     assert b2.site_orderings == b3.site_orderings == ("row",)
 
 
 def test_raster_ladder_roster_covers_both_rungs():
-    """The sweep-ladder arms exist at every rung, and each is its `ma` sibling
-    with ONLY the declared knobs moved.
+    """The sweep-ladder arms exist at every rung, and each is its `ma`
+    sibling with only the declared knobs moved.
 
-    Two things this pins. First, the chain is only readable one field at a
-    time if every ladder cell differs from its parent in exactly the roster's
-    knobs and nothing else -- an extra field silently inherited from a
-    different parent would make `ma -> mamo2` price two changes and the
-    printed anchors invalid. Second, the 8x8 critical cells are ALREADY RUN
-    (tag 20260828-rasterord-d64, seeds 42/43/44, printed in
-    tab:eval-hard-8x8), so the roster restructure that added the 4x4 rung must
-    leave their configs untouched; deriving both rungs from one roster is what
-    makes that checkable rather than hoped for.
+    The chain is readable one field at a time only if every ladder cell
+    differs from its parent in exactly the roster's knobs -- an extra field
+    silently inherited from a different parent would make `ma -> mamo2`
+    price two changes and the printed anchors invalid. And the 8x8 critical
+    cells are already run (tag 20260828-rasterord-d64, seeds 42/43/44,
+    printed in tab:eval-hard-8x8), so the roster restructure that added the
+    4x4 rung must leave their configs untouched.
 
     The heads are built, not just constructed as configs, because the `ef`
-    arms need the target for the exact-field channel's adjacency -- a knob
-    typo there fails here and not after a GPU launch.
-    """
+    arms need the target for the exact-field channel's adjacency."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import (
@@ -2512,7 +2484,7 @@ def test_raster_ladder_roster_covers_both_rungs():
             parent = CONFIGS[parent_name]
             # Rung knobs ride on top of the arm's, and only where the band
             # can read them: `separable_band_scores` is attention-only (the
-            # prefix-sum arms have no score tensor and must NOT pick it up),
+            # prefix-sum arms have no score tensor and must not pick it up),
             # while `gather_triu_pairs` reaches both bands -- the interval
             # head assembles the same symmetric pair slab.
             rung = _RASTER_LADDER_RUNG_KNOBS.get(pattern, {})
@@ -2535,12 +2507,12 @@ def test_raster_ladder_roster_covers_both_rungs():
 
 
 def test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob():
-    """The amortised cell exists to test ONE question (does mixture
-    training buy back the cross-slice transfer zero-shot loses at
-    sigma_c), so it must be the house thp sigma_c cell with the mixture
-    grid as the only moved field. The grid mirrors the d256 zero-shot
-    probe's composition FRACTIONS (n+/64 = 32/30/28/24/20) so the two
-    tables read side by side, anchor slice 0.5 first."""
+    """The amortised cell exists to test one question (does mixture training
+    buy back the cross-slice transfer zero-shot loses at sigma_c), so it is
+    the house thp sigma_c cell with the mixture grid as the only moved
+    field. The grid mirrors the d256 zero-shot probe's composition fractions
+    (n+/64 = 32/30/28/24/20) so the two tables read side by side, anchor
+    slice 0.5 first."""
     from dataclasses import asdict
 
     from experiments.constrained_hard_03.configs import CONFIGS
@@ -2560,9 +2532,9 @@ def test_camort_cell_is_the_thp_critical_twin_plus_the_mixture_knob():
 
 
 def test_d256_camort_cell_is_the_thp2_critical_twin_plus_the_mixture_knob():
-    """The d256 confirmation must be the d64 design moved ONE lever (size,
-    via the thp2 parent) with the SAME mixture fractions as the d64 cell —
-    a grid change would make it a new design un-anchored from the d64
+    """The d256 confirmation is the d64 design moved one lever (size, via
+    the thp2 parent) with the same mixture fractions as the d64 cell — a
+    grid change would make it a new design un-anchored from the d64
     result."""
     from dataclasses import asdict
 

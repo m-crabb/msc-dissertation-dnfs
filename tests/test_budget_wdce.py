@@ -4,16 +4,14 @@ of the three claims that carry the masked-diffusion sampler's WDCE loss
 the budget-masked reference.
 
 Claim 1 (corruption law): under the budget-masked reference, the bridge
-conditional given the terminal fibre state is EXACTLY the unconstrained
+conditional given the terminal fibre state is exactly the unconstrained
 corruption kernel mu_lambda -- mask each site independently, no budget-aware
-correction. Why: a reference trajectory factorises as P(order) times the
-assignment-conditional product, and the product is the same constant on
-every feasible trajectory (the trajectory-constant lemma), so the revelation
-order is INDEPENDENT of the terminal state; the masked set is a function of
-the order and the exchangeable clocks alone. The correction WOULD appear if
-the site-selection clock saw the budget (only the species draw does) -- that
-is the same boundary-feasible-mass pathology the mask-and-renormalise
-counterexample pins.
+correction. A reference trajectory factorises as P(order) times the
+assignment-conditional product, and the product is the same constant on every
+feasible trajectory (the trajectory-constant lemma), so the revelation order is
+independent of the terminal state; the masked set is a function of the order
+and the exchangeable clocks alone. A correction would appear only if the
+site-selection clock saw the budget (only the species draw does).
 
 Claim 2 (minimiser): with exact importance weights the WDCE population
 minimiser at every masked context is the CONSTRAINED target's masked
@@ -62,10 +60,10 @@ def fibre_states(n_sites, n_plus_target):
 
 def revealed_set_law_given_terminal(n_sites, terminal, n_revealed):
     """Brute-force P(revealed set after k reveals | X_1 = terminal) under the
-    budget-masked reference: sum honest trajectory probabilities (uniform
-    site choice times the per-step urn conditionals, NOT assuming the
-    trajectory-constant lemma) over all d! revelation orders, then condition
-    on the terminal and aggregate by the first-k set."""
+    budget-masked reference: sum honest trajectory probabilities (uniform site
+    choice times the per-step urn conditionals, not assuming the
+    trajectory-constant lemma) over all d! revelation orders, then condition on
+    the terminal and aggregate by the first-k set."""
     a_sites = {site for site, spin in enumerate(terminal) if spin == +1}
     law = {}
     total = 0.0
@@ -89,15 +87,14 @@ def corrupt_by_masking(terminal, mask_set):
 def wdce_population_minimiser(sigma, n_sites, n_plus_target, neighbours, size_weight):
     """Per-(context, site) minimiser of the population constrained WDCE.
 
-    Assembles the loss's cross-entropy coefficients explicitly: for each
-    fibre terminal x_1 (weighted by the exact target mass, standing in for
-    converged self-normalised importance weights) and each nonempty mask set
-    S (weighted by any positive size_weight(|S|)), the corrupted context
-    x_tilde accumulates weight towards species x_1^d at each masked site d.
-    The cross-entropy minimiser at fixed context is the normalised
-    coefficient vector (the standard fact sum_i c_i (-log s_i) is minimised
-    over the simplex at s = c / sum c), so no numerical optimisation is
-    needed and the test is exact. Returns {(context, site): p_plus}.
+    Assembles the loss's cross-entropy coefficients explicitly: for each fibre
+    terminal x_1 (weighted by the exact target mass, standing in for converged
+    self-normalised importance weights) and each nonempty mask set S (weighted
+    by any positive size_weight(|S|)), the corrupted context x_tilde
+    accumulates weight towards species x_1^d at each masked site d. The
+    cross-entropy minimiser at fixed context is the normalised coefficient
+    vector (sum_i c_i (-log s_i) is minimised over the simplex at
+    s = c / sum c), so the test is exact. Returns {(context, site): p_plus}.
     """
     coefficients = {}
     for terminal in fibre_states(n_sites, n_plus_target):
@@ -171,11 +168,9 @@ def test_wdce_minimiser_is_the_exact_constrained_conditional():
 
 
 def test_minimiser_is_invariant_to_the_corruption_size_weight():
-    """w(lambda) reweights WHICH contexts are visited, never the posterior
-    over completions at a fixed context, so any positive size weighting
-    (uniform, or the any-order-autoregressive 1/k) trains towards the same
-    conditional -- the freedom the paper's w(lambda) grants survives the
-    constraint untouched."""
+    """w(lambda) reweights which contexts are visited, never the posterior over
+    completions at a fixed context, so any positive size weighting (uniform, or
+    the any-order-autoregressive 1/k) trains towards the same conditional."""
     n_sites, n_plus, sigma = 5, 2, 0.4
     neighbours = ring_neighbour_pairs(n_sites)
     uniform = wdce_population_minimiser(
@@ -254,15 +249,13 @@ def test_reference_log_weight_terms_shift_all_trajectories_equally():
 
 
 def test_minimiser_is_invariant_to_context_dependent_loss_weights():
-    """Lead-1 licence (near-boundary exposure boost): a per-context loss
-    weight eta(m, b) — any positive function of the CONTEXT, here the
-    budget-class boost 1 + kappa*1[b in {1, m-1}] — scales every
-    completion coefficient at a fixed context equally, so the per-context
-    minimiser (the exact fibre conditional) is untouched. Same argument as
-    the size-weight invariance: eta is context-measurable, and b, m are
-    functions of the context alone. A weight depending on the TERMINAL
-    (not just the context) would NOT enjoy this — it would re-tilt the
-    posterior over completions."""
+    """A per-context loss weight eta(m, b) — any positive function of the
+    context, here the near-boundary boost 1 + kappa*1[b in {1, m-1}] — scales
+    every completion coefficient at a fixed context equally, so the per-context
+    minimiser (the exact fibre conditional) is untouched: eta is
+    context-measurable, and b, m are functions of the context alone. A weight
+    depending on the terminal would instead re-tilt the posterior over
+    completions."""
     n_sites, n_plus, sigma = 5, 2, 0.4
     neighbours = ring_neighbour_pairs(n_sites)
 

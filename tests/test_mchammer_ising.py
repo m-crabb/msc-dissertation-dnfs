@@ -1,8 +1,8 @@
 """Tests for the literal icet/mchammer Ising baselines.
 
-Written before the implementation. What correct looks like:
+Properties pinned:
 
-1. The cluster-expansion embedding IS the target: total CE energy equals
+1. The cluster-expansion embedding is the target: total CE energy equals
    -log p̃(x) of the unconstrained ``IsingTarget`` for every configuration,
    because the whole natural-units construction (temperature 1, k_B 1) rests
    on exp(-E) = p̃(x). A mis-set cutoff that silently grabbed second-neighbour
@@ -194,25 +194,22 @@ class TestRunners:
 
 
 class TestSemiGrandCanonical:
-    """Delta-mu = 0 SGC: the practitioner counterpart of the UNCONSTRAINED leg.
+    """Delta-mu = 0 SGC: the practitioner counterpart of the unconstrained leg.
 
-    Written before the implementation. What correct looks like:
+    Properties pinned:
 
-    1. The composition FLOATS. This is the whole distinction from
-       ``run_canonical`` (swaps freeze it) and from ``run_vcsgc`` (a penalty
-       pins it): with no chemical-potential difference there is nothing
-       constraining the number of up spins, so the trace must actually move
-       and must centre on 0.5 by the Z2 symmetry of the bias-free target.
-       A units bug -- forgetting ``boltzmann_constant=NATURAL_BOLTZMANN``,
-       whose mchammer default is in eV -- would leave the chain "running
-       fine" while sampling at an absurd effective temperature, and the
-       floating composition is what makes that visible.
-    2. At Delta-mu = 0 SGC targets p̃(x) EXACTLY, the same distribution the
-       unconstrained DNFS sampler targets. That is the property the house
-       table's baseline row rests on: if the two rows do not share a target,
-       the comparison is meaningless. At 4x4 the state space is enumerable,
-       so this is checkable against the exact Boltzmann average rather than
-       against another sampler.
+    1. The composition floats — the distinction from ``run_canonical`` (swaps
+       freeze it) and ``run_vcsgc`` (a penalty pins it): with no
+       chemical-potential difference nothing constrains the number of up
+       spins, so the trace moves and centres on 0.5 by the Z2 symmetry of the
+       bias-free target. A units bug -- forgetting
+       ``boltzmann_constant=NATURAL_BOLTZMANN``, whose mchammer default is in
+       eV -- leaves the chain running while sampling at an absurd effective
+       temperature, and the floating composition is what makes that visible.
+    2. At Delta-mu = 0 SGC targets p̃(x) exactly, the same distribution the
+       unconstrained DNFS sampler targets, which is what the house table's
+       baseline row rests on. At 4x4 the state space is enumerable, so this
+       is checked against the exact Boltzmann average.
     """
 
     def _exact_mean_potential(self, D: int, sigma: float) -> float:
@@ -236,7 +233,7 @@ class TestSemiGrandCanonical:
         )
         assert summary["ensemble"] == "sgc"
         composition = summary["traces"]["composition"]
-        # NOT frozen: the defining contrast with the canonical ensemble.
+        # Not frozen: the defining contrast with the canonical ensemble.
         assert composition.std() > 0.0
         assert summary["observables"]["composition"]["mean"] == pytest.approx(
             0.5, abs=0.05
@@ -272,8 +269,8 @@ class TestSemiGrandCanonical:
         """record_spins must not perturb the chain, and the spin frames must
         agree with mchammer's own composition trace -- the check that atom
         order is read back consistently (as for VC-SGC and the canonical
-        probe). Here it also pins the ONE thing the profile observables of
-        the house table need and the scalar traces cannot supply."""
+        probe). The spin frames are what the house table's profile
+        observables need and the scalar traces cannot supply."""
         kwargs = dict(
             D=D_SMALL,
             sigma=0.1,

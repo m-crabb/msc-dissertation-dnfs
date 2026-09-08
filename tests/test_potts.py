@@ -2,15 +2,11 @@
 oracle, multiset-manifold base, and the claim that the swap sampler is
 S-agnostic.
 
-The load-bearing tests are:
-  * `test_s2_potts_swap_ratio_matches_ising` — S=2 Potts at 2σ must reproduce
-    Ising at σ on the quantity that actually drives sampling. This is the
-    strongest regression available: it pins the factor-2 convention AND the
-    energy form against a module already validated to the paper.
-  * `test_closed_form_swap_ratio_matches_generic_oracle` — the O(B·d·S) closed
-    form vs the materialise-and-re-evaluate generic path, for S ≥ 3 where no
-    Ising cross-check exists.
-  * `test_swap_sampler_runs_unchanged_on_potts` — the extension's whole premise.
+`test_s2_potts_swap_ratio_matches_ising` pins the factor-2 convention and the
+energy form against a module already validated to the paper, on the quantity
+that drives sampling. `test_closed_form_swap_ratio_matches_generic_oracle`
+checks the O(B·d·S) closed form against the materialise-and-re-evaluate path
+for S >= 3, where no Ising cross-check exists.
 """
 
 import math
@@ -57,11 +53,8 @@ def test_index_roundtrip_covers_all_species():
 
 
 def test_head_index_idiom_agrees_with_to_index():
-    """The inline idiom the heads use must equal the target's own map.
-
-    If these ever diverge the heads silently embed the wrong species, so pin
-    them together rather than trusting the convention to hold by habit.
-    """
+    """The inline idiom the heads use must equal the target's own map; if
+    they diverge the heads silently embed the wrong species."""
     target = PottsTarget(D=2, sigma=0.3, n_states=3)
     spins = target.sample_base(8, "cpu")
 
@@ -84,7 +77,7 @@ def test_s2_potts_energy_matches_ising_up_to_constant():
     """S=2 Potts at 2σ = Ising at σ + C, with C independent of the state.
 
     δ(s_i,s_j) = (1 + x_i x_j)/2  ⇒  2σ·Σ A δ = σ·Σ A x x + σ·Σ A.
-    Only the DIFFERENCE across states is physical, so assert the offset is
+    Only the difference across states is physical, so assert the offset is
     constant rather than zero — and separately that it equals the predicted
     σ·Σ_ij A_ij.
     """
@@ -103,10 +96,9 @@ def test_s2_potts_energy_matches_ising_up_to_constant():
 def test_potts_reuses_the_ising_adjacency_and_its_edge_double_counting(D):
     """Potts must share IsingTarget's A exactly, double counting included.
 
-    Both sums run over ORDERED (i, j), so each of the torus's 2d undirected
-    edges contributes twice: A.sum() == 4d. Any divergence here would surface
-    as a silent coupling rescale in the S=2 correspondence rather than as a
-    failure, so pin the adjacency itself.
+    Both sums run over ordered (i, j), so each of the torus's 2d undirected
+    edges contributes twice: A.sum() == 4d. A divergence would surface as a
+    silent coupling rescale in the S=2 correspondence rather than as a failure.
 
     D=2 is included deliberately: on a 2-cycle a site's left and right
     neighbours coincide, so A carries entries of 2 rather than 1 while the
@@ -123,11 +115,9 @@ def test_potts_reuses_the_ising_adjacency_and_its_edge_double_counting(D):
 
 
 def test_potts_energy_is_maximised_by_alignment():
-    """A fully-aligned lattice maximises Σ A δ — a sign/orientation sanity check.
-
-    Cheap, but it catches an inverted coupling, which would train happily and
-    sample the wrong phase.
-    """
+    """A fully-aligned lattice maximises Σ A δ — a sign/orientation check that
+    catches an inverted coupling, which would train happily and sample the
+    wrong phase."""
     potts = PottsTarget(D=3, sigma=0.4, n_states=3)
     aligned = potts.from_index(torch.zeros(1, 9, dtype=torch.long))
     mixed = potts.from_index(torch.arange(9).remainder(3).view(1, 9))
@@ -145,7 +135,7 @@ def test_potts_energy_is_maximised_by_alignment():
 
 
 def test_s2_potts_swap_ratio_matches_ising():
-    """The sampling-relevant quantity must agree EXACTLY at S=2.
+    """The sampling-relevant quantity must agree exactly at S=2.
 
     The additive energy constant cancels in a log-ratio, so unlike the energy
     test above this one admits no offset. If the factor-2 convention or the
@@ -173,7 +163,7 @@ def test_closed_form_swap_ratio_matches_generic_oracle(n_states):
 
     The generic `IsingTarget.swap_log_ratio` builds every swapped neighbour and
     calls `log_p_tilde_t` — encoding-agnostic, so it is a valid oracle for any
-    S. It is also O(B·P·d) memory, which is exactly why the closed form exists.
+    S. It is also O(B·P·d) memory, which is why the closed form exists.
     """
     composition = tuple([1 / n_states] * n_states)
     potts = FixedCompositionPottsTarget(D=n_states, sigma=0.3, composition=composition)
@@ -223,7 +213,7 @@ def test_base_lands_on_multiset_manifold():
 
 
 def test_base_log_eta_is_the_multinomial_slice_size():
-    """−log|C| with |C| = d!/∏N_a! — a MULTINOMIAL, not Ising's binomial.
+    """−log|C| with |C| = d!/∏N_a! — a multinomial, not Ising's binomial.
 
     Getting this wrong shifts log Z by a constant, which is invisible in
     sampling and silently wrong in any reported free energy.
@@ -239,11 +229,9 @@ def test_base_log_eta_is_the_multinomial_slice_size():
 
 
 def test_base_covers_more_than_one_slice_state():
-    """The base must be uniform over C, not a fixed arrangement.
-
-    A permutation bug that returns the sorted multiset every time would still
-    pass the manifold test above, so check for actual variety.
-    """
+    """The base must be uniform over C, not a fixed arrangement: a permutation
+    bug returning the sorted multiset every time would still pass the manifold
+    test above."""
     potts = FixedCompositionPottsTarget(D=2, sigma=0.3, composition=(0.5, 0.5))
     states = _random_slice_states(potts, 64, seed=6)
 
@@ -275,12 +263,12 @@ def test_off_manifold_states_rejected():
 
 @torch.no_grad()
 def test_swap_sampler_runs_unchanged_on_potts():
-    """`sample_swap_ctmc` + a stock head must run on S=3 with NO code changes.
+    """`sample_swap_ctmc` + a stock head must run on S=3 with no code changes.
 
-    This is the extension's whole premise: the move set only permutes
-    positions, and the readout indexes an `nn.Embedding(vocab_size, ·)`.
-    Composition is conserved exactly — a swap cannot change a multiset — so
-    the hard constraint holds for S species for free.
+    The move set only permutes positions, and the readout indexes an
+    `nn.Embedding(vocab_size, ·)`. Composition is conserved exactly — a swap
+    cannot change a multiset — so the hard constraint holds for S species for
+    free.
     """
     torch.manual_seed(7)
     potts = FixedCompositionPottsTarget(D=2, sigma=0.3, composition=(0.5, 0.25, 0.25))

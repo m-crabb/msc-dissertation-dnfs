@@ -1,43 +1,38 @@
-"""What correct looks like for the 16x16 house-table fill, written before it.
+"""The 16x16 house-table fill.
 
-The 8x8 fill established the chain-pool reference machinery (its own
-standard error via the half-split, an estimated sampling floor, FLOP
-provenance read from each cell's saved config) and `house_table_16x16`
-IMPORTS that machinery rather than restating it -- it is lattice-generic and
-already verified at 8x8. What this module tests is the
-four things the top rung does differently, each of which is a way to print a
-wrong number that the 8x8 tests cannot catch.
+`house_table_16x16` imports the 8x8 fill's reference machinery (half-split
+standard error, estimated sampling floor, FLOP provenance read from each cell's
+saved config) rather than restating it: that code is lattice-generic and already
+verified at 8x8. Tested here are the four things the top rung does differently,
+each a way to print a wrong number the 8x8 tests cannot catch.
 
-(1) THE REFERENCE SHIPS IN A DIFFERENT FORMAT, AND THE FLOP BILL IS IN
-    DIFFERENT UNITS. The 8x8 pool is one npz per chain carrying
-    `n_trial_steps` -- a count of swap PROPOSALS. The d256 pool is a single
-    pooled tensor whose provenance records SWEEPS, and one sweep is
-    `N_SITES = 256` proposals (generate_kawasaki_reference_d256.py:137,
-    `burn_proposals = BURN_IN_SWEEPS * N_SITES`). A fill that passed sweeps
-    where the bill wants trials would under-price the reference chain by
-    256x, which is the one direction that would flatter the neural sampler in
-    the FLOP/es column.
+(1) The reference ships in a different format and the FLOP bill is in different
+    units. The 8x8 pool is one npz per chain carrying `n_trial_steps`, a count
+    of swap proposals. The d256 pool is a single pooled tensor whose provenance
+    records sweeps, and one sweep is `N_SITES = 256` proposals
+    (generate_kawasaki_reference_d256.py:137, `burn_proposals = BURN_IN_SWEEPS *
+    N_SITES`). Passing sweeps where the bill wants trials would under-price the
+    reference chain by 256x, the one direction that flatters the neural sampler
+    in the FLOP/es column.
 
-(2) CHAIN IDENTITY MUST BE RECOVERED BY SLICING. The half-split standard
-    error needs the chain as its unit of independence, but the d256
-    reference is `np.concatenate(thinned_per_chain)` -- chain-block
-    contiguous, equal width, with the boundaries recorded nowhere in the
-    tensor. An off-by-one in the block width mixes two chains into every
-    split and understates the reference's own error.
+(2) Chain identity must be recovered by slicing. The half-split standard error
+    needs the chain as its unit of independence, but the d256 reference is
+    `np.concatenate(thinned_per_chain)` -- chain-block contiguous, equal width,
+    with the boundaries recorded nowhere in the tensor. An off-by-one in the
+    block width mixes two chains into every split and understates the
+    reference's own error.
 
-(3) THE COUPLING MUST BE ASSERTED, NOT ASSUMED. `kawasaki_ref_d256_sc` is
-    MISLABELLED: it sits at sigma = 0.22305, not the frozen sigma_c of
-    0.220343. It certifies cleanly against the LEGACY 0.588 anchor, so
-    nothing about the directory announces the problem; only reading its
-    provenance does. Mixing it into the sigma_c column would compare heads
-    against a reference at a different temperature.
+(3) The coupling must be asserted, not assumed. `kawasaki_ref_d256_sc` is
+    mislabelled: it sits at sigma = 0.22305, not the frozen sigma_c of
+    0.220343. It certifies cleanly against the legacy 0.588 anchor, so only
+    reading its provenance reveals the problem. Mixing it into the sigma_c
+    column would compare heads against a reference at a different temperature.
 
-(4) THE ARM SET IS FOUR HEADS AND CARRIES NO REJECTION ROW. The skeleton
-    declared a plain-`fimo2` row that was never run at either coupling
-    (since deleted), and the rejection rows stay at 4x4 and 8x8 because
-    neither the unconstrained nor the soft chapter has a d256 case to
-    reject off. A fill that emitted either would print a row with no
-    run behind it.
+(4) The arm set is four heads and carries no rejection row. The skeleton
+    declared a plain-`fimo2` row that was never run at either coupling (since
+    deleted), and the rejection rows stay at 4x4 and 8x8 because neither the
+    unconstrained nor the soft chapter has a d256 case to reject off. A fill
+    that emitted either would print a row with no run behind it.
 """
 
 import json
@@ -80,7 +75,7 @@ def test_trial_count_converts_sweeps_to_proposals():
 
 
 def test_trial_count_scales_with_the_lattice():
-    """The sweep -> proposal factor is the SITE COUNT, not a constant. A
+    """The sweep -> proposal factor is the site count, not a constant. A
     hard-coded 256 would silently mis-bill any other rung built this way."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
@@ -104,13 +99,13 @@ def test_pooled_reference_splits_into_equal_chain_blocks():
 
 
 def test_chain_blocks_are_not_interleaved():
-    """Blocks must be CONTIGUOUS slices, not a stride.
+    """Blocks must be contiguous slices, not a stride.
 
     The generator concatenates whole chains; a strided split would look
     identical in shape while putting one snapshot of every chain into each
-    block, which would make the half-split read the within-chain
-    correlation as if it were between-chain and collapse the reference's
-    stated error toward zero.
+    block, which would make the half-split read the within-chain correlation as
+    if it were between-chain and collapse the reference's stated error toward
+    zero.
     """
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
@@ -182,14 +177,14 @@ def test_reference_must_be_composition_exact(tmp_path):
 
 
 def test_arm_set_is_the_heads_that_ran():
-    """The three w3 heads (ma, thp, thp2) plus the raster-ordering ladder
-    that ran at this rung (tag 20260830-rasterord-d256): the two band
-    families at one and two sweeps, with and without the exact field, and
-    the separable `ma` twin at the floor. The plain-`fimo2` row the skeleton
-    declared has no run at either coupling and was deleted; `fimo2ef`
-    left with the factorised head, which is demoted to an
-    exterior-combiner note and prints no results row at any rung. Its cells
-    and config still exist -- an editorial removal, not a deletion."""
+    """The three w3 heads (ma, thp, thp2) plus the raster-ordering ladder that
+    ran at this rung (tag 20260830-rasterord-d256): the two band families at one
+    and two sweeps, with and without the exact field, and the separable `ma`
+    twin at the floor. The plain-`fimo2` row the skeleton declared has no run at
+    either coupling and was deleted; `fimo2ef` left with the factorised head,
+    which is demoted to an exterior-combiner note and prints no results row at
+    any rung. Its cells and config still exist -- an editorial removal, not a
+    deletion."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
     assert set(h16.ARMS) == {
@@ -212,11 +207,11 @@ def test_arm_set_is_the_heads_that_ran():
 
 
 def test_gfn_rows_stay_outside_the_bold_comparison():
-    """The 8x8 rule carried up: the GFN rows are a different sampling
-    paradigm, so even when a GFN cell holds the best number in a column the
-    bold lands on the best SWAP cell. `best` is computed over ARMS, which
-    the GFN arms are not in; a refactor computing it over every table key
-    would silently move the bold."""
+    """The 8x8 rule carried up: the GFN rows are a different sampling paradigm,
+    so even when a GFN cell holds the best number in a column the bold lands on
+    the best swap cell. `best` is computed over ARMS, which the GFN arms are not
+    in; a refactor computing it over every table key would silently move the
+    bold."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
     assert not set(h16.GFN_ARMS) & set(h16.ARMS)
@@ -279,9 +274,9 @@ def _make_cell(tmp_path, name, halted=False):
 
 def test_tripwire_halted_cells_are_excluded(tmp_path):
     """Four d256 w3 cells were halted at step 5000 of 50000 by the cold-CV
-    inversion tripwire. Their evals read ESS fraction ~0.0009 purely from
-    the truncation, so keeping one would print a training-infrastructure
-    artefact as a catastrophic head."""
+    inversion tripwire. Their evals read ESS fraction ~0.0009 purely from the
+    truncation, so keeping one would print a training-infrastructure artefact as
+    a catastrophic head."""
     from experiments.constrained_hard_03.analysis import house_table_16x16 as h16
 
     good = _make_cell(tmp_path, "H2_d256_c50_s010_letf_ma_50k_w3_seed42_t-r2")

@@ -1,13 +1,13 @@
-"""What correct looks like for the 8x8 house-table fill, written before it.
+"""The 8x8 house-table fill.
 
 The 4x4 fill (`house_table_4x4.py`) can lean on exact enumeration: its
-reference IS the true conditional, so the reference row's error cells are
-zero by construction and only the sampler side needs a floor. At 8x8 the
-constrained slice holds C(64,32) ~ 1.8e18 states and no enumeration exists,
-so the reference becomes the certified Kawasaki chain pool and three
-properties that were free at 4x4 have to be earned:
+reference is the true conditional, so the reference row's error cells are zero
+by construction and only the sampler side needs a floor. At 8x8 the constrained
+slice holds C(64,32) ~ 1.8e18 states and no enumeration exists, so the reference
+becomes the certified Kawasaki chain pool and three properties that were free at
+4x4 have to be earned:
 
-  * the reference has its OWN precision, which must be reported rather than
+  * the reference has its own precision, which must be reported rather than
     printed as zero (the caption at hard.tex:1150 already promises "(SE)"
     in those cells);
   * the sampling floor must be estimated against a sampled reference rather
@@ -15,14 +15,13 @@ properties that were free at 4x4 have to be earned:
   * the reference must still be composition-exact, since every error column
     compares against it on the c=0.5 slice.
 
-The reference-SE estimator under test is the HALF-SPLIT: draw two disjoint
-halves of the chain pool, measure the error metric BETWEEN them, and halve
-it. Two half-size references each carry sqrt(2) times the full pool's noise
-and their separation combines both, so the half-split distance is ~2x the
-full pool's standard error. The alternative -- bootstrapping the reference
-against itself -- estimates the wrong thing: it answers "how much does this
-reference wobble under resampling", not "how far apart would two
-independent references land", which is what an error column needs.
+The reference-SE estimator under test is the half-split: draw two disjoint
+halves of the chain pool, measure the error metric between them, and halve it.
+Two half-size references each carry sqrt(2) times the full pool's noise and
+their separation combines both, so the half-split distance is ~2x the full
+pool's standard error. Not a bootstrap of the reference against itself, which
+answers how much this reference wobbles under resampling rather than how far
+apart two independent references would land.
 """
 
 import json
@@ -49,9 +48,9 @@ def _balanced_spins(n, seed, d=D_SITES):
 
 
 def test_reference_is_composition_exact():
-    """Every reference state sits on the slice the neural cells are scored
-    on. A reference that drifted off c=0.5 would make every error column
-    measure the composition gap rather than the structure."""
+    """Every reference state sits on the slice the neural cells are scored on.
+    A reference that drifted off c=0.5 would make every error column measure
+    the composition gap rather than the structure."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     states = _balanced_spins(64, seed=0)
@@ -66,8 +65,8 @@ def test_reference_is_composition_exact():
 
 def test_reference_se_is_positive_and_falls_with_more_chains():
     """The reference's precision is not zero at 8x8, and it improves as the
-    pool grows -- the property that distinguishes a sampled reference from
-    the 4x4 enumerated one."""
+    pool grows -- the property that distinguishes a sampled reference from the
+    4x4 enumerated one."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     small = [_balanced_spins(400, seed=s) for s in range(4)]
@@ -81,10 +80,10 @@ def test_reference_se_is_positive_and_falls_with_more_chains():
 
 
 def test_reference_se_tracks_root_n_scaling():
-    """Quadrupling the pool should roughly halve the standard error. Pins
-    the half-split estimator's CALIBRATION, not merely its direction: an
-    estimator that forgot the factor of two, or that bootstrapped instead,
-    would still pass the monotonicity test above."""
+    """Quadrupling the pool should roughly halve the standard error. Pins the
+    half-split estimator's calibration, not merely its direction: an estimator
+    that forgot the factor of two, or that bootstrapped instead, would still
+    pass the monotonicity test above."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     base = [_balanced_spins(500, seed=s) for s in range(4)]
@@ -97,16 +96,15 @@ def test_reference_se_tracks_root_n_scaling():
 
 
 def test_reference_se_matches_a_directly_measured_one():
-    """ABSOLUTE calibration, not just scaling: the half-split estimate must
-    match the error an independent pool of the same size actually shows
-    against a much larger truth.
+    """Absolute calibration, not just scaling: the half-split estimate must
+    match the error an independent pool of the same size actually shows against
+    a much larger truth.
 
-    The factor of two is the whole content of the estimator and a naive
-    check will not catch it being wrong -- comparing a single pool against a
-    single truth conflates three things (the pool's noise, the truth's own
-    noise, and the spread of a one-draw comparison) and reads ~0.7x even
-    when the estimator is right. The controlled version averages over
-    independent pools and removes the truth's contribution in quadrature.
+    Comparing a single pool against a single truth conflates three things (the
+    pool's noise, the truth's own noise, and the spread of a one-draw
+    comparison) and reads ~0.7x even when the estimator is right, so the
+    controlled version averages over independent pools and removes the truth's
+    contribution in quadrature.
     """
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
@@ -130,10 +128,10 @@ def test_reference_se_matches_a_directly_measured_one():
 
 
 def test_reference_se_is_far_below_the_sampling_floor():
-    """The table is only readable if the reference is sharper than the
-    thing it measures. With ~1e5 pooled reference draws against N=5000
-    neural draws the floor must dominate the reference SE by several-fold;
-    if it did not, no error-column difference between heads could be read."""
+    """The table is only readable if the reference is sharper than the thing it
+    measures. With ~1e5 pooled reference draws against N=5000 neural draws the
+    floor must dominate the reference SE by several-fold; if it did not, no
+    error-column difference between heads could be read."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     pool = [_balanced_spins(2000, seed=s) for s in range(15)]
@@ -151,9 +149,9 @@ def test_reference_se_is_far_below_the_sampling_floor():
 
 
 def test_sampling_floor_falls_with_more_draws():
-    """The floor is the error a PERFECT sampler still shows at finite N, so
-    it must decay in N. A floor that ignored n_draws would silently declare
-    every neural cell 'at the floor' regardless of its draw count."""
+    """The floor is the error a perfect sampler still shows at finite N, so it
+    must decay in N. A floor that ignored n_draws would silently declare every
+    neural cell 'at the floor' regardless of its draw count."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     reference = _balanced_spins(20_000, seed=4)
@@ -169,9 +167,9 @@ def test_sampling_floor_falls_with_more_draws():
 
 
 def test_perfect_sampler_sits_at_the_floor():
-    """A draw taken FROM the reference must score at the floor, within the
-    floor's own spread. This is the calibration that lets the printed table
-    say 'this cell is indistinguishable from exact at its own N'."""
+    """A draw taken from the reference must score at the floor, within the
+    floor's own spread. This is the calibration that lets the printed table say
+    'this cell is indistinguishable from exact at its own N'."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     reference = _balanced_spins(20_000, seed=6)
@@ -192,11 +190,10 @@ def test_perfect_sampler_sits_at_the_floor():
 
 
 def test_flop_config_comes_from_the_run_dir_not_the_registry(tmp_path):
-    """The 4x4 fill bills FLOPs off the LIVE registry (house_table_4x4.py
-    :228), so a cell trained before `gather_triu_pairs` or `compile_model`
-    landed is charged at today's architecture rather than its own. The 8x8
-    fill must read each run's saved config.json, which is the only record of
-    what actually trained."""
+    """The 4x4 fill bills FLOPs off the live registry (house_table_4x4.py:228),
+    so a cell trained before `gather_triu_pairs` or `compile_model` landed is
+    charged at today's architecture rather than its own. The 8x8 fill must read
+    each run's saved config.json, the only record of what actually trained."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     run_dir = tmp_path / "H2_d64_c50_s010_letf_thp_50k_w2_seed42_tag"
@@ -217,9 +214,9 @@ def test_flop_config_comes_from_the_run_dir_not_the_registry(tmp_path):
 
 
 def test_registry_drift_against_run_dir_is_reported(tmp_path):
-    """The audit must NAME the drifted fields rather than silently pick a
-    side -- a cell whose saved config disagrees with the registry is a
-    provenance finding, not something for the fill to paper over."""
+    """The audit must name the drifted fields rather than silently pick a side
+    -- a cell whose saved config disagrees with the registry is a provenance
+    finding, not something for the fill to paper over."""
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
 
     saved = {
@@ -261,12 +258,10 @@ def test_real_reference_certifies(sigma_label, npz_tag):
 
 # --- Separable billing ----------------------------------------------------
 #
-# The band identity is EXACT, so a masked-attention head's honest per-sample
-# bill is the cheapest exact way to evaluate it -- not whichever contraction
-# order happened to exist on the day it trained. Every archived MA cell ran
-# dense only because the derivation landed after them. These pin the swap:
-# that it happens, that it moves nothing but the bill, and that it stays off
-# the families it does not apply to.
+# The band identity is exact, so a masked-attention head's honest per-sample
+# bill is the cheapest exact way to evaluate it, not whichever contraction
+# order existed on the day it trained; every archived MA cell ran dense only
+# because the derivation landed after them.
 
 
 @pytest.mark.parametrize(
@@ -293,9 +288,9 @@ def test_billing_config_is_separable_for_attention_bands_only(name, expected):
 
 def test_billing_config_moves_exactly_one_field():
     """A billing config that drifted on anything else would be exactly the
-    misattribution `registry_config_for` exists to refuse. The swap is
-    licensed by the band identity and by nothing else, so it must not carry
-    a second change in with it."""
+    misattribution `registry_config_for` exists to refuse. The swap is licensed
+    by the band identity and by nothing else, so it must not carry a second
+    change in with it."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
@@ -309,10 +304,9 @@ def test_billing_config_moves_exactly_one_field():
 
 
 def test_billed_head_computes_the_trained_head_s_function():
-    """The claim the re-bill rests on: same weights, same outputs. If this
-    ever failed, the table would be pricing a different model from the one
-    whose ESS it prints -- the one error an exactness argument cannot
-    survive."""
+    """The claim the re-bill rests on: same weights, same outputs. Otherwise
+    the table would be pricing a different model from the one whose ESS it
+    prints."""
     import torch
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
         flop_billing_config,
@@ -336,8 +330,8 @@ def test_billed_head_computes_the_trained_head_s_function():
 
 
 def test_separable_billing_actually_lowers_the_attention_bill():
-    """The point of the exercise. A no-op here would mean the flag never
-    reached the head and the table quietly kept the dense price."""
+    """A no-op here would mean the flag never reached the head and the table
+    quietly kept the dense price."""
     import torch
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
         flop_billing_config,
@@ -361,13 +355,13 @@ def test_separable_billing_actually_lowers_the_attention_bill():
 
 
 def test_ladder_provenance_is_keyed_by_coupling_not_by_arm():
-    """The ladder's two columns ran in separate campaigns under separate
-    tags, so provenance must be per (arm, coupling).
+    """The ladder's two columns ran in separate campaigns under separate tags,
+    so provenance must be per (arm, coupling).
 
-    The failure this guards is SILENT: an arm-keyed map sends the floor
-    lookup to the sigma_c tag, the run dirs are absent, and the fill's
+    The failure this guards is silent: an arm-keyed map sends the floor lookup
+    to the sigma_c tag, the run dirs are absent, and the fill's
     missing-condition branch prints `--` -- indistinguishable from "not yet
-    run". The column would stay blank with the runs sitting on disk.
+    run", with the runs sitting on disk.
     """
     from experiments.constrained_hard_03.analysis.house_table_8x8 import ARM_PROVENANCE
 
@@ -397,9 +391,8 @@ def test_every_provenanced_cell_names_a_real_config():
 
 
 def test_gfn_cells_name_real_configs():
-    """Both GFN arms at both couplings must resolve to registered d64
-    configs; a tag or name typo would otherwise print as a permanently
-    blank row (same failure mode the provenance test above guards)."""
+    """Both GFN arms at both couplings must resolve to registered d64 configs;
+    a tag or name typo would otherwise print as a permanently blank row."""
     from experiments.constrained_hard_03.analysis.house_table_8x8 import (
         GFN_ARMS,
         GFN_CELL_NAME,
@@ -418,8 +411,8 @@ def test_gfn_cells_name_real_configs():
 def test_gfn_registry_audit_catches_architecture_drift(tmp_path):
     """The GFN rows carry the same provenance promise as the swap rows: the
     bill is measured on a policy rebuilt from the registry, so the fill must
-    refuse if the run's own saved config disagrees on an architecture field.
-    A policy trained at hidden 32 billed at the registry's hidden 64 would
+    refuse if the run's own saved config disagrees on an architecture field. A
+    policy trained at hidden 32 billed at the registry's hidden 64 would
     silently overstate the row's FLOP/es."""
     from dataclasses import asdict
 
@@ -447,10 +440,10 @@ def test_gfn_registry_audit_catches_architecture_drift(tmp_path):
 def test_gfn_row_reads_frozen_ess_and_bills_without_euler_factor(tmp_path):
     """At this rung both sides store 5000 draws, so the GFN row reads its
     frozen ess_fraction exactly like every house row (the 4x4 fill's
-    truncate-and-recompute deviation does not apply). And the bill handed in
-    is used per RAW SAMPLE as-is: an autoregressive rollout has no Euler
-    grid, so a bill that picked up the house n_euler multiplier would
-    overstate FLOP/es by two orders."""
+    truncate-and-recompute deviation does not apply). The bill handed in is
+    used per raw sample as-is: an autoregressive rollout has no Euler grid, so
+    a bill that picked up the house n_euler multiplier would overstate FLOP/es
+    by two orders."""
     from experiments.constrained_hard_03.analysis.house_table_8x8 import neural_cell
 
     run_dir = tmp_path / "gfn_run"
@@ -459,7 +452,7 @@ def test_gfn_row_reads_frozen_ess_and_bills_without_euler_factor(tmp_path):
     samples = _balanced_spins(n, seed=1)
     torch.save(samples, run_dir / "eval" / "samples.pt")
     torch.save(torch.zeros(n), run_dir / "eval" / "log_weights.pt")
-    frozen_ess = 0.625  # deliberately NOT the value uniform weights imply
+    frozen_ess = 0.625  # deliberately not the value uniform weights imply
     (run_dir / "eval" / "metrics.json").write_text(
         json.dumps({"ess_fraction": frozen_ess})
     )
@@ -481,9 +474,9 @@ def test_gfn_row_reads_frozen_ess_and_bills_without_euler_factor(tmp_path):
 
 def test_gfn_rows_stay_outside_the_bold_comparison():
     """The GFN rows are a different sampling paradigm (decided at 4x4,
-    hard.tex caption): even when a GFN cell holds the best number in a
-    column, the bold must land on the best SWAP cell. A refactor that
-    computed `best` over every key in the table would silently move it."""
+    hard.tex caption): even when a GFN cell holds the best number in a column,
+    the bold must land on the best swap cell. A refactor computing `best` over
+    every key in the table would silently move it."""
     from experiments.constrained_hard_03.analysis.house_table_8x8 import latex_table
 
     def entry(ess, flops):

@@ -1,8 +1,7 @@
 """Cost joining for the DNFS-vs-mchammer wall-clock grid.
 
 This module turns two differently-derived ESS numbers into one comparable
-cost, which makes it the place a wrong number enters the headline efficiency
-claim. The tests pin the three ways that can happen:
+cost. The tests pin the three ways a wrong number gets in:
 
   * an untimed run silently costing zero -- most archived runs predate
     `eval_draw_seconds`, and a default would fabricate the very quantity the
@@ -103,12 +102,10 @@ def _write_mchammer(
 
 
 def test_untimed_runs_are_dropped_not_costed_as_zero(tmp_path):
-    """A run without `eval_draw_seconds` must not reach the grid at all.
-
-    Archived specialists predate the timing fields. Defaulting them to zero
-    would make the reference look infinitely slower than a sampler that was
-    never actually timed.
-    """
+    """A run without `eval_draw_seconds` must not reach the grid at all:
+    archived specialists predate the timing fields, and defaulting them to
+    zero would make the reference look infinitely slower than a sampler that
+    was never timed."""
     _write_dnfs_run(tmp_path, "timed_seed42", draw_seconds=4.0)
     _write_dnfs_run(tmp_path, "untimed_seed43", draw_seconds=None)
 
@@ -120,11 +117,8 @@ def test_untimed_runs_are_dropped_not_costed_as_zero(tmp_path):
 
 def test_cost_is_seconds_per_effective_sample_not_per_drawn_sample(tmp_path):
     """seconds / ESS, so a batch worth half its size costs twice as much.
-
     Dividing by `n_eval_samples` instead would report identical cost for a
-    sampler with ESS 0.9 and one with ESS 0.1 -- erasing the entire quality
-    axis the grid is built to expose.
-    """
+    sampler with ESS 0.9 and one with ESS 0.1."""
     _write_dnfs_run(
         tmp_path,
         "cell_seed42",
@@ -148,12 +142,9 @@ def test_other_lattice_sizes_are_excluded(tmp_path):
 
 
 def test_sides_are_seed_meaned_before_joining(tmp_path):
-    """Two DNFS seeds and three mchammer seeds give ONE row, not six.
-
-    The two sides share no seed axis, so a row-wise join would both invent a
-    correspondence and multiply the row count -- silently weighting whichever
-    composition happened to have more baseline seeds.
-    """
+    """Two DNFS seeds and three mchammer seeds give one row, not six. The two
+    sides share no seed axis, so a row-wise join would invent a correspondence
+    and silently weight whichever composition had more baseline seeds."""
     results_dir, baseline_dir = tmp_path / "runs", tmp_path / "mch"
     for seed in (42, 43):
         _write_dnfs_run(
@@ -180,15 +171,10 @@ def test_sides_are_seed_meaned_before_joining(tmp_path):
 
 
 def test_seed_filter_isolates_a_survivor_from_the_seed_mean(tmp_path):
-    """Restricting to one seed must report THAT seed's cost, not the mean.
-
+    """Restricting to one seed must report that seed's cost, not the mean.
     The amortised cells contain both collapsed and healthy seeds, and cost per
-    effective sample is 1/ESS, so a collapsed seed contributes an enormous
-    number that dominates any average. The seed-mean therefore describes no
-    run that exists: it neither reports what the recipe costs when it works
-    nor how often it works. Both are needed, so the filter has to be able to
-    pull the survivor out.
-    """
+    effective sample is 1/ESS, so a collapsed seed dominates any average and
+    the seed-mean describes no run that exists."""
     for seed, ess_fraction in ((42, 0.001), (44, 0.5)):
         _write_dnfs_run(
             tmp_path,
@@ -211,11 +197,9 @@ def test_seed_filter_isolates_a_survivor_from_the_seed_mean(tmp_path):
 
 def test_swept_run_contributes_one_row_per_composition(tmp_path):
     """An amortised run is costed at every composition it was swept at.
-
-    Collapsing the sweep to a single number would hide that cost per effective
-    sample explodes at the window edges, which is where the amortised sampler
-    actually loses to a specialist.
-    """
+    Collapsing the sweep to one number would hide that cost per effective
+    sample explodes at the window edges, where the amortised sampler loses to
+    a specialist."""
     _write_dnfs_run(
         tmp_path,
         "amort_seed42",

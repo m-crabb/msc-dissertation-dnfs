@@ -1,14 +1,13 @@
 """Tests for the MLP rate-matrix parameterisation (Stage 1).
 
-These encode "what correct looks like" for the MLPRateMatrix module:
+Pinned here for MLPRateMatrix:
 - shape contract (B, d) -> (B, d),
 - non-negativity of rates (CTMC requirement),
 - non-trivial dependence on both inputs (t and x).
 
-We do NOT test learned behaviour here; that's the job of the training-loop
-integration tests later. The point of these tests is to catch architecture
-mistakes (wrong output shape, missing softplus, t/x ignored) before training
-silently fails.
+These catch architecture mistakes (wrong output shape, missing softplus, t/x
+ignored) before training silently fails; learned behaviour is the
+training-loop integration tests' job.
 """
 
 import pytest

@@ -1,25 +1,20 @@
-"""Falsification tests for the two-hole patch head on a Bravais supercell
-(the 64-site fcc Cu-Au cell), written BEFORE the geometry body.
+"""Two-hole patch head on a Bravais supercell (the 64-site fcc Cu-Au cell).
 
-The head's every geometric fact is a statement about the lattice's
-TRANSLATION GROUP: the hollow window is a list of offsets, the pooled
-levels are balls of offsets, the pair position code is the offset class of
-j from i, and "opposite offset" is negation. On the D x D torus that group
-is Z_D^2; on a one-atom-per-primitive-cell supercell repeated (n1, n2, n3)
-times it is Z_n1 x Z_n2 x Z_n3, with offsets read as minimum-image
-fractional displacements. `bravais_patch_geometry` builds the same tensors
-the torus constructor builds, so the head's math (blindness by locality,
-partner-zeroed recompute, hole-subtracted linear pools, label oddness,
-translation equivariance) is unchanged; these tests check that each
-property survives the change of group, and that the torus path is
-untouched (its tensors and its pooled means are reproduced exactly).
+Every geometric fact in the head is a statement about the lattice's
+translation group: the hollow window is a list of offsets, the pooled levels
+are balls of offsets, the pair position code is the offset class of j from i,
+and "opposite offset" is negation. On the D x D torus that group is Z_D^2; on
+a one-atom-per-primitive-cell supercell repeated (n1, n2, n3) times it is
+Z_n1 x Z_n2 x Z_n3, with offsets read as minimum-image fractional
+displacements. `bravais_patch_geometry` builds the same tensors the torus
+constructor builds, so the head's math is unchanged under the change of group.
 
-Claims under test:
+Properties pinned:
   * geometry: the one-shell window of the 4x4x4 cell is the twelve fcc
     nearest neighbours, agrees with the expansion's own neighbour list,
     is closed under negation, and never aliases; the displacement table is
     a translation-group table (each row a permutation, negation consistent);
-  * the 2x2x4 cell is REFUSED: two repeats make an offset and its negation
+  * the 2x2x4 cell is refused: two repeats make an offset and its negation
     the same site, so partner-zeroing would be ambiguous;
   * the torus geometry reproduces the head's original buffers, and the
     mask-matmul pooling equals the circular conv2d pooling;
@@ -117,7 +112,7 @@ def test_fcc_window_closed_under_negation():
     opposite = geometry.opposite_offset
     assert (opposite[opposite] == torch.arange(12)).all(), "negation is an involution"
     assert (opposite != torch.arange(12)).all(), "no offset is its own negation"
-    # Site i sits at the OPPOSITE offset inside its neighbour's window.
+    # Site i sits at the opposite offset inside its neighbour's window.
     for site in range(64):
         for k, partner in enumerate(geometry.neighbour_site[site].tolist()):
             assert geometry.neighbour_site[partner, opposite[k]] == site
@@ -383,14 +378,12 @@ def test_cuau64_patch_cells_mirror_their_mask_one_parents():
         assert cell.eval.n_eval_samples_training == 256 and cell.patch_shells == 2
 
 
-# ---- a Bravais cell that IS enumerable: the square-lattice expansion -------
+# ---- an enumerable Bravais cell: the square-lattice expansion -------------
 #
 # `data/ce/square_cuau_4x4.json` is a 4x4 square lattice (2.5 A spacing, one
-# layer in a 10 x 10 x 20 A box). Its translation group is the 4x4 torus's,
-# so the Bravais geometry can be checked against the torus one, and the
-# swap Kolmogorov identity can run on its enumerable c=0.5 slice through the
-# cluster-expansion target -- the identity the loss relies on, here through
-# the same target class and geometry route the 64-site cell uses.
+# layer in a 10 x 10 x 20 A box). Its translation group is the 4x4 torus's, so
+# the Bravais geometry checks against the torus one and the swap Kolmogorov
+# identity runs on its enumerable c=0.5 slice.
 
 SQUARE_16 = "data/ce/square_cuau_4x4.json"
 
@@ -421,18 +414,15 @@ def test_square_expansion_two_shells_is_the_torus_radius_one_window():
 def test_kolmogorov_residual_zero_mean_on_square_expansion_slice(patch_shells=1):
     """E_{p_t^C}[delta_t] = 0 with exact dt_log_Z on the enumerable c=0.5
     slice of the square-lattice expansion, with the head on the Bravais
-    geometry and the cluster-expansion target: the reverse rate read off -G
-    is the true reverse rate on this route too.
+    geometry and the cluster-expansion target.
 
-    The bar is the doubly-hollow reference head's own residual mean on the
-    SAME target, not an absolute: eV-scale energies at beta 20 give a 26-nat
-    log-p spread, and the head-independent term of the residual carries an
-    fp32 floor of ~2.4e-4 of the rms at t=0.1 that is identical across heads
-    and seeds (1e-5 on the Ising target). A head defect would move the
-    patch head OFF that floor; matching it to 20% is the pass. Geometry
-    does not enter the identity, so one shell count and the worst-floor
-    time point suffice (each residual pass over the 12870-state slice is
-    ~20 s)."""
+    The bar is the doubly-hollow reference head's own residual mean on the same
+    target, not an absolute: eV-scale energies at beta 20 give a 26-nat log-p
+    spread, and the head-independent term of the residual carries an fp32 floor
+    of ~2.4e-4 of the rms at t=0.1, identical across heads and seeds (1e-5 on
+    the Ising target). Matching that floor to 20% is the pass. Geometry does not
+    enter the identity, so one shell count and the worst-floor time point
+    suffice."""
     from discrete_flow_sampler.constraints.swap_readout import DoublyHollowSwapHead
     from discrete_flow_sampler.diagnostics.metrics import enumerate_states
     from discrete_flow_sampler.samplers.swap_kolmogorov import residual_swap

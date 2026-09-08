@@ -1,4 +1,4 @@
-"""Pin for outer_batch_size decoupled BELOW batch_size (2026-08-19).
+"""Pin for outer_batch_size decoupled below batch_size (2026-08-19).
 
 Every archived run left `outer_batch_size=None`, so one number set the
 gradient batch, the rollout/buffer width, and the c_t sample size at once.
@@ -7,15 +7,15 @@ c_t_batch pinned at the old coupled width. The existing c_t_batch tests
 only ever exercise outer_batch == batch_size, so this file pins the one
 new mechanism before any such cell is trusted:
 
-1. **The replay buffer's row count reflects outer_batch** — per cycle it
-   gains n_euler_steps x outer_batch rows, NOT batch_size or c_t_batch
+1. The replay buffer's row count reflects outer_batch — per cycle it
+   gains n_euler_steps x outer_batch rows, not batch_size or c_t_batch
    rows. The buffer takes the first outer_batch rows of the rollout;
    c_t_batch only widens the no-grad c_t estimate, and batch_size only
-   sizes the with-replacement inner draws FROM the buffer.
-2. **c_t still sees the full c_t_batch rows** while the buffer is narrow —
+   sizes the with-replacement inner draws from the buffer.
+2. c_t still sees the full c_t_batch rows while the buffer is narrow —
    the decoupling cuts rollout retention without cutting the per-slot
    normaliser's sample size.
-3. **Training runs to completion** with an inner batch larger than the
+3. Training runs to completion with an inner batch larger than the
    per-cycle buffer contribution (draws are with replacement, so a narrow
    buffer must not starve the inner step).
 

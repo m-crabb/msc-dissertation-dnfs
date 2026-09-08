@@ -47,10 +47,10 @@ D10_BASE_AMORTISED_CELL = "S2_d10_camort_l50_letf_ne128_anneal"
 D10_TRANSFER_CELL = "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50"
 D10_DEEP_BUFFER_CELL = "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50_cyc8"
 # Four arms probing neighbour log-ratio saturation, reaching the same
-# unbinding threshold Delta* = clamp/(2*lambda) by two different routes:
-# shrink the true ratio (lower lambda) or stop truncating it (raise the
-# ceiling). Keeping both routes in one tuple is deliberate — they must stay
-# identical in every respect except the one variable each moves.
+# unbinding threshold Delta* = clamp/(2*lambda) by two routes: shrink the
+# true ratio (lower lambda) or stop truncating it (raise the ceiling). Both
+# routes share a tuple because they must stay identical except in the one
+# variable each moves.
 D10_SATURATION_CELLS = (
     "S2_d10_camort_offset_clip50_lam10",
     "S2_d10_camort_offset_clip50_lam25",
@@ -62,9 +62,8 @@ D10_SATURATION_CELLS = (
 # specialist guards, not the surviving-recipe inheritance check.
 D10_STAIRCASE_CELL = "S2_d10_camort_offset_clip50_lam10_hw20"
 # The StableAdamW test of soft.tex 4.4's trust-region recommendation:
-# deliberately departs from the
-# surviving recipe in exactly {optimiser, clip}, so like the arms above it
-# joins only the conditioning and specialist guards.
+# departs from the surviving recipe in exactly {optimiser, clip}, so like the
+# arms above it joins only the conditioning and specialist guards.
 D10_STADAMW_CELL = "S2_d10_camort_offset_cyc8_stadamw"
 COMPOSITION_GAIN_CELL = "S2_d8_camort_spine3_cgain_l50_letf_ne128_house_sc"
 PAIRED_SPINE1_CELL = "S2_d8_camort_spine1_pairgrad_l50_letf_ne128_house_sc"
@@ -75,10 +74,10 @@ D10_AMORTISED_CELLS = (
     D10_TRANSFER_CELL,
     D10_DEEP_BUFFER_CELL,
 )
-# Deliberately NOT in D10_AMORTISED_CELLS: that tuple drives
-# `test_amortised_cell_inherits_the_surviving_recipe`, and these arms exist
-# precisely to depart from that recipe. They are still amortised cells, so
-# they join AMORTISED_CELLS for the conditioning and specialist guards.
+# Not in D10_AMORTISED_CELLS, which drives
+# `test_amortised_cell_inherits_the_surviving_recipe`: these arms exist to
+# depart from that recipe. They are still amortised, so they join
+# AMORTISED_CELLS for the conditioning and specialist guards.
 AMORTISED_CELLS = (
     VALIDATION_CELL,
     NARROW_WINDOW_CELL,
@@ -149,9 +148,8 @@ def test_amortised_cell_builds_a_conditioned_model(cell_name):
     )
     model = _build_model(cfg, target)
     assert model.condition_on_composition is True
-    # The house cells come back wrapped in ExactFieldFlipModel, which
-    # proxies condition_on_composition but not the embedder attribute —
-    # the embedder lives on the wrapped leTF, so look through the wrapper.
+    # ExactFieldFlipModel proxies condition_on_composition but not the
+    # embedder, which lives on the wrapped leTF; look through the wrapper.
     inner_model = getattr(model, "model", model)
     assert hasattr(inner_model, "comp_embedder")
 
@@ -284,12 +282,11 @@ def test_pairgrad_step_zero_loss_and_shared_gradients_are_exact():
 
 
 def test_validation_cell_differs_from_its_comparator_only_by_amortisation():
-    """The D=4 cell is a controlled clone of the archived c=0.5 specialist.
-
-    Strip the two amortisation knobs and the name, and what is left must be
-    the specialist config byte-for-byte — otherwise a gap in the comparison
-    could be some unnoticed hyperparameter drift rather than the cost of
-    serving a whole range of compositions with one model.
+    """The D=4 cell is a controlled clone of the archived c=0.5 specialist:
+    strip the two amortisation knobs and the name, and what is left must be
+    the specialist config byte-for-byte, so a gap in the comparison is the
+    cost of serving a whole range of compositions with one model rather than
+    unnoticed hyperparameter drift.
     """
     validation = CONFIGS[VALIDATION_CELL]
     specialist = CONFIGS["S2_d4_c05_l50_letf"]
@@ -308,11 +305,9 @@ def test_validation_cell_differs_from_its_comparator_only_by_amortisation():
 
 
 def test_narrow_window_cell_differs_only_in_the_window():
-    """The coverage-cost probe must vary one thing.
-
-    Its whole purpose is to attribute a change in conditioning fidelity to the
-    width of the training range, so anything else differing from the wide cell
-    — steps, Euler budget, capacity — would make the comparison worthless.
+    """The coverage-cost probe must vary one thing: it attributes a change in
+    conditioning fidelity to the width of the training range, so steps,
+    Euler budget and capacity must match the wide cell.
     """
     wide = CONFIGS[VALIDATION_CELL]
     narrow = CONFIGS[NARROW_WINDOW_CELL]
@@ -324,9 +319,8 @@ def test_narrow_window_cell_differs_only_in_the_window():
     ]
     assert narrow.composition.curriculum[-1].half_width == pytest.approx(0.15)
     assert wide.composition.curriculum[-1].half_width == pytest.approx(0.30)
-    # 0.30 and 0.80 fall outside the narrow training range on purpose: those
-    # sweep rows measure extrapolation, and reading them as interpolation
-    # would credit the model with coverage it never trained on.
+    # 0.30 and 0.80 fall outside the narrow training range on purpose:
+    # those sweep rows measure extrapolation, not interpolation.
     narrow_edge = (
         narrow.composition.centre - narrow.composition.curriculum[-1].half_width
     )
@@ -334,9 +328,8 @@ def test_narrow_window_cell_differs_only_in_the_window():
 
 
 def test_budget_twin_varies_only_the_training_budget():
-    """5x the steps, nothing else — so a slope change is attributable.
-
-    The curriculum boundaries move with the run length so the model spends the
+    """5x the steps, nothing else — so a slope change is attributable. The
+    curriculum boundaries move with the run length so the model spends the
     same fraction of training at each window width; that keeps the schedule
     the same experiment rather than a second variable.
     """
@@ -366,10 +359,10 @@ def test_annealed_twin_varies_only_the_lambda_schedule():
     """The budget twin plus the surviving lambda anneal, nothing else.
 
     Fixed lambda=50 over 50k steps reproduced the from-scratch fragility
-    (seed 42's Z2-breaking collapse), so this cell tests whether
-    the anneal restores seed survival while keeping the budget-bought
-    obedience. The final stage must land on the operating point lambda=50,
-    or the cell samples a different soft target than every comparator.
+    (seed 42's Z2-breaking collapse), so this cell tests whether the anneal
+    restores seed survival while keeping the budget-bought obedience. The
+    final stage must land on the operating point lambda=50, or the cell
+    samples a different soft target than every comparator.
     """
     twin = CONFIGS[BUDGET_TWIN_CELL]
     annealed = CONFIGS[ANNEALED_TWIN_CELL]
@@ -392,12 +385,11 @@ def test_offset_anneal_finishes_its_ramp_before_the_window_widens():
     """Same lambda ramp as the annealed twin, moved off the window boundaries.
 
     The annealed twin's training ESS collapses at exactly the steps where
-    lambda rises, and those are also the steps where the draw window widens and
-    the replay buffer is cleared -- three simultaneous shocks. This cell keeps
-    the ramp identical in values but lands it entirely before the first
-    widening, so a surviving run attributes the twin's deaths to the pile-up
-    rather than to a lambda step as such. Nothing else may differ, or the
-    attribution is lost.
+    lambda rises, and those are also the steps where the draw window widens
+    and the replay buffer is cleared -- three simultaneous shocks. This cell
+    keeps the ramp identical in values but lands it entirely before the
+    first widening, so a surviving run attributes the twin's deaths to the
+    pile-up rather than to a lambda step as such. Nothing else may differ.
     """
     annealed = CONFIGS[ANNEALED_TWIN_CELL]
     offset = CONFIGS[OFFSET_ANNEAL_CELL]
@@ -426,19 +418,16 @@ def test_clip_cells_vary_only_the_gradient_clip(cell_name, max_norm):
     Every death in the offset cell is preceded by the same optimiser
     signature: at the final window widening the pre-clip gradient norm jumps
     from ~30 to 10^3-10^5 and the clip fires on essentially every subsequent
-    step, while the one surviving seed peaks at ~111 and stops clipping within
-    2k steps. Clipping at 500 does not contain that, it *sustains* it -- a
-    clipped step has magnitude exactly 500, about 17x a healthy step, taken in
-    a direction estimated from importance weights that have just degenerated.
-    So the update magnitude stops carrying information about the descent
-    direction's quality precisely when it is least trustworthy.
+    step, while the one surviving seed peaks at ~111 and stops clipping
+    within 2k steps. Clipping at 500 sustains that rather than containing
+    it -- a clipped step has magnitude exactly 500, about 17x a healthy step,
+    taken in a direction estimated from importance weights that have just
+    degenerated.
 
     Two values rather than one because the healthy phase also spikes (the
     unconditioned specialist trains fine with 4% of steps above 500), so the
     tighter cell risks squashing informative tail gradients; 100 hedges that
     while still keeping a clipped step within ~4x a healthy one.
-
-    Nothing else may differ, or a survival change cannot be attributed.
     """
     offset = CONFIGS[OFFSET_ANNEAL_CELL]
     clipped = CONFIGS[cell_name]
@@ -462,20 +451,20 @@ def test_deep_buffer_cell_varies_only_the_replay_buffer_depth():
     """Same D=10 recipe, twice the buffer depth, nothing else.
 
     The transfer cell carried both D=4 fixes and still ran away at the first
-    widening: median gradient norm ~800 before step 10k and ~7.6e4 just after,
-    escalating rather than falling back, with training ESS pinned at 1.0 for
-    the remaining 40k steps. So a bounded step is not sufficient at 100 sites,
-    and the remaining untested difference from the D=4 recipe is buffer depth.
+    widening: median gradient norm ~800 before step 10k and ~7.6e4 just
+    after, escalating rather than falling back, with training ESS pinned at
+    1.0 for the remaining 40k steps. So a bounded step is not sufficient at
+    100 sites, and the remaining untested difference from the D=4 recipe is
+    buffer depth.
 
     Depth matters here in a way it never did for a specialist. Batches are
     drawn uniformly across the buffer, so depth is the only mechanism mixing
     requested compositions *within* an update; and because the buffer holds
-    states generated under the previous half-width, at a widening the model is
-    scored on compositions its buffer has never visited. Doubling the depth
-    halves the rate at which fresh compositions enter per optimiser step, so
-    the buffer tracks the widened window before the loss charges for it.
-
-    Nothing else may differ, or a survival change cannot be attributed.
+    states generated under the previous half-width, at a widening the model
+    is scored on compositions its buffer has never visited. Doubling the
+    depth halves the rate at which fresh compositions enter per optimiser
+    step, so the buffer tracks the widened window before the loss charges
+    for it.
     """
     transfer = CONFIGS[D10_TRANSFER_CELL]
     deep = CONFIGS[D10_DEEP_BUFFER_CELL]
@@ -495,18 +484,20 @@ def test_deep_buffer_cell_varies_only_the_replay_buffer_depth():
 
 
 def test_d10_transfer_cell_carries_exactly_the_two_d4_fixes():
-    """The D=10 cell may differ from its parent only by the offset and the clip.
+    """The D=10 cell may differ from its parent only by the offset and the
+    clip.
 
     Both interventions were established separately at D=4: finishing the
-    penalty ramp before the first widening (so a moving target never shares a
-    boundary with stretching coverage), and lowering the gradient clip so a
-    saturated step is ~2x a healthy one rather than ~17x. Together they took
-    the D=4 cell from 1/4 surviving seeds to 4/4.
+    penalty ramp before the first widening (so a moving target never shares
+    a boundary with stretching coverage), and lowering the gradient clip so
+    a saturated step is ~2x a healthy one rather than ~17x. Together they
+    took the D=4 cell from 1/4 surviving seeds to 4/4.
 
     This run buys a single seed, so a third simultaneous change would make a
-    failure unattributable -- notably replay_buffer_cycles, which stays at the
-    parent's 4 even though D=4 uses 8 and buffer depth is what mixes
-    compositions within a batch. That is a named next lever, not a silent one.
+    failure unattributable -- notably replay_buffer_cycles, which stays at
+    the parent's 4 even though D=4 uses 8 and buffer depth is what mixes
+    compositions within a batch. That is a named next lever, not a silent
+    one.
     """
     parent = CONFIGS[D10_BASE_AMORTISED_CELL]
     transfer = CONFIGS[D10_TRANSFER_CELL]
@@ -550,8 +541,8 @@ def test_null_control_is_the_specialist_reached_through_the_amortised_path():
     Every c drawn is exactly the centre, so the target is the archived
     c=0.5 specialist's target — but it is reached through the adapter, the
     per-cycle draw, the per-state composition buffer, the buffered c_t
-    baseline and the target binding. That makes it the one comparison where a
-    discrepancy can only be the machinery, since the physics is held fixed.
+    baseline and the target binding. With the physics held fixed, a
+    discrepancy can only be the machinery.
     """
     null = CONFIGS[NULL_CONTROL_CELL]
     specialist = CONFIGS["S2_d4_c05_l50_letf"]
@@ -574,10 +565,9 @@ def test_null_control_is_the_specialist_reached_through_the_amortised_path():
 
 @pytest.mark.parametrize("cell_name", D10_AMORTISED_CELLS)
 def test_amortised_cell_inherits_the_surviving_recipe(cell_name):
-    """λ anneal and ne128 are what made this leg train on 4/4 seeds.
-
-    D=4 is deliberately excluded: its archived λ=50 comparator trained 4/4
-    without the anneal, so the validation cell matches that recipe instead.
+    """λ anneal and ne128 are what made this leg train on 4/4 seeds. D=4 is
+    excluded: its archived λ=50 comparator trained 4/4 without the anneal,
+    so the validation cell matches that recipe instead.
     """
     cfg = CONFIGS[cell_name]
     assert cfg.ctmc.n_euler_steps == 128
@@ -612,12 +602,10 @@ def test_grid_control_draws_exactly_the_specialist_compositions():
 
 @pytest.mark.parametrize("cell_name", D10_SATURATION_CELLS)
 def test_saturation_arms_differ_from_the_control_in_one_variable_only(cell_name):
-    """Each arm must be the control cell with exactly one thing moved.
-
-    The comparison is worthless if an arm also picked up a different seed,
-    buffer depth, integration budget or window schedule: any of those would
-    supply an alternative explanation for a survival difference, and the
-    control is a single run so there is no seed spread to absorb it.
+    """Each arm must be the control cell with exactly one thing moved. A
+    different seed, buffer depth, integration budget or window schedule
+    would supply an alternative explanation for a survival difference, and
+    the control is a single run so there is no seed spread to absorb it.
     """
     control = CONFIGS[SATURATION_CONTROL_CELL]
     arm = CONFIGS[cell_name]
@@ -648,8 +636,7 @@ def test_saturation_arms_raise_delta_star_above_the_control(cell_name):
 
     Delta* = clamp / (2 * lambda) is the composition error at which the
     ceiling starts truncating the neighbour ratio. The control sits at 0.05
-    against a measured error of 0.078 — i.e. already saturating. An arm that
-    did not raise Del* above the control would not be testing anything.
+    against a measured error of 0.078 — i.e. already saturating.
     """
 
     def delta_star(cfg):
@@ -681,7 +668,7 @@ def test_specialist_cells_are_untouched():
 
 
 def test_staircase_cell_caps_and_paces_the_widening():
-    """The staircase cell's three load-bearing choices, pinned.
+    """Three load-bearing choices, pinned.
 
     (1) Coverage is capped at half-width 0.20 — the requested composition
     range [0.3, 0.7] needs no more, and 0.30 is the width whose variance
@@ -714,8 +701,7 @@ def test_final_recipe_machinery_pair_differs_only_in_conditioning():
     Specialist-minus-null at c = 0.5 is quoted as the cost of the
     conditioning machinery at the final recipe (50k steps, clip 50, offset
     lambda anneal). That subtraction only measures the machinery if the two
-    cells agree on every other field; any second difference becomes a
-    confound riding inside the quoted number.
+    cells agree on every other field.
     """
     null_cfg = CONFIGS[FINAL_RECIPE_NULL_CELL]
     specialist_cfg = CONFIGS[FINAL_RECIPE_SPECIALIST_CELL]

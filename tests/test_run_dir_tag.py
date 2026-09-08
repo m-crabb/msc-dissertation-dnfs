@@ -1,15 +1,15 @@
 """Run-dir tagging on the shared baseline/soft `train` entry point.
 
 A Slurm job resubmitted after preemption re-invokes `train` from scratch.
-With the default timestamp suffix every invocation mints a NEW run dir, so a
+With the default timestamp suffix every invocation mints a new run dir, so a
 retried job leaves a sibling directory, and tooling that resolves run dirs
 by recency (e.g. the sweep step in the amortised sbatch) can silently pick
 the wrong one. A caller-fixed `tag` — mirroring the hard experiment's
 runner — gives the run a stable directory identity: the retry lands in the
-SAME dir, and a run that already finished (eval/metrics.json present) is
+same dir, and a run that already finished (eval/metrics.json present) is
 detected and skipped rather than retrained.
 
-Scope: this file covers the DIRECTORY-identity half of that contract only.
+Scope: this file covers the directory-identity half of that contract only.
 Mid-run continuation from `checkpoints/resume.pt` (added 2026-08-22) is a
 separate contract with its own file, `tests/test_training_resume.py` — but
 the two compose, and the tag is what makes the resume reachable at all: a

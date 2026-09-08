@@ -4,33 +4,32 @@ In control_variate mode the outer step re-runs the head/model on
 (trajectory[k], t_k) for every grid slot k — but rollout step k already
 computed that exact forward on those tensors and threw it away (the swap
 step returns its pair scores; the flip LE step holds G_t before the relu).
-`return_cv_integrand=True` accumulates ξ_t (Eq. 8) into a (T, B) buffer
-DURING the rollout; only the final slot needs one fresh forward. At d256
-this removes 127 of 128 c_t-grid head forwards per outer cycle (~7-8 h
-eager per 16x16 CV run).
+`return_cv_integrand=True` accumulates ξ_t (Eq. 8) into a (T, B) buffer during
+the rollout; only the final slot needs one fresh forward. At d256 this removes
+127 of 128 c_t-grid head forwards per outer cycle (~7-8 h eager per 16x16 CV
+run).
 
-What correct looks like, independent of implementation:
+Properties pinned:
 
-1. **BIT-IDENTICAL, not close.** No RNG is touched and the arithmetic is
+1. Bit-identical, not close: no RNG is touched and the arithmetic is
    unchanged, so (a) the trajectory equals a flag-off rollout under the
    same seed, and (b) the returned integrand equals the sequential
    (chunk_rows=None) grid recompute on that trajectory — `torch.equal`,
    for the swap sampler (both step kinds) and the flip sampler (LE and
    non-LE models).
-2. **Guards refuse loudly.** The flag without `return_all_states`,
-   without `target`, or with resampling enabled is a contract error —
-   the reuse is only certified for the plain buffer rollout.
-3. **The eval path stays bit-exact.** The flip LE refactor (Euler step
-   returns G_t instead of relu(G_t); ξ_t reuses it) must leave
+2. The flag without `return_all_states`, without `target`, or with resampling
+   enabled is a contract error; the reuse is only certified for the plain
+   buffer rollout.
+3. The eval path stays bit-exact: the flip LE refactor (Euler step returns
+   G_t instead of relu(G_t); ξ_t reuses it) leaves
    `sample_ctmc(return_log_weights=True)` bit-equal to a fresh-forward
-   reference loop under the same seed — the same reuse contract the swap
-   sampler already pins in test_swap_perf_refactors.py.
-4. **Trainer wiring, both trainers.** `train_cfg.c_t_from_rollout=True`
-   (getattr default False: every archived config is untouched) makes a
-   control-variate run skip the grid recompute entirely, with a training
-   log bit-identical to the knob-off sequential path. Setting the knob
-   together with rollout resampling refuses loudly.
-5. **Free rider.** In naive_mc mode the variance bookkeeping's
+   reference loop under the same seed.
+4. Trainer wiring, both trainers. `train_cfg.c_t_from_rollout=True` (getattr
+   default False, so archived configs are untouched) makes a control-variate
+   run skip the grid recompute entirely, with a training log bit-identical to
+   the knob-off sequential path. The knob together with rollout resampling
+   refuses loudly.
+5. Free rider: in naive_mc mode the variance bookkeeping's
    `dt_log_p_tilde_t` recompute is the integrand itself; with the knob on
    the trainer reuses it, so `cv_var_ratio` is exactly 1.0 and the two
    variance columns are exactly equal.
@@ -130,7 +129,7 @@ def test_swap_reuse_bit_identical_to_sequential_grid(multi_event):
     # (a) Samples untouched: the flag consumes no RNG and changes no state.
     assert torch.equal(trajectory_on, trajectory_off)
 
-    # (b) The integrand IS the sequential grid recompute, bit for bit.
+    # (b) The integrand is the sequential grid recompute, bit for bit.
     want_c_t, want_integrand = compute_c_t_grid_swap(
         TS,
         trajectory_off,
@@ -231,7 +230,7 @@ def test_flip_reuse_guards():
 
 @torch.no_grad()
 def _reference_sample_ctmc_log_weights(model, x0, ts, target):
-    """The pre-refactor eval loop: a FRESH forward inside every ξ_t call.
+    """The pre-refactor eval loop: a fresh forward inside every ξ_t call.
 
     RNG consumption matches production (only the Euler step draws), so a
     shared seed makes the two paths comparable bit for bit.
@@ -358,8 +357,8 @@ def test_swap_trainer_reuse_with_resampling_refuses(tmp_path):
 
 def test_swap_trainer_naive_mode_free_rider(tmp_path):
     """Naive mode with the knob: the grid still runs (its integrand is
-    target-only), but the variance bookkeeping reuses it — the ratio must
-    be EXACTLY 1.0, the two variance columns exactly equal."""
+    target-only), but the variance bookkeeping reuses it, so the ratio is
+    exactly 1.0 and the two variance columns exactly equal."""
     _run_swap(tmp_path / "naive", c_t_from_rollout=True, estimator_mode="naive_mc")
     for row in _log_rows(tmp_path / "naive"):
         assert float(row["cv_var_ratio"]) == 1.0
@@ -442,10 +441,9 @@ def test_flip_trainer_naive_mode_free_rider(tmp_path):
 
 
 def test_optimised_recipe_flips_only_the_declared_flags():
-    """`optimised_recipe` is the transform that lands these
-    optimisations: exactly compile_head and train.c_t_from_rollout flip,
-    every other field is untouched (twin discipline — the transform must
-    never smuggle a third change into a new cell)."""
+    """`optimised_recipe` is the transform that lands these optimisations:
+    exactly compile_head and train.c_t_from_rollout flip, every other field
+    untouched."""
     from dataclasses import fields
 
     from experiments.constrained_hard_03.configs import (

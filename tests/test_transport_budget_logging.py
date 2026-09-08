@@ -1,15 +1,15 @@
 """Transport-budget instrumentation for the swap-CTMC sampler.
 
-A trajectory's ESS says nothing about whether the sampler MOVED: a head that
+A trajectory's ESS says nothing about whether the sampler moved: a head that
 fires (almost) no swaps still returns finite IS weights, so an eval can look
 healthy while its draw never left the base distribution's neighbourhood.
 These tests pin the measured jump budget:
 
-  - BOTH Euler step kinds (one-event categorical and vertex-disjoint matching)
+  - both Euler step kinds (one-event categorical and vertex-disjoint matching)
     count proposed / accepted / state-changing swap events into the optional
     stats dict, in the same accumulate-into-dict style;
   - same-spin pairs matter: Swap2(x, i, j) = x when x_i == x_j, so `accepted`
-    alone OVERSTATES productive transport — `accepted_state_changing` counts
+    alone overstates productive transport — `accepted_state_changing` counts
     only swaps whose endpoint spins differ at fire time;
   - the frozen final eval integrates the counters along the trajectory and
     writes jumps_per_site_{proposed,accepted,state_changing} into the
@@ -62,7 +62,7 @@ class _ConstRateHead:
 
 
 class _SinglePairHead:
-    """Fake swap head: positive score ONLY on pair (0, 1), negative elsewhere.
+    """Fake swap head: positive score only on pair (0, 1), negative elsewhere.
 
     Forces exactly that pair to fire (score * dt >= 1 saturates its firing
     probability while relu kills every other pair), so a test can hand-pick
@@ -84,7 +84,7 @@ def _int_stat(stats, key):
 
 
 def test_multi_event_trajectory_counts_ordered_transport_budget():
-    """(a) Matching-step trajectory: counters present, correctly ordered
+    """Matching-step trajectory: counters present, correctly ordered
     (state_changing <= accepted <= proposed), all positive for a nonzero-rate
     head, and state_steps = batch x n_euler_steps."""
     torch.manual_seed(0)
@@ -109,7 +109,7 @@ def test_multi_event_trajectory_counts_ordered_transport_budget():
 
 
 def test_one_event_trajectory_produces_same_counter_keys():
-    """(b) The one-event step now feeds the SAME counter keys through the same
+    """The one-event step feeds the same counter keys through the same
     optional stats argument. Its single categorical draws the firing pair
     directly — there is no thinning/rejection stage — so proposed == accepted
     by construction."""
@@ -154,7 +154,7 @@ def _tiny_cfg(n_eval_samples=10, eval_sample_chunk=4, use_matching_step=False):
 
 
 def test_final_eval_writes_integrated_jumps_per_site_fields(tmp_path):
-    """(c) The chunked final eval accumulates transport stats across its draw
+    """The chunked final eval accumulates transport stats across its draw
     slices and writes the three integrated jumps_per_site_* fields into the
     metrics.json it already writes. One-event canonical cell: proposed and
     accepted coincide (no thinning stage), and state_changing never exceeds
@@ -183,7 +183,7 @@ def test_final_eval_writes_integrated_jumps_per_site_fields(tmp_path):
 
 
 def test_final_eval_matching_step_jumps_fields_land_too(tmp_path):
-    """(c cont.) The matching-canonical route through the same final_eval gets
+    """The matching-canonical route through the same final_eval gets
     the fields as well (this is the path eval/ on a 16x16-rung-style cell and
     every eval-variant dir shares)."""
     torch.manual_seed(0)
@@ -201,7 +201,7 @@ def test_final_eval_matching_step_jumps_fields_land_too(tmp_path):
 
 
 def test_same_spin_pair_fires_as_noop_in_matching_step():
-    """(d) A same-spin pair's swap is a state no-op: on x = [+1, +1, -1, -1]
+    """A same-spin pair's swap is a state no-op: on x = [+1, +1, -1, -1]
     with only pair (0, 1) able to fire, `accepted` increments but
     `accepted_state_changing` does not, and the state is unchanged. Flipping
     the state so the pair is mixed-spin turns the same fired event into a
@@ -232,7 +232,7 @@ def test_same_spin_pair_fires_as_noop_in_matching_step():
 
 
 def test_same_spin_pair_fires_as_noop_in_one_event_step():
-    """(d cont.) Same no-op discipline in the one-event step: the saturated
+    """Same no-op discipline in the one-event step: the saturated
     pair (0, 1) always wins the categorical, and on a same-spin state it
     counts as accepted but not state-changing."""
     torch.manual_seed(0)
@@ -250,7 +250,7 @@ def test_same_spin_pair_fires_as_noop_in_one_event_step():
 
 
 def test_stats_argument_stays_optional_and_inert():
-    """(4) None = today's behaviour: both step kinds run without a stats dict
+    """None = today's behaviour: both step kinds run without a stats dict
     and the stats accumulation consumes no RNG, so a stats-on and a stats-off
     trajectory from the same seed are byte-identical."""
     target = FixedCompositionIsingTarget(D=4, sigma=0.1, target_composition=0.5)

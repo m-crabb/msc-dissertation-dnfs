@@ -1,9 +1,9 @@
-"""House-table observable errors (MDNS Eq. 26/28, DASBS EW2) -- what correct looks like.
+"""House-table observable errors (MDNS Eq. 26/28, DASBS EW2).
 
-Written before the implementation. Three properties pin the definitions:
+Three properties pin the definitions:
   * self-distance is zero (sampler == reference, uniform weights);
   * the metrics are weight-aware (a weighted sampler must reproduce a
-    reference that the UNweighted sampler does not);
+    reference that the unweighted sampler does not);
   * EW2 of a pure shift equals the shift (1-D W2 is the shift for translations).
 """
 

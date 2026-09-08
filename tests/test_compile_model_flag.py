@@ -2,7 +2,7 @@
 
 Mirrors the hard route's compile_head contract (test_swap_perf_refactors
 ::test_compile_head_flag_matches_uncompiled_and_keeps_state_dict):
-`ModelCfg.compile_model=True` must use IN-PLACE nn.Module.compile so
+`ModelCfg.compile_model=True` must use in-place nn.Module.compile so
 state_dict keys stay unprefixed (torch.compile(module) wrapping would add
 `_orig_mod.` and break checkpoint round-trips) and the compiled forward
 agrees with eager at fp32 tolerance. The soft route reuses this ModelCfg

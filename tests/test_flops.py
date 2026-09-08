@@ -1,8 +1,7 @@
 """Tests for the FLOP/es counter (house-table cost column).
 
-What correct looks like, fixed before the implementation:
 - the per-forward instrument is torch's FlopCounterMode, so on a bare
-  linear layer it must return EXACTLY the textbook 2*M*N*K matmul count,
+  linear layer it must return exactly the textbook 2*M*N*K matmul count,
   and it must be linear in batch size (the licence for measuring at B=1
   and scaling);
 - the neural sampling bill is n_euler_steps forwards plus the (negligible
@@ -112,7 +111,7 @@ def test_vcsgc_bill_is_gibbs_class_and_scales_with_trials():
 def test_sgc_bill_is_a_bare_gibbs_site_update_and_scales_with_trials():
     # One SGC trial at Delta-mu = 0 is a free single-site flip: the same
     # local-field work Gibbs pays and nothing else. It must therefore price
-    # EXACTLY one Gibbs site update -- strictly below VC-SGC, which pays a
+    # exactly one Gibbs site update -- strictly below VC-SGC, which pays a
     # further O(1) penalty-difference rider off its cached composition, and
     # strictly below Kawasaki, which evaluates the field at two sites.
     # Linear in trials like every chain bill.
@@ -123,7 +122,7 @@ def test_sgc_bill_is_a_bare_gibbs_site_update_and_scales_with_trials():
 
 def test_kawasaki_bill_is_two_site_gibbs_class_and_scales_with_trials():
     # One Kawasaki (canonical non-local swap) trial evaluates the local
-    # field at BOTH swapped sites, so it must price at least two Gibbs site
+    # field at both swapped sites, so it must price at least two Gibbs site
     # updates and stay within that class (below 3x — the pair pick,
     # adjacency correction and swap bookkeeping are O(1) riders, not a
     # third field evaluation). Linear in trials like every chain bill.

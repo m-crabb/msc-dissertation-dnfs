@@ -7,13 +7,12 @@ everything off the requested composition. The comparator prices that.
 
 Both corrections depend on x only through c(x), so the whole calculation
 collapses onto the unconstrained composition marginal π(n) = P_unc(N₊ = n).
-That reduction is what makes the row exact at D = 4 rather than another
-sampled estimate, and it is the first thing these tests pin — if it were
-wrong, the row would be cheap and meaningless.
+That reduction is what makes the row exact at D = 4 rather than another sampled
+estimate, and it is the first thing these tests pin.
 
-The other three pin the boundary behaviours that make the numbers readable:
-no reweighting when λ = 0, a marginal that is a probability distribution, and
-the soft row collapsing onto the hard row as λ → ∞.
+The rest pin the boundary behaviours: no reweighting when λ = 0, a marginal
+that is a probability distribution, and the soft row collapsing onto the hard
+row as λ → ∞.
 """
 
 import importlib
@@ -39,11 +38,10 @@ def marginal():
 
 
 def test_marginal_is_a_distribution_over_achievable_compositions(marginal):
-    """One entry per achievable N₊, summing to one.
-
-    A composition on a d-site lattice can only be a multiple of 1/d, and the
-    filter rows divide by entries of this vector — a marginal that silently
-    dropped or double-counted a slice would rescale every cost in the table.
+    """One entry per achievable N₊, summing to one. A composition on a d-site
+    lattice can only be a multiple of 1/d, and the filter rows divide by entries
+    of this vector, so a dropped or double-counted slice would rescale every
+    cost in the table.
     """
     assert len(marginal) == D * D + 1
     assert marginal.sum() == pytest.approx(1.0)
@@ -51,12 +49,8 @@ def test_marginal_is_a_distribution_over_achievable_compositions(marginal):
 
 
 def test_soft_filter_is_free_when_there_is_no_penalty(marginal):
-    """λ = 0 means every weight is 1, so the ESS fraction is exactly 1.
-
-    This is the sanity anchor for the whole row: whatever the marginal looks
-    like, an absent constraint must cost nothing. A formula that returned
-    anything else here would be measuring the marginal's shape rather than the
-    price of the constraint.
+    """λ = 0 means every weight is 1, so the ESS fraction is exactly 1: whatever
+    the marginal looks like, an absent constraint costs nothing.
     """
     for c_target in (0.30, 0.50, 0.80):
         assert comparator.soft_filter_ess_fraction(
@@ -65,13 +59,10 @@ def test_soft_filter_is_free_when_there_is_no_penalty(marginal):
 
 
 def test_soft_filter_matches_brute_force_over_all_states(marginal):
-    """The c(x)-only reduction reproduces the state-level ESS exactly.
-
-    This is the load-bearing claim. The row is computed from a length-(d+1)
-    marginal instead of 2^d states because the reweighting factor
-    exp(-λ d (c(x) - c_t)²) is constant on a composition slice. If that were
-    not exactly true the cheap calculation would drift from the real one, so
-    it is checked against the honest enumeration rather than assumed.
+    """The c(x)-only reduction reproduces the state-level ESS exactly. The row
+    is computed from a length-(d+1) marginal instead of 2^d states because the
+    reweighting factor exp(-λ d (c(x) - c_t)²) is constant on a composition
+    slice; checked against the enumeration rather than assumed.
     """
     d = D * D
     lam, c_target = 50.0, 0.55
@@ -97,13 +88,10 @@ def test_soft_filter_matches_brute_force_over_all_states(marginal):
 
 
 def test_hard_filter_is_the_limit_the_soft_filter_approaches(marginal):
-    """As λ → ∞ the reweighting becomes rejection onto one slice.
-
-    The two rows are the same calculation at two penalty strengths, and saying
-    so is what lets the writeup quote one crossover composition rather than
-    two unrelated ones. At finite λ the soft row must be the *cheaper* of the
-    two, because it keeps neighbouring slices at reduced weight instead of
-    discarding them.
+    """As λ → ∞ the reweighting becomes rejection onto one slice: the two rows
+    are the same calculation at two penalty strengths. At finite λ the soft row
+    must be the cheaper of the two, keeping neighbouring slices at reduced
+    weight instead of discarding them.
     """
     d, c_target = D * D, 5 / (D * D)
 
@@ -122,19 +110,15 @@ def test_hard_filter_is_the_limit_the_soft_filter_approaches(marginal):
 
 
 def test_rejecting_off_the_soft_target_is_exactly_the_constrained_ensemble():
-    """Conditioning the SOFT target on a slice gives the unconstrained one.
-
-    This is why rejecting off the trained soft sampler is a legitimate route
-    to a hard constraint rather than an approximation: on the slice
-    c(x) = c_t the penalty factor exp(-λ d (c(x) - c_t)²) is identically 1, so
-    it cancels out of the conditional and
+    """Conditioning the soft target on a slice gives the unconstrained one, so
+    rejecting off the trained soft sampler is exact rather than approximate: on
+    the slice c(x) = c_t the penalty factor exp(-λ d (c(x) - c_t)²) is
+    identically 1, so it cancels out of the conditional and
 
         p_soft(x | c(x) = c_t) = p_unc(x | c(x) = c_t)
 
-    exactly, for every λ. λ therefore buys efficiency and costs no bias — the
-    accepted samples are the fixed-composition ensemble however the sampler
-    was tuned. If this failed, every hard-constraint number obtained this way
-    would be λ-dependent and none of them would be the target.
+    exactly, for every λ. λ buys efficiency and costs no bias — the accepted
+    samples are the fixed-composition ensemble however the sampler was tuned.
     """
     d, n_requested = D * D, 5
     c_target = n_requested / d
@@ -159,13 +143,11 @@ def test_rejecting_off_the_soft_target_is_exactly_the_constrained_ensemble():
 
 
 def test_soft_sampler_acceptance_beats_unconstrained_rejection(marginal):
-    """The premise of the third row: λ concentrates mass onto the slice.
-
-    Both routes reject onto the same slice and return the same distribution
-    (above), so the only difference is how often they accept. Rejecting off
-    the soft target must accept more often than rejecting off the
-    unconstrained one, or there would be no reason to train the sampler at
-    all — and the gap is the quantitative answer to "why not just filter".
+    """λ concentrates mass onto the slice. Both routes reject onto the same
+    slice and return the same distribution (above), so the only difference is
+    how often they accept: rejecting off the soft target must accept more often
+    than rejecting off the unconstrained one, and the gap is the quantitative
+    answer to "why not just filter".
     """
     d, c_target = D * D, 5 / (D * D)
 
@@ -179,12 +161,10 @@ def test_soft_sampler_acceptance_beats_unconstrained_rejection(marginal):
 
 
 def test_off_lattice_composition_cannot_be_hard_filtered(marginal):
-    """c·d must be an integer or the acceptance is exactly zero.
-
-    At D = 4 the quantum is 1/16 = 0.0625, so a swept composition like 0.575
-    is not achievable at all. Returning a small-but-positive number there
-    would understate rejection sampling's real failure mode, which is that it
-    cannot service the request at any cost.
+    """c·d must be an integer or the acceptance is exactly zero. At D = 4 the
+    quantum is 1/16 = 0.0625, so a swept composition like 0.575 is unachievable;
+    a small-but-positive number there would understate rejection sampling's
+    failure mode, which is that it cannot service the request at any cost.
     """
     assert comparator.hard_filter_acceptance(marginal, c_target=0.575, d=D * D) == 0.0
     assert not math.isnan(

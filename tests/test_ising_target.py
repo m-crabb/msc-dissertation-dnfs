@@ -18,10 +18,8 @@ def test_log_prob_matches_explicit_sum_D2():
     target = IsingTarget(D=2, sigma=0.1)
     # x = [+1, -1, -1, +1] over a 2x2 periodic grid
     x = torch.tensor([[1, -1, -1, 1]], dtype=torch.float)
-    # adjacency: 2x2 periodic grid → each site has 4 neighbours but with wrap,
-    # for a 2x2 each pair of sites is connected by both an "x" and "y" edge,
-    # giving the J matrix specific structure. Trust the implementation; we test
-    # via the log_prob = x^T J x relationship instead.
+    # On a 2x2 torus each pair of sites is connected by both an "x" and a "y"
+    # edge, so check the log_prob = x^T J x relation rather than a hand-built J.
     expected = torch.einsum("bi,ij,bj->b", x, target.J, x) * 1.0
     got = target.log_prob(x)
     torch.testing.assert_close(got, expected)

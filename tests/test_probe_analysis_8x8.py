@@ -1,23 +1,20 @@
-"""Tests for the (sigma_c, 8x8) headline-cell probe analysis, written before
-the analysis script bodies.
+"""Tests for the (sigma_c, 8x8) headline-cell probe analysis.
 
-What is under test here is exactly the NEW research-bearing computation the
-probe analysis adds over the already-tested demo_4x4 machinery:
+Covers the computation the probe analysis adds over the already-tested
+demo_4x4 machinery:
 
 1. batch_means_tau_int — the competitor burn-in rule is "max(1e4 sweeps,
    20*tau_int(energy)) with tau_int from batch means at block length
    >= 10*tau_int". Batch means estimates tau_int from the variance
    inflation of block averages,
    Var(block_mean) ~= tau_int * Var(x) / L for block length L >> tau_int,
-   so tau_hat = L * Var(block means) / Var(x). The estimator must certify
-   its own block length (L >= 10 * tau_hat), the self-consistency
-   condition.
+   so tau_hat = L * Var(block means) / Var(x). The estimator certifies its
+   own block length (L >= 10 * tau_hat), the self-consistency condition.
 2. kawasaki_burn_in_sweeps — the max() rule itself.
 3. ratio_with_ci — the delta-method 95% CI on the per-compute N_eff ratio
-   that the GO margin rule reads: CI excluding 1 AND point >= 1.5.
+   that the GO margin rule reads: CI excluding 1 and point >= 1.5.
 4. frozen_verdict — the three-way GO/PARTIAL/NO-GO mapping with the
-   PARTIAL narratives; the outcome is decided by it mechanically, so every
-   branch is pinned.
+   PARTIAL narratives, every branch pinned.
 """
 
 import numpy as np
@@ -150,8 +147,8 @@ def test_ratio_f_ci_resolves_large_effects_only():
 
 
 # ---------------------------------------------------------------------------
-# tv_noise_floor — coverage TV must be read against the finite-sample
-# floor a PERFECT sampler would show at the same effective sample size
+# tv_noise_floor — coverage TV is read against the finite-sample floor a
+# perfect sampler would show at the same effective sample size
 # ---------------------------------------------------------------------------
 
 
@@ -204,7 +201,7 @@ def test_verdict_go_requires_everything():
 
 def test_verdict_marginal_win_is_partial_real_but_marginal():
     # significant in both currencies but point < 1.5x -> the
-    # "real-but-marginal" narrative, NOT GO (magnitude bar) and NOT NO-GO
+    # "real-but-marginal" narrative: neither GO (magnitude bar) nor NO-GO
     verdict = frozen_verdict(
         energy_eval_ratio=_margin(1.2, True),
         network_pass_ratio=_margin(1.3, True),

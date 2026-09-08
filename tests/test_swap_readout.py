@@ -72,8 +72,8 @@ def test_masked_body_double_hollow(use_sdpa):
     d_j = (_masked_body(m, x_fj, t, (i,))[:, j, :] - base).abs().max().item()
 
     if use_sdpa:
-        # SDPA masking is structural (weight exactly 0): both blindness
-        # properties must be EXACT flag-on, per the Tier-2 evidence bar.
+        # SDPA masking is structural (weight exactly 0), so both blindness
+        # properties are exact with the flag on.
         assert d_i == 0.0 and d_j == 0.0, (
             f"SDPA double-hollowness not exact: d_i={d_i:.2e}, d_j={d_j:.2e}"
         )
@@ -133,11 +133,10 @@ def test_doubly_hollow_trivial_swap_vanishes():
 
 @torch.no_grad()
 def test_doubly_hollow_unordered_pair_loop_is_bit_identical():
-    """The gate head loops UNORDERED pairs: `_masked_body` zeroes
-    a SET of sites, so the (j, i) pass recomputed the (i, j) pass exactly and
-    the ordered loop paid 2x. This pins the dedup as bit-identical -- not
-    close -- against the ordered reference it replaced, so every gate number
-    taken with the old head still holds."""
+    """The gate head loops unordered pairs: `_masked_body` zeroes a set of
+    sites, so the (j, i) pass recomputed the (i, j) pass exactly and the
+    ordered loop paid 2x. The dedup is bit-identical -- not close -- to the
+    ordered reference it replaced."""
     m = _backbone(d=9)
     x, t = _state(d=9), torch.rand(1)
     om = m.omega(((x + 1) / 2).long())
@@ -182,7 +181,7 @@ def test_mask_one_antisymmetric():
 def test_mask_one_blind_to_anchor(use_sdpa):
     """G_swap(i,j) is invariant to flipping x_i then fixing omega.
 
-    Flip x_i AND keep the readout's omega_{x_i} fixed by comparing the body
+    Flip x_i and keep the readout's omega_{x_i} fixed by comparing the body
     contribution only: assert the masked body H[:,j,:] (anchor i) is unchanged
     when x_i flips (structural blindness, not incidental).
     """
@@ -199,12 +198,11 @@ def test_mask_one_blind_to_anchor(use_sdpa):
 
 @torch.no_grad()
 def test_mask_one_label_asymmetry_pinned():
-    """The mask-one head is NOT label-symmetric (H_ij != H_ji).
+    """The mask-one head is not label-symmetric (H_ij != H_ji).
 
-    This is expected and documents why the downstream residual must order swap
-    pairs by site index (i<j), not by spin. State-swap antisymmetry (above) is
-    unaffected; here the label asymmetry is PINNED so a future 'fix' that makes it
-    symmetric is caught and reconsidered.
+    This is expected, and is why the downstream residual orders swap pairs by
+    site index (i<j), not by spin. State-swap antisymmetry (above) is
+    unaffected.
     """
     m = _backbone(d=9)
     head = LeTFMaskOneSwapHead(m)
@@ -241,7 +239,7 @@ def _naive_factoring(model, x, t):
 
 @torch.no_grad()
 def test_naive_factoring_breaks_antisymmetry():
-    """The naive factoring is NOT antisymmetric.
+    """The naive factoring is not antisymmetric.
 
     Negative control: max-over-pairs floor + separation from the bit-exact head.
     """
@@ -301,13 +299,13 @@ def test_brute_force_matches_mask_one():
 
 @torch.no_grad()
 def test_brute_force_matches_mask_one_d16_batch_all_pairs():
-    """Extended: d=16 (gate dim), batch>1, ALL i<j pairs.
+    """Extended: d=16 (gate dim), batch>1, all i<j pairs.
 
     test_brute_force_matches_mask_one above only pins d=9, batch 1, active
-    (opposite-spin) pairs. Before mask_one is used as an O(d) drop-in for the
-    O(d^2) reference head in the d=16 gate, the oracle must also cover
-    the gate's own dimension, more than one state at once, and same-spin pairs
-    (where both heads should agree trivially at exactly 0).
+    (opposite-spin) pairs. mask_one is an O(d) drop-in for the O(d^2)
+    reference head in the d=16 gate, so the oracle must also cover the gate's
+    own dimension, more than one state at once, and same-spin pairs (where
+    both heads agree trivially at exactly 0).
     """
     d = 16
     m = _backbone(d=d)

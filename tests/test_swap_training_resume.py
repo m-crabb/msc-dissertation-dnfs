@@ -3,21 +3,20 @@ recall restarted the MO 100k run from scratch).
 
 The contract these tests pin:
 
-1. **Bit-exact continuation.** A run interrupted at an outer-cycle boundary
-   and resumed must produce the SAME training trajectory as an uninterrupted
-   run — bit-for-bit on CPU fp32. This is only achievable because the resume
-   checkpoint carries full boundary state: model + optimiser (AdamW moments),
-   step counter, torch CPU/CUDA RNG states, and the replay buffer (with
-   replay_buffer_cycles > 1 the buffer holds past outer trajectories that are
-   not reconstructible). Curriculum stage / warmup / intended lr are NOT
-   stored — they are derivable from the step counter because the sigma ladder
-   uses absolute start_steps; the tests run a two-stage curriculum across the
-   interruption point to pin that fast-forward.
-2. **Idempotent completion.** Re-invoking training on a finished run dir
-   (Modal retries re-run the function with identical inputs) must be a no-op.
-3. **Orphan log rows.** A dead attempt may have flushed log rows PAST the
-   last checkpoint; resume must truncate them so every step appears exactly
-   once.
+1. Bit-exact continuation. A run interrupted at an outer-cycle boundary and
+   resumed must produce the same training trajectory as an uninterrupted run
+   — bit-for-bit on CPU fp32. That needs the resume checkpoint to carry full
+   boundary state: model + optimiser (AdamW moments), step counter, torch
+   CPU/CUDA RNG states, and the replay buffer (with replay_buffer_cycles > 1
+   the buffer holds past outer trajectories that are not reconstructible).
+   Curriculum stage / warmup / intended lr are not stored — they are
+   derivable from the step counter because the sigma ladder uses absolute
+   start_steps; the tests run a two-stage curriculum across the interruption
+   point to pin that fast-forward.
+2. Idempotent completion. Re-invoking training on a finished run dir (Modal
+   retries re-run the function with identical inputs) must be a no-op.
+3. Orphan log rows. A dead attempt may have flushed log rows past the last
+   checkpoint; resume must truncate them so every step appears exactly once.
 """
 
 import csv
@@ -101,11 +100,11 @@ def test_resumed_run_is_bit_exact_with_uninterrupted(tmp_path):
     # Interrupted twin: identical run dying at the step-4 boundary. Running
     # to n_steps=4 leaves exactly the state a preempted 8-step run would
     # have checkpointed there (same seed => same first 4 steps); drop the
-    # artefacts only a COMPLETED run writes.
+    # artefacts only a completed run writes.
     _run(interrupted_dir, n_steps=4, head=_head(init_seed=0))
     (interrupted_dir / "checkpoints" / "final.pt").unlink()
 
-    # Resume with a DIFFERENTLY-initialised head: if the checkpoint restore
+    # Resume with a differently-initialised head: if the checkpoint restore
     # were incomplete, the continuation could not match the reference.
     _run(interrupted_dir, n_steps=8, head=_head(init_seed=999))
 
@@ -135,7 +134,7 @@ def test_resumed_run_is_bit_exact_with_uninterrupted(tmp_path):
 def test_resumed_ema_shadow_is_bit_exact_with_uninterrupted(tmp_path):
     """The dual-eval instrument's resume contract: final_ema.pt after an
     interrupt-and-resume must equal the uninterrupted run's — which
-    requires the shadow AND the warmup counter to travel in resume.pt
+    requires the shadow and the warmup counter to travel in resume.pt
     (a re-seeded shadow or reset counter changes every subsequent
     effective decay and the artefacts diverge)."""
     uninterrupted_dir = tmp_path / "uninterrupted"

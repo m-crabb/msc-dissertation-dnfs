@@ -3,25 +3,22 @@
 The panel validated the controlled/naive integrand variance ratio as a 5/5
 in-run classifier of the d256 cold-CV failure (cold: ratio never < 1.5
 across 5k steps; healthy warm: crosses below 1 within ~1000 steps) — yet
-the two variances, BOTH already computed every outer cycle
+the two variances, both already computed every outer cycle
 (var_estimator_integrand and var_dt_log_p_tilde over the same rollout
 rows), were compared nowhere in code.
 
-What correct looks like, independent of implementation:
-
-1. **The ratio is logged every step** as `cv_var_ratio`. In naive mode the
-   active integrand IS ∂_t log p̃, evaluated row-locally on the same rows,
-   so the ratio must be exactly 1.0 — a free wiring self-check that also
-   documents the column's semantics.
-2. **In CV mode the column is the division of its two parent columns** on
-   every row — no separate estimator pass, no new randomness.
-3. **The halt guard defaults OFF** (None — every archived cell's
-   behaviour). When armed it must stop the run GRACEFULLY — marker file
-   written, loop exited, final checkpoint still saved — and only on a
-   SUSTAINED inversion: the ratio above 1.0 for a full trailing window of
-   outer cycles at/after the arming step. A transient inversion (the
-   healthy warm-start pattern) must never trip it; that is why the window
-   exists and why the arming step exists.
+1. The ratio is logged every step as `cv_var_ratio`. In naive mode the
+   active integrand is ∂_t log p̃, evaluated row-locally on the same rows,
+   so the ratio must be exactly 1.0 — a free wiring self-check.
+2. In CV mode the column is the division of its two parent columns on every
+   row — no separate estimator pass, no new randomness.
+3. The halt guard defaults off (None — every archived cell's behaviour).
+   When armed it must stop the run gracefully — marker file written, loop
+   exited, final checkpoint still saved — and only on a sustained
+   inversion: the ratio above 1.0 for a full trailing window of outer
+   cycles at/after the arming step. A transient inversion (the healthy
+   warm-start pattern) must never trip it, which is what the window and
+   the arming step are for.
 """
 
 import csv
@@ -96,7 +93,7 @@ def _rows(run_dir: Path) -> list[dict]:
 
 
 def test_cv_var_ratio_is_exactly_one_in_naive_mode(tmp_path):
-    """Naive mode: the estimator integrand IS the naive integrand, computed
+    """Naive mode: the estimator integrand is the naive integrand, computed
     row-locally on the same rollout rows, so the logged ratio is 1.0. This
     pins the wiring end to end: a value != 1.0 here means the two variance
     columns no longer share their row set."""

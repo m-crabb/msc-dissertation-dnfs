@@ -1,17 +1,21 @@
 """Tests for the vectorised budget-masked masked-diffusion sampler
-(`samplers/budget_masked.py`), written BEFORE the implementation.
+(`samplers/budget_masked.py`).
 
 The pure-python derivation artefacts are already exhaustively verified
-(`test_budget_preconditioner.py`, `test_budget_wdce.py`); what needs testing
-here is the TORCH implementation that the 4x4 gate actually runs: that the
-vectorised preconditioners reproduce the verified reference functions
-exactly, that generation cannot leave the composition fibre (the gate's G0
-is structural, so a violation here is a bug in the revelation loop, never a
-training result), that the rollout law matches an independent
-dynamic-programming enumeration of the same conditionals, that the
-importance weights make the weighted estimator agree with the exactly
-enumerated conditional, and that the WDCE cross-entropy is oriented (the
-exact conditional scores better than a perturbation of it).
+(`test_budget_preconditioner.py`, `test_budget_wdce.py`); what is tested here
+is the torch implementation the 4x4 gate runs:
+
+1. the vectorised preconditioners reproduce the verified reference functions
+   exactly;
+2. generation cannot leave the composition fibre, so the gate's G0 is
+   structural and a violation here is a bug in the revelation loop, never a
+   training result;
+3. the rollout law matches an independent dynamic-programming enumeration of
+   the same conditionals;
+4. the importance weights make the weighted estimator agree with the exactly
+   enumerated conditional;
+5. the WDCE cross-entropy is oriented (the exact conditional scores better
+   than a perturbation of it).
 
 Conventions under test: masked states are float tensors with +1/-1 spins
 and 0.0 at masked sites; adjacency is the symmetric 0/1 matrix of
@@ -142,11 +146,11 @@ def test_budget_tilted_boundary_is_a_saturating_delta():
 
 @pytest.mark.parametrize("mode", ["budget_tilted", "none", "unconstrained"])
 def test_rollout_never_leaves_the_fibre(mode):
-    """The gate's G0: with an ADVERSARIAL (randomly initialised, not
-    zero-init) trunk and any preconditioner — including the unconstrained
-    one that leans towards forbidden species — every terminal has exactly
-    N_+ up spins, because the species draw is feasibility-clamped. This is
-    the design decision that makes G0 structural rather than learned."""
+    """The gate's G0: with an adversarial (randomly initialised, not
+    zero-init) trunk and any preconditioner — including the unconstrained one
+    that leans towards forbidden species — every terminal has exactly N_+ up
+    spins, because the species draw is feasibility-clamped. That clamp is
+    what makes G0 structural rather than learned."""
     n_sites, n_plus, sigma = 16, 8, 0.223
     adjacency = ring_adjacency(n_sites)
     torch.manual_seed(0)
@@ -216,10 +220,10 @@ def rollout_law_by_dynamic_programming(logit_fn, n_sites, n_plus):
 
 
 def test_zero_trunk_with_budget_tilt_at_sigma_zero_is_uniform_on_fibre():
-    """At sigma = 0 the budget-tilted preconditioner IS the urn law, and the
-    urn law's terminal distribution is uniform on the fibre (the reference-
-    process theorem). With a zero trunk the DP law must therefore put
-    exactly 1/C(4,2) on each of the 6 fibre states."""
+    """At sigma = 0 the budget-tilted preconditioner is the urn law, whose
+    terminal distribution is uniform on the fibre (the reference-process
+    theorem). With a zero trunk the DP law must therefore put exactly
+    1/C(4,2) on each of the 6 fibre states."""
     n_sites, n_plus = 4, 2
     adjacency = ring_adjacency(n_sites)
 
@@ -233,7 +237,7 @@ def test_zero_trunk_with_budget_tilt_at_sigma_zero_is_uniform_on_fibre():
 
 
 def test_sampled_rollout_matches_the_dynamic_programming_law():
-    """Bind the SAMPLING path (site clock, species draw, bookkeeping) to the
+    """Bind the sampling path (site clock, species draw, bookkeeping) to the
     DP law with a nonzero trunk and nonzero sigma: each terminal's sampled
     frequency must sit within 5 binomial standard errors of the DP
     probability. Deterministic seed, so a failure is a bug, not noise."""
@@ -270,11 +274,11 @@ def test_sampled_rollout_matches_the_dynamic_programming_law():
 
 
 def test_weighted_estimator_recovers_the_exact_fibre_conditional():
-    """End-to-end weight correctness: with a perturbed trunk (so the rollout
-    law is NOT the target) the self-normalised importance weights must
-    reweight the empirical terminal distribution back to the exactly
-    enumerated fibre conditional. A wrong rollout log-probability or a
-    missing weight term shows up here as irreducible TV."""
+    """With a perturbed trunk (so the rollout law is not the target) the
+    self-normalised importance weights must reweight the empirical terminal
+    distribution back to the exactly enumerated fibre conditional. A wrong
+    rollout log-probability or a missing weight term shows up here as
+    irreducible TV."""
     n_sites, n_plus, sigma = 6, 3, RING_SIGMA
     adjacency = ring_adjacency(n_sites)
     torch.manual_seed(2)
@@ -377,8 +381,8 @@ def test_wdce_loss_prefers_the_exact_conditional():
 
 def test_gated_offset_at_init_is_exactly_v0():
     """GatedBudgetTiltOffset with gates at their 1.0 init must reproduce
-    preconditioner_logit_diff('budget_tilted') bit-for-bit at masked sites
-    — the whole point of the gate is keeping V0's start."""
+    preconditioner_logit_diff('budget_tilted') bit-for-bit at masked sites,
+    so the gate keeps V0's start."""
     from discrete_flow_sampler.samplers.budget_masked import (
         GatedBudgetTiltOffset,
     )
@@ -418,9 +422,9 @@ def test_gated_rollout_stays_on_fibre():
 
 
 def test_context_loss_weight_none_is_the_frozen_protocol():
-    """Regression pin: the default (no context weight) computes the same
-    loss as before the argument existed, and a CONSTANT weight matches it
-    too (the batch-mean normalisation makes constant weights a no-op)."""
+    """The default (no context weight) computes the same loss as before the
+    argument existed, and a constant weight matches it too (the batch-mean
+    normalisation makes constant weights a no-op)."""
     n_sites, n_plus, sigma = 6, 3, RING_SIGMA
     adjacency = ring_adjacency(n_sites)
     torch.manual_seed(9)
@@ -463,10 +467,10 @@ def test_context_loss_weight_none_is_the_frozen_protocol():
 
 def test_log_variance_loss_is_near_zero_at_the_exact_conditional():
     """F_LV's optimality signature: at the exact conditional the trajectory
-    log-RN-derivative is CONSTANT across trajectories (Var = 0 up to float
+    log-RN-derivative is constant across trajectories (Var = 0 up to float
     noise); a perturbed conditional must score strictly higher. Also pins
-    that gradients flow to the model through the rollout (the property
-    WDCE never exercises)."""
+    that gradients flow to the model through the rollout, which WDCE never
+    exercises."""
     from discrete_flow_sampler.samplers.budget_masked import (
         log_variance_loss,
     )
@@ -549,8 +553,8 @@ def test_ema_shadow_tracks_and_swaps():
 
 
 def test_ema_warmup_forgets_init_where_plain_shadow_cannot():
-    """The plain-shadow failure mode, pinned. A plain 0.9999 shadow after k
-    updates is decay^k init + (1-decay^k) recent-params: at k=200 that is
+    """The plain-shadow failure mode. A plain 0.9999 shadow after k updates
+    is decay^k init + (1-decay^k) recent-params: at k=200 that is
     98% init, at the paper's k=2000 still 82% init, so eval-on-EMA reads a
     nearly-untrained model no matter how good training was. The warmup
     schedule effective_decay = min(decay, (1+t)/(10+t)) makes the init
@@ -584,21 +588,20 @@ def test_ema_warmup_forgets_init_where_plain_shadow_cannot():
 
 
 # ---------------------------------------------------------------------------
-# Unconstrained control (gate-3 arm 0): n_plus_target=None switches the
-# budget machinery off and the reference becomes the paper's own masked
-# diffusion on the free space. The algebra to pin: the trajectory constant
-# becomes (1/2)^d — exactly the uniform base on {-1,+1}^d — so
-# log w = log p_tilde - rollout_log_prob still holds with no bookkeeping.
+# Unconstrained control: n_plus_target=None switches the budget machinery off
+# and the reference becomes the paper's own masked diffusion on the free
+# space. The trajectory constant becomes (1/2)^d, the uniform base on
+# {-1,+1}^d, so log w = log p_tilde - rollout_log_prob still holds with no
+# bookkeeping.
 # ---------------------------------------------------------------------------
 
 
 def test_unconstrained_rollout_log_prob_is_exact_species_product():
-    """Zero logits = the unconstrained REFERENCE process: every species
-    draw is Bernoulli(1/2) and every draw counts (no clamp, no forced
-    steps), so rollout_log_prob must be exactly d*log(1/2) on every
-    trajectory — the trajectory 'constant' of the free space. The
-    terminals must also actually leave the fibre (compositions vary),
-    otherwise the budget machinery was not off."""
+    """Zero logits give the unconstrained reference process: every species
+    draw is Bernoulli(1/2) and every draw counts (no clamp, no forced steps),
+    so rollout_log_prob must be exactly d*log(1/2) on every trajectory — the
+    trajectory 'constant' of the free space. The terminals must also leave
+    the fibre (compositions vary), or the budget machinery was not off."""
     n_sites = 16
     generator = torch.Generator().manual_seed(0)
     terminals, rollout_log_prob = rollout_budget_masked(
@@ -611,13 +614,11 @@ def test_unconstrained_rollout_log_prob_is_exact_species_product():
 
 
 def test_unconstrained_oracle_conditionals_give_constant_weights():
-    """The sharp end-to-end check of the unconstrained algebra: rolling
-    out with the EXACT free-space conditionals must give importance
-    weights that are constant across trajectories (log w = log Z for
-    every rollout) — this exercises the rollout law, the log-prob
-    accumulation, and the uniform-base cancellation at once. Uses the
-    2x2 torus (d = 4, 16 states) so the oracle is an exact enumeration
-    with no sampling floor."""
+    """Rolling out with the exact free-space conditionals must give
+    importance weights constant across trajectories (log w = log Z for every
+    rollout), exercising the rollout law, the log-prob accumulation and the
+    uniform-base cancellation at once. Uses the 2x2 torus (d = 4, 16 states)
+    so the oracle is an exact enumeration with no sampling floor."""
     from discrete_flow_sampler.targets.ising import IsingTarget
 
     target = IsingTarget(D=2, sigma=0.3)

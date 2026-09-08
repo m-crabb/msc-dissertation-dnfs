@@ -64,7 +64,7 @@ def test_local_equivariance_at_depth():
 
 
 def test_compute_body_hollow_at_depth():
-    """Definition 3 holds at the FINAL layer output H = h_L for depth>1.
+    """Definition 3 holds at the final layer output H = h_L for depth>1.
 
     The data-dependent-weight stacking (LEAPS Section 9) preserves
     hollow-ness through depth because: (i) k_t zeros the kernel center,

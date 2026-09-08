@@ -1,7 +1,6 @@
 """Closed-form swap log-ratio: FixedComposition override + generic fallback.
 
-Encodes "what correct looks like" for `swap_log_ratio(x, t, pairs) -> (B, P)`
-before the closed form is implemented (TDD). The oracle is the already-tested
+The oracle for `swap_log_ratio(x, t, pairs) -> (B, P)` is the already-tested
 neighbour helper `_log_p_tilde_at_swap_neighbours`, so a shared bug cannot pass
 both sides. Closed form:
 
@@ -101,7 +100,7 @@ def test_pair_order_invariant():
 
 def test_pair_columns_cache_serves_hits_and_recomputes_on_new_pairs():
     """B4 (2026-08-24): the (site_i, site_j, A_ij) gather is cached by
-    pairs-tensor IDENTITY — the same object must serve bit-equal results,
+    pairs-tensor identity — the same object must serve bit-equal results,
     and a different pairs tensor must recompute, never serve stale columns."""
     torch.manual_seed(0)
     target = FixedCompositionIsingTarget(D=4, sigma=0.223, target_composition=0.5)

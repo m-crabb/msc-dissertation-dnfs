@@ -44,7 +44,7 @@ def _exact_slice(target, D, t_scalar):
 
 @torch.no_grad()
 def test_xi_t_swap_is_unbiased_for_dt_log_Z():
-    # E_{p_t^C}[ξ_t] = ∂_t log Z_t^C for ANY valid rate, checked
+    # E_{p_t^C}[ξ_t] = ∂_t log Z_t^C for any valid rate, checked
     # exactly on the 2×2 slice at random init — no training.
     head, tgt = _head_and_target()
     for t_scalar in (0.1, 0.5, 0.9):
@@ -76,7 +76,7 @@ def test_single_pass_reverse_rate_identity():
 
 @torch.no_grad()
 def test_orientation_negative_control_index_not_spin():
-    # Reading the TRANSPOSED entry G[:, j, i] at the swapped state (what a
+    # Reading the transposed entry G[:, j, i] at the swapped state (what a
     # spin-based representative would do) breaks the reverse-rate identity: the
     # head is label-asymmetric, so the two disagree by >> 1e-4.
     head, tgt = _head_and_target()
@@ -153,7 +153,7 @@ def test_compute_c_t_grid_swap_modes():
 
 @torch.no_grad()
 def test_xi_t_swap_unbiased_d16_slice():
-    # Unbiasedness at the GATE's dimension: d=16, N_A=8 (12,870 states), random
+    # Unbiasedness at the gate's dimension: d=16, N_A=8 (12,870 states), random
     # init, no training. mask_one head is numerically equal to doubly-hollow
     # (test_brute_force_matches_mask_one_d16_batch_all_pairs, d=16, batch, all
     # i<j pairs oracle in test_swap_readout.py: observed bit-exact, atol=1e-5

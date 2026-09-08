@@ -1,10 +1,8 @@
 """Per-stage best-checkpoint instrument (boundary-shock arm, 2026-08-19).
 
-What correct looks like, written before the implementation:
-
 - With ``train_cfg.stage_best_checkpoints = True`` and a sigma curriculum,
   training saves ``checkpoints/best_stage<k>.pt`` for each curriculum stage
-  k, chosen by the TRAILING MEDIAN (window 3) of the periodic in-training
+  k, chosen by the trailing median (window 3) of the periodic in-training
   eval ESS within that stage — a windowed statistic, because the archived
   16x16 record shows single-step ESS peaks are noise excursions and a
   best-by-single-step rule would checkpoint noise.

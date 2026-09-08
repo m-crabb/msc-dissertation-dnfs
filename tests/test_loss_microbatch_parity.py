@@ -1,7 +1,7 @@
 """Gradient-exactness pins for the micro-batched loss backward (2026-08-16).
 
 The two 16x16 screen arms that OOM an A100-80GB (`H2_d256_scr5k_ma_h128_lr03`,
-`H2_d256_scr5k_mo`) fit by slicing the ONE inner-step backward over batch rows.
+`H2_d256_scr5k_mo`) fit by slicing the one inner-step backward over batch rows.
 That is admissible only because it is not a recipe change: the swap loss is a
 per-row mean (residual_swap is row-wise, c_t is gathered per row from a grid
 frozen for the cycle, nan_to_num is row-wise), so
@@ -9,12 +9,11 @@ frozen for the cycle, nan_to_num is row-wise), so
     mean_N[r^2] = sum_slices (n_k / N) * mean_slice_k[r^2]
 
 decomposes exactly, and autograd's linearity carries the identity to the
-gradient: backwarding each slice's weighted loss accumulates the SAME total
+gradient: backwarding each slice's weighted loss accumulates the same total
 gradient the single backward produces, up to float summation order. Clipping
 and the optimiser step then see identical inputs. These tests pin that
-identity — the proof the arm stays the twin its pin declares — and pin the
-None path as literally the archived single-backward so the queued fleet is
-untouched by deploying the lever switched off.
+identity, and pin the None path as the archived single-backward so the queued
+fleet is untouched by deploying the lever switched off.
 """
 
 import torch
@@ -100,7 +99,7 @@ def test_microbatched_grads_match_full_batch_masked_attention():
 
 
 def test_microbatch_none_is_the_single_backward_path_bit_exactly():
-    """None must reproduce the archived single-backward BIT-exactly (same
+    """None must reproduce the archived single-backward bit-exactly (same
     ops in the same order), because the queued fleet imports this code with
     the field unset — statistical equivalence is not a strong enough
     contract there."""

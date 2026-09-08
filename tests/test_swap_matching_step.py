@@ -5,7 +5,7 @@ critical coupling (Λ ∝ d²; scouting 2026-07-05). The matching step fires a
 vertex-disjoint set of swaps per step — disjoint swaps commute, so tau-leaping
 is exact within a matching — restoring O(d) trajectory length.
 
-These tests pin what "correct" means before the implementation:
+Pinned here:
   - the selected set is a valid matching (vertex-disjoint) and a subset of the
     proposals (so applied swaps commute and none is invented);
   - conflicts are resolved by priority (higher priority wins its vertices);

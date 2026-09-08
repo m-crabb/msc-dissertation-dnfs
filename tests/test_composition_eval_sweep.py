@@ -2,19 +2,19 @@
 
 Two obligations, one structural and one statistical.
 
-**A conditioned model must survive its own final eval.** The end-of-run block
-calls the model outside the training loop, and a composition-conditioned model
-raises when c is missing — deliberately, so that an unconditioned eval cannot
-happen silently. Unbound, an amortised cell trains to completion and then dies
-at the very last step, after all the compute has been spent.
-
-**Per-composition numbers must be measured at the composition they claim.**
-Both the draw and the scoring happen inside one binding: the IS log-weights
-accumulate log p̃_t at the bound c, so the free energy and internal energy read
-off them must use the same c. Scoring weights drawn at c against the density at
-c' mixes two targets into a single estimate and raises nothing — it just
-reports a confident wrong number. `test_sweep_scores_each_row_against_its_own
-_target` pins that by checking the exact enumeration moves with c.
+1. A conditioned model must survive its own final eval. The end-of-run block
+   calls the model outside the training loop, and a composition-conditioned
+   model raises when c is missing — deliberately, so an unconditioned eval
+   cannot happen silently. Unbound, an amortised cell trains to completion and
+   then dies at the last step, after all the compute has been spent.
+2. Per-composition numbers must be measured at the composition they claim.
+   Both the draw and the scoring happen inside one binding: the IS log-weights
+   accumulate log p̃_t at the bound c, so the free energy and internal energy
+   read off them must use the same c. Scoring weights drawn at c against the
+   density at c' mixes two targets into one estimate and raises nothing — it
+   reports a confident wrong number.
+   `test_sweep_scores_each_row_against_its_own_target` pins that by checking
+   the exact enumeration moves with c.
 
 The in-loop ESS probe is pinned to the window centre, so it tracks training
 health only; every per-composition claim has to come from this sweep.
@@ -103,12 +103,10 @@ def amortised_run(tmp_path_factory):
 
 
 def test_binding_reaches_both_the_model_and_the_density():
-    """c has to arrive in two places, and neither is inferable from the other.
-
-    The model needs it as an input, or it predicts rates for some other
-    composition; the target needs it because the penalty is the only thing that
-    makes p_c differ from p. A specialist gets neither — the same objects it
-    always got.
+    """c has to arrive in two places, and neither is inferable from the other:
+    the model needs it as an input, or it predicts rates for some other
+    composition; the target needs it because the penalty is the only thing
+    that makes p_c differ from p. A specialist gets neither.
     """
     target = IsingTarget(
         D=2,
@@ -167,12 +165,11 @@ def test_sweep_covers_the_specialists_and_the_held_out_points(amortised_run):
 
 
 def test_sweep_on_the_ema_checkpoint_lands_in_eval_ema(tmp_path):
-    """A sweep is a statement about ONE parameter state, so it must land
+    """A sweep is a statement about one parameter state, so it must land
     beside that state's own frozen eval: `final_ema.pt` -> `eval_ema/`.
-
-    Writing the EMA sweep into `eval/` would silently overwrite the raw
-    model's sweep with EMA numbers wearing the raw path — the dual-eval
-    convention keys every artefact by the weights that produced it.
+    Writing the EMA sweep into `eval/` would overwrite the raw model's sweep
+    with EMA numbers wearing the raw path; the dual-eval convention keys every
+    artefact by the weights that produced it.
     """
     from dataclasses import replace
 
@@ -197,13 +194,11 @@ def test_sweep_on_the_ema_checkpoint_lands_in_eval_ema(tmp_path):
 
 
 def test_sweep_rows_carry_a_cost_axis(amortised_run):
-    """Cost has to be recorded at draw time or it is gone.
-
-    No archived run carries any timing, and the runs span several machines, so
-    a cost-vs-quality grid can only be built from runs made after this exists.
-    Seconds are machine-specific; `nfe_per_effective_sample` is the quotable
-    one — Euler steps × samples ÷ ESS, which prices the Euler budget and is
-    comparable across hardware.
+    """Cost has to be recorded at draw time or it is gone: no archived run
+    carries timing, and the runs span several machines. Seconds are
+    machine-specific; `nfe_per_effective_sample` is the quotable one — Euler
+    steps × samples ÷ ESS, which prices the Euler budget and is comparable
+    across hardware.
     """
     rows = composition_sweep(amortised_run, compositions=(0.50,), save=False)
     row = rows[0]
@@ -219,10 +214,9 @@ def test_sweep_rows_carry_a_cost_axis(amortised_run):
 def test_sweep_scores_each_row_against_its_own_target(amortised_run):
     """The binding must reach the density, not just the model.
 
-    `free_energy_per_site_exact` is an enumeration over the target at the bound
+    `free_energy_per_site_exact` enumerates the target at the bound
     composition. If the binding covered only the model call, every row would
-    enumerate the same c and these would all be equal — the silent failure this
-    test exists to catch.
+    enumerate the same c and these would all be equal.
     """
     rows = composition_sweep(amortised_run, compositions=(0.30, 0.50, 0.80))
     exact = [row["free_energy_per_site_exact"] for row in rows]
@@ -237,12 +231,10 @@ def test_sweep_scores_each_row_against_its_own_target(amortised_run):
 
 
 def test_sweep_reseeds_per_composition_for_common_random_numbers(amortised_run):
-    """Every composition is drawn from the same base states and noise stream.
-
-    Common random numbers: differences down the sweep then reflect the model's
-    behaviour at c, not which base draw each row happened to get. Repeating a
-    composition inside one sweep is the sharpest check — the two rows must be
-    bit-identical.
+    """Every composition is drawn from the same base states and noise stream,
+    so differences down the sweep reflect the model's behaviour at c, not
+    which base draw each row happened to get. Repeating a composition inside
+    one sweep is the sharpest check: the two rows must be bit-identical.
     """
     rows = composition_sweep(amortised_run, compositions=(0.50, 0.30, 0.50), save=False)
     # Everything except the clock: `eval_draw_seconds` measures the machine,
@@ -256,8 +248,8 @@ def test_sweep_reseeds_per_composition_for_common_random_numbers(amortised_run):
 
 
 def test_sweep_refuses_an_unconditioned_run(tmp_path):
-    """A specialist has no c input, so a 'sweep' over it would be six copies
-    of one number wearing ten different labels."""
+    """A specialist has no c input, so a "sweep" over it would be copies of
+    one number wearing different labels."""
     torch.manual_seed(0)
     run_dir = train(
         _tiny_cfg("tiny_specialist", conditioned=False),
@@ -271,9 +263,8 @@ def test_sweep_refuses_an_unconditioned_run(tmp_path):
 
 
 def test_specialist_end_of_run_eval_is_unchanged(tmp_path):
-    """The amortisation plumbing must not perturb the archived comparators.
-
-    Same seed twice, identical eval weights: any stray RNG draw or changed
+    """The amortisation plumbing must not perturb the archived comparators:
+    same seed twice, identical eval weights. Any stray RNG draw or changed
     base-sampling route on the specialist path would break comparability with
     `results/02_constrained_soft`.
     """
@@ -295,7 +286,7 @@ def test_specialist_end_of_run_eval_is_unchanged(tmp_path):
 
 def test_eval_only_reports_the_composition_the_samples_were_drawn_at(tmp_path):
     """`eval_only` rebuilds the target from config.json, where an amortised run
-    records BOTH a fallback scalar and a window centre. The saved samples came
+    records both a fallback scalar and a window centre. The saved samples came
     from the centre, so that is the composition the recomputed metrics belong
     to; reading the fallback instead would relabel them silently."""
     torch.manual_seed(0)
@@ -313,16 +304,16 @@ def test_eval_only_reports_the_composition_the_samples_were_drawn_at(tmp_path):
 
 
 def test_eval_only_redraw_goes_through_the_target_base(tmp_path, monkeypatch):
-    """`eval_only(redraw=True)` must re-DRAW from the checkpoint, not rescore
-    the saved tensors — and the initial state must come from
+    """`eval_only(redraw=True)` must re-draw from the checkpoint, not rescore
+    the saved tensors, and the initial state must come from
     `target.sample_base`.
 
-    Why this exists: the archived 2026-06-17 matched-base evals drew x0 from
-    an inline uniform `torch.randint` while the base was Bernoulli(0.8),
-    silently omitting a log w0 term with sd ~6.9 nats (the §D4 bug, corrected
-    in de9db7c). Rescoring the saved tensors can never repair that — the
-    wrong x0 is baked into the saved log-weights — so the recovery path has
-    to redraw, and this test pins that it redraws through the corrected base.
+    The archived 2026-06-17 matched-base evals drew x0 from an inline uniform
+    `torch.randint` while the base was Bernoulli(0.8), omitting a log w0 term
+    with sd ~6.9 nats (the §D4 bug, corrected in de9db7c). Rescoring the saved
+    tensors cannot repair that — the wrong x0 is baked into the saved
+    log-weights — so the recovery path has to redraw through the corrected
+    base.
     """
     from dataclasses import replace
 
@@ -356,7 +347,7 @@ def test_eval_only_redraw_goes_through_the_target_base(tmp_path, monkeypatch):
     # The stale eval was archived before being overwritten...
     archived = run_dir / "eval_archived_pre_redraw"
     assert json.loads((archived / "metrics.json").read_text()) == stale_metrics
-    # ...and a second redraw does not stack further archives: the FIRST
+    # ...and a second redraw does not stack further archives: the first
     # archive is the record of what the bug produced, later redraws are not.
     eval_only(run_dir, redraw=True, redraw_seed=8)
     assert sorted(run_dir.glob("eval_archived_*")) == [archived]
@@ -366,12 +357,12 @@ def test_eval_only_redraw_with_grid_override_leaves_eval_frozen(tmp_path):
     """`eval_only(redraw=True, n_euler_override=k)` must write its artefacts
     to `eval_ne<k>/` and leave the frozen `eval/` byte-untouched.
 
-    Why this exists: the ne64-vs-ne128 grid-offset measurement redraws frozen
-    checkpoints on BOTH grids, and the archived `eval/` dirs are the record
-    the printed F(c) numbers were read from — a redraw that overwrote them
-    (or even archived them, implying they were superseded) would destroy the
-    very baseline the offset is measured against. The override draw is a NEW
-    side measurement, so it gets a side directory and no archive step.
+    The ne64-vs-ne128 grid-offset measurement redraws frozen checkpoints on
+    both grids, and the archived `eval/` dirs are the record the printed F(c)
+    numbers were read from: a redraw that overwrote them (or archived them,
+    implying they were superseded) would destroy the baseline the offset is
+    measured against. The override draw is a new side measurement, so it gets
+    a side directory and no archive step.
     """
     torch.manual_seed(0)
     run_dir = train(
@@ -409,11 +400,11 @@ def test_eval_only_redraw_with_grid_override_leaves_eval_frozen(tmp_path):
 
 
 def test_sweep_saves_the_frames_behind_each_row(amortised_run):
-    """The house error columns (dMag, dCorr, EW2) score FRAMES against a
-    reference; a row of scalars cannot be re-scored after the fact. So the
-    sweep files each composition's draw and its log-weights beside the JSON,
-    keyed by the requested c, and the filed weights must reproduce that row's
-    own ESS -- the check that a frame set cannot land under a neighbour's c.
+    """The house error columns (dMag, dCorr, EW2) score frames against a
+    reference, and a row of scalars cannot be re-scored after the fact. The
+    sweep therefore files each composition's draw and its log-weights beside
+    the JSON, keyed by the requested c, and the filed weights must reproduce
+    that row's own ESS, so a frame set cannot land under a neighbour's c.
     """
     rows = composition_sweep(amortised_run)
     frames_root = amortised_run / "eval" / "composition_sweep"

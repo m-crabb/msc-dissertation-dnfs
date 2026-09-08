@@ -1,31 +1,24 @@
 """Tests for the batched c_t grid computation.
 
-Motivation: the c_t grid pays n_grid sequential no-grad head calls per
-outer cycle; at d256 trajectory+c_t is ~75% of wall.
+The c_t grid pays n_grid sequential no-grad head calls per outer cycle; at
+d256 trajectory+c_t is ~75% of wall.
 
-What correct looks like, independent of implementation:
-
-1. **Off is byte-identical.** ``c_t_grid_chunk_rows = None`` (the default,
-   and the value every archived run implicitly carries) must run the
-   existing per-slot sequential loop — n_grid integrand calls at
-   outer_batch rows each — so the falsification record of every archived
-   cell stays valid.
-2. **Parity is the gate.** The chunked path computes the SAME quantities
-   (the c_t grid and the per-state integrand matrix) with the same fp32
-   ops modulo batch-dim blocking, so it must match the sequential path
-   within the established 1e-5 batch-blocking class (cf. the SDPA/chunk
-   parities in test_swap_perf_refactors.py) in BOTH estimator modes. No
-   quality change is permitted — the parity test IS the gate.
-3. **The row cap is respected.** No integrand call may see more than
-   chunk_rows rows; the call count is ceil(n_rows / chunk_rows) and the
-   final call takes the remainder.
-4. **Nonsense is rejected.** Non-positive, boolean, or non-integer row
-   caps refuse loudly.
-5. **The trainer wires the knob.** train_cfg.c_t_grid_chunk_rows reaches
-   the compute call every outer cycle; explicit None and the unknobbed
-   getattr default are bit-identical training runs. The knob is stateless
-   and consumes no RNG, so there is no resume contract beyond wiring
-   (contrast test_c_t_batch.py, where the knob enlarges a base DRAW).
+1. ``c_t_grid_chunk_rows = None`` (the default, and the value every archived
+   run implicitly carries) runs the existing per-slot sequential loop —
+   n_grid integrand calls at outer_batch rows each.
+2. The chunked path computes the same quantities (the c_t grid and the
+   per-state integrand matrix) with the same fp32 ops modulo batch-dim
+   blocking, so it must match the sequential path within the established
+   1e-5 batch-blocking class (cf. the SDPA/chunk parities in
+   test_swap_perf_refactors.py) in both estimator modes.
+3. No integrand call may see more than chunk_rows rows; the call count is
+   ceil(n_rows / chunk_rows) and the final call takes the remainder.
+4. Non-positive, boolean, or non-integer row caps refuse loudly.
+5. train_cfg.c_t_grid_chunk_rows reaches the compute call every outer cycle;
+   explicit None and the unknobbed getattr default are bit-identical
+   training runs. The knob is stateless and consumes no RNG, so there is no
+   resume contract beyond wiring (contrast test_c_t_batch.py, where the knob
+   enlarges a base draw).
 """
 
 import csv
@@ -115,7 +108,7 @@ def test_default_none_runs_the_sequential_loop(monkeypatch):
 
 @pytest.mark.parametrize("mode", ["control_variate", "naive_mc"])
 def test_chunked_matches_sequential_parity(mode):
-    """THE GATE: chunked must reproduce the sequential c_t grid and the
+    """Chunked must reproduce the sequential c_t grid and the
     per-state integrand matrix within the 1e-5 batch-blocking class — same
     fp32 ops, only the call blocking differs."""
     t_grid, x_traj, target, head = _fixture()

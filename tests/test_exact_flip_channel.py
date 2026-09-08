@@ -1,4 +1,4 @@
-"""What correct looks like for the soft exact-field FLIP channel, before it.
+"""The soft exact-field flip channel.
 
 The channel wraps a flip-rate model with the closed form the field regression
 measured at ~95% of every trained specialist
@@ -6,27 +6,24 @@ measured at ~95% of every trained specialist
 
     G(i | x) <- G_head(i | x) + gain(t) * Delta_i(x),
     Delta_i  = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ],
-    gain(t)  = gain_constant + gain_slope * t,   both ZERO at init.
+    gain(t)  = gain_constant + gain_slope * t,   both zero at init.
 
-Contracts these tests freeze, each guarding a specific failure:
+Properties pinned:
 
-1. ZERO-INIT BIT-IDENTITY. A channel-on model must reproduce its parent
-   exactly at initialisation — same construction RNG (the gains are
-   zeros, no draws), same forward output. Without this the lambda-sweep
-   twins would differ from Table 4.1's cells in their step-0 telemetry
-   and the comparison would carry a second undeclared change.
-2. GAIN=1 EQUALS BRUTE FORCE. With gain_constant=1 the added score at the
-   flip slot must equal log pi~(flip_i x) - log pi~(x) computed directly
-   from target.log_prob — tying the WIRING (not just the formula) to the
-   target, so a sign slip or a hole-included composition cannot pass.
+1. Zero-init bit-identity: a channel-on model reproduces its parent exactly at
+   initialisation — same construction RNG (the gains are zeros, no draws),
+   same forward output — so the lambda-sweep twins match Table 4.1's cells in
+   their step-0 telemetry.
+2. Gain=1 equals brute force: with gain_constant=1 the added score at the flip
+   slot equals log pi~(flip_i x) - log pi~(x) computed directly from
+   target.log_prob, tying the wiring and not just the formula to the target.
 3. The current-token slot stays exactly zero (the DNFS convention the
-   trainers rely on: summing over the vocab axis IS the flip score).
-4. LIVE lambda. Curricula mutate the target in place
-   (set_composition_penalty_strength); the channel must follow without
+   trainers rely on: summing over the vocab axis is the flip score).
+4. Live lambda: curricula mutate the target in place
+   (set_composition_penalty_strength) and the channel follows without
    rebuild, as the hard channel does for sigma.
-5. CONFIG PARITY. Every `_efc` twin differs from its parent in name and
-   model.exact_field_channel ONLY — the one-declared-change rule that makes
-   the rerun of tab:soft-lambda-sweep readable as "the channel did this".
+5. Config parity: every `_efc` twin differs from its parent in name and
+   model.exact_field_channel alone.
 """
 
 from dataclasses import asdict
@@ -119,7 +116,7 @@ def test_channel_follows_live_lambda(target):
     target.set_composition_penalty_strength(120.0)
     after = wrapped(x, t) - wrapped.model(x, t)
     assert not torch.allclose(before, after)
-    base_lp = target.log_prob(x)  # brute force under the NEW lambda
+    base_lp = target.log_prob(x)  # brute force under the new lambda
     flipped = x.clone()
     flipped[:, 0] = -flipped[:, 0]
     brute = target.log_prob(flipped) - base_lp
@@ -135,7 +132,7 @@ def test_wrapper_is_transparent_to_the_dispatchers(target):
 
 
 def build_conditioned_pair(target, seed=0):
-    """(base, wrapped) AMORTISED leTF models, identical construction RNG."""
+    """(base, wrapped) amortised leTF models, identical construction RNG."""
 
     def fresh():
         torch.manual_seed(seed)
@@ -234,14 +231,13 @@ def test_composition_gain_requires_conditioned_model_and_runtime_c(target):
 
 
 def test_per_row_composition_matches_brute_force(target):
-    """The channel must aim at each ROW's composition, not the target scalar.
+    """The channel must aim at each row's composition, not the target scalar.
 
-    Failure mode guarded: in an amortised batch the LOSS scores every row
-    against its own c (bound via target.composition_batch), while a channel
-    reading target.target_composition would inject a field aimed at one
-    scalar c* for all rows — a silent disagreement between the transport the
-    channel supplies and the target the loss trains toward, worst exactly at
-    the off-centre windows amortisation exists to serve."""
+    In an amortised batch the loss scores every row against its own c (bound
+    via target.composition_batch), so a channel reading
+    target.target_composition would inject a field aimed at one scalar c* for
+    all rows: a silent disagreement between the transport the channel supplies
+    and the target the loss trains toward, worst at the off-centre windows."""
     _, wrapped = build_conditioned_pair(target)
     with torch.no_grad():
         wrapped.gain_constant.fill_(1.0)

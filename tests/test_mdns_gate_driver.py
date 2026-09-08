@@ -1,42 +1,36 @@
 """Characterisation pin for the MDNS budget-masked gate driver.
 
-Why this file exists. The driver (`mdns_budget_gate_4x4.py`) carries the
-whole budget-masked gate result and had NO test coverage whatsoever — `build_space`,
-`run_slate`, `evaluate_arm` and `conditional_kl_and_late_error` were
-entirely unpinned, while the library underneath it
-(`samplers/budget_masked.py`) is pinned by 35 tests. The 8x8 refactor has to lift the
-lattice size out of the driver's module globals and make the reference
-block pluggable (exact enumeration at 4x4; chains + slice-TI at 8x8,
-where 2^64 states rule enumeration out), and that is precisely the kind
-of refactor that moves numbers silently.
+The driver (`mdns_budget_gate_4x4.py`) carries the whole budget-masked gate
+result, and `build_space`, `run_slate`, `evaluate_arm` and
+`conditional_kl_and_late_error` were unpinned. The 8x8 refactor has to lift the
+lattice size out of the driver's module globals and make the reference block
+pluggable (exact enumeration at 4x4; chains + slice-TI at 8x8, where 2^64 states
+rule enumeration out) -- the kind of refactor that moves numbers silently.
 
-So the contract here is deliberately narrow and blunt:
+The contract here is deliberately narrow:
 
-1. **The 4x4 path does not move.** Golden values captured from the
-   pre-refactor driver at a tiny budget, across the three arms that
-   exercise the distinct branches: "a" (budget-tilted, constrained),
-   "b" (untilted, constrained — the preconditioner-ablation branch) and
-   "u" (unconstrained free-space control, whose instrument set is a
-   DIFFERENT dict: log-Z error instead of the fibre instruments). If a
-   size refactor changes any of these, it changed the 4x4 gate.
-2. **Feasibility is structural, not learned.** `off_fibre_count` and
-   `train_off_fibre_count` are 0 on the constrained arms at an untrained
-   model and a 3-step budget alike — the G0 property that makes the
-   budget-masked family worth scaling in the first place.
-3. **The driver is deterministic.** Verified bit-identical over repeated
-   runs before these values were frozen; asserted here so a future
-   nondeterminism regression fails loudly rather than making the golden
-   pin flaky.
+1. The 4x4 path does not move. Golden values captured from the pre-refactor
+   driver at a tiny budget, across the three arms that exercise the distinct
+   branches: "a" (budget-tilted, constrained), "b" (untilted, constrained --
+   the preconditioner-ablation branch) and "u" (unconstrained free-space
+   control, whose instrument set is a different dict: log-Z error instead of
+   the fibre instruments).
+2. Feasibility is structural, not learned. `off_fibre_count` and
+   `train_off_fibre_count` are 0 on the constrained arms at an untrained model
+   and a 3-step budget alike -- the G0 property that makes the budget-masked
+   family worth scaling.
+3. The driver is deterministic. Verified bit-identical over repeated runs
+   before these values were frozen; asserted here so a nondeterminism
+   regression fails loudly rather than making the golden pin flaky.
 
 The budget is tiny on purpose (3 steps, 512 eval rollouts, 32 training
-rollouts): this pins WIRING, not convergence. The numbers below are
-therefore untrained-model numbers and carry no research meaning — their
-only job is to be unchanged.
+rollouts): this pins wiring, not convergence. The numbers below are
+untrained-model numbers and carry no research meaning.
 
-Tolerance: `rel=1e-5`, the fp32 batch-blocking class used elsewhere in
-this suite, not exact equality — the refactor is allowed to change
-reduction ORDER (e.g. batching an eval loop differently), and is not
-allowed to change the quantity.
+Tolerance: `rel=1e-5`, the fp32 batch-blocking class used elsewhere in this
+suite, not exact equality -- the refactor is allowed to change reduction order
+(e.g. batching an eval loop differently), and is not allowed to change the
+quantity.
 """
 
 import tempfile
@@ -107,11 +101,10 @@ GOLDEN = {
     },
 }
 
-# The on-slice exact free-energy reference at (4x4, sigma_c). Cross-checked
-# against the slice-TI validation stage's -1.52110 (slice_ti.py run against
-# exact enumeration): the two constructions agree to 5 decimals, which is
-# the evidence that swapping enumeration for TI at 8x8 substitutes the SAME
-# quantity rather than a differently-normalised one.
+# The on-slice exact free-energy reference at (4x4, sigma_c). Agrees to 5
+# decimals with the slice-TI validation stage's -1.52110 (slice_ti.py run
+# against exact enumeration), so swapping enumeration for TI at 8x8
+# substitutes the same quantity rather than a differently-normalised one.
 SLICE_TI_4X4_SC = -1.52110
 
 
@@ -146,7 +139,7 @@ def _report(slate, key):
 
 @pytest.mark.parametrize("key", sorted(GOLDEN))
 def test_4x4_metrics_are_unchanged(slate, key):
-    """Contract 1: the 4x4 numbers the gate-3 result rests on do not move."""
+    """The 4x4 numbers the gate-3 result rests on do not move."""
     report = _report(slate, key)
     for field, expected in GOLDEN[key].items():
         assert field in report, f"{key}: driver stopped reporting {field!r}"
@@ -159,10 +152,10 @@ def test_4x4_metrics_are_unchanged(slate, key):
 
 @pytest.mark.parametrize("key", ["a_seed42", "b_seed42"])
 def test_constrained_arms_never_leave_the_fibre(slate, key):
-    """Contract 2: feasibility is a property of the move set, so it holds
-    at an untrained model and after three steps alike — no training, no
-    tolerance, no clamp-dependence. This is the G0 property the whole
-    budget-masked route is chosen for."""
+    """Feasibility is a property of the move set, so it holds at an untrained
+    model and after three steps alike -- no training, no tolerance, no
+    clamp-dependence. This is the G0 property the budget-masked route is chosen
+    for."""
     report = _report(slate, key)
     assert report["off_fibre_count"] == 0
     assert report["train_off_fibre_count"] == 0
@@ -170,9 +163,9 @@ def test_constrained_arms_never_leave_the_fibre(slate, key):
 
 def test_free_arm_reports_the_free_space_instrument_set(slate):
     """The unconstrained control lives on 2^16, not the fibre, so it must
-    report log-Z error and composition spread and must NOT report the
-    fibre instruments. Pinned because the size refactor touches exactly
-    the branch that chooses between the two dicts."""
+    report log-Z error and composition spread and must not report the fibre
+    instruments. Pinned because the size refactor touches the branch that
+    chooses between the two dicts."""
     report = _report(slate, "u_seed42")
     for field in (
         "log_z_estimate",
@@ -197,8 +190,8 @@ def test_exact_slice_reference_agrees_with_slice_ti(slate):
 
 
 def test_driver_is_deterministic():
-    """Contract 3: the golden pin above is only meaningful if repeated runs
-    agree. Re-runs the smallest useful slate rather than the full fixture."""
+    """The golden pin above is only meaningful if repeated runs agree. Re-runs
+    the smallest useful slate rather than the full fixture."""
     original = (gate.TRAIN_ROLLOUTS_PER_STEP, gate.EVAL_BATCH)
     gate.TRAIN_ROLLOUTS_PER_STEP, gate.EVAL_BATCH = TRAIN_ROLLOUTS, EVAL_BATCH
     try:
@@ -280,11 +273,10 @@ def test_configure_lattice_rejects_sizes_without_a_half_filled_fibre(bad_side):
 
 
 def test_no_stale_n_plus_default_survives_a_rebind():
-    """The rebind's one real hazard: a def-time `n_plus_target=N_PLUS`
-    default captured at import would keep filling the 4x4 fibre after
-    configure_lattice(8), silently producing a 16-site composition on a
-    64-site lattice. Assert the defaults are gone rather than trusting a
-    comment."""
+    """The rebind's one real hazard: a def-time `n_plus_target=N_PLUS` default
+    captured at import would keep filling the 4x4 fibre after
+    configure_lattice(8), silently producing a 16-site composition on a 64-site
+    lattice."""
     import inspect
 
     for function in (
@@ -306,8 +298,8 @@ def test_chain_reference_matches_the_probes_own_energy_convention(lattice_8x8):
     """The chain reference is only a valid stand-in for enumeration if it
     measures energy the way `slice_energy_hist` does. The driver's reader
     applies `_energy` directly; the probe's `reference_energies` routes via
-    `observable_values("energy", ...)`. They must agree exactly — if they
-    ever diverge, every 8x8 TV silently becomes meaningless."""
+    `observable_values("energy", ...)`. They must agree exactly -- if they
+    diverge, every 8x8 TV silently becomes meaningless."""
     from experiments.constrained_hard_03.plot_probe_8x8 import (
         reference_energies,
     )
@@ -394,11 +386,10 @@ def test_chain_regime_requires_a_free_energy_reference(lattice_8x8):
     not PROBE_ROOT.exists(), reason="certified probe chains not present locally"
 )
 def test_8x8_eval_runs_end_to_end_and_stays_on_the_fibre(lattice_8x8):
-    """The plumbing check: an untrained 8x8 model must
-    evaluate against the chain reference and return the fibre instruments
-    MINUS within-level, with structural feasibility intact at 64 sites
-    (where `_pack_spin_keys` would have silently overflowed had the
-    within-level instrument been kept)."""
+    """An untrained 8x8 model must evaluate against the chain reference and
+    return the fibre instruments minus within-level, with structural
+    feasibility intact at 64 sites (where `_pack_spin_keys` would have silently
+    overflowed had the within-level instrument been kept)."""
     original = gate.EVAL_BATCH
     gate.EVAL_BATCH = 64
     try:

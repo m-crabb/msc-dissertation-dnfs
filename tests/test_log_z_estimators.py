@@ -117,7 +117,7 @@ def test_compute_c_t_grid_naive_mc_unbiased_on_d2():
 def test_compute_c_t_grid_control_variate_unbiased_on_d2():
     """Mirror of naive_mc unbiasedness test for control_variate.
 
-    The unbiasedness identity holds for ANY R_t under the rate-matrix
+    The unbiasedness identity holds for any R_t under the rate-matrix
     algebra Σ_y R(y,x) = 0 (which our per-site-flip parameterisation
     enforces by construction): subtracting the control statistic
     Σ_y R(x,y) p_t(y)/p_t(x) = ∂_t log p_t(x) from ∂_t log p̃_t(x) leaves
@@ -199,7 +199,7 @@ def test_control_variate_reduces_variance_vs_naive_mc():
 
     The variance-reduction identity (paper Eq. 8) holds asymptotically as
     R_t approaches Kolmogorov-satisfying; with a fresh-init random MLP
-    the control statistic is uncorrelated with the integrand and ADDS
+    the control statistic is uncorrelated with the integrand and adds
     variance instead. So we train ~1000 inner-step-equivalents at D=2
     using `compute_c_t_grid` in single-slot naive_mc mode + the existing
     kolmogorov_loss to bring R_t into the regime where the CV variance-

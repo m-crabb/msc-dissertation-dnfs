@@ -1,57 +1,36 @@
-"""Falsification tests for an interior band with NO global term.
+"""Tests for an interior band with no global term.
 
-Written BEFORE the change: these encode what correct looks like independently
-of how the band gets its own readout.
+The factorised head's interior is a 2x2: what the pooling sees (the open
+interval between the holes, or the whole lattice bar the two holes) crossed
+with how it weights what it sees (uniformly, or by a learned softmax). One of
+those cells could not be built alone, because the band had no readout of its
+own -- it was concatenated onto the hole-subtracted global vector and shared
+`global_context_readout`, so every head carrying a band also carried a global
+term. At 16x16 the only interior mechanism measured in isolation was the
+learned one (the masked-attention head); both uniform-weight interiors arrive
+fused inside `fimo2ef`, which sets `interior_band='prefix'` and
+`use_global=True`.
 
-WHAT THIS OPENS, AND WHY IT WAS SHUT. The factorised head's interior is a
-2x2 -- what the pooling may SEE (the open interval between the holes, or the
-whole lattice bar the two holes) crossed with how it WEIGHTS what it sees
-(uniformly, or by a learned softmax). Until now one of those cells could not
-be built alone:
+`fbil` (bilinear exterior, no global term) was seed-unstable at the 4x4 gate
+and the reading on record is "the global term stabilises", measured with no
+interior mechanism at all. If a prefix band alone stabilises the bilinear
+exterior just as well, the global term is one of two interchangeable interior
+suppliers. Neither is a cost lever -- both are O(1) per pair (one cumsum plus
+two gathers against one lattice sum plus four gathers).
 
-    if interior_band is not None and not use_global:
-        raise ValueError("interior_band rides the global term's per-pair path")
+Pinned hardest below:
 
-The band had no readout of its own -- it was concatenated onto the
-hole-subtracted global vector and shared `global_context_readout`. So every
-head carrying a band also carried a global term, and at 16x16 the only
-interior mechanism ever measured in ISOLATION is the learned one (the
-masked-attention head); both uniform-weight interiors arrive fused inside
-`fimo2ef`, which sets `interior_band='prefix'` AND `use_global=True`.
-
-WHAT THE NEW CELL ASKS. `fbil` -- bilinear exterior with no global term --
-was seed-unstable at the 4x4 gate, and the reading on record is "the global
-term stabilises". That was measured with NO interior mechanism at all. If a
-prefix band alone stabilises the bilinear exterior just as well, the global
-term is not special: it is one of two interchangeable interior suppliers,
-and "global" stops being load-bearing in the explanation. Neither is a cost
-lever -- both are O(1) per pair (one cumsum plus two gathers against one
-lattice sum plus four gathers) -- so this is a question about the mechanism,
-not the price.
-
-WHAT MUST NOT MOVE, and is therefore pinned hardest below:
-
-  * THE MODULE NAMES ARE CHECKPOINT KEYS. `global_site_features`,
-    `global_context_norm` and `global_context_readout` stay spelled that way
-    even when no global term exists, because 101 archived factorised cells
-    carry those keys in their state_dict. Only the private method that uses
-    them is renamed to say what it now does.
-
-  * ARCHIVED HEADS MUST BE BYTE-IDENTICAL. The construction order of the
-    init draws has to survive the change, so a `use_global=True` head built
-    at a fixed seed matches the pre-change one exactly -- not to a
-    tolerance. That is what protects every reported factorised cell.
-
-  * THE HEAD MUST STILL REFUSE AN EMPTY CONTEXT. With bilinear, global and
-    band all absent the pair score depends only on time, which is not a
-    model of anything; the existing guard has to widen rather than
-    disappear.
-
-  * BLINDNESS IS UNCONDITIONAL. Dropping the global term removes the
-    hole-subtraction, so the remaining path must be blind on its own --
-    band summaries are blind by index exclusion, but that is now the ONLY
-    thing standing between the head and a leak, so it is tested directly
-    rather than inherited.
+  * `global_site_features`, `global_context_norm` and `global_context_readout`
+    keep those names even when no global term exists: 101 archived factorised
+    cells carry those keys in their state_dict.
+  * the construction order of the init draws survives, so a `use_global=True`
+    head built at a fixed seed matches the pre-change one exactly, not to a
+    tolerance.
+  * with bilinear, global and band all absent the pair score depends only on
+    time, so the guard widens rather than disappears.
+  * blindness is unconditional: with no hole subtraction, index exclusion on
+    the band is the only thing carrying it, so it is tested directly rather
+    than inherited.
 """
 
 import pytest
@@ -125,7 +104,7 @@ BAND_ONLY_CASES = {
 
 @pytest.mark.parametrize("case", list(BAND_ONLY_CASES))
 def test_band_without_global_builds_and_scores(case):
-    """The cell exists at all -- the guard that forbade it is gone."""
+    """The cell builds at all: the guard that forbade it is gone."""
     head = _head(**BAND_ONLY_CASES[case])
     G = head(_state(), torch.rand(2))
     assert G.shape == (2, D, D)
@@ -134,10 +113,10 @@ def test_band_without_global_builds_and_scores(case):
 
 @pytest.mark.parametrize("case", list(BAND_ONLY_CASES))
 def test_band_without_global_owns_no_global_site_features(case):
-    """Dropping the global term must drop its per-site encoder too, not
-    merely stop calling it: a module that is built and never used is a dead
-    init draw that would shift every later draw and silently break the
-    byte-identity of any head built after it."""
+    """Dropping the global term must drop its per-site encoder too, not merely
+    stop calling it: a module built and never used is a dead init draw that
+    shifts every later draw, breaking byte-identity for any head built
+    after."""
     head = _head(**BAND_ONLY_CASES[case])
     assert not hasattr(head, "global_site_features")
     assert hasattr(head, "global_context_readout")  # the band's readout now
@@ -146,9 +125,9 @@ def test_band_without_global_owns_no_global_site_features(case):
 @torch.no_grad()
 @pytest.mark.parametrize("case", list(BAND_ONLY_CASES))
 def test_band_without_global_stays_blind(case):
-    """H_ij must not move when the tokens AT the holes move. With no global
+    """H_ij must not move when the tokens at the holes move. With no global
     term there is no hole subtraction, so index exclusion on the band is the
-    only thing carrying blindness -- test it, do not inherit it."""
+    only thing carrying blindness."""
     head = _head(**BAND_ONLY_CASES[case])
     x, t = _state(), torch.rand(2)
     H = head.compute_pair_context(x, t)
@@ -163,8 +142,8 @@ def test_band_without_global_stays_blind(case):
 @torch.no_grad()
 @pytest.mark.parametrize("case", list(BAND_ONLY_CASES))
 def test_band_without_global_keeps_exact_antisymmetry(case):
-    """G[j,i] = -G[i,j] and G_ii = 0 at exactly 0.0 -- identities of the
-    mirror, which the swap CTMC's reverse rate leans on."""
+    """G[j,i] = -G[i,j] and G_ii = 0 at exactly 0.0: identities of the mirror,
+    which the swap CTMC's reverse rate leans on."""
     G = _head(**BAND_ONLY_CASES[case])(_state(), torch.rand(2))
     assert torch.equal(G, -G.transpose(1, 2))
     assert torch.equal(torch.diagonal(G, dim1=1, dim2=2), torch.zeros(2, D))
@@ -172,15 +151,15 @@ def test_band_without_global_keeps_exact_antisymmetry(case):
 
 @pytest.mark.parametrize("case", list(BAND_ONLY_CASES))
 def test_band_without_global_trains_every_parameter(case):
-    """`sum(G**2)`, not `sum(G)`: G is exactly antisymmetric, so its plain
-    sum is identically zero as a function of the parameters and every
-    gradient would vanish -- an objective that passes a dead module."""
+    """`sum(G**2)`, not `sum(G)`: G is exactly antisymmetric, so its plain sum
+    is identically zero as a function of the parameters and every gradient
+    would vanish -- an objective that passes a dead module."""
     head = _head(**BAND_ONLY_CASES[case]).train()
     head(_state(), torch.rand(2)).pow(2).sum().backward()
     for name, parameter in head.named_parameters():
         # Backbone params are out of scope by the suite's convention, and
-        # `attention_readout` is pinned DEAD for this head on purpose -- the
-        # one-pass design routes around it, which its own suite asserts.
+        # `attention_readout` is pinned dead for this head: the one-pass design
+        # routes around it, which its own suite asserts.
         if name.startswith("backbone."):
             continue
         assert parameter.grad is not None, f"{case}: {name} got no grad"
@@ -196,9 +175,9 @@ def test_head_still_refuses_an_empty_context():
 
 
 def test_global_bond_features_still_need_a_band():
-    """Unchanged: the bond totals SHARE the band provider's feature modules,
-    and it is that sharing which makes global-minus-band the exterior bond
-    sum in one basis."""
+    """The bond totals share the band provider's feature modules, and it is
+    that sharing which makes global-minus-band the exterior bond sum in one
+    basis."""
     with pytest.raises(ValueError, match="band"):
         _head(use_global=False, interior_band=None, global_bond_features=True)
 
@@ -206,9 +185,8 @@ def test_global_bond_features_still_need_a_band():
 @torch.no_grad()
 @pytest.mark.parametrize("case", list(BAND_ONLY_CASES))
 def test_dropping_the_global_term_is_visible_in_the_scores(case):
-    """A guard against the change being inert. The band-only head must NOT
-    reproduce its global-carrying twin -- if it did, either the global term
-    was never contributing or the flag is not wired."""
+    """The band-only head must not reproduce its global-carrying twin: if it
+    did, either the global term never contributed or the flag is not wired."""
     knobs = BAND_ONLY_CASES[case]
     band_only = _head(**knobs)
     with_global = _head(**{**knobs, "use_global": True})
@@ -232,9 +210,8 @@ def test_config_flag_reaches_the_head():
         n_heads=2,
         use_sdpa_readout=False,
     )
-    # The exact-field channel is switched off here so the assertion lands on
-    # the factorised head itself: with it on, build_swap_head returns the
-    # WRAPPER, whose attributes are its own.
+    # The exact-field channel is off so the assertion lands on the factorised
+    # head itself: with it on, build_swap_head returns the wrapper.
     head = build_swap_head(
         replace(parent, use_global=False, exact_field_channel=False), d64
     )

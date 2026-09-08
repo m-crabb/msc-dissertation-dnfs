@@ -1,9 +1,7 @@
 """Falsification tests for the factorised (low-rank bilinear + hole-subtracted
 global) swap head.
 
-Written BEFORE the head body: these encode what correct looks like for the
-factorised one-pass design, independently of its implementation. The head's
-claim is that the pair context can be assembled from per-site pieces --
+The pair context is assembled from per-site pieces --
 
     H_ij = sum_r a_r(prefix_i, pos_i) * b_r(suffix_j, pos_j)      (bilinear)
          + rho( c(x) - psi_i - psi_j )                            (global)
@@ -11,18 +9,17 @@ claim is that the pair context can be assembled from per-site pieces --
 
 with every piece blind to the token values at i and j, so the shared readout
 G(i,j|x) = <H_ij, omega_{x_i} - omega_{x_j}> keeps exact state-swap
-antisymmetry with NO per-pair pooling over the lattice.
+antisymmetry with no per-pair pooling over the lattice.
 
-The workhorse is the same blindness probe as the interval-head suite (flip a
-hole spin, demand H unchanged -- strictly stronger than antisymmetry), plus
-two pins specific to this head:
+The workhorse is the blindness probe of the interval-head suite (flip a hole
+spin, demand H unchanged -- strictly stronger than antisymmetry). Two pins are
+specific to this head:
 
-  * the bilinear-only ablation must be blind to the ENTIRE interval interior
-    (prefix_i stops before i, suffix_j starts after j, and nothing else looks
-    at x) -- the coverage hole the global term exists to fill, stated as a
-    test rather than prose;
-  * forward must agree with the explicit readout <H_ij, omega_i - omega_j>
-    of compute_pair_context, the one H path (the interval-head pattern).
+  1. the bilinear-only ablation is blind to the entire interval interior
+     (prefix_i stops before i, suffix_j starts after j) -- the coverage hole
+     the global term fills;
+  2. forward agrees with the explicit readout <H_ij, omega_i - omega_j> of
+     compute_pair_context, the one H path.
 """
 
 import pytest
@@ -107,9 +104,8 @@ def _drift(a, b):
 
 
 # Edge-heavy pair list for d=9: empty prefix+suffix, adjacent (empty interior),
-# and a generic interior pair. No empty-band special case exists in this head
-# (the global term is defined for every pair), so adjacency is exercised only
-# as an ordinary input, not a convention.
+# and a generic interior pair. The global term is defined for every pair, so
+# adjacency is exercised as an ordinary input rather than a special case.
 PROBE_PAIRS = [(0, 8), (3, 4), (0, 1), (7, 8), (2, 5)]
 
 ABLATIONS = [
@@ -123,10 +119,10 @@ ABLATIONS = [
 @pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 @pytest.mark.parametrize("use_bilinear,use_global", ABLATIONS)
 def test_pair_context_blind_to_both_holes(use_bilinear, use_global, gather_triu_pairs):
-    """Core claim: H_ij invariant under ANY change to x_i, x_j, in every
-    ablation arm -- blindness is per-term, so no arm may leak. Run on both
-    assembly paths: the triu-pair gather re-indexes the global term's
-    per-pair map, which is the arm that carries the hole subtraction."""
+    """H_ij is invariant under any change to x_i, x_j, in every ablation arm:
+    blindness is per-term, so no arm may leak. Both assembly paths, since the
+    triu-pair gather re-indexes the global term's per-pair map, the arm that
+    carries the hole subtraction."""
     head = _head(
         use_bilinear=use_bilinear,
         use_global=use_global,
@@ -151,7 +147,7 @@ def test_pair_context_blind_to_both_holes(use_bilinear, use_global, gather_triu_
 def test_pair_context_sensitive_to_all_coverage_regions():
     """Anti-triviality control: with both terms on, H_ij must move when any
     visible region moves -- prefix (bilinear left), suffix (bilinear right),
-    and interval interior (reachable ONLY through the global term)."""
+    and interval interior (reachable only through the global term)."""
     head = _head()
     x = _state()
     t = torch.rand(1)
@@ -165,10 +161,9 @@ def test_pair_context_sensitive_to_all_coverage_regions():
 
 @torch.no_grad()
 def test_bilinear_only_blind_to_interval_interior():
-    """The coverage hole, pinned: with the global term off, NOTHING in the
-    head sees the open interval (i, j) -- prefix_i stops before i, suffix_j
-    starts after j. This is the structural fact that makes the global term a
-    necessary component rather than an enrichment."""
+    """The coverage hole: with the global term off, nothing in the head sees
+    the open interval (i, j) -- prefix_i stops before i, suffix_j starts after
+    j."""
     head = _head(use_bilinear=True, use_global=False)
     x = _state()
     t = torch.rand(1)
@@ -188,8 +183,8 @@ def test_bilinear_only_blind_to_interval_interior():
 
 @torch.no_grad()
 def test_blindness_probe_has_teeth():
-    """Negative control for the TEST: an unmasked-body context must register
-    loudly under the same flip probe, pinning the probe's sensitivity floor."""
+    """Negative control: an unmasked-body context must register under the same
+    flip probe, pinning the probe's sensitivity floor."""
     head = _head()
     x = _state()
     t = torch.rand(1)
@@ -232,8 +227,8 @@ def test_trivial_swap_vanishes():
 
 @torch.no_grad()
 def test_index_antisymmetry_pinned():
-    """G[j,i] == -G[i,j] exactly: pins the label-SYMMETRY convention
-    (H_ji := H_ij, as the interval head) AND the upper-triangle-then-mirror
+    """G[j,i] == -G[i,j] exactly: pins the label-symmetry convention
+    (H_ji := H_ij, as the interval head) and the upper-triangle-then-mirror
     assembly, which makes index antisymmetry an identity rather than a
     numerical property."""
     head = _head()
@@ -247,8 +242,7 @@ def test_index_antisymmetry_pinned():
 @pytest.mark.parametrize("use_bilinear,use_global", ABLATIONS)
 def test_forward_matches_context_readout(use_bilinear, use_global):
     """forward must agree with the explicit readout <H_ij, omega_i - omega_j>
-    of compute_pair_context -- the mask-one forward/forward_looped pattern,
-    here guarding the triangle-and-mirror assembly."""
+    of compute_pair_context, guarding the triangle-and-mirror assembly."""
     head = _head(use_bilinear=use_bilinear, use_global=use_global)
     x = _state()
     t = torch.rand(1)
@@ -286,9 +280,9 @@ def test_shapes_finite_and_pair_gather():
 
 
 def test_head_parameters_receive_grad():
-    """Every head-owned module must be live in the graph, the backbone's
-    causal stacks must be live through the factor streams, and
-    attention_readout is pinned DEAD (this head replaces it)."""
+    """Every head-owned module is live in the graph, the backbone's causal
+    stacks are live through the factor streams, and attention_readout is
+    pinned dead (this head replaces it)."""
     head = _head()
     x = _state()
     head(x, torch.rand(1)).sum().backward()
@@ -326,10 +320,9 @@ def test_flags_must_enable_at_least_one_term():
 
 @torch.no_grad()
 def test_G_stays_fp32_under_bf16_autocast():
-    """The pair-score tensor feeds fp32-only diagnostics downstream; the
-    interval/mask-one heads keep G fp32 under the eval autocast block and
-    this head must too, even though its assembly uses einsum (which autocast
-    would otherwise emit in bf16)."""
+    """G feeds fp32-only diagnostics downstream, so it must stay fp32 under
+    the eval autocast block even though the assembly uses einsum (which
+    autocast would otherwise emit in bf16)."""
     head = _head()
     x = _state()
     t = torch.rand(1)
@@ -338,16 +331,15 @@ def test_G_stays_fp32_under_bf16_autocast():
     assert G.dtype == torch.float32, f"G downcast to {G.dtype} under autocast"
 
 
-# ---------------------------------------------------------------------------
-# Multi-order causal streams. The bilinear
-# term under the row-major ordering is structurally blind to the whole raster
+# --------------------------------------------------- multi-order causal streams
+# Under the row-major ordering the bilinear term is blind to the whole raster
 # interval between the holes (pinned by
 # test_bilinear_only_blind_to_interval_interior); running the causal stacks
-# under EXTRA site orderings gives every pair a second (prefix, suffix) split,
-# so deep coverage grows to the complement of the INTERSECTION of the
+# under extra site orderings gives every pair a second (prefix, suffix) split,
+# so deep coverage grows to the complement of the intersection of the
 # per-ordering intervals. Every ordering's factors are blind by causality
-# (bit-exact), so blindness and antisymmetry survive unchanged. d = 9 below
-# is a 3x3 lattice, so column-major and diagonal orderings exist.
+# (bit-exact), so blindness and antisymmetry survive unchanged. d = 9 below is
+# a 3x3 lattice, so column-major and diagonal orderings exist.
 
 
 def _mo_head(
@@ -384,7 +376,7 @@ def _mo_head(
 
 def test_default_head_state_dict_unchanged_by_ordering_feature():
     """Archived fab8/fab16 checkpoints must keep loading: the default
-    construction registers NO new parameters or persistent buffers, and the
+    construction registers no new parameters or persistent buffers, and the
     explicit single-ordering spelling is the same module tree."""
     default = _head()
     single = _mo_head(site_orderings=("row",), lattice_side=None)
@@ -394,7 +386,7 @@ def test_default_head_state_dict_unchanged_by_ordering_feature():
 
 @torch.no_grad()
 def test_single_ordering_forward_bit_exact_to_default():
-    """orderings=("row",) must be the SAME code path as the default head, not
+    """orderings=("row",) must be the same code path as the default head, not
     a numerically-similar one: same RNG consumption at construction, same op
     sequence in forward, bit-identical output."""
     default = _head(
@@ -440,12 +432,11 @@ def test_multi_order_pair_context_blind_to_both_holes():
 
 @torch.no_grad()
 def test_col_ordering_opens_row_interior_coverage():
-    """The mechanism multi-order streams exist for, two-sided. Bilinear-only, the row
-    ordering leaves pair (1, 7) blind to its whole raster interior {2..6}.
-    Under col order [0,3,6,1,4,7,2,5,8] the pair sits at positions (3, 5),
-    so site 3 (position 1) moves into the col PREFIX -- deep coverage the
-    row ordering could not provide -- while site 4 (position 4) stays
-    interior in BOTH orderings: exactly the intersection k=2 cannot see."""
+    """Bilinear-only, the row ordering leaves pair (1, 7) blind to its whole
+    raster interior {2..6}. Under col order [0,3,6,1,4,7,2,5,8] the pair sits
+    at positions (3, 5), so site 3 (position 1) moves into the col prefix --
+    coverage the row ordering could not provide -- while site 4 (position 4)
+    stays interior in both orderings: the intersection k=2 cannot see."""
     head = _mo_head(site_orderings=("row", "col"), use_global=False)
     x = _state()
     t = torch.rand(1)
@@ -500,9 +491,8 @@ def test_multi_order_parameters_receive_grad():
 
 
 def test_extra_orderings_validated_at_construction():
-    """Silent no-ops and shape mismatches are rejected where they are made:
-    extras need a square lattice side matching d, the row ordering must come
-    first (it is the archived-checkpoint module tree), extras without the
+    """Extras need a square lattice side matching d, the row ordering must
+    come first (it is the archived-checkpoint module tree), extras without the
     bilinear term would be dead, and unknown ordering names are typos."""
     with pytest.raises(ValueError):
         _mo_head(site_orderings=("row", "col"), lattice_side=None)
@@ -519,12 +509,12 @@ def test_extra_orderings_validated_at_construction():
 
 
 # --- interior band on the narrow per-pair path -------------------------------
-# The factorised head's global term is the one place a per-pair nonlinearity
-# is paid for; the interval / masked-attention band summaries M_ij (blind by
-# index exclusion, valid for i < j) can ride that same path at band width.
-# Pins: blindness survives, the band is sensitive to the open interval, the
-# band-free head is byte-identical to the archived one, and forward still
-# equals the readout of the materialised H.
+# The global term is the one place a per-pair nonlinearity is paid for; the
+# interval / masked-attention band summaries M_ij (blind by index exclusion,
+# valid for i < j) ride that same path at band width. Pins: blindness
+# survives, the band is sensitive to the open interval, the band-free head is
+# byte-identical to the archived one, and forward still equals the readout of
+# the materialised H.
 
 
 def _band_head(interior_band, site_orderings=("row",), gather_triu_pairs=False, **kw):
@@ -562,8 +552,8 @@ def test_interior_band_context_blind_to_both_holes(
     interior_band, site_orderings, gather_triu_pairs
 ):
     """Both assembly paths: on the gathered one the band is consumed in its
-    NATIVE i < j form (no mirror at all), which is a different code path
-    through the provider, so blindness is re-pinned there."""
+    native i < j form (no mirror), a different code path through the provider,
+    so blindness is re-pinned there."""
     head = _band_head(interior_band, site_orderings, gather_triu_pairs)
     x, t = _state(), torch.rand(1)
     H = head.compute_pair_context(x, t)
@@ -616,7 +606,7 @@ def test_interior_band_forward_matches_context_readout_and_antisymmetry(
 
 
 def test_no_interior_band_is_byte_identical_to_archived_head():
-    """interior_band=None must construct the SAME modules in the SAME RNG
+    """interior_band=None must construct the same modules in the same RNG
     order as the pre-band head, so archived fab8/fmo2 checkpoints load and
     evaluate unchanged."""
     torch.manual_seed(0)
@@ -648,31 +638,26 @@ def test_interior_band_provider_has_no_duplicate_backbone_and_gets_grad(interior
 
 
 # ------------------------------------------------------ global bond features
-# Global bond features. The global term is a sum of STRICTLY PER-SITE features,
-# so the head carries a whole-lattice UNARY statistic and -- via the band --
-# a LOCAL bond statistic over the interval, but no bond statistic anywhere
-# else. The band gives sum over (i, j); the global gives sum over the lattice
-# minus hole-touching terms; neither recovers the other, because a part is
-# not a total. Having both buys their DIFFERENCE, the exterior bond sum,
-# which neither gives alone -- exactly the situation that already holds on
-# the unary side. The arm asks whether exterior domain-wall density matters
-# at criticality.
+# The global term is a sum of per-site features, so the head carries a
+# whole-lattice unary statistic and -- via the band -- a bond statistic over
+# the interval, but no bond statistic elsewhere. The band gives the sum over
+# (i, j); the global gives the lattice sum minus hole-touching terms; having
+# both buys their difference, the exterior bond sum. The arm asks whether
+# exterior domain-wall density matters at criticality. The family shares
+# `band_pair_features` with the band provider, so both functionals read the
+# same chi and that difference is exact in one basis; no feature parameters
+# are added.
 #
-# The family SHARES `band_pair_features` with the band provider, so the two
-# functionals read the same chi and the difference above is exact in one
-# basis rather than approximate across two. Adds no feature parameters.
-#
-# WHAT THESE TESTS PIN, and why the reference exists. The hole subtraction is
-# no longer two gathers: chi^delta_k touches sites (k, k+delta), so a pair
-# (i, j) must drop every k in {i, i-delta, j, j-delta}. That set COLLIDES
-# when |i - j| = delta -- and with pair_offsets (1, D) those are precisely
+# The hole subtraction is not two gathers: chi^delta_k touches sites
+# (k, k+delta), so a pair (i, j) must drop every k in {i, i-delta, j, j-delta}.
+# That set collides when |i - j| = delta -- with pair_offsets (1, D), precisely
 # the nearest-neighbour pairs the Ising energy is built from. A naive
-# four-gather subtraction removes one term TWICE, leaving -chi in the
-# residual, which depends on the hole spins: blindness fails, on the pairs
-# that matter most. `_reference_hole_free_bond_totals` is an explicit loop
-# over k with the membership test written out, so the vectorised index
-# arithmetic (clamp-and-mask at both boundaries, plus the collision add-back)
-# is checked against the definition rather than against itself.
+# four-gather subtraction removes one term twice, leaving -chi in the residual,
+# which depends on the hole spins: blindness fails on the pairs that matter
+# most. `_reference_hole_free_bond_totals` is an explicit loop over k with the
+# membership test written out, so the vectorised index arithmetic
+# (clamp-and-mask at both boundaries, plus the collision add-back) is checked
+# against the definition rather than against itself.
 
 
 def _bond_head(site_orderings=("row",), gather_triu_pairs=False, **kw):
@@ -689,9 +674,9 @@ def _bond_head(site_orderings=("row",), gather_triu_pairs=False, **kw):
 
 def _reference_hole_free_bond_totals(head, x):
     """(B, d, d, F): for every pair, the sum of chi^delta_k over every bond
-    that touches NEITHER hole. Written as the definition -- an explicit loop
-    with the membership test spelled out -- so it shares no index arithmetic
-    with the implementation under test."""
+    that touches neither hole. An explicit loop with the membership test
+    spelled out, so it shares no index arithmetic with the implementation
+    under test."""
     provider = head.interior_band_provider
     d = head.d
     emb = head.backbone.token_embedder(((x + 1) / 2).long())
@@ -711,10 +696,9 @@ def _reference_hole_free_bond_totals(head, x):
 
 @torch.no_grad()
 def test_global_bond_totals_match_the_looped_definition():
-    """The whole point of the arm's index arithmetic, checked against a
-    membership test. Catches the |i - j| = delta double-subtraction and both
-    boundary cases (k = i - delta < 0, and i >= d - delta so chi_i does not
-    exist) in one shot."""
+    """The arm's index arithmetic against a membership test: catches the
+    |i - j| = delta double-subtraction and both boundary cases
+    (k = i - delta < 0, and i >= d - delta so chi_i does not exist)."""
     head = _bond_head()
     x = _state()
     got = head.interior_band_provider.hole_free_bond_totals(x)
@@ -730,9 +714,8 @@ def test_global_bond_totals_match_the_looped_definition():
 
 @torch.no_grad()
 def test_global_bond_totals_match_the_definition_on_the_gathered_pair_list():
-    """Same claim on the (P,) index form the triu path consumes: the masks
-    are written once to broadcast over both shapes, so this pins that they
-    actually do."""
+    """Same claim on the (P,) index form the triu path consumes: the masks are
+    written once to broadcast over both shapes."""
     head = _bond_head()
     x = _state()
     rows, cols = triu_pair_indices(head.d, x.device)
@@ -743,10 +726,9 @@ def test_global_bond_totals_match_the_definition_on_the_gathered_pair_list():
 
 @torch.no_grad()
 def test_global_bond_totals_drop_the_adjacent_bond_exactly_once():
-    """The collision case, named. For a pair with j - i = delta the bond
-    (i, j) is itself hole-touching and is reached by BOTH the k = i and the
-    k = j - delta gather. Pinning it separately from the reference test so a
-    future reader sees the failure mode rather than inferring it."""
+    """The collision case. For a pair with j - i = delta the bond (i, j) is
+    itself hole-touching and is reached by both the k = i and the k = j - delta
+    gather."""
     head = _bond_head()
     x = _state()
     provider = head.interior_band_provider
@@ -774,8 +756,8 @@ def test_global_bond_totals_drop_the_adjacent_bond_exactly_once():
 @pytest.mark.parametrize("gather_triu_pairs", [False, True], ids=["dense", "triu"])
 @pytest.mark.parametrize("site_orderings", [("row",), ("row", "col")])
 def test_global_bond_context_blind_to_both_holes(site_orderings, gather_triu_pairs):
-    """The property the whole head exists to hold. Every pair, both holes and
-    both together -- including the adjacent pairs where the collision bites."""
+    """Blindness over every pair, both holes and both together -- including
+    the adjacent pairs where the collision bites."""
     head = _bond_head(site_orderings, gather_triu_pairs)
     x, t = _state(), torch.rand(1)
     H = head.compute_pair_context(x, t)
@@ -791,12 +773,10 @@ def test_global_bond_context_blind_to_both_holes(site_orderings, gather_triu_pai
 
 @torch.no_grad()
 def test_global_bonds_see_exterior_structure_the_unary_sum_cannot():
-    """Sensitivity with teeth: flip a site OUTSIDE the interval and outside
-    both holes, and the bond head must respond differently from its bond-free
-    twin. A flip changes the unary sum too, so this cannot isolate the bond
-    channel by itself -- what it pins is that the family is wired in and
-    reaches the exterior, which is the region the band structurally cannot
-    see."""
+    """Flip a site outside the interval and outside both holes: the bond head
+    must respond differently from its bond-free twin. A flip changes the unary
+    sum too, so this pins only that the family is wired in and reaches the
+    exterior, the region the band structurally cannot see."""
     with_bonds = _bond_head(use_bilinear=False)
     without = _band_head("prefix", use_bilinear=False)
     x, t = _state(), torch.rand(1)
@@ -826,11 +806,10 @@ def test_global_bond_forward_matches_context_readout_and_antisymmetry():
 
 
 def test_global_bond_features_reuse_the_band_modules_and_add_no_feature_params():
-    """The design decision, pinned: the family SHARES `band_pair_features`
-    with the band rather than owning a copy, so `global - band` is the
-    exterior bond sum in ONE basis, and the arm costs only the widened
-    readout. If a future edit gives the global term its own modules this
-    fails, which is the point -- that is a different experiment."""
+    """The family shares `band_pair_features` with the band rather than owning
+    a copy, so `global - band` is the exterior bond sum in one basis and the
+    arm costs only the widened readout. Giving the global term its own modules
+    fails here: that is a different experiment."""
     plain = _band_head("prefix")
     bonds = _bond_head()
     added = sum(p.numel() for p in bonds.parameters()) - sum(
@@ -848,9 +827,9 @@ def test_global_bond_features_reuse_the_band_modules_and_add_no_feature_params()
 
 
 def test_global_bond_features_off_is_byte_identical_to_the_archived_head():
-    """Default OFF, and the flag adds no module, no buffer and no RNG draw
-    when off -- so all 103 archived factorised cells stay loadable and
-    evaluate unchanged."""
+    """Default off, and the flag adds no module, no buffer and no RNG draw
+    when off, so all 103 archived factorised cells stay loadable and evaluate
+    unchanged."""
     torch.manual_seed(0)
     archived = _band_head("prefix")
     torch.manual_seed(0)
@@ -861,18 +840,17 @@ def test_global_bond_features_off_is_byte_identical_to_the_archived_head():
 
 
 def test_global_bond_features_require_a_band_to_share():
-    """The family has no modules of its own, so it cannot be asked for
-    without a band provider -- fail at construction, not at the first
-    forward on a GPU."""
+    """The family has no modules of its own, so it cannot be asked for without
+    a band provider -- fail at construction, not at the first forward."""
     with pytest.raises(ValueError):
         _band_head(None, global_bond_features=True)
 
 
 def test_global_bond_parameters_receive_grad():
-    """Objective is sum(G**2), NOT sum(G): G is exactly antisymmetric, so
-    sum(G) is identically zero as a FUNCTION of the parameters and its
-    gradient vanishes for every module -- a test that would pass a dead
-    parameter. Squaring makes the (i, j) and (j, i) contributions add."""
+    """Objective is sum(G**2), not sum(G): G is exactly antisymmetric, so
+    sum(G) is identically zero as a function of the parameters and its
+    gradient vanishes for every module, which would pass a dead parameter.
+    Squaring makes the (i, j) and (j, i) contributions add."""
     head = _bond_head()
     x, t = _state(), torch.rand(1)
     head(x, t).pow(2).sum().backward()

@@ -1,47 +1,41 @@
-"""ESS-triggered SMC resampling inside the TRAINING rollout (both routes).
+"""ESS-triggered SMC resampling inside the training rollout (both routes).
 
-Written before the implementation — these encode "what correct looks like".
-Sections 1-6 pin the swap route (821bd19); section 7 holds the
-flip-route twins, written before `train()` was wired to the same flag.
+Sections 1-6 pin the swap route (821bd19); section 7 holds the flip-route
+twins.
 
-Background. LEAPS (Algorithm 1, lines 11-14) resamples the walker
-population whenever the interim ESS drops below a threshold and resets the
-accumulated log-weights, and its training loop (Algorithm 2, line 5) draws
-its batch from exactly that routine. This trainer's buffer rebuild calls
-`sample_swap_ctmc(..., return_all_states=True)`, which carries no weights
-at all, so the training rollout has never resampled. This suite pins the
-opt-in flag that closes that gap.
+LEAPS (Algorithm 1, lines 11-14) resamples the walker population whenever the
+interim ESS drops below a threshold and resets the accumulated log-weights,
+and its training loop (Algorithm 2, line 5) draws its batch from exactly that
+routine. This trainer's buffer rebuild calls
+`sample_swap_ctmc(..., return_all_states=True)`, which carries no weights at
+all, so the training rollout has never resampled. This suite pins the opt-in
+flag that closes that gap.
 
-What correct looks like:
+Properties pinned:
 
-1. OFF IS OFF. Absent flag == flag None == the archived rollout, and the
+1. Off is off: absent flag == flag None == the archived rollout, and the
    never-firing threshold tau = 0 is bit-identical too (the no-fire path of
-   `resample_if_needed` consumes no RNG, so arming the machinery without
-   firing it cannot move a single sample).
-2. THE TRIGGER ACTUALLY FIRES, and the firing count reaches the training
-   log so a run can be checked for whether the flag did anything.
-3. SLICES ARE RECORDED AFTER THE CHECKPOINT. A trajectory slice must be
-   the ensemble that CONTINUES from that time — the post-resample,
-   equally-weighted one — because that is the ensemble whose plain batch
-   mean estimates E_{p_t}[.]. Pinned with a stub that collapses every
-   resample to a single ancestor: every recorded slice after the first
-   event must then be all-clones. (This also exercises the degenerate
-   collapse the real trigger is chosen to avoid.)
-4. THE BUFFER SURVIVES IT: post-rollout buffer rows keep their shape,
-   dtype, finiteness, and — the hard-constraint invariant — every row
-   stays on the fixed-composition manifold, since resampling only ever
+   `resample_if_needed` consumes no RNG).
+2. The trigger fires, and the firing count reaches the training log.
+3. Slices are recorded after the checkpoint: a trajectory slice is the
+   ensemble that continues from that time — post-resample, equally weighted —
+   because that is the ensemble whose plain batch mean estimates E_{p_t}[.].
+   Pinned with a stub that collapses every resample to a single ancestor, so
+   every recorded slice after the first event is all-clones; that also
+   exercises the degenerate collapse the real trigger avoids.
+4. The buffer survives it: post-rollout rows keep shape, dtype, finiteness
+   and stay on the fixed-composition manifold, since resampling only
    duplicates whole on-manifold rows.
-5. THE c_t ESTIMATOR STAYS VALID. c_t is a batch mean of xi_t over the
+5. The c_t estimator stays valid. c_t is a batch mean of xi_t over the
    rollout states (Eq. 8, swap form), and Eq. 8's identity
-   E_{p_t}[xi_t] = d_t log Z_t holds under p_t, i.e. under the ACCUMULATED
-   IMPORTANCE WEIGHT, not under the raw particle law. Two tests split the
-   claim: (a) the weighting that makes the batch mean valid is the IS
-   weight; (b) systematic resampling reproduces exactly that weighting in
-   expectation, so the post-resample UNWEIGHTED mean is conditionally
-   unbiased for the self-normalised weighted mean.
-6. THE EVAL PATH IS UNTOUCHED. The in-training ESS column must stay a
-   plain-IS draw or it stops being comparable with every archived cell, so
-   no call that asks for log-weights may carry a resampling config.
+   E_{p_t}[xi_t] = d_t log Z_t holds under p_t, i.e. under the accumulated
+   importance weight, not the raw particle law. Two tests split the claim:
+   (a) the weighting that makes the batch mean valid is the IS weight;
+   (b) systematic resampling reproduces that weighting in expectation, so the
+   post-resample unweighted mean is conditionally unbiased for the
+   self-normalised weighted mean.
+6. The eval path is untouched: the in-training ESS column stays a plain-IS
+   draw, so no call that asks for log-weights carries a resampling config.
 """
 
 import csv
@@ -169,10 +163,10 @@ def test_flag_absent_and_flag_none_and_never_firing_are_all_identical(tmp_path):
     """Every existing recipe must be byte-identical unchanged.
 
     Three runs from the same seed: the archived call (no field at all), the
-    explicit None, and tau = 0.0 (machinery armed, trigger can never fire —
-    ESS >= 0 always). The last one is the sharp case: it walks the
+    explicit None, and tau = 0.0 (machinery armed, trigger can never fire
+    since ESS >= 0 always). The last is the sharp case: it walks the
     resampling branch, accumulates log-weights and evaluates the trigger
-    every step, and must STILL land on identical weights, because the
+    every step, and must still land on identical weights, because the
     no-fire path returns its inputs unchanged and consumes no RNG.
     """
     baseline_dir = _run_tiny_training(tmp_path / "baseline")
@@ -281,7 +275,7 @@ def test_flip_sampler_takes_the_same_trajectory_mode():
 
 
 def test_trajectory_mode_still_needs_a_target():
-    """The trigger reads weights, and weights need xi_t — so a trajectory
+    """The trigger reads weights and weights need xi_t, so a trajectory
     rollout asking to resample without a target is a configuration error,
     not a silently unresampled run."""
     head, target = _head_and_target()
@@ -323,12 +317,12 @@ def test_resample_event_count_reaches_the_training_log(tmp_path):
 
 @torch.no_grad()
 def test_slices_are_recorded_after_the_resample_checkpoint(monkeypatch):
-    """A recorded slice must be the ensemble that CONTINUES from that time.
+    """A recorded slice must be the ensemble that continues from that time.
 
-    Rationale: the plain batch mean of xi_t over a slice only estimates
-    E_{p_t}[xi_t] once the accumulated IS weights have been applied, and a
-    resample is what applies them. Recording the pre-resample rows would
-    store the still-weighted ensemble and hand c_t the wrong measure.
+    The plain batch mean of xi_t over a slice only estimates E_{p_t}[xi_t]
+    once the accumulated IS weights have been applied, and a resample is what
+    applies them; recording the pre-resample rows would store the
+    still-weighted ensemble and hand c_t the wrong measure.
 
     Pinned with a stub that collapses every resample onto ancestor 0, so
     "recorded after" is observable as all-clone slices. The stub doubles as
@@ -398,10 +392,8 @@ def test_buffer_after_a_resampled_rollout_is_well_formed(tmp_path, monkeypatch):
 
 @torch.no_grad()
 def test_the_weighting_that_validates_the_c_t_batch_mean_is_the_is_weight():
-    """Design answer (1), first half.
-
-    Eq. (8) reads E_{p_t}[xi_t] = d_t log Z_t: the identity holds under the
-    ANNEALED TARGET, and a particle ensemble represents p_t only through
+    """Eq. (8) reads E_{p_t}[xi_t] = d_t log Z_t: the identity holds under the
+    annealed target, and a particle ensemble represents p_t only through
     its accumulated importance weights. On the enumerable d = 16 slice,
     take the whole state space as the ensemble with log-weights
     log p~_t (proposal uniform over the slice): the self-normalised
@@ -431,14 +423,12 @@ def test_the_weighting_that_validates_the_c_t_batch_mean_is_the_is_weight():
 
 @torch.no_grad()
 def test_resampling_reproduces_that_weighting_in_expectation():
-    """Design answer (1), second half.
-
-    Systematic resampling draws ancestor counts with
+    """Systematic resampling draws ancestor counts with
     E[counts_i] = B * w_i exactly, so conditional on the weights
 
         E[ (1/B) sum_m xi_t(x^{a(m)}) ] = sum_i w_i xi_t(x^i),
 
-    the self-normalised weighted mean. The post-resample UNWEIGHTED batch
+    the self-normalised weighted mean. The post-resample unweighted batch
     mean is therefore an unbiased estimator of the weighted mean the
     previous test showed to be the valid one. Integrated over the single
     systematic jitter on a fine grid (counts are piecewise constant in the
@@ -468,9 +458,9 @@ def test_resampling_reproduces_that_weighting_in_expectation():
 def test_only_the_rollout_resamples_never_the_in_training_eval_draw(
     tmp_path, monkeypatch
 ):
-    """The `ess` column must remain a plain-IS reading, comparable with
-    every archived cell, so the resampling config may reach the buffer
-    rollout and nothing else."""
+    """The `ess` column must remain a plain-IS reading, comparable with every
+    archived cell, so the resampling config reaches the buffer rollout and
+    nothing else."""
     original_sampler = swap_training.sample_swap_ctmc
     recorded_calls = []
 
@@ -501,7 +491,7 @@ def _run_tiny_flip_training(output_dir, *, amortised=False, **train_overrides):
     The flip loop serves both the unconstrained and soft chapters. The
     amortised variant is the soft production shape: the rollout executes
     inside the composition binding (`_bound`), so the ESS trigger's xi_t
-    must read the BOUND target's annealed density, not the bare one.
+    must read the bound target's annealed density, not the bare one.
     """
     torch.manual_seed(0)
     if amortised:
@@ -603,8 +593,8 @@ def test_flip_trainer_amortised_soft_rollout_fires_inside_the_binding(tmp_path):
     """The soft production recipe amortises over compositions, so the rollout
     (and therefore the ESS trigger's xi_t) runs inside `_bound`'s composition
     binding. A firing amortised run that completes with finite losses pins
-    that the resampling machinery composes with the binding — the trigger
-    reads the annealed density of the composition the cycle actually drew."""
+    that the resampling machinery composes with the binding: the trigger
+    reads the annealed density of the composition the cycle drew."""
     rows = _log_rows(
         _run_tiny_flip_training(
             tmp_path, amortised=True, rollout_resample_ess_fraction=1.0

@@ -1,11 +1,11 @@
 """Tests for the eval-time SMC resampling upgrade (samplers/resampling.py).
 
-Written before the bodies — they encode "what correct looks like":
+Properties pinned:
 
     1) systematic resampling: counts_i within 1 of B·w̄_i (the low-variance
        floor/ceil property), uniform weights -> every particle exactly once.
     2) resample_if_needed: no-fire path returns inputs unchanged and
-       consumes NO RNG (the bit-exact parity guarantee); fire path banks
+       consumes no RNG (the bit-exact parity guarantee); fire path banks
        logmeanexp(log_w) and resets weights to zero.
     3) sampler wiring: never-firing config replays the plain sampler
        bit-exactly; aggressive config stays on the composition manifold
@@ -63,7 +63,7 @@ class ConstantRateModel:
 
 def test_systematic_counts_within_one_of_expected():
     # Floor/ceil property: an interval of length B·w̄_i on the scaled CDF
-    # axis contains ⌊B·w̄_i⌋ or ⌈B·w̄_i⌉ unit-grid points, for ANY jitter u.
+    # axis contains ⌊B·w̄_i⌋ or ⌈B·w̄_i⌉ unit-grid points, for any jitter u.
     log_weights = torch.tensor([0.0, -1.0, 2.0, 0.5, -3.0, 1.0, 0.0, -0.5])
     batch_size = log_weights.shape[0]
     expected_counts = batch_size * torch.softmax(log_weights, dim=0)
@@ -218,7 +218,7 @@ def test_resampling_requires_log_weights():
 
 @torch.no_grad()
 def test_smc_log_z_matches_enumeration_on_2x2_slice():
-    # E[Ẑ] = Z_1/Z_0 for ANY valid rates (here: random init, no training),
+    # E[Ẑ] = Z_1/Z_0 for any valid rates (here: random init, no training),
     # so both the plain-IS estimator and the SMC product form must land on
     # the enumerated log(Z_1^C/Z_0^C) of the d=4, N_A=2 slice (6 states),
     # up to Euler bias (O(dt), 48-step grid) and MC error (B=1024).
@@ -293,17 +293,15 @@ def test_resampling_lifts_final_segment_ess():
 
 def test_systematic_ancestors_are_sorted_so_a_prefix_is_not_a_uniform_subset():
     """Ancestor indices come back in CDF order, so `ancestors[:k]` is a
-    contiguous low-CDF block, NOT an exchangeable subset.
+    contiguous low-CDF block, not an exchangeable subset.
 
-    This is the property that makes `swap_training`'s c_t-batch prefix
-    slice unsafe after a resample fires: with `c_t_batch > outer_batch` the
-    rollout draws n_rollout rows, resamples all of them, and the replay
-    buffer then keeps the FIRST outer_batch. When the rows are iid base
-    draws a prefix is a uniform subset and that is free; once systematic
-    resampling has ordered the rows by ancestor, the prefix over-represents
-    the low-index end of the CDF and clusters duplicate lineages together.
-    The trainer must therefore shuffle before slicing. This test pins the
-    sortedness so the requirement cannot silently lapse.
+    That is what makes `swap_training`'s c_t-batch prefix slice unsafe after a
+    resample fires: with `c_t_batch > outer_batch` the rollout draws n_rollout
+    rows, resamples all of them, and the replay buffer keeps the first
+    outer_batch. On iid base draws a prefix is a uniform subset; once
+    systematic resampling has ordered the rows by ancestor, the prefix
+    over-represents the low-index end of the CDF and clusters duplicate
+    lineages together, so the trainer must shuffle before slicing.
     """
     torch.manual_seed(0)
     log_weights = torch.randn(16) * 2.0

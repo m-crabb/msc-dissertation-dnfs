@@ -6,7 +6,7 @@ eval_autocast_bf16 block -- crashing the fp32-only torch.quantile rate
 diagnostic at step 0 and departing from the dtype path the bf16-eval flags were
 validated on. The mask-one readout never had the bug because elementwise
 mul+sum is not autocast-listed. The D=4 gate cells and the smoke configs run
-with the flag OFF, so only a d64-flag run exercises this path -- hence a
+with the flag off, so only a d64-flag run exercises this path -- hence a
 dedicated CPU-autocast test rather than relying on cell smokes.
 """
 

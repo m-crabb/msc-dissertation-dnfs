@@ -1,4 +1,4 @@
-"""What correct looks like for the binary cluster-expansion target.
+"""The binary cluster-expansion target.
 
 The target evaluates E(s) = J_0 + sum_k c_k sum_tuples prod s on a periodic
 cell exported by `experiments/alloy_ce/export_binary_expansion.py`, and hands
@@ -6,7 +6,7 @@ the samplers closed-form flip and swap energy changes. Three things must hold:
 
 1. It reproduces the fitting library's energies on the reference
    configurations stored in the JSON (icet for the square toy, CLEASE for the
-   MetaDNS Cu-Au cell) -- the whole reason the export exists.
+   MetaDNS Cu-Au cell).
 2. The closed-form swap change equals the brute-force difference obtained by
    materialising the swapped state, for every pair, on random states off and
    on the composition slice; likewise the single-flip change.

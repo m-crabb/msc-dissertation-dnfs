@@ -1,38 +1,24 @@
-"""What correct looks like for the matched-base amortised soft design.
+"""Matched-base amortised soft design.
 
-The design turns one flag (`base_matches_composition`) on IsingTarget:
-when set, the base
-distribution eta reads the composition the run is conditioned on — the
-bound per-cycle vector during amortised training, else the target's own
-scalar c* — instead of the static `base_composition`. Motivated by the
-8x8 mb twins (one lever, full rescue at every off-centre window: the
-specialist collapse was base reachability, not the target).
+The flag `base_matches_composition` on IsingTarget makes the base distribution
+eta read the composition the run is conditioned on — the bound per-cycle vector
+during amortised training, else the target's own scalar c* — instead of the
+static `base_composition`.
 
-Failure modes these tests exist to catch:
+Properties pinned:
 
-1. PER-ROW MISALIGNMENT. Replay batches mix compositions; base_log_eta
-   scoring row b against row b''s c never raises, it just trains the
-   wrong thing (the b-major rule, composition.py). Pinned against a
-   brute-force per-site product.
-2. DRAW/PATH DISAGREEMENT. The archived-eval bug class: x0 drawn from
-   one base while the path density assumes another (a silent 6.9-nat
-   log w0 hole at d=64). With the flag, draw and path share one binding;
-   pinned by the endpoint identity log p_tilde_0 == base_log_eta on
-   sample_base's own draws, per-row.
-3. ARCHIVED-RUN DRIFT. Flag off must be byte-identical to today's
-   behaviour (RNG consumption included), or every archived specialist
-   stops reproducing; and at a bound c = 0.5 the matched draw must equal
-   the house draw bit-for-bit so the amortised centre anchors against
-   the house specialist.
-4. RESIDUAL-PATH BUGS. A bias-only Ising with bias = log(c/(1-c))/2 IS
-   the matched Bernoulli base (log-densities equal up to a constant), so
-   p_tilde_t is t-invariant up to a constant and R = 0 satisfies
-   Kolmogorov (Eq. 7) exactly — an analytic end-to-end pin on the
-   residual seeing the matched base.
-5. UNDECLARED CONFIG LEVERS. The camort cells must differ from their
-   house parents in exactly the three declared levers (conditioning,
-   spine draw, matched base) — a stray lever puts an undeclared change
-   under every specialist-vs-amortised claim in the merged house table.
+1. Per-row alignment: base_log_eta scores row b against row b's c (the b-major
+   rule, composition.py), against a brute-force per-site product.
+2. Draw/path agreement: draw and path share one binding, pinned per-row by
+   log p_tilde_0 == base_log_eta on sample_base's own draws (the archived-eval
+   bug was a silent 6.9-nat log w0 hole at d=64).
+3. Flag off is byte-identical to today's behaviour, RNG consumption included,
+   and at a bound c = 0.5 the matched draw equals the house draw bit-for-bit.
+4. A bias-only Ising with bias = log(c/(1-c))/2 is the matched Bernoulli base
+   (log-densities equal up to a constant), so p_tilde_t is t-invariant up to a
+   constant and R = 0 satisfies Kolmogorov (Eq. 7) exactly.
+5. The camort cells differ from their house parents in exactly the three
+   declared levers: conditioning, spine draw, matched base.
 """
 
 import json
@@ -188,7 +174,7 @@ class _ZeroRateModel:
 def test_residual_zero_when_target_is_the_matched_base():
     # bias = log(c/(1-c))/2 and sigma = 0 make log_prob(x) equal
     # log eta_c(x) up to the x-independent constant d/2*log(c(1-c)), so
-    # p_tilde_t is the SAME distribution at every t and R = 0 satisfies
+    # p_tilde_t is the same distribution at every t and R = 0 satisfies
     # Kolmogorov with dt_log_Zt = that constant's negation.
     c = 0.25
     target = IsingTarget(
@@ -241,14 +227,11 @@ def test_d8_camort_cell_is_three_declared_levers_off_house_centre(
 
 @pytest.mark.parametrize("sigma_suffix", ["", "_sc"])
 def test_d8_camort_spine3_is_one_lever_off_the_17_value_cell(sigma_suffix):
-    """The draw-set ablation: the 17-value cell trained healthy at
-    sigma=0.1 but collapsed on all four seeds at sigma_c, and the D=4 cell
-    that motivated the design ran at sigma=0.1 with the 3-value spine — so
-    "mixed draws at
-    criticality" and "the post-gate densification to 17 values" are
-    confounded in the dead cell. This twin separates them with ONE lever:
-    the draw set back to the gate's spine {0.25, 0.375, 0.5}, everything
-    else byte-identical to the 17-value cell, both couplings."""
+    """One lever off the 17-value cell: the draw set back to the gate's spine
+    {0.25, 0.375, 0.5}, everything else byte-identical, both couplings. It
+    separates "mixed draws at criticality" from "the post-gate densification
+    to 17 values", confounded in the 17-value cell (healthy at sigma=0.1,
+    collapsed on all four seeds at sigma_c)."""
     from experiments.constrained_soft_02.configs import CONFIGS
 
     parent = asdict(CONFIGS[f"S2_d8_camort_l50_letf_ne128_house{sigma_suffix}"])
@@ -265,13 +248,12 @@ def test_d8_camort_spine3_is_one_lever_off_the_17_value_cell(sigma_suffix):
 
 
 def test_d8_camort_spine1_is_one_lever_off_spine3_sc():
-    """Collapse-mechanism twin: spine3 sc collapsed identically to the
-    17-value cell, so mixture cardinality is exonerated and the remaining
-    split is machinery-vs-mixture. spine1 keeps the FULL amortised machinery
-    (conditioning channel, matched base, per-cycle draw-and-bind) at a
-    single value {0.5}: if it also dies, the machinery breaks at sigma_c
-    without any mixing; if it matches the mb c=0.5 specialist (~0.96), the
-    mixture is the poison."""
+    """One lever off spine3 sc: the full amortised machinery (conditioning
+    channel, matched base, per-cycle draw-and-bind) at a single value {0.5}.
+    spine3 sc collapsed identically to the 17-value cell, so this splits
+    machinery from mixture — dying means the machinery breaks at sigma_c with
+    no mixing, matching the mb c=0.5 specialist (~0.96) means the mixture is
+    the poison."""
     from experiments.constrained_soft_02.configs import CONFIGS
 
     parent = asdict(CONFIGS["S2_d8_camort_spine3_l50_letf_ne128_house_sc"])
@@ -288,13 +270,10 @@ def test_d8_camort_spine1_is_one_lever_off_spine3_sc():
 
 
 def test_d8_camort_spine3_rb1_is_one_lever_off_spine3_sc():
-    """Collapse-mechanism twin: amortised replay scores each state
-    against its own cycle's frozen c_t (up to replay_buffer_cycles=4 cycles
-    stale) — the one structural asymmetry vs the specialist path, which
-    always uses the latest grid. rb1 sets replay_buffer_cycles=1 so every
-    inner batch is scored against cycle-fresh c_t and trajectories: if it
-    trains, staleness (or off-policy replay) is the killer; if it dies,
-    the mixture itself is."""
+    """One lever off spine3 sc: replay_buffer_cycles=1, so every inner batch is
+    scored against cycle-fresh c_t and trajectories rather than its own cycle's
+    frozen c_t up to 4 cycles stale — the one structural asymmetry vs the
+    specialist path, which always uses the latest grid."""
     from experiments.constrained_soft_02.configs import CONFIGS
 
     parent = asdict(CONFIGS["S2_d8_camort_spine3_l50_letf_ne128_house_sc"])
@@ -335,7 +314,7 @@ def test_d4_gate_differs_from_wave3_camort_in_declared_set_only():
     assert ising_diff == {"base_matches_composition"}, ising_diff
 
 
-# -- wire: one construction helper serves train AND rebuild-eval ------------
+# -- wire: one construction helper serves train and rebuild-eval ------------
 
 
 def test_construct_target_forwards_matched_base_flag():
@@ -356,9 +335,8 @@ def test_construct_target_forwards_matched_base_flag():
 
 
 def test_rebuild_from_run_dir_forwards_matched_base_flag(tmp_path):
-    # The eval instrument: a rebuild that silently drops the flag would
-    # eval a matched-base run against a uniform base — the exact
-    # pre-de9db7c failure, reborn. Exercised end-to-end via config.json.
+    # A rebuild that silently drops the flag would eval a matched-base run
+    # against a uniform base (the pre-de9db7c failure), so go via config.json.
     from dataclasses import asdict as cfg_asdict
 
     from experiments.constrained_soft_02.configs import CONFIGS

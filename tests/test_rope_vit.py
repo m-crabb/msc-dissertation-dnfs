@@ -1,9 +1,8 @@
-"""Falsification tests for the periodic-RoPE / patch-key backbone
-(`models/rope_vit.py`), written BEFORE the module body.
+"""Periodic-RoPE / patch-key backbone (`models/rope_vit.py`).
 
-What the backbone claims, stated as tests:
+Properties pinned:
 
-  * RoPE primitive: a rotated dot product depends on the SIGNED lattice
+  * RoPE primitive: a rotated dot product depends on the signed lattice
     offset (delta_row, delta_col) mod L and on nothing else -- the torus wraps
     exactly because every phase frequency is an integer multiple of 2 pi / L.
     Signed, not min-image: +delta and -delta must differ (the swap readout is
@@ -21,7 +20,7 @@ What the backbone claims, stated as tests:
     hidden). Input-masking commutes with the roll, so a both-holes-masked
     pair oracle on the bidirectional body is exactly pair-equivariant:
     G(T_v x)[i+v, j+v] = G(x)[i, j].
-  * The CAUSAL streams are NOT equivariant (the raster prefix set is not
+  * The causal streams are not equivariant (the raster prefix set is not
     shift-covariant); nothing here claims otherwise.
   * fimo2 (factorised + prefix band + row/col orderings) on this backbone is
     doubly blind and exactly swap-antisymmetric at 4x4 and 8x8, the swap
@@ -304,7 +303,7 @@ def test_patch_two_body_equivariant_under_patch_multiple_shifts_only(lattice_sid
 
 @torch.no_grad()
 def test_masked_pair_oracle_is_exactly_pair_equivariant():
-    """Both holes zeroed at the INPUT, bidirectional body read at j, readout
+    """Both holes zeroed at the input, bidirectional body read at j, readout
     against omega_i - omega_j: the O(d^2)-pass oracle. Masking commutes with
     the roll, so the pair score field shifts with the lattice."""
     lattice_side = 4
@@ -458,18 +457,17 @@ def test_rope_cells_mirror_fimo2_rung_except_backbone(patch_size):
 
 def test_rope_ma_cells_are_their_ma_twin_plus_the_backbone_position_code():
     """Single-variable pin for the 8x8 sigma_c arms (2026-08-28): each RoPE
-    masked-attention cell must differ from the `ma` sibling in `model` and
-    NOTHING else, and must build a head sitting on a RoPE backbone at its own
-    patch size. Both p run: p = 1 is dense causal attention in two pieces, so
-    it isolates the position code, and p = 2 adds far-key pooling, so the
-    chain ma -> rope1 -> rope2 separates the code from the pooling.
+    masked-attention cell differs from the `ma` sibling in `model` alone and
+    builds a head on a RoPE backbone at its own patch size. Both p run: p = 1
+    is dense causal attention in two pieces, isolating the position code, and
+    p = 2 adds far-key pooling, so ma -> rope1 -> rope2 separates the code
+    from the pooling.
 
     Also pins the optimised recipe: these cells are built by `replace`-ing a
-    parent rather than by calling `optimised_recipe`, which is exactly how a
-    cell silently loses `compile_head`. They are masked attention, not
-    factorised, so decision (c) -- factorised arms at exact sigma_c train
-    eager, after compile produced catastrophic seeds there at ~40% -- does
-    not reach them and both must be compiled."""
+    parent rather than by calling `optimised_recipe`, which is how a cell
+    silently loses `compile_head`. The eager-at-sigma_c rule applies to the
+    factorised arms only (compile gave catastrophic seeds there at ~40%);
+    these are masked attention, so both must be compiled."""
     from dataclasses import replace
 
     from experiments.constrained_hard_03.configs import (

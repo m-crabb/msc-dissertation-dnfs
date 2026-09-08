@@ -3,7 +3,7 @@
 Only the pure-tensor analysis functions are exercised here: histogram/TV, the
 on-slice free-energy reference, and the within-level uniformity metric. The
 full gate (`run_gate`/`main`) instantiates the leTF backbone and runs the swap
-CTMC, so it is NOT tested locally -- the controller runs the real gate.
+CTMC, so it is not tested locally -- the controller runs the real gate.
 """
 
 import itertools
@@ -124,7 +124,7 @@ def test_within_level_concentration_shows_large_excess():
 
 def test_within_level_skewed_weights_uniform_states_excess_near_zero():
     # Weight-matching pin: the states cover the level
-    # EXACTLY uniformly, but the IS weights are heavily skewed (lognormal,
+    # exactly uniformly, but the IS weights are heavily skewed (lognormal,
     # n_eff_k ~ 37 << n_k = 3200). Weight dispersion alone floors the raw TV_k
     # at ~0.30; the weight-matched null (observed weights on uniform draws)
     # models exactly that, so the excess must sit ~0. Under the old unweighted

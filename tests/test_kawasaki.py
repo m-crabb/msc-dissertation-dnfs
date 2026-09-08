@@ -1,6 +1,6 @@
 """Tests for the Kawasaki composition-preserving Ising sampler (§3.1).
 
-These encode "what correct looks like" for the hard-constraint MCMC baseline:
+Pins for the hard-constraint MCMC baseline:
   1. a swap move conserves composition exactly (the hard constraint, by
      construction);
   2. the incremental swap Δlog_prob matches a full recompute, including the
@@ -53,7 +53,7 @@ def test_swap_preserves_composition():
 
 
 def test_kawasaki_dE_matches_recompute_nonadjacent():
-    # site 0 (+1) and site 6 (-1): on a 4x4 torus 6 is NOT a neighbour of 0.
+    # site 0 (+1) and site 6 (-1): on a 4x4 torus 6 is not a neighbour of 0.
     D, sigma = 4, 0.37
     x = _config(D, [0, 5, 10])
     i, j = 0, 6
@@ -74,7 +74,7 @@ def test_kawasaki_dE_matches_recompute_adjacent():
 
 def test_kawasaki_stationary_matches_exact_enum_d4():
     """A long chain reproduces the exact canonical conditional on the c=0.5
-    slice. Compared over discrete energy LEVELS (not per-state), so it is not
+    slice. Compared over discrete energy levels (not per-state), so it is not
     subject to the finite-N TVD floor (project_tvd_floor_at_low_n)."""
     from discrete_flow_sampler.diagnostics.metrics import (
         conditional_pmf_at_composition,

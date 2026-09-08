@@ -2,19 +2,18 @@
 blindness: hollow local patch with the partner zeroed + multi-scale pooled
 context with both holes subtracted + torus-relative pair position).
 
-Written BEFORE the head body. The claims under test, each as a property the
-implementation cannot fake:
+The claims under test:
 
   * two-hole blindness: the pair context H_ij is invariant to x_i, x_j and
-    both together, for EVERY pair of a 4x4 lattice (adjacent, diagonal,
+    both together, for every pair of a 4x4 lattice (adjacent, diagonal,
     distance 2, wrap-around) and a probe set at 8x8;
   * the context is not trivially blind: it moves when a neighbour of a hole
-    moves AND when a far site moves (the pooled levels reach it);
+    moves and when a far site moves (the pooled levels reach it);
   * the vectorised assembly equals a slow per-pair reference that zeroes the
     partner in the patch and subtracts the holes from the pooled means by
     hand -- the index arithmetic of the torus scatter is what this pins;
   * exact state-swap antisymmetry and exact index antisymmetry at init;
-  * torus translation equivariance of the PAIR output G;
+  * torus translation equivariance of the pair output G;
   * the swap Kolmogorov residual averages to zero under the exact p_t on the
     enumerable 2x2 and 4x4 slices when dt_log_Z is exact -- the identity
     the loss relies on, which holds only if the reverse rate read off
@@ -138,7 +137,7 @@ def test_pair_context_sensitive_near_and_far():
 
 @torch.no_grad()
 def test_blindness_probe_has_teeth():
-    """Negative control for the probe: the per-site patch feature with NO
+    """Negative control for the probe: the per-site patch feature with no
     partner zeroing must register a neighbour flip loudly."""
     head = _head(lattice_side=4, patch_radius=1)
     x = _state(16)
@@ -195,7 +194,7 @@ def test_trivial_swap_vanishes_and_index_antisymmetry_exact():
 @torch.no_grad()
 @pytest.mark.parametrize("lattice_side,patch_radius", [(4, 1), (8, 1), (8, 2), (8, 3)])
 def test_pair_output_translation_equivariant_on_torus(lattice_side, patch_radius):
-    """The PHYSICAL rate of the unordered pair, G[min, max], must satisfy
+    """The physical rate of the unordered pair, G[min, max], must satisfy
     G(roll x)(roll i, roll j) == G(x)(i, j) for every lattice shift: nothing
     in the head may know an absolute position, and a shift that moves the
     lower index to the other hole must not change the rate. The stored
@@ -222,8 +221,8 @@ def test_pair_output_translation_equivariant_on_torus(lattice_side, patch_radius
 def test_kolmogorov_residual_zero_mean_on_exact_slice(lattice_side, composition):
     """E_{p_t^C}[delta_t] = 0 with exact dt_log_Z: holds only if the reverse
     rate the residual reads off -G is the true reverse rate. The bar is
-    relative to the residual RMS: the fp32 enumeration floor is ~3e-5 of
-    it (measured identically for the factorised head), not an absolute."""
+    relative to the residual RMS: the fp32 enumeration floor is ~3e-5 of it
+    (measured identically for the factorised head), not an absolute."""
     D = lattice_side
     head = _head(lattice_side=D)
     target = FixedCompositionIsingTarget(D=D, sigma=0.3, target_composition=composition)
@@ -251,7 +250,7 @@ def test_forward_matches_context_readout():
     token_difference = omega_f.unsqueeze(2) - omega_f.unsqueeze(1)
     scores = (head.compute_pair_context(x, t) * token_difference).sum(-1)
     # H is label-odd and the omega difference too, so the direct readout is
-    # the label-SYMMETRIC physical matrix; forward stores it index-antisymmetric.
+    # the label-symmetric physical matrix; forward stores it index-antisymmetric.
     assert _drift(scores, scores.transpose(1, 2)) < ATOL
     upper = torch.triu(scores, diagonal=1)
     assert _drift(head(x, t), upper - upper.transpose(1, 2)) < ATOL
@@ -336,7 +335,7 @@ def test_build_swap_head_wires_lattice_side_and_exact_field_wrapper():
 
 
 def test_d64_thp_cell_mirrors_fimo2_rung_except_head_kind():
-    """The d64 twin differs from the fimo2 rung ONLY in head_kind (and the
+    """The d64 twin differs from the fimo2 rung only in head_kind (and the
     fimo2-specific band/ordering knobs that head_kind makes inert), so any
     outcome difference is attributable to the head."""
     from dataclasses import replace

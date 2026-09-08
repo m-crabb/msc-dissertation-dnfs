@@ -1,25 +1,20 @@
-"""What correct looks like for the 20x20 fill, written before it.
+"""Tests for the 20x20 fill.
 
-This rung differs from every other house table in two ways, and both are
-places a fill can go wrong silently rather than loudly.
+This rung differs from every other house table in two ways, both places a
+fill can go wrong silently.
 
-TWO COUPLINGS. The rung was single-coupling by construction while only the
-sigma = 0.1 wave existed (an empty sigma_c half would have read as "not yet
-landed" rather than "never run"). The sigma_c wave (tag 20260829-d400-sc,
-12 cells, 100k steps) has its own certified reference (kawasaki_ref_d400_sc,
-tau 18.9 sweeps), so the table
+Two couplings. The rung was single-coupling while only the sigma = 0.1 wave
+existed. The sigma_c wave (tag 20260829-d400-sc, 12 cells, 100k steps) has its
+own certified reference (kawasaki_ref_d400_sc, tau 18.9 sweeps), so the table
 now carries the same s010/s220 pair as every rung below. The two waves have
-DIFFERENT config names (50k flat vs 100k_curr) and DIFFERENT tags, so cells
+different config names (50k flat vs 100k_curr) and different tags, so cells
 are pinned per (row, coupling) rather than globbed from one template.
 
-THE REFERENCE FLOP BILL IS SIZE-DERIVED. `chain_trial_counts` converts sweeps
-to swap proposals through `lattice_edge**2` and DEFAULTS TO 16, because it was
-written for the d256 fill. Imported here and left at its default it would
-under-bill the reference chain by (16/20)^2 = 0.64 -- a 36% error in the
-reference row's FLOP/es, with nothing in the output to reveal it. The 16x16
-module's docstring already promises the factor is "derived, not hard-coded, so
-another rung built this way cannot be mis-billed"; this rung is the one that
-tests the promise.
+The reference FLOP bill is size-derived. `chain_trial_counts` converts sweeps
+to swap proposals through `lattice_edge**2` and defaults to 16, having been
+written for the d256 fill; left at its default here it would under-bill the
+reference chain by (16/20)^2 = 0.64 -- a 36% error in the reference row's
+FLOP/es, with nothing in the output to reveal it.
 """
 
 import json
@@ -36,7 +31,7 @@ D_SITES = L * L
 
 
 def test_rung_is_two_coupling_at_exact_sigma_c():
-    """Both house couplings, and s220 is exact SIGMA_C, never legacy 0.223.
+    """Both house couplings, with s220 at exact SIGMA_C, never legacy 0.223.
 
     Each coupling names its own reference directory: scoring sigma_c cells
     against the sigma = 0.1 pool would carry a d<nn>/dsigma systematic that
@@ -79,13 +74,13 @@ def test_reference_bill_uses_this_rung_s_lattice_not_the_d256_default():
     expected = (1000 + 2000) * 20 * 20
 
     assert reference_trial_counts(provenance) == [expected] * 3
-    # And it must NOT silently equal the d256 default.
+    # And it must not silently equal the d256 default.
     assert reference_trial_counts(provenance) != chain_trial_counts(provenance)
 
 
 @pytest.mark.skipif(not REFERENCE_DIR.is_dir(), reason="d400 reference not generated")
 def test_reference_is_certified_at_this_lattice_and_coupling():
-    """A reference is a reference only for its own lattice AND sigma.
+    """A reference is a reference only for its own lattice and sigma.
 
     Both are recorded in the pool's provenance, and the directory name is
     not evidence of either -- `kawasaki_ref_d256_sc` is on record as
@@ -104,8 +99,8 @@ def test_reference_is_certified_at_this_lattice_and_coupling():
     not REFERENCE_DIR_SC.is_dir(), reason="d400 sigma_c reference not generated"
 )
 def test_sigma_c_reference_is_certified_at_exact_sigma_c():
-    """The sigma_c pool must record EXACT SIGMA_C -- the d256 sc pool's
-    0.22305 mislabel is the precedent this assertion exists to catch."""
+    """The sigma_c pool must record exact SIGMA_C -- the d256 sc pool was
+    mislabelled at 0.22305."""
     from discrete_flow_sampler.targets.ising import SIGMA_C
 
     provenance = json.loads((REFERENCE_DIR_SC / "provenance.json").read_text())
@@ -123,13 +118,13 @@ def test_sigma_c_reference_is_certified_at_exact_sigma_c():
 
 
 def test_external_anchor_gates_on_lattice_side_as_well_as_sigma():
-    """The mchammer nn anchor (0.578756) was measured at sigma_c AND d256.
+    """The mchammer nn anchor (0.578756) was measured at sigma_c and d256.
 
     The nn-correlation at criticality is D-dependent (finite-size effects
-    peak at sigma_c), so a d400 chain at exact SIGMA_C must NOT be held to
-    the d256 anchor: it could fail certification spuriously, or pass
-    narrowly and record an external cross-check that was never valid.
-    An earlier version of the check keyed on sigma alone."""
+    peak at sigma_c), so a d400 chain at exact SIGMA_C must not be held to
+    the d256 anchor: it could fail certification spuriously, or pass narrowly
+    and record an external cross-check that was never valid. An earlier
+    version of the check keyed on sigma alone."""
     from experiments.constrained_hard_03.generate_kawasaki_reference_d256 import (
         CERTIFICATION_NN_TARGET,
         external_nn_anchor,
@@ -145,7 +140,7 @@ def test_external_anchor_gates_on_lattice_side_as_well_as_sigma():
 
 @pytest.mark.skipif(not REFERENCE_DIR.is_dir(), reason="d400 reference not generated")
 def test_reference_has_no_external_anchor_and_says_so():
-    """Off sigma_c there is no mchammer anchor, and that must be RECORDED.
+    """Off sigma_c there is no mchammer anchor, and that must be recorded.
 
     The certification then rests on the internal checks alone (Gelman-Rubin,
     start-condition agreement). Silence here would let a reader assume an
@@ -198,7 +193,7 @@ def test_gfn_cells_name_registered_configs_at_both_couplings():
 
 def test_gfn_rows_stay_outside_the_bold_comparison():
     """The 8x8/16x16 rule carried up: a GFN cell holding the best number in
-    a column must not take the bold, which marks the best SWAP cell. `best`
+    a column must not take the bold, which marks the best swap cell. `best`
     runs over ARMS, which the GFN arms are not in."""
     from experiments.constrained_hard_03.analysis import house_table_20x20 as h20
 

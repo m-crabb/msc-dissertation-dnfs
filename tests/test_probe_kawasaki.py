@@ -1,27 +1,25 @@
-"""Tests for the 8x8 Kawasaki mixing-probe machinery, written before the
-implementations. What correct looks like:
+"""Tests for the 8x8 Kawasaki mixing-probe machinery.
 
 1. The local nearest-neighbour-swap snapshot runner is composition-preserving
-   BY CONSTRUCTION: every recorded snapshot must sit exactly on the c = 0.5
-   slice. A single off-slice snapshot means the move set is not a swap (the
-   hard constraint would silently become soft, invalidating the whole probe).
+   by construction: every recorded snapshot sits exactly on the c = 0.5 slice.
+   An off-slice snapshot means the move set is not a swap, and the hard
+   constraint has silently become soft.
 2. At sigma = 0 every unlike-pair proposal is accepted (delta log p = 0), so
    the acceptance fraction equals the probability that a uniformly drawn
    directed NN bond is unlike-spin. Under the uniform slice distribution that
    is d / (2*(d-1)) for any fixed bond (hypergeometric: pick the partner spin
    from the remaining d-1 sites, of which d/2 are opposite). The chain kernel
-   preserves uniformity at sigma = 0, so the long-run acceptance pins BOTH the
+   preserves uniformity at sigma = 0, so the long-run acceptance pins both the
    proposal distribution and the accept rule.
 3. Split-half R-hat halves each chain before the multi-chain R-hat, so a
    drift shared by all chains (none stationary, all agreeing) is caught as a
    first-half/second-half discrepancy that plain R-hat is blind to.
 4. The mchammer canonical probe runner respects the explicit initial state
-   (snapshot 0 IS the seeded configuration -- the mode round-trip the
-   reference seeding depends on), keeps composition constant, records the
-   exact snapshot count, and its data-container `potential` equals
-   -sigma * x^T A x recomputed from OUR snapshots -- the cross-engine check
-   that would fail loudly if the supercell atom order stopped being readable
-   as a row-major torus flattening.
+   (snapshot 0 is the seeded configuration), keeps composition constant,
+   records the exact snapshot count, and its data-container `potential`
+   equals -sigma * x^T A x recomputed from our snapshots -- the cross-engine
+   check that fails if the supercell atom order stops being readable as a
+   row-major torus flattening.
 """
 
 import numpy as np
@@ -152,7 +150,7 @@ def test_run_canonical_probe_tiny_run():
     assert np.all((snapshots == 1).sum(axis=1) == d_SMALL // 2)
     assert result["composition_is_constant"]
 
-    # initial spins respected: snapshot 0 IS the seeded state, so the
+    # initial spins respected: snapshot 0 is the seeded state, so the
     # seeded phi mode (side=0 -> +domain in the left half-columns) survives
     # the spins -> symbols -> spins round trip.
     np.testing.assert_array_equal(snapshots[0], initial.astype(np.int8))

@@ -1,4 +1,4 @@
-"""What correct looks like for the soft flip log-ratio decomposition.
+"""The soft flip log-ratio decomposition.
 
 The soft analogue of the hard chapter's local-field regression rests on one
 closed form, derived here and pinned against brute force:
@@ -7,14 +7,14 @@ closed form, derived here and pinned against brute force:
                = x_i * [ -4 sigma h_i + 2 lambda (c_null - c*) + lambda/d ]
 
 with h_i = (A x)_i the local field (no self-bond, so hollow at i) and
-c_null = c(x) - (x_i + 1)/(2d) the HOLE-EXCLUDED composition. The base term
+c_null = c(x) - (x_i + 1)/(2d) the hole-excluded composition. The base term
 is -4 sigma x_i h_i because base_log_prob = x^T J x counts every edge twice.
-The naive penalty difference 2 lambda x_i (c - c*) - lambda/d looks x_i-EVEN
+The naive penalty difference 2 lambda x_i (c - c*) - lambda/d looks x_i-even
 in part, but substituting c = c_null + (x_i+1)/(2d) cancels the lambda/d
 pieces exactly, leaving a form that is odd in x_i with a hollow coefficient.
 
-Why the oddness matters and is worth a test of its own: the leTF emits
-G(i|x) = -x_i S_i(x) with S hollow at i, so the model can ONLY represent
+The oddness matters because the leTF emits
+G(i|x) = -x_i S_i(x) with S hollow at i, so the model can only represent
 x_i-odd functions of the state. If the true log-ratio had an x_i-even
 component the architecture could never learn it and the regression's R^2
 ceiling would be below 1 by construction; the closed form says the ceiling
@@ -23,7 +23,7 @@ is exactly 1, and test 2 asserts that.
 Failure modes these tests guard: a sign slip in the field term (the double
 edge count is easy to halve), the penalty's extensive scaling (lambda*d,
 mirroring VC-SGC, not bare lambda), and a feature matrix built from the
-hole-INCLUDED composition, which would silently leak x_i into a "hollow"
+hole-included composition, which would silently leak x_i into a "hollow"
 column and inflate every downstream R^2.
 """
 
@@ -65,7 +65,7 @@ def soft_target():
 
 
 def closed_form_flip_log_ratio(target, x):
-    """The derived form, built ONLY from hollow features and x_i."""
+    """The derived form, built only from hollow features and x_i."""
     d = x.shape[1]
     h = x @ target.A  # local fields, (N, d)
     c = target.composition_fraction(x).unsqueeze(1)  # (N, 1)

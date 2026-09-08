@@ -3,7 +3,7 @@
 The correctness crux is the ∂_t log Z_t baseline. The annealing path makes
 Z_t depend on the target composition, so a baseline averaged over a batch
 spanning several compositions mixes incompatible normalisers and biases every
-row's residual target. The loop avoids that by drawing ONE composition per
+row's residual target. The loop avoids that by drawing one composition per
 outer cycle — leaving the average over the full outer batch, exactly as
 precise as a specialist run's — and then carrying each state's own
 composition and baseline through the replay buffer, so inner batches may

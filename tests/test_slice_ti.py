@@ -1,7 +1,5 @@
 """Tests for the slice thermodynamic-integration reference (slice_ti.py).
 
-Written BEFORE the implementation. What correct looks like:
-
 The on-slice free energy in the repo's convention (metrics.free_energy_lb_estimate,
 paper Eq. 37) is F/d = -log Z_slice(sigma) / (2 sigma d). Thermodynamic
 integration exploits d(log Z_slice)/d(sigma) = <x^T A x>_sigma:
@@ -9,7 +7,7 @@ integration exploits d(log Z_slice)/d(sigma) = <x^T A x>_sigma:
     log Z_slice(sigma) = log C(d, N_plus) + integral_0^sigma <x^T A x>_s ds
 
 so a quadrature over chain estimates of the mean double-counted pair energy
-<x^T A x>_s yields an ABSOLUTE reference in exactly the convention the
+<x^T A x>_s yields an absolute reference in exactly the convention the
 neural estimate -1.89703 was produced in. The failure mode that matters is
 a silent convention mismatch (sign, factor 2 sigma d, single- vs
 double-counted adjacency); these tests pin every link against the exact
@@ -105,7 +103,7 @@ def test_lattice_energy_matches_target_convention():
 
 @pytest.mark.parametrize("sigma_target", [0.10, 0.223])
 def test_ti_on_exact_integrand_recovers_enumeration_reference(sigma_target):
-    # End-to-end convention test: TI with the EXACT <x^T A x>_sigma curve
+    # End-to-end convention test: TI with the exact <x^T A x>_sigma curve
     # (enumeration integrand, zero statistical error) must reproduce
     # on_slice_free_energy_reference at 4x4 to quadrature precision.
     # This is the test that catches any silent sign / 2-sigma-d / adjacency

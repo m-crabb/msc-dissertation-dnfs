@@ -10,7 +10,7 @@ where the fixed-composition fibre is enumerable:
    (reveal a uniform masked site, assign species A = spin +1 w.p. b/m), the
    optimally controlled generator's unmask rate, computed as
    reference-rate x exp(V(child) - V(state)) with the value function summed
-   over fibre completions, equals EXACTLY the constrained target's masked
+   over fibre completions, equals exactly the constrained target's masked
    conditional Pr_pi(X^i = s | unmasked pattern). The hinge is the exact
    cancellation (b/m) x C(m,b)/C(m-1,b-1) = 1 -- the urn factor in the
    reference against the completion count in the value ratio. This is what
@@ -23,19 +23,18 @@ where the fixed-composition fibre is enumerable:
        logit(+1) - logit(-1) = log(b/(m-b)) + 4 sigma f_i,
    with f_i the local field where unmasked neighbours contribute their spin
    and masked neighbours their urn mean mu = (2b - m)/m, is
-   (a) EXACT at sigma = 0 (the hypergeometric urn law b/m),
-   (b) EXACT when one site remains masked (budget-forced delta),
+   (a) exact at sigma = 0 (the hypergeometric urn law b/m),
+   (b) exact when one site remains masked (budget-forced delta),
    (c) a delta whenever b = 0 or b = m at any sigma,
    (d) Z2-covariant on the symmetric fibre, and
    (e) strictly better than the unconstrained zero-imputation
-       preconditioner (which cannot see the budget at all and assigns
-       positive probability to species the budget forbids).
+       preconditioner, which cannot see the budget at all and assigns
+       positive probability to species the budget forbids.
 
-The failure mode this construction guards: initialising a constrained
-masked sampler with the UNCONSTRAINED preconditioner starts it off the
-fibre-conditional law precisely at the boundary states (b = 0 or b = m)
-where the budget binds hardest -- the states every trajectory must pass
-through late in generation."""
+Initialising a constrained masked sampler with the unconstrained
+preconditioner starts it off the fibre-conditional law precisely at the
+boundary states (b = 0 or b = m) where the budget binds hardest -- the states
+every trajectory must pass through late in generation."""
 
 from itertools import combinations
 from itertools import product as cartesian_product
@@ -150,7 +149,7 @@ def unconstrained_preconditioner_plus(state, site, sigma, neighbours):
 def optimal_unmask_probability_via_value_function(
     state, site, spin, sigma, n_plus_target, neighbours
 ):
-    """The controlled generator's unmask tilt computed the LONG way:
+    """The controlled generator's unmask tilt computed the long way:
     reference rate x exp(V(child) - V(state)), with exp(V) equal to the
     completion mass divided by the completion count C(m, b) (the reference's
     conditional terminal law is uniform over the C(m, b) completions). The
@@ -181,7 +180,7 @@ def optimal_unmask_probability_via_value_function(
 
 def test_value_function_tilt_equals_exact_masked_conditional():
     """(b/m) C(m,b)/C(m-1,b-1) = 1: the reference's urn factor cancels the
-    value ratio's completion counting, so the optimal generator IS the
+    value ratio's completion counting, so the optimal generator is the
     constrained target's masked conditional -- the licence for the MDNS
     parameterisation on the fibre."""
     neighbours = ring_neighbour_pairs(SMALL_RING)
@@ -201,7 +200,7 @@ def test_value_function_tilt_equals_exact_masked_conditional():
 def test_value_function_tilts_sum_to_one_per_site():
     """Per masked site the two species tilts sum to 1, so the controlled
     process keeps the reference's per-site unmask clock: control re-routes
-    WHICH species is revealed, never how fast sites reveal."""
+    which species is revealed, never how fast sites reveal."""
     neighbours = ring_neighbour_pairs(SMALL_RING)
     for state in feasible_masked_states(SMALL_RING, SMALL_RING_PLUSSES):
         for site, spin_value in enumerate(state):
@@ -260,9 +259,8 @@ def test_boundary_budgets_are_deltas_at_any_sigma():
 
 def test_last_masked_site_matches_the_exact_delta():
     """m = 1 is the fully-revealed limit where the exact conditional is a
-    budget-forced delta; the preconditioner must agree exactly (the
-    analogue of the unconstrained preconditioner being exact at full
-    context is this single-masked-site exactness)."""
+    budget-forced delta; the preconditioner must agree exactly (the analogue
+    of the unconstrained preconditioner being exact at full context)."""
     neighbours = ring_neighbour_pairs(SMALL_RING)
     for state in feasible_masked_states(SMALL_RING, SMALL_RING_PLUSSES):
         masked, _ = masked_and_budget(state, SMALL_RING_PLUSSES)
@@ -306,12 +304,12 @@ def test_z2_mirror_covariance_on_the_symmetric_fibre():
 
 
 def test_budget_tilt_strictly_dominates_the_unconstrained_preconditioner():
-    """The comparison the derivation exists for: against the brute-forced
-    fibre conditional, the budget-tilted preconditioner must beat the
-    unconstrained zero-imputation one in BOTH mean and worst-case absolute
-    error over every (feasible state, masked site) pair. The unconstrained
-    form's worst case is structural: at b = 0 with an aligned unmasked
-    field it confidently proposes the species the budget forbids."""
+    """Against the brute-forced fibre conditional, the budget-tilted
+    preconditioner must beat the unconstrained zero-imputation one in both
+    mean and worst-case absolute error over every (feasible state, masked
+    site) pair. The unconstrained form's worst case is structural: at b = 0
+    with an aligned unmasked field it confidently proposes the species the
+    budget forbids."""
     neighbours = ring_neighbour_pairs(SMALL_RING)
     tilted_errors, untilted_errors = [], []
     for state in feasible_masked_states(SMALL_RING, SMALL_RING_PLUSSES):
@@ -347,9 +345,9 @@ def test_budget_tilt_strictly_dominates_the_unconstrained_preconditioner():
 
 
 def test_untilted_form_violates_a_boundary_delta():
-    """Pin one concrete instance of the failure mode: budget exhausted,
-    but both unmasked neighbours are +1, so the unconstrained
-    preconditioner leans +1 while the fibre forbids it."""
+    """One concrete instance of the failure mode: budget exhausted, but both
+    unmasked neighbours are +1, so the unconstrained preconditioner leans +1
+    while the fibre forbids it."""
     state = (+1, +1, None, +1, -1, None)  # b = 0, m = 2 at N_+ = 3
     neighbours = ring_neighbour_pairs(SMALL_RING)
     masked, budget = masked_and_budget(state, SMALL_RING_PLUSSES)

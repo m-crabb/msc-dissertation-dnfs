@@ -1,14 +1,10 @@
 """Tests for paper-faithful diagnostics (paper Appendix D.1, Table 2).
 
-Tests for the IS estimators (`free_energy_lb_estimate`,
-`internal_energy_estimate`, `entropy_estimate`) and their
-enumeration-based exact references encode "what correct looks like"
-before the bodies are filled in. They start failing with
-NotImplementedError; they pass once each body lands.
-
-Tests for the off-paper utilities removed in the 2026-05 metric refactor
-(TVD, KL, 1-D Wasserstein, log_prob_w1) have been deleted alongside the
-function definitions.
+Covers the IS estimators (`free_energy_lb_estimate`,
+`internal_energy_estimate`, `entropy_estimate`) against their
+enumeration-based exact references. Tests for the off-paper utilities removed
+in the 2026-05 metric refactor (TVD, KL, 1-D Wasserstein, log_prob_w1) were
+deleted with the function definitions.
 """
 
 import pytest
@@ -175,8 +171,8 @@ def test_entropy_is_2sigma_times_energy_minus_free_energy():
 
 
 def test_exact_free_energy_matches_logsumexp_definition():
-    """Sanity: given a target whose log_p̃ enumerates trivially, the
-    exact F/D should equal -logsumexp(log_p̃(states)) / (2σD)."""
+    """For a target whose log_p̃ enumerates trivially, the exact F/D equals
+    -logsumexp(log_p̃(states)) / (2σD)."""
     sigma, D = 0.1, 2
 
     class TinyTarget:
@@ -375,7 +371,7 @@ def test_diagonal_correlation_all_up_is_one():
 
 def test_diagonal_correlation_checkerboard_is_plus_one():
     # checkerboard sign = (-1)^(row+col); diagonal neighbours (r±1,c±1) share
-    # colour, so every diagonal product is +1 — the OPPOSITE of nn_correlation.
+    # colour, so every diagonal product is +1 — the opposite of nn_correlation.
     coords = torch.arange(16)
     row, col = coords // 4, coords % 4
     x = ((-1.0) ** (row + col)).unsqueeze(0)  # (1, 16)

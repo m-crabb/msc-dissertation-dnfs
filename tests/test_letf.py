@@ -2,7 +2,7 @@
 
 Four correctness pillars:
 1. CausalStack inclusive-causal masking - perturbing input position i changes
-   outputs at positions >= i but NOT positions < i.
+   outputs at positions >= i but not positions < i.
 2. compute_body hollow (Def. 3) - full pipeline output at i independent of x_i.
    This is the load-bearing test; the readout's slice-and-mask trick + the
    inclusive-causal stacks are tested jointly here.
@@ -10,10 +10,9 @@ Four correctness pillars:
 4. Spin/index input regression - model accepts both +-1 floats (training)
    and 0/1 longs (tests).
 
-The original isolated AttentionReadout masks-self test is dropped: the
-slice-and-mask design depends on inputs structured by the inclusive-causal
-stacks, so an isolated readout test feeding arbitrary tensors is over-strict.
-The full-pipeline hollow test in pillar 2 is the right level of granularity.
+There is no isolated AttentionReadout masks-self test: the slice-and-mask
+design depends on inputs structured by the inclusive-causal stacks, so the
+full-pipeline hollow test in pillar 2 is the right granularity.
 """
 
 import pytest
@@ -91,7 +90,7 @@ def test_compute_body_hollow(use_sdpa):
         diff = (H1[0, i, :] - H2[0, i, :]).abs().max().item()
         if use_sdpa:
             # Tier-2 structural evidence: SDPA gives masked keys attention
-            # weight exactly 0 (exp(-inf)), so hollowness must hold EXACTLY
+            # weight exactly 0 (exp(-inf)), so hollowness must hold exactly
             # flag-on, not just within tolerance.
             assert diff == 0.0, f"SDPA hollowness not exact at i={i}: diff = {diff:.2e}"
         assert diff < 1e-5, (
@@ -156,7 +155,7 @@ def test_reference_fidelity_components_present():
 def test_omega_readout_init_uses_leaps_small_scale():
     """omega init std ~ 0.002 (LEAPS magnitude), not the kaiming_uniform default.
 
-    Why: omega is the rate-matrix readout (Eq. 22: G = (omega_tau - omega_xi)^T H).
+    omega is the rate-matrix readout (Eq. 22: G = (omega_tau - omega_xi)^T H).
     Default kaiming_uniform_(a=sqrt(5)) on (vocab=2, hidden=128) gives uniform
     bound = 1/sqrt(128) ~= 0.088, so std ~ 0.051. With H ~ O(1) post-LayerNorm
     and hidden_dim=128, the bilinear G has per-element std on the order of

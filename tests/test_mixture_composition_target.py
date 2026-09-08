@@ -1,13 +1,12 @@
-"""What correct looks like for the slice-mixture target, written before it.
+"""The slice-mixture target.
 
-Composition amortisation trains ONE head on a mixture of
-fixed-composition slices. The whole design
-rests on three algebraic facts this file pins:
+Composition amortisation trains one head on a mixture of fixed-composition
+slices. The design rests on three algebraic facts this file pins:
 
   * swaps conserve n_plus row-wise, so a trajectory never leaves the slice
-    it started on and every element's weights are exact against ITS OWN
+    it started on and every element's weights are exact against its own
     slice conditional;
-  * `base_log_eta` must therefore be computed FROM x (-log C(d, n_plus(x)))
+  * `base_log_eta` must therefore be computed from x (-log C(d, n_plus(x)))
     rather than stored as a single constant -- that is the one change that
     makes the per-slice geometric path exact under the mixture;
   * `swap_log_ratio`'s closed form survives unchanged, because the swapped
@@ -52,7 +51,7 @@ def test_sample_base_lands_only_on_registered_slices_and_covers_all():
 def test_base_log_eta_is_the_per_row_slice_constant():
     """-log C(d, n_plus(x)) per row: on each slice it must agree exactly
     with the single-slice target's constant, because the mixture's
-    per-slice conditional IS that target's."""
+    per-slice conditional is that target's."""
     tgt = _mixture()
     x = tgt.sample_base(300, device="cpu")
     eta = tgt.base_log_eta(x)

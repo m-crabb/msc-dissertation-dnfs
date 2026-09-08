@@ -1,13 +1,13 @@
 """Bit-exact regression tests for the Tier-1 performance refactors.
 
-The reference implementations below are VERBATIM copies of the pre-refactor
+The reference implementations below are verbatim copies of the pre-refactor
 code (swap_ctmc.py @ commit 7259301). The refactored library functions must
 match them exactly — torch.equal on CPU float32 — under identical RNG seeds.
 That is a fair test because the refactors add/remove/reorder no RNG
 consumption (`multinomial` / `bernoulli` / `rand` calls are untouched); only
 deterministic tensor arithmetic is restructured.
 
-Second-return contract note: the step functions' second return changed from
+Second-return contract: the step functions' second return changed from
 relu'd forward rates to raw gathered pair scores (so the eval loop can reuse
 one head call for the IS integrand). Assertions compare `F.relu(second)` on
 both sides — relu is idempotent, so the same assertion pins both the old and
@@ -279,7 +279,7 @@ def test_compute_xi_t_swap_unchanged_behaviour():
 
 @torch.no_grad()
 def test_antisymmetry_exact_under_bf16_autocast():
-    """Swap-antisymmetry must hold EXACTLY under autocast: both calls feed
+    """Swap-antisymmetry holds exactly under autocast: both calls feed
     bit-identical inputs to the masked body, and the readout dot product just
     negates one operand -- IEEE negation is exact at any precision."""
     head, target = _small_head_and_target()
@@ -327,12 +327,12 @@ def test_head_scores_match_fp32_within_bf16_tolerance():
 
 
 # --------------------------------------------------------------------------
-# SDPA readout (opt-in flag, default OFF)
+# SDPA readout (opt-in flag, default off)
 # --------------------------------------------------------------------------
 
 
 def _letf_pair(d: int, seed: int = 13) -> tuple[LeTFRateMatrix, LeTFRateMatrix]:
-    """Same-seed model pair differing ONLY in the SDPA readout flag (the flag
+    """Same-seed model pair differing only in the SDPA readout flag (the flag
     consumes no RNG, so the parameters are identical)."""
     models = []
     for use_sdpa in (False, True):
@@ -388,13 +388,13 @@ def test_model_cfg_sdpa_default_off():
 
 
 # --------------------------------------------------------------------------
-# torch.compile on the head (opt-in flag, default OFF)
+# torch.compile on the head (opt-in flag, default off)
 # --------------------------------------------------------------------------
 
 
 @torch.no_grad()
 def test_compile_head_flag_matches_uncompiled_and_keeps_state_dict():
-    """`compile_head=True` must use IN-PLACE nn.Module.compile: identical
+    """`compile_head=True` must use in-place nn.Module.compile: identical
     state_dict keys (no `_orig_mod.` prefix, so checkpoints round-trip) and
     inductor-vs-eager output agreement at fp32 tolerance. The cfg's d need
     not match the backbone (build_swap_head only reads head_kind /

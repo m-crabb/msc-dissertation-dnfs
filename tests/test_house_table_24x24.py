@@ -1,15 +1,15 @@
-"""What correct looks like for the 24x24 fill, written before it.
+"""The 24x24 house-table fill.
 
 The 24x24 rung (tag 20260903-d576-sc) is the d400 sigma_c R=3
 bf16 cell moved to the lattice, plus one continuation of the radius knob
-(R=4), three seeds each, ONE coupling. Two things can go wrong silently:
+(R=4), three seeds each, one coupling. Two things can go wrong silently:
 
   * the fill imports the 20x20 module's lattice-bound helpers, which were
     written with L = 20 baked in; used at their defaults they would bill the
     reference at (20/24)^2 = 0.69 of its true proposals and score the
     magnetisation/correlation profiles on the wrong lattice. Every helper
     the 24x24 fill takes from 20x20 must therefore accept the lattice side
-    explicitly, AND the 20x20 fill must be unchanged at its default.
+    explicitly, and the 20x20 fill must be unchanged at its default.
   * the table is single-coupling by construction (no sigma = 0.1 wave was
     ever run at d576). A two-coupling body would print an empty half that
     reads as "not yet landed" rather than "never run".

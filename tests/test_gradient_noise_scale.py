@@ -11,7 +11,7 @@ so measuring the squared norm at two batch sizes (b, N) solves the 2x2
 system for |G|^2 and tr(Sigma), and B_simple = tr(Sigma)/|G|^2 is the
 critical-batch predictor. The micro-batched backward already walks slices
 of size b inside the full batch of size N, so both measurements come from
-the SAME already-paid backward — the accumulated-gradient increment after
+the same already-paid backward — the accumulated-gradient increment after
 slice k is (n_k/N) * g_slice_k, which rescales to the unweighted slice
 gradient exactly.
 
@@ -67,9 +67,9 @@ def _flat_grad(head):
 
 
 def test_components_invert_the_expectation_identity():
-    """Feed the helper squared norms constructed FROM a known (|G|^2, trS)
-    via E|g_B|^2 = |G|^2 + trS/B; it must return that pair exactly. This
-    tests the 2x2 inversion, which is the research-bearing algebra."""
+    """Feed the helper squared norms constructed from a known (|G|^2, trS)
+    via E|g_B|^2 = |G|^2 + trS/B; it must return that pair exactly, which
+    tests the 2x2 inversion."""
     grad_sqnorm_true, trace_sigma = 3.7, 250.0
     slice_size, batch_size = 16, 128
     slice_sqnorm = grad_sqnorm_true + trace_sigma / slice_size
@@ -97,7 +97,7 @@ def test_components_reject_equal_sizes():
 
 def test_slice_sqnorms_match_independent_slice_gradients():
     """Each collected (rows, sqnorm) must equal the squared norm of that
-    slice's OWN unweighted gradient, computed by a separate backward. This
+    slice's own unweighted gradient, computed by a separate backward. This
     pins the (N / n_k) rescaling of the accumulated increment — the step a
     naive implementation (logging the weighted increment) would get wrong
     by a factor of (n_k/N)^2."""
