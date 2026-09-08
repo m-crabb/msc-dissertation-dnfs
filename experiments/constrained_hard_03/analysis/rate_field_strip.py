@@ -62,8 +62,15 @@ def channel_for_anchor(x, anchor, A, sigma):
     return sigma * delta
 
 
-def plot_strip(columns, side, anchor, out):
+SWAP_ROW_LABELS = ["Configuration", "Learned\nswap rate", "Closed-form\nlog ratio"]
+FLIP_ROW_LABELS = ["Configuration", "Learned\nflip rate", "Closed-form\nlog ratio"]
+
+
+def plot_strip(columns, side, anchor, out, row_labels=SWAP_ROW_LABELS):
     """State, learned rate and terminal log ratio; explanations live in the caption.
+
+    `anchor=None` draws no marked site: the flip-family strip, where the rate
+    and channel rows are per-site fields rather than one anchor's partners.
 
     Each row uses a common scale across time. The two fields have different
     units and separate colour scales. Read unordered-pair rates before calling
@@ -89,8 +96,7 @@ def plot_strip(columns, side, anchor, out):
         wspace=0.10,
         hspace=0.15,
     )
-    row_labels = ["Configuration", "Learned\nswap rate", "Closed-form\nlog ratio"]
-    anchor_row, anchor_col = divmod(anchor, side)
+    anchor_row, anchor_col = divmod(anchor, side) if anchor is not None else (0, 0)
     for row, key in enumerate(("x", "rate", "channel")):
         for col, values in enumerate(columns):
             ax = fig.add_subplot(grid[row, col])
@@ -115,7 +121,10 @@ def plot_strip(columns, side, anchor, out):
                     norm=TwoSlopeNorm(0, -limit, limit),
                     interpolation="nearest",
                 )
-            for colour, width in [("white", 2.4), ("#1a1a19", 1.2)]:
+            anchor_outline = (
+                [("white", 2.4), ("#1a1a19", 1.2)] if anchor is not None else []
+            )
+            for colour, width in anchor_outline:
                 ax.add_patch(
                     plt.Rectangle(
                         (anchor_col - 0.5, anchor_row - 0.5),
@@ -159,6 +168,12 @@ def main():
         help="display every Nth archived frame (default: all)",
     )
     parser.add_argument(
+        "--recorded-frames",
+        type=int,
+        nargs="+",
+        help="archived frame indices to display, instead of --recorded-stride",
+    )
+    parser.add_argument(
         "--anchor",
         type=int,
         default=None,
@@ -177,17 +192,26 @@ def main():
             parser.error("choose a run directory or --recorded, not both")
         with np.load(args.recorded, allow_pickle=False) as data:
             metadata = json.loads(str(data["metadata"]))
+            frames = args.recorded_frames or list(
+                range(0, len(data["times"]), args.recorded_stride)
+            )
             columns = [
-                dict(t=t, x=x, rate=rate, channel=channel)
-                for t, x, rate, channel in zip(
-                    data["times"][:: args.recorded_stride],
-                    data["states"][:: args.recorded_stride],
-                    data["rates"][:: args.recorded_stride],
-                    data["channels"][:: args.recorded_stride],
-                    strict=True,
+                dict(
+                    t=data["times"][k],
+                    x=data["states"][k],
+                    rate=data["rates"][k],
+                    channel=data["channels"][k],
                 )
+                for k in frames
             ]
-        plot_strip(columns, metadata["side"], metadata["anchor"], args.out)
+        anchor = metadata.get("anchor")
+        plot_strip(
+            columns,
+            metadata["side"],
+            anchor,
+            args.out,
+            row_labels=SWAP_ROW_LABELS if anchor is not None else FLIP_ROW_LABELS,
+        )
         print(f"saved {args.out} from {args.recorded}")
         return
     if args.run_dir is None:
