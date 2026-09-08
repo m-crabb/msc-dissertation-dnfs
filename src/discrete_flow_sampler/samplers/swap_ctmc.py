@@ -65,18 +65,15 @@ def _euler_step_swap(
     fires that step; logging the Λ·dt>1 clip fraction is the caller's
     responsibility (the train driver).
 
-    The second return is the RAW gathered head output G[i,j] (relu applied
+    The second return is the raw gathered head output G[i,j] (relu applied
     internally where rates are needed), so the eval loop can reuse this one
     head call for the ξ_t integrand.
 
     `stats` (optional dict) accumulates the same transport counters as the
-    matching step, so one-event trajectories get a measured jump budget too.
-    This step has no thinning/rejection stage — the categorical draws the
-    firing pair directly with probability rate·dt — so a fired event is both
-    the proposal and the acceptance and "proposed" == "accepted" by
-    construction (both keys are kept so downstream readers see one schema).
-    "accepted_state_changing" excludes fired same-spin pairs: their swap is
-    a state no-op, so counting them would overstate productive transport.
+    matching step. There is no thinning stage here, so a fired event is both
+    proposal and acceptance and "proposed" == "accepted" (both keys kept for
+    one schema); "accepted_state_changing" excludes fired same-spin pairs,
+    whose swap is a state no-op.
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)  # (P, 2)
@@ -119,12 +116,12 @@ def _vertex_disjoint_matching(proposed, priority, pairs, d, max_rounds=8):
     """Extract a vertex-disjoint subset (matching) of the `proposed` pairs.
 
     Luby-style rounds: a pair is a winner iff it holds the highest priority
-    among all still-active pairs at BOTH its endpoints; winners are then
+    among all still-active pairs at both its endpoints; winners are then
     vertex-disjoint by construction (distinct priorities ⇒ a vertex is the max
     for ≤1 pair). Winning vertices are retired and pairs touching them
-    deactivated, then repeat. Driving toward a MAXIMAL matching drops only
-    genuinely unresolvable conflicts, keeping the per-pair firing rate close to
-    the proposal rate (the property the IS weight relies on). Returns a (B, P)
+    deactivated, then repeat. Driving toward a maximal matching drops only
+    unresolvable conflicts, keeping the per-pair firing rate close to the
+    proposal rate (the property the IS weight relies on). Returns a (B, P)
     bool mask ⊆ `proposed`.
     """
     batch_size, n_pairs = proposed.shape
@@ -189,15 +186,12 @@ def _euler_step_swap_matching(
     as dt → 0, so this collapses to the one-event step in that limit. The caller
     controls dt to hold the expected events per site per step ≤ 0.1.
 
-    `stats` (optional dict) accumulates the step's own fidelity numbers —
-    proposed/accepted swap counts and states visited, kept as device tensors
-    so no per-step host sync — because this is the RUNNING step's only
-    faithfulness record: `lambda_dt_clipped_frac` in the training log gates
-    the one-event step, which this function replaces, and the Luby matching
-    silently drops proposals still contested after its round budget.
-    Without a matching-native diagnostic a d256 run can sit outside its
-    validated envelope unnoticed; the drop fraction this feeds is that
-    certificate.
+    `stats` (optional dict) accumulates proposed/accepted swap counts and
+    states visited, kept as device tensors (no per-step host sync). This is
+    the running step's only faithfulness record: `lambda_dt_clipped_frac`
+    gates the one-event step only, and the Luby matching silently drops
+    proposals still contested after its round budget, so the drop fraction
+    this feeds is the certificate that a run sits inside its validated envelope.
     """
     batch_size, d = state.shape
     pairs = upper_tri_pairs(d, state.device)
@@ -245,12 +239,10 @@ def sample_swap_ctmc(
     swap/step (O(d²) steps at the critical coupling).
 
     `matching_stats` (optional dict) accumulates the step's transport
-    counters — proposed/accepted/state-changing swaps and states visited —
-    for BOTH step kinds (see `_euler_step_swap_matching` and
-    `_euler_step_swap` for each step's counting semantics). Feeds the
-    `proposal_drop_frac` / `events_per_site_per_step` training-log columns
-    and the eval-time jumps-per-site budget. None (the default) skips all
-    accumulation — the historical behaviour, bit-for-bit.
+    counters (proposed/accepted/state-changing swaps and states visited) for
+    both step kinds; feeds the `proposal_drop_frac` /
+    `events_per_site_per_step` training-log columns and the eval-time
+    jumps-per-site budget. None skips all accumulation, bit-for-bit.
 
     `resampling` (needs `target`, and one of `return_log_weights` /
     `return_all_states`) enables adaptive systematic resampling of the
@@ -258,37 +250,31 @@ def sample_swap_ctmc(
     Resampling duplicates whole on-manifold rows, so composition stays
     bit-exact. Two modes:
 
-      * with `return_log_weights=True` — the EVAL mode. Return becomes
-        (x_final, log_weights, ResamplingStats); the final-segment
-        log_weights feed `smc_log_z_estimate` together with the stats.
-      * with `return_all_states=True` — the TRAINING-ROLLOUT mode (LEAPS
-        Alg. 1 lines 11-14, whose trajectories Alg. 2 line 5 trains on).
-        Weights are accumulated internally to drive the trigger ONLY, and
-        the return is (trajectory, ResamplingStats) — deliberately WITHOUT
-        the weights. They are a per-segment residue after the resets, so a
-        caller that read them as the trajectory's IS weights would silently
-        drop every banked increment; anything wanting a log Ẑ must use the
-        eval mode. Each slice is recorded AFTER that step's checkpoint, so
-        `trajectory[k]` is the equally-weighted ensemble that CONTINUES
-        from t_k — the measure whose plain batch mean estimates E_{p_t}[·]
-        (the `rollout_resample_ess_fraction` config field carries the full
-        argument for why c_t needs exactly that). Slices already written
-        are never rewritten with the ancestor permutation: replaying the
-        genealogy backwards would replace each earlier slice's filtering
-        marginal p_s with a smoothing one tilted by future weights, and
-        nothing downstream consumes a trajectory as a path — the buffer
-        stores (state, t) pairs and c_t is a per-slot mean, so only the
-        per-slot marginal has to be right.
+      * `return_log_weights=True`, the eval mode: returns (x_final,
+        log_weights, ResamplingStats); the final-segment log_weights feed
+        `smc_log_z_estimate` together with the stats.
+      * `return_all_states=True`, the training-rollout mode (LEAPS Alg. 1
+        lines 11-14, whose trajectories Alg. 2 line 5 trains on): weights
+        drive the trigger only and the return is (trajectory,
+        ResamplingStats) without them, since after the resets they are a
+        per-segment residue, not the trajectory's IS weights; a log Ẑ needs
+        the eval mode. Each slice is recorded after that step's checkpoint,
+        so `trajectory[k]` is the equally-weighted ensemble that continues
+        from t_k, the measure whose plain batch mean estimates E_{p_t}[·]
+        (see `rollout_resample_ess_fraction`). Earlier slices are never
+        rewritten with the ancestor permutation: that would replace each
+        filtering marginal p_s with a smoothing one tilted by future
+        weights, and nothing downstream consumes a trajectory as a path
+        (c_t is a per-slot mean, so only the per-slot marginal must be right).
 
     `return_cv_integrand=True` requires `return_all_states=True`, `target`
-    and resampling OFF: reuse is certified only for plain buffer rollouts.
-    Return (trajectory, cv_integrand), adding (T, B) per-slot ξ_t (Eq. 8,
+    and resampling off (reuse is certified only for plain buffer rollouts).
+    Returns (trajectory, cv_integrand) with (T, B) per-slot ξ_t (Eq. 8,
     swap form) via `xi_t_swap_from_scores` on the Euler step's pair scores;
     only the final slot needs a fresh head call. Bit-identical to sequential
-    (chunk_rows=None) `compute_c_t_grid_swap`: same tensors/arithmetic, no
-    extra RNG consumption (tests/test_cv_integrand_reuse.py). At d256 this
-    removes 127 of 128 c_t-grid head forwards per outer cycle (~7-8 h eager
-    per 16x16 CV run).
+    (chunk_rows=None) `compute_c_t_grid_swap`, no extra RNG consumption
+    (tests/test_cv_integrand_reuse.py); at d256 this removes 127 of 128
+    c_t-grid head forwards per outer cycle (~7-8 h eager per 16x16 CV run).
     """
     if return_log_weights and target is None:
         raise ValueError("sample_swap_ctmc(return_log_weights=True) requires `target`.")
@@ -371,7 +357,7 @@ def sample_swap_ctmc(
             if accumulate_log_weights:
                 log_weights = log_weights + xi_t * step_dt
             if return_cv_integrand:
-                # Slot k of the CV grid IS this ξ_t: `state` here equals
+                # Slot k of the CV grid is this ξ_t: `state` here equals
                 # trajectory[step] and t_per_batch equals t_grid[step].
                 cv_integrand[step] = xi_t
         state = new_state
@@ -392,9 +378,8 @@ def sample_swap_ctmc(
             trajectory[step + 1] = state
 
     if return_cv_integrand:
-        # The loop covered slots 0..T-2 (each step's scores are at the
-        # slot it STARTED from); the final state never gets an Euler step,
-        # so its slot is the one fresh head call of the whole grid.
+        # The loop covered slots 0..T-2 (each step's scores are at the slot it
+        # started from); the final slot is the one fresh head call of the grid.
         cv_integrand[-1] = compute_xi_t_swap(
             state, ts[-1].expand(batch_size), head, target
         )
@@ -446,18 +431,17 @@ def slice_index_of(target, x: Tensor) -> Tensor:
 def mean_per_slice(values: Tensor, slice_idx: Tensor, n_slices: int) -> Tensor:
     """Within-slice mean of a (T, M) integrand table over its M rows. (T, K).
 
-    THE CORRECTION THIS ENCODES. On a slice mixture the
-    residual for a row on slice C needs ∂_t log Z_t^{(C)}: swap dynamics
-    hold every slice's mass fixed, so only each slice's conditional
-    evolves; a single mixture-level ∂_t log Z_t cannot generally serve
-    every slice's residual. E_{p_t^{(C)}}[ξ_t] = ∂_t log Z_t^{(C)} for any
-    rates (Stein), so the estimator is a within-slice mean. The pooled
-    mean over all rows (the earlier reduction) left every row an offset
+    On a slice mixture the residual for a row on slice C needs
+    ∂_t log Z_t^{(C)}: swap dynamics hold every slice's mass fixed, so only
+    each slice's conditional evolves, and one mixture-level ∂_t log Z_t
+    cannot serve every slice. E_{p_t^{(C)}}[ξ_t] = ∂_t log Z_t^{(C)} for any
+    rates (Stein), so the estimator is a within-slice mean. The pooled mean
+    over all rows (the earlier reduction) left every row an offset
     ∂_t log Z_t^{(C)} − mean_C ∂_t log Z_t^{(C)}, ~2 nats at d16 and ~18
     nats at d256 from the binomial base constant alone; with c_t detached
-    that offset reaches the gradient as 2·Δ·E_q[∇ξ_t]. With exact ratios,
-    E_{p_t^{(C)}}[∇ξ_t] = 0 by Stein cancellation; it need not vanish
-    under the current model law or replayed past model laws.
+    that offset reaches the gradient as 2·Δ·E_q[∇ξ_t], which vanishes by
+    Stein cancellation only under exact ratios, not under the current or
+    replayed model laws.
 
     K == 1 is `values.mean(dim=-1)` bit-for-bit (the archived specialist
     path). A slice with no rows (~K·(1−1/K)^M, negligible at M ≥ 128)
@@ -493,24 +477,20 @@ def compute_c_t_grid_swap(
     mode='control_variate' -> c_t = mean_m ξ_t^swap(x_t^{(m)})   (Eq. 8, swap form)
 
     Returns (c_t_grid, integrand_per_t). The grid is (T,) for a single-
-    slice target — the archived contract, bit-identical — and (T, K) for a
-    K-slice composition mixture, the mean taken WITHIN each slice (see
-    `mean_per_slice` for why the pooled mean was wrong). Rows keep their
-    slice for the whole trajectory, so `x_traj[0]` labels every slot.
+    slice target (the archived contract, bit-identical) and (T, K) for a
+    K-slice composition mixture, the mean taken within each slice (see
+    `mean_per_slice`). Rows keep their slice for the whole trajectory, so
+    `x_traj[0]` labels every slot.
 
-    chunk_rows: None runs the per-slot
-    sequential loop — n_grid integrand calls at outer_batch rows each, the
-    byte-identical archived behaviour. When set, the (n_grid × outer_batch)
-    integrand evaluations are flattened and computed in row-chunks of at
-    most chunk_rows, cutting the per-call launch overhead that dominates
-    the no-grad c_t phase at d256 (~75% of wall there is trajectory+c_t).
-    The quantities are the SAME fp32 ops modulo batch-dim blocking, so
-    parity vs the sequential path is pinned at the established 1e-5
-    batch-blocking class (tests/test_c_t_grid_chunk.py; no quality change
-    is permitted). The cap exists so
-    the flattened batch stays inside GPU memory: at d256-MA a no-grad call
-    peaks ~40 MB/row, so 512-2048 rows is the in-cap class on an 80 GB
-    a100. Stateless and RNG-free, so no resume contract beyond wiring.
+    chunk_rows: None runs the per-slot sequential loop, n_grid integrand
+    calls at outer_batch rows each (the archived behaviour). When set, the
+    (n_grid × outer_batch) evaluations are flattened and computed in
+    row-chunks of at most chunk_rows, cutting the per-call launch overhead
+    that dominates the no-grad c_t phase at d256. Same fp32 ops modulo
+    batch-dim blocking, so parity vs the sequential path is pinned at the
+    1e-5 batch-blocking class (tests/test_c_t_grid_chunk.py). The cap keeps
+    the flattened batch inside GPU memory: at d256-MA a no-grad call peaks
+    ~40 MB/row, so 512-2048 rows fits an 80 GB A100. Stateless and RNG-free.
     """
     if mode not in ("naive_mc", "control_variate"):
         raise ValueError(f"Unknown mode {mode!r}")

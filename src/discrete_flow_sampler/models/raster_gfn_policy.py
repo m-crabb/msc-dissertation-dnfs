@@ -1,30 +1,24 @@
 """Autoregressive raster-order policy for the GFlowNet comparator.
 
-The comparator's construction chain assigns lattice sites in raster order,
-so a state is a prefix x_{<i} and the forward policy is a product of per-site
-Bernoulli conditionals
+The construction chain assigns lattice sites in raster order, so a state is a
+prefix x_{<i} and the forward policy is a product of per-site Bernoulli
+conditionals
 
     q_theta(x) = prod_i P_F(x_i | x_{<i}),
 
 with the exactly-N_A composition constraint enforced by count masking: after
 placing n_up up-spins with r sites remaining, the conditional is forced to -1
-once n_up == N_A and forced to +1 once N_A - n_up == r. Every trajectory is
-feasible by construction ("the action space is set up so that infeasible
-states are never reachable"), which is the route this comparator exists to
-test against the CTMC-level projection.
+once n_up == N_A and forced to +1 once N_A - n_up == r, so every trajectory
+is feasible by construction (the route tested against the CTMC-level
+projection).
 
-Why a causal transformer and a FIXED order: scoring a full configuration
-computes all d conditionals in ONE causal forward pass (O(d^2) attention),
-where a general GFlowNet framework's state->logits map re-encodes each of the
-d prefixes separately (O(d^3)) — the difference between a runnable and an
-unrunnable 16x16 cell. Fixed raster order also gives each state exactly one
-parent, so P_B == 1 and both the flow-underdetermination problem and the
-learned-backward-policy design question disappear.
-
-Failure mode guarded here: the classic AR off-by-one, where the feature that
-predicts x_i has already seen x_i. Token i is the embedding of x_{i-1} (BOS
-at i=0), so position i attends only to sites < i; the sequential sampler and
-the parallel scorer share `_encode`, and a test pins their agreement.
+A causal transformer scores all d conditionals in one pass (O(d^2)
+attention) where a state->logits map re-encoding each prefix costs O(d^3).
+The fixed order gives each state exactly one parent, so P_B == 1 and no
+backward policy is learned. Guarded failure mode: the AR off-by-one where
+the feature predicting x_i has already seen x_i. Token i is the embedding of
+x_{i-1} (BOS at i=0), so position i attends only to sites < i; sampler and
+scorer share `_encode`, and a test pins their agreement.
 """
 
 import torch
@@ -101,11 +95,11 @@ class RasterGFNPolicy(nn.Module):
       * `log_z`        -> scalar log-partition estimate for the TB objective
                           (Malkin et al. 2022: at the TB optimum it equals
                           the slice log Z, so it is also a free estimator);
-      * flow head      -> log F_res(s_i), the forward-looking flow RESIDUAL
+      * flow head      -> log F_res(s_i), the forward-looking flow residual
                           of prefix s_i (Pan et al. 2023). The full log-flow
                           is log F(s_i) = log F_res(s_i) + partial_energy(s_i)
                           and the terminal residual is 0 by convention since
-                          a complete prefix's partial energy IS log p_tilde.
+                          a complete prefix's partial energy is log p_tilde.
     """
 
     def __init__(
@@ -132,17 +126,12 @@ class RasterGFNPolicy(nn.Module):
         self.final_norm = nn.LayerNorm(hidden_dim)
         self.policy_head = nn.Linear(hidden_dim, 1)
         self.log_z = nn.Parameter(torch.zeros(()))
-        # Two flow parameterisations. The shared-trunk readout (the
-        # original) reads log F_res off the causal features — cheapest, but
-        # its gradients flow INTO the policy trunk, and the flow-lr
-        # sweeps surfaced the failure mode: a fast flow readout absorbs DB
-        # residuals and SHIELDS the policy from its own gradient signal.
-        # The standalone module is the torchgfn convention (a separate
-        # ScalarEstimator over the state, verified in reference source):
-        # it decouples flow gradients from the trunk entirely, at a
-        # declared parameter cost (a small MLP over the 3-way one-hot
-        # prefix encoding; hidden = trunk hidden_dim, 2 hidden layers —
-        # a sizing choice kept small to bound the delta).
+        # Shared-trunk readout (the original) reads log F_res off the causal
+        # features, but its gradients enter the policy trunk: the flow-lr
+        # sweeps showed a fast readout absorbing DB residuals and shielding
+        # the policy from its gradient. The standalone module (torchgfn's
+        # separate ScalarEstimator convention) decouples them: a small MLP
+        # over the 3-way one-hot prefix, hidden = hidden_dim, 2 hidden layers.
         if not with_flow_head:
             self.flow_head = None
         elif standalone_flow_head:
@@ -215,7 +204,7 @@ class RasterGFNPolicy(nn.Module):
     def _forced_moves(self, n_up_before: torch.Tensor, site_index) -> tuple:
         """Boolean (force_up, force_down) given up-count before each site.
 
-        force_down uses >= rather than == so that scoring an OFF-slice state
+        force_down uses >= rather than == so that scoring an off-slice state
         (too many up-spins) yields -inf instead of silently renormalising.
         The two can never both hold on a reachable prefix: they would need
         N_A - n_up == remaining and n_up == N_A with remaining >= 1.
@@ -256,10 +245,10 @@ class RasterGFNPolicy(nn.Module):
 
     def _standalone_flow_residuals(self, spins: torch.Tensor) -> torch.Tensor:
         """(B, d) residuals from the standalone module: entry i is
-        log F_res of the prefix BEFORE site i (sites < i assigned, the rest
-        an explicit 'unassigned' class), matching the loss's alignment
-        exactly. All d prefixes of each sample are encoded as a 3-way
-        one-hot over sites — (B, d, 3d) — and scored in one MLP batch."""
+        log F_res of the prefix before site i (sites < i assigned, the rest
+        an explicit 'unassigned' class), matching the loss's alignment.
+        All d prefixes of each sample are encoded as a 3-way one-hot over
+        sites, (B, d, 3d), and scored in one MLP batch."""
         batch, d = spins.shape
         token_ids = (spins > 0).long()  # (B, d) in {0, 1}
         site = torch.arange(d, device=spins.device)
@@ -298,17 +287,14 @@ class RasterGFNPolicy(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Draw n slice configurations; returns (spins, log q_theta(spins)).
 
-        epsilon mixes the POLICY with a uniform behaviour distribution
-        (standard GFN exploration); the returned log-probability is always
-        the policy's own, which is what the TB loss needs — with epsilon > 0
-        training is off-policy, which TB tolerates without importance weights
-        (the one distinctly-GFN property this comparator keeps).
-
-        The mask binds the behaviour policy too, so exploration cannot leave
-        the slice. The default path caches per-block keys/values, so a
-        rollout costs O(d^2) attention; `kv_cache=False` keeps the naive
-        one-prefix-re-encode-per-site path (O(d^3)) whose only remaining
-        job is pinning the cache as an exact rewrite
+        epsilon mixes the policy with a uniform behaviour distribution (GFN
+        exploration); the returned log-probability is always the policy's
+        own, which TB needs: with epsilon > 0 training is off-policy, which
+        TB tolerates without importance weights. The mask binds the
+        behaviour policy too, so exploration cannot leave the slice. The
+        default path caches per-block keys/values (O(d^2) rollout);
+        `kv_cache=False` is the naive re-encode-per-site path (O(d^3)), kept
+        to pin the cache as an exact rewrite
         (test_sample_with_and_without_kv_cache_agree).
         """
         device = self.position_embedding.device

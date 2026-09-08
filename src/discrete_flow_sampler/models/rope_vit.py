@@ -1,61 +1,52 @@
 """Periodic-RoPE, patch-key leTF backbone with torus position encoding.
 
-The defect this answers. `letf.py` carries free ABSOLUTE position embeddings
-(one learned vector per site, in every causal block and in the readout), so
-the network must learn from d independent vectors that site 0 and site d-L
-are bonded across the wrap. Here there are no position parameters at all:
-positions enter through rotary embeddings whose phases are integer
-multiples of 2 pi / L, so every attention logit is a function of the SIGNED
-lattice offset (delta_row, delta_col) mod L and of nothing else --
+`letf.py` carries free absolute position embeddings (one learned vector per
+site), so the network must learn from d independent vectors that site 0 and
+site d-L are bonded across the wrap. Here there are no position parameters:
+positions enter through rotary embeddings whose phases are integer multiples
+of 2 pi / L, so every attention logit is a function of the signed lattice
+offset (delta_row, delta_col) mod L only --
 
     q_s . k_s' -> R(theta_s)^T q_s . R(theta_s') k_s' = q_s . R(theta_s' - theta_s) k_s',
     theta_s = 2 pi m (row_s, col_s) / L,   m integer,                          (1)
 
-and (1) is invariant under (row, col) -> (row + v) mod L for every integer v.
-Signed offsets, never min-image distance: folding +delta onto -delta would
-impose a reflection symmetry that fights the i < j antisymmetric readout.
+invariant under (row, col) -> (row + v) mod L for every integer v. Signed
+offsets, not min-image distance: folding +delta onto -delta would impose a
+reflection symmetry that fights the i < j antisymmetric readout.
 
-What is exact and what is not. The rotation (1) makes a BIDIRECTIONAL stack
-exactly torus-translation-equivariant, H(roll x) = roll H(x), and because
-input masking commutes with the roll a both-holes-masked pair oracle on it
-is exactly pair-equivariant (tests pin both). The heads in `constraints/`,
-however, take their blindness from the raster CAUSAL sweep, and the prefix
-set {x_<k} is not shift-covariant, so the causal streams this backbone hands
-them are NOT equivariant. What the heads gain is a relative, periodic
-position code in place of d free vectors; the sweep's raster asymmetry is
-untouched.
+(1) makes a bidirectional stack exactly torus-translation-equivariant,
+H(roll x) = roll H(x), and a both-holes-masked pair oracle on it exactly
+pair-equivariant (tests pin both). The heads in `constraints/` take their
+blindness from the raster causal sweep, whose prefix set {x_<k} is not
+shift-covariant, so the causal streams are not equivariant; they gain a
+relative periodic position code and nothing more.
 
-Patch keys, the d-scaling lever. ViT/DeiT tokenise the image into p x p
-patches; done naively on the causal sweep that breaks the slice trick (a
-patch strictly before patch(k) in patch-raster order can contain sites AFTER
-k in site-raster order, a leak). The compatible form keeps one query per
-SITE and splits the keys into
+Patch keys: p x p ViT patches applied naively to the causal sweep break the
+slice trick (a patch before patch(k) in patch-raster order can contain sites
+after k in site-raster order). The compatible form keeps one query per site
+and splits the keys into
 
     near  : individual sites in the query's own patch-row band (the p rows of
             sites that the query's patch-row spans), position <= query       [causal]
     far   : one pooled key per patch, allowed iff every member site precedes
             the query, i.e. the patch-row is strictly earlier                 [causal]
-    cond  : the conditioning token, scored UNROTATED (a rotated query against
-            an unrotated positionless key would reintroduce absolute position
-            -- the MDNS CLS-token mistake).
+    cond  : the conditioning token, scored unrotated (a rotated query against
+            an unrotated positionless key would reintroduce absolute position).
 
-Pooled patch key = MEAN over members of the ROTATED site keys, so the patch
-logit is the mean of the member logits and (1) still holds term by term;
-pooled value = mean of member values. Keys per query fall from d to
-1 + pL + d/p^2 (p = 1 is dense causal attention in two pieces, bit-level
-identical up to reduction order), attention cost per layer from O(d^2) to
-O(d (pL + d/p^2)). The price is the ViT price: pooling aliases shifts that
-are not multiples of p, so at p > 1 equivariance holds on p Z^2 only (pinned
-by test); and the far field is seen at patch resolution. Blindness is
-untouched: every far patch lies entirely before the query.
+Pooled patch key = mean over members of the rotated site keys, so the patch
+logit is the mean of the member logits and (1) holds term by term; pooled
+value = mean of member values. Keys per query fall from d to 1 + pL + d/p^2
+(p = 1 is dense causal attention in two pieces, identical up to reduction
+order), attention cost per layer from O(d^2) to O(d (pL + d/p^2)). Pooling
+aliases shifts that are not multiples of p, so at p > 1 equivariance holds on
+p Z^2 only (pinned by test), and the far field is seen at patch resolution.
+Blindness is untouched: every far patch lies entirely before the query.
 
-Frequencies. Each head has head_dim/2 rotation planes, half assigned to rows
-and half to columns; the integer multipliers are spread geometrically from 1
-to L/2 (Nyquist on the torus), so at the production width (hidden 32, 4
-heads, head_dim 8) each axis gets two planes, m in {1, L/2}: a long
-wavelength that separates far from near and a short one that resolves
-neighbours. Every multiplier is an integer, which is the whole periodicity
-argument.
+Frequencies: each head has head_dim/2 rotation planes, half on rows and half
+on columns; integer multipliers are spread geometrically from 1 to L/2
+(Nyquist on the torus), so at the production width (hidden 32, 4 heads,
+head_dim 8) each axis gets two planes, m in {1, L/2}. Every multiplier is an
+integer, which is the periodicity argument.
 """
 
 import math
@@ -137,7 +128,7 @@ class RoPELatticeAttention(nn.Module):
         angles = periodic_rope_angles(lattice_side, self.head_dim, "cpu")
         if reverse:
             angles = angles.flip(0)
-        # Index arithmetic on POSITIONS (the flipped raster is a raster too),
+        # Index arithmetic on positions (the flipped raster is a raster too),
         # all non-persistent: reproducible from the constructor, out of state_dict.
         band_width = patch_size * lattice_side
         position = torch.arange(d)

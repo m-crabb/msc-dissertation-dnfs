@@ -1,70 +1,40 @@
-"""Exclusion-mask band-attention swap head: direction (a), the reported head.
+"""Exclusion-mask band-attention swap head, the reported head.
 
-Direction (b) (`interval_swap_head.py`, prefix-sum band) came first, but
-its band assembly cancels the hole terms by SUBTRACTION,
-leaving an fp residue that needs a numerics caveat wherever the head is
-claimed exact. This head keeps everything else -- the three-interval
-decomposition, the causal P/S streams, the band feature families, the
-per-pair readout, the omega-difference readout -- and swaps only the band
-AGGREGATOR: masked attention over the same visible set the interval head
-sums. Exclusion happens BEFORE the softmax, so a hole term never enters any
-computed quantity and blindness is bit-exact, not exact-up-to-ulp. The
-interval head stays in the tree as the O(1)-per-pair reserve; the
-falsification suite is shared in structure (test_masked_attention_swap_head
-mirrors test_interval_swap_head with the blindness bar tightened to
-equality).
+`interval_swap_head.py` assembles its band by prefix-sum subtraction, which
+cancels the hole terms up to an fp residue. This head keeps its
+three-interval decomposition, causal P/S streams, band feature families and
+pair readout, and replaces only the band aggregator with masked attention
+over the same visible set. Exclusion happens before the softmax, so a hole
+term never enters any computed quantity and blindness is bit-exact.
 
-Same readout as swap_readout.py / interval_swap_head.py (DNFS Prop. 2 /
-Eq. (9), pair form):
+Readout (DNFS Prop. 2 / Eq. (9), pair form), as in swap_readout.py:
 
     G_swap(i, j | x) = < H_ij(x_{-{i,j}}),  omega_{x_i} - omega_{x_j} >
 
-and the same blindness requirement on the body: H_ij must not depend on the
-token VALUES at i and j (see interval_swap_head.py for why blindness must
-hold at every layer -- the two-hop leak -- and why band content must
-therefore be shallow/local in BOTH designs).
+H_ij must not depend on the token values at i and j; interval_swap_head.py
+explains why blindness must hold at every layer (the two-hop leak) and why
+band content is therefore shallow and local.
 
-How the band works here, per feature family:
+Band, per feature family: per-term features (unary v_k, offset-delta
+u^delta_k) are the interval head's; each pair (i, j) forms a query from its
+two position embeddings (no token content); keys are term features plus the
+term's position embedding; visibility is the interval head's index
+arithmetic (unary term k needs i < k < j; offset-delta term k needs k > i and
+k + delta < j); a masked softmax pools the visible features. Masked scores
+are filled with -1e9, not -inf: exp(-1e9 - max) underflows to exactly +0.0
+in fp32, so an excluded term's weight is zero whatever the hole tokens are,
+while a fully-masked row (empty interval, j - i < delta + 2) softmaxes to a
+finite uniform instead of NaN; its output and gradient are then zeroed by
+the index mask.
 
-    * the family's per-term features (unary v_k, offset-delta u^delta_k) are
-      unchanged from the interval head -- same MLPs, same meaning;
-    * each pair (i, j) forms a QUERY from the two position embeddings (no
-      token content: queries must be blind for every pair, and positions
-      always are);
-    * KEYS are term features plus the term's position embedding, so the
-      pooling weights can address the interior both by content ("a domain
-      wall") and by position ("the site next to the hole") -- the
-      position-addressability the fixed-weight interval sum lacks;
-    * visibility is the SAME index-arithmetic set as the interval head:
-      unary term k needs i < k < j; offset-delta term k (touching sites k
-      and k+delta) needs k > i and k + delta < j (straddle exclusion);
-    * masked softmax pools the visible features. Masked scores are set to
-      -1e9 (finite, not -inf): exp(-1e9 - max) underflows to EXACTLY +0.0
-      in fp32, so an excluded term's weight -- and hence its contribution
-      to numerator and denominator -- is exactly zero regardless of the
-      token values at the holes. That is the bit-exactness claim, and the
-      finite fill means a fully-masked row (empty interval: adjacent pairs,
-      or j - i < delta + 2) yields a FINITE uniform softmax instead of NaN;
-      its output is then overwritten with exact 0.0 by index mask, matching
-      the interval head's empty-band convention, and its gradient
-      contribution is zeroed by the same mask -- no NaN in forward or
-      backward, with no special-case branch.
+Cost: one backbone pass plus one masked attention of d^2 pair queries over
+O(d) terms per family. The (B, d^2, n_terms) score tensor is the price; it is
+halved by `gather_triu_pairs` (the band is defined on i < j, so the lower
+triangle is known zeros; see `interval_swap_head.scatter_symmetric_pairs`)
+and removed by `separable_band_scores`.
 
-Cost contract: one backbone pass (P/S) + one masked attention of d^2 pair
-queries over O(d) terms per family -- O(d) work per pair where the interval
-head pays O(1), but the O(d)-backbone-pass anchor multiplier (the ~99.5%
-term the mask-one head pays) is equally dead. The (B, d^2, n_terms) score
-tensor is the price: fine through d = 64 unchunked; d = 256 wants pair
-chunking (deferred to the D=16 repricing task, where the eval-path chunking
-already exists). Half of that price is removed by `gather_triu_pairs`
-(opt-in, default OFF): the band is DEFINED on i < j -- the lower triangle's
-visible set is empty and holds zeros -- so scoring the full grid computes
-d(d-1)/2 pair queries whose answer is known to be zero, plus a dead
-diagonal. See `interval_swap_head.scatter_symmetric_pairs`.
-
-Time is deliberately absent from the band, as in the interval head: band
-features are token statistics; time enters H through the pair readout's
-summaries and time line.
+Time is absent from the band, as in the interval head: it enters H through
+the pair readout's summaries and time line.
 """
 
 import torch
@@ -80,37 +50,23 @@ from discrete_flow_sampler.models.letf import LeTFRateMatrix
 EXCLUDED_SCORE_FILL = -1e9
 
 # Floor on the separable path's softmax normaliser. Only empty bands reach it
-# (they normalise to exactly 0), and their pooled value is discarded -- but it
-# must be discarded WITHOUT a division by zero, because `torch.where` carries
-# NaN back through the branch it did not select. Well above fp32's 1.18e-38
-# smallest normal, so it never perturbs a live band.
+# (normaliser exactly 0); their pooled value is discarded, but `torch.where`
+# carries NaN back through the unselected branch, so the division must not be
+# 0/0. Well above fp32's 1.18e-38 smallest normal, so no live band is touched.
 EMPTY_BAND_FLOOR = 1e-30
 
 
 def _masked_exponential(scores: Tensor, mask: Tensor) -> Tensor:
-    """`u * exp(scores)`: one half of a separable masked softmax, UNSHIFTED.
+    """`u * exp(scores)`: one half of a separable masked softmax, unshifted.
 
-    NO STABILISING SHIFT, AND THAT IS THE POINT. A softmax normally subtracts
-    a per-row maximum before exponentiating, and the separable form would have
-    to subtract `max_k A_ik + max_k B_jk` -- an upper bound on the
-    non-separable `max_k(A_ik + B_jk)`. Analytically a common shift cancels in
-    the normalisation, so that costs nothing. Bit-for-bit it does not:
-    `exp(s - c)` rounds differently for different `c`, and the row maximum is
-    taken over `u_i`, a set that CONTAINS the partner hole k = j. Moving the
-    token at j then moves the shift, and the pooled result changes in the last
-    bits -- measured 2.98e-8, a residue exactly like the one this head was
-    chosen over the interval head to avoid (module docstring).
-
-    The shift controls the exponent range: fp32 overflows near +88
-    and a product of two halves underflows near -87, against a trained 4x4
-    checkpoint's measured score range of [-6.65, 10.69]. `band_score_range`
-    reports the live figure so the margin is monitored rather than assumed.
-
-    Exclusion is MULTIPLICATIVE, where the dense path fills scores with
-    `EXCLUDED_SCORE_FILL` and leans on `exp(-1e9 - max)` underflowing. Both
-    give an excluded term weight zero; only this one does so with no
-    floating-point argument at all, which makes blindness here STRICTER than
-    on the path it replaces.
+    The separable form would have to stabilise with `max_k A_ik + max_k B_jk`,
+    and that row maximum ranges over `u_i`, a set containing the partner hole
+    k = j; `exp(s - c)` rounds differently per `c`, so moving the token at j
+    would move the pooled result in the last bits (measured 2.98e-8). Without
+    the shift, exclusion is a multiplication by zero and blindness is exact.
+    The price is exponent range: fp32 overflows near +88 and a product of two
+    halves underflows near -87, against a trained 4x4 checkpoint's measured
+    score range of [-6.65, 10.69]; `band_score_range` reports the live figure.
     """
     return torch.exp(scores) * mask
 
@@ -220,11 +176,8 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 nn.GELU(),
                 nn.Linear(band_feature_dim, band_feature_dim),
             )
-            # One extra family widens the band block, so the inherited
-            # pair_readout's input is now band_feature_dim too narrow: rebuild
-            # it. The narrow one the parent drew is discarded (one wasted init
-            # draw -- harmless; use_stencil=False never enters here, so those
-            # cells stay byte-identical to pre-stencil code).
+            # The extra family widens the band block, so the inherited
+            # pair_readout is band_feature_dim too narrow: rebuild it.
             self.pair_readout = self._build_pair_readout(band_feature_dim * n_families)
 
     def _attend_band_family(
@@ -244,12 +197,9 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
 
         Under the triu-pair gather the pair axes collapse to a single list
         axis: pair_query_input (P, 2*position_dim), visible (P, n), result
-        (B, P, F). Only the einsum subscripts move -- the DENSE subscripts are
-        left literally as they were, so the archived path's contraction order
-        (and with it its last bit) is untouched. This is where the lever pays
-        most: the (B, d^2, n_terms) score tensor is this head's largest, and
-        it is the "d = 256 wants pair chunking" price the module docstring
-        names.
+        (B, P, F). Only the einsum subscripts move; the dense subscripts are
+        left as they were so the archived path's contraction order is
+        untouched.
         """
         pair_axes = "ij" if pair_query_input.dim() == 3 else "p"
         query = self.band_query_projections[family](pair_query_input)  # (..., A)
@@ -277,13 +227,13 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         term_features: Tensor,
         term_positions: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        """The band scores as an outer SUM: (B, d, n) row part, (B, d, n) col.
+        """The band scores as an outer sum: (B, d, n) row part, (B, d, n) col.
 
         `s_ijk = A_ik + B_jk`. The query is one `nn.Linear` on the
-        CONCATENATION `[rho_i || rho_j]`, so its weight splits column-wise
+        concatenation `[rho_i || rho_j]`, so its weight splits column-wise
         into `[W_row | W_col]` and the pair axes never meet. The bias rides
-        with the row half arbitrarily -- it is common to i and j, so it
-        cancels in the softmax normalisation whichever half carries it.
+        with the row half; it is common to i and j, so it cancels in the
+        softmax normalisation whichever half carries it.
         """
         query = self.band_query_projections[family]
         position_dim = position.shape[-1]
@@ -312,49 +262,26 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
     ) -> Tensor:
         """`_attend_band_family` without the (B, d^2, n) score tensor.
 
-        Computes the SAME masked softmax pool -- this is an algebraic
-        identity, not an approximation, and it must not be confused with the
-        factorised swap head, which changes the function and pays a measured
-        variance price for it. Both halves of the softmax become matrix
-        products once `s_ijk = A_ik + B_jk` and `visible = u_ik w_jk`:
+        An exact rewrite of the same masked softmax pool, not the factorised
+        swap head (which changes the function). Once `s_ijk = A_ik + B_jk` and
+        `visible = u_ik w_jk`, both halves of the softmax are matrix products:
 
             Z_ij    = sum_k alpha_ik beta_jk
             out_ijf = (1/Z_ij) sum_k alpha_ik beta_jk feat_kf
 
-        with `alpha = u e^{A}` and `beta = w e^{B}`, unshifted for the reason
-        in (1) below. Peak memory falls to the (B, d, d, F) context every all-pairs head
-        returns anyway; the 5.00 GB slab at B=32, d=256 never exists.
+        with `alpha = u e^{A}` and `beta = w e^{B}`, unshifted (see
+        `_masked_exponential`). Peak memory falls to the (B, d, d, F) context;
+        the 5.00 GB score slab at B=32, d=256 never exists.
 
-        THREE THINGS THIS GUARDS AGAINST.
+        An empty band is a 0/0 here, not the dense path's discarded uniform
+        row: the clamp before the division matters in backward, where
+        `torch.where` propagates NaN from the unselected branch. Emptiness is
+        decided from the mask (`u & w`), not from `Z > 0`, because the two
+        agree only while nothing underflows.
 
-        1. THE SOFTMAX SHIFT IS GONE, DELIBERATELY. The separable form would
-           have to stabilise with `max_k A_ik + max_k B_jk`, and that row
-           maximum ranges over `u_i`, a set containing the partner hole k = j
-           -- so a hole's token value reaches the answer in the last bits
-           (measured 2.98e-8) and bit-exact blindness, the property this head
-           was chosen for, is quietly lost. Unshifted, exclusion is a
-           multiplication by zero and blindness is STRICTER here than on the
-           dense path. The price is that the exponent budget is monitored
-           rather than guaranteed: see `_masked_exponential` and
-           `band_score_range`.
-
-        2. AN EMPTY BAND IS A 0/0, NOT A UNIFORM ROW. The dense path fills
-           masked scores with a finite -1e9 so a fully-masked row softmaxes
-           to a discarded uniform; here `Z_ij` is exactly zero. The clamp
-           before the division is load-bearing in BACKWARD, not forward:
-           `torch.where` propagates NaN from the unselected branch.
-
-        3. EMPTINESS IS DECIDED FROM THE MASK, NOT FROM `Z > 0`. The two
-           agree only while nothing underflows, and underflow is exactly the
-           failure mode (1) leaves live -- so the indicator is a boolean
-           count over `u & w`, exact and batch-free, rather than a test on
-           the normaliser it is meant to protect.
-
-        Under `gather_triu_pairs` the pair axes collapse to a list, so the
-        halves are GATHERED (`alpha[rows] * beta[cols]`) instead of outer-
-        multiplied. That path keeps a (B, P, n) product, so it does NOT
-        compose well with this lever: the gather removes half of a slab this
-        removes entirely. Correct, but not the recommended pairing.
+        Under `gather_triu_pairs` the halves are gathered
+        (`alpha[rows] * beta[cols]`) into a (B, P, n) product, so the two
+        levers compose correctly but the gather buys nothing here.
         """
         row_scores, col_scores = self._band_family_halves(
             family, position, term_features, term_positions
@@ -364,9 +291,8 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
 
         if pairs is None:
             normaliser = torch.einsum("bik,bjk->bij", alpha, beta)
-            # Weight by the column half FIRST. A single three-operand einsum
-            # is free to contract alpha with beta first, which rebuilds the
-            # (B, d, d, n) tensor this method exists to avoid.
+            # Weight by the column half first: a three-operand einsum may
+            # contract alpha with beta first, rebuilding the (B, d, d, n) slab.
             weighted = beta.unsqueeze(-1) * term_features.unsqueeze(1)
             numerator = torch.einsum("bik,bjkf->bijf", alpha, weighted)
             non_empty = (visible_row.float() @ visible_col.float().T > 0).unsqueeze(-1)
@@ -385,18 +311,12 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
     def band_score_range(self, x: Tensor) -> float:
         """Worst-case exponent the unshifted separable pool can reach, in nats.
 
-        `max|A| + max|B|`, maximised over pairs and families -- a conservative
-        two-sided bound, since it dominates each half on its own as well as
-        their sum. Compare against ~87: fp32 overflows above +88 and a product
-        of the two halves underflows below -87, so this is the headroom the
-        decision to drop the softmax shift is spending (see
-        `_masked_exponential` for why the shift had to go). A trained 4x4
-        checkpoint measures a score range of [-6.65, 10.69], i.e. ~17 against
-        a budget of 87.
-
-        Blind by construction, and cheap: it reads the same (B, d, n) halves
-        the pool already builds, never the (B, d^2, n) tensor the lever
-        exists to avoid.
+        `max|A| + max|B|` over pairs and families, a conservative two-sided
+        bound. Compare against ~87 (fp32 overflows above +88, a product of two
+        halves underflows below -87): the headroom the unshifted softmax in
+        `_masked_exponential` spends. A trained 4x4 checkpoint measures
+        [-6.65, 10.69], ~17 against a budget of 87. Reads only the (B, d, n)
+        halves, never the (B, d^2, n) tensor.
         """
         emb = self.backbone.token_embedder(((x + 1) / 2).long())
         position = self.pair_position_embedding(torch.arange(self.d, device=x.device))
@@ -416,33 +336,19 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
         return widest
 
     def _init_relative_pair_positions(self, position_dim: int, side: int) -> None:
-        """Signed torus displacement of j from i, and one embedding row per
-        displacement -- the pair position code the TWO-HOLE PATCH head uses
-        and the raster heads do not.
+        """Signed torus displacement of j from i, one embedding row per
+        displacement: the pair position code the two-hole patch head uses.
 
-        THE DEFECT THIS ADDRESSES. `pair_position_embedding` is
-        `nn.Embedding(d, .)` indexed by ABSOLUTE site, so the query
-        W_q(rho_i, rho_j) has no way to know that sites 0 and d-1 are torus
-        neighbours; the wrap has to be learned from data. The patch head --
-        the one that wins at every rung where both ran -- instead indexes
-        `relative_position_embedding` by the signed displacement, so
-        translation-equivalent pairs share a code by construction.
-
-        WHY THIS IS NOT WHAT ROPE TESTED. The RoPE experiment swapped the
-        BACKBONE's position code, which reaches only the causal-stream
-        summaries P_i and S_j; it never touched this embedding, which is what
-        the band's query and the pair readout actually consume. RoPE measured
-        free on an A100 (24.0 ms against leTF's 24.8 at d=256) and read a
-        null on quality -- consistent with having fixed the layer that
-        matters least.
-
-        The output width is 2 * position_dim so the query projection's shape
-        is untouched and the two modes differ in nothing but the code.
-
-        NOTE FOR THE BAND FACTORISATION: the absolute mode's query is linear
-        on a CONCATENATION, which is what makes the score tensor an outer sum
-        A_ik + B_jk. A relative code is one vector per pair, so that identity
-        does NOT hold here and the two levers do not compose as written.
+        `pair_position_embedding` is indexed by absolute site, so the query
+        W_q(rho_i, rho_j) has to learn that sites 0 and d-1 are torus
+        neighbours; indexing by displacement gives translation-equivalent
+        pairs one code by construction. The RoPE experiment (24.0 ms vs
+        leTF's 24.8 at d=256 on an A100, null on quality) swapped only the
+        backbone's code, which reaches P_i and S_j, never this embedding.
+        Output width is 2 * position_dim so the query projection's shape is
+        unchanged. A relative code is one vector per pair, not a
+        concatenation, so the outer-sum identity behind
+        `separable_band_scores` does not hold with it.
         """
         site = torch.arange(self.d)
         rows, cols = site // side, site % side
@@ -462,25 +368,15 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
             interval  k + min(O) > i  and  k + max(O) < j    (strictly inside)
             lattice   k + o != i and k + o != j for every o  (touches neither)
 
-        Blindness holds under BOTH, and for the same reason: what it
-        requires is that exclusion remove every term whose support touches a
-        hole, decided from the INDICES alone so the mask is
-        value-independent. It does NOT require per-site or depth-0 features
-        -- that was a rule stated on the depth axis when the live constraint
-        is bounded support. Exclusion is applied
-        BEFORE the softmax either way, so an excluded term carries pooling
-        weight exactly zero rather than a small one.
+        Blindness holds under both: exclusion removes every term whose
+        support touches a hole, decided from the indices alone, before the
+        softmax. The requirement is bounded support, not depth-0 features.
 
-        The interval branch is written as min/max rather than as a per-offset
-        conjunction because that is the archived semantics: for the stencil
-        it is deliberately conservative, leaving an uncovered collar around
-        each hole that the narrower families fill in.
-
-        `lattice` is NOT simply the more general window. Its softmax
-        normalises over ~d terms instead of ~|j - i|, which dilutes whatever
-        mass the interval deserves, and a learned soft mask approximates the
-        hard interval indicator without containing it -- so it can lose, and
-        the `lattice` option exists to measure which.
+        The interval branch is min/max rather than a per-offset conjunction
+        because that is the archived semantics; for the stencil it leaves an
+        uncovered collar round each hole that the narrower families fill.
+        `lattice` normalises over ~d terms instead of ~|j - i| and can lose to
+        the interval window; the option exists to measure which.
         """
         if self.attention_window == "interval":
             return (slot + min(offsets) > site_i) & (slot + max(offsets) < site_j)
@@ -496,20 +392,13 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
     ) -> tuple[Tensor, Tensor]:
         """The same predicate, split as visible(i, j, k) = u(i, k) & w(j, k).
 
-        Both windows separate, for different reasons: `interval` is a pair of
-        one-sided inequalities, one per hole; `lattice` is a product of
-        disequalities that is already per-hole term by term. Returns two
-        (d, n_terms) tables over the FULL site range -- not the pair layout --
-        because the separable path indexes them by row and column site, which
-        under the triu gather is a list of pairs rather than a grid.
-
-        Separability of the MASK is half of why the band factorises (the
-        other half is that the query is linear on a concatenation): a
-        separable mask multiplies into alpha and beta, where the dense path
-        must fill scores with `EXCLUDED_SCORE_FILL` and rely on the softmax
-        underflowing them. Multiplying makes exclusion exactly zero rather
-        than zero-up-to-underflow, so blindness stops needing a numerical
-        argument at all.
+        Both windows separate: `interval` is a pair of one-sided inequalities,
+        one per hole; `lattice` is a product of per-hole disequalities.
+        Returns two (d, n_terms) tables over the full site range, not the pair
+        layout, because the separable path indexes them by row and column
+        site (a list of pairs under the triu gather). A separable mask
+        multiplies into alpha and beta, so exclusion is exactly zero rather
+        than zero-up-to-underflow.
         """
         site = torch.arange(self.d, device=term_slot.device).view(-1, 1)
         slot = term_slot.view(1, -1)
@@ -524,12 +413,10 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
     def _band_families(self, emb: Tensor):
         """Yield `(offsets, term_features, term_slot)` for every band family.
 
-        The three families are built the same way whichever aggregator
-        consumes them, so enumerating them once keeps the dense and separable
-        paths honest: they differ only in the pool, never in what is pooled.
-        `term_slot` is the term's index into the site axis, which is also its
-        row of the position table -- the unary and offset families start at
-        site 0, the stencil starts at `side`.
+        Shared by the dense and separable paths so they differ only in the
+        pool, never in what is pooled. `term_slot` is the term's index into
+        the site axis (its row of the position table); the unary and offset
+        families start at site 0, the stencil at `side`.
         """
         yield (
             (0,),
@@ -544,19 +431,12 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
                 torch.arange(n_terms, device=emb.device),
             )
         if self.use_stencil:
-            # 5-point lattice-stencil family. Per-term feature
-            # s_k = MLP(emb(x_k) ++ emb(x_{k±1}) ++ emb(x_{k±side})) -- a 2D
-            # neighbourhood statistic, richer than the unary/offset terms that
-            # capped the one-pass family at ~0.78 (H-shared).
-            #
-            # Centres exist only for side <= k < d - side (raster-boundary
-            # sites lack a k±side neighbour); the range is empty when
-            # d = 2*side. Straddle exclusion: centre k touches
-            # {k-side .. k+side}, all strictly interior iff k - side > i AND
-            # k + side < j -- index arithmetic, so blindness is
-            # value-independent, like every other family. The ±side reach
-            # leaves an uncovered collar round each hole; the narrow families
-            # above cover it, forming a locality ladder.
+            # 5-point stencil family, s_k = MLP(emb(x_k) ++ emb(x_{k±1}) ++
+            # emb(x_{k±side})): a 2D neighbourhood statistic, richer than the
+            # unary/offset terms that capped the one-pass family at ~0.78.
+            # Centres exist only for side <= k < d - side (empty when
+            # d = 2*side); centre k touches {k-side .. k+side}, interior iff
+            # k - side > i and k + side < j.
             side = self.stencil_side
             centres = torch.arange(side, self.d - side, device=emb.device)
             yield (
@@ -581,27 +461,14 @@ class MaskedAttentionSwapHead(IntervalSwapHead):
     ) -> Tensor:
         """All-pairs middle-band summaries via masked attention, (B, d, d, F).
 
-        Same visible sets, features and output contract as the interval
-        head's cumsum version; only the pooling differs (learned softmax
-        weights instead of a fixed sum). Entry [:, i, j, :] contains no term
-        touching site i or site j -- exactly, because excluded terms carry
-        softmax weight +0.0 (module docstring). Empty intervals are exact
-        zeros. Only the i < j triangle is consumed downstream; the lower
-        triangle's visibility set is empty, so it holds zeros here.
-
-        When use_stencil is set, a final 5-point lattice-stencil family is
-        appended (trailing F channels); see `_band_families`.
-
-        `pairs` = (rows, cols) selects a LIST of pairs (the triu-pair gather)
-        and returns (B, P, F). Visibility is index arithmetic in both forms,
-        so exclusion -- and with it bit-exact blindness -- is unchanged; the
-        hole terms are simply never scored for pairs nobody asked about.
-
-        Under `separable_band_scores` the pool is an exact rewrite that never
-        builds the (B, d^2, n) score tensor; see
-        `_attend_band_family_separable`. The two branches share `_band_families`
-        precisely so the choice of aggregator cannot drift into a choice of
-        features.
+        Same visible sets, features and output contract as the interval head's
+        cumsum version; only the pooling differs. Entry [:, i, j, :] contains
+        no term touching site i or j (excluded terms carry softmax weight
+        +0.0); empty intervals and the lower triangle are exact zeros. With
+        use_stencil a stencil family is appended as trailing F channels.
+        `pairs` = (rows, cols) selects a list of pairs and returns (B, P, F).
+        Under `separable_band_scores` the pool is the exact rewrite in
+        `_attend_band_family_separable`.
         """
         del t
         x_idx = ((x + 1) / 2).long()

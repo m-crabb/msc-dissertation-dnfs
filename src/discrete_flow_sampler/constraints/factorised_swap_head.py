@@ -1,141 +1,86 @@
 """Factorised swap head: low-rank bilinear causal factors + hole-subtracted
-global context. All-pairs G in ONE body pass with NO per-pair pooling.
+global context. All-pairs G in one body pass with no per-pair pooling.
 
 Same readout as every swap head (DNFS Prop. 2 / Eq. (9), pair form):
 
     G(i, j | x) = < H_ij(x_-{i,j}),  omega_{x_i} - omega_{x_j} >
 
-and the same blindness requirement: H_ij must not depend on the token VALUES
-at sites i and j, at any layer -- one globally-mixing layer leaks x_i into
-every representation (the two-hop leak, interval_swap_head.py). Where the
-interval/masked-attention heads push all d^2 pair rows through a per-pair
-readout MLP over concatenated summaries, here the pair context is built
-from per-site pieces, so no pair ever pools over O(d) lattice terms and the
-per-pair work drops from O(d) to a d-free constant:
+and the same blindness requirement: H_ij must not depend on the token values
+at sites i and j, at any layer (one globally-mixing layer leaks x_i into
+every representation; see interval_swap_head.py). The pair context is built
+from per-site pieces, so no pair pools over O(d) lattice terms:
 
     H_ij = sum_r  a_r(prefix_i, pos_i) * b_r(suffix_j, pos_j)   [bilinear]
          + rho( LN( c(x) - psi_i - psi_j ) )                    [global]
          + tau(t)                                               [time]
 
-* bilinear -- prefix_i / suffix_j are the leTF causal-stream slice objects
-  (blind to x_{>=i} / x_{<=j} by causality, so depth is free). The factor
-  maps are LINEAR in the normalised streams: the nonlinearity lives in the
-  causal stacks, and the rank R bounds the pair-interaction kernel. That
-  bound is the expressivity price of the factorisation, and it is measured,
-  not assumed (enumeration-gate at the smallest lattice before any scale
-  run). The bilinear term alone cannot see the open interval (i, j) --
-  prefix stops before i, suffix starts after j -- and the test suite pins
-  that hole rather than hiding it.
-* global -- psi_k = MLP(emb(x_k) ++ pos_k) is strictly per-site; the sum
-  c = sum_k psi_k is a whole-lattice summary, and subtracting psi_i + psi_j
-  removes the ONLY terms that touch the holes, so blindness is exact in
-  real arithmetic (fp leaves an ~ulp cancellation residue, exactly as the
-  interval head's prefix-sum band; suite bar 1e-5). This is the term that
-  covers the interval interior. Its depth cap is structural, but the cap is
-  narrower than "per-site": what is forced is that
-  the subtraction remove EVERY term touching a hole, which needs each
-  term's support to be a bounded set known from the indices. Per-site is
-  the cheapest such family, at two gathers (psi_i, psi_j). A fixed-offset
-  bond family u^delta_k = phi(e_k, e_{k+delta}) qualifies equally, at four
-  -- k in {i-delta, i, j-delta, j}, deduplicated when j - i == delta and
-  dropped where the index leaves the strip -- and would make c an
-  energy-like summary rather than a magnetisation-like one, which for an
-  Ising target is the quantity the Boltzmann weight is built from. That
-  variant is NOT built here; psi below is per-site only. What no
-  subtraction reaches is a term downstream of an unmasked layer, whose
-  support is the whole lattice: that is the leak, and it is what confines
-  depth to AFTER aggregation (rho). The
-  LayerNorm before rho is load-bearing for scale: |c| grows linearly in d,
-  and without the norm rho saturates at exactly the lattice sizes this head
-  exists to reach.
-* time -- a projected time embedding added to every pair's context: the
-  additive analogue of the interval head's "context_norm(H) + time" line.
-  There is deliberately NO norm over the assembled H: a post-sum LayerNorm
-  is nonlinear across terms and would force H to be materialised, defeating
-  the factorisation; scale control lives per-term instead.
+* bilinear -- prefix_i / suffix_j are the leTF causal-stream summaries
+  (blind to x_{>=i} / x_{<=j} by causality). The factor maps are linear in
+  the normalised streams; the rank R bounds the pair kernel. This term
+  cannot see the open interval (i, j): prefix stops before i, suffix starts
+  after j.
+* global -- psi_k = MLP(emb(x_k) ++ pos_k) is per-site, c = sum_k psi_k,
+  and subtracting psi_i + psi_j removes the only terms touching the holes,
+  so blindness is exact up to fp cancellation (suite bar 1e-5). The rule is
+  that every term's support be a bounded index set the subtraction can
+  reach; a term downstream of an unmasked layer has whole-lattice support
+  and cannot be subtracted, which confines depth to after aggregation (rho).
+  The LayerNorm before rho matters: |c| grows linearly in d and rho would
+  saturate at large lattices without it.
+* time -- a projected time embedding added to every pair. There is no norm
+  over the assembled H: a post-sum LayerNorm would force H to be
+  materialised term-by-term; scale control is per-term instead.
 
-The bilinear and time terms are per-site objects
-whose readout distributes (<a_i * b_j, w_i - w_j> = <a_i * w_i, b_j> -
-<a_i, b_j * w_j>, and <tau, w_i - w_j> = <tau, w_i> - <tau, w_j>), but the
-global term does NOT distribute -- LN and rho are nonlinear in psi_i +
-psi_j -- so it is a fixed-width per-pair map over a materialised
-(B, d, d, F_g) tensor. FLOP-counted at the production backbone (hidden 32,
-2 layers) it is 34% of the head's forward at d=64 and 50% at d=256, and its
-(B, d, d, .) tensors are the head's memory footprint. The cost class is
-still O(d^2) against masked attention's O(d^3): what the factorisation
-removes is the per-pair pooling over the lattice, not per-pair work.
+The bilinear and time readouts distribute (<a_i * b_j, w_i - w_j> =
+<a_i * w_i, b_j> - <a_i, b_j * w_j>; <tau, w_i - w_j> = <tau, w_i> -
+<tau, w_j>); the global term does not (LN and rho are nonlinear in
+psi_i + psi_j), so it is a per-pair map over a materialised (B, d, d, F_g)
+tensor, and those tensors are the head's memory footprint. Cost class is
+O(d^2) against masked attention's O(d^3). `gather_triu_pairs` (default off)
+runs LN and rho on the d(d-1)/2 pairs with i < j and mirrors back
+(`scatter_symmetric_pairs`), a memory lever at d=256.
 
-`gather_triu_pairs` (opt-in, default OFF) halves that per-pair work:
-the global term is exactly symmetric in
-(i, j), so LN and rho run on the d(d-1)/2 pairs with i < j and the result
-is mirrored back (`interval_swap_head.scatter_symmetric_pairs`). A memory
-lever for D=16 (d=256), where that slab is what threatens the card.
-
-forward therefore materialises H once (`compute_pair_context`, the object
-the blindness probes flip spins at) and reads G off it, the interval head's
-pattern. An earlier forward distributed the bilinear readout into two
-(d x Rf)(Rf x d) matmuls to avoid the (B, d, d, f) intermediate; with the
-global term present that intermediate exists anyway, and the distributed
-form costs ~2Rf per pair against Rf + f for build-then-read (0.401 vs
-~0.35 GFLOP at d=256, B=2), so it was a FLOP loss for no memory gain and
-was removed. H is defined on i < j and mirrored down (H_ji := H_ij, the
-label-symmetry convention); the score's upper triangle is mirrored as
+forward materialises H once (`compute_pair_context`, where the blindness
+probes flip spins) and reads G off it. A distributed bilinear readout via
+two (d x Rf)(Rf x d) matmuls was removed: with the global term the
+(B, d, d, f) intermediate exists anyway and the distributed form cost ~2Rf
+per pair against Rf + f (0.401 vs ~0.35 GFLOP at d=256, B=2). H is defined
+on i < j and mirrored down (H_ji := H_ij); G's upper triangle is mirrored as
 G[j,i] = -G[i,j], so index antisymmetry is an identity.
 
-Interior band (opt-in via `interior_band`):
-the global term is the one per-pair nonlinearity this head pays for, and it
-runs at band width, so the interval head's prefix-sum band or the
-masked-attention head's attention band (both blind by index exclusion,
-both (B, d, d, F_b), valid for i < j) can be concatenated into its input,
+Interior band (opt-in via `interior_band`): the interval head's prefix-sum
+band or the masked-attention head's attention band (both blind by index
+exclusion, both (B, d, d, F_b), valid for i < j) is concatenated into the
+global term's input,
 
     rho( LN( [ c - psi_i - psi_j ; M_ij ] ) ),
 
-at a width cost of F_b on tensors the term already materialises. This is
-the experiment that separates the two axes the head ladder conflated: the
-EXTERIOR combiner (per-pair MLP over [P_i, S_j] in interval / masked
-attention, rank-R bilinear here) and the INTERIOR mechanism (sum, band,
-attention, extra orderings). Holding the interior fixed and changing only
-the combiner measures what the factorisation itself costs; 4x4 rank/width
-insensitivity only ever suggested it was free. The band provider is an
-IntervalSwapHead / MaskedAttentionSwapHead instance used for its
-`band_summaries` alone: its own pair readout is deleted and its backbone
-reference is kept OFF the module tree so the shared backbone is not
-checkpointed twice. `interior_band=None` constructs nothing extra, in the
-same RNG order, so archived checkpoints stay byte-identical.
+which holds the interior mechanism fixed while only the exterior combiner
+changes. The provider head is used for `band_summaries` alone: its pair
+readout is deleted and its backbone reference kept off the module tree so
+the shared backbone is not checkpointed twice. `interior_band=None`
+constructs nothing extra, in the same RNG order.
 
-Multi-order causal streams (opt-in via `site_orderings`): the bilinear
-term under the row-major ordering is
-structurally blind to the whole raster interval between its holes -- prefix
-stops before i, suffix starts after j -- so the interval interior is covered
-only by the shallow global term. Running the causal stacks under EXTRA site
-orderings (column-major, anti-diagonal) gives every pair a second split,
+Multi-order causal streams (opt-in via `site_orderings`): the row-major
+bilinear term is blind to the whole raster interval between its holes.
+Running the causal stacks under extra orderings (column-major,
+anti-diagonal) gives every pair a second split,
 
     H_ij += sum_o sum_r a^o_r(P^o_first, first) * b^o_r(S^o_last, last),
 
-first/last taken in ordering o, so a site interior to the row interval but
-exterior in ordering o gains DEEP coverage; what remains invisible to the
-bilinear terms shrinks to the intersection of the per-ordering intervals.
-This adds INFORMATION, not capacity -- the rank/width axes were measured
-and refuted as the deficit's cause at the 4x4 gate, while the interior is
-where the trained field's deviation from the reference concentrates -- and
-blindness stays bit-exact by causality in every ordering (the earlier hole
-bounds the prefix, the later hole the suffix). The backbone stacks are
-SHARED across orderings (one extra forward pass each, the cheap term);
-only the factor maps are per-ordering. `("row",)` is byte-identical to the
-single-ordering head: no extra modules, no persistent state, archived
-checkpoints load unchanged.
+first/last taken in ordering o, so what stays invisible to the bilinear
+terms shrinks to the intersection of the per-ordering intervals. Blindness
+holds by causality in every ordering. The backbone stacks are shared across
+orderings; only the factor maps are per-ordering. `("row",)` is
+byte-identical to the single-ordering head.
 
-Full-context site features combined
-into pairs break blindness at layer one, and repairing them by explicit
-antisymmetrisation costs one swapped forward per ordered pair -- that is
-`swap_readout.antisymmetrise`, the O(d^2)-pass test oracle, not a head. A
-per-pair MLP over factorised summaries is the interval head; its d^2 MLP
-rows are the cost this head removes.
+Full-context site features repaired by explicit antisymmetrisation cost one
+swapped forward per ordered pair; that is `swap_readout.antisymmetrise`,
+the test oracle, not a head.
 
-The final contractions run inside an autocast-disabled fp32 block: einsum
-and matmul are on the autocast lower-precision list, and G feeds fp32-only
-diagnostics downstream -- the same dtype contract the interval and mask-one
-heads keep through their mul+sum readouts.
+The final contractions run in an autocast-disabled fp32 block: einsum and
+matmul are on the autocast lower-precision list, and G feeds fp32-only
+diagnostics, the same dtype contract as the interval and mask-one heads.
 """
 
 import torch
@@ -185,31 +130,23 @@ class FactorisedSwapHead(nn.Module):
     Args:
         backbone: the leTF rate model; reused for token/time embedders, the
             fwd/bwd causal stacks and the omega table. attention_readout is
-            deliberately unused -- this head replaces it.
+            unused -- this head replaces it.
         bilinear_rank: number of rank-1 terms R in the bilinear pair kernel.
-            The head's expressivity knob: R = d recovers (in principle) an
-            arbitrary kernel over the causal features, small R is the bet
-            the gate prices.
         factor_dim: width f of each factor vector and of the projected
-            omega readout. The readout contracts in this width, not in the
-            backbone's hidden width.
+            omega readout.
         global_feature_dim: channels of the per-site global features psi.
         position_dim: width of the head-owned site-position embedding
             (positions may enter H freely; blindness constrains only token
             values).
         use_bilinear / use_global: ablation switches. At least one term must
-            be on -- a head with both off would score every pair from time
-            and positions alone, which trains to nothing informative;
-            reject at construction rather than at first flat loss.
+            be on; with both off every pair is scored from time and
+            positions alone.
         site_orderings: causal-sweep directions for the bilinear factors
-            (see the module docstring). Must start
-            with "row" -- the archived-checkpoint module tree -- and the
-            default ("row",) adds nothing: no extra modules, no persistent
-            state. Extras from {"col", "diag"} each add one shared-backbone
-            pass and their own factor maps.
-        lattice_side: D of the flattened D x D lattice; required by (and
-            only by) the extra orderings, whose permutations are index
-            arithmetic on (row, col).
+            (module docstring). Must start with "row" (the archived-checkpoint
+            module tree); extras from {"col", "diag"} each add one
+            shared-backbone pass and their own factor maps.
+        lattice_side: D of the flattened D x D lattice; required only by the
+            extra orderings.
     """
 
     def __init__(
@@ -305,12 +242,10 @@ class FactorisedSwapHead(nn.Module):
         band_dim = (
             0 if interior_band is None else band_feature_dim * (1 + len(pair_offsets))
         )
-        # Bond-carrying global term: the whole-lattice bond sums ride the
-        # SAME per-pair path at one extra family per offset. No feature
-        # parameters -- they are the band provider's own modules -- so the
-        # option costs only this widening (576 of the head's 145,778 at the
-        # production width, +0.4%), which is what keeps a positive from
-        # being confounded with capacity.
+        # Bond-carrying global term: whole-lattice bond sums ride the same
+        # per-pair path, one family per offset. The features are the band
+        # provider's own modules, so the option costs only this widening
+        # (576 of the head's 145,778 parameters at production width, +0.4%).
         self.global_bond_features = global_bond_features
         if global_bond_features:
             band_dim += band_feature_dim * len(pair_offsets)
@@ -320,17 +255,10 @@ class FactorisedSwapHead(nn.Module):
                 nn.GELU(),
                 nn.Linear(global_feature_dim, global_feature_dim),
             )
-        # The per-pair readout is shared by the global term and the band, and
-        # exists whenever EITHER does. It used to be built only
-        # under `use_global`, which is why a band could not run alone: it had
-        # no readout of its own and rode the global term's. That constraint
-        # was an implementation detail shaping the experiment -- it made
-        # "uniform interior, no global" unbuildable, so at 16x16 the only
-        # interior mechanism ever measured in isolation was the learned one.
-        #
-        # THE MODULE NAMES DO NOT MOVE even when no global term exists: they
-        # are state_dict keys in 101 archived factorised cells. The private
-        # method that uses them is renamed instead.
+        # The per-pair readout is shared by the global term and the band and
+        # exists whenever either does. The module names stay `global_*` even
+        # with no global term: they are state_dict keys in 101 archived
+        # factorised cells.
         if use_global or interior_band is not None:
             context_dim = (global_feature_dim if use_global else 0) + band_dim
             self.global_context_norm = nn.LayerNorm(context_dim)
@@ -340,11 +268,9 @@ class FactorisedSwapHead(nn.Module):
                 nn.Linear(global_feature_dim, factor_dim),
             )
 
-        # Extra orderings LAST, so the base modules' init draws are identical
-        # for any k at a fixed seed (and absent entirely at k=1, keeping the
-        # module tree byte-compatible with pre-extension checkpoints). The
-        # permutations ride as NON-persistent buffers: index arithmetic,
-        # reproducible from the constructor args, invisible to state_dict.
+        # Extra orderings last, so the base modules' init draws are identical
+        # at a fixed seed and the module tree matches archived checkpoints.
+        # Permutations are non-persistent buffers, invisible to state_dict.
         for name in site_orderings[1:]:
             order = lattice_site_ordering(name, self.d, lattice_side)
             self.register_buffer(f"_order_{name}", order, persistent=False)
@@ -369,7 +295,7 @@ class FactorisedSwapHead(nn.Module):
                     for name in site_orderings[1:]
                 }
             )
-        # Band provider LAST for the same reason as the orderings: absent at
+        # Band provider last for the same reason as the orderings: absent at
         # interior_band=None, and never ahead of the archived modules' draws.
         if interior_band is not None:
             self._build_interior_band_provider(
@@ -408,10 +334,9 @@ class FactorisedSwapHead(nn.Module):
             # Only the attention queries and the deleted readout use pair
             # positions; the prefix-sum band would carry them as dead weight.
             del provider.pair_position_embedding
-        # Keep the shared backbone reachable for band_summaries but OFF the
-        # provider's module tree: a registered submodule would re-emit every
-        # backbone tensor under `interior_band_provider.backbone.*` in
-        # state_dict (parameters() dedups by identity; state_dict does not).
+        # Keep the shared backbone reachable but off the provider's module
+        # tree: a registered submodule would re-emit every backbone tensor
+        # under `interior_band_provider.backbone.*` in state_dict.
         del provider._modules["backbone"]
         provider.__dict__["backbone"] = backbone
         self.interior_band_provider = provider
@@ -427,14 +352,12 @@ class FactorisedSwapHead(nn.Module):
     def _extra_factor_tensors(
         self, name: str, x: Tensor, t: Tensor
     ) -> tuple[Tensor, Tensor]:
-        """Bilinear factors for one extra ordering, (B, d, R, f) in o-POSITION
+        """Bilinear factors for one extra ordering, (B, d, R, f) in o-position
         space: entry [:, p] belongs to site order[p].
 
         a[:, p] may depend only on {t, x[order[<p]], order[p]}; b[:, q] only
         on {t, x[order[>q]], order[q]} -- causality in the permuted sequence,
-        which is what makes every ordering's factors hole-blind for any pair:
-        the earlier-in-o hole bounds the usable prefix, the later one the
-        suffix.
+        so the earlier-in-o hole bounds the prefix and the later the suffix.
         """
         order = getattr(self, f"_order_{name}")
         modules = self.extra_ordering_modules[name]
@@ -476,34 +399,18 @@ class FactorisedSwapHead(nn.Module):
     def _interior_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
         """The per-pair interior term, (B, d, d, f).
 
-        Assembled from whichever ingredients the head carries: the
-        hole-subtracted global sum rho(LN(c - psi_i - psi_j)), the interior
-        band, and the whole-lattice bond totals. Either of the first two can
-        stand alone -- the band used to require the global term because it
-        had no readout of its own, which made 'uniform interior, no global'
-        unbuildable and left the interior 2x2 half-populated at every rung.
+        Assembled from whichever the head carries: the hole-subtracted global
+        sum rho(LN(c - psi_i - psi_j)), the interior band, and the
+        whole-lattice bond totals; the global term and the band can each
+        stand alone. Entry [:, i, j] is blind to x_i and x_j up to fp
+        cancellation, and symmetric in (i, j), so it already respects the
+        H_ji := H_ij mirror. `t` only reaches the band provider's signature;
+        time enters through the dedicated time term.
 
-        The modules are still spelled `global_context_norm` /
-        `global_context_readout` because those are state_dict keys in 101
-        archived factorised cells; only this method's name follows the
-        meaning.
-
-        The subtraction removes the only terms of c that touch the holes,
-        so entry [:, i, j] is blind to x_i and x_j exactly (up to the fp
-        cancellation residue). Symmetric in (i, j) by construction, so it
-        already respects the H_ji := H_ij mirror. Token statistics are
-        time-free (`t` only reaches the band provider's signature, which
-        ignores it); time arrives through the dedicated time term.
-
-        This is the one per-pair nonlinearity the head pays for (50% of its
-        forward FLOPs at d = 256, and its (B, d, d, .) tensors ARE the head's
-        memory footprint), and it is exactly symmetric, so it is also where
-        the triu-pair gather pays: under `gather_triu_pairs` the subtraction,
-        the LayerNorm and rho run on the d(d-1)/2 pairs with i < j and the
-        result is mirrored back (`scatter_symmetric_pairs`). The band needs
-        no mirror on that path at all -- band summaries are NATIVELY defined
-        on i < j, and the dense path's `torch.where` mirror exists only to
-        make the whole block symmetric before the grid-shaped readout.
+        Under `gather_triu_pairs` the subtraction, LayerNorm and rho run on
+        the d(d-1)/2 pairs with i < j and are mirrored back
+        (`scatter_symmetric_pairs`); band summaries are natively on i < j,
+        so the dense path's `torch.where` mirror is not needed there.
         """
         if self.use_global:
             x_idx = ((x + 1) / 2).long()
@@ -526,8 +433,7 @@ class FactorisedSwapHead(nn.Module):
                     else band
                 )
             if self.global_bond_features:
-                # Symmetric in (i, j) already, so -- unlike the band -- it
-                # needs no mirror on either path.
+                # Symmetric in (i, j) already; unlike the band, no mirror.
                 bonds = self.interior_band_provider.hole_free_bond_totals(
                     x, (rows, cols)
                 )
@@ -567,13 +473,11 @@ class FactorisedSwapHead(nn.Module):
     def compute_pair_context(self, x: Tensor, t: Tensor) -> Tensor:
         """The pair context H, (B, d, d, f), mirrored to i > j.
 
-        The one path: forward reads G off it, and the blindness tests flip
-        hole spins at it (strictly stronger than probing G's antisymmetry).
+        forward reads G off it and the blindness tests flip hole spins at it.
         The global and time terms are symmetric in (i, j) already; only the
-        bilinear terms are defined on ordered pairs and need the mirror,
-        each ordering mirrored in ITS OWN o-space before un-permuting.
-        Contractions run in fp32 (module docstring) so H, and hence G, keep
-        the fp32 contract under autocast.
+        bilinear terms are defined on ordered pairs and need the mirror, each
+        ordering mirrored in its own o-space before un-permuting.
+        Contractions run in fp32 (module docstring).
         """
         batch, d = x.shape
         bilinear_factors = []

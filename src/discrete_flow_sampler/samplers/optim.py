@@ -7,19 +7,17 @@ class StableAdamW(torch.optim.Optimizer):
     """AdamW with Adafactor-style per-tensor update clipping (StableAdamW).
 
     Wortsman et al. 2023 ("Stable and low-precision training..."), Algorithm
-    1: standard AdamW moments, but the step for each parameter TENSOR is
+    1: standard AdamW moments, but the step for each parameter tensor is
     scaled by 1/max(1, RMS_t/clip) with RMS_t = sqrt(mean(g_t^2 / v_hat_t)),
-    i.e. the root-mean-square of the would-be Adam update ratio. Why this and
-    not a raw gradient-norm clip: the swap loss is an unnormalised sum over
-    d(d-1)/2 pairs, so a fixed grad_clip_max_norm carries EXTENSIVE units and
-    silently changes meaning with lattice size (spike guard at d=64,
-    permanent normalisation at d=256 — the 16x16 divergence). RMS_t is
-    unit-free: it compares the gradient to the optimiser's own noise scale
-    v_hat, so clip=1.0 means the same thing at every d. The decoupled weight
-    decay uses the same scaled lr, per the paper. Guarded against: the
-    documented rescale-not-skip runaway, where a degenerate batch buys the
-    largest permitted step in its own noise direction — here a spike inflates
-    its own RMS_t and is damped tensor-wise instead of renormalised globally.
+    the root-mean-square of the would-be Adam update ratio. Not a raw
+    gradient-norm clip because the swap loss is an unnormalised sum over
+    d(d-1)/2 pairs, so a fixed grad_clip_max_norm carries extensive units
+    (spike guard at d=64, permanent normalisation at d=256 — the 16x16
+    divergence); RMS_t compares the gradient to v_hat, so clip=1.0 means the
+    same thing at every d. Decoupled weight decay uses the same scaled lr,
+    per the paper. A spike inflates its own RMS_t and is damped tensor-wise,
+    which guards the rescale-not-skip runaway where a degenerate batch buys
+    the largest permitted step in its own noise direction.
     """
 
     def __init__(

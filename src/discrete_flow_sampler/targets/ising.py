@@ -9,21 +9,19 @@ from torch import Tensor
 from discrete_flow_sampler.composition import expand_b_major
 from discrete_flow_sampler.samplers._neighbours import DEFAULT_LOG_RATIO_CLAMP
 
-# THE project's critical coupling: exact 2D Ising criticality under THIS repo's
+# The project's critical coupling: exact 2D Ising criticality under this repo's
 # double-counted convention (x^T J x picks up each edge twice, so the per-bond
 # coupling is 2*sigma): beta_c = ln(1+sqrt(2))/2 = 0.44069 gives
-# sigma_c = ln(1+sqrt(2))/4.
-# Every NEW cell, reference pool and figure uses this value.
+# sigma_c = ln(1+sqrt(2))/4. Every new cell, reference pool and figure uses it.
 SIGMA_C = math.log(1.0 + math.sqrt(2.0)) / 4.0  # = 0.220343...
 SIGMA_C_EXACT = SIGMA_C  # alias kept for existing tests and readers
 
-# The LEGACY critical coupling every archived "s223"/sigma_c run was
-# trained and evaluated at, inherited from DNFS Table 2. The finding
-# (test_ising_exact.py): DNFS's own Table 2 "optimal" column at this label is
-# in fact evaluated at SIGMA_C, so 0.22305 was never anyone's exact value.
-# Archived cell definitions keep this literal (their stored configs and the
-# eval config-drift guard are pinned to it, and it is what those models were
-# trained at); scheduled retrain waves replace them with SIGMA_C cells.
+# The legacy critical coupling every archived "s223"/sigma_c run was trained
+# and evaluated at, inherited from DNFS Table 2. DNFS's own Table 2 "optimal"
+# column at this label is in fact evaluated at SIGMA_C (test_ising_exact.py),
+# so 0.22305 was never anyone's exact value. Archived cell definitions keep
+# this literal (stored configs and the eval config-drift guard are pinned to
+# it); do not edit. Retrain waves replace them with SIGMA_C cells.
 SIGMA_C_LEGACY = 0.22305
 
 
@@ -36,26 +34,22 @@ class IsingTarget:
 
     where J = sigma · A_D and A_D is the adjacency matrix of the DxD grid
     with periodic boundaries (the lattice is a torus, no edge effects).
-    The convention is that A_D is symmetric with zeros on the diagonal,
-    each nearest-neighbour pair {i, j} contributing entry sigma in BOTH
-    A_D[i, j] and A_D[j, i] — so the quadratic form x^T J x picks up
-    each edge twice. This matches the paper's igraph-based construction.
+    A_D is symmetric with zeros on the diagonal, each nearest-neighbour pair
+    {i, j} contributing to both A_D[i, j] and A_D[j, i], so x^T J x picks up
+    each edge twice (the paper's igraph-based construction).
 
     Annealing path (paper Eq. 4):
 
         log p̃_t(x) = (1 - t) · log η(x) + t · log p(x)
 
-    with η = uniform on {-1, +1}^d (so log η ≡ -d · log 2, constant in x)
-    and log p(x) = log_prob(x) - log Z. Working with the unnormalised
-    log_prob is fine because the constant log Z cancels in derivatives.
+    with η = uniform on {-1, +1}^d (log η ≡ -d · log 2) and
+    log p(x) = log_prob(x) - log Z; the constant log Z cancels in derivatives.
+    The path is linear in log, so the time-derivative is t-independent:
 
-    Because the path is linear in log, the time-derivative is path-position
-    independent:
+        ∂_t log p̃_t(x) = log p(x) - log η(x)
 
-        ∂_t log p̃_t(x) = log p(x) - log η(x)         [t-independent]
-
-    This is the term DNFS estimates the expectation of (under p̃_t) to form
-    the ∂_t log Z_t signal in the Kolmogorov-residual training loss.
+    DNFS estimates its expectation under p̃_t to form the ∂_t log Z_t signal
+    in the Kolmogorov-residual loss.
     """
 
     def __init__(
@@ -131,8 +125,7 @@ class IsingTarget:
                 A[i, right] = 1.0
                 A[i, down] = 1.0
 
-        # symmetrise so the matrix is symmetric (undirected edges); a supplied
-        # adjacency is already symmetric
+        # undirected edges; a supplied adjacency is already symmetric
         if adjacency is None:
             A = A + A.T
         self.A = A  # kept for `set_sigma` rescaling
@@ -164,11 +157,9 @@ class IsingTarget:
             )
         self.composition_penalty_strength = strength
 
-    # Denominator of the realisable compositions, or None if c is free. The
-    # soft penalty accepts any real c, so an amortised trainer may draw from a
-    # continuum. A fixed-composition target cannot — there c·d must be an
-    # integer or no exact slice exists — so it sets this to `d` and the
-    # trainer quantises its draws onto that lattice.
+    # Denominator of the realisable compositions, or None if c is free: the
+    # soft penalty accepts any real c; a fixed-composition target needs c·d
+    # integral, sets this to `d`, and the trainer quantises its draws.
     composition_quantum: int | None = None
 
     def composition_fraction(self, x: Tensor) -> Tensor:
@@ -178,12 +169,11 @@ class IsingTarget:
     def _matched_base_p(self, n_rows: int) -> Tensor:
         """Per-row base probability p when the base matches the composition.
 
-        The bound per-cycle/per-row vector when one is in force (expanded
-        b-major, the same alignment rule the penalty uses), else the
-        scalar `target_composition`. Base and penalty MUST read the same
-        binding: a base drawn at one c while the path density assumes
-        another is the archived-eval bug (a silent ~6.9-nat log w0
-        hole), which sharing this single read makes impossible.
+        The bound per-row vector when one is in force (expanded b-major, as
+        the penalty does), else the scalar `target_composition`. Base and
+        penalty read the same binding: a base drawn at one c while the path
+        density assumes another was the archived-eval bug (a silent ~6.9-nat
+        log w0 hole).
         """
         if self._bound_composition is not None:
             p = expand_b_major(self._bound_composition, n_rows)
@@ -201,15 +191,12 @@ class IsingTarget:
         """Log-density of the per-site Bernoulli base η, shape (B,).
 
         η(x) = ∏_i p^{[x_i=+1]} (1-p)^{[x_i=-1]}. p is `base_composition`,
-        or — with `base_matches_composition` — the composition each row is
-        conditioned on, so the annealing path (Eq. 4) starts AT the
-        requested composition rather than transporting mass to it. NOTE
-        this makes the base part of the path density at every t, not just
-        an x0 convention: for p≠0.5 it contributes a field-like
-        (1−t)-weighted term to every neighbour log-ratio the rates see.
-        For the uniform base (p=0.5) this is the constant -d·log2 for all
-        x; we return that exact expression so the annealing path stays
-        byte-identical to a uniform base.
+        or, with `base_matches_composition`, the composition each row is
+        conditioned on, so the annealing path (Eq. 4) starts at the requested
+        composition. The base is then part of the path density at every t:
+        for p≠0.5 it adds a field-like (1−t)-weighted term to every neighbour
+        log-ratio. For p=0.5 the exact constant -d·log2 is returned so the
+        path stays byte-identical to a uniform base.
         """
         if self.base_matches_composition:
             p = self._matched_base_p(x.shape[0]).to(device=x.device, dtype=x.dtype)
@@ -231,10 +218,9 @@ class IsingTarget:
         """Draw n states from the base η, shape (n, d), entries in {-1, +1}.
 
         At p=0.5 this is a plain randint draw (identical RNG consumption, so
-        existing runs reproduce bit-for-bit). The matched route keeps that
+        archived runs reproduce bit-for-bit). The matched route keeps that
         branch when every row's composition is exactly 0.5, so an amortised
-        cycle at the centre draws the same bits as the house specialist —
-        the anchor the merged table compares against.
+        cycle at the centre draws the same bits as the house specialist.
         """
         if self.base_matches_composition:
             p = self._matched_base_p(n)
@@ -255,7 +241,7 @@ class IsingTarget:
         The closed form the exact-field channel feeds the flip model:
         flipping x_i changes x^T J x by -4 x_i (J x)_i and the bias term by
         -2 bias x_i, both odd in x_i. Subclasses with another energy override
-        this ONE method and the channel follows (the cluster expansion reads
+        this one method and the channel follows (the cluster expansion reads
         Eq. (2) of its export instead of the quadratic form).
         """
         return x * (-4.0 * self.sigma * (x @ self.A) - 2.0 * self.bias)
@@ -292,34 +278,25 @@ class IsingTarget:
     def composition_batch(self, composition: Tensor):
         """Bind a per-row target composition for the duration of the block.
 
-        Used by the amortised sampler, where one model is trained to serve
-        many compositions, so a training batch carries a *different* c per
-        row:
+        Used by the amortised sampler, where a training batch carries a
+        different c per row:
 
             log p_c(x_b) = x_b^T J x_b − λ · d · (c_+(x_b) − c_b)^2
 
-        c is bound rather than passed as an argument because the penalty is
-        reached indirectly through `log_prob` → `log_p_tilde_t` /
-        `dt_log_p_tilde_t`, which are called from ~15 sites across
-        `kolmogorov.py`, `_neighbours.py`, `ctmc.py` and the swap stack.
-        Threading an argument through all of them would churn signatures the
-        hard leg also depends on.
+        c is bound rather than passed because the penalty is reached through
+        `log_prob` → `log_p_tilde_t` / `dt_log_p_tilde_t` from many call
+        sites. The previous binding is restored on exit, including when the
+        block raises.
 
         Args:
-            composition: (n_blocks,) tensor of target compositions in [0, 1],
-                one per row of the batch this block will evaluate. Batches
-                that are an integer multiple of `n_blocks` are expanded
-                b-major — see `_row_composition`.
+            composition: (n_blocks,) tensor of target compositions in [0, 1].
+                Batches that are an integer multiple of `n_blocks` are
+                expanded b-major (see `_row_composition`).
 
-        On exit the previous binding is restored, including when the block
-        raises, so no run can leak a bound vector into a later evaluation.
-
-        This is the shared seam for both constraint routes. Here the bound
-        composition feeds the soft penalty; a fixed-composition subclass is
-        expected to honour the same binding wherever it currently reads its
-        scalar composition (its base sampler, its slice-size constant, its
-        off-manifold check), so an amortised trainer needs no knowledge of
-        which route it is driving.
+        Shared seam for both constraint routes: here the binding feeds the
+        soft penalty; a fixed-composition subclass honours it wherever it
+        reads its scalar composition (base sampler, slice-size constant,
+        off-manifold check).
         """
         composition = torch.as_tensor(
             composition, dtype=torch.float, device=self.device
@@ -342,9 +319,8 @@ class IsingTarget:
     def _row_composition(self, x: Tensor) -> Tensor | float | None:
         """Target composition for each row of `x`. Scalar when nothing is bound.
 
-        A bound vector is aligned to `x` by `composition.expand_b_major`,
-        which documents why the expansion rule matters and why a ragged
-        batch is a hard error rather than a broadcast.
+        A bound vector is aligned to `x` by `composition.expand_b_major`; a
+        ragged batch is a hard error there, not a broadcast.
 
         Returns:
             None when no composition is configured at all, the scalar
@@ -415,8 +391,8 @@ class IsingTarget:
                             = log_prob(x) - base_log_eta(x)
 
         For the uniform base (base_composition=0.5) base_log_eta is -d · log 2,
-        so this reduces to log_prob(x) + d · log 2. The expression has no
-        t-dependence - that's the consequence of a linear-in-log annealing path.
+        so this reduces to log_prob(x) + d · log 2. No t-dependence: the
+        annealing path is linear in log.
         """
         return self.log_prob(x) - self.base_log_eta(x)
 
@@ -424,11 +400,10 @@ class IsingTarget:
         """log p̃_t(Swap2(x, i, j)) − log p̃_t(x) for each pair, shape (B, P).
 
         Generic fallback: materialise the swapped states and evaluate the
-        annealing density directly. Correct for any target (the same
-        build-and-evaluate path as `_log_p_tilde_at_swap_neighbours`), and it
-        doubles as the oracle the closed-form overrides are tested against.
-        Subclasses on a fixed-composition slice override this with a closed form
-        that skips the (B, P, d) materialisation.
+        annealing density directly. Correct for any target, and the oracle
+        the closed-form overrides are tested against. Fixed-composition
+        subclasses override it with a closed form that skips the (B, P, d)
+        materialisation.
         """
         batch_size, d = x.shape
         n_pairs = pairs.shape[0]
@@ -447,13 +422,11 @@ class IsingTarget:
     def _pair_columns(self, pairs: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """(site_i, site_j, A_ij) for a pairs tensor, cached by identity.
 
-        B4 (optimisation decision, 2026-08-24): the closed-form swap
-        log-ratios gather A[site_i, site_j] from the frozen adjacency on
-        every call, and the production samplers pass the same module-level
-        `upper_tri_pairs` cache object every step — so the (P,) gather is
-        identical each time. A single-slot cache keyed by tensor identity
-        (`is`, not value equality, so the hit stays O(1)) pays it once;
-        any other pairs tensor recomputes correctly through the miss path.
+        2026-08-24: the closed-form swap log-ratios gather A[site_i, site_j]
+        on every call, and the production samplers pass the same module-level
+        `upper_tri_pairs` object every step, so the (P,) gather is identical
+        each time. A single-slot cache keyed by identity (`is`, so the hit is
+        O(1)) pays it once; any other pairs tensor takes the miss path.
         """
         cached = getattr(self, "_pair_columns_cache", None)
         if cached is not None and cached[0] is pairs:
@@ -472,7 +445,7 @@ class FixedCompositionIsingTarget(IsingTarget):
     composition_penalty. It differs from IsingTarget only in the base:
 
       * sample_base draws uniformly over configs with exactly N_A up-spins (the
-        canonical fixed-N base), NOT product-Bernoulli.
+        canonical fixed-N base), not product-Bernoulli.
       * base_log_eta returns the constant -log C(d, N_A) on the slice.
 
     The config knob is the composition fraction c (target_composition);
@@ -587,39 +560,25 @@ def register_composition_grid(target, compositions):
 
 
 class MixtureCompositionIsingTarget(FixedCompositionIsingTarget):
-    """Ising target on a MIXTURE of fixed-composition slices, for the
-    composition-amortisation campaign (one head trained across slices).
+    """Ising target on a mixture of fixed-composition slices (one head
+    trained across slices).
 
-    THE ALGEBRA THIS CLASS RESTS ON. Swap moves conserve n_plus row-wise,
-    so a trajectory never leaves the slice its base draw started on: the
-    mixture lives entirely in `sample_base`, and each batch element's
-    annealing path, rates and IS weights are exact against ITS OWN slice
-    conditional. Three consequences, one per override:
+    Swap moves conserve n_plus row-wise, so a trajectory never leaves the
+    slice its base draw started on: the mixture lives in `sample_base`, and
+    each element's path, rates and IS weights are exact against its own
+    slice conditional. `sample_base` draws a slice uniformly, then a uniform
+    configuration on it; `base_log_eta` is read from x as
+    -log C(d, n_plus(x)), which makes the per-slice path
+    log p~_t = (1-t)*base_log_eta(x) + t*log_prob(x) correct for every row;
+    `assert_on_manifold` checks membership of the slice set. `swap_log_ratio`
+    is inherited: swapped and unswapped states share a slice, so the base
+    constant cancels pairwise. No conditioning channel is added to any head:
+    composition is visible in x (the spin count), and an explicit c-input
+    would break checkpoint compatibility with every archived head.
 
-      * `sample_base` draws a slice per element uniformly from the grid,
-        then a uniform configuration on that slice — that is the whole
-        amortisation;
-      * `base_log_eta` is computed FROM x as -log C(d, n_plus(x)) instead
-        of a stored constant, which is exactly what makes the per-slice
-        geometric path log p~_t = (1-t)*base_log_eta(x) + t*log_prob(x)
-        correct for every row simultaneously;
-      * `assert_on_manifold` checks membership of the registered slice
-        SET, not one count.
-
-    `swap_log_ratio` is inherited untouched: the swapped and unswapped
-    states always share a slice, so the base constant cancels pairwise
-    exactly as in the single-slice closed form.
-
-    NO conditioning channel is added to any head: composition is conserved
-    and visible in x (the spin count), so the head amortises implicitly
-    through its input. An explicit c-input was rejected — it duplicates
-    information the head already has and breaks checkpoint compatibility
-    with every archived head.
-
-    `compositions[0]` is the ANCHOR slice: the inherited scalar attributes
-    (`n_plus_target`, `_log_slice_size`, `target_composition`) refer to it,
-    which keeps single-slice diagnostics meaningful. Put the trained
-    chapter composition (0.5) first.
+    `compositions[0]` is the anchor slice: the inherited scalar attributes
+    (`n_plus_target`, `_log_slice_size`, `target_composition`) refer to it.
+    Put the trained chapter composition (0.5) first.
     """
 
     def __init__(self, D, sigma, compositions, bias=0.0, device="cpu"):

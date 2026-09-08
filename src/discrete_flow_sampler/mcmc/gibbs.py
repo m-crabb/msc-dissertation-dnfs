@@ -5,7 +5,7 @@ at site i:
 
     p(x_i = +1 | x_{≠i}) = σ( 4 h + 2 b ),    h = Σ_j J_ij x_j,  b = bias
 
-derivation: the paper's J is symmetric (each edge contributes to BOTH J_ij
+derivation: the paper's J is symmetric (each edge contributes to both J_ij
 and J_ji), so the terms in x^T J x involving x_i come to 2 x_i Σ_j J_ij x_j.
 Together with the bias term:
 
@@ -23,7 +23,7 @@ where S is the number of +1 spins among sites other than i. The +1/d term is
 the discrete single-site correction from comparing S+1 against S.
 
 The textbook one-edge-per-pair convention gives σ(2h_i); ours double-counts
-in J, so the factor doubles. Proposal IS the conditional, so acceptance is
+in J, so the factor doubles. Proposal is the conditional, so acceptance is
 always 1 (no MH correction). One "sweep" updates every site once; chains are
 vectorised, the inner loop is over sites only.
 """
@@ -68,11 +68,10 @@ def gibbs_sample(
     if record_energy_every is not None:
         energy_trace.append(target.log_prob(spins).detach())
 
-    # Composition-penalty awareness. The soft constraint λ·d·(c₊ − c_t)² is a
-    # GLOBAL term, so it must enter the single-site heat-bath conditional, not
-    # only the diagnostic. Guard mirrors IsingTarget.composition_penalty
-    # (ising.py): when inactive the log-odds and RNG stream are byte-for-byte
-    # the original unconstrained sampler.
+    # The soft constraint λ·d·(c₊ − c_t)² is a global term, so it must enter
+    # the single-site conditional. Guard mirrors IsingTarget.composition_penalty
+    # (ising.py); when inactive the log-odds and RNG stream match the
+    # unconstrained sampler byte-for-byte.
     target_composition = getattr(target, "target_composition", None)
     penalty_strength = getattr(target, "composition_penalty_strength", 0.0)
     penalty_active = target_composition is not None and penalty_strength != 0.0

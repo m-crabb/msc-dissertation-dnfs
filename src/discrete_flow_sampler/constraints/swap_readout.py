@@ -1,28 +1,23 @@
 """Paired-swap antisymmetric rate readout (swap-DNFS, instantiation A).
 
-A composition-preserving swap exchanges the spins at two sites (i, j). The swap
-rate is read off a context HOLLOW IN BOTH sites against the token difference:
+A composition-preserving swap exchanges the spins at sites (i, j). The swap
+rate is read off a context hollow in both sites against the token difference:
 
     G_swap(i, j | x) = < H_ij(x_{-{i,j}}),  omega_{x_i} - omega_{x_j} >
 
-Doubly-hollow H_ij gives EXACT state-swap antisymmetry
+Doubly-hollow H_ij gives exact state-swap antisymmetry
     G_swap(i, j | x) = -G_swap(i, j | Swap2(x, i, j))
-and free trivial-swap vanishing (x_i = x_j => G_swap = 0), at random init with
-no training. Two heads share the readout and differ only in how H_ij is built:
+and trivial-swap vanishing (x_i = x_j => G_swap = 0) at random init. Two
+heads share the readout and differ in how H_ij is built:
 
-  * DoublyHollowSwapHead - brute-force: mask BOTH i and j (O(d^2) passes; the
-    architecture-agnostic correctness gate).
-  * LeTFMaskOneSwapHead  - climax head: mask anchor i, reuse the single-site
-    leTF hollowness at j. The d anchor passes are independent, so forward
-    batches them into the model batch dimension (one stacked pass, optionally
-    chunked for memory); forward_looped keeps the O(d)-sequential-pass
-    reference.
+  * DoublyHollowSwapHead: mask both i and j (O(d^2) passes; correctness gate).
+  * LeTFMaskOneSwapHead: mask anchor i, reuse the single-site leTF hollowness
+    at j; the d anchor passes are batched into one stacked pass.
 
-Both read H_ij at the SECOND index j, so they agree numerically: the leTF
-readout at j already ignores j's own input, so additionally masking j is a
-no-op. The heads are NOT label-symmetric (H_ij != H_ji), so the downstream
-swap residual must order each unordered pair by site index (i<j), never by
-spin. LeTFRateMatrix is reused untouched.
+Both read H_ij at the second index j and agree numerically, since the leTF
+readout at j already ignores j's own input. The heads are not label-symmetric
+(H_ij != H_ji), so the swap residual must order each pair by site index
+(i<j), never by spin.
 """
 
 from collections.abc import Callable, Iterable
@@ -48,11 +43,10 @@ def _masked_body(
 ) -> Tensor:
     """Run the leTF body with `mask_sites` content-free (embedding zeroed).
 
-    Replicates LeTFRateMatrix.compute_body plus the per-position output_norm +
-    time line (letf.py:332), leaving LeTFRateMatrix untouched. Returns the
-    hollow body H of shape (B, d, hidden_dim). H[:, k, :] never depends on x_k
-    (leTF slice-and-mask hollowness) nor on any masked site's value (the
-    zeroing is an unconditional override, independent of the true token).
+    Replicates LeTFRateMatrix.compute_body plus the output_norm + time line.
+    Returns H of shape (B, d, hidden_dim); H[:, k, :] depends neither on x_k
+    (leTF hollowness) nor on any masked site's value (the zeroing is an
+    unconditional override).
     """
     x_idx = ((x + 1) / 2).long()
     x_emb = model.token_embedder(x_idx).clone()  # (B, d, h)
@@ -69,25 +63,17 @@ def _masked_body(
 def _keep_masked_bodies(
     model: LeTFRateMatrix, x: Tensor, t: Tensor, keep: Tensor
 ) -> Tensor:
-    """Batched `_masked_body` over a stack of keep-masks: ONE stacked pass.
+    """Batched `_masked_body` over a stack of keep-masks in one stacked pass.
 
-    `keep` is (n_masks, d) with 1.0 at sites whose token embedding survives
-    and 0.0 at sites forced content-free. The masked passes are independent --
-    they differ only in WHICH sites are zeroed -- so they ride the model batch
-    dimension: build (n_masks*B, d, h), run the fwd/bwd stacks + readout once,
-    and reshape back. Every kernel in the path reduces over non-batch dims, so
-    each batch element's arithmetic (including reduction order) is identical
-    to its looped counterpart -- observed bit-exact on CPU.
-
-    Zeroing is an unconditional override (multiply by a value-independent
-    mask), so H never depends on the true token at any masked site. That is
-    the whole blindness argument, and it is why depth is free here: the
-    masking is at the INPUT, so the two-hop leak that forces the one-pass
-    heads' band content to be shallow (interval_swap_head.py) never arises.
+    `keep` is (n_masks, d), 1.0 where the token embedding survives and 0.0
+    where the site is forced content-free. The masked passes are independent,
+    so they ride the model batch dimension as (n_masks*B, d, h); every kernel
+    reduces over non-batch dims, so the result is bit-exact with the loop.
+    Masking at the input means H never depends on a masked token at any
+    depth, unlike the two-hop leak of the one-pass heads (interval_swap_head.py).
 
     Returns (n_masks, B, d, h): [a, :, j, :] is the body under mask a read at
-    site j -- blind to every site zeroed by keep[a] AND hollow in x_j (leTF
-    single-site hollowness: the readout at j ignores j's own input).
+    site j, blind to every site zeroed by keep[a] and hollow in x_j.
     """
     x_idx = ((x + 1) / 2).long()
     x_emb = model.token_embedder(x_idx)  # (B, d, h)
@@ -110,12 +96,8 @@ def _keep_masked_bodies(
 def _anchor_masked_bodies(
     model: LeTFRateMatrix, x: Tensor, t: Tensor, anchor_sites: Tensor
 ) -> Tensor:
-    """Batched `_masked_body` over single-site anchors: ONE stacked pass.
-
-    The single-anchor special case of `_keep_masked_bodies`: keep-mask a
-    zeroes exactly site anchor_sites[a] (a diagonal zeroing mask). Delegating
-    is arithmetically identical to building `emb` here, so the mask-one head's
-    numerics are unchanged.
+    """Single-anchor case of `_keep_masked_bodies`: keep-mask a zeroes only
+    site anchor_sites[a].
 
     Returns (n_anchors, B, d, h): [a, :, j, :] = H_ij for anchor i = anchor_sites[a].
     """
@@ -125,19 +107,13 @@ def _anchor_masked_bodies(
 
 
 class DoublyHollowSwapHead(nn.Module):
-    """Brute-force doubly-hollow swap head: mask BOTH sites. Gate-only, O(d^2).
+    """Brute-force doubly-hollow swap head: mask both sites. Gate-only, O(d^2).
 
-    Architecture-agnostic correctness check. For each pair {i, j} it masks
-    BOTH sites, reads the body at each of them, and reads out against the
-    token difference. The diagonal (i == j) and same-spin pairs vanish
-    automatically because omega_{x_i} - omega_{x_j} = 0 there.
-
-    `_masked_body` applies order-independent embedding overrides, so one
-    pass per unordered pair replaces two bit-identical masked passes:
-    H[:, j] against omega_i - omega_j gives G[i, j], and H[:, i] against
-    omega_j - omega_i gives G[j, i]. Output is bit-identical to the ordered
-    loop; tests/test_swap_head_vectorised.py pins mask_one to this oracle
-    at exact equality.
+    For each unordered pair {i, j} one masked pass gives both entries:
+    H[:, j] against omega_i - omega_j is G[i, j], H[:, i] against
+    omega_j - omega_i is G[j, i]. Diagonal and same-spin pairs vanish because
+    the token difference is zero. tests/test_swap_head_vectorised.py pins
+    mask_one to this oracle at exact equality.
     """
 
     def __init__(self, backbone: LeTFRateMatrix):
@@ -163,22 +139,17 @@ class DoublyHollowSwapHead(nn.Module):
 
 
 class LeTFMaskOneSwapHead(nn.Module):
-    """Climax swap head: mask anchor i, reuse single-site leTF hollowness.
+    """Mask-one swap head: mask anchor i, reuse single-site leTF hollowness.
 
-    For each anchor i, one masked body pass returns H_ij = H[:, j, :] for ALL
-    j != i: blind to x_i (anchor masked) and hollow in x_j (leTF readout at j
-    ignores j's own input). The readout against omega_{x_i} - omega_{x_j} then
-    gives the full row G_swap(i, :). Diagonal and same-spin pairs vanish because
-    the token difference is zero there. NOT label-symmetric (H_ij != H_ji).
+    For each anchor i one masked pass returns H_ij = H[:, j, :] for all
+    j != i, blind to x_i and hollow in x_j; the readout against
+    omega_{x_i} - omega_{x_j} gives the row G_swap(i, :). Not label-symmetric.
 
-    forward batches the d independent anchor passes into the model batch
-    dimension (`_anchor_masked_bodies`) instead of looping them sequentially
-    -- the loop cost ~d x the single-site head and made D >= 8 rungs
-    infeasible (56 s/forward at d=256). `anchor_chunk_size` caps anchors per
-    stacked pass: the readout attention buffer is (n_anchors*B, n_heads, d, 2d),
-    which stops fitting memory at large d unchunked. None = all d anchors in
-    one pass. forward_looped is the original sequential reference, kept as the
-    test oracle.
+    forward batches the d anchor passes into the model batch dimension (the
+    sequential loop took 56 s/forward at d=256). `anchor_chunk_size` caps
+    anchors per stacked pass, since the readout attention buffer
+    (n_anchors*B, n_heads, d, 2d) stops fitting memory at large d; None = all
+    d anchors at once. forward_looped is the sequential test oracle.
     """
 
     def __init__(self, backbone: LeTFRateMatrix, anchor_chunk_size: int | None = None):
@@ -203,8 +174,7 @@ class LeTFMaskOneSwapHead(nn.Module):
         return torch.cat(rows, dim=0).permute(1, 0, 2)  # (B, d, d)
 
     def forward_looped(self, x: Tensor, t: Tensor) -> Tensor:
-        """Sequential oracle: one masked pass per anchor, ~d x slower than
-        forward (tests/test_swap_head_vectorised.py)."""
+        """Sequential oracle: one masked pass per anchor."""
         m = self.backbone
         x_idx = ((x + 1) / 2).long()
         om = m.omega(x_idx)  # (B, d, h)
@@ -224,10 +194,9 @@ def antisymmetrise(
 
     G_swap(i, j | x) := 1/2 [ raw(i, j | x) - raw(i, j | Swap2(x, i, j)) ]
 
-    is exactly antisymmetric under Swap2 for ANY raw_head, with no hollowness
-    required. raw_head is a callable (x, t) -> (B, d, d). Cost is one swapped
-    forward pass per ordered pair (O(d^2)): the guaranteed-correct fallback and
-    the unit-test oracle, NOT the efficient path.
+    is exactly antisymmetric under Swap2 for any raw_head, no hollowness
+    required. raw_head is a callable (x, t) -> (B, d, d). One swapped pass
+    per ordered pair (O(d^2)): the unit-test oracle, not the efficient path.
     """
     base = raw_head(x, t)
     batch, d, _ = base.shape

@@ -1,43 +1,29 @@
 """House figure style for every thesis figure.
 
-One module owns the palette and the uncertainty grammar so that a reader
-moving between chapters sees one visual language. The palette anchors on
-the two newest deliberately-designed figure sets (the 4x4 demo pack and
-the 8x8 probe figures) and was validated for colour-vision deficiency as
-a five-hue set on the light surface (worst adjacent CVD dE 9.1, normal
-dE 21.6, dataviz six-check validator 2026-08-13). Two hues sit below the
-3:1 surface-contrast bar, so every figure must carry direct labels or a
-legend naming its series -- colour is never the only identity channel.
+One module owns the palette and the uncertainty grammar. The five-hue
+palette was validated for colour-vision deficiency on the light surface
+(worst adjacent CVD dE 9.1, normal dE 21.6, dataviz six-check validator
+2026-08-13). Two hues sit below the 3:1 surface-contrast bar, so every
+figure carries direct labels or a legend; colour is never the only
+identity channel.
 
-Colour follows the ROLE, never the figure: the reference/ground truth is
-always ink, our sampler is always the same blue, classical baselines stay
-in one family. A new figure picks roles, not colours.
-
-The one exception is a figure whose contrast IS a parameter level -- two
-lambdas, two lattice sizes, two temperatures -- where every series shares
-one role and the rule above would collapse them onto a single hue, leaving
-linestyle to carry a distinction it carries badly. There, ``parameter_ramp``
-gives the role a lightness ramp: light is the low level, dark the high one.
-The hue still names the role, so a reader who has learned "ink = reference"
-keeps it, and the ramp survives greyscale print by construction.
+Colour follows the role, never the figure: reference/ground truth is ink,
+our sampler is the same blue everywhere, classical baselines stay in one
+family. The one exception is a figure whose contrast is a parameter level
+(two lambdas, two lattice sizes) where every series shares one role;
+``parameter_ramp`` gives that role a lightness ramp, light = low level,
+dark = high level, which survives greyscale print.
 
 Uncertainty grammar (one convention per data shape):
-- curves with seed spread   -> ``seed_band``: mean line + shaded min-max
-  band, band labelled with n in the legend entry.
-- any other shaded interval -> ``uncertainty_band``: the same alpha and
-  edge treatment as ``seed_band``, for series that already have their own
-  centre marks (markers, an existing line) and only need the ribbon. A
-  band is the default for uncertainty ALONG A CONTINUOUS x; it implies
-  interpolation between the plotted abscissae, which is why it is wrong
-  for the two cases below.
-- point estimates           -> ``point_errorbars``: discrete capped bars.
-  Kept for x that is categorical, or where each abscissa is a separate
-  experiment (one trained window, one reference chain) rather than a
-  sample of one underlying curve -- a ribbon there claims a continuum the
-  data does not measure.
+- curves with seed spread   -> ``seed_band``: mean line + min-max band,
+  n in the legend entry.
+- any other shaded interval -> ``uncertainty_band``: same ribbon, for
+  series with their own centre marks. A band implies interpolation along
+  a continuous x, which is why it is wrong for the two cases below.
+- point estimates           -> ``point_errorbars``: capped bars, for
+  categorical x or one experiment per abscissa.
 - seed-by-seed structure    -> ``per_seed_traces``: thin per-seed lines,
-  ONLY when the seed split itself is the figure's point (e.g. the
-  penalty-variance traces, where one escaping seed is the story).
+  only when the seed split itself is the figure's point.
 """
 
 from __future__ import annotations
@@ -48,12 +34,8 @@ from matplotlib.colors import ListedColormap, to_hex, to_rgb
 
 # --- roles (never reassign per figure) -----------------------------------
 REFERENCE_INK = "#1a1a19"  # exact enumeration / certified chain / TI truth
-REFERENCE_FILL = "#4a4943"  # the same role as a large filled area (bars,
-# patches). Ink was specified for LINES: a
-# thin near-black curve reads as reference,
-# but a bar-sized block of it dominates the
-# panel and fights the saturated hues beside
-# it. Use ink for strokes, this for fills.
+REFERENCE_FILL = "#4a4943"  # the reference role as a filled area (bars,
+# patches): a bar-sized block of ink dominates the panel. Ink for strokes.
 SAMPLER_HUE = "#2a78d6"  # our sampler (DNFS / masked attention), every chapter
 NEURAL_COMPARATOR_HUE = "#1baf7a"  # second neural head or matched neural baseline
 CLASSICAL_HUE = "#eda100"  # classical MCMC baseline (Kawasaki nonlocal, Gibbs, VC-SGC)
@@ -64,51 +46,33 @@ MUTED = "#6f6e66"
 GRID = "#e6e5df"
 
 # Spin-lattice rendering, established at background.tex fig:ising-phases:
-# indigo = spin -1 (down), gold = spin +1 (up); the pair separates in
-# greyscale print. Lattices plot as (x + 1) / 2 so index 0 maps to down.
-# Every figure showing raw spin configurations uses THIS map -- a montage
-# in a different palette reads as a different physical system.
+# indigo = spin -1 (down), gold = spin +1 (up); separates in greyscale.
+# Lattices plot as (x + 1) / 2 so index 0 maps to down. Every raw-spin
+# figure uses this map.
 SPIN_DOWN_COLOUR = "#3B3A6B"
 SPIN_UP_COLOUR = "#F2C14E"
 SPIN_CMAP = ListedColormap([SPIN_DOWN_COLOUR, SPIN_UP_COLOUR])
 
-# House geometry: figures are designed AT print size, 1:1 --
-# figsize width equals the width the figure prints at, so a point of script
-# font is a point on the page. Two tex widths only: \textwidth for
+# House geometry: figures are designed at print size, 1:1, so a point of
+# script font is a point on the page. Two tex widths only: \textwidth for
 # multi-panel figures, 0.72\textwidth for single panels (A4, 2.5 cm margins,
 # 11 pt body -> text block 6.3 in). Label size 9 pt matches the
-# \footnotesize house tables at 1:1; dpi 300 is print quality at these
-# physical sizes.
+# \footnotesize house tables; dpi 300 is print quality at these sizes.
 FULL_WIDTH_IN = 6.3
 SINGLE_PANEL_WIDTH_IN = 4.54
 FIGSIZE_FULL_1X2 = (FULL_WIDTH_IN, 2.9)
-FIGSIZE_FULL_1X2_SHORT = (FULL_WIDTH_IN, 2.4)  # 1x2 whose panels carry a few
-# marks, not a dense curve: at
-# 2.9 in they print 7.4 cm tall
-# for two nearly-empty boxes.
-FIGSIZE_FULL_1X4 = (FULL_WIDTH_IN, 2.5)  # four panels in a row. The old
-# 2x2 printed 14.1 cm, half a
-# page; this prints 6.4 cm. An
-# earlier 1x4 attempt set 18 in
-# wide and let LaTeX shrink it,
-# which printed ~3 pt type --
-# the width stays 6.3 in and the
-# panels get narrow instead.
+FIGSIZE_FULL_1X2_SHORT = (FULL_WIDTH_IN, 2.4)  # 1x2 with a few marks per
+# panel, not a dense curve; at 2.9 in it printed 7.4 cm tall.
+FIGSIZE_FULL_1X4 = (FULL_WIDTH_IN, 2.5)  # four panels in a row: 6.4 cm tall
+# vs 14.1 cm for the old 2x2. Width stays 6.3 in and the panels get narrow;
+# an 18 in figure shrunk by LaTeX printed ~3 pt type.
 FIGSIZE_FULL_2X2 = (FULL_WIDTH_IN, 5.6)
-FIGSIZE_FULL_WIDE_SINGLE = (FULL_WIDTH_IN, 2.6)  # one panel at full width, legend
-# OUTSIDE the axes (below): a
-# six-entry legend inside a 6.3 in
-# panel covers the peak it is
-# meant to explain.
+FIGSIZE_FULL_WIDE_SINGLE = (FULL_WIDTH_IN, 2.6)  # one panel at full width,
+# legend below the axes: a six-entry legend inside covers the peak.
 FIGSIZE_SINGLE = (SINGLE_PANEL_WIDTH_IN, 3.2)
-FIGSIZE_SINGLE_2X2 = (SINGLE_PANEL_WIDTH_IN, 3.8)  # four panels as a 2x2 at
-# 0.72\textwidth: the 1x4 at
-# full width left ~0.63 in of
-# data axis per panel (60% of
-# the canvas went to labels);
-# this trades +3.3 cm of print
-# height for ~2.6x the data
-# area at unchanged type size.
+FIGSIZE_SINGLE_2X2 = (SINGLE_PANEL_WIDTH_IN, 3.8)  # 2x2 at 0.72\textwidth:
+# the 1x4 at full width left ~0.63 in of data axis per panel (60% went to
+# labels); this trades +3.3 cm of print height for ~2.6x the data area.
 
 FONT_SIZE_TITLE = 9
 FONT_SIZE_LABEL = 9
@@ -140,9 +104,8 @@ def use_house_style() -> None:
 
 
 def style_axes(ax, grid_axis: str = "y") -> None:
-    """The shared axis treatment: recessive grid below the data, no top or
-    right spine, muted remaining spines/ticks (lifted verbatim from the two
-    anchor scripts so restyled figures match them exactly)."""
+    """Shared axis treatment: recessive grid below the data, no top or right
+    spine, muted remaining spines and ticks."""
     ax.grid(axis=grid_axis, color=GRID, linewidth=0.8, zorder=0)
     ax.set_axisbelow(True)
     for spine in ("top", "right"):
@@ -153,14 +116,11 @@ def style_axes(ax, grid_axis: str = "y") -> None:
 
 
 def parameter_ramp(hue, n_levels, lightest=0.55):
-    """Lightness ramp within ONE role, ordered low level -> high level.
+    """Lightness ramp within one role, ordered low level -> high level.
 
-    For figures whose contrast is a parameter rather than a role (see the
-    module docstring). The darkest entry is the role's own hue, so a
-    single-level figure is unchanged and a two-level one reads as "same
-    thing, more of it". ``lightest`` is how far the low end is blended
-    toward white; above about 0.65 a 1.6pt line starts to disappear on the
-    light surface, which is why it is not the default.
+    The darkest entry is the role's own hue, so a single-level figure is
+    unchanged. ``lightest`` is the blend toward white at the low end; above
+    about 0.65 a 1.6pt line disappears on the light surface.
     """
     base = np.array(to_rgb(hue))
     if n_levels == 1:
@@ -171,23 +131,16 @@ def parameter_ramp(hue, n_levels, lightest=0.55):
     ]
 
 
-BAND_ALPHA = 0.18  # one alpha for every shaded interval in the thesis: two
-# bands of different roles may overlap, and at 0.18 the
-# overlap (0.33 effective) still reads as a third shade
-# rather than as an opaque block hiding the curve under it.
+BAND_ALPHA = 0.18  # one alpha for every shaded interval: two overlapping
+# bands (0.33 effective) still read as a third shade, not an opaque block.
 
 
 def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None):
-    """The house shaded interval: series hue, BAND_ALPHA, NO edge line.
+    """The house shaded interval: series hue, BAND_ALPHA, no edge line.
 
-    The edge is suppressed deliberately -- a stroked band boundary reads as
-    a data curve, and a min-max envelope over 4 seeds is not one. Drawn at
-    zorder 2 so it sits above the grid (zorder 0) and below the centre line
-    or markers (zorder 3+) that name the series.
-
-    Use for uncertainty along a continuous x. For point estimates at
-    categorical or one-experiment-per-abscissa positions use
-    ``point_errorbars`` instead; see the module docstring.
+    No edge because a stroked band boundary reads as a data curve. zorder 2
+    sits above the grid (0) and below the centre line or markers (3+).
+    For point estimates use ``point_errorbars``; see the module docstring.
     """
     return ax.fill_between(
         x,
@@ -203,9 +156,8 @@ def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None):
 
 def seed_band(ax, x, per_seed_values, hue, label):
     """Mean line + min-max shaded band for a family of seed curves; the
-    legend entry carries n so the band's meaning is on the figure, not in
-    the caption. min-max (not +/-sd) because thesis seed counts are 3-6:
-    a standard deviation over so few seeds implies a precision it lacks."""
+    legend entry carries n. min-max rather than +/-sd because seed counts
+    are 3-6."""
     per_seed_values = np.asarray(per_seed_values)
     n_seeds = per_seed_values.shape[0]
     mean = per_seed_values.mean(axis=0)
@@ -241,9 +193,8 @@ def point_errorbars(ax, x, y, yerr, hue, label, marker="o"):
 
 
 def per_seed_traces(ax, x, per_seed_values, hue, label, highlight_index=None):
-    """Thin per-seed lines; reserved for figures whose point IS the
-    seed-by-seed split. ``highlight_index`` draws one seed at full weight
-    (the escaping seed of the penalty-variance figure)."""
+    """Thin per-seed lines for figures whose point is the seed-by-seed
+    split. ``highlight_index`` draws one seed at full weight."""
     per_seed_values = np.asarray(per_seed_values)
     for index, trace in enumerate(per_seed_values):
         is_highlighted = index == highlight_index

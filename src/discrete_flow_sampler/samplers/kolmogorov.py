@@ -22,29 +22,20 @@ with
         = dt log p_t(x)
           + Σ_{i: y_i != x_i} [ R^θ(y_i, i | x)  -  R^θ(x_i, i | y) * p_t(y) / p_t(x) ]   (Eq. 7)
 
-where we have specialised to single-site flips only (Eq. 6): the Σ_{y != x}
-collapses to Σ_i over the d single-flip neighbours y(i). Eq. (7) does NOT
-require the one-way `R = [G]_+` parameterisation of Prop. 1 — that further
-specialisation is what produces Eq. (10) and `residual_lenet`. Any
-parameterisation that emits per-site flip rates (e.g. `MLPRateMatrix`)
-satisfies Eq. (7)'s premises; the cost is empirical estimator variance,
-which the paper attacks with the control-variate estimator (Eq. 8).
+specialised to single-site flips (Eq. 6): Σ_{y != x} collapses to Σ_i over
+the d single-flip neighbours y(i). Eq. (7) does not require the one-way
+`R = [G]_+` parameterisation of Prop. 1; that further specialisation gives
+Eq. (10) and `residual_lenet`. Any per-site flip-rate model (e.g.
+`MLPRateMatrix`) satisfies Eq. (7); the cost is estimator variance, which
+the control-variate estimator (Eq. 8) attacks.
 
-Implementation notes
---------------------
+Implementation notes:
 - ∂_t log p_t(x) = ∂_t log p̃_t(x) − ∂_t log Z_t. The caller pre-computes
-  ∂_t log Z_t (via `samplers.log_z_estimators`) and passes it in. This
-  separates the "average over a batch" logic (in the estimator) from the
-  per-x residual computation here.
-
-- The Z_t in p_t(y)/p_t(x) cancels: it equals exp(log p̃_t(y) − log p̃_t(x)).
-  So the residual never needs Z_t directly -- only its t-derivative.
-
-- For each x in the batch, computing the residual requires evaluating the
-  *model* on x AND on each of its d single-flip neighbours -- d + 1 forward
-  passes' worth of model inputs per x. Vectorised here as one
-  (B*d, d) batched call. This is exactly the cost cliff that motivates
-  the locally equivariant Transformer in Stage 3.
+  ∂_t log Z_t (`samplers.log_z_estimators`) and passes it in.
+- Z_t cancels in p_t(y)/p_t(x) = exp(log p̃_t(y) − log p̃_t(x)), so the
+  residual needs only the t-derivative of log Z_t.
+- Each x needs the model on x and on its d single-flip neighbours,
+  vectorised as one (B*d, d) batched call.
 """
 
 import torch
@@ -63,10 +54,8 @@ __all__ = ["DEFAULT_LOG_RATIO_CLAMP", "residual_general", "residual_lenet", "los
 def _flip_signs_matrix(n_sites: int, *, device, dtype) -> Tensor:
     """Return the (d, d) matrix with -1 on the diagonal and +1 elsewhere.
 
-    Multiplying state.unsqueeze(1) (shape (B, 1, d)) by this matrix's
-    unsqueezed form (shape (1, d, d)) builds the (B, d, d) tensor whose
-    [b, i, :] row is state[b, :] with site i flipped. Cheaper and clearer
-    than a Python loop or in-place index_put_.
+    state.unsqueeze(1) (B, 1, d) times this matrix (1, d, d) gives the
+    (B, d, d) tensor whose [b, i, :] row is state[b, :] with site i flipped.
     """
     return 1.0 - 2.0 * torch.eye(n_sites, device=device, dtype=dtype)
 
@@ -97,12 +86,10 @@ def residual_general(
     """
     batch_size, n_sites = x.shape
 
-    # Pre-compute the off-diagonal flip matrix.
     flip_signs = _flip_signs_matrix(n_sites, device=x.device, dtype=x.dtype)
 
-    # (B, d, d) of single-site flips: flip_neighbours[b, i, :] is x[b, :]
-    # with only site i flipped. Then flatten to (B*d, d) so the model and
-    # target can be evaluated on all neighbours in a single batched call.
+    # flip_neighbours[b, i, :] is x[b, :] with site i flipped; flattened to
+    # (B*d, d) so model and target run on all neighbours in one call.
     flip_neighbours = x.unsqueeze(1) * flip_signs.unsqueeze(0)  # (B, d, d)
     flat_neighbours = flip_neighbours.reshape(batch_size * n_sites, n_sites)
     t_per_neighbour = t.repeat_interleave(n_sites)  # (B*d,)
@@ -110,17 +97,14 @@ def residual_general(
     # Forward (outflow) rates at x: model(x, t)[b, i] = R_t(x_flip_i, i | x).
     forward_rates = model(x, t)  # (B, d)
 
-    # Reverse (inflow) rates from each flipped neighbour: at state x_flip_i,
-    # the rate of flipping site i back to x is the diagonal of model evaluated
-    # at the (B*d, d) neighbour batch -- entry [b, i, i] in the (B, d, d)
-    # reshape. That's R_t(x_i, i | x_flip_i).
+    # Reverse (inflow) rate R_t(x_i, i | x_flip_i): the rate of flipping site
+    # i back, i.e. entry [b, i, i] of the model at the neighbour batch.
     rates_at_neighbours = model(flat_neighbours, t_per_neighbour).reshape(
         batch_size, n_sites, n_sites
     )
     reverse_rates = rates_at_neighbours.diagonal(dim1=1, dim2=2)  # (B, d)
 
-    # p_t(x_flip_i) / p_t(x). Z_t cancels in the ratio, so we only need
-    # log p̃_t differences.
+    # p_t(x_flip_i) / p_t(x); Z_t cancels, so log p̃_t differences suffice.
     log_p_tilde_at_x = target.log_p_tilde_t(x, t)  # (B,)
     log_p_tilde_at_flips = target.log_p_tilde_t(
         flat_neighbours, t_per_neighbour
@@ -128,8 +112,7 @@ def residual_general(
     log_neighbour_ratio = log_p_tilde_at_flips - log_p_tilde_at_x.unsqueeze(-1)
     neighbour_ratio = log_neighbour_ratio.exp()  # (B, d)
 
-    # ∂_t log p_t(x) = ∂_t log p̃_t(x) − ∂_t log Z_t. The Z_t-derivative is
-    # a single scalar that broadcasts over the batch.
+    # ∂_t log p_t(x) = ∂_t log p̃_t(x) − ∂_t log Z_t.
     dt_log_pt_x = target.dt_log_p_tilde_t(x, t) - dt_log_Zt  # (B,)
 
     # Per-site bracket from Eq. 7: forward rate - reverse rate * ratio.
@@ -152,12 +135,10 @@ def residual_lenet(
                     + Σ_{i, y_i ≠ x_i} [G(y_i, i | x)]_+
                                        - [-G(y_i, i | x)]_+ · p_t(y_i)/p_t(x)
 
-    Why this collapses to a single forward pass:
-        Local equivariance (Eq. 20) gives G(x_i, i | y_i) = -G(y_i, i | x).
-        So the reverse rate at the flipped neighbour, R^θ(x_i, i | y_i)
-        = [G(x_i, i | y_i)]_+ = [-G(y_i, i | x)]_+, is computable from the
-        same G(·, i | x) tensor — no second model call. This is the
-        O(|N|) → O(1) reduction the paper attributes to leNets.
+    Local equivariance (Eq. 20) gives G(x_i, i | y_i) = -G(y_i, i | x), so
+    the reverse rate R^θ(x_i, i | y_i) = [-G(y_i, i | x)]_+ comes from the
+    same G(·, i | x) tensor: one forward pass, the O(|N|) → O(1) reduction
+    the paper attributes to leNets.
 
     Args:
         x: (B, D) state in {-1, +1}.
@@ -197,12 +178,8 @@ def loss(
 ) -> Tensor:
     """Mean-squared Kolmogorov residual over the batch. Scalar Tensor.
 
-    Dispatches on `model.is_locally_equivariant`:
-      - True  -> residual_lenet (Eq. 10, single forward pass).
-      - False -> residual_general (Eq. 7, two forward passes).
-
-    The training loop calls this single entry point regardless of stage;
-    only the model's class attribute decides the residual form.
+    Dispatches on `model.is_locally_equivariant`: True -> residual_lenet
+    (Eq. 10, one forward pass); False -> residual_general (Eq. 7, two).
     """
     if getattr(model, "is_locally_equivariant", False):
         residual = residual_lenet(x, t, dt_log_Zt, model, target)

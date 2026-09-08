@@ -3,40 +3,25 @@
 Paper reference: Eq. (2) (forward Euler step) and Eq. (8)/(13) (importance
 weight + ESS), in `dnfs.pdf`.
 
-Forward simulation
-------------------
-Given a learned rate matrix R_t(x, i) (per-site flip rate), a single Euler
-step of size dt is
+One Euler step of size dt under the learned per-site flip rate R_t(x, i):
 
     Pr[ flip site i in step | x ]  =  clip( R_t(x, i) * dt , 0, 1 ).
 
-For binary spins, sites are conditionally independent within one Euler
-step (the joint-state Categorical factorises across sites), so we can
-sample all per-site flips with a single uniform draw per site.
+Sites are conditionally independent within a step, so one uniform draw per
+site samples the joint flip.
 
-Importance log-weight
----------------------
-When `return_log_weights=True`, we accumulate
+With `return_log_weights=True` the IS log-weight accumulates
+w(t + dt) = w(t) + xi_t(x_t; R_t) * dt with the full Eq. (8) integrand
 
-    w(t + dt) = w(t) + xi_t( x_t ; R_t ) * dt,
+    xi_t(x) = dt_log_p_tilde_t(x)
+             - sum_i R_t(x, i) * ( p_t(x_flip_i) / p_t(x) - 1 ),
 
-where xi_t is the local IS integrand. The exact form is the design choice:
-    a) Textbook ("full") xi_t (paper Eq. analogous to (8)):
-            xi_t(x) = dt_log_p_tilde_t(x)
-                     - sum_i R_t(x, i) * ( p_t(x_flip_i) / p_t(x) - 1 )
-       Needs the target (for log p_tilde at flipped neighbours -- the
-       ratio collapses to exp(log_p_tilde(x_flip) - log_p_tilde(x))).
-    b) Simpler model-only variant the paper uses for ESS: see Eq. (13).
-The caller picks one (driven by what Eq. 8 / 13 in the paper specifies).
+which needs `target` for log p_tilde at the flipped neighbours (the ratio is
+exp(log_p_tilde(x_flip) - log_p_tilde(x))); there is no silent fallback to a
+model-only weight.
 
-Caller contract
----------------
-- `model(x, t_per_batch)` must return (B, d) non-negative rates.
-- `ts` is a 1-D monotonically increasing time grid; dt is read from
-  consecutive entries (NOT assumed uniform -- compute dt = ts[i+1] - ts[i]).
-- When `return_log_weights=True`, `target` must be supplied. We do NOT
-  silently fall back to a model-only weight, because that would change
-  semantics under the same flag.
+Caller contract: `model(x, t_per_batch)` returns (B, d) non-negative rates;
+`ts` is a 1-D increasing grid and dt = ts[i+1] - ts[i] is not assumed uniform.
 """
 
 import torch
@@ -73,9 +58,8 @@ def _compute_xi_t_general(
     flat_neighbours = flip_neighbours.reshape(batch_size * n_sites, n_sites)
     t_per_neighbour = t.repeat_interleave(n_sites)  # (B*d,)
 
-    # Rate of returning to x from each flipped neighbour, i.e.
-    # R_t(x, x_flip_i) under the paper's first-index-is-destination
-    # convention. Equals the i-th model output evaluated AT x_flip_i.
+    # Return rate R_t(x, x_flip_i) (first index = destination): the i-th model
+    # output evaluated at x_flip_i.
     rates_at_flipped = model(flat_neighbours, t_per_neighbour).reshape(
         batch_size, n_sites, n_sites
     )
@@ -145,24 +129,12 @@ def compute_xi_t(
 ) -> Tensor:
     """Per-state IS integrand ξ_t(x; R_t) for ∂_t log Z_t (paper Eq. 8).
 
-    Same quantity used in two places:
-      • `sample_ctmc(..., return_log_weights=True)` — accumulated along the
-        Euler trajectory to produce IS log-weights for ESS / F/D / E/D eval.
-      • `samplers.log_z_estimators.compute_c_t_grid` (control_variate
-        mode) — averaged per time slot in the outer step as the c_t
-        target for the inner-loop loss (paper Algorithm 1 line 4).
-
-    Dispatches on `model.is_locally_equivariant`:
-      - True  -> `_compute_xi_t_lenet`  (single forward pass, paper Eq. 8 LE form).
-      - False -> `_compute_xi_t_general` (two forward passes, paper Eq. 8 general form).
-
-    `outflow_rates` is the non-LE-only passthrough optimisation: in that
-    branch `sample_ctmc` already computed `model(state, t)` for the Euler
-    step and feeds it through to skip the duplicate forward pass.
-    Outer-step c_t computation omits it and lets the helper recompute.
-    The LE branch ignores the argument — its reuse path is
-    `xi_t_lenet_from_scores`, fed the Euler step's pre-relu G_t directly
-    by `sample_ctmc`.
+    Used for the IS log-weights in `sample_ctmc` and for the c_t grid in
+    `log_z_estimators.compute_c_t_grid` (paper Algorithm 1 line 4).
+    Dispatches on `model.is_locally_equivariant`: one forward pass (LE) or
+    two (general). `outflow_rates` lets the non-LE branch reuse the Euler
+    step's `model(state, t)`; the LE branch ignores it and reuses the
+    pre-relu G_t via `xi_t_lenet_from_scores` instead.
     """
     if getattr(model, "is_locally_equivariant", False):
         return _compute_xi_t_lenet(state, t, model, target)
@@ -184,16 +156,11 @@ def _euler_step(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
 
 
 def _euler_step_general(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
-    """Existing binary-flip Euler step (single rate per site).
-
-    Forward Euler flip step (paper Eq. 2): each site flips independently with
-    probability outflow_rates * dt, clipped to [0, 1] for numerical safety
-    when dt is too coarse. The clamp signals stiffness rather than masking
-    it -- check post-hoc if many flip_prob entries hit 1.
-
-    Returns (new_state, outflow_rates) where outflow_rates is (B, D).
-    The caller re-uses outflow_rates to avoid a duplicate forward pass
-    inside compute_xi_t.
+    """Binary-flip forward Euler step (paper Eq. 2): each site flips with
+    probability outflow_rates * dt, clipped to [0, 1]. The clamp signals
+    stiffness rather than masking it -- check post-hoc if many flip_prob
+    entries hit 1. Returns (new_state, outflow_rates), the latter (B, D)
+    and reused by `compute_xi_t`.
     """
     outflow_rates = model(state, t_per_batch)
     flip_prob = (outflow_rates * step_dt).clamp(0.0, 1.0)
@@ -205,24 +172,14 @@ def _euler_step_general(model, state: Tensor, t_per_batch: Tensor, step_dt: Tens
 def _euler_step_lenet(model, state: Tensor, t_per_batch: Tensor, step_dt: Tensor):
     """LE-path Euler step: per-site categorical over S values.
 
-    Math (paper Eq. 2 specialised to R_t = [G]_+ under local equivariance):
+    Paper Eq. 2 with R_t = [G]_+ under local equivariance:
         Pr[site i -> τ in step] = [G(τ, i | x)]_+ * dt   for τ ≠ x_i,
         Pr[site i stays]        = 1 - Σ_{τ ≠ x_i} [G(τ, i | x)]_+ * dt.
 
-    For binary this collapses back to the non-LE single-flip-prob form,
-    but we write the general categorical so the same code path serves
-    S > 2 (alloy extension; future cells under `constrained_soft_02`).
-
-    Implementation: build a (B, D, S+1) per-site categorical with the
-    last slot = "stay", sample once via torch.multinomial on the
-    flattened (B*D, S+1) tensor, then map indices back to spin values
-    in {-1, +1} using spin_of_idx = 2*idx - 1 (with the stay-index
-    routed to the original state value).
-
-    Returns (new_state, G_t) — the PRE-relu (B, D, S) scores, not the
-    rates: [G]_+ is recoverable from G_t but not vice versa, and ξ_t's
-    reverse rate needs [-G]_+ of the same tensor (see
-    `xi_t_lenet_from_scores`).
+    Written as a (B, D, S+1) categorical (last slot = stay) so the same
+    path serves S > 2. Returns (new_state, G_t) with G_t the pre-relu
+    (B, D, S) scores: ξ_t's reverse rate needs [-G]_+ of the same tensor
+    (`xi_t_lenet_from_scores`).
     """
     G_t = model(state, t_per_batch)
     R_t = F.relu(G_t)  # (B, D, S)
@@ -281,23 +238,19 @@ def sample_ctmc(
         target: required when `return_log_weights=True`; used to evaluate
             `dt_log_p_tilde_t` (and, depending on xi_t form, `log_p_tilde_t`
             at flipped neighbours).
-        resampling: optional `ResamplingConfig` enabling adaptive systematic
-            resampling of the particle batch when interim ESS < τ·B
-            (`samplers.resampling`). Needs `target`, plus one of
-            `return_log_weights` (the eval mode) or `return_all_states` (the
-            training-rollout mode — see `swap_ctmc.sample_swap_ctmc` for the
-            full argument; the two samplers keep one contract). Applies
-            unchanged to soft-tilted targets — resampling only touches
-            (state, log_weights). The ξ_t the trigger reads per step reuses
-            the Euler step's own forward for BOTH model kinds (non-LE: the
-            outflow rates pass through; LE: the step returns the pre-relu
-            G_t and `xi_t_lenet_from_scores` recovers both rate signs).
+        resampling: optional `ResamplingConfig`: adaptive systematic
+            resampling of the batch when interim ESS < τ·B
+            (`samplers.resampling`). Needs `target` plus one of
+            `return_log_weights` (eval) or `return_all_states` (training
+            rollout; same contract as `swap_ctmc.sample_swap_ctmc`). Only
+            (state, log_weights) are touched, so soft-tilted targets need
+            no special case.
         return_cv_integrand: requires `return_all_states=True`, `target`,
-            resampling OFF. Return (trajectory, cv_integrand), adding the
+            resampling off. Return (trajectory, cv_integrand) with the
             (T, B) per-slot ξ_t (paper Eq. 8) from each Euler-step forward;
             only the final slot needs a fresh model call. Bit-identical to
             `log_z_estimators.compute_c_t_grid` (control_variate) on that
-            trajectory: same tensors/arithmetic, no extra RNG consumption
+            trajectory, no extra RNG consumption
             (tests/test_cv_integrand_reuse.py).
 
     Returns:
@@ -392,9 +345,8 @@ def sample_ctmc(
         new_state, step_scores = _euler_step(model, state, t_per_batch, step_dt)
 
         if accumulate_log_weights or return_cv_integrand:
-            # Eq. 8 ξ_t at the Euler interval's left endpoint x_t. Reuse
-            # (B, D) rates for non-LE, or pre-relu G_t for LE, preserving
-            # both forward [G]_+ and reverse [-G]_+ rates.
+            # Eq. 8 ξ_t at the interval's left endpoint x_t, reusing the step's
+            # own forward (rates for non-LE, pre-relu G_t for LE).
             if model_is_locally_equivariant:
                 xi_t = xi_t_lenet_from_scores(step_scores, state, t_per_batch, target)
             else:
@@ -408,12 +360,12 @@ def sample_ctmc(
             if accumulate_log_weights:
                 log_weights = log_weights + xi_t * step_dt
             if return_cv_integrand:
-                # Slot k of the CV grid IS this ξ_t: `state` here equals
+                # Slot k of the CV grid is this ξ_t: `state` here equals
                 # trajectory[step] and t_per_batch equals t_grid[step].
                 cv_integrand[step] = xi_t
 
         state = new_state
-        # Checkpoint AFTER the state advance: the particle carrying log w(t+dt)
+        # Checkpoint after the state advance: the particle carrying log w(t+dt)
         # is x_{t+dt}, so that is the row set resampling duplicates/kills.
         if resampling is not None and step % resampling.check_every == 0:
             state, log_weights, log_z_increment, fired = resample_if_needed(
@@ -424,15 +376,13 @@ def sample_ctmc(
                 smc_stats.n_events += 1
                 smc_stats.event_steps.append(step)
         # Recorded after the checkpoint so the slice is the ensemble that
-        # continues. Unchanged when resampling is off: `state` is returned
-        # untouched by a checkpoint that does not fire.
+        # continues; a checkpoint that does not fire returns `state` untouched.
         if return_all_states:
             trajectory[step + 1] = state
 
     if return_cv_integrand:
-        # The loop covered slots 0..T-2 (each step's forward is at the
-        # slot it STARTED from); the final state never gets an Euler step,
-        # so its slot is the one fresh model call of the whole grid.
+        # The loop filled slots 0..T-2 (each step's forward sits at its start
+        # slot); the final state gets no Euler step, so its slot needs one call.
         cv_integrand[-1] = compute_xi_t(state, ts[-1].expand(batch_size), model, target)
         return trajectory, cv_integrand
     if return_all_states and resampling is not None:

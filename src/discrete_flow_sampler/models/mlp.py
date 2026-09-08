@@ -1,43 +1,27 @@
-"""MLP rate-matrix parameterisation — Stage 0 high-variance baseline.
+"""MLP rate-matrix parameterisation: the Stage 0 high-variance baseline.
 
-Concept (paper Sec. 3, Eq. (4)):
-    DNFS learns a CTMC generator R_theta(x, t) so that, when integrated from
-    t = 0 (base p_0) to t = 1 (target p_1), the marginals follow the
-    annealing path. For binary spins (S = 2) the original Stage 1 design
-    naïvely emitted one rate per site (the flip rate); the rate matrix
-    collapsed to shape (B, D**2).
+DNFS (Sec. 3, Eq. (4)) learns a CTMC generator R_theta(x, t) so that,
+integrated from t = 0 (base p_0) to t = 1 (target p_1), the marginals follow
+the annealing path. For binary spins (S = 2) one rate per site (the flip
+rate) suffices, shape (B, D**2).
 
-Baseline role:
-    Stages 1 and 2 use `LeMLPRateMatrix` (`models/lemlp.py`). This
-    module is retained for `stage_0_*` configs as a *high-variance*
-    baseline.
+Stages 1 and 2 use `LeMLPRateMatrix` (`models/lemlp.py`); this module is kept
+for `stage_0_*` configs. Eq. (7) (`residual_general` in
+`samplers/kolmogorov.py`) is a valid loss for any single-site-flip
+parameterisation and does not need local equivariance, but per Zijing its
+empirical variance is intractable at lattice scale even under the paper's
+control-variate estimator (Eq. 8); the pre-redo stage_2 d=10 R≡0 collapse
+corroborates this. Eq. (10) (`residual_lenet`) uses Prop. 1 + Eq. (20) to
+fold the reverse rate into the forward tensor and requires
+`is_locally_equivariant = True`; `MLPRateMatrix.is_locally_equivariant =
+False` routes stage_0 to Eq. (7), so the stage_0 -> stage_1 -> stage_2 ladder
+shows the architectural (Eq. 10) and estimator (control variate) variance
+reductions stacking.
 
-    Eq. (7) (`residual_general` in `samplers/kolmogorov.py`) is a valid
-    loss for any single-site-flip parameterisation — it does NOT require
-    local equivariance. Per Zijing, the empirical variance of Eq. (7) is
-    intractable at lattice scale even under the paper's control-variate
-    estimator (Eq. 8); the pre-redo stage_2 d=10 R≡0 collapse corroborates
-    this. Eq. (10) (`residual_lenet`) is the LE specialisation that uses
-    Prop. 1 + Eq. (20) to fold the reverse rate into the same forward
-    tensor — *that* is the path requiring `is_locally_equivariant = True`.
-
-    `MLPRateMatrix.is_locally_equivariant = False` routes stage_0 runs to
-    Eq. (7). The stage_0 → stage_1 → stage_2 ladder thus demonstrates two
-    stacking variance-reduction strategies: architectural (Eq. 10 via
-    leMLP) and estimator (control variates).
-
-Architecture (intentionally vanilla):
-
-    inputs  : concat(x, t) of shape (B, d + 1)
-    hidden  : `n_layers` blocks of (Linear -> ReLU), width = `hidden_dim`
-    output  : Linear -> (B, d) raw scores
-    rates   : softplus(scores), guaranteed >= 0
-
-Why softplus rather than exp:
-    Both produce non-negative outputs. Softplus has a well-conditioned
-    gradient near zero (slope 1/2) whereas exp can either saturate (large
-    negative scores -> 0 with vanishing gradient) or blow up early. Softplus
-    was the paper's choice for the original family.
+Architecture: concat(x, t) (B, d + 1) -> `n_layers` (Linear -> ReLU) blocks
+of width `hidden_dim` -> Linear -> (B, d) scores -> softplus rates >= 0.
+Softplus rather than exp because its gradient near zero is well conditioned
+(slope 1/2) where exp saturates or blows up; it was the paper's choice.
 """
 
 import torch

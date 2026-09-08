@@ -1,75 +1,40 @@
 """Potts target distribution: the S-species generalisation of the Ising target.
 
-Why Potts
----------
-Ising fixes S = 2. The Potts model keeps the same lattice and the same
-annealing path but lets each site carry one of S labels, with the coupling
-rewarding *agreement* rather than a product of spins:
+Each site carries one of S labels and the coupling rewards agreement:
 
     log p(s) = σ · Σ_{i,j} A_ij · δ(s_i, s_j)                          (Potts)
     log p(x) = σ · Σ_{i,j} A_ij · x_i x_j    + bias·Σ_i x_i            (Ising)
 
-A_ij is the same periodic D×D adjacency IsingTarget builds — reused verbatim,
-not rebuilt. It is symmetric with zero diagonal, so each undirected edge is
-counted TWICE in both sums (`A.sum() == 4d` for the 2d edges of the torus).
-Sharing that convention is what makes the S=2 correspondence below exact: any
-edge-counting difference would show up as a coupling rescale, not an error.
+A_ij is the periodic D×D adjacency IsingTarget builds, reused as is: symmetric
+with zero diagonal, so each undirected edge is counted twice in both sums
+(`A.sum() == 4d`). The effective per-bond coupling is therefore 2σ, already
+baked into the project's σ_c ≈ 0.223 (the 2D Ising critical coupling
+ln(1+√2)/2 ≈ 0.4407, halved). D=2 is degenerate: on a 2-cycle a site's two
+neighbours are the same site, so A has entries of 2 rather than 1 (Ising
+identically); it is used only in convention-agnostic plumbing tests.
 
-Two consequences of the double counting worth knowing:
+S=2 correspondence. For x ∈ {−1,+1}, δ(s_i, s_j) = (1 + x_i x_j) / 2, so
 
-* The effective per-bond coupling is 2σ, since σ·Σ_{i,j} A_ij(·) = 2σ·Σ_⟨ij⟩(·).
-  This is already baked into the project's σ_c ≈ 0.223 gate value (the 2D Ising
-  critical coupling ln(1+√2)/2 ≈ 0.4407, halved).
-* **D=2 is degenerate and should not be used for physics.** On a 2-cycle a
-  site's left and right neighbours are the SAME site, so the loop writes that
-  edge twice before symmetrisation doubles it again: A has entries of 2 rather
-  than 1 (`A.sum()` still equals 4d). That is a genuine property of the L=2
-  torus as a multigraph, not a bug, and it affects Ising identically — but it
-  makes D=2 an atypical lattice. It is used here only in plumbing tests whose
-  assertions are convention-agnostic.
+    σ_P · Σ A_ij δ(s_i,s_j) = (σ_P/2)·Σ A_ij x_i x_j + (σ_P/2)·Σ A_ij.
 
-The Ising form is not a special case of the Potts form by substitution — it
-is a special case by *identity*. For x ∈ {−1,+1},
+S=2 Potts at σ_P = 2σ equals Ising at σ plus an x-independent constant
+(σ·Σ A_ij = σ·2·|edges|) that cancels in every log-ratio. This is the
+regression test in test_potts.py, and why `sigma` here is the Potts coupling:
+reproducing an Ising run at σ means passing 2σ. `IsingTarget.base_log_prob`
+cannot be reused for S > 2: `x_i x_j` on labels {−1,1,3,...} is not an
+indicator, and nothing would raise.
 
-    δ(s_i, s_j) = (1 + x_i x_j) / 2
+State encoding: x = 2·label − 1, label ∈ {0, …, S−1}, stored as a float
+tensor like Ising's {−1,+1}. Every head recovers the index with
+`((x + 1) / 2).long()` (13 call sites), which inverts this map for any S, so
+the swap/head stack runs on Potts unchanged; `to_index` / `from_index` own
+the convention.
 
-so    σ_P · Σ A_ij δ(s_i,s_j) = (σ_P/2)·Σ A_ij x_i x_j + (σ_P/2)·Σ A_ij.
-
-Hence **S=2 Potts at coupling σ_P = 2σ equals Ising at coupling σ, plus an
-x-independent constant** (σ·Σ A_ij = σ·2·|edges|). The constant shifts log Z
-by a known amount and cancels identically in every log-ratio, so it never
-reaches the sampler. This is the regression test in test_potts.py, and it is
-the reason `sigma` here means the *Potts* coupling: a caller reproducing an
-Ising run at σ must pass 2σ.
-
-Copying `IsingTarget.base_log_prob` would be silently wrong for S > 2 — the
-quadratic `x_i x_j` on labels {−1,1,3,5,...} takes values {1,−1,−3,9,...},
-which is not an indicator and not any Potts model. No error would be raised.
-
-State encoding
---------------
-States are stored in the codebase's existing affine convention
-
-    x = 2·label − 1,    label ∈ {0, …, S−1}    ⇒    x ∈ {−1, 1, 3, …, 2S−3}
-
-as a float tensor, exactly as Ising stores {−1,+1}. This is deliberate: every
-head and backbone recovers the embedding index with `((x + 1) / 2).long()`
-(13 call sites), which inverts this map for ANY S. So the whole swap/head
-stack runs on Potts unchanged. `to_index` / `from_index` below make the
-convention explicit and give a single place to change it later.
-
-What is NOT carried over
-------------------------
-* **No `bias` field.** On the fixed-composition manifold a per-species field
-  Σ_i h_{s_i} depends only on the species COUNTS, which are frozen by the
-  constraint — so it is an additive constant there and does exactly nothing.
-  Omitted rather than implemented-and-ignored.
-* **No soft composition penalty.** The hard route enforces composition through
-  the swap move set. `composition_penalty` is inherited returning zeros
-  (target_composition=None), which is what the hard cells already rely on.
-* **`composition_fraction` is meaningless for S > 2** — a Potts composition is
-  an S-vector, not a scalar — so it is overridden to raise. Use
-  `composition_counts`.
+Not carried over: `bias` (on the fixed-composition manifold a per-species
+field depends only on the frozen species counts, so it is a constant); the
+soft composition penalty (`composition_penalty` is inherited returning zeros);
+`composition_fraction` (a Potts composition is an S-vector, so it raises; use
+`composition_counts`).
 """
 
 import math
@@ -84,12 +49,10 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 class PottsTarget(IsingTarget):
     """Periodic D×D Potts lattice with the shared annealing path.
 
-    Subclasses IsingTarget to REUSE, not to specialise: the periodic adjacency
-    construction, `set_sigma`, the annealing path `log_p_tilde_t` /
-    `dt_log_p_tilde_t` (Eq. 4 — linear in log, so t-independent derivative),
-    `log_prob`, and the generic materialise-and-evaluate `swap_log_ratio` are
-    all encoding-agnostic and correct as inherited. Only the pieces that read
-    `x` as a NUMBER rather than a LABEL are overridden here.
+    Inherits the adjacency construction, `set_sigma`, the annealing path
+    `log_p_tilde_t` / `dt_log_p_tilde_t` (Eq. 4), `log_prob` and the generic
+    materialise-and-evaluate `swap_log_ratio`, all encoding-agnostic. Only
+    the pieces that read `x` as a number rather than a label are overridden.
 
     Args:
         D: lattice side; d = D².
@@ -121,9 +84,7 @@ class PottsTarget(IsingTarget):
     def to_index(self, x: Tensor) -> Tensor:
         """Label indices 0…S−1 from stored spins, shape (B, d) long.
 
-        Inverse of `from_index`; the same map every head applies inline as
-        `((x + 1) / 2).long()`. Centralised here so the encoding has one
-        owner — see the module docstring.
+        Inverse of `from_index`; the map every head applies inline.
         """
         return ((x + 1) / 2).long()
 
@@ -132,12 +93,10 @@ class PottsTarget(IsingTarget):
         return (index * 2 - 1).float()
 
     def composition_counts(self, x: Tensor) -> Tensor:
-        """Per-species site counts, shape (B, S).
+        """Per-species site counts, shape (B, S); rows sum to d.
 
-        The Potts analogue of `composition_fraction`. Rows sum to d. This is
-        the quantity the swap move set conserves exactly (a swap permutes
-        labels, so it cannot change the multiset), which is why the hard
-        constraint generalises to S > 2 for free.
+        The Potts analogue of `composition_fraction`, and the quantity a swap
+        conserves exactly (it permutes labels).
         """
         return F.one_hot(self.to_index(x), self.n_states).sum(dim=1)
 
@@ -154,13 +113,11 @@ class PottsTarget(IsingTarget):
             log p(x) = σ · Σ_{i,j} A_ij · δ(s_i, s_j)
 
         Each undirected edge is counted twice (A symmetric, zero diagonal),
-        matching IsingTarget's convention so the S=2 correspondence in the
-        module docstring is exact.
+        matching IsingTarget so the S=2 correspondence is exact.
 
-        Implementation note: build the one-hot Ω ∈ {0,1}^{B×d×S} of labels;
-        then Σ_{i,j} A_ij δ(s_i,s_j) = Σ_a (Ω_a)ᵀ A (Ω_a), i.e. contract the
-        adjacency against each species channel and sum. That is one batched
-        matmul rather than a (B, d, d) pairwise-equality tensor.
+        With the one-hot Ω ∈ {0,1}^{B×d×S} of labels,
+        Σ_{i,j} A_ij δ(s_i,s_j) = Σ_a (Ω_a)ᵀ A (Ω_a): one batched matmul
+        rather than a (B, d, d) pairwise-equality tensor.
         """
         onehot = F.one_hot(self.to_index(x), self.n_states).to(x.dtype)  # (B, d, S)
         neighbour_counts = torch.matmul(self.A, onehot)  # (B, d, S)
@@ -189,17 +146,13 @@ class PottsTarget(IsingTarget):
 class FixedCompositionPottsTarget(PottsTarget):
     """Potts on the fixed-composition manifold C = {n_a(s) = N_a ∀ species a}.
 
-    The hard-constraint counterpart, and the reason the Potts extension is
-    cheap: a swap permutes two labels, so it preserves the label MULTISET
-    exactly. That is precisely this manifold, generalised from Ising's single
-    scalar n_plus to an S-vector of counts. `samplers/swap_ctmc.py` therefore
-    needs no changes at all.
+    A swap permutes two labels and so preserves the label multiset, which is
+    this manifold (Ising's scalar n_plus generalised to an S-vector of
+    counts); `samplers/swap_ctmc.py` needs no changes.
 
-    Differs from PottsTarget only in the base:
-      * `sample_base` draws uniformly over the multiset slice (a random
-        permutation of a fixed label multiset), not i.i.d. uniform labels;
-      * `base_log_eta` is the constant −log|C|, where |C| is the MULTINOMIAL
-        coefficient d! / ∏_a N_a! — not Ising's binomial C(d, N_A).
+    Differs from PottsTarget only in the base: `sample_base` draws uniformly
+    over the multiset slice, and `base_log_eta` is the constant −log|C| with
+    |C| the multinomial coefficient d! / ∏_a N_a! (Ising: binomial C(d, N_A)).
 
     Args:
         composition: per-species fractions, length S, summing to 1. Each
@@ -236,11 +189,9 @@ class FixedCompositionPottsTarget(PottsTarget):
     def sample_base(self, n: int, device) -> Tensor:
         """Uniform over the multiset slice, shape (n, d).
 
-        A uniform random permutation of the fixed label multiset is a uniform
-        draw from C. `argsort` of per-row uniforms IS a uniform random
-        permutation (the same trick IsingTarget.sample_base uses for its
-        N_A-subset), so scattering the sorted multiset through it is uniform
-        on the slice.
+        `argsort` of per-row uniforms is a uniform random permutation (as in
+        IsingTarget.sample_base), so scattering the sorted multiset through
+        it is uniform on C.
         """
         multiset = torch.repeat_interleave(
             torch.arange(self.n_states, device=device),
@@ -254,9 +205,8 @@ class FixedCompositionPottsTarget(PottsTarget):
     def base_log_eta(self, x: Tensor) -> Tensor:
         """Constant log-density −log|C| on the slice, shape (B,).
 
-        Every state in C is equiprobable under the uniform base, so the base
-        contributes no x-dependence — which is why the (1−t) term of the
-        annealing path drops out of `swap_log_ratio` entirely.
+        Constant in x, which is why the (1−t) term of the annealing path
+        drops out of `swap_log_ratio`.
         """
         return torch.full(
             (x.shape[0],), -self._log_slice_size, device=x.device, dtype=x.dtype
@@ -277,15 +227,13 @@ class FixedCompositionPottsTarget(PottsTarget):
         """Closed-form Potts swap log-ratio on the slice, shape (B, P).
 
         Mirrors `FixedCompositionIsingTarget.swap_log_ratio`: the base is
-        constant on C so the (1−t) term cancels, leaving only t·σ·ΔE.
+        constant on C so the (1−t) term cancels, leaving t·σ·ΔE.
 
-        Derivation. Write the energy as E(s) = Σ_k n_k(s_k) where
-        n_k(a) = Σ_l A_kl·δ(s_l, a) is the adjacency-weighted count of
-        neighbours of site k carrying label a. Swapping labels a = s_i and
-        b = s_j changes only terms touching i or j. Splitting off the
-        {i, j} pair itself (whose contribution 2·A_ij·δ(a,b) is symmetric in
-        a,b and therefore CANCELS), and writing the exclusive neighbour counts
-        m_k(·) = n_k(·) − A_ki·δ(s_i,·) − A_kj·δ(s_j,·):
+        Derivation. Write E(s) = Σ_k n_k(s_k) with n_k(a) = Σ_l A_kl·δ(s_l, a)
+        the adjacency-weighted count of neighbours of k carrying label a.
+        Swapping a = s_i and b = s_j changes only terms touching i or j. The
+        {i, j} pair's own term 2·A_ij·δ(a,b) is symmetric in a,b and cancels;
+        with the exclusive counts m_k(·) = n_k(·) − A_ki·δ(s_i,·) − A_kj·δ(s_j,·):
 
             ΔE = 2·[ m_i(b) − m_i(a) + m_j(a) − m_j(b) ]
 
@@ -296,23 +244,14 @@ class FixedCompositionPottsTarget(PottsTarget):
 
         so   log p̃_t(Swap2(x,i,j)) − log p̃_t(x) = t · σ · ΔE.
 
-        The −2·A_ij correction is the part that is easy to drop: it removes
-        the double-counted i–j bond that n_i and n_j each already include.
+        The −2·A_ij term removes the i–j bond that n_i and n_j each already
+        include. Same-label pairs (a = b) are the identity move and must give
+        exactly 0, but the formula assumed a ≠ b: the brackets vanish while
+        −2·A_ij survives, so adjacent same-label pairs would get a spurious
+        −4σt that feeds `exp()` in the ξ_t inflow term. They are masked.
 
-        Same-label pairs (a = b) are the identity move and must give EXACTLY
-        0, but the formula above does NOT deliver that for free: the count
-        brackets vanish while the −2·A_ij term survives, so adjacent
-        same-label pairs would pick up a spurious −4σt. The derivation assumed
-        a ≠ b (it used δ(a,b) = 0), so a = b must be masked explicitly. These
-        columns feed `exp()` in the ξ_t inflow term, where a fake rate on a
-        no-op move would silently bias the sampler.
-
-        Cost: one (B, d, S) neighbour-count tensor via `A @ onehot`, then O(B·P)
-        flat gathers — the (B, P, S) intermediate is deliberately avoided.
-
-        MUST agree with the inherited generic `swap_log_ratio` (which
-        materialises the swapped states and re-evaluates); that generic path
-        is the oracle in test_potts.py.
+        Must agree with the inherited generic `swap_log_ratio`, the oracle in
+        test_potts.py.
         """
         labels = self.to_index(x)  # (B, d)
         onehot = F.one_hot(labels, self.n_states).to(x.dtype)  # (B, d, S)
@@ -322,7 +261,7 @@ class FixedCompositionPottsTarget(PottsTarget):
         label_i, label_j = labels[:, site_i], labels[:, site_j]  # (B, P) = a, b
 
         # Flat (site, species) indexing keeps every gather at (B, P) instead of
-        # materialising (B, P, S), which is the whole point of the closed form.
+        # materialising (B, P, S).
         flat_counts = neighbour_counts.reshape(x.shape[0], -1)  # (B, d*S)
 
         def count_at(site: Tensor, label: Tensor) -> Tensor:

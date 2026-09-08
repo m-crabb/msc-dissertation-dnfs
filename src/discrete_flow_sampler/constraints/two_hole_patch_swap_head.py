@@ -1,16 +1,15 @@
-"""Two-hole patch swap head: blindness by LOCALITY, not by ordering.
+"""Two-hole patch swap head: blindness by locality, not by ordering.
 
 Same readout as every swap head (DNFS Prop. 2 / Eq. (9), pair form):
 
     G(i, j | x) = < H_ij(x_-{i,j}),  omega_{x_i} - omega_{x_j} >,
 
 so exact state-swap antisymmetry needs H_ij blind to the token values at
-both holes. The leTF heads get that from a raster ordering (prefix/suffix
-streams blind by causality) and pay for it with the interval pathology: the
-sites between the holes in raster order are invisible to the deep streams.
-This head has no ordering at all. Every term is a function of a bounded
-neighbourhood or a linear pool, and the two holes are removed from each
-term by construction:
+both holes. The leTF heads get that from a raster ordering and pay with the
+interval pathology (sites between the holes in raster order are invisible
+to the deep streams). This head has no ordering: every term is a function
+of a bounded neighbourhood or a linear pool, with the two holes removed
+from each term by construction:
 
     H_ij = P_ij - P_ji,     P_ij = rho( LN( z_ij ) ),
     z_ij = W_first C_i^{(-j)} + W_second C_j^{(-i)} + e(j - i) + tau(t),
@@ -21,69 +20,62 @@ term by construction:
   e   = torus-relative position of j from i.
 
 * Patch term. P_i is the (2R+1)^2 - 1 spins around i on the torus, centre
-  EXCLUDED (the LEAPS zero-centre kernel, made explicit as a gather), and
+  excluded (the LEAPS zero-centre kernel as an explicit gather), and
   f_i = phi(P_i, t) is a small MLP. f_i is blind to x_i by the hollow
   window but sees x_j whenever |j - i|_inf <= R, so for those pairs the
-  partner's entry is overwritten with 0 (not a token value) and phi is
-  re-run: f_i^{(-j)} = phi(P_i with x_j := 0). That recompute is d * K
-  extra phi evaluations with K = (2R+1)^2 - 1 -- O(d R^2) patch MLPs of
-  width O(R^2), i.e. O(d R^4) MACs, the R^4 law of the deep-LEAPS recompute
-  but on a ONE-layer patch map, so at R = 1..2 it is a few MMAC. For
-  |j - i|_inf > R the per-site f_i is already blind to x_j and is reused
-  unchanged. With R = 1 and phi linear, f_i^{(-j)} - f_j^{(-i)} IS the
+  partner's entry is overwritten with 0 and phi is re-run:
+  f_i^{(-j)} = phi(P_i with x_j := 0), d * K extra phi evaluations with
+  K = (2R+1)^2 - 1, i.e. O(d R^4) MACs on a one-layer patch map. For
+  |j - i|_inf > R the per-site f_i is already blind to x_j and is reused.
+  With R = 1 and phi linear, f_i^{(-j)} - f_j^{(-i)} is the
   partner-excluded field difference of the Kawasaki log-ratio, so the
   exact equilibrium rate is in the function class at the smallest radius.
 
 * Pooled levels. psi_k = emb(x_k) is strictly per-site, v^l = W_l psi, and
   c^l_i is the mean of v^l over the centred (2r_l+1)^2 torus box around i
   with the two holes' terms subtracted (the global level is the whole
-  lattice). Subtraction is exact in real arithmetic because nothing mixes
-  sites before the pool -- the factorised head's global-term argument,
-  here at every scale. Centred circular boxes, not a quadtree: block
-  boundaries would break torus translation equivariance, which the tests
-  demand of the pair output. For S = 2 each level carries the local
-  magnetisation at that scale around each hole; it is the low-rank far
-  field of an H-matrix split (near field exact in the patch, far field
-  pooled), the prior that scale-free critical correlations want.
+  lattice). Subtraction is exact because nothing mixes sites before the
+  pool. Centred circular boxes, not a quadtree: block boundaries would
+  break the torus translation equivariance the tests demand. For S = 2
+  each level carries the local magnetisation at that scale around each
+  hole: the low-rank far field of an H-matrix split (near field exact in
+  the patch, far field pooled).
 
 * Relative position. e depends only on the torus displacement (j - i) mod
   D in each axis, so it is translation-invariant by construction; it is
-  NOT tied over C4v (the patch MLP is not either), so the head is exactly
+  not tied over C4v (nor is the patch MLP), so the head is exactly
   translation-equivariant and only approximately rotation-equivariant.
 
-Label parity: the physical rate of the
-unordered pair {i, j} is one number, so G must be label-SYMMETRIC and
-S_ij = G_ij / (x_i - x_j) label-ODD: the exact Kawasaki rate has S_ij
-proportional to the partner-excluded field DIFFERENCE h~_j - h~_i. A
-label-symmetric z_ij = u_i + u_j can only produce even S, and that draft
-could not fit the exact field even supervised (4x4 MSE flat at the
-target's variance). Two consequences are built in here: the holes enter
-through DIFFERENT linear maps (otherwise z depends on C_i + C_j only), and
-the readout is antisymmetrised explicitly, H_ij = P_ij - P_ji, which is
-free because P is computed for every ordered pair anyway (time enters
-INSIDE z for the same reason: an additive time line would be an even,
-i.e. unphysical, contribution to S). The explicit oddness is what makes the stored i < j convention translation-equivariant:
-a lattice shift can move the lower index to the other hole, and only an
-odd S gives the same physical rate whichever hole is called first. Index
-antisymmetry of the stored matrix is then the usual triangle-and-mirror
-identity. State-swap antisymmetry needs none of this, only blindness:
-H(x) = H(swap2(x, i, j)) and the omega difference flips sign. rho and LN
-act AFTER the holes are removed, which is why depth there is free: the
-blindness constraint binds only the site-level maps (phi per-patch, psi
-per-site), never the per-pair readout.
+Label parity: the physical rate of the unordered pair {i, j} is one
+number, so G must be label-symmetric and S_ij = G_ij / (x_i - x_j)
+label-odd: the exact Kawasaki rate has S_ij proportional to the
+partner-excluded field difference h~_j - h~_i. A label-symmetric
+z_ij = u_i + u_j can only produce even S, and that draft could not fit the
+exact field even supervised (4x4 MSE flat at the target's variance).
+Hence the holes enter through different linear maps (otherwise z depends
+on C_i + C_j only) and the readout is antisymmetrised explicitly,
+H_ij = P_ij - P_ji, free because P is computed for every ordered pair
+anyway; time enters inside z for the same reason (an additive time line
+would be an even, unphysical, contribution to S). The explicit oddness is
+what makes the stored i < j convention translation-equivariant: a lattice
+shift can move the lower index to the other hole, and only an odd S gives
+the same physical rate whichever hole is called first. State-swap
+antisymmetry needs only blindness: H(x) = H(swap2(x, i, j)) and the omega
+difference flips sign. rho and LN act after the holes are removed, so
+depth there is free: the blindness constraint binds only the site-level
+maps (phi per patch, psi per site), never the per-pair readout.
 
-Cost: O(d K) patch work, O(d) pooling, O(d^2 f) assembly and O(d^2 f^2) for
-the per-pair rho -- the same O(d^2) class as the factorised head with no
-(B, d^2, n_terms) band tensor and no causal stacks (the backbone's leTF
-stacks are NOT run; only its token/time embedders and omega are reused, so
-the head drops into the existing trainer, EMA and exact-field wrapper).
+Cost: O(d K) patch work, O(d) pooling, O(d^2 f) assembly and O(d^2 f^2)
+per-pair rho, the same O(d^2) class as the factorised head with no band
+tensor and no causal stacks (only the backbone's token/time embedders and
+omega are reused, so the head drops into the existing trainer, EMA and
+exact-field wrapper).
 
-What it gives up, stated up front: no nonlinear function of the far field
-(only pooled means of per-site embeddings), no bond/energy density beyond
-the patch radius, and neither phi nor e is C4v-tied. The trained-head
-regression at 4x4 put 80-95% of Var S on local functions of the holes'
-neighbourhoods, which is exactly the patch term's reach; the remaining
-non-local share is what the pooled levels must carry.
+Given up: no nonlinear function of the far field (only pooled means of
+per-site embeddings), no bond/energy density beyond the patch radius, and
+neither phi nor e is C4v-tied. The trained-head regression at 4x4 put
+80-95% of Var S on local functions of the holes' neighbourhoods, the patch
+term's reach; the non-local remainder is what the pooled levels carry.
 """
 
 import math
@@ -99,16 +91,16 @@ from discrete_flow_sampler.models.letf import LeTFRateMatrix
 # ---- lattice geometry -----------------------------------------------------
 #
 # Every geometric fact the head uses is a statement about the lattice's
-# TRANSLATION GROUP: the hollow window is a list of offsets, each pooled
+# translation group: the hollow window is a list of offsets, each pooled
 # level a ball of offsets, the pair position code the offset class of j from
 # i, and "opposite offset" negation in the group. `PatchGeometry` holds
-# exactly those tensors, so the head's math is the same on the D x D torus
-# (group Z_D^2, offsets (dr, dc) mod D) and on a one-atom-per-primitive-cell
-# supercell such as the 4x4x4 fcc Cu-Au cell (group Z_4^3, offsets read as
-# fractional displacements mod the supercell; 2026-09-03). What changes is
-# only what "radius" means: a Chebyshev radius R on the square lattice, a
-# count of neighbour SHELLS on the Bravais cell (one shell = the twelve fcc
-# nearest neighbours, two = eighteen).
+# those tensors, so the head's math is the same on the D x D torus (group
+# Z_D^2, offsets (dr, dc) mod D) and on a one-atom-per-primitive-cell
+# supercell such as the 4x4x4 fcc Cu-Au cell (group Z_4^3, offsets as
+# fractional displacements mod the supercell; 2026-09-03). Only "radius"
+# changes meaning: a Chebyshev radius R on the square lattice, a count of
+# neighbour shells on the Bravais cell (one shell = the twelve fcc nearest
+# neighbours, two = eighteen).
 
 
 @dataclass
@@ -118,7 +110,7 @@ class PatchGeometry:
     neighbour_site: (d, K) site at offset k from site i (the hollow window).
     opposite_offset: (K,) index of -offset_k inside the window.
     level_masks / level_sizes: per pooled level, the (d, d) 0/1 membership of
-        j in the ball around i (centre INCLUDED, as the torus box is) and the
+        j in the ball around i (centre included, as the torus box is) and the
         ball's site count; the whole-lattice level is appended by the head.
     pair_displacement: (d, d) class of the offset of j from i, in
         0..n_displacements-1, with class 0 the identity; on both lattices
@@ -233,7 +225,7 @@ def bravais_patch_geometry(
     pooling_shells: tuple[int, ...] | None = None,
     tolerance: float = 1e-5,
 ) -> PatchGeometry:
-    """A periodic supercell with ONE site per primitive cell (every site
+    """A periodic supercell with one site per primitive cell (every site
     translation-equivalent), from Cartesian `positions` (d, 3) and the
     supercell `cell` (3, 3), rows = lattice vectors, as the expansion JSON
     stores them.
@@ -250,9 +242,8 @@ def bravais_patch_geometry(
     sites on fcc).
 
     Refused, like 2R+1 > D on the torus: a window site reached at its
-    minimum distance through MORE THAN ONE image (the 2x2x4 cell, where two
-    repeats put +a and -a on the same site). The patch weight for that entry
-    could not tell the two bonds apart, and the partner-zeroed recompute is
+    minimum distance through more than one image (the 2x2x4 cell, where two
+    repeats put +a and -a on the same site); the partner-zeroed recompute is
     only defined when each window entry is one bond.
     """
     positions = torch.as_tensor(positions, dtype=torch.float64)
@@ -325,7 +316,7 @@ class TwoHolePatchSwapHead(nn.Module):
     scores), same contract as the heads in swap_readout.py.
 
     Args:
-        backbone: the leTF rate model, reused ONLY for token_embedder,
+        backbone: the leTF rate model, reused only for token_embedder,
             time_embedder and omega (shared readout convention); its causal
             stacks and attention readout are never run.
         lattice_side: D of the D x D torus (d = D^2); omit when `geometry`
@@ -431,7 +422,7 @@ class TwoHolePatchSwapHead(nn.Module):
         return self.patch_mlp(torch.cat([patches, time_embedding], dim=-1))
 
     def site_patch_features(self, x: Tensor, t: Tensor) -> Tensor:
-        """f_i = phi(P_i, t), (B, d, f): hollow in x_i, NOT blind to neighbours."""
+        """f_i = phi(P_i, t), (B, d, f): hollow in x_i, not blind to neighbours."""
         return self._patch_mlp(self._patches(x), t)
 
     def partner_zeroed_patch_features(self, x: Tensor, t: Tensor) -> Tensor:
@@ -513,7 +504,7 @@ class TwoHolePatchSwapHead(nn.Module):
             )
             z = z - (partner if in_box is None else partner * in_box)
         # Near pairs (j = i + offset): swap in phi with the partner zeroed on
-        # both sides; i sits at the OPPOSITE offset inside j's window.
+        # both sides; i sits at the opposite offset inside j's window.
         delta = self.partner_zeroed_patch_features(x, t) - f_site.unsqueeze(2)
         site = torch.arange(d, device=x.device).repeat_interleave(self.n_patch)
         offset = torch.arange(self.n_patch, device=x.device).repeat(d)
@@ -567,23 +558,19 @@ class TwoHolePatchSwapHead(nn.Module):
         """Pair-score matrix G, (B, d, d): <H_ij, omega_i - omega_j>, upper
         triangle mirrored so index antisymmetry is an identity.
 
-        DO NOT HAND-FUSE THIS READOUT (measured dead end, 2026-08-27). In
-        source terms it materialises three (B, d, d, f) tensors -- H, the
-        omega difference, and their product -- which at d=400, batch 512,
-        f=32 reads as 10.5 GB each against a (B, d, d) output of 328 MB.
-        There is an identity that removes all three: with
-        S_ij = <P_ij, D_ij> and D_ji = -D_ij, the score matrix is S + S^T,
-        and S splits into two contractions against the per-site omega.
-        Implemented and measured at d=400 R=3 on an A100-80GB, it is a real
-        win EAGER (0.2998 s / 20.58 GB against 0.3124 / 23.11 at batch 128)
-        and a real LOSS COMPILED (0.1175 / 18.13 against 0.1044 / 15.92),
-        which is the configuration every cell trains under. Inductor already
-        fuses the broadcast-difference-times-difference-summed-over-f
-        pattern and never materialises those tensors -- the compiled
-        baseline is 31% under the eager one on exactly that account -- while
-        the hand-fused einsum needs omega indexed by the second spatial axis
-        and forces a permuted contiguous copy it cannot fuse through. The
-        slabs are a property of the source, not of the executed kernel.
+        Do not hand-fuse this readout (measured 2026-08-27). In source terms
+        it materialises three (B, d, d, f) tensors (H, the omega difference,
+        their product), 10.5 GB each at d=400, batch 512, f=32 against a
+        328 MB output. The identity S_ij = <P_ij, D_ij>, D_ji = -D_ij,
+        score = S + S^T splits S into two contractions against the per-site
+        omega and removes all three; measured at d=400 R=3, batch 128, on an
+        A100-80GB it wins eager (0.2998 s / 20.58 GB vs 0.3124 / 23.11) and
+        loses compiled (0.1175 / 18.13 vs 0.1044 / 15.92), the configuration
+        every cell trains under. Inductor already fuses the broadcast
+        difference-times-difference pattern without materialising the slabs
+        (the compiled baseline is 31% under eager on that account), while
+        the hand-fused einsum forces a permuted contiguous copy of omega it
+        cannot fuse through.
         """
         H = self.compute_pair_context(x, t)
         omega = self.backbone.omega(((x + 1) / 2).long())

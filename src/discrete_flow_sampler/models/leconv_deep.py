@@ -17,12 +17,10 @@ Hollow-preservation through depth (the LEAPS trick):
     2. A_l is a 1×1 conv → W_l[site] depends only on h_{l-1}[site].
     3. By induction over l, h_l[site] never depends on x[site].
 
-Why this beats the static K-summand `LeConvRateMatrix` at criticality:
-    Critical correlations are scale-free (power-law decay). A wavelet-like
-    kernel schedule (e.g. [3, 5, 7, 9]) lets each layer pick up a distinct
-    length-scale of fluctuations. K parallel hollow filters at one kernel
-    size cannot represent multi-scale structure. LEAPS Figure 7 ablation
-    confirms: depth-5 LEC > depth-3 LEC > LEA at the same parameter budget.
+A kernel schedule such as [3, 5, 7, 9] gives each layer a distinct length
+scale, which K parallel hollow filters at one kernel size (`LeConvRateMatrix`)
+cannot represent; LEAPS Figure 7: depth-5 LEC > depth-3 LEC > LEA at the
+same parameter budget.
 """
 
 import torch
@@ -36,28 +34,22 @@ from discrete_flow_sampler.models.lemlp import TimestepEmbedder
 class LeConvDeepRateMatrix(nn.Module):
     """LEAPS-style deep LEC rate matrix.
 
-    Drop-in replacement for `LeConvRateMatrix` under the
-    `is_locally_equivariant=True` interface — the readout (Prop. 2) and
+    Drop-in replacement for `LeConvRateMatrix`: the readout (Prop. 2) and
     the (B, d, S) output shape are identical; only `compute_body` changes
-    from K parallel hollow convs to L sequential layers with the
-    data-dependent-weight stacking trick.
+    from K parallel hollow convs to L sequential data-dependent-kernel layers.
 
     Args:
         D: lattice side length. Flat dim d = D*D.
         vocab_size: number of token states S (2 for binary Ising).
         kernel_schedule: tuple of odd kernel sizes per layer; length L
-            sets the depth. LEAPS Figure 7 caption uses (5, 7, 15) for
-            depth 3 and (3, 5, 7, 9, 15) for depth 5 on 15×15 lattices.
-            For our D=10 the lattice-spanning 15 is overkill; (3, 5, 7, 9)
-            keeps the wavelet structure within reach.
+            sets the depth. LEAPS Figure 7 uses (5, 7, 15) for depth 3 and
+            (3, 5, 7, 9, 15) for depth 5 on 15×15 lattices; for D=10 the
+            lattice-spanning 15 is dropped, (3, 5, 7, 9).
         hidden_dim: channel dim for embeddings + the per-layer state.
         use_global_context: if True, kernel generation at every site also
-            receives a leave-one-out global token summary. The summary for
-            site i averages all token embeddings except x_i, so it preserves
-            hollow-ness while giving the conv access to lattice-scale
-            magnetisation information.
-
-    Tests in `tests/test_leconv_deep.py` encode the structural contract.
+            receives a leave-one-out mean of the token embeddings (all but
+            x_i), which preserves hollowness while exposing lattice-scale
+            magnetisation.
     """
 
     is_locally_equivariant: bool = True
@@ -92,17 +84,12 @@ class LeConvDeepRateMatrix(nn.Module):
         nn.init.kaiming_uniform_(self.omega.weight, a=5**0.5)
 
         # h_0: spatially uniform learned constant, shifted by the time
-        # embedding in compute_body. The spatial uniformity makes layer 1's
-        # W_1 uniform across the lattice — i.e. layer 1 is a standard
-        # translation-equivariant hollow conv. Layers 2..L pick up spatial
-        # structure from h_{l-1} while all kernel-generation layers can adapt
-        # across t.
+        # embedding in compute_body, so layer 1 is a plain translation-
+        # equivariant hollow conv; layers 2..L pick up structure from h_{l-1}.
         self.h_0 = nn.Parameter(torch.zeros(hidden_dim))
 
-        # Per-layer 1×1 channel-mix into kernel weights. A_l projects
-        # hidden_dim -> k_l² channels per site. The output, reshaped to
-        # (k_l, k_l) at each site, IS the position-conditional kernel for
-        # that layer.
+        # Per-layer 1×1 channel-mix A_l: hidden_dim -> k_l² channels per site,
+        # reshaped to the (k_l, k_l) position-conditional kernel.
         self.A = nn.ModuleList(
             [
                 nn.Conv2d(hidden_dim, k * k, kernel_size=1, bias=True)
@@ -127,33 +114,19 @@ class LeConvDeepRateMatrix(nn.Module):
         """Per-site global token summary excluding the site's own token.
 
         `x_emb` has shape (B, h, D, D). The output at lattice site i is
-        mean({x_emb_j : j != i}), hence independent of x_i. This is the
-        global analogue of a hollow local neighbourhood.
+        mean({x_emb_j : j != i}), hence independent of x_i.
         """
         n_sites = self.D * self.D
         total = x_emb.sum(dim=(2, 3), keepdim=True)
         return (total - x_emb) / max(n_sites - 1, 1)
 
     def compute_body(self, x: Tensor, t: Tensor) -> Tensor:
-        """Pre-readout body H(x), shape (B, d, hidden_dim).
-
-        LEAPS Section 9 recurrence:
-            h_0(t) = learned constant + time embedding (spatially uniform)
-            for l in 1..L:
-                W_l = σ(A_l · h_{l-1} + b_l) + c_l       # per-site 1×1, k_l² channels
-                W_l = reshape(W_l, k_l, k_l) * hollow_mask
-                h_l = position_conditional_conv(x_in, W_l)
-            H = h_L
-
-        Hollow-preservation through depth:
-            - h_0(t) is spatially uniform and independent of x.
-            - Inductive step: if h_{l-1}[r,s] is independent of x[r,s], then
-              W_l[..., r, s] (built from h_{l-1}[r,s] via 1×1 channel-mix) is
-              independent of x[r,s]. The conv with hollow kernel excludes the
-              diagonal contribution, so h_l[r,s] is also independent of x[r,s].
+        """Pre-readout body H(x), shape (B, d, hidden_dim); the LEAPS
+        Section 9 recurrence in the module docstring, with W_l masked hollow
+        before the position-conditional conv.
 
         Accepts ±1 float spins (training; ctmc.py flip convention) or 0/1
-        Long indices (tests). The `((x+1)/2).long()` line handles both.
+        Long indices (tests).
         """
         x_idx = ((x + 1) / 2).long()
         B = x_idx.shape[0]
@@ -168,9 +141,8 @@ class LeConvDeepRateMatrix(nn.Module):
         cond_t = self.time_embedder(t)  # (B, h)
         x_in = x_emb + cond_t[:, :, None, None]  # (B, h, D, D)
 
-        # h_0(t): spatially uniform and time-conditioned. This preserves
-        # hollow-ness and translation equivariance because cond_t has no
-        # dependence on x and is shared across sites.
+        # h_0(t): spatially uniform and time-conditioned; cond_t does not
+        # depend on x, so hollowness and translation equivariance hold.
         h = self.h_0[None, :, None, None] + cond_t[:, :, None, None]
         h = h.expand(-1, -1, self.D, self.D).contiguous()
 
@@ -185,10 +157,8 @@ class LeConvDeepRateMatrix(nn.Module):
             hollow_mask = getattr(self, f"hollow_mask_{layer_idx}")
             W = W * hollow_mask[None, :, :, None, None]
 
-            # 3) Position-conditional convolution with circular padding.
-            #    At each output site (r, s), use the local kernel W[..., r, s]
-            #    weighted against the (k×k) circular-padded patch of x_in
-            #    centred at (r, s).
+            # 3) Position-conditional convolution with circular padding: at
+            #    site (r, s) apply W[..., r, s] to the k×k patch of x_in there.
             pad = k_size // 2
             x_padded = F.pad(x_in, (pad, pad, pad, pad), mode="circular")
             x_unfold = x_padded.unfold(2, k_size, 1).unfold(3, k_size, 1)
@@ -201,12 +171,9 @@ class LeConvDeepRateMatrix(nn.Module):
         return h.permute(0, 2, 3, 1).reshape(B, self.D * self.D, self.hidden_dim)
 
     def forward(self, x: Tensor, t: Tensor) -> Tensor:
-        """Returns G(τ, i | x), shape (B, d, S). τ=x_i slot is exactly zero.
-
-        Identical formula to `LeConvRateMatrix.forward`; only `compute_body`
-        differs from the static K-summand version.
-
-        Accepts ±1 float spins (training) or 0/1 Long indices (tests).
+        """Returns G(τ, i | x), shape (B, d, S); the τ=x_i slot is exactly
+        zero. Same readout as `LeConvRateMatrix.forward`. Accepts ±1 float
+        spins (training) or 0/1 Long indices (tests).
         """
         H = self.compute_body(x, t)
         x_idx = ((x + 1) / 2).long()

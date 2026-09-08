@@ -1,13 +1,10 @@
 """Losses and prefix rewards for the raster-order GFlowNet comparator.
 
-Hand-rolled rather than imported from torchgfn: on the fixed raster chain
-P_B == 1 and the losses reduce to a few lines, the enumeration-exact tests in
-test_gfn_comparator.py are a stronger correctness authority than a reference
-implementation, and torchgfn's state-map abstraction would re-encode every
-prefix (O(d^3) attention at d=256, where the causal policy scores all d
-conditionals in one O(d^2) pass). torchgfn remains the conventions reference
-(its FL-DB lives in DBGFlowNet(forward_looking=True) with intermediate
-rewards from env.log_reward, mirrored here as prefix partial energies).
+On the fixed raster chain P_B == 1 and the losses reduce to a few lines,
+pinned by the enumeration-exact tests in test_gfn_comparator.py. torchgfn is
+the conventions reference: its FL-DB is DBGFlowNet(forward_looking=True)
+with intermediate rewards from env.log_reward, mirrored here as prefix
+partial energies.
 """
 
 import torch
@@ -17,8 +14,8 @@ def raster_prefix_log_reward_increments(target, spins: torch.Tensor) -> torch.Te
     """(B, d) per-site increments of the prefix partial energy.
 
     The FL-DB intermediate reward is the partial energy of a prefix: the
-    target's log p_tilde restricted to bonds with BOTH endpoints assigned.
-    Assign each bond to its LARGER raster index; under raster order that
+    target's log p_tilde restricted to bonds with both endpoints assigned.
+    Assign each bond to its larger raster index; under raster order that
     endpoint is assigned second (periodic wrap bonds included), so the
     increment at flat site m is
 
@@ -29,10 +26,8 @@ def raster_prefix_log_reward_increments(target, spins: torch.Tensor) -> torch.Te
 
         sum_m delta_m = x^T J x + bias * sum_i x_i = target.log_prob(x),
 
-    which is the identity the FL-DB terminal convention (zero residual at the
-    complete prefix) relies on — a test pins it. Rejected alternative:
-    zeroing unassigned sites and recomputing the full quadratic per prefix is
-    O(d^3) per batch; this is one (B, d) @ (d, d) matmul.
+    the identity the FL-DB terminal convention (zero residual at the
+    complete prefix) relies on; a test pins it. One (B, d) @ (d, d) matmul.
     """
     lower_bonds = torch.tril(target.J)  # J symmetric, zero diagonal
     assigned_neighbour_field = spins @ lower_bonds.T
@@ -75,14 +70,13 @@ def forward_looking_db_loss(
 
     with delta_i the partial-energy increment of assigning site i and the
     terminal residual log F_res(s_d) == 0 (a complete prefix's partial energy
-    IS log p_tilde, so the terminal flow equals the reward with no residual).
-    Each of the d residuals carries the LOCAL energy change — the dense
-    credit assignment that lets FL-DB survive the hundreds-step trajectories
-    where TB's single trajectory-level residual is documented to degrade
-    (the reason this arm exists at d=256).
+    is log p_tilde, so the terminal flow equals the reward). Each of the d
+    residuals carries the local energy change, the dense credit assignment
+    that lets FL-DB survive the hundreds-step trajectories where TB's single
+    trajectory-level residual is documented to degrade.
 
     Shapes: all (B, d); flow_residuals[:, i] is the model's log F_res(s_i)
-    for the prefix BEFORE site i is assigned.
+    for the prefix before site i is assigned.
     """
     terminal = torch.zeros_like(flow_residuals[:, :1])
     next_flow_residuals = torch.cat([flow_residuals[:, 1:], terminal], dim=1)

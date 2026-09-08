@@ -1,45 +1,40 @@
 """Cluster-expansion alloy targets: a real materials energy on every rung.
 
-WHY THIS EXISTS. The three chapters run the ensemble ladder (free, penalised,
-fixed composition) on the nearest-neighbour Ising model read as a binary
-alloy. This module lets the same samplers run on a real cluster expansion --
-the MetaDNS Cu-Au expansion on its 64-site fcc cell, or the square-grid toy in
-icet-ce/ -- so the ladder can be shown on an alloy a materials reader
-recognises, with mchammer as the reference on the same energy.
+Lets the ensemble ladder (free, penalised, fixed composition) run on a real
+cluster expansion -- the MetaDNS Cu-Au expansion on its 64-site fcc cell, or
+the square-grid toy in icet-ce/ -- with mchammer as the reference on the same
+energy.
 
-THE ENERGY. On a fixed periodic cell with two species, any cluster expansion
-is exactly a polynomial in spins s_i in {-1, +1} (Au = +1, Cu = -1):
+On a fixed periodic cell with two species, any cluster expansion is a
+polynomial in spins s_i in {-1, +1} (Au = +1, Cu = -1):
 
     E(s) = J_0 + sum_k c_k sum_{tuples T in class k} prod_{i in T} s_i,           (1)
 
-with the tuple lists and coefficients exported once by
+with tuple lists and coefficients exported once by
 `experiments/alloy_ce/export_binary_expansion.py`, which fits (1) to the
 library's own energies and refuses to write unless the residual is at
-floating-point precision. The Boltzmann target is p(s) ∝ exp[-beta E(s)]; to
-keep every downstream estimator unchanged the project's beta = 2 sigma
-convention is kept, so `sigma` here is beta/2 and
-`free_energy_lb_estimate(log_w, sigma, d)` returns F/d in the expansion's own
+floating-point precision. The target is p(s) ∝ exp[-beta E(s)]; the project's
+beta = 2 sigma convention is kept, so `sigma` = beta/2 and
+`free_energy_lb_estimate(log_w, sigma, d)` returns F/d in the expansion's
 energy units (eV per site for the alloy files).
 
-CLOSED-FORM MOVES. Flipping site i negates every product that contains i, so
+Flipping site i negates every product containing i, so
 
     Delta E_flip(i)   = -2 E_i,           E_i  := sum_{T ∋ i} c_T prod_T s,         (2)
     Delta E_swap(i,j) = -2 E_i - 2 E_j + 4 E_ij,   E_ij := sum_{T ∋ i,j} c_T prod_T s, (3)
 
-for s_i != s_j (a like-spin swap is the identity, so it gets 0): flipping both
-negates the products containing exactly one of the two sites and leaves the
-ones containing both alone. For the pair-only Ising expansion (3) is the
-existing Kawasaki closed form in `FixedCompositionIsingTarget.swap_log_ratio`,
-which is what the parity test pins. Cost is one gather-product-scatter per
-tuple class, O(B * n_tuples), with no (B, d, d, d) or (B, P, d) materialisation
--- the reason the swap sampler could not simply call the library.
+for s_i != s_j (a like-spin swap is the identity): flipping both negates the
+products containing exactly one of the two sites and leaves those containing
+both alone. For the pair-only Ising expansion (3) is the Kawasaki closed form
+in `FixedCompositionIsingTarget.swap_log_ratio`, which the parity test pins.
+Cost is one gather-product-scatter per tuple class, O(B * n_tuples), with no
+(B, d, d, d) materialisation.
 
-FAILURE MODES GUARDED. Wrong species sign or basis convention: absorbed by the
-export's fit, and caught by the reference-energy test. Image multiplicity
-(a shell at exactly half the cell): the tuple lists carry the duplicate on
-purpose and `index_add_` accumulates it. Slice constant: the fixed-composition
-class reuses the Ising slice methods verbatim, so log C(d, n_plus) enters the
-path weight exactly as it does for Ising.
+Species sign or basis convention errors are absorbed by the export's fit and
+caught by the reference-energy test; image multiplicity (a shell at exactly
+half the cell) is carried as a duplicate tuple and accumulated by
+`index_add_`; the fixed-composition class reuses the Ising slice methods, so
+log C(d, n_plus) enters the path weight as for Ising.
 """
 
 from __future__ import annotations
@@ -257,11 +252,10 @@ class MixtureCompositionClusterExpansionTarget(FixedCompositionClusterExpansionT
 
     The slice-mixture machinery is MixtureCompositionIsingTarget's verbatim
     (uniform slice choice per base draw, base_log_eta read off each row's
-    count, manifold check against the grid), exactly as the single-slice
-    class borrows FixedCompositionIsingTarget's; the swap ratio is the
-    expansion's Eq. (3) and needs no change because a swap never leaves its
-    slice. `compositions[0]` is the anchor slice the inherited scalar
-    attributes refer to.
+    count, manifold check against the grid); the swap ratio is the
+    expansion's Eq. (3), unchanged because a swap never leaves its slice.
+    `compositions[0]` is the anchor slice the inherited scalar attributes
+    refer to.
     """
 
     sample_base = MixtureCompositionIsingTarget.sample_base

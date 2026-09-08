@@ -6,41 +6,29 @@ additive score, in front of any learned swap head.
                      = sigma * [2 (x_j - x_i)(h_i - h_j) - 2 (x_j - x_i)^2 A_ij],
     h = x A  (neighbour sums),  gain(t) = gain_constant + gain_slope * t.
 
-Why this channel. Under binary swap antisymmetry every score is
-(x_i - x_j) S_ij(x_{-ij}), and the exact equilibrium log-ratio is the
-rank-one, linear, hole-excluded field difference sigma (x_i - x_j)(h~_i -
-h~_j) -- h~ = the neighbour field at each hole with its partner excluded,
-which is what the -2 diff^2 A_ij term does for adjacent pairs (the i-j bond
-is swap-invariant and must not be counted). The 4x4 regression of trained
-heads (2026-08-22) put ~half of Var S on exactly this field; MDNS's
-preconditioning is the same move for the flip process (exact local
-conditional as a fixed logit, learned residual). Here the head only has to
-learn the residual.
+Under binary swap antisymmetry every score is (x_i - x_j) S_ij(x_{-ij}),
+and the exact equilibrium log-ratio is the hole-excluded field difference
+sigma (x_i - x_j)(h~_i - h~_j); the -2 diff^2 A_ij term excludes the
+swap-invariant i-j bond for adjacent pairs. The 4x4 regression of trained
+heads (2026-08-22) put ~half of Var S on this field, so the head only has
+to learn the residual (the same move as MDNS's preconditioning for flips).
 
-Why not the log-ratio t * sigma * Delta. With one-way rates relu(+-G) a
-nonzero G is TRANSPORT, not equilibrium dynamics: along p_t ~ eta^{1-t} p^t
-mass must flow toward lower energy from t = 0 onward (the KFE source
--sigma E + const is nonzero at t = 0), so the channel is the source
-direction sigma * Delta with a learned time-dependent gain, not the
-log-ratio that vanishes at t = 0. The magnitude of the optimal transport
-field is the non-local Poisson solution the residual carries.
+The channel is the t = 1 source direction sigma * Delta with a learned time
+gain, not the log-ratio t * sigma * Delta: with one-way rates relu(+-G) a
+nonzero G is transport, and along p_t ~ eta^{1-t} p^t mass must flow toward
+lower energy from t = 0 (the KFE source -sigma E + const is nonzero there).
 
-Why gain starts at ZERO. Bit-identity with the base head at initialisation
-(tests assert it), so every archived cell's init telemetry -- rate-clip
-fraction, per-pair rate scale -- is unchanged, and the channel is something
-the optimiser switches on rather than something that rescales the rates
-before the first step (at sigma_c, |sigma Delta| reaches ~1.8 on a lattice
-whose trained mean per-pair rate is ~0.004).
+The gain starts at zero so the channel is bit-identical to the base head at
+init (tests assert it) and archived cells' init telemetry is unchanged; at
+sigma_c |sigma Delta| reaches ~1.8 against a trained mean per-pair rate of
+~0.004, so a nonzero init would rescale the rates before the first step.
 
-Two antisymmetries, and which one the channel has for free. sigma * Delta
-is STATE-antisymmetric (its sign flips at the swapped state, the property
-the reverse rate needs) but SYMMETRIC in the pair labels -- swapping i and j
-is one physical move whichever site is called i. The heads' matrices carry
-INDEX antisymmetry G[j,i] = -G[i,j] as a convention imposed by the mirror
-(keep i < j, subtract the transpose), and the loss reads i < j only; the
-channel is given the same convention by the same mirror, so the sum is
-exactly index-antisymmetric with a zero diagonal. sigma and A are
-read LIVE from the target so the sigma-curriculum propagates.
+sigma * Delta is state-antisymmetric (sign flips at the swapped state) but
+symmetric in the pair labels. The heads carry index antisymmetry
+G[j,i] = -G[i,j] by the mirror (keep i < j, subtract the transpose) and the
+loss reads i < j only; the channel gets the same mirror, so the sum is
+index-antisymmetric with a zero diagonal. sigma and A are read live from
+the target so the sigma-curriculum propagates.
 """
 
 import torch
@@ -90,37 +78,29 @@ class ExactFieldFlipModel(nn.Module):
         Delta_i  = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ],
         h = x A  (Ising; an expansion supplies -beta Delta E_i instead),  c_null_i = c(x) - (x_i + 1)/(2d),  gain(t) = g0 + g1 t.
 
-    The opt-in amortised correction keeps that global gain and adds
+    The opt-in amortised correction adds a composition-dependent gain
 
         gain(t, c) = g0 + g1 t + (c - c0) (h0 + h1 t),
 
-    where c0 is the target's scalar centre composition. It is deliberately
-    the smallest family that can express the critical specialists' observed
-    composition-dependent gains. At c=c0 it is exactly the archived channel;
-    h0=h1=0 at initialisation, so enabling it consumes no RNG and leaves the
-    step-zero forward bit-identical. The parameters are only registered when
-    requested, preserving strict loading of every archived checkpoint.
+    c0 the target's scalar centre composition: the smallest family that
+    expresses the critical specialists' observed composition-dependent
+    gains. At c=c0 it is the archived channel; h0=h1=0 at init, so the
+    step-zero forward is bit-identical, and the parameters are registered
+    only when requested so archived checkpoints still load strictly.
 
     Delta_i is the exact soft flip log-ratio at t=1 (pinned against brute
-    force in tests/test_soft_field_regression.py): written against the
-    HOLE-EXCLUDED composition c_null it is exactly odd in x_i, so it lives
-    in the leTF's representable set G = -x_i S_i(x). The local-field regression put
-    the two closed-form columns at ~95% of every trained lambda=50
-    specialist's variance — dominated by the PENALTY column, i.e. by
-    exactly the term whose lambda^2 Var[delta_P] noise makes soft training
-    fragile — so the channel hands the model the response it currently has
-    to learn while being shelled by that variance.
+    force in tests/test_soft_field_regression.py); written against the
+    hole-excluded composition c_null it is odd in x_i, so it lives in the
+    leTF's representable set G = -x_i S_i(x). The local-field regression
+    put the two closed-form columns at ~95% of every trained lambda=50
+    specialist's variance, dominated by the penalty column whose
+    lambda^2 Var[delta_P] noise makes soft training fragile.
 
-    Same three conventions as the swap channel above, same reasons: the
-    feature is the t=1 source direction with a learned time gain, NOT the
-    log-ratio t*Delta (transport must be nonzero at t=0); the gain starts
-    at ZERO so a channel-on model is bit-identical to its parent at init
-    and the lambda-sweep twins carry one declared change; sigma, lambda and
-    c* are read LIVE from the target so every curriculum propagates.
+    Same conventions as the swap channel above: t=1 source direction with a
+    learned time gain, gain zero at init, sigma, lambda and c* read live.
 
     Binary flips only: for S > 2 each destination token has its own
-    log-ratio and a single per-site channel is wrong, so the constructor
-    refuses rather than silently mis-scoring Potts.
+    log-ratio, so the constructor refuses rather than mis-scoring Potts.
     """
 
     def __init__(
@@ -183,15 +163,11 @@ class ExactFieldFlipModel(nn.Module):
     def exact_field(self, x: Tensor, composition: Tensor | None = None) -> Tensor:
         """Delta_i(x), shape (B, d) — the closed form above, live params.
 
-        composition: per-row target composition (B,), the amortised route.
-        None (the specialist route) falls back to the target's scalar c*.
-        The two must never disagree with what the loss scores: in an
-        amortised batch the penalty is bound per-row via
-        target.composition_batch, so a channel left on the scalar would
-        inject a field aimed at the wrong composition for every row whose
-        c differs from it — silent misdirection, worst at the off-centre
-        windows amortisation exists to serve (pinned by
-        test_per_row_composition_matches_brute_force).
+        composition: per-row target composition (B,), the amortised route;
+        None (specialist route) uses the target's scalar c*. In an amortised
+        batch the penalty is bound per-row via target.composition_batch, so
+        a channel left on the scalar would aim the field at the wrong
+        composition (pinned by test_per_row_composition_matches_brute_force).
         """
         target = self.target
         d = x.shape[-1]

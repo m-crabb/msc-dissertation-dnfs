@@ -1,44 +1,29 @@
 """Locally Equivariant MLP rate-matrix parameterisation (DNFS Sec. 3.3 + App. B.2).
 
-Background — why local equivariance?
-    The CTMC generator G_theta(τ, i | x, t) must satisfy the detailed-balance
-    analogue of Eq. (10) in the paper, which requires the antisymmetry
-    (Eq. 20):
+The generator G_theta(τ, i | x, t) must satisfy the antisymmetry of Eq. (20),
 
-        G(τ, i | x) = -G(x_i, i | Swap(x, i, τ))          ...(20)
+    G(τ, i | x) = -G(x_i, i | Swap(x, i, τ))          ...(20)
 
-    where Swap(x, i, τ) is x with site i replaced by τ.  Any architecture
-    that bakes in this identity is called *locally equivariant* (LE).  The MLP
-    of Stage 1 does not satisfy it — its outputs at different sites are coupled
-    in an unconstrained way.
+where Swap(x, i, τ) is x with site i replaced by τ. An architecture that
+bakes this in is locally equivariant (LE); the Stage 1 MLP is not.
 
-Hollow network (Definition 3):
-    A network is hollow w.r.t. site i if its output at site i does not depend
-    on the token x_i itself — only on the *other* sites.  The hollow mask is a
-    (D, D) matrix of ones with a zero diagonal; multiplying W_raw by it zeroes
-    out the diagonal weights so site i never reads its own embedding.
+Hollow network (Definition 3): the output at site i does not depend on x_i,
+only on the other sites. The hollow mask is a (D, D) ones matrix with a zero
+diagonal; W_raw * mask stops site i reading its own embedding.
 
-Proposition 2 readout (App. B.2):
-    Given a hollow hidden representation H(x_{-i}, t) ∈ R^h for site i, a
-    locally equivariant rate can be constructed as:
+Prop. 2 readout (App. B.2): given hollow H(x_{-i}, t) ∈ R^h for site i,
 
-        G(τ, i | x) = <H_i, ω_τ - ω_{x_i}>                ...(Prop. 2)
+    G(τ, i | x) = <H_i, ω_τ - ω_{x_i}>                ...(Prop. 2)
 
-    where ω_τ, ω_{x_i} are learned token embeddings.  The antisymmetry
-    property follows algebraically: swapping x_i ↔ τ negates H_i (hollow,
-    so H_i(x_{-i}) is unchanged) and negates (ω_τ - ω_{x_i}).
+with learned token embeddings ω. Swapping x_i ↔ τ leaves H_i unchanged
+(hollow) and negates (ω_τ - ω_{x_i}), which is Eq. (20).
 
-Single-layer constraint:
-    *Stacking hollow layers violates LE.*  After the first hollow layer the
-    hidden state at site i depends on {x_j : j ≠ i}; a second hollow layer
-    would mix those outputs across sites, reintroducing x_i dependence.  We
-    instead use multiple *summands* — K independent single-layer hollow
-    projections summed before the readout — which preserves hollowness.
+Stacking hollow layers breaks LE (a second layer mixes the other sites'
+outputs, which depend on x_i, back into site i), so K independent
+single-layer hollow summands are summed before the readout instead.
 
-Spin convention:
-    States arrive as {-1, +1} tensors (the codebase convention for Ising
-    spins). Internally we map to {0, 1} indices via idx = (x + 1) / 2 for
-    embedding lookups; we never change the external contract.
+States arrive as {-1, +1} tensors; idx = (x + 1) / 2 maps to {0, 1} for
+embedding lookups.
 """
 
 import math
@@ -114,28 +99,15 @@ class TimestepEmbedder(nn.Module):
 class LeMLPRateMatrix(nn.Module):
     """Locally equivariant MLP rate-matrix (DNFS paper Eq. 20, Prop. 2).
 
-    Constructs G(τ, i | x, t) satisfying the antisymmetry condition
-    (Eq. 20) by combining:
-
-    1. Hollow MLP — K independent single-layer projections (summands),
-       each masked so site i never reads x_i.  The mask enforces
-       Definition 3 (hollow w.r.t. every site simultaneously).
-
-    2. Prop. 2 readout — inner product of the hollow hidden state H_i
-       with the difference of learned token embeddings: <H_i, ω_τ - ω_{x_i}>.
-       This is exactly zero when τ = x_i, and antisymmetric under swap.
-
-    3. Time conditioning — sinusoidal TimestepEmbedder added to H_i after
-       the hollow projection; time is shared across all sites.
+    G(τ, i | x, t) = <H_i, ω_τ - ω_{x_i}> with H_i the sum of K single-layer
+    hollow projections (Definition 3) plus a shared sinusoidal time embedding.
 
     Args:
         d: number of sites (D² for a D×D Ising lattice).
         vocab_size: number of discrete token values (S=2 for binary spins).
         hidden_dim: width h of all embedding / hidden layers.
-        n_summands: number K of independent hollow-MLP summands.  Must be
-            >= 1.  More summands increase expressivity without violating LE.
-        activation: nonlinearity applied inside each hollow summand.
-            One of "gelu" (default), "relu", "silu".
+        n_summands: number K of hollow-MLP summands, >= 1.
+        activation: nonlinearity inside each summand: "gelu", "relu", "silu".
     """
 
     is_locally_equivariant: bool = True
@@ -162,13 +134,10 @@ class LeMLPRateMatrix(nn.Module):
         self.token_embedder = nn.Embedding(vocab_size, hidden_dim)
         nn.init.kaiming_uniform_(self.token_embedder.weight, a=math.sqrt(5))
 
-        # Hollow MLP weights: K summands, each a (D, D) weight matrix over
-        # site indices and a bias.  The hollow_mask zeroes the diagonal so
-        # site i never aggregates its own embedding.
+        # Hollow MLP: K summands, each a (D, D) site-mixing weight and a bias.
         K = n_summands
-        # Diagonal is zero-init AND zero-masked at every forward; the mask is
-        # the load-bearing one but explicitly zeroing the storage avoids
-        # confusing parameter-histogram readouts.
+        # Diagonal zero-init as well as masked at forward; the mask is
+        # load-bearing, zeroed storage just keeps parameter histograms clean.
         W_init = torch.randn(K, d, d) / math.sqrt(d)
         W_init.diagonal(dim1=-2, dim2=-1).zero_()
         self.W_raw = nn.Parameter(W_init)
@@ -203,40 +172,28 @@ class LeMLPRateMatrix(nn.Module):
                transitioning site i to token τ, given state x[b].
                G[b, i, x_i[b]] = 0 exactly (self-slot zeroed by scatter).
         """
-        # Step 1 — convert spins to 0/1 embedding indices.
         x_idx = ((x + 1) / 2).long()  # (B, D), values in {0, 1}
 
-        # Step 2 — embed each site's current token.
         x_emb = self.token_embedder(x_idx)  # (B, D, h)
 
-        # Step 3 — hollow MLP with K summands.
-        #   W_raw is (K, D, D); multiplying by hollow_mask zeroes the diagonal
-        #   so site i's row reads only from other sites (Definition 3).
+        # Hollow MLP (Definition 3): the mask zeroes W's diagonal so site d
+        # aggregates only the other sites j (kdj,bjh->kbdh), summed over K.
         W = self.W_raw * self.hollow_mask  # (K, D, D)
-        # einsum "kdj,bjh->kbdh": for each summand k and site d, aggregate the
-        # weighted embeddings of *all other* sites j (diagonal is 0).
-        # b: batch, d: target site, j: source site, h: embedding dim.
         pre = torch.einsum("kdj,bjh->kbdh", W, x_emb) + self.b[:, None, None, :]
-        # (K, B, D, h) -> activation -> sum over K -> (B, D, h)
         H = self.activation(pre).sum(dim=0)  # (B, D, h)
 
-        # Step 4 — add time conditioning (broadcast over sites).
+        # Time conditioning, broadcast over sites.
         H = H + self.time_embedder(t)[:, None, :]  # (B, D, h)
 
-        # Step 5 — Prop. 2 readout: G(τ, i | x) = <H_i, ω_τ - ω_{x_i}>.
-        #   omega_all : (S, h)  — all token embeddings
-        #   omega_xi  : (B, D, h) — embedding of the current token at each site
+        # Prop. 2 readout: G(τ, i | x) = <H_i, ω_τ - ω_{x_i}>.
         omega_all = self.omega.weight  # (S, h)
         omega_xi = self.omega(x_idx)  # (B, D, h)
         # diff[b, d, s, h] = omega_all[s, h] - omega_xi[b, d, h]
         diff = omega_all[None, None, :, :] - omega_xi[:, :, None, :]  # (B, D, S, h)
-        # Contract over hidden dim h to get (B, D, S) rates.
         G = torch.einsum("bdh,bdsh->bds", H, diff)  # (B, D, S)
 
-        # Guard against fp rounding in the inner product: the τ=x_i slot is
-        # (ω_{x_i} - ω_{x_i})^T H_i = 0 algebraically, but float32 arithmetic
-        # can leave a small non-zero residual. Scatter to exact zero so
-        # downstream [G]_+ / [-G]_+ aren't fed numerical garbage at the self-slot.
+        # The τ=x_i slot is (ω_{x_i} - ω_{x_i})^T H_i = 0 algebraically; float32
+        # leaves a residual, so scatter it to exact zero before [G]_+ / [-G]_+.
         G = G.scatter(-1, x_idx.unsqueeze(-1), 0.0)
 
         return G

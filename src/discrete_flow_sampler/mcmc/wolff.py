@@ -1,12 +1,11 @@
 """Wolff single-cluster sampler for the unconstrained torus Ising model.
 
-Role: ground-truth cross-check for the baseline chapter's Gibbs reference
-(Wolff 1989). At criticality single-site dynamics has dynamic exponent
-z ~ 2.17 while Wolff sits near 0.25, so a Wolff pool decorrelates ~L^2
-faster per sweep-equivalent — it is the sampler whose agreement certifies
-the Gibbs pool and whose disagreement would replace it. Same cluster family
-as the Swendsen--Wang ground truths of MDNS and DASBS, at a third of the
-code (one seeded cluster per move; no lattice-wide bond percolation).
+Ground-truth cross-check for the baseline chapter's Gibbs reference (Wolff
+1989). At criticality single-site dynamics has dynamic exponent z ~ 2.17
+while Wolff sits near 0.25, so a Wolff pool decorrelates ~L^2 faster per
+sweep-equivalent; its agreement certifies the Gibbs pool. Same cluster
+family as the Swendsen--Wang ground truths of MDNS and DASBS (one seeded
+cluster per move, no lattice-wide bond percolation).
 
 The move: pick a random seed site, grow a cluster over aligned neighbours,
 adding each tried bond with
@@ -16,7 +15,7 @@ adding each tried bond with
 (K = 2 sigma is the per-bond coupling under this repo's double-counted
 `log p = x^T J x` convention — using 1 - exp(-2 sigma) here is the silent
 bug the 3x3 enumeration test exists to catch), then flip the whole cluster.
-Every bond on the cluster boundary was REJECTED with probability exp(-2K)
+Every bond on the cluster boundary was rejected with probability exp(-2K)
 during growth, which is exactly the factor detailed balance needs, so the
 flip is accepted with probability one. The construction requires zero
 external field: a bias term breaks the up/down symmetry of the cluster flip
@@ -31,7 +30,7 @@ Growth is breadth-first with the whole frontier processed per step: each
 frontier site tries its 4 torus neighbours once (numpy-vectorised), aligned
 non-member neighbours join with p_add. A site rejected through one bond can
 be re-tried later through another, which is the correct Wolff rule (each
-BOND is tried at most once, sites may be offered repeatedly).
+bond is tried at most once, sites may be offered repeatedly).
 """
 
 import numpy as np
@@ -50,11 +49,10 @@ def wolff_sample(
     """Draw n_samples configurations from an unconstrained IsingTarget.
 
     cluster_size_log: pass a list to have every flipped cluster's site count
-      appended (burn-in included -- it is part of the realistic sampling
-      price). Observation only: the RNG stream is untouched, so the same
-      seed yields bit-identical samples with or without the log, which is
-      how the certified reference pools are FLOP-recounted without being
-      rebuilt (diagnostics/flops.py::wolff_run_flops).
+      appended (burn-in included, as part of the sampling price). The RNG
+      stream is untouched, so the same seed yields bit-identical samples
+      with or without the log; diagnostics/flops.py::wolff_run_flops relies
+      on this to FLOP-count certified pools without rebuilding them.
 
     target: duck-types IsingTarget — needs `.D`, `.sigma`, `.bias`, `.d`.
       Must have bias == 0 (see module docstring).

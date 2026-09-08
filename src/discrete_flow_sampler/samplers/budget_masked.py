@@ -1,52 +1,40 @@
 """Budget-masked masked-diffusion sampler on the fixed-composition fibre.
 
-The masked-diffusion analogue of the swap CTMC: instead of restricting the
-MOVE SET of a flip sampler to composition-preserving swaps, the reference
-process reveals masked sites one at a time and restricts the SPECIES DRAW
-to the remaining budget — reveal a uniformly chosen masked site, assign
+The masked-diffusion analogue of the swap CTMC: rather than restricting the
+move set, the reference reveals a uniformly chosen masked site and draws
 species +1 with probability b/m (b = remaining +1 budget, m = masked
 sites). Its terminal law is uniform on the fibre and every trajectory
-carries the same reference constant N_+!(d-N_+)!/d! (the trajectory-
-constant lemma, exhaustively verified in tests/test_budget_masked_reference
-.py), which is what makes importance weights implementable: all reference
-terms cancel under self-normalisation.
+carries the same reference constant N_+!(d-N_+)!/d! (trajectory-constant
+lemma, tests/test_budget_masked_reference.py), so all reference terms
+cancel under self-normalisation.
 
-Three verified facts, each pinned by the exhaustive tests named
-below (the tests are the durable record of the derivations):
+Verified facts (the tests are the durable record of the derivations):
 
-1. Constrained Lemma 3: the optimally controlled generator unmasks site i
-   to species s at rate gamma(t) * Pr_pi(X^i = s | X^UM) — the CONSTRAINED
-   target's masked conditional. The reference's urn factor b/m cancels the
-   value function's completion-count ratio C(m,b)/C(m-1,b-1) = m/b
-   identically, so the network learns that conditional directly
-   (tests/test_budget_preconditioner.py::
-   test_value_function_tilt_equals_exact_masked_conditional).
+1. Constrained Lemma 3: the optimal control unmasks site i to species s at
+   rate gamma(t) * Pr_pi(X^i = s | X^UM), the constrained target's masked
+   conditional; the urn factor b/m cancels the value-function ratio
+   C(m,b)/C(m-1,b-1) = m/b (tests/test_budget_preconditioner.py).
 2. The budget-tilted preconditioner V0 approximates it in closed form:
-   logit(+1) - logit(-1) = log(b/(m-b)) + 4*sigma*f_i, with masked
-   neighbours imputed at the urn mean (2b-m)/m. Exact at sigma = 0, at
-   m = 1, and at exhausted budgets (same test module, 8 tests).
-3. The WDCE loss transfers with no structural change: corruption is the
-   unconstrained mask-independently kernel (order-assignment independence),
-   and the population minimiser at every context is the Lemma-3 conditional
-   (tests/test_budget_wdce.py, 8 tests).
+   logit(+1) - logit(-1) = log(b/(m-b)) + 4*sigma*f_i, masked neighbours
+   imputed at the urn mean (2b-m)/m. Exact at sigma = 0, at m = 1 and at
+   exhausted budgets.
+3. WDCE transfers unchanged: corruption is the unconstrained kernel
+   (order-assignment independence) and the population minimiser at every
+   context is the Lemma-3 conditional (tests/test_budget_wdce.py).
 
 Conventions: masked states are float tensors with +1.0/-1.0 spins and 0.0
-at masked sites (0 doubles as the zero-imputation value, so the field
-computation is a single matmul); adjacency is IsingTarget's symmetric 0/1
-matrix (each undirected edge in both directions), giving the single-site
-tilt E(+1) - E(-1) = 4*(A x)_i on the x^T A x energy.
+at masked sites (0 doubles as the zero-imputation value, so the field is a
+single matmul); adjacency is IsingTarget's symmetric 0/1 matrix, giving the
+single-site tilt E(+1) - E(-1) = 4*(A x)_i on the x^T A x energy.
 """
 
 import torch
 from torch import Tensor, nn
 from torch.nn.functional import logsigmoid, softplus
 
-# Pseudo-infinite logit for the boundary-budget branch of the budget-tilted
-# preconditioner. log(b/(m-b)) diverges at b = 0 or b = m; the closed form
-# and the exact delta agree in the limit, so the branch is float safety,
-# not semantics (mirrors the pure-python reference). 30 saturates a float32
-# sigmoid (~1e-13 from the boundary) while leaving room for a trunk logit
-# on top without overflow.
+# log(b/(m-b)) diverges at b = 0 or b = m; the closed form and the exact
+# delta agree in the limit, so this branch is float safety. 30 saturates a
+# float32 sigmoid (~1e-13) and leaves room for a trunk logit without overflow.
 BOUNDARY_LOGIT = 30.0
 
 
@@ -55,10 +43,9 @@ def masked_count_and_budget(
 ) -> tuple[Tensor, Tensor]:
     """Per-row (m, b): masked-site count and remaining +1 budget.
 
-    Both are pure functions of the state — no bookkeeping to fall out of
-    sync with the actual reveals (the failure mode of carrying budget as
-    training-loop state; the corruption step of the WDCE loss masks
-    arbitrary subsets, where incremental bookkeeping has no meaning).
+    Pure functions of the state, so nothing falls out of sync with the
+    reveals; WDCE corruption masks arbitrary subsets, where incremental
+    bookkeeping has no meaning.
     """
     masked_count = (x_masked == 0.0).sum(dim=1)
     budget = n_plus_target - (x_masked == 1.0).sum(dim=1)
@@ -68,10 +55,8 @@ def masked_count_and_budget(
 def masked_state_features(x_masked: Tensor) -> Tensor:
     """Three-channel one-hot encoding (+1 / -1 / masked), shape (B, 3d).
 
-    The trunk sees only this: b and m are computable from it, so a capable
-    network CAN learn the budget structure — which is exactly what the
-    no-preconditioner ablation measures (how much of it must be learned
-    when the preconditioner does not supply it).
+    b and m are computable from it, so the trunk can learn the budget
+    structure; the no-preconditioner ablation measures how much it must.
     """
     return torch.cat(
         [x_masked == 1.0, x_masked == -1.0, x_masked == 0.0], dim=1
@@ -81,14 +66,11 @@ def masked_state_features(x_masked: Tensor) -> Tensor:
 class MaskedConditionalNet(nn.Module):
     """Minimal trunk Phi_theta for the masked conditional, MDNS-style.
 
-    Outputs a per-site logit DIFFERENCE (logit(+1) - logit(-1)); the
-    sampler's conditional is sigmoid(Phi_theta(x) + P(x)) with P the chosen
-    preconditioner, exactly the paper's softmax(network + preconditioner)
-    reduced to two species. The final layer is ZERO-INITIALISED so that at
-    step 0 the sampler IS the preconditioner's law — the from-scratch
-    mechanism the Fig.-10 ablation measures (with a random init the modes
-    would differ by init noise as well as by preconditioner, confounding
-    the comparison).
+    Outputs a per-site logit difference logit(+1) - logit(-1); the sampler's
+    conditional is sigmoid(Phi_theta(x) + P(x)) with P the preconditioner,
+    the paper's softmax(network + preconditioner) reduced to two species.
+    The final layer is zero-initialised so step 0 is the preconditioner's
+    law, which the Fig.-10 ablation compares across modes.
     """
 
     def __init__(self, n_sites: int, hidden_width: int = 128):
@@ -116,25 +98,18 @@ def preconditioner_logit_diff(
     mode: str,
 ) -> Tensor:
     """The mode-defining logit offset P(x), shape (B, d); rows are valid at
-    masked sites only (unmasked positions are revealed, never drawn).
+    masked sites only.
 
-    mode = "budget_tilted": the derived V0,
+    "budget_tilted": V0,
         log(b/(m-b)) + 4*sigma*f_i,  f_i = (A x_imputed)_i,
-    with masked neighbours imputed at the urn mean (2b-m)/m — the only
-    imputation that is unbiased under the urn's exchangeable marginal.
-    Boundary budgets take the pseudo-infinite branch (exact deltas).
-
-    mode = "unconstrained": the paper's App. D.4 form verbatim —
-    4*sigma*f_i with masked neighbours at zero and NO budget term. Blind to
-    the budget by construction; the 4x4 gate measures what that costs.
-
-    mode = "none": zero (the Fig.-10 no-preconditioning mirror).
-
-    Rejected alternative: V1 imputes
-    the other masked sites' urn mean CONDITIONED on the hypothesis at i;
-    ~10% lower mean error, but needs a hypothesis-dependent field pass and
-    shares every exactness limit with V0 — not worth the complication at
-    4x4 scale.
+    masked neighbours imputed at the urn mean (2b-m)/m, the imputation that
+    is unbiased under the urn's exchangeable marginal; boundary budgets take
+    the pseudo-infinite branch (exact deltas).
+    "unconstrained": the paper's App. D.4 form, 4*sigma*f_i with masked
+    neighbours at zero and no budget term.
+    "none": zero (the Fig.-10 no-preconditioning mirror).
+    Not the hypothesis-conditioned imputation V1: ~10% lower mean error but
+    a hypothesis-dependent field pass, and the same exactness limits as V0.
     """
     if mode == "none":
         return torch.zeros_like(x_masked)
@@ -156,14 +131,13 @@ def preconditioner_logit_diff(
 def budget_tilt_components(
     x_masked: Tensor, adjacency: Tensor, sigma: float, n_plus_target: int
 ) -> tuple[Tensor, Tensor, Tensor]:
-    """V0's two logit terms, separately: (budget_logit (B,), energy_term
+    """V0's two logit terms separately: (budget_logit (B,), energy_term
     (B, d), interior (B,) bool).
 
     budget_logit is log(b/(m-b)) on interior rows and the pseudo-infinite
     delta on boundary rows; energy_term is 4*sigma*f with urn-mean
-    imputation. Split out so the gated variant (`GatedBudgetTiltOffset`)
-    can scale the two mechanisms independently without duplicating the
-    computation the ungated preconditioner is exhaustively tested on.
+    imputation. Split out so `GatedBudgetTiltOffset` can scale the two
+    mechanisms independently.
     """
     masked_count, budget = masked_count_and_budget(x_masked, n_plus_target)
     interior = (budget > 0) & (budget < masked_count)
@@ -189,23 +163,16 @@ def budget_tilt_components(
 
 
 class GatedBudgetTiltOffset(nn.Module):
-    """V0 with learnable scales on its two mechanisms ("keep the good init
-    without the unlearning bill").
+    """V0 with learnable scales on its two mechanisms.
 
         P(x) = gate_budget * log(b/(m-b)) + gate_field * energy_term
-        (interior rows; boundary rows keep the UNGATED exact deltas)
+        (interior rows; boundary rows keep the ungated exact deltas)
 
-    Both gates initialise at 1.0, so step 0 is EXACTLY the V0 law — the
-    first 4x4 runs showed that V0's strong-but-imperfect near-boundary
-    opinions must be partially cancelled by the trunk (the unconstrained
-    preconditioner ends better than V0 precisely there); two scalars turn
-    that cancellation into
-    a 2-parameter descent instead of distributed trunk weights. The
-    boundary branch stays ungated because it is exact at any coupling —
-    a gate there could only unlearn a true delta. Rejected alternative:
-    a context-conditioned gate g(m, b) (small MLP) — more capacity, but
-    the mechanism question ("is the unlearning bill the prior's scale?")
-    is answered by scalars, and scalars stay interpretable.
+    Both gates initialise at 1.0, so step 0 is the V0 law. The first 4x4
+    runs showed the trunk partially cancelling V0's near-boundary opinions
+    (the unconstrained preconditioner ends better there); two scalars make
+    that cancellation a 2-parameter descent. The boundary branch stays
+    ungated because it is exact at any coupling.
     """
 
     def __init__(self, adjacency: Tensor, sigma: float, n_plus_target: int):
@@ -230,18 +197,13 @@ def feasibility_clamped_p_plus(
 ) -> Tensor:
     """Generation-time feasibility guard: b = 0 forbids +1, b = m forces it.
 
-    This is the reference process's own mechanism (the budget lives in the
-    species draw, never the site clock), applied to the learned conditional
-    — it is what makes on-fibre generation (the 4x4 gate's G0 criterion)
-    structural. It is NOT the
-    mask-and-renormalise pathology: the rollout log-probability records the
-    CLAMPED probabilities actually sampled from, so the importance weights
-    stay consistent with the rollout law (the pathology is computing
-    weights with one law while sampling from another, pinned by
-    tests/test_budget_masked_reference.py::
-    test_mask_and_renormalise_correction_is_trajectory_dependent).
-    Asymptotically a no-op: the WDCE minimiser is itself a delta at
-    boundary contexts.
+    The reference process's own mechanism (the budget lives in the species
+    draw, never the site clock) applied to the learned conditional, which
+    makes on-fibre generation structural. Not the mask-and-renormalise
+    pathology: the rollout log-probability records the clamped probabilities
+    actually sampled from, so the weights stay consistent with the rollout
+    law (tests/test_budget_masked_reference.py). Asymptotically a no-op: the
+    WDCE minimiser is itself a delta at boundary contexts.
     """
     p_plus = torch.where(budget <= 0, torch.zeros_like(p_plus), p_plus)
     return torch.where(budget >= masked_count, torch.ones_like(p_plus), p_plus)
@@ -257,46 +219,31 @@ def rollout_budget_masked(
     """Generate terminals by sequential revelation; return
     (terminals, rollout_log_prob).
 
-    n_plus_target = None switches the budget machinery OFF: the reference
-    becomes the paper's own unconstrained masked diffusion (uniform site,
-    species +1 with probability 1/2), there is no feasibility clamp, and
-    every species draw contributes to rollout_log_prob. The trajectory
-    constant simplifies with the machinery: the budget-masked reference's
-    assignment product N_+!(d-N_+)!/d! = 1/C(d, N_+) becomes the product
-    of d independent 1/2 draws, (1/2)^d — which is EXACTLY the uniform
-    base measure on {-1,+1}^d, so it cancels in the importance weight the
-    same way the fibre constant cancels against uniform-on-the-fibre:
-    log w = log p_tilde(X_1) - rollout_log_prob in both cases, and
-    logmeanexp(log w) estimates the corresponding log Z (full-space or
-    slice). Pinned by tests/test_budget_masked_sampler.py::
-    test_unconstrained_oracle_conditionals_give_constant_weights.
+    n_plus_target = None switches the budget machinery off: the reference
+    is the paper's unconstrained masked diffusion (uniform site, species +1
+    with probability 1/2), no feasibility clamp, every draw counted. The
+    trajectory constant 1/C(d, N_+) becomes (1/2)^d, the uniform base
+    measure on {-1,+1}^d, so it cancels the same way the fibre constant
+    cancels against uniform-on-the-fibre; logmeanexp(log w) then estimates
+    the corresponding log Z (full-space or slice).
+    Pinned by tests/test_budget_masked_sampler.py.
 
-    The embedded jump chain of the controlled CTMC: the clock gamma(t)
-    cancels between reference and control (the verified tilts-sum-to-one
-    property — control re-routes WHICH species is revealed, never how fast
-    sites reveal), so the terminal law depends only on the jump chain and
-    the discrete loop below IS the sampler; no Euler error term exists to
-    tune, unlike the flip/swap CTMC path.
+    This is the embedded jump chain of the controlled CTMC: gamma(t) cancels
+    between reference and control (tilts sum to one; control re-routes
+    which species is revealed, never how fast), so the terminal law depends
+    only on the jump chain and there is no Euler error to tune.
 
-    rollout_log_prob accumulates log q(species | state) of the SPECIES
-    draws only. The uniform site-choice factors (1/m per step, 1/d! per
-    trajectory) are identical for every trajectory, and cancel against the
-    same factors in the reference measure inside the importance weight —
-    dropping them here and in the weight is the same batch-softmax
-    invariance that drops the reference constants (verified in
-    tests/test_budget_wdce.py::
-    test_reference_log_weight_terms_shift_all_trajectories_equally).
-    The trajectory importance weight is then
+    rollout_log_prob accumulates log q(species | state) of the species draws
+    only; the uniform site-choice factors (1/m per step, 1/d! per
+    trajectory) are identical across trajectories and cancel in the weight
+    (tests/test_budget_wdce.py). The trajectory importance weight is
         log w = log p_tilde(X_1) - rollout_log_prob   (+ constants),
     with log p_tilde the unnormalised target log-density (sigma * x^T A x).
 
-    Gradient flow is governed by the CALLER's grad mode: the body takes
-    no stance, so a caller under torch.no_grad() gets the cheap detached
-    rollout (WDCE's sampling step), while a caller in default grad mode
-    gets rollout_log_prob differentiable through the model (what F_LV
-    needs — it differentiates the trajectory RN derivative). The DRAWS
-    themselves are constants either way: this is the paper's v = u-bar
-    convention (gradient-free sampling measure), not a REINFORCE term.
+    Grad mode is the caller's: under torch.no_grad() the rollout is detached
+    (WDCE's sampling step); in default mode rollout_log_prob is
+    differentiable through the model (F_LV). The draws themselves are
+    constants either way: the paper's v = u-bar convention, not REINFORCE.
     """
     device = generator.device  # CPU and CUDA generators both carry it
     x_masked = torch.zeros(n_rollouts, n_sites, device=device)
@@ -318,9 +265,8 @@ def rollout_budget_masked(
                 torch.sigmoid(logit), budget, masked_count
             )
         draw_plus = torch.rand(n_rollouts, generator=generator, device=device) < p_plus
-        # log q via logsigmoid for saturation safety; clamped rows are
-        # forced draws with q = 1, i.e. log q = 0 (constrained only —
-        # the unconstrained reference never clamps, so every draw counts)
+        # log q via logsigmoid for saturation safety; clamped rows are forced
+        # draws with q = 1, so log q = 0 (the unconstrained reference never clamps)
         log_q = torch.where(draw_plus, logsigmoid(logit), logsigmoid(-logit))
         if n_plus_target is None:
             rollout_log_prob += log_q
@@ -344,34 +290,27 @@ def wdce_cross_entropy(
         F_WDCE^c = sum_k w_k * (1/R) sum_r sum_{d masked in x~_kr}
                        -log s_theta(x~_kr)_{d, X_k^d},
 
-    with w_k the batch-softmax importance weights (detached: they estimate
-    the target measure, they are not a differentiation path — self-
-    normalised IS, their Eq. (16)), and x~_kr the r-th corruption of
-    terminal X_k: lambda ~ U(0,1) per replicate, each site masked
-    independently with probability lambda. That corruption is the
-    UNCONSTRAINED kernel deliberately — the bridge conditional of the
-    budget-masked reference given the terminal is exactly mu_lambda
-    (order-assignment independence via the trajectory constant, verified in
-    tests/test_budget_wdce.py); a budget-aware corruption would be wrong,
-    not conservative. w(lambda) = 1: the minimiser is invariant to the
-    corruption-size weight (also verified), so the simplest choice is the
-    defensible one. Empty masks contribute an empty sum, as in Eq. (4).
+    with w_k the detached batch-softmax importance weights (self-normalised
+    IS, Eq. (16)) and x~_kr the r-th corruption of terminal X_k: lambda ~
+    U(0,1) per replicate, each site masked independently with probability
+    lambda. The corruption is the unconstrained kernel deliberately: the
+    bridge conditional of the budget-masked reference given the terminal is
+    exactly mu_lambda (tests/test_budget_wdce.py), so a budget-aware
+    corruption would be wrong, not conservative. w(lambda) = 1, since the
+    minimiser is invariant to it. Empty masks contribute an empty sum, as
+    in Eq. (4).
 
-    The per-site term is a numerically stable binary cross-entropy in the
-    logit difference: -log s(+1) = softplus(-z), -log s(-1) = softplus(z).
+    Per-site term: -log s(+1) = softplus(-z), -log s(-1) = softplus(z).
 
     context_loss_weight (optional): eta(x~) -> (B*R,) positive weights, a
-    function of the CORRUPTED CONTEXT alone (e.g. the near-boundary boost
-    1 + kappa*1[b in {1, m-1}], with b and m read off the context). Because
-    every completion coefficient at a fixed context scales equally, the
-    population minimiser is unchanged (the same argument as the w(lambda)
-    freedom; pinned by tests/test_budget_wdce.py::
-    test_minimiser_is_invariant_to_context_dependent_loss_weights) — the
-    weight reallocates GRADIENT between contexts, nothing else. It is
-    normalised to batch-mean 1 so the loss scale (and the effective
-    learning rate) is comparable across boost settings. A weight that read
-    the TERMINAL would not be minimiser-safe; the signature only exposes
-    the corrupted context to make that mistake impossible.
+    function of the corrupted context alone (e.g. the near-boundary boost
+    1 + kappa*1[b in {1, m-1}]). Every completion coefficient at a fixed
+    context scales equally, so the population minimiser is unchanged and
+    the weight only reallocates gradient between contexts
+    (tests/test_budget_wdce.py). Normalised to batch-mean 1 so the loss
+    scale is comparable across boost settings. A weight that read the
+    terminal would not be minimiser-safe, so the signature exposes only
+    the corrupted context.
     """
     n_terminals, n_sites = terminals.shape
     device = terminals.device  # generator must live on the same device
@@ -416,28 +355,20 @@ def log_variance_loss(
 
         F_LV^c = Var_batch( log p_tilde(X_1) - rollout_log_prob ).
 
-    Why this transfers to the fibre with no extra terms: the exact
-    log dP*/dP^u adds the reference's trajectory constant and the
-    uniform-on-fibre base constant to the expression above, and a
-    variance is invariant to additive constants — the same cancellation
-    the batch softmax buys WDCE, bought here by Var instead. The paper's
-    4x4 case studies rank F_LV their strongest objective at this size
-    (their Tabs. 2 and 4: at beta_critical ESS 0.9809 / path-KL 0.0083
-    vs WDCE's 0.9644 / 0.0177), which is why it is carried here as the
-    robustness objective. Cost note: unlike WDCE this differentiates
-    through every species draw of the rollout (the paper's stated reason
-    to prefer WDCE at 16x16 scale); at d = 16 the graph is 16 tiny-MLP
-    calls deep and fits trivially.
+    Transfers to the fibre with no extra terms: the exact log dP*/dP^u adds
+    the reference trajectory constant and the uniform-on-fibre constant, and
+    a variance is invariant to additive constants. The paper's 4x4 case
+    studies rank F_LV strongest at this size (Tabs. 2 and 4: at
+    beta_critical ESS 0.9809 / path-KL 0.0083 vs WDCE's 0.9644 / 0.0177),
+    so it is carried as the robustness objective. Unlike WDCE it
+    differentiates through every species draw of the rollout (the paper's
+    reason to prefer WDCE at 16x16).
 
-    Trained UNCLAMPED: like the WDCE loss, the objective sees the raw
-    parameterised conditional; the feasibility clamp remains a
-    generation-time guard (boundary steps contribute log q = 0 with zero
-    gradient either way, since the clamp forces q = 1 there).
+    Trained unclamped, like WDCE; the feasibility clamp is a generation-time
+    guard (boundary steps contribute log q = 0 with zero gradient either way).
 
-    Returns (loss, terminals, detached log-RN) so a training loop can
-    log ESS/feasibility off the SAME rollout that carried the gradient —
-    F_LV consumes one rollout per step where WDCE consumes rollout + a
-    separate corruption pass.
+    Returns (loss, terminals, detached log-RN) so a training loop can log
+    ESS/feasibility off the same rollout that carried the gradient.
     """
     terminals, rollout_log_prob = rollout_budget_masked(
         logit_diff_fn, n_rollouts, n_sites, n_plus_target, generator

@@ -1,48 +1,36 @@
 """Literal icet/mchammer baselines for the Ising target, with timing.
 
-Why literal mchammer rather than our numba samplers: the thesis benchmarks
-DNFS against *what materials practitioners actually run*. A fast bespoke
-engine would be either an unclaimed contribution or unexplained machinery, so
-the reported baselines are mchammer's own ensembles; the numba scripts
-(`scripts/vcsgc_mcmc_validation.py`, `mcmc/kawasaki.py`) remain as
-independent cross-checks that would catch an embedding bug here.
+The baselines are mchammer's own ensembles, i.e. what materials practitioners
+run; the numba samplers (`scripts/vcsgc_mcmc_validation.py`,
+`mcmc/kawasaki.py`) stay as independent cross-checks of the embedding.
 
-The embedding (validated to ~1e-9 against exact enumeration): the 2D Ising
-torus is a single-layer FCC-free cell with a 10-unit vacuum gap in z and a
-pair cutoff strictly between 1 and sqrt(2), so icet sees exactly one
-nearest-neighbour pair orbit (4 neighbours per site) and no spurious z-image
-or second-neighbour bonds. With ECI = [0, -bias, -4*sigma] the total CE
-energy of a configuration equals -log p̃(x) for
+Embedding (validated to ~1e-9 against exact enumeration): the 2D Ising torus
+is a single-layer cell with a 10-unit vacuum gap in z and a pair cutoff in
+(1, sqrt(2)), so icet sees one nearest-neighbour pair orbit (4 neighbours per
+site) and no z-image or second-neighbour bonds. With ECI = [0, -bias, -4*sigma]
+the CE energy equals -log p̃(x) for
 
     log p̃(x) = sigma * x^T A x + bias * sum_i x_i,
 
-and working in natural units (temperature 1, k_B 1) makes the Boltzmann
-weight exp(-E/kT) = exp(-E) = p̃(x) — the sampler then targets our
-distribution with no further conversion. Spin convention: Au = +1, Ag = -1.
+and in natural units (temperature 1, k_B 1) exp(-E/kT) = exp(-E) = p̃(x).
+Spin convention: Au = +1, Ag = -1.
 
 Three ensembles, one per constraint leg:
 
-* soft  -> ``VCSGCEnsemble``. mchammer's variance-constrained penalty enters
-  the acceptance exponent as -kappa * N * (c + phi/2)^2; at kappa = lambda,
-  phi_Au = -2 * c_target this equals our -lambda * d * (c - c_target)^2
-  identically (N = d), giving std(c) = 1/sqrt(2*lambda*d).
-* hard  -> ``CanonicalEnsemble``. Swap moves preserve composition exactly:
-  the hard constraint is enforced by the move set, not a penalty — the
-  practitioner counterpart of Kawasaki dynamics.
-* none  -> ``SemiGrandCanonicalEnsemble`` at Delta-mu = 0. Free
-  single-site flips with no penalty and no conserved composition, so it
-  targets p̃(x) itself: the practitioner counterpart of the
-  UNCONSTRAINED leg, completing the one-package arc SGC / VC-SGC /
-  Canonical across the three results chapters.
+* soft -> ``VCSGCEnsemble``. Its penalty enters the acceptance exponent as
+  -kappa * N * (c + phi/2)^2; at kappa = lambda, phi_Au = -2 * c_target this
+  equals our -lambda * d * (c - c_target)^2 identically (N = d), giving
+  std(c) = 1/sqrt(2*lambda*d).
+* hard -> ``CanonicalEnsemble``. Swap moves preserve composition exactly:
+  the practitioner counterpart of Kawasaki dynamics.
+* none -> ``SemiGrandCanonicalEnsemble`` at Delta-mu = 0: free single-site
+  flips targeting p̃(x) itself, the unconstrained leg.
 
-Timing discipline: ``wall_seconds_run`` times the MC loop alone (setup —
-cluster-space construction, calculator build — is recorded separately and
-must never be folded into per-sample cost). Statistical efficiency comes
-from the Sokal integrated autocorrelation time on each observable trace, so
-every runner reports seconds per *effective* sample: the only currency in
-which a CPU MCMC sweep and a GPU amortised sampler can be compared honestly.
-There is no NFE analogue for an mchammer sweep, so wall-clock carries the
-whole comparison.
+``wall_seconds_run`` times the MC loop alone; setup (cluster-space and
+calculator construction) is recorded separately and never folded into
+per-sample cost. Every runner reports seconds per effective sample via the
+Sokal integrated autocorrelation time; there is no NFE analogue for an
+mchammer sweep, so wall-clock carries the comparison.
 """
 
 import socket
@@ -64,10 +52,8 @@ from discrete_flow_sampler.diagnostics.metrics import integrated_autocorr
 NATURAL_TEMPERATURE = 1.0
 NATURAL_BOLTZMANN = 1.0
 
-# Fraction of recorded frames discarded as burn-in before any statistic is
-# computed. One third is deliberately generous at these chain lengths; tau_int
-# is measured on what remains, so under-discarding shows up in the numbers
-# rather than silently biasing them.
+# Burn-in discarded before any statistic. One third is generous at these chain
+# lengths; tau_int is measured on the remainder, so under-discarding shows up.
 BURN_IN_FRACTION = 1.0 / 3.0
 
 _UP_SYMBOL = "Au"  # spin +1
@@ -112,12 +98,11 @@ def atoms_to_spins(symbols) -> np.ndarray:
 def vcsgc_parameters(penalty_strength: float, target_composition: float) -> dict:
     """The soft-target dictionary: kappa = lambda, phi_up = -2 * c_target.
 
-    mchammer's VC-SGC exponent is -kappa * N * (c + phi/2)^2. Substituting
-    phi = -2 * c_target gives -kappa * N * (c - c_target)^2, which is our
-    penalty -lambda * d * (c - c_target)^2 exactly when kappa = lambda
-    (N = d). No approximation is involved; a sign or factor error here would
-    sample a wrong-but-plausible ensemble, which is why the identity is
-    pinned by test over the full range of c.
+    mchammer's VC-SGC exponent is -kappa * N * (c + phi/2)^2; with
+    phi = -2 * c_target it is -kappa * N * (c - c_target)^2, our penalty
+    -lambda * d * (c - c_target)^2 exactly when kappa = lambda (N = d). A
+    sign or factor error here samples a wrong-but-plausible ensemble, so
+    the identity is pinned by test over the full range of c.
     """
     return {
         "kappa": penalty_strength,
@@ -128,7 +113,7 @@ def vcsgc_parameters(penalty_strength: float, target_composition: float) -> dict
 def _composition_initialised_supercell(
     primitive: Atoms, D: int, target_composition: float, seed: int
 ) -> tuple[Atoms, int]:
-    """Supercell started AT the (quantised) target composition.
+    """Supercell started at the (quantised) target composition.
 
     Starting on-target shortens burn-in for VC-SGC and is mandatory for the
     canonical ensemble, where swap moves make the initial composition the
@@ -213,16 +198,13 @@ def run_vcsgc(
 ) -> dict:
     """One VC-SGC chain at the soft-target operating point, with timing.
 
-    ``record_spins`` additionally returns the full +-1 configuration at every
-    ensemble-data row (post burn-in, int8) under ``traces["spins"]``. The
-    house evaluation table scores per-site magnetisation and correlation
-    profiles against the VC-SGC reference, which the scalar composition and
-    potential traces cannot supply. Capture follows ``run_canonical_probe``:
-    drive ``ensemble.run`` one write interval at a time and read the structure
-    back between calls, so frame k is the state mchammer's row k describes
-    (row-major D x D atom order, see the probe's docstring). The RNG stream is
-    untouched by chunking, so the chain is identical to the one-shot run; the
-    default keeps the cheaper one-shot path for callers that only need traces.
+    ``record_spins`` also returns the full +-1 configuration at every
+    ensemble-data row (post burn-in, int8) under ``traces["spins"]``, which
+    the per-site magnetisation and correlation profiles need. Capture follows
+    ``run_canonical_probe``: drive ``ensemble.run`` one write interval at a
+    time and read the structure back, so frame k is the state of row k
+    (row-major D x D atom order). Chunking leaves the RNG stream untouched,
+    so the chain equals the one-shot run.
     """
     if record_spins and n_steps % data_write_interval != 0:
         raise ValueError(
@@ -312,28 +294,19 @@ def run_sgc(
 ) -> dict:
     """One semi-grand-canonical chain at Delta-mu = 0: the unconstrained leg.
 
-    Equal chemical potentials mean the species term drops out of the
-    acceptance exponent entirely, leaving free single-site flips against the
-    CE energy alone — so this chain targets p̃(x), the same distribution the
-    unconstrained DNFS sampler targets, and the two are directly comparable
-    in the house evaluation table. ``chemical_potentials`` is required by
-    mchammer and carries no default; passing an unequal pair here would
-    silently sample a field-biased Ising model.
+    Equal chemical potentials drop the species term from the acceptance
+    exponent, so the chain targets p̃(x) itself, as the unconstrained DNFS
+    sampler does. ``chemical_potentials`` has no mchammer default; an
+    unequal pair would silently sample a field-biased Ising model.
 
-    ``initial_composition`` is only a STARTING point, unlike the same
-    argument to ``run_canonical`` (where swap moves make it the composition
-    forever) or ``run_vcsgc`` (where the penalty pins it): here the
-    composition floats, and 0.5 is the neutral disordered start. At sigma_c
-    that start sits at the Z2 symmetric point and the chain magnetises into
-    one sector or the other during burn-in, independently per seed — which
-    is why the table's row pools independent seeds rather than extending one
-    chain.
+    ``initial_composition`` is only a starting point (the composition floats
+    here, unlike ``run_canonical`` and ``run_vcsgc``); 0.5 is the neutral
+    disordered start. At sigma_c the chain magnetises into one Z2 sector
+    during burn-in, independently per seed, so the table pools independent
+    seeds rather than extending one chain.
 
-    ``record_spins`` follows ``run_vcsgc`` exactly: chunked driving that
-    leaves the RNG stream untouched, so the chain is identical to the
-    one-shot run and frame k is the state mchammer's row k describes. The
-    house table's magnetisation and correlation PROFILES need configurations;
-    the scalar traces cannot supply them.
+    ``record_spins`` follows ``run_vcsgc``: chunked driving, RNG stream
+    untouched, frame k = row k.
     """
     if record_spins and n_steps % data_write_interval != 0:
         raise ValueError(
@@ -416,46 +389,35 @@ def run_canonical_probe(
     bias: float = 0.0,
 ) -> dict:
     """Canonical (non-local unlike-pair swap) chain recording full ±1 spin
-    snapshots at an exact proposal interval — the mixing probe's non-local
-    variant carrier. Differs from `run_canonical` in three ways:
-
-    * explicit initial state: the supercell's symbols are set from
-      ``initial_spins`` before the ensemble is built, so reference chains can
-      be seeded IN a chosen phi mode (phase-separated left/right) rather than
-      at a random slice point;
-    * exact-interval snapshot capture: ``ensemble.run(snapshot_interval)`` is
-      driven in a loop and the structure read back between calls — the
-      simplest capture whose intervals are exact in trial steps (mchammer's
-      trajectory observer is bypassed; its rows would also cost memory);
-    * raw arrays + counters are returned instead of summary statistics: the
-      probe's analysis stage owns burn-in and R̂ decisions, so nothing is
-      discarded here.
+    snapshots at an exact proposal interval; the mixing probe's non-local
+    variant carrier. Unlike `run_canonical`: the initial state is set from
+    ``initial_spins`` (so chains can start in a chosen phi mode);
+    ``ensemble.run(snapshot_interval)`` is driven in a loop with the
+    structure read back between calls (intervals exact in trial steps,
+    trajectory observer bypassed); raw arrays and counters are returned,
+    burn-in and R̂ decisions belonging to the analysis stage.
 
     Site indexing: spin index i == atom index i of the D x D x 1 ``repeat``
-    supercell. ASE's repeat enumerates the two in-plane lattice vectors
-    lexicographically, so reading atom order as a row-major D x D flattening
-    reproduces the torus adjacency exactly (neighbours are i±1 and i±D with
-    wraparound); energy and both correlation observables are invariant to
-    which in-plane axis plays "rows", and the phi half-split axis is
-    self-consistent because the SAME indexing writes the initial state and
-    reads every snapshot. A scrambled atom order would silently corrupt all
-    spatial observables — which is why ``potential_per_snapshot`` (mchammer's
-    own exactly-recomputed CE energy at each snapshot step) rides along: it
-    must equal -sigma * x^T A x recomputed from the returned snapshots, and
-    the probe's tests pin that equality.
+    supercell. ASE enumerates the in-plane lattice vectors
+    lexicographically, so atom order read as a row-major D x D flattening
+    reproduces the torus adjacency (neighbours i±1 and i±D with wraparound);
+    the same indexing writes the initial state and reads every snapshot. A
+    scrambled order would silently corrupt every spatial observable, so
+    ``potential_per_snapshot`` (mchammer's own CE energy at each snapshot)
+    rides along: it must equal -sigma * x^T A x recomputed from the
+    snapshots, and the probe's tests pin that.
 
     snapshots[k] is the state after k * snapshot_interval proposals
-    (snapshots[0] = the initial state, matching the numba runners'
-    record-at-top convention); the state after the final interval is not
-    recorded. ``n_proposals`` must be a multiple of ``snapshot_interval``:
-    acceptance is recovered from mchammer's per-interval ``acceptance_ratio``
-    rows, and a trailing partial interval would silently undercount it.
+    (snapshots[0] = the initial state, the numba runners' record-at-top
+    convention); the state after the final interval is not recorded.
+    ``n_proposals`` must be a multiple of ``snapshot_interval``: acceptance
+    is recovered from the per-interval ``acceptance_ratio`` rows, and a
+    trailing partial interval would undercount it.
 
-    Returns a dict with ``snapshots`` (int8, [n_kept, d]), ``n_proposals``
-    (read back from ``ensemble.step`` — the exact trial-step currency),
-    ``n_accepted``, ``potential_per_snapshot``, ``composition_is_constant``,
-    ``wall_seconds_setup`` and ``wall_seconds_run`` (setup — cluster-space and
-    calculator construction — must never be folded into per-proposal cost).
+    Returns ``snapshots`` (int8, [n_kept, d]), ``n_proposals`` (from
+    ``ensemble.step``), ``n_accepted``, ``potential_per_snapshot``,
+    ``composition_is_constant``, ``wall_seconds_setup`` and
+    ``wall_seconds_run`` (setup is never folded into per-proposal cost).
     """
     d = D * D
     initial_spins = np.asarray(initial_spins)
@@ -501,9 +463,8 @@ def run_canonical_probe(
     recorded_steps = data["mctrial"].to_numpy()
     expected_steps = np.arange(n_snapshots + 1) * snapshot_interval
     if not np.array_equal(recorded_steps, expected_steps):
-        # Defensive: the acceptance/potential bookkeeping below assumes
-        # mchammer writes ensemble data at exactly every write interval; a
-        # version drift in that cadence must fail loudly, not skew counters.
+        # The bookkeeping below assumes a row at exactly every write interval;
+        # a cadence drift in mchammer must fail loudly, not skew the counters.
         raise RuntimeError(
             "unexpected mchammer ensemble-data cadence: "
             f"mctrials {recorded_steps[:5]}... vs expected multiples of "
@@ -568,9 +529,8 @@ def run_canonical(
     data = ensemble.data_container.data
     potential_trace = _post_burn_in(data["potential"].values)
 
-    # Swap moves make composition invariant by construction; verify rather
-    # than trust, because a silently-wrong move set (e.g. a flip ensemble
-    # picked by mistake) would invalidate every number downstream.
+    # Swap moves make composition invariant by construction; verify, since a
+    # wrong move set (e.g. a flip ensemble) would invalidate every number below.
     final_spins = atoms_to_spins(ensemble.structure.get_chemical_symbols())
     composition_is_constant = int(np.sum(final_spins > 0)) == n_up
 

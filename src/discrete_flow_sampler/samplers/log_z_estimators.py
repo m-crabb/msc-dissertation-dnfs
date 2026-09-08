@@ -4,34 +4,25 @@ The Kolmogorov residual loss needs
 
     ∂_t log p_t(x) = ∂_t log p̃_t(x) − ∂_t log Z_t,
 
-and the second term is the same scalar for every x. Paper Algorithm 1
-amortises this estimate over a replay buffer: at the start of each outer
-cycle, evaluate it once per time-grid point under the stop-gradient model,
-cache the K+1 scalars, and reuse them across `inner_steps_per_outer`
-gradient updates.
+and the second term is one scalar for every x. Algorithm 1 amortises it over
+a replay buffer: at the start of each outer cycle, evaluate it once per
+time-grid point under the stop-gradient model, cache the K+1 scalars, and
+reuse them across `inner_steps_per_outer` gradient updates.
 
-Two modes -- both produce a per-time-slot scalar c_t, both run under
-`torch.no_grad` so the c_t is detached from autograd:
+Two modes, both giving a per-slot scalar c_t under `torch.no_grad`:
 
-  - naive_mc:        c_t = mean_m ∂_t log p̃_t(x_t^{(m)}).
-                     Target-only; integrand is θ-independent. Used as the
-                     stage_0 / stage_1 ablation against control_variate.
-                     This is *not* in the paper's Algorithm 1 (which only
-                     ships the CV form); it preserves the existing
-                     experimental design where stages 0 and 2 differ in
-                     architecture, and 0_cv / 2 differ only in architecture.
+  - naive_mc:        c_t = mean_m ∂_t log p̃_t(x_t^{(m)}). Target-only,
+                     θ-independent; the stage_0 / stage_1 ablation against
+                     control_variate (not in the paper's Algorithm 1).
+  - control_variate: c_t = mean_m ξ_t(x_t^{(m)}; R_t^{sg}), paper Eq. 8 and
+                     Algorithm 1 line 4 verbatim. ξ_t subtracts the control
+                     statistic Σ_y R(x,y) p_t(y)/p_t(x), driving c_t to zero
+                     variance as R approaches Kolmogorov-satisfying.
 
-  - control_variate: c_t = mean_m ξ_t(x_t^{(m)}; R_t^{sg}) per paper Eq. 8 --
-                     paper Algorithm 1 line 4 verbatim. ξ_t subtracts the
-                     Kolmogorov-derived control statistic
-                     Σ_y R(x,y) p_t(y)/p_t(x), driving c_t to zero variance
-                     as R approaches Kolmogorov-satisfying.
-
-The inner-step loss is `(ξ_θ(x) − c_t)²` with c_t looked up from the
-buffer by the sample's t-index. Because c_t is detached, gradient flows
-only through ξ_θ -- this is the uncentred gradient form the paper derives
-in §C.1 (and the only form whose fixed points are the R that satisfy
-Kolmogorov forward exactly, rather than merely making ξ_θ flat in x).
+The inner-step loss is `(ξ_θ(x) − c_t)²` with c_t looked up by the sample's
+t-index. c_t is detached, so gradient flows only through ξ_θ: the uncentred
+gradient form of §C.1, whose fixed points are the R satisfying Kolmogorov
+forward exactly rather than merely making ξ_θ flat in x.
 """
 
 from typing import Literal
@@ -66,10 +57,9 @@ def compute_c_t_grid(
 
     Returns:
         c_t_grid: (T,) -- scalar c_t per time-grid point. Detached.
-        integrand_per_t: (T, M) -- per-state integrand values that were
-            averaged, detached. Surfaced so the training loop can log
-            `var_estimator_integrand` as the mechanism column comparing
-            naive vs CV variance reduction.
+        integrand_per_t: (T, M) -- the per-state integrands averaged,
+            detached; the training loop logs their variance as
+            `var_estimator_integrand` (naive vs CV comparison).
     """
     if mode not in ("naive_mc", "control_variate"):
         raise ValueError(
@@ -83,10 +73,8 @@ def compute_c_t_grid(
         device=x_traj.device,
     )
 
-    # Per-time-slot loop rather than one mega-batched call: keeps peak
-    # memory at M (not T*M) and matches the per-slot semantics of paper
-    # line 4. The K-iteration Python overhead is dwarfed by the model
-    # forward in compute_xi_t.
+    # Per-slot loop keeps peak memory at M (not T*M) and matches the
+    # per-slot semantics of Algorithm 1 line 4.
     with torch.no_grad():
         for k in range(n_grid):
             x_k = x_traj[k]

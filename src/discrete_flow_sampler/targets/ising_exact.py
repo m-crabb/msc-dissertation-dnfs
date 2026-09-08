@@ -7,7 +7,7 @@ for finite-size analysis, and DNFS Table 2 prints its per-site values as the
 module computes those values so the thesis carries its own exact reference
 instead of citing the paper's numbers.
 
-The formula, with K the PER-BOND coupling beta*J (this repo's convention has
+The formula, with K the per-bond coupling beta*J (this repo's convention has
 log p = x^T J x double-counting each edge, so K = 2 * sigma):
 
     Z = (1/2) (2 sinh 2K)^{mn/2} (Z1 + Z2 + Z3 + Z4)
@@ -18,7 +18,7 @@ log p = x^T J x double-counting each edge, so K = 2 * sigma):
     Z4 = prod_{r=0}^{n-1} 2 sinh(m gamma_{2r}   / 2)
 
     cosh gamma_l = cosh 2K coth 2K - cos(pi l / n)   (gamma_l >= 0, l >= 1)
-    gamma_0      = 2K + ln tanh K                    (SIGNED)
+    gamma_0      = 2K + ln tanh K                    (signed)
 
 gamma_0 is the only signed angle and it changes sign exactly at criticality
 (tanh K_c = e^{-2K_c}); below K_c the Z4 product is negative, at K_c it is
@@ -27,9 +27,8 @@ four products are accumulated as (log magnitude, sign) pairs and combined by
 a signed logsumexp. Everything is done in logs: at 10x10, log Z ~ 73, and
 the naive products overflow float64 at modest sizes.
 
-The internal energy is -d(log Z)/dK. Rather than differentiating the angles
-analytically (twice the code for no accuracy the tests can see), it is a
-5-point central difference on the closed form: truncation O(h^4) and
+The internal energy -d(log Z)/dK is a 5-point central difference on the
+closed form rather than an analytic derivative: truncation O(h^4) and
 float64 cancellation balance near 1e-9 at h = 1e-4 * max(1, K), validated
 against exact enumeration at 4x4 to 1e-6 in tests/test_ising_exact.py.
 """

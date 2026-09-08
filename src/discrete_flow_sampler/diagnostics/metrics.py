@@ -12,17 +12,9 @@ Sample budget: N = 2,048 with std taken across 10 independent seeds for
 Table 2; N = 5,000 for the Figure 13 energy histogram. We standardise on
 N = 5,000 (≥ 2,048 strictly) so a single eval pass feeds both.
 
-All other distance metrics from earlier drafts (TVD, KL, 1-D Wasserstein
-on log p̃) were off-paper and have been removed -- the paper does not
-report them, and TVD in particular was sample-size-floored at this budget.
-
-Note on the σ factor in the per-spin internal energy. Paper Eq. 53
-defines E(x) := -σ x^T A x; paper Table 2's reported `E/D` is the
-standard physics per-spin internal energy u = ⟨H⟩/N with H = -½ x^T A x
-in J = 1 units, which equals -E_p[log p̃] / (2σD). The two differ by a
-factor of β = 2σ (the matrix form `x^T A x` double-counts edges; β is
-the inverse temperature). See `internal_energy_estimate` docstring for
-the derivation.
+Table 2's `E/D` is the physics per-spin energy u = ⟨H⟩/N with H = -½ x^T A x,
+which differs from the paper's Eq. 53 E(x) := -σ x^T A x by β = 2σ; the
+derivation is in `internal_energy_estimate`.
 """
 
 import itertools
@@ -418,15 +410,11 @@ def split_half_gelman_rubin(chains) -> float:
     two halves and the 2m halves enter the plain multi-chain `gelman_rubin`
     as if they were independent chains.
 
-    Why the split matters: plain R̂ only compares BETWEEN-chain means, so m
-    chains drifting in lockstep (all still relaxing from comparable inits,
-    none stationary) can pass it while every chain is biased the same way.
-    Halving makes each chain's own first-half/second-half disagreement count
-    as a between-"chain" discrepancy — exactly the non-stationarity a
-    reference-chain validity bar must catch. For odd chain lengths the middle
-    sample is dropped so both halves are equal length (rank-normalisation and
-    folding from the full Vehtari recipe are intentionally out of scope: the
-    probe gates on location/scale mixing of near-Gaussian observables).
+    Plain R̂ compares only between-chain means, so m chains drifting in
+    lockstep from comparable inits can pass it while every chain is biased the
+    same way; halving makes each chain's first-half/second-half disagreement
+    count. For odd lengths the middle sample is dropped. Rank-normalisation and
+    folding from the full Vehtari recipe are out of scope.
     """
     chains = np.asarray(chains, dtype=np.float64)
     n_samples = chains.shape[1]
@@ -482,14 +470,12 @@ def half_magnetisation_order_parameter(x: Tensor, D: int) -> Tensor:
     """Mode order parameter phi = (m_left - m_right) / 2 on the DxD torus, (B,).
 
     m_left / m_right are the mean spins of columns [0, D//2) and [D//2, D) of
-    the row-major flattening; the half factor puts phi in [-1, 1]. NOTE the
-    numba twin `mcmc.kawasaki.left_minus_right` omits the half factor, so its
-    phi spans [-2, 2] — figures built from the two are on different scales.
-    At fixed
-    50/50 composition the two phase-separated modes give phi = +1 / -1 while
-    total magnetisation is constant on the slice, so phi is the mode-coverage
-    observable of the mixing-probe metric; E_pi[phi] = 0 by the global
-    spin-flip symmetry of the slice.
+    the row-major flattening; the half factor puts phi in [-1, 1]. The numba
+    twin `mcmc.kawasaki.left_minus_right` omits the half factor, so its phi
+    spans [-2, 2]. At fixed 50/50 composition the two phase-separated modes
+    give phi = +1 / -1 while total magnetisation is constant on the slice, so
+    phi is the mode-coverage observable; E_pi[phi] = 0 by the global spin-flip
+    symmetry of the slice.
     """
     grid = x.float().reshape(*x.shape[:-1], D, D)
     m_left = grid[..., :, : D // 2].mean(dim=(-2, -1))
@@ -519,18 +505,15 @@ def gradient_noise_scale_components(
 
     and the critical-batch predictor is B_simple = tr(Sigma) / |G|^2:
     below B_simple, doubling the batch roughly halves the steps needed;
-    above it, extra rows buy little. In the swap trainer the inputs are
-    free by-products of one already-paid backward: `slice_sqnorm_mean` is
-    the training log's `grad_sqnorm_slice_mean` (E|g_b|^2 over the
+    above it, extra rows buy little. In the swap trainer `slice_sqnorm_mean`
+    is the training log's `grad_sqnorm_slice_mean` (E|g_b|^2 over the
     micro-batch slices, b = loss_microbatch_size) and `full_sqnorm` is the
-    logged pre-clip `grad_norm` squared (the same step's |g_N|^2 at
-    N = batch_size).
+    logged pre-clip `grad_norm` squared (|g_N|^2 at N = batch_size).
 
-    Single-step estimates are noisy and |G|^2 can come out negative early
-    in training, where the true gradient is small against the noise; that
-    is information, not error (B_simple is effectively infinite there).
-    Average the two returned components separately across steps (an EMA,
-    per McCandlish) and divide at the end -- never average the ratio.
+    Single-step estimates are noisy and |G|^2 can come out negative early in
+    training (B_simple is effectively infinite there). Average the two
+    components separately across steps (an EMA, per McCandlish) and divide at
+    the end; never average the ratio.
     """
     if slice_size >= batch_size:
         raise ValueError(
@@ -563,10 +546,9 @@ def _reference_weights_or_uniform(reference: Tensor, reference_weights) -> Tenso
 
     The 10x10 house tables score against drawn reference samples (uniform);
     the 4x4 hard table's reference is the exactly enumerated composition
-    slice, entering as unique states + exact Boltzmann probabilities. The
-    two are equivalent by construction (a weight of k/N equals k duplicates
-    in an unweighted set of N; pinned in test_house_observable_errors), so
-    the extension changes no existing caller's value.
+    slice, entering as unique states + exact Boltzmann probabilities. A weight
+    of k/N equals k duplicates in an unweighted set of N (pinned in
+    test_house_observable_errors).
     """
     if reference_weights is not None:
         return reference_weights
@@ -582,13 +564,12 @@ def magnetisation_profile_error(
 ) -> float:
     """dMag of MDNS Eq. (26): mean absolute error of the row/column magnetisations.
 
-    M_row(k) = sum_{i in row k} E[x_i] (a SUM over the L sites of the row, not a
-    mean, so the number scales with L -- compare within a lattice size only).
+    M_row(k) = sum_{i in row k} E[x_i] (a sum over the L sites of the row, not a
+    mean, so the number scales with L; compare within a lattice size only).
     The error is (1/2L) sum_k |M_row(k) - M_row_pi(k)| + |M_col(k) - M_col_pi(k)|,
-    i.e. a plain average over the 2L row and column profiles. Under exact Z2
+    a plain average over the 2L row and column profiles. Under exact Z2
     balance every profile is ~0, so a sampler that loses one mode reads large
-    here even when its energy marginal is right -- that is why the house table
-    keeps the column at c = 0.5 where translation would make it redundant.
+    here even when its energy marginal is right.
     """
     uniform = _reference_weights_or_uniform(reference, reference_weights)
     sampler_profile = _weighted_site_means(x, weights).view(L, L)
@@ -648,10 +629,10 @@ def energy_wasserstein2(
 
     W2^2 = int_0^1 (F^{-1}(u) - G^{-1}(u))^2 du, the closed form in one
     dimension: sort each sample, build the weighted CDF, and read both quantile
-    functions on a common grid of u. No bins, so no sqrt(bins/N) floor (the
-    failure of the energy TVD this column replaces), and a shifted distribution
-    is charged by the shift rather than by loss of overlap. Pass energies per
-    site so cells compare across lattice sizes (DASBS uses total energy).
+    functions on a common grid of u. No bins, so no sqrt(bins/N) floor, and a
+    shifted distribution is charged by the shift rather than by loss of
+    overlap. Pass energies per site so cells compare across lattice sizes
+    (DASBS uses total energy).
     """
 
     def quantile_function(values: Tensor, w: Tensor) -> Tensor:

@@ -1,10 +1,9 @@
 """Preemption-resume plumbing shared by the flip and swap trainers.
 
-Both trainers face the same failure: a preempted (or budget-capped) container
-restarts the function with identical inputs, and without a resume checkpoint
-that restart is a run from step 0. A Modal GPU recall once cost a 100k-step
-run its whole trajectory this way, and a later preemption lost eight
-matched-base runs at ~94% of a 50k budget to the same gap.
+A preempted (or budget-capped) container restarts the function with
+identical inputs; without a resume checkpoint that restart is a run from
+step 0 (one Modal recall cost a 100k-step run, a later one eight
+matched-base runs at ~94% of a 50k budget).
 
 Each trainer assembles its own checkpoint payload. This module handles
 atomic writes, loading, RNG state and log truncation.

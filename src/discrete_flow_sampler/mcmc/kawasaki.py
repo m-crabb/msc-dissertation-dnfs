@@ -1,16 +1,13 @@
 """Kawasaki (composition-preserving swap) MCMC for the hard-constrained Ising
 canonical ensemble.
 
-Two move sets live here. run_chain / run_chain_order_param exchange the spins
-of one +1 site and one -1 site chosen uniformly at random anywhere on the
-torus (non-local swap — the practitioner-standard canonical-ensemble move, and
-a deliberately strong baseline). run_local_swap_chain_snapshots swaps a
-uniform random nearest-neighbour bond instead (local Kawasaki — the textbook
-conserved-order-parameter dynamics, and the mixing probe's slow competitor).
-Either way composition c(x) = #{+1}/d is invariant by construction: there is
-no penalty term, and the hard constraint c(x) = c_target holds exactly at
-every step. This is the §3.1 counterpart to the soft VCSGC sampler in
-scripts/vcsgc_mcmc_validation.py.
+run_chain / run_chain_order_param swap one +1 site and one -1 site drawn
+uniformly anywhere on the torus (non-local Kawasaki, the practitioner-standard
+canonical move). run_local_swap_chain_snapshots swaps a uniform random
+nearest-neighbour bond (local Kawasaki, the mixing probe's slow competitor).
+Composition c(x) = #{+1}/d is invariant by construction, so the hard
+constraint holds exactly at every step. This is the §3.1 counterpart to the
+soft VCSGC sampler in scripts/vcsgc_mcmc_validation.py.
 
 Energy convention matches IsingTarget.base_log_prob (bias=0, swap-invariant):
 
@@ -19,20 +16,17 @@ Energy convention matches IsingTarget.base_log_prob (bias=0, swap-invariant):
 with A the symmetric DxD-torus adjacency (each edge counted twice). Acceptance
 is min(1, exp(delta log_prob_ising)).
 
-Derivation of the swap Δ. For a swap of opposite sites i, j with old values
-a = x_i and b = x_j = -a, write the change as two simultaneous single-site
-changes δ_i = b - a at i and δ_j = a - b = -δ_i at j. The quadratic form changes
-by the two single-site terms plus a cross term for the shared bond:
+Swap Δ: for opposite sites i, j with a = x_i, b = x_j = -a, the swap is two
+simultaneous single-site changes δ_i = b - a and δ_j = -δ_i, so
 
     Δ(x^T A x) = 2 δ_i N(i) + 2 δ_j N(j) + 2 A_ij δ_i δ_j
                = 2 (b - a) [N(i) - N(j)] - 2 * 1[i~j] * (b - a)^2,
 
-where N(k) = sum_{n in nbr(k)} x_n is the OLD neighbour-sum (computed on the
-current x, including the other swapped site). The correction -2·1[i~j]·(b-a)^2
-removes the double-counted shared bond: its product x_i x_j is invariant under
-the exchange, but each neighbour-sum counts the other site. The bias term
-bias·Σx_i is unchanged by a swap (composition fixed ⇒ Σx_i fixed), so it never
-enters Δ. See tests/test_kawasaki.py::test_kawasaki_dE_matches_recompute_adjacent.
+with N(k) = sum_{n in nbr(k)} x_n the old neighbour-sum (on the current x,
+including the other swapped site). The -2·1[i~j]·(b-a)^2 term removes the
+double-counted shared bond, whose product x_i x_j is swap-invariant. The bias
+term bias·Σx_i is swap-invariant too, so it never enters Δ.
+See tests/test_kawasaki.py::test_kawasaki_dE_matches_recompute_adjacent.
 """
 
 import numpy as np
@@ -151,13 +145,12 @@ def left_minus_right(x, D):
     """Mode-sensitive order parameter: mean(x | left-half columns) minus
     mean(x | right-half columns) on a DxD lattice.
 
-    Labels WHICH way the system has phase-separated at fixed composition:
+    Labels which way the system has phase-separated at fixed composition:
     +domain on the left → ~ +2, on the right → ~ -2, symmetric/mixed → ~ 0.
-    NOTE `diagnostics.metrics.half_magnetisation_order_parameter` is the same
-    observable scaled by 1/2 (phi in [-1, 1]) — the two figure families are
-    on different axes scales.
-    Unlike energy, this distinguishes spatial modes, so its between-chain R̂
-    detects ergodicity breaking (the §3.1 mode-coverage failure).
+    `diagnostics.metrics.half_magnetisation_order_parameter` is the same
+    observable scaled by 1/2 (phi in [-1, 1]). Unlike energy this
+    distinguishes spatial modes, so its between-chain R̂ detects ergodicity
+    breaking (the §3.1 mode-coverage failure).
     """
     half = D // 2
     left_sum = 0.0
@@ -177,7 +170,7 @@ def left_minus_right(x, D):
 def init_phase_separated(D, side):
     """c=0.5 phase-separated config: all +1 in the left (side=0) or right
     (side=1) half-columns, -1 elsewhere. For even D this is exactly d/2 +1
-    sites. Used to seed chains in DIFFERENT modes for the ergodicity test."""
+    sites. Used to seed chains in different modes for the ergodicity test."""
     if D % 2 != 0:
         raise ValueError("init_phase_separated assumes even D for c=0.5")
     d = D * D
@@ -206,33 +199,25 @@ def neighbour_site(i, direction, D):
 
 @njit(cache=True)
 def run_local_swap_chain_snapshots(x, D, sigma, n_steps, seed, thin):
-    """LOCAL nearest-neighbour-swap Kawasaki chain recording full int8 spin
+    """Local nearest-neighbour-swap Kawasaki chain recording full int8 spin
     snapshots every `thin` proposals. Returns (snapshots, x_final, n_accept).
 
-    Move set — deliberately DIFFERENT from run_chain / run_chain_order_param,
-    which swap arbitrary unlike pairs (non-local Kawasaki, the mchammer
-    CanonicalEnsemble move): here a site i is drawn uniformly, then one of its
-    4 torus neighbours j uniformly, i.e. a uniform random directed NN bond.
-    Local composition-conserving dynamics transports magnetisation
-    diffusively, so domain coarsening and mode traversal near criticality are
-    drastically slower than under non-local swaps — that gap is the quantity
-    the mixing probe measures, so silently reusing the non-local move here
-    would erase the phenomenon under study.
+    Move set differs from run_chain: a site i is drawn uniformly, then one of
+    its 4 torus neighbours j, i.e. a uniform random directed NN bond. Local
+    composition-conserving dynamics transports magnetisation diffusively, so
+    coarsening and mode traversal near criticality are far slower than under
+    non-local swaps; that gap is what the mixing probe measures, so the
+    non-local move must not be reused here.
 
-    Trial-step currency: EVERY proposal costs one step, including like-spin
-    bonds where the swap is the identity (the sampler cannot know a bond is
-    like-spin without touching it — this is the standard local-Kawasaki
-    accounting). Identity proposals are counted as rejections; the rejected
-    alternative (proposing only unlike bonds) needs a live unlike-bond list,
-    which is a different, rejection-free algorithm with a different currency.
-    Unlike-pair swaps use the same closed-form Metropolis delta as the
-    non-local runner (`kawasaki_delta_log_prob`; its shared-bond correction is
-    always active here since i ~ j by construction), so acceptance is
+    Every proposal costs one step, including like-spin bonds where the swap
+    is the identity (counted as rejections; standard local-Kawasaki
+    accounting). Unlike-pair swaps use `kawasaki_delta_log_prob` (its
+    shared-bond correction is always active since i ~ j), so acceptance is
     min(1, exp(sigma * Delta(x^T A x))) and composition is invariant exactly.
 
-    snapshots[k] is the state after k*thin proposals — snapshots[0] is the
-    initial configuration, matching run_chain_order_param's record-at-top
-    convention; the final state is returned separately, not recorded.
+    snapshots[k] is the state after k*thin proposals (snapshots[0] is the
+    initial configuration, matching run_chain_order_param); the final state
+    is returned separately, not recorded.
     """
     np.random.seed(seed)
     d = D * D
@@ -262,18 +247,15 @@ def run_local_swap_chain_snapshots(x, D, sigma, n_steps, seed, thin):
 
 @njit(cache=True)
 def run_nonlocal_swap_chain_snapshots(x, D, sigma, n_steps, seed, thin):
-    """NON-local Kawasaki chain recording full int8 spin snapshots every
+    """Non-local Kawasaki chain recording full int8 spin snapshots every
     `thin` proposals. Returns (snapshots, x_final, n_accept).
 
-    Same move set and accept rule as run_chain (uniform unlike-pair swap
-    anywhere on the torus, Metropolis on sigma * x^T A x, plus/minus index
-    arrays for O(1) proposals) — only the record differs: full configurations
-    rather than the scalar energy, because reference-sample generation needs
-    the stored draws themselves, not just a trace. The snapshot convention
-    matches run_local_swap_chain_snapshots: snapshots[k] is the state after
-    k*thin proposals, so snapshots[0] is the initial configuration and the
-    final state is returned separately, not recorded. Passing thin = n_steps
-    therefore turns this into a burn-in runner that stores a single snapshot.
+    Same move set and accept rule as run_chain; only the record differs (full
+    configurations, which reference-sample generation needs). Snapshot
+    convention matches run_local_swap_chain_snapshots: snapshots[k] is the
+    state after k*thin proposals, snapshots[0] the initial configuration, the
+    final state returned separately. thin = n_steps makes this a burn-in
+    runner storing a single snapshot.
     """
     np.random.seed(seed)
     d = D * D

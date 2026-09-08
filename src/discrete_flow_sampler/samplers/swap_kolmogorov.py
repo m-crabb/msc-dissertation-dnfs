@@ -2,7 +2,7 @@
 
 The single-site residual (Eq. 10) sums over d single-flip neighbours; the swap
 residual sums over the i<j opposite-spin pairs, with the reverse rate read off
-the SAME tensor via the readout's exact antisymmetry
+the same tensor via the readout's exact antisymmetry
     R(y_ij -> x) = [G_swap(i,j | y_ij)]_+ = [-G_swap(i,j | x)]_+ .
 Same-spin pairs vanish for free (G_swap = 0, y_ij = x), so summing all i<j is
 correct without masking.
@@ -36,7 +36,7 @@ def loss_swap(
 ):
     """Mean-squared swap residual over the batch. Scalar.
 
-    `return_residual=True` additionally hands back the SANITISED per-state
+    `return_residual=True` additionally hands back the sanitised per-state
     residual the loss squares, so a caller can measure its mean without a
     second forward pass. Default stays scalar-only: `profile_swap.py` and the
     archived tests call this positionally and must not see a tuple.
@@ -59,47 +59,28 @@ def loss_swap_backward_microbatched(
 ) -> tuple[Tensor, Tensor]:
     """`loss_swap(...).backward()` with the retained graph bounded to
     `microbatch_size` rows. Returns (detached full-batch loss, detached
-    per-state residual); gradients are left ACCUMULATED in `head`'s .grad
+    per-state residual); gradients are left accumulated in `head`'s .grad
     buffers, so the caller must zero_grad() first.
 
-    WHY THIS IS NOT A RECIPE CHANGE. The loss is a per-row mean — the
-    residual (Eq. 10, swap form) is computed row-wise, `dt_log_Zt` is a
-    per-row gather from a grid held fixed across the cycle, and the
-    nan_to_num sanitiser is row-wise — so the batch mean decomposes exactly
-    as mean_N = sum_k (n_k/N) * mean_slice_k, and autograd's linearity
-    carries that identity to the gradient: backwarding each slice's
-    weighted loss sums to the single-backward gradient, bit-for-bit up to
-    float summation order. Clipping and the optimiser step then see the
-    same total gradient (tests/test_loss_microbatch_parity.py). This would
-    NOT hold for a batch-coupled objective (self-normalised weights, batch
-    statistics); anything of that kind added to loss_swap breaks the
-    parity test before it breaks a run.
+    The loss is a per-row mean (row-wise residual, per-row `dt_log_Zt`
+    gather, row-wise nan_to_num), so mean_N = sum_k (n_k/N) * mean_slice_k
+    and autograd's linearity carries this to the gradient: backwarding each
+    slice's weighted loss sums to the single-backward gradient up to float
+    summation order (tests/test_loss_microbatch_parity.py). A batch-coupled
+    objective (self-normalised weights, batch statistics) would break this.
+    Peak memory drops by ~N/microbatch_size at unchanged FLOPs, with no
+    recompute forward. `microbatch_size=None` (or >= the batch) is the
+    archived single-backward path, op-for-op.
 
-    WHAT IT BUYS. Peak training memory is the retained autograd graph,
-    linear in batch rows (for mask_one, each row additionally rides its d
-    stacked anchor passes). Slicing frees each slice's graph at its own
-    backward, so the peak drops by ~N/microbatch_size at unchanged total
-    FLOPs — unlike activation checkpointing, which pays a recompute
-    forward. This is what makes the two measured A100-80GB OOM arms of the
-    16x16 screen (masked-attention h128; mask_one) launchable.
-
-    `microbatch_size=None` (or >= the batch) is the archived single-
-    backward path, op-for-op — the default every queued or archived cell
-    runs, pinned bit-exact by the parity test.
-
-    NOISE-SCALE OBSERVER. `slice_grad_sqnorms_out`, when a list, collects
-    one `(rows, sqnorm)` pair per slice, where `sqnorm` is the squared
-    norm of that slice's UNWEIGHTED gradient — the E|g_b|^2 ingredient of
-    the McCandlish two-batch-size gradient-noise-scale estimator
-    (diagnostics.metrics.gradient_noise_scale_components; the |g_N|
-    partner is the pre-clip grad_norm the trainer already logs). The
-    accumulated-grad increment after slice k is (n_k/N) * g_slice_k by
-    the weighting above, so the unweighted slice gradient is recovered by
-    rescaling with N/n_k. Collection only READS `.grad` between slice
-    backwards (one clone per parameter per slice); the accumulated update
-    is bit-identical with it on or off, and the single-backward paths
-    have no slices so they never touch the list — callers log NaN from an
-    empty list, never a fabricated value.
+    `slice_grad_sqnorms_out`, when a list, collects one `(rows, sqnorm)` pair
+    per slice, `sqnorm` the squared norm of that slice's unweighted gradient
+    (the E|g_b|^2 ingredient of the McCandlish gradient-noise-scale
+    estimator, diagnostics.metrics.gradient_noise_scale_components; |g_N| is
+    the trainer's pre-clip grad_norm). The accumulated-grad increment after
+    slice k is (n_k/N) * g_slice_k, so the unweighted gradient is recovered
+    by rescaling with N/n_k. Collection only reads `.grad` between slice
+    backwards; the single-backward path never touches the list, so callers
+    log NaN from an empty list.
     """
     batch_size = x.shape[0]
     if microbatch_size is None or microbatch_size >= batch_size:
@@ -146,32 +127,23 @@ def loss_swap_backward_microbatched(
 def c_t_offset_rms(residual_sum: Tensor, residual_count: Tensor) -> float:
     """RMS over time slots of Δ_t ≜ E_q[ξ_t] − c_t. Scalar float.
 
-    WHAT THIS MEASURES. With c_t detached (the paper's stop-gradient
-    treatment), one slot's objective decomposes exactly as
+    With c_t detached (the paper's stop-gradient treatment), one slot's
+    objective decomposes as
 
         E_q[(ξ_t − c_t)^2] = Var_q[ξ_t] + Δ_t^2 ,   Δ_t = E_q[ξ_t] − c_t ,
 
-    so c_t's VALUE never reaches the gradient — only Δ_t does, and it arrives
-    as a rank-one term 2·Δ_t·E_q[∇_θ ξ_t] that shifts ξ uniformly instead of
-    narrowing it. At Δ_t = 0 the detached gradient equals the exact variance
-    gradient identically. The trainer estimates c_t from the current cycle's
-    fresh rollout but averages the loss over a replay buffer holding several
-    past models' states, so Δ_t ≠ 0 by construction.
-
-    Since −E_q[residual] is exactly Δ_t, the caller accumulates residuals into
-    per-slot (sum, count) tensors across one outer cycle — the window over
-    which c_t is held fixed — and this reduces them.
-
-    WHY PER-SLOT RMS, not the signed mean of a mixed batch. The objective pays
-    Δ_t^2 in every slot independently, so offsets of opposite sign across
-    slots ADD to the damage while cancelling in a signed average: a batch mean
-    would report 0.0 on a maximally mismatched run. The sign is discarded for
-    the same reason a variance discards it.
-
-    Slots no inner batch drew are excluded rather than counted as zero, which
-    would dilute the RMS toward a falsely healthy reading. Returns NaN when no
-    slot has been visited, matching the trainer's convention for a diagnostic
-    whose window has not opened yet.
+    so only Δ_t reaches the gradient, as a rank-one term 2·Δ_t·E_q[∇_θ ξ_t]
+    that shifts ξ uniformly; at Δ_t = 0 the detached gradient equals the
+    exact variance gradient. The trainer estimates c_t from the current
+    cycle's rollout but averages the loss over a replay buffer of past
+    models' states, so Δ_t ≠ 0 by construction. Since −E_q[residual] = Δ_t,
+    the caller accumulates residuals into per-slot (sum, count) tensors over
+    one outer cycle (the window over which c_t is fixed) and this reduces
+    them. Per-slot RMS rather than a signed batch mean because Δ_t^2 is paid
+    in every slot independently and opposite-sign offsets would cancel in a
+    mean. Unvisited slots are excluded rather than counted as zero; returns
+    NaN when no slot has been visited (the trainer's convention for an
+    unopened window).
     """
     seen = residual_count > 0
     if not bool(seen.any()):

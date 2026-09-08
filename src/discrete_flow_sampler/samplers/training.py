@@ -17,13 +17,12 @@ Inner step (× inner_steps_per_outer, one gradient update each):
        c_t is constant.
     3. Backward + Adam step.
 
-The outer-step amortises the trajectory simulation over `inner_steps_per_outer`
-gradient updates (paper default 100), reducing the per-gradient-step cost
-from O(T) to O(2T/inner_steps + 1) forward-equivalents -- the 25x speedup
-identified in the training-loop investigation.
+The outer step amortises the trajectory simulation over `inner_steps_per_outer`
+gradient updates (paper default 100): per-gradient-step cost drops from O(T)
+to O(2T/inner_steps + 1) forward-equivalents.
 
-Eval: existing full t=0->1 IS-trajectory + ESS, gated on the inner-step
-counter so `eval_every` keeps its meaning.
+Eval: full t=0->1 IS trajectory + ESS, gated on the inner-step counter so
+`eval_every` keeps its meaning.
 """
 
 import csv
@@ -66,16 +65,11 @@ def _retain_chunks(
 ) -> torch.Tensor:
     """Append one outer batch to a replay chunk list; return the retained view.
 
-    The single expression of the replay retention rule. Any per-state
-    quantity the trainer wants to keep alongside the states — time index,
-    and for an amortised run the composition and its ∂_t log Z_t baseline —
-    is retained by calling this with its own chunk list, so every parallel
-    quantity is appended and evicted on exactly the same schedule and cannot
-    drift out of alignment with the states it describes.
-
-    Algorithm 1 line 5 prints an unbounded ``B <- B U {...}`` with no
-    eviction; retention here is a bounded FIFO whose invariant is a constant
-    cycle count (``max_cycles``) rather than a constant trajectory count.
+    Every per-state quantity (time index, and for amortised runs the
+    composition and its ∂_t log Z_t baseline) is retained through this with
+    its own chunk list, so all are appended and evicted on the same schedule
+    and stay aligned with the states. Algorithm 1 line 5 prints an unbounded
+    ``B <- B U {...}``; retention here is a FIFO of ``max_cycles`` cycles.
     """
     chunks.append(new_chunk.detach())
     if len(chunks) > max_cycles:
@@ -143,13 +137,12 @@ def _set_optimizer_lr(optimiser: torch.optim.Optimizer, lr: float) -> None:
 
 
 def _clear_replay(*chunk_lists: list[torch.Tensor]) -> None:
-    """Drop every retained chunk. Called when the *target* moves.
+    """Drop every retained chunk. Called when the target moves.
 
-    σ and λ stage boundaries invalidate retained states and their baselines,
-    so the buffer is emptied. A change to the *distribution compositions are
-    drawn from* is not such a boundary: every retained state still carries
-    the composition and baseline it was generated under, so it stays valid
-    training data and must be kept.
+    σ and λ stage boundaries invalidate retained states and their baselines.
+    Widening the composition draw window is not such a boundary: each
+    retained state carries the composition and baseline it was generated
+    under, so it stays valid training data.
     """
     for chunks in chunk_lists:
         chunks.clear()
@@ -166,9 +159,8 @@ _GRADIENT_GROUPS = (
 def _gradient_group_norms(model) -> dict[str, float]:
     """Pre-clip L2 norms partitioned by the soft-collapse mechanism groups.
 
-    Every parameter with a gradient lands in exactly one group. The foreach
-    norm keeps the opt-in diagnostic to one multi-tensor reduction per group
-    rather than launching a reduction for every transformer tensor.
+    Every parameter with a gradient lands in exactly one group; the foreach
+    norm is one multi-tensor reduction per group.
     """
     grouped: dict[str, list[torch.Tensor]] = {name: [] for name in _GRADIENT_GROUPS}
     reference = None
@@ -205,12 +197,9 @@ def _gradient_group_norms(model) -> dict[str, float]:
         else:
             group_norm = reference.new_zeros(())
         norm_tensors.append(group_norm)
-    # The exact-field wrapper historically registers its scalar gains after
-    # the inner model has moved to CUDA, so those gains remain CPU scalars
-    # while omega/embedder/trunk gradients live on the accelerator. PyTorch's
-    # optimizer and clip_grad_norm_ support that mixed-device parameter list;
-    # collect each already-reduced scalar independently rather than stacking
-    # group norms across devices.
+    # The exact-field wrapper registers its scalar gains after the inner model
+    # has moved to CUDA, so gains may be CPU scalars while the rest are on the
+    # accelerator; collect per group rather than stacking across devices.
     values = [float(group_norm.cpu()) for group_norm in norm_tensors]
     return {
         f"grad_norm_{name}": float(value)
@@ -222,22 +211,15 @@ def _rate_diagnostics(model, x, t, step_dt: float, *, target=None) -> dict[str, 
     """Cheap eval-time diagnostics for CTMC rate scale.
 
     ESS alone cannot distinguish a no-op sampler (rates near zero) from a
-    stiff sampler (rates so large Euler probabilities clip). Logging per-site
-    outflow rates at eval cadence makes those failure modes visible without
-    changing the training objective.
+    stiff one (rates so large Euler probabilities clip); per-site outflow
+    rates make both visible.
 
-    When `target` is supplied AND the model is locally equivariant, also
-    logs the saturation fraction of the log-target ratio against whatever
-    ceiling is actually in force at `kolmogorov.residual_lenet` and
-    `ctmc._compute_xi_t_lenet` — `_neighbours.log_ratio_clamp(target)`,
-    the paper's 5.0 unless the target overrides it. Reading the live value
-    rather than a literal is what keeps the column comparable across cells
-    that vary the ceiling: it always means "saturating the clamp this run
-    is using". `log_ratio_clamp_frac` is the share of (B, d, S) entries
-    that exceed the ceiling; `log_ratio_p99` is the unclipped 99th
-    percentile so the magnitude of the saturated tail is visible
-    (saturation alone is ambiguous between "just above" and "an order of
-    magnitude above").
+    When `target` is supplied and the model is locally equivariant, also logs
+    saturation of the log-target ratio against the live ceiling
+    `_neighbours.log_ratio_clamp(target)` (the paper's 5.0 unless the target
+    overrides it), so the column stays comparable across cells that vary it.
+    `log_ratio_clamp_frac` is the share of (B, d, S) entries above the
+    ceiling; `log_ratio_p99` is the unclipped 99th percentile.
     """
     if getattr(model, "is_locally_equivariant", False):
         rates = F.relu(model(x, t)).sum(dim=-1)  # (B, d), per-site outflow
@@ -297,9 +279,8 @@ def train(
                                      (paper line 3); falls back to
                                      batch_size if None.
             .inner_steps_per_outer -- paper default 100.
-            .replay_buffer_cycles -- number of recent outer batches retained
-                                     in the replay buffer; default 1 preserves
-                                     the pre-recovery behaviour. The public
+            .replay_buffer_cycles -- recent outer batches retained in the
+                                     replay buffer; default 1. The public
                                      DNFS reference retains four N=256 outer
                                      batches via DataBuffer(max_size=1024/N).
             .lr, .seed.
@@ -313,49 +294,40 @@ def train(
             integrand `compute_c_t_grid` averages per time slot.
         sigma_curriculum: optional piecewise-constant schedule of objects
             with `.start_step`, `.sigma`, and optional `.lr`. Stage
-            boundaries clear the replay buffer so retained states are always
-            drawn under the current target temperature.
+            boundaries clear the replay buffer.
         lambda_curriculum: optional piecewise-constant schedule of objects
             with `.start_step`, `.composition_penalty_strength`, and
             optional `.lr`. Anneals the soft-composition penalty (typically
-            upward, so the physics is learned before the constraint
-            tightens). Same boundary rules and replay-buffer clearing as
+            upward). Same boundary rules and replay clearing as
             `sigma_curriculum`.
-        composition_centre: enables **amortised** training when set (with
+        composition_centre: enables amortised training when set (with
             `composition_values`, either suffices). One target composition is
-            drawn per outer cycle and the model is conditioned on it, so a
-            single network serves many compositions. `None` leaves every code
-            path here byte-identical to a specialist run.
+            drawn per outer cycle and the model is conditioned on it. `None`
+            leaves every code path byte-identical to a specialist run.
         composition_half_width: initial half-width of the draw window
             [centre − w, centre + w]. Ignored when `composition_values` is set.
         composition_values: finite set to draw compositions from, instead of
             the continuous window.
         composition_curriculum: optional piecewise-constant schedule of
             objects with `.start_step`, `.half_width` and optional `.lr`,
-            widening the draw window during training. Same boundary rules as
-            the other two curricula but — deliberately — it does NOT clear the
-            replay buffer; see `_clear_replay`.
+            widening the draw window. Same boundary rules as the other two
+            but it does not clear the replay buffer; see `_clear_replay`.
         on_checkpoint: optional zero-arg callable invoked after each resume
-            checkpoint lands on disk (Modal passes `volume.commit` so the
-            checkpoint survives a preemption that skips the death-flush).
+            checkpoint lands on disk (Modal passes `volume.commit`).
 
-    Preemption resume: save `checkpoints/resume.pt` every
-    `train_cfg.resume_every_outer` outer cycles (default 10); restore it on
+    Preemption resume: `checkpoints/resume.pt` is saved every
+    `train_cfg.resume_every_outer` outer cycles (default 10) and restored on
     entry. Only outer boundaries have a complete replay buffer and c_t grid.
-    The payload preserves weights, AdamW moments, step, Torch RNG states and
-    all four replay-chunk lists: past trajectories cannot be reconstructed,
-    and amortised states must retain their own compositions and c_t baselines.
-    Fresh moments or RNG states would change the continuation. Curriculum
-    indices derive from step and absolute `start_step`s; optimiser state
-    carries the exact LR, including warmup scaling.
+    The payload holds weights, AdamW moments, step, Torch RNG states and all
+    four replay-chunk lists; fresh moments or RNG states would change the
+    continuation. Curriculum indices derive from step and absolute
+    `start_step`s; optimiser state carries the exact LR incl. warmup scaling.
 
-    Amortisation and ∂_t log Z_t: the annealing path makes Z_t a function of
-    the target composition, so the `c_t` baseline is only valid for the
-    composition it was averaged over. Drawing one composition per outer cycle
-    keeps that average over the full outer batch — no loss of precision
-    relative to a specialist run — and each state then carries its own
-    baseline through the replay buffer, so inner batches may freely mix
-    compositions drawn across cycles.
+    Amortisation and ∂_t log Z_t: Z_t depends on the target composition, so
+    the `c_t` baseline is valid only for the composition it was averaged
+    over. One composition per outer cycle keeps that average over the full
+    outer batch, and each state carries its own baseline through the replay
+    buffer, so inner batches may mix compositions across cycles.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir = output_dir / "checkpoints"
@@ -384,11 +356,9 @@ def train(
         optimiser.load_state_dict(resume_state["optimiser"])
     start_step = int(resume_state["step"]) if resume_state is not None else 0
 
-    # Warmup-corrected EMA covers the top-level module, including wrapper
-    # gains (tests/test_flip_trainer_ema.py). Updated after each optimiser
-    # step and never read by training: ema_decay leaves updates bit-identical.
-    # Construct after weight restoration, then restore both shadow and counter
-    # to avoid init contamination or a restarted warmup (see ema.py).
+    # Warmup-corrected EMA over the top-level module, incl. wrapper gains.
+    # Updated after each optimiser step, never read by training. Constructed
+    # after weight restoration, then shadow and counter restored (ema.py).
     ema = (
         ExponentialMovingAverage(model.parameters(), ema_decay, warmup=True)
         if ema_decay > 0
@@ -413,12 +383,9 @@ def train(
         raise ValueError(
             f"replay_buffer_cycles must be >= 1, got {replay_buffer_cycles}"
         )
-    # ESS-triggered SMC resampling inside the buffer-rebuild rollout, the
-    # flip-route twin of the swap trainer's wiring (LEAPS Alg. 1 lines
-    # 11-14, whose trajectories Alg. 2 line 5 trains on). None = OFF =
-    # every archived run, bit-identical. The full argument for why the c_t
-    # batch mean survives it — and why the resample supplies the weighting
-    # Eq. 8 asks for — is on the config field.
+    # ESS-triggered SMC resampling inside the buffer-rebuild rollout (LEAPS
+    # Alg. 1 lines 11-14; Alg. 2 line 5 trains on those trajectories).
+    # None = off = every archived run. Why the c_t mean survives it: config.
     rollout_resample_ess_fraction = getattr(
         train_cfg, "rollout_resample_ess_fraction", None
     )
@@ -435,12 +402,9 @@ def train(
         if rollout_resample_ess_fraction is not None
         else None
     )
-    # Rollout-integrand reuse: build the CV c_t grid from the rollout's
-    # own model forwards instead of re-running them —
-    # bit-identical to compute_c_t_grid (same tensors, same arithmetic,
-    # no RNG; tests/test_cv_integrand_reuse.py); at T grid slots this
-    # removes T-1 of the T model forwards the grid pass would pay.
-    # Default False = archived behaviour, byte-identical.
+    # Rollout-integrand reuse: build the CV c_t grid from the rollout's own
+    # model forwards, bit-identical to compute_c_t_grid
+    # (tests/test_cv_integrand_reuse.py). Default False = archived behaviour.
     c_t_from_rollout = bool(getattr(train_cfg, "c_t_from_rollout", False))
     if c_t_from_rollout and rollout_resampling is not None:
         raise ValueError(
@@ -634,10 +598,8 @@ def train(
                 if lr_now is not None:
                     current_intended_lr = float(lr_now)
 
-            # The replay tags come from the checkpoint, not from the target:
-            # they record the σ and λ the RETAINED states were drawn under,
-            # which is what the next boundary compares against to decide
-            # whether those states are still valid training data.
+            # Replay tags come from the checkpoint, not the target: they record
+            # the σ and λ the retained states were drawn under.
             x_replay_chunks = [
                 chunk.to(device) for chunk in resume_state["x_replay_chunks"]
             ]
@@ -652,14 +614,11 @@ def train(
             ]
             replay_sigma = float(resume_state["replay_sigma"])
             replay_lambda = float(resume_state["replay_lambda"])
-            # RNG restore comes LAST so nothing above can perturb the stream
-            # the continuation is about to consume.
+            # RNG restore comes last so nothing above perturbs the stream.
             restore_rng_state(resume_state)
 
-        # Diagnose stiffness/init basin at t=0 before the first update,
-        # preserving RNG state. This is the only init-time clip-fraction
-        # record; in-loop diagnostics see updated weights. Skip on resume
-        # to preserve the original init record.
+        # Init-time rate diagnostics at t=0, RNG state preserved; skipped on
+        # resume so the original init record stands.
         if resume_state is None:
             rng_state_cpu = torch.get_rng_state()
             rng_state_cuda = (
@@ -686,9 +645,8 @@ def train(
                 wandb.log({f"init/{k}": v for k, v in init_diag.items()}, step=0)
 
         for outer in range(start_outer, n_outer):
-            # Update σ before rebuilding the buffer so inner-step samples are
-            # consistent with the σ they will be trained against. Curriculum
-            # runs are piecewise-constant plateaus.
+            # Update σ before rebuilding the buffer so retained samples match
+            # the σ they are trained against.
             if curriculum:
                 while (
                     curriculum_idx + 1 < len(curriculum)
@@ -718,9 +676,7 @@ def train(
                             step=step,
                         )
 
-            # λ annealing mirrors the σ curriculum: tighten the penalty on
-            # outer-cycle boundaries and clear the replay buffer so retained
-            # states are always drawn under the current soft target.
+            # λ annealing mirrors the σ curriculum, including the replay clear.
             if lambda_stages:
                 while (
                     lambda_idx + 1 < len(lambda_stages)
@@ -750,10 +706,8 @@ def train(
                             step=step,
                         )
 
-            # Widen the composition draw window. Unlike the σ and λ stages
-            # above this does NOT clear the replay buffer: the target has not
-            # moved, so retained states remain valid training data, and
-            # clearing would discard exactly what the widening accumulates.
+            # Widen the composition draw window. No replay clear: the target
+            # has not moved (see `_clear_replay`).
             if composition_stages:
                 while (
                     composition_idx + 1 < len(composition_stages)
@@ -788,14 +742,11 @@ def train(
                 cycle_composition = None
             model_cycle, bind_cycle = _bound(cycle_composition)
 
-            # OUTER STEP -- rebuild buffer + c_t. Trajectory and c_t are
-            # both detached from autograd by the no_grad block; this is
-            # the paper's R_t^{θ_sg} (stop-gradient) treatment.
+            # Outer step: rebuild buffer + c_t under no_grad, the paper's
+            # R_t^{θ_sg} (stop-gradient) treatment.
             t_grid = torch.linspace(0.0, 1.0, n_grid, device=device)
-            # Rollout-integrand reuse: in CV mode the rollout hands back the
-            # per-slot ξ_t from its own forwards and the grid recompute
-            # below is skipped. Naive mode is target-only, so the grid
-            # path stays.
+            # In CV mode the rollout hands back the per-slot ξ_t from its own
+            # forwards; naive mode is target-only, so the grid path stays.
             reuse_rollout_integrand = (
                 c_t_from_rollout and estimator_mode == "control_variate"
             )
@@ -818,16 +769,11 @@ def train(
                         x_traj = rollout_result
                         rollout_resample_events = float("nan")
                     else:
-                        # No log-weights come back by design: after the
-                        # resets they are a per-segment residue, and nothing
-                        # in training may read them (the `ess` column is its
-                        # own plain-IS draw below). Every slice is already
-                        # the post-resample, equally-weighted ensemble,
-                        # which is what makes the c_t mean below a mean over
-                        # p_t rather than over the raw rollout law. Inside
-                        # bind_cycle, so the trigger's xi_t reads the
-                        # annealed density of the composition this cycle
-                        # actually drew.
+                        # No log-weights come back: after the resets they are
+                        # a per-segment residue (the `ess` column is its own
+                        # plain-IS draw). Every slice is the post-resample,
+                        # equally-weighted ensemble, so the c_t mean below is
+                        # a mean over p_t rather than the raw rollout law.
                         x_traj, rollout_smc_stats = rollout_result
                         rollout_resample_events = float(rollout_smc_stats.n_events)
                     if reuse_rollout_integrand:
@@ -843,13 +789,9 @@ def train(
                             mode=estimator_mode,
                         )  # (T,), (T, M)
 
-                    # Per-outer variance bookkeeping. Average within-slot
-                    # variance: keeps the column comparable across t (each
-                    # slot has its own ∂_t log p̃ baseline) and meaningful as
-                    # "estimator noise per time slot".
-                    # Same knob in naive mode: the integrand IS
-                    # ∂_t log p̃_t on these rows, so the knob skips the
-                    # (T·M) recompute.
+                    # Per-outer variance bookkeeping: mean within-slot
+                    # variance, comparable across t. In naive mode the
+                    # integrand is ∂_t log p̃_t, so the knob skips the recompute.
                     if c_t_from_rollout and estimator_mode == "naive_mc":
                         naive_per_t = integrand_per_t
                     else:
@@ -865,10 +807,9 @@ def train(
             t_idx_buffer = torch.arange(n_grid, device=device).repeat_interleave(
                 outer_batch
             )
-            # Flatten and retain the most recent outer trajectory batches for
-            # uniform inner-step sampling. `c_t_grid` intentionally remains
-            # the latest outer-step estimate, matching the public DNFS code's
-            # OnlineData(update_dt_log_Zt=False) behaviour.
+            # Retain the most recent outer batches for uniform inner sampling.
+            # `c_t_grid` stays the latest outer-step estimate, matching the
+            # public DNFS code's OnlineData(update_dt_log_Zt=False).
             x_buffer, t_idx_buffer = _append_replay_buffer(
                 x_replay_chunks,
                 t_idx_replay_chunks,
@@ -894,11 +835,9 @@ def train(
             for _inner in range(inner_steps_per_outer):
                 step_start = time.time()
 
-                # LR warmup: linearly ramp from 0 to current_intended_lr over
-                # the first `warmup_steps` inner updates. Applied multiplicatively
-                # so it composes with curriculum LR transitions. Targets the
-                # early-training regime where random init can emit high-magnitude
-                # rates that destabilise the first few optimiser steps.
+                # LR warmup: linear ramp to current_intended_lr over the first
+                # `warmup_steps` updates, multiplicative so it composes with
+                # curriculum LR transitions.
                 if warmup_steps > 0:
                     if step < warmup_steps:
                         warmup_scale = (step + 1) / warmup_steps
@@ -906,7 +845,7 @@ def train(
                     elif step == warmup_steps:
                         _set_optimizer_lr(optimiser, current_intended_lr)
 
-                # INNER STEP -- N uniform draws from buffer (paper line 7).
+                # Inner step: N uniform draws from the buffer (paper line 7).
                 sample_idx = torch.randint(
                     buffer_size,
                     (inner_batch,),
@@ -958,10 +897,9 @@ def train(
                     "log_ratio_p99": float("nan"),
                 }
                 if step % eval_cfg.eval_every == 0:
-                    # The in-loop ESS probe is held at one composition (the
-                    # window centre) for the whole run, so the curve tracks
-                    # training health rather than which compositions happened
-                    # to be drawn. Per-composition eval is a separate sweep.
+                    # The in-loop ESS probe is held at the window centre so the
+                    # curve tracks training health, not which compositions
+                    # were drawn. Per-composition eval is a separate sweep.
                     model_eval, bind_eval = _bound(centre_composition)
                     with torch.no_grad():
                         eval_grid = torch.linspace(
@@ -1063,12 +1001,9 @@ def train(
                         log_dict.update(
                             {f"train/{key}": value for key, value in rate_diag.items()}
                         )
-                        # Exact-field gains are the live mechanism under test
-                        # in the soft amortised runs. Keep them in W&B at
-                        # the existing eval cadence (not every step, avoiding
-                        # extra device synchronisation in the hot path). The
-                        # getattr route is inert for every unwrapped model and
-                        # archived global-gain channel.
+                        # Exact-field gains, logged at eval cadence only (no
+                        # device sync in the hot path); getattr is inert for
+                        # unwrapped models.
                         for gain_name in (
                             "gain_constant",
                             "gain_slope",
@@ -1082,11 +1017,9 @@ def train(
                                 )
                     wandb.log(log_dict, step=step)
 
-                # Step-tagged checkpoints (opt-in): `final.pt` alone cannot
-                # serve runs whose late loss cycles through excursions, since
-                # it samples an arbitrary phase of the cycle. Zero-padded so
-                # lexicographic order is step order; step 0 (random init)
-                # is excluded.
+                # Step-tagged checkpoints (opt-in), for runs whose late loss
+                # cycles through excursions; `final.pt` samples an arbitrary
+                # phase. Zero-padded so lexicographic order is step order.
                 checkpoint_every = getattr(train_cfg, "checkpoint_every", None)
                 if (
                     checkpoint_every is not None
@@ -1097,10 +1030,8 @@ def train(
 
                 step += 1
 
-            # Resume checkpoints require an outer boundary: buffer and c_t
-            # are complete, and the next cycle rebuilds both. Save the last
-            # cycle too, so interruption before final.pt needs no repeated
-            # updates.
+            # Resume checkpoints land on outer boundaries, where buffer and
+            # c_t are complete. The last cycle is saved too.
             if (outer + 1) % resume_every_outer == 0 or outer == n_outer - 1:
                 save_resume_state(
                     ckpt_dir,

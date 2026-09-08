@@ -1,20 +1,17 @@
 """Outer/inner training loop for the swap-move CTMC (hard-constraint route).
 
-Focused mirror of `training.train` (paper Algorithm 1, App. C.1) with the
-single-site sampler/loss swapped for the swap-move counterparts throughout:
-`sample_swap_ctmc` replaces `sample_ctmc`, `compute_c_t_grid_swap` replaces
-`compute_c_t_grid`, and `loss_swap` (Eq. 10, swap form) replaces the
-single-site Kolmogorov loss. There is no soft composition penalty on this
-route -- the swap move set enforces n_plus == N_A exactly, so `lambda_curriculum`
-and its stage handling are dropped entirely.
+Mirror of `training.train` (paper Algorithm 1, App. C.1) with the single-site
+sampler/loss replaced by the swap-move counterparts: `sample_swap_ctmc`,
+`compute_c_t_grid_swap` and `loss_swap` (Eq. 10, swap form). The swap move
+set enforces n_plus == N_A exactly, so there is no composition penalty and
+no `lambda_curriculum`.
 
 Pair diagnostics replace the flip trainer's per-site columns with
-`rate_pair_mean`, `rate_pair_p99` and `lambda_dt_clipped_frac`: each event
-jointly chooses an i<j pair (see `_swap_rate_diagnostics`).
-`log_ratio_clamp_frac` still measures saturation at the neighbour-ratio cap,
-here `SWAP_LOG_RATIO_CLAMP`; `log_ratio_p99` is omitted.
-`rollout_resample_events` counts outer-cycle ESS-triggered SMC events and
-reads NaN when disabled (`TrainCfg.rollout_resample_ess_fraction`).
+`rate_pair_mean`, `rate_pair_p99` and `lambda_dt_clipped_frac` (see
+`_swap_rate_diagnostics`). `log_ratio_clamp_frac` measures saturation at
+`SWAP_LOG_RATIO_CLAMP`; `log_ratio_p99` is omitted. `rollout_resample_events`
+counts outer-cycle ESS-triggered SMC events, NaN when disabled
+(`TrainCfg.rollout_resample_ess_fraction`).
 """
 
 import csv
@@ -62,31 +59,21 @@ from discrete_flow_sampler.samplers.training import (
 )
 from discrete_flow_sampler.seeding import seed_everything
 
-# torch.quantile refuses inputs above 2**24 elements. The pair-rate slab is
-# (outer_batch, d(d-1)/2), which at d=256 and the production outer batch of
-# 512 is 16,711,680 -- 99.6% of the cap, a margin of 65,536 elements. The
-# 16x16 rung has therefore been running just under a cliff, and d=400 is the
-# first size over it (40,857,600, 2.4x), where the step-0 init diagnostic
-# raised "quantile() input tensor is too large" before the first optimiser
-# step of the first 20x20 run.
+# torch.quantile refuses inputs above 2**24 elements. The pair-rate slab
+# (outer_batch, d(d-1)/2) is 16,711,680 at d=256 with outer batch 512 (99.6%
+# of the cap); at d=400 it is 40,857,600, and the step-0 init diagnostic
+# raised "quantile() input tensor is too large" on the first 20x20 run.
 _QUANTILE_MAX_ELEMENTS = 2**24
 
 
 def _p99(values: torch.Tensor) -> float:
     """p99 of a flat tensor, on torch.quantile's own 'linear' convention.
 
-    WHY NOT JUST ALWAYS SORT. Every archived d256 number was logged through
-    `torch.quantile`, so the small-input path must stay bit-identical rather
-    than merely equivalent: below the cap this calls torch.quantile
-    unchanged and no archived cell moves. Above the cap it sorts and
-    interpolates by hand on the convention torch documents -- position
-    q*(n-1), linear between the two neighbouring order statistics -- so the
-    column means the same thing on both sides of the boundary and a d400
-    row stays comparable with a d256 one.
-
-    The sort is O(n log n) on ~4e7 elements once per logged step, against a
-    step that is already a compiled 512-row forward and backward over the
-    same slab; it is not on the critical path.
+    Below the cap this calls torch.quantile unchanged, so every archived d256
+    number (all logged through it) stays bit-identical. Above the cap it
+    sorts and interpolates by hand on the convention torch documents --
+    position q*(n-1), linear between the neighbouring order statistics -- so
+    a d400 row stays comparable with a d256 one.
     """
     n = values.numel()
     if n <= _QUANTILE_MAX_ELEMENTS:
@@ -102,29 +89,23 @@ def _p99(values: torch.Tensor) -> float:
 def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, float]:
     """Eval-time diagnostics for the swap-CTMC rate scale.
 
-    Mirrors `training._rate_diagnostics` for the pair-rate matrix. Gathers
-    forward rates at the SAME i<j pairs `_euler_step_swap` uses, so the
-    logged clip fraction matches the sampler's actual clip behaviour:
+    Mirrors `training._rate_diagnostics` for the pair-rate matrix, gathering
+    forward rates at the same i<j pairs `_euler_step_swap` uses so the logged
+    clip fraction matches the sampler:
 
         Lambda * dt = sum_{i<j} [G_swap(i,j|x)]_+ * dt
 
-    `lambda_dt_clipped_frac` is the fraction of states with Lambda*dt > 1 --
-    when this clips, `_euler_step_swap`'s stay slot clamps to 0 and
-    `torch.multinomial` renormalises the pair probabilities, forcing exactly
-    one swap that step (see that function's docstring). NOTE: that clipping
-    exists in the ONE-EVENT step only. Under `use_matching_step=True` this
-    column is a diagnostic of one-event clip-safety, not of the running
-    step; the matching step's own fidelity is the `proposal_drop_frac` and
-    `events_per_site_per_step` columns (accumulated at the buffer rebuild).
-    `lambda_dt_p99` records the tail of the per-state rate load directly,
-    since the one-event Euler budget rule reads the tail and the state
-    distribution of Lambda is too fat-tailed to reconstruct it from the
-    mean and an exceedance fraction.
-
-    `log_ratio_clamp_frac` is the fraction of pair log-ratios
-    log p_tilde_t(swap) - log p_tilde_t(x) reaching `SWAP_LOG_RATIO_CLAMP`
-    (Eq. 8 / Eq. 10, swap form) -- expected ~0 across the gate sigma-ladder;
-    a nonzero value flags residual/xi_t bias.
+    `lambda_dt_clipped_frac` is the fraction of states with Lambda*dt > 1,
+    where the one-event step's stay slot clamps to 0 and exactly one swap is
+    forced. Under `use_matching_step=True` it is a one-event clip-safety
+    diagnostic only; the matching step's fidelity is `proposal_drop_frac` and
+    `events_per_site_per_step`. `lambda_dt_p99` records the tail of the
+    per-state rate load directly: the one-event Euler budget rule reads the
+    tail, and Lambda is too fat-tailed to reconstruct it from mean and
+    exceedance fraction. `log_ratio_clamp_frac` is the fraction of pair
+    log-ratios log p_tilde_t(swap) - log p_tilde_t(x) reaching
+    `SWAP_LOG_RATIO_CLAMP` (Eq. 8 / Eq. 10, swap form); expected ~0, nonzero
+    flags residual/xi_t bias.
     """
     pairs = upper_tri_pairs(x.shape[1], x.device)
     forward_rates = F.relu(gather_pair_scores(head(x, t), pairs))  # (B, n_pairs)
@@ -138,10 +119,7 @@ def _swap_rate_diagnostics(head, x, t, step_dt: float, *, target) -> dict[str, f
         # precision under the eval autocast block.
         "rate_pair_p99": _p99(forward_rates.reshape(-1).float()),
         "lambda_dt_clipped_frac": (lambda_dt > 1.0).float().mean().item(),
-        # p99 of the per-state total-rate load: the one-event budget rule
-        # (n_euler from the tail of Lambda) needs the tail directly — the
-        # d256 review showed it is NOT recoverable from mean + exceedance
-        # because the state distribution of Lambda is fat-tailed.
+        # tail of the per-state rate load (see docstring)
         "lambda_dt_p99": torch.quantile(lambda_dt.float(), 0.99).item(),
         "log_ratio_clamp_frac": (
             (log_ratio > SWAP_LOG_RATIO_CLAMP).float().mean().item()
@@ -163,14 +141,12 @@ def _save_resume_state(
 ) -> None:
     """Assemble the swap trainer's outer-boundary state for preemption resume.
 
-    The write itself is `resume.save_resume_state` (atomic, shared with the
-    flip trainer); what is swap-specific is the payload. Replay chunks move
-    to CPU so the checkpoint is device-portable; RNG states make the
-    continuation bit-identical to an uninterrupted run (exactly on CPU fp32,
-    modulo kernel nondeterminism on CUDA). Curriculum stage / warmup / lr
-    are NOT stored — all are derivable from `step` because the sigma ladder
-    uses absolute start_steps, and the optimiser lr travels inside the
-    optimiser state dict.
+    The write is `resume.save_resume_state` (atomic, shared with the flip
+    trainer); the payload is swap-specific. Replay chunks move to CPU so the
+    checkpoint is device-portable; RNG states make the continuation
+    bit-identical (exactly on CPU fp32, modulo kernel nondeterminism on
+    CUDA). Curriculum stage, warmup and lr are not stored: all derive from
+    `step` (absolute start_steps), and lr travels in the optimiser state dict.
     """
     state = {
         "step": step,
@@ -180,20 +156,18 @@ def _save_resume_state(
         "x_replay_chunks": [chunk.cpu() for chunk in x_replay_chunks],
         "t_idx_replay_chunks": [chunk.cpu() for chunk in t_idx_replay_chunks],
         "replay_sigma": replay_sigma,
-        # Shadow AND update counter: a resume that re-seeded the shadow at
-        # the resume-point weights would re-create the init-contamination
-        # failure; a reset counter would restart the warmup schedule.
+        # Shadow and update counter: a re-seeded shadow re-creates the
+        # init-contamination failure; a reset counter restarts the warmup.
         "ema": ema.state_dict() if ema is not None else None,
-        # c_t grid EMA: the smoothed grid is a function of every past
-        # cycle's raw estimate, so it cannot be reconstructed at resume —
-        # it must travel for the continuation to be bit-exact.
+        # The smoothed grid depends on every past cycle's raw estimate, so
+        # it cannot be rebuilt at resume; it must travel.
         "c_t_ema": c_t_ema.state_dict() if c_t_ema is not None else None,
     }
     save_resume_state(ckpt_dir, state)
 
 
 def _cv_inversion_sustained(ratio_history: list[float], window: int) -> bool:
-    """True iff the trailing `window` outer-cycle var-ratios are ALL > 1.0.
+    """True iff the trailing `window` outer-cycle var-ratios are all > 1.0.
 
     Strictly-greater and windowed by design: the healthy warm-start pattern
     opens ~30x against and crosses below 1 within ~1000 steps, so a single
@@ -221,37 +195,28 @@ def train_swap(
 ):
     """Run paper Algorithm 1 for `train_cfg.n_steps` total inner steps.
 
-    ema_decay > 0 arms the dual-eval instrument: a warmup-corrected
-    parameter shadow (see discrete_flow_sampler.ema) updated after every
-    optimiser step and saved as checkpoints/final_ema.pt alongside the raw
-    final.pt. Training dynamics are UNTOUCHED — the shadow never feeds the
-    loss — and the raw eval stays the primary number (comparability with
-    every archived cell); the EMA eval is the recorded-alongside reading.
+    ema_decay > 0 keeps a warmup-corrected parameter shadow (see
+    discrete_flow_sampler.ema), updated after every optimiser step and saved
+    as checkpoints/final_ema.pt alongside final.pt. The shadow never feeds
+    the loss; the raw eval stays the primary number, the EMA eval is
+    recorded alongside.
 
     Args:
-        head: a swap-readout head (e.g. `DoublyHollowSwapHead` /
-            `LeTFMaskOneSwapHead`) wrapping a `LeTFRateMatrix` backbone --
-            already instantiated, on `target.device`. `head.parameters()`
-            covers the backbone too since it is a registered submodule.
-        target: a `FixedCompositionIsingTarget` -- swaps preserve its
-            n_plus == N_A manifold by construction, so `sample_base` already
-            returns on-manifold states with no extra handling needed here.
-        train_cfg, ctmc_cfg, eval_cfg, output_dir, use_wandb, estimator_mode:
-            same contract as `training.train`.
-        sigma_curriculum: optional piecewise-constant schedule, same
-            contract as `training.train`. There is no `lambda_curriculum`
-            counterpart: the hard-constraint route has no soft composition
-            penalty to anneal.
+        head: a swap-readout head (e.g. `DoublyHollowSwapHead`) wrapping a
+            `LeTFRateMatrix` backbone, instantiated on `target.device`.
+        target: a `FixedCompositionIsingTarget`; swaps preserve its
+            n_plus == N_A manifold, so `sample_base` is already on-manifold.
+        train_cfg, ctmc_cfg, eval_cfg, output_dir, use_wandb, estimator_mode,
+            sigma_curriculum: same contract as `training.train`. There is no
+            `lambda_curriculum`: no soft penalty to anneal on this route.
         on_checkpoint: optional zero-arg callable invoked after each resume
-            checkpoint lands on disk (Modal passes `volume.commit` so the
-            checkpoint survives a preemption that skips the death-flush).
+            checkpoint lands (Modal passes `volume.commit`).
 
     Preemption resume: every `train_cfg.resume_every_outer` outer cycles
-    (default 10) the full boundary state is checkpointed to
-    `checkpoints/resume.pt`; if that file exists on entry, training restores
-    it and continues instead of starting over (see `_save_resume_state` for
-    what "full state" means and why the continuation is bit-exact). A resume
-    at step >= n_steps is a completed run being retried: return immediately.
+    (default 10) the boundary state is checkpointed to `checkpoints/resume.pt`;
+    if it exists on entry, training restores and continues (see
+    `_save_resume_state`). A resume at step >= n_steps is a completed run
+    being retried: return immediately.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir = output_dir / "checkpoints"
@@ -285,9 +250,8 @@ def train_swap(
             if saved_ema is not None:
                 ema.load_state_dict(saved_ema)
             else:
-                # A missing historical average cannot be reconstructed.
-                # Start a new warmup-corrected shadow at the restored model,
-                # never at the caller's unrelated initialisation.
+                # The historical average cannot be reconstructed: start a
+                # new warmup-corrected shadow at the restored model.
                 ema = ExponentialMovingAverage(
                     head.parameters(), ema_decay, warmup=True
                 )
@@ -299,10 +263,9 @@ def train_swap(
                 )
 
     if start_step >= train_cfg.n_steps:
-        # Completed run being re-invoked (e.g. a Modal retry after success):
-        # make sure the terminal artefacts exist, touch nothing else. The
-        # EMA artefact can be missing alone (preempted between the two
-        # final saves), so it is backfilled from the checkpointed shadow.
+        # Completed run re-invoked (e.g. a Modal retry): ensure the terminal
+        # artefacts exist, touch nothing else. final_ema.pt can be missing
+        # alone (preempted between the two saves); backfill from the shadow.
         if not (ckpt_dir / "final.pt").exists():
             torch.save(head.state_dict(), ckpt_dir / "final.pt")
         if ema is not None and not (ckpt_dir / "final_ema.pt").exists():
@@ -323,10 +286,9 @@ def train_swap(
     n_composition_slices = n_slices(
         target
     )  # 1 for a specialist, K on a composition mixture
-    # Trajectory step for every simulation in this loop (buffer rebuild and
-    # in-training eval draw): the matching step is required from d=256 up,
-    # where one-event clip-safety would need ~3x the Euler grid. getattr
-    # because test call sites pass bare config bags without the field.
+    # Trajectory step for every simulation in this loop: the matching step
+    # is required from d=256 up, where one-event clip-safety would need ~3x
+    # the Euler grid. getattr: test call sites pass bare config bags.
     multi_event = getattr(ctmc_cfg, "use_matching_step", False)
     inner_steps_per_outer = train_cfg.inner_steps_per_outer
     replay_buffer_cycles = getattr(train_cfg, "replay_buffer_cycles", 1)
@@ -342,11 +304,9 @@ def train_swap(
         if CTGridEMA.is_enabled(c_t_ema_halflife)
         else None
     )
-    # Decouple the c_t rollout batch from the buffer
-    # batch. c_t = mean_m xi_t over the cycle's rollout states (Eq. 8
-    # holds for the model's own law), so its standard error falls with
-    # the rollout row count; only this no-grad phase needs scaling.
-    # Default None = outer_batch = the archived setting, byte-identical.
+    # c_t rollout batch, decoupled from the buffer batch: c_t = mean_m xi_t
+    # over the rollout states (Eq. 8), so its standard error falls with the
+    # row count. None = outer_batch = the archived setting, byte-identical.
     c_t_batch = getattr(train_cfg, "c_t_batch", None)
     if c_t_batch is not None:
         if isinstance(c_t_batch, bool) or int(c_t_batch) != c_t_batch:
@@ -365,9 +325,7 @@ def train_swap(
     c_t_grid_chunk_rows = getattr(train_cfg, "c_t_grid_chunk_rows", None)
     # ESS-triggered SMC resampling inside the buffer-rebuild rollout (LEAPS
     # Alg. 1 lines 11-14, whose trajectories Alg. 2 line 5 trains on). None
-    # = OFF = every archived run, bit-identical. The full argument for why
-    # the c_t batch mean survives it — and why it is the resample that
-    # supplies the weighting Eq. 8 asks for — is on the config field.
+    # = off = every archived run, bit-identical; argument on the config field.
     rollout_resample_ess_fraction = getattr(
         train_cfg, "rollout_resample_ess_fraction", None
     )
@@ -384,12 +342,10 @@ def train_swap(
         if rollout_resample_ess_fraction is not None
         else None
     )
-    # Rollout-integrand reuse: build the CV c_t grid from the rollout's
-    # own head forwards instead of re-running them —
-    # bit-identical to the sequential grid (same tensors, same arithmetic,
-    # no RNG; tests/test_cv_integrand_reuse.py), removing 127 of 128
-    # c_t-grid head forwards per outer at d256 (~7-8 h eager per 16x16 CV
-    # run). Default False = archived behaviour, byte-identical.
+    # Build the CV c_t grid from the rollout's own head forwards instead of
+    # re-running them: bit-identical to the sequential grid (same tensors,
+    # no RNG; tests/test_cv_integrand_reuse.py), removing 127 of 128 c_t-grid
+    # head forwards per outer at d256. False = archived, byte-identical.
     c_t_from_rollout = bool(getattr(train_cfg, "c_t_from_rollout", False))
     if c_t_from_rollout and rollout_resampling is not None:
         raise ValueError(
@@ -466,29 +422,21 @@ def train_swap(
         replay_sigma = float(target.sigma)
         current_intended_lr = float(train_cfg.lr)
         warmup_steps = int(getattr(train_cfg, "warmup_steps", 0))
-        # rewarmup_on_stage: re-run the warmup ramp from each sigma
-        # transition (anchor moves); off => anchor stays 0 and the ramp is
-        # the historical step-0-only behaviour, bit-identical.
+        # rewarmup_on_stage re-runs the warmup ramp from each sigma
+        # transition; off => anchor stays 0, the archived step-0-only ramp.
         rewarmup_on_stage = bool(getattr(train_cfg, "rewarmup_on_stage", False))
         warmup_anchor = 0
-        # flush_replay_on_stage: empty the buffer at each sigma transition.
-        # True (default) = every archived run, bit-identical. False retains
-        # the window across the boundary; the loss recomputes both target
-        # terms at the live sigma, so retained states are evaluation points
-        # under the NEW target, not stale labels (the TrainCfg field comment
-        # carries the argument). The c_t EMA reset below stays unconditional
-        # either way -- c_t is a function of sigma, so smoothing across a
-        # boundary would mix estimates of two different quantities.
+        # flush_replay_on_stage empties the buffer at each sigma transition
+        # (True = every archived run). False keeps the window: the loss
+        # recomputes both target terms at the live sigma, so retained states
+        # are evaluation points under the new target, not stale labels. The
+        # c_t EMA reset below is unconditional either way.
         flush_replay_on_stage = bool(getattr(train_cfg, "flush_replay_on_stage", True))
-        # Per-stage best-checkpoint instrument: within each curriculum stage,
-        # save the head whenever the TRAILING MEDIAN (window 3) of the
-        # periodic train-eval ESS makes a new stage best. The median window
-        # exists because the archived 16x16 record shows single-step train-ESS
-        # peaks are noise excursions over a stationary series — a best-by-peak
-        # rule would checkpoint noise. Pure IO: training dynamics, the CSV
-        # schema and final.pt are untouched, and the flag is off in every
-        # archived config. Raw weights only: the EMA shadow lags mid-stage,
-        # so an "EMA best" is not well defined at the save instant.
+        # Per-stage best checkpoint: save the head whenever the trailing
+        # median (window 3) of the train-eval ESS makes a new stage best. A
+        # median, because single-step train-ESS peaks on the archived 16x16
+        # record are noise excursions. Raw weights only: the EMA shadow lags
+        # mid-stage. Pure IO; the flag is off in every archived config.
         stage_best_enabled = bool(getattr(train_cfg, "stage_best_checkpoints", False))
         stage_best_json_path = ckpt_dir / "stage_best.json"
         # Reload on resume so best-so-far survives preemption; the trailing
@@ -532,22 +480,20 @@ def train_swap(
                 if saved_c_t_ema is not None:
                     c_t_ema.load_state_dict(saved_c_t_ema)
                 else:
-                    # Checkpoint predating the c_t EMA, on an EMA cell: the next
-                    # cycle passes through raw (the re-seed path), a
-                    # one-cycle lag vs the archived trajectory — say so.
+                    # Checkpoint predating the c_t EMA: the next cycle passes
+                    # through raw, a one-cycle lag vs the archived trajectory.
                     print(
                         "[train_swap] WARNING: resume.pt has no c_t_ema "
                         "state; grid EMA re-seeded at the next cycle",
                         flush=True,
                     )
-            # RNG restore comes LAST in the restore sequence so nothing
-            # above can perturb the stream the continuation will consume.
+            # RNG restore comes last so nothing above can perturb the
+            # stream the continuation will consume.
             restore_rng_state(resume_state)
 
-        # Pre-training stiff-sampler / init-basin diagnostic. Computed at t=0
-        # before the first optimiser step; RNG state is saved and restored so
-        # the diagnostic does not perturb training-trajectory randomness.
-        # Skipped on resume: it belongs to step 0 and already exists on disk.
+        # Init-basin diagnostic at t=0 before the first optimiser step; RNG
+        # state is saved and restored so it does not perturb training.
+        # Skipped on resume: it belongs to step 0 and is already on disk.
         if resume_state is None:
             rng_state_cpu = torch.get_rng_state()
             rng_state_cuda = (
@@ -617,11 +563,9 @@ def train_swap(
             n_rollout = outer_batch if c_t_batch is None else c_t_batch
             x_initial = target.sample_base(n_rollout, device=device)
             outer_matching_stats: dict | None = {} if multi_event else None
-            # Rollout-integrand reuse: in CV mode the rollout hands back the
-            # per-slot ξ_t it computed from its own head forwards, and the
-            # grid recompute below is skipped entirely. Naive mode is
-            # target-only (no head in the integrand), so the grid path
-            # stays.
+            # In CV mode the rollout hands back the per-slot ξ_t from its own
+            # head forwards and the grid recompute is skipped. Naive mode has
+            # no head in the integrand, so the grid path stays.
             reuse_rollout_integrand = (
                 c_t_from_rollout and estimator_mode == "control_variate"
             )
@@ -644,20 +588,16 @@ def train_swap(
                     x_traj_full = rollout_result
                     rollout_resample_events = float("nan")
                 else:
-                    # No log-weights come back by design: after the resets
-                    # they are a per-segment residue, and nothing in
-                    # training may read them (the `ess` column is its own
-                    # plain-IS draw below). Every slice is already the
-                    # post-resample, equally-weighted ensemble, which is
-                    # what makes the c_t mean below a mean over p_t rather
-                    # than over the raw rollout law.
+                    # No log-weights come back: after the resets they are a
+                    # per-segment residue (the `ess` column is its own plain-IS
+                    # draw). Every slice is the post-resample equally-weighted
+                    # ensemble, so the c_t mean below is a mean over p_t.
                     x_traj_full, rollout_smc_stats = rollout_result
                     rollout_resample_events = float(rollout_smc_stats.n_events)
                 if reuse_rollout_integrand:
-                    # c_t = mean_m ξ_t (Eq. 8) — the same reduction
-                    # compute_c_t_grid_swap applies, on the same values:
-                    # a plain mean for a specialist, a WITHIN-slice mean
-                    # (T, K) on a composition mixture (see mean_per_slice).
+                    # c_t = mean_m ξ_t (Eq. 8), the reduction
+                    # compute_c_t_grid_swap applies: a plain mean for a
+                    # specialist, a within-slice (T, K) mean on a mixture.
                     c_t_grid = reduce_c_t_grid(integrand_per_t, x_traj_full[0], target)
                 else:
                     c_t_grid, integrand_per_t = compute_c_t_grid_swap(
@@ -668,10 +608,9 @@ def train_swap(
                         mode=estimator_mode,
                         chunk_rows=c_t_grid_chunk_rows,
                     )  # (T,), (T, n_rollout)
-                # Smooth the grid across cycles (first cycle after
-                # construction/reset passes through raw). The rms delta
-                # logs how much correction the EMA is applying — 0.0 on
-                # passthrough cycles, the mechanism's own read-out.
+                # Smooth the grid across cycles (first cycle after reset
+                # passes through raw). The rms delta logs how much correction
+                # the EMA applies: 0.0 on passthrough cycles.
                 c_t_ema_rms_delta = float("nan")
                 if c_t_ema is not None:
                     raw_c_t_grid = c_t_grid
@@ -680,14 +619,11 @@ def train_swap(
                         (raw_c_t_grid - c_t_grid).pow(2).mean().sqrt().item()
                     )
 
-                # Per-outer variance bookkeeping. Average within-slot
-                # variance: keeps the column comparable across t (each
-                # slot has its own ∂_t log p̃ baseline) and meaningful as
-                # "estimator noise per time slot". Over the full rollout
-                # set so the column reflects the c_t estimator's own rows.
-                # Same knob in naive mode: the integrand IS
-                # ∂_t log p̃_t on these rows, so the knob skips the (T·M)
-                # recompute (and makes cv_var_ratio exactly 1.0).
+                # Mean within-slot variance over the full rollout set: each
+                # slot has its own ∂_t log p̃ baseline, so this is estimator
+                # noise per time slot on the c_t estimator's own rows. In
+                # naive mode the integrand is ∂_t log p̃_t on these rows, so
+                # the reuse knob skips the (T·M) recompute (cv_var_ratio = 1).
                 if c_t_from_rollout and estimator_mode == "naive_mc":
                     naive_per_t = integrand_per_t
                 else:
@@ -700,14 +636,11 @@ def train_swap(
                 var_dt_log_p_tilde = naive_per_t.var(dim=-1).mean().item()
                 var_estimator_integrand = integrand_per_t.var(dim=-1).mean().item()
 
-            # CV-inversion observer: the
-            # controlled/naive integrand variance ratio, formed from the two
-            # variances above — same rollout rows, no extra estimator pass.
-            # In naive mode the integrand IS the naive one, so the column
-            # reads exactly 1.0 (a wiring self-check). Sustained ratio > 1
-            # is a validated 5/5 in-run classifier of the d256 cold-CV
-            # inversion (cold: never < 1.5 across 5k steps; healthy warm:
-            # crosses below 1 within ~1000 steps — hence the window).
+            # CV-inversion observer: controlled/naive integrand variance
+            # ratio on the same rollout rows (exactly 1.0 in naive mode, a
+            # wiring self-check). Sustained ratio > 1 is a 5/5 in-run
+            # classifier of the d256 cold-CV inversion (cold: never < 1.5
+            # across 5k steps; healthy warm: below 1 within ~1000 steps).
             cv_var_ratio = (
                 var_estimator_integrand / var_dt_log_p_tilde
                 if var_dt_log_p_tilde > 0
@@ -722,10 +655,9 @@ def train_swap(
                     cv_var_ratio_history, halt_cv_inversion_window
                 )
             ):
-                # Tripwire for CV CONTINUATION cells (default None = off, so
-                # every archived cell is untouched): stop spending walltime
-                # on a run the classifier has already called — gracefully.
-                # Marker for the judge; loop exits; final.pt still saves.
+                # Tripwire for CV continuation cells (None = off, every
+                # archived cell untouched): stop a run the classifier has
+                # called. Marker for the judge; loop exits; final.pt saves.
                 (output_dir / "cv_inversion_halt.json").write_text(
                     json.dumps(
                         {
@@ -740,40 +672,27 @@ def train_swap(
                 )
                 break
 
-            # The buffer takes the FIRST outer_batch rows of the
-            # enlarged rollout. Base positions are iid draws, so a prefix
-            # is a uniform subset (no selection bias); c_t above used all
-            # n_rollout rows. .contiguous() releases the enlarged storage:
-            # replay chunks are views (training._retain_chunks detaches but
-            # shares storage), and at d256 a c_t_batch=512 chunk is ~400 MB.
-            # A no-op view when n_rollout == outer_batch (byte-identical).
+            # The buffer takes the first outer_batch rows of the rollout;
+            # c_t above used all n_rollout. Base draws are iid, so a prefix
+            # is a uniform subset. .contiguous() releases the enlarged
+            # storage (replay chunks are views; a c_t_batch=512 chunk is
+            # ~400 MB at d256); a no-op view when n_rollout == outer_batch.
             #
-            # Under rollout resampling the prefix is NOT a uniform subset:
-            # `systematic_resample_indices` returns ancestors in CDF
-            # order (test-pinned in tests/test_resampling.py), so once a
-            # resample has fired the rows are SORTED BY ANCESTOR: a prefix
-            # is then a contiguous low-CDF block that over-represents the
-            # low-index end and clusters duplicate lineages adjacently —
-            # a selection bias on exactly the axis c_t is estimated over,
-            # plus a diversity loss the buffer inherits for the whole
-            # cycle. Shuffling first restores the uniform-subset property.
-            # Only reachable with c_t_batch > outer_batch AND rollout
-            # resampling on; the permutation is skipped otherwise so the
-            # flag-off path stays byte-identical (the parity guarantee is
-            # test-pinned) and no RNG is consumed.
+            # After a resample the rows are sorted by ancestor
+            # (`systematic_resample_indices` returns CDF order, pinned in
+            # tests/test_resampling.py), so a prefix over-represents the
+            # low-CDF end and clusters duplicate lineages: shuffle first.
+            # Skipped otherwise so the flag-off path consumes no RNG.
             if rollout_resampling is not None and n_rollout > outer_batch:
                 shuffled_rows = torch.randperm(n_rollout, device=device)
                 x_traj_full = x_traj_full[:, shuffled_rows]
             x_traj = x_traj_full[:, :outer_batch].contiguous()
             del x_traj_full
 
-            # Matching-native fidelity for THIS outer cycle's buffer states
-            # (constant across the cycle's inner rows). This is the running
-            # step's own certificate: `lambda_dt_clipped_frac` gates the
-            # dormant one-event path, and the Luby matching silently drops
-            # proposals still contested after its round budget — without
-            # these two columns a multi-event run has no logged evidence it
-            # stayed in the regime the matching step was validated for
+            # Matching-step fidelity for this cycle's buffer states (constant
+            # across its inner rows). The Luby matching silently drops
+            # proposals still contested after its round budget; these two
+            # columns show the run stayed in the validated regime
             # (drop_frac ~< 1%, events/site/step <= 0.1).
             if multi_event and outer_matching_stats.get("state_steps"):
                 proposed_total = float(outer_matching_stats["proposed"])
@@ -806,11 +725,9 @@ def train_swap(
 
             # Δ accumulators reset per outer cycle: c_t is fixed across the
             # cycle's inner steps, so that is the window over which a per-slot
-            # residual mean estimates a single Δ_t. Carrying them across
-            # cycles would average over c_t values that no longer apply.
-            # Indexed by (slot, slice) so that on a mixture the per-slice
-            # offsets, which are equal and opposite around the pooled
-            # mean, cannot cancel in the signed slot mean.
+            # residual mean estimates one Δ_t. Indexed by (slot, slice) so
+            # that on a mixture the per-slice offsets, equal and opposite
+            # around the pooled mean, cannot cancel in the signed slot mean.
             delta_residual_sum = torch.zeros(
                 n_grid * n_composition_slices, device=device
             )
@@ -821,11 +738,9 @@ def train_swap(
             for _inner in range(inner_steps_per_outer):
                 step_start = time.time()
 
-                # LR warmup: linearly ramp from 0 to current_intended_lr over
-                # the first `warmup_steps` inner updates. Applied multiplicatively
-                # so it composes with curriculum LR transitions. Targets the
-                # early-training regime where random init can emit high-magnitude
-                # rates that destabilise the first few optimiser steps.
+                # LR warmup: linear ramp from 0 to current_intended_lr over
+                # `warmup_steps` inner updates, multiplicative so it composes
+                # with curriculum LR transitions.
                 if warmup_steps > 0:
                     warmup_rel_step = step - warmup_anchor
                     if warmup_rel_step < warmup_steps:
@@ -843,7 +758,7 @@ def train_swap(
                 x_sample = x_buffer[sample_idx]  # (N, D)
                 t_idx_sample = t_idx_buffer[sample_idx]  # (N,)
                 t_sample = t_grid[t_idx_sample]  # (N,)
-                # Each row's baseline is ITS slice's ∂_t log Z_t: the grid
+                # Each row's baseline is its slice's ∂_t log Z_t: the grid
                 # is (T,) for a specialist and (T, K) on a mixture, and
                 # the slice is read off the state (swaps conserve it).
                 slice_sample = slice_index_of(target, x_sample)  # (N,)
@@ -851,23 +766,17 @@ def train_swap(
                     t_idx_sample, slice_sample
                 ]  # (N,)
 
-                # loss_microbatch_size slices this one backward over batch
-                # rows — the gradient-identical memory schedule that fits
-                # the two measured d=256 OOM arms (see the helper's
-                # docstring); None = the archived single backward. When
-                # slicing is on, the per-slice gradient squared-norms ride
-                # for free: with the pre-clip grad_norm below they form
-                # the two-batch-size pair the gradient-noise-scale
-                # estimator inverts (gradient_noise_scale_components).
+                # loss_microbatch_size slices the backward over batch rows
+                # (gradient-identical; None = the archived single backward).
+                # The per-slice gradient squared-norms pair with the pre-clip
+                # grad_norm for gradient_noise_scale_components.
                 optimiser.zero_grad()
                 slice_grad_sqnorms: list | None = (
                     [] if loss_microbatch_size is not None else None
                 )
-                # bf16 on the loss update only (see TrainCfg's comment):
-                # the head keeps G fp32 through its own autocast-disabled
-                # readout block, and the target's swap log-ratio is bit-
-                # identical here because its field sum is small-integer
-                # valued. The eval below is untouched and stays fp32.
+                # bf16 on the loss update only: the head keeps G fp32 in its
+                # autocast-disabled readout, and the swap log-ratio is
+                # bit-identical (small-integer field sum). Eval stays fp32.
                 with torch.autocast(
                     device_type=device.type,
                     dtype=torch.bfloat16,
@@ -882,7 +791,7 @@ def train_swap(
                         microbatch_size=loss_microbatch_size,
                         slice_grad_sqnorms_out=slice_grad_sqnorms,
                     )
-                # Mean over FULL slices only: a ragged tail is a different
+                # Mean over full slices only: a ragged tail is a different
                 # batch size b and would bias E|g_b|^2.
                 full_slice_sqnorms = [
                     sqnorm
@@ -895,12 +804,9 @@ def train_swap(
                     else float("nan")
                 )
                 # Δ diagnostic: −E[residual] per slot is the offset between
-                # c_t and the mean of ξ_t over the distribution the LOSS
-                # averages over (the buffer), which is the only channel by
-                # which c_t's value reaches the gradient. Accumulated over
-                # the cycle because c_t is fixed there and a single inner
-                # batch gives ~1 sample per slot. Sign flipped on readout,
-                # not here, so the running sums stay plain residual sums.
+                # c_t and the buffer mean of ξ_t, the only channel by which
+                # c_t reaches the gradient. Accumulated over the cycle (one
+                # inner batch gives ~1 sample per slot); sign flipped on readout.
                 delta_slot = t_idx_sample * n_composition_slices + slice_sample
                 delta_residual_sum.index_add_(0, delta_slot, residual_sample)
                 delta_residual_count.index_add_(
@@ -937,14 +843,10 @@ def train_swap(
                             n_grid,
                             device=device,
                         )
-                        # Stream the eval draw in slices: the vectorised swap
-                        # head rides d anchor copies per sample, so feeding
-                        # all n_eval_samples at once builds (d*B)-row
-                        # attention buffers and OOMs at large d. IS weights
-                        # are independent per sample, so slicing changes
-                        # nothing statistically.
-                        # In-training evals are a diagnostic; run.py's final
-                        # eval always draws the full n_eval_samples.
+                        # Stream the eval draw in slices: the swap head builds
+                        # (d*B)-row attention buffers and OOMs at large d; IS
+                        # weights are independent per sample, so slicing is
+                        # exact. run.py's final eval draws the full n_eval_samples.
                         n_train_eval = (
                             getattr(eval_cfg, "n_eval_samples_training", None)
                             or eval_cfg.n_eval_samples
@@ -982,8 +884,7 @@ def train_swap(
                         current_stage = max(curriculum_idx, 0)
                         if current_stage != stage_ess_stage:
                             # New stage: the window must not mix ESS values
-                            # across a sigma boundary — the target changed,
-                            # so cross-boundary medians compare nothing.
+                            # across a sigma boundary (the target changed).
                             stage_ess_recent.clear()
                             stage_ess_stage = current_stage
                         stage_ess_recent.append(ess_value)
