@@ -1,30 +1,21 @@
 """Tests for the decoupled c_t rollout batch.
 
-What correct looks like, independent of implementation:
+Properties pinned:
 
-1. **Off is byte-identical.** `c_t_batch = None` (the default, and the value
-   every archived run implicitly carries) must leave the training trajectory
-   untouched — same RNG stream, same c_t, same buffer — so the falsification
-   record of every archived cell stays valid.
-2. **Explicit-equals-default is a no-op.** `c_t_batch == outer_batch` must
-   also be bit-identical: the knob only has content when it ENLARGES the
-   rollout set (otherwise it is the off path wearing a name).
-3. **c_t uses the larger set.** With c_t_batch > outer_batch, the base draw
-   and the c_t grid must both see c_t_batch rows — c_t = mean_m xi_t over
-   the enlarged set (the Eq.-8 identity holds for the model's own law, so a
-   bigger M is a purer estimate of the same quantity, standard error ~ 1/M).
-4. **The buffer is unchanged in size and composition.** The replay buffer
-   must receive exactly the first `outer_batch` rows of the enlarged rollout
-   (a uniform subset — no selection bias), so inner-step sampling sees the
-   same buffer_size as an off run; the whole point is that ONLY the no-grad
-   c_t phase scales, never the inner-update batch or buffer.
-5. **Under-supply is rejected.** c_t_batch < outer_batch would starve the
-   buffer (only the first outer_batch rows feed it); refuse loudly.
-6. **Resume stays bit-exact under the knob.** The knob is stateless, so an
-   interrupt-and-resume with c_t_batch on must reproduce the uninterrupted
-   log bit-for-bit (same contract test_swap_training_resume.py pins for the
-   base state) — this pins that the enlarged draw's RNG consumption is
-   checkpointed via the RNG state, not reconstructed.
+1. `c_t_batch = None` (the default every archived run carries) leaves the
+   training trajectory untouched: same RNG stream, same c_t, same buffer.
+2. `c_t_batch == outer_batch` is also bit-identical; the knob only has
+   content when it enlarges the rollout set.
+3. With c_t_batch > outer_batch, the base draw and the c_t grid both see
+   c_t_batch rows: c_t = mean_m xi_t over the enlarged set (the Eq.-8
+   identity holds for the model's own law; standard error ~ 1/M).
+4. The replay buffer receives exactly the first `outer_batch` rows of the
+   enlarged rollout (a uniform subset), so only the no-grad c_t phase
+   scales, never the inner-update batch or buffer.
+5. c_t_batch < outer_batch would starve the buffer; refused loudly.
+6. Resume stays bit-exact with the knob on (as test_swap_training_resume.py
+   pins for the base state): the enlarged draw's RNG consumption is carried
+   by the checkpointed RNG state.
 """
 
 import csv
@@ -57,9 +48,8 @@ OUTER_BATCH = 8
 
 
 def _head(init_seed: int) -> LeTFMaskOneSwapHead:
-    # Mask-one, not the doubly-hollow oracle: the rollout-accounting
-    # contracts are head-agnostic and the oracle costs ~15x per call for no
-    # extra coverage here (same reasoning as tests/test_c_t_ema.py).
+    # Mask-one, not the doubly-hollow oracle: the contracts are head-agnostic
+    # and the oracle costs ~15x per call (as in tests/test_c_t_ema.py).
     torch.manual_seed(init_seed)
     return LeTFMaskOneSwapHead(
         LeTFRateMatrix(d=16, vocab_size=2, hidden_dim=16, n_layers=2, n_heads=2)
@@ -170,9 +160,8 @@ def test_c_t_uses_the_larger_rollout_set(tmp_path, monkeypatch):
     monkeypatch.setattr(FixedCompositionIsingTarget, "sample_base", base_spy)
     monkeypatch.setattr(swap_training, "compute_c_t_grid_swap", c_t_spy)
 
-    # n_eval_samples deliberately != c_t_batch so the spied base draws are
-    # unambiguous: init diagnostics draw outer_batch (8), eval draws 12,
-    # the c_t cycle draws the enlarged 16.
+    # n_eval_samples != c_t_batch so the spied base draws are unambiguous:
+    # init diagnostics draw 8, eval draws 12, the c_t cycle draws 16.
     run_dir = tmp_path / "run"
     _run(
         run_dir,
@@ -223,8 +212,8 @@ def test_buffer_size_and_composition_unchanged(tmp_path, monkeypatch):
     assert buf.shape[1] == OUTER_BATCH
     assert torch.equal(buf, full[:, :OUTER_BATCH])
     assert captured["t_idx_buffer"].numel() == n_grid * OUTER_BATCH
-    # replay_buffer_cycles=2 -> the live buffer holds two cycles of the
-    # OFF-run row count, never c_t_batch rows.
+    # replay_buffer_cycles=2 -> two cycles of the off-run row count, never
+    # c_t_batch rows.
     assert captured["buffer_size"] == 2 * n_grid * OUTER_BATCH
 
 
@@ -243,9 +232,8 @@ def test_c_t_batch_below_outer_batch_rejected(tmp_path):
 
 
 def test_resumed_run_bit_exact_with_knob_on(tmp_path):
-    """The knob is stateless; resume bit-exactness must survive it (this
-    pins that the enlarged base draw's RNG consumption is carried by the
-    checkpointed RNG state)."""
+    """The knob is stateless; resume bit-exactness must survive it (the
+    enlarged base draw's RNG consumption rides the checkpointed RNG state)."""
     uninterrupted_dir = tmp_path / "uninterrupted"
     interrupted_dir = tmp_path / "interrupted"
 

@@ -1,61 +1,32 @@
-"""Three-interval (leave-two-out) swap head: all-pairs H_ij in ONE body pass.
+"""Three-interval (leave-two-out) swap head: all-pairs H_ij in one body pass.
 
-Uses swap_readout.py's pair form of DNFS Prop. 2 / Eq. (9):
+Pair form of DNFS Prop. 2 / Eq. (9), as in swap_readout.py:
 
     G_swap(i, j | x) = < H_ij(x_{-{i,j}}),  omega_{x_i} - omega_{x_j} >
 
-Exact state-swap antisymmetry G(i,j|x) = -G(i,j|Swap2(x,i,j)) needs exactly
-one property of the body: H_ij must be BLIND to the token values x_i and x_j
-(the omega-difference flips sign under the swap; H must not move). Blindness
-is strictly stronger than the antisymmetry it buys -- H_ij must be invariant
-under ANY change to x_i or x_j, not just their exchange -- and the tests
-falsify the stronger property directly.
-
-Why blindness must hold at every layer (the two-hop leak): one attention
-layer mixes x_i into every token's representation, so masking the i->j edge
-only at a readout layer still leaks via x_i -> token k (layer 1) -> H_ij
-(layer 2). The mask-one head buys layer-wise blindness with d anchor passes
-(~99.5% of measured runtime). This head buys it STRUCTURALLY in one pass, by
-the interval decomposition the two holes induce:
+State-swap antisymmetry G(i,j|x) = -G(i,j|Swap2(x,i,j)) needs H_ij blind to
+the token values x_i and x_j (the omega-difference flips sign; H must not
+move). Blindness must hold at every layer: one attention layer mixes x_i
+into every token, so masking only a readout edge leaks x_i -> token k -> H_ij.
+The mask-one head buys layer-wise blindness with d anchor passes; this head
+buys it structurally from the interval decomposition the two holes induce:
 
     [ x_0 .. x_{i-1} ]  x_i  ( x_{i+1} .. x_{j-1} )  x_j  [ x_{j+1} .. ]
        prefix P_i       HOLE       band  M_ij        HOLE    suffix S_j
 
-* P and S are the leTF slice-trick objects and already exist in the
-  backbone: with the cond_t prepend, the inclusive-causal fwd state at slot
-  i depends only on x_{<i}, and the (un-flipped) bwd state at slot j+1
-  depends only on x_{>j}. Deep and fully mixed within their interval, blind
-  by causality -- and causality composes, so depth is safe.
-* The band is the genuinely new object: an interval summary open at BOTH
-  ends, which no causal sweep produces. Any feature shared across pairs
-  must be blind for every pair that reads it, so band features cannot come
-  from a globally-mixed deep stack -- they are LOCAL (unary and fixed-offset
-  pair statistics of raw token embeddings), aggregated per pair with
-  index-structural exclusion of any term touching a hole site.
-* Cross-interval mixing (prefix <-> band <-> suffix) happens only in the
-  per-pair readout MLP. This is the direction's capacity gamble; the D=4
-  gate prices it.
+P and S are the backbone's causal-stack states (fwd at slot i sees x_{<i},
+un-flipped bwd at slot j+1 sees x_{>j}), blind by causality at any depth.
+The band is an interval open at both ends, so it is built from local
+features (unary and fixed-offset pair statistics of raw token embeddings)
+with index-structural exclusion of every term touching a hole. The three
+mix only in the per-pair readout MLP. Cost: O(d) precompute, O(1) per pair.
 
-Efficiency contract: O(d) precompute (causal stacks, feature prefix
-sums), O(1) assembly per pair, so all O(d^2) contexts cost one body pass
-plus a batched per-pair MLP -- no d-anchor multiplier.
+fp caveat: band assembly by prefix-sum subtraction (sum[i+1..j-1] =
+prefix[j-1] - prefix[i]) is blind in real arithmetic but leaves an
+~ulp * |prefix| residue that depends on x_i; the test bar is ATOL=1e-5. A
+hole-free block decomposition would restore bit-exact blindness.
 
-Numerical-exactness note (fp caveat to K1 "exact antisymmetry at init"):
-prefix-sum band assembly (sum[i+1..j-1] = prefix[j-1] - prefix[i]) is blind
-EXACTLY in real arithmetic, but both prefix sums contain the hole terms and
-cancel them by subtraction, leaving an fp residue ~ ulp * |prefix| that
-does depend on x_i. This is linear-scale cancellation (bounded features,
-benign -- nothing like direction (c)'s exp-scale softmax denominators); the
-test bar is the suite's ATOL=1e-5. If bit-exact blindness is ever needed,
-assemble the band from hole-free partial sums instead (block decomposition:
-whole blocks precomputed + O(sqrt d) boundary terms recomputed per pair --
-every addend is then hole-free and blindness is structural, like the
-mask-one head's).
-
-The head is label-SYMMETRIC by construction (H_ji := H_ij, so the full
-matrix is index-antisymmetric: G[j,i] = -G[i,j]); the downstream i<j
-ordering convention is unaffected. The backbone's attention_readout is
-deliberately unused -- this head replaces it.
+H_ji := H_ij, so G[j,i] = -G[i,j]. The backbone's attention_readout is unused.
 """
 
 import torch
@@ -70,18 +41,11 @@ _TRIU_PAIR_CACHE: dict[tuple[int, torch.device], tuple[Tensor, Tensor]] = {}
 def triu_pair_indices(d: int, device) -> tuple[Tensor, Tensor]:
     """Row/column index vectors of the d(d-1)/2 unordered pairs i < j.
 
-    Shared by every head whose per-pair work is label-symmetric (this head,
-    the masked-attention band, the factorised global term): those heads
-    compute H on all d^2 ordered pairs and then mirror the i < j triangle
-    down, so half the nonlinear work -- and half of the (B, d^2, F)
-    activation slab that is the heads' memory footprint at d = 256 -- is
-    the mirror image of the other half.
-
-    Cached per (d, device) exactly like the sampler's own pair table
-    (`_swap_neighbours.upper_tri_pairs`, kept separate so `constraints`
-    does not import `samplers`): every forward re-reads the same indices and
-    the list grows as d^2, so rebuilding it per call is pure dispatch
-    overhead. Callers treat the result as read-only.
+    Shared by every label-symmetric head: H is computed on the i < j triangle
+    and mirrored, halving the (B, d^2, F) activation slab. Cached per
+    (d, device) like `_swap_neighbours.upper_tri_pairs` (kept separate so
+    `constraints` does not import `samplers`); callers treat the result as
+    read-only.
     """
     key = (d, torch.device(device))
     if key not in _TRIU_PAIR_CACHE:
@@ -93,22 +57,13 @@ def triu_pair_indices(d: int, device) -> tuple[Tensor, Tensor]:
 def scatter_symmetric_pairs(pair_values: Tensor, d: int) -> Tensor:
     """(B, P, F) per-pair values on i < j -> the symmetric (B, d, d, F) block.
 
-    The inverse of the triu gather, and the point at which the heads' label-
-    symmetry convention H_ji := H_ij becomes an identity rather than a
-    numerical property: ONE tensor is written into both triangles, so
-    H == H.transpose(1, 2) bit-exactly and index antisymmetry of G follows.
-
-    The DIAGONAL is left at zero rather than recomputed. forward reads H
-    against omega_{x_i} - omega_{x_j}, which is identically zero at i = j, so
-    the dense path's diagonal never reaches G; reproducing it would reinstate
-    d of the rows this lever exists to drop. (Consequence, stated because it
-    is a real difference: `compute_pair_context` diagonals differ between the
-    two paths. Nothing downstream reads them.)
-
-    Written as two index_put's into one freshly-allocated output. The two
-    rejected alternatives -- `out + out.transpose(1, 2)`, and a gather
-    through a pad-slot index map -- each cost an extra (B, d, d, F)
-    tensor, which is precisely what the lever exists to save.
+    One tensor is written into both triangles, so H == H.transpose(1, 2)
+    bit-exactly and index antisymmetry of G follows. The diagonal is left at
+    zero: forward reads H against omega_{x_i} - omega_{x_j}, identically zero
+    at i = j, so it never reaches G (`compute_pair_context` diagonals differ
+    between the dense and gathered paths; nothing downstream reads them).
+    Two index_put's rather than `out + out.transpose(1, 2)`, which costs an
+    extra (B, d, d, F) tensor.
     """
     rows, cols = triu_pair_indices(d, pair_values.device)
     out = pair_values.new_zeros(pair_values.shape[0], d, d, pair_values.shape[-1])
@@ -122,16 +77,13 @@ def causal_stream_summaries(
 ) -> tuple[Tensor, Tensor]:
     """Prefix/suffix interval summaries from the backbone's causal stacks.
 
-    Shared by every head that assembles pair contexts from the leTF
-    slice-trick objects (this head and the factorised head). Returns
-    (prefix_summary, suffix_summary), each (B, d, h), with
+    Returns (prefix_summary, suffix_summary), each (B, d, h), with
 
-        prefix_summary[:, i, :] depending ONLY on {t, x_0..x_{i-1}}
-        suffix_summary[:, j, :] depending ONLY on {t, x_{j+1}..x_{d-1}}
+        prefix_summary[:, i, :] depending only on {t, x_0..x_{i-1}}
+        suffix_summary[:, j, :] depending only on {t, x_{j+1}..x_{d-1}}
 
-    -- see IntervalSwapHead.causal_summaries for the full derivation of the
-    slice indices; the classic failure is an off-by-one in either slice, and
-    the blindness tests probe the boundary sites specifically to catch it.
+    Slice derivation in IntervalSwapHead.causal_summaries. Shared with the
+    factorised head.
     """
     x_idx = ((x + 1) / 2).long()
     x_emb = backbone.token_embedder(x_idx)  # (B, d, h)
@@ -149,41 +101,28 @@ class IntervalSwapHead(nn.Module):
     scores), same contract as the heads in swap_readout.py.
 
     Args:
-        backbone: the leTF rate model; this head reuses its token/time
-            embedders and fwd/bwd causal stacks (P and S streams) and its
-            omega table for the readout. attention_readout is unused.
-        pair_offsets: sequence offsets delta for the band's pairwise-local
-            features u^delta_k = f(x_k, x_{k+delta}). For a flattened D x D
-            lattice pass (1, D): offset 1 is row adjacency, offset D column
-            adjacency -- the interactions the Ising energy is built from.
-            Unary features are always included.
+        backbone: the leTF rate model; reuses its token/time embedders,
+            fwd/bwd causal stacks and omega table. attention_readout is unused.
+        pair_offsets: sequence offsets delta for the band's pair features
+            u^delta_k = f(x_k, x_{k+delta}). On a flattened D x D lattice,
+            offset 1 is row adjacency and offset D column adjacency. Unary
+            features are always included.
         band_feature_dim: channels per band-feature family (unary + one per
-            offset), concatenated into the pair readout input.
-        position_dim: size of the head-owned site-position embedding fed to
-            the pair readout (H_ij MAY depend on the positions i, j --
-            blindness constrains only the token VALUES there).
-        readout_score_scale: fixed multiplier on the pair scores G — the
-            muP readout compensation (MuReadout's output multiplier, Yang
-            et al., arXiv:2203.03466). The score chain
-            `context_norm -> <H, omega_diff>` has no fan-in compensation:
-            LayerNorm pins ||H_ij|| ~ sqrt(hidden) while omega's
-            per-component std (0.002) is width-free, so G — and with it
-            the initial rates ReLU(G) — grows as sqrt(hidden) (verified
-            2x at h32 -> h128). Setting hidden_base/hidden (e.g. 32/128)
-            cancels that growth with muP's extra 1/sqrt(width) margin, so
-            rates start small and unclipped at any width. A multiplier is
-            used rather than the two rejected alternatives: zero-init of
-            pair_readout's last layer feeds context_norm an exactly-zero
-            input (LayerNorm's 1/sqrt(eps) gradient there), and shrinking
-            omega's init std touches a table shared with the backbone
-            readout, breaking archived parity for every head. ReLU is
-            positively homogeneous, so the scale is exactly a rate scale;
-            expressivity is untouched (the model can learn to undo it) —
-            what changes is the readout path's effective step size under
-            Adam, which is the intended muP dynamics change. Default 1.0
-            = every archived cell: the multiply is skipped entirely, and
-            the attribute is a float, not a parameter, so state_dict and
-            RNG consumption are unchanged either way.
+            offset).
+        position_dim: head-owned site-position embedding fed to the pair
+            readout (H_ij may depend on positions i, j; blindness constrains
+            only the token values there).
+        readout_score_scale: fixed multiplier on G, the muP readout
+            compensation (MuReadout, Yang et al., arXiv:2203.03466).
+            LayerNorm pins ||H_ij|| ~ sqrt(hidden) while omega's per-component
+            std (0.002) is width-free, so G and the initial rates ReLU(G) grow
+            as sqrt(hidden) (measured 2x at h32 -> h128); hidden_base/hidden
+            (e.g. 32/128) cancels that. Not by shrinking omega's init std,
+            which is shared with the backbone readout. ReLU is positively
+            homogeneous, so this is exactly a rate scale; it changes the
+            readout path's effective Adam step, not expressivity. Default 1.0
+            skips the multiply and is a float, not a parameter, so archived
+            state_dicts and RNG consumption are unchanged.
     """
 
     def __init__(
@@ -199,40 +138,27 @@ class IntervalSwapHead(nn.Module):
         site_orderings: tuple[str, ...] = ("row",),
         lattice_side: int | None = None,
     ):
-        """exterior_combiner: "mlp" is the archived head, the
-        per-pair readout over [prefix, suffix, band, positions]. "bilinear"
-        moves the deep exterior OUT of that MLP and into a rank-R product
+        """exterior_combiner: "mlp" is the archived head (per-pair readout
+        over [prefix, suffix, band, positions]). "bilinear" moves the exterior
+        out of that MLP into a rank-R product
 
             H_ij += sum_r a_r(prefix_i, i) * b_r(suffix_j, j),
 
-        the factorised head's exterior at this head's hidden width, so the
-        per-pair MLP sees only [band, positions]. Everything else -- band,
-        context_norm, time line, H width -- is byte-identical, which makes
-        this the single-variable test of what the factorisation itself
-        costs: the factorised-head cells change the chassis at the same
-        time (global sum, per-term scaling, factor width). Blindness is
-        unchanged: the factor maps are per-site, prefix_i is blind to
-        x_{>=i} and suffix_j to x_{<=j} by causality, and the post-sum
-        LayerNorm is admissible here because H is materialised anyway.
+        the factorised head's exterior at this width, so the MLP sees only
+        [band, positions]; everything else is byte-identical, isolating what
+        the factorisation itself costs. Blindness holds: the factor maps are
+        per-site and prefix_i / suffix_j are causal.
         """
         super().__init__()
         if exterior_combiner not in ("mlp", "bilinear"):
             raise ValueError(
                 f"exterior_combiner must be 'mlp' or 'bilinear'; got {exterior_combiner!r}"
             )
-        # The bilinear exterior reads the ROW ordering's prefix/suffix only:
-        # `_ordering_exterior_rows` is called on the "mlp" branch alone, and
-        # `_bilinear_exterior` takes the row summaries. So an extra ordering
-        # under this combiner is not merely dead weight, it is INVISIBLE --
-        # ("row",) and ("row", "col") build the same parameters and return a
-        # bit-identical forward. Measured at d=16: mlp gains 256 parameters
-        # and moves the forward by 1.2e-2, bilinear gains 0 and moves it by 0.
-        # Without this raise, `ivmo2ef` + bilinear reads as a single-variable
-        # test of the factorisation while silently also deleting the second
-        # ordering, worth +0.154 raw and disjoint -- the largest lever on this
-        # axis. FactorisedSwapHead carries the mirror check because it builds
-        # per-ordering factor maps (`extra_ordering_modules`); this head does
-        # not, so the combination is refused rather than approximated.
+        # The bilinear exterior reads the row ordering's prefix/suffix only
+        # (`_ordering_exterior_rows` runs on the "mlp" branch alone), so an
+        # extra ordering would be invisible: ("row",) and ("row", "col") give a
+        # bit-identical forward (d=16: mlp moves it 1.2e-2, bilinear 0). Refused
+        # rather than silently dropping the +0.154 raw second-ordering lever.
         if exterior_combiner == "bilinear" and tuple(site_orderings)[1:]:
             raise ValueError(
                 "exterior_combiner='bilinear' reads the row ordering only, so "
@@ -242,9 +168,8 @@ class IntervalSwapHead(nn.Module):
             )
         self.exterior_combiner = exterior_combiner
         self.bilinear_rank = bilinear_rank
-        # Opt-in band/readout on d(d-1)/2 unordered pairs, then mirror via
-        # scatter_symmetric_pairs. No parameter, buffer or RNG draw: flag-off
-        # heads stay byte-identical to archived ones; only GEMM shape differs.
+        # Opt-in band/readout on the d(d-1)/2 pairs, mirrored back by
+        # scatter_symmetric_pairs; no parameter or RNG draw, flag-off is archived.
         self.gather_triu_pairs = gather_triu_pairs
         self.site_orderings = tuple(site_orderings)
         self.position_dim = position_dim
@@ -267,10 +192,8 @@ class IntervalSwapHead(nn.Module):
         )
         self.pair_position_embedding = nn.Embedding(self.d, position_dim)
 
-        # Extra orderings register BEFORE the readout is drawn only because
-        # `_build_pair_readout` reads `site_orderings` for its width; they add
-        # no parameters and no RNG draw, so ('row',) stays byte-identical to
-        # every archived raster cell.
+        # Registered before the readout only because `_build_pair_readout`
+        # reads `site_orderings` for its width; no parameters, no RNG draw.
         self._register_site_orderings(lattice_side)
 
         band_dim = band_feature_dim * (1 + len(self.pair_offsets))
@@ -293,11 +216,8 @@ class IntervalSwapHead(nn.Module):
         """Per-pair MLP; its input carries the exterior summaries only under
         the "mlp" combiner. Shared with the masked-attention stencil rebuild."""
         hidden = self.backbone.hidden_dim
-        # One (prefix, suffix) pair PER ORDERING under the "mlp" combiner: an
-        # extra ordering owns no modules of its own -- it reuses the
-        # backbone's causal stacks on a permuted sequence -- so this widening
-        # is the extra ordering's ENTIRE parameter cost, which keeps a lift from
-        # being confounded with capacity.
+        # One (prefix, suffix) pair per ordering under "mlp": an extra ordering
+        # reuses the backbone stacks, so this widening is its entire parameter cost.
         exterior_dim = (
             2 * hidden * len(self.site_orderings)
             if self.exterior_combiner == "mlp"
@@ -312,19 +232,13 @@ class IntervalSwapHead(nn.Module):
     def _register_site_orderings(self, lattice_side: int | None) -> None:
         """Permutations and per-pair (min, max) o-position grids, as buffers.
 
-        For ordering o with `order` mapping o-position -> site and `inv` the
-        inverse, the pair {i, j} sits at o-positions inv[i], inv[j]. The head
-        reads the prefix stream at min(inv[i], inv[j]) and the suffix stream
-        at max: the prefix has then seen only sites earlier in o than BOTH
-        holes, and the suffix only sites later than both, so each is blind to
-        x_i and x_j by exactly the causality argument the row ordering uses.
-        min and max of an UNORDERED pair are symmetric, so label symmetry
-        H_ji = H_ij comes for free rather than needing a mirror.
-
-        Index arithmetic reproducible from the constructor args, so these ride
-        as NON-persistent buffers and never enter a checkpoint -- the
-        convention the factorised head already follows. "row" is the identity
-        and registers nothing, which is what keeps the archived path clean.
+        For ordering o with `order`: o-position -> site and `inv` its inverse,
+        the pair {i, j} sits at o-positions inv[i], inv[j]. The head reads the
+        prefix stream at min(inv[i], inv[j]) and the suffix at max, so each is
+        blind to x_i and x_j by the row ordering's causality argument; min and
+        max are symmetric, so H_ji = H_ij needs no mirror. Non-persistent
+        buffers (reproducible from the constructor args), as in the factorised
+        head. "row" is the identity and registers nothing.
         """
         from discrete_flow_sampler.constraints.factorised_swap_head import (
             lattice_site_ordering,
@@ -356,11 +270,10 @@ class IntervalSwapHead(nn.Module):
     def _ordering_exterior_rows(
         self, x: Tensor, t: Tensor, pairs: tuple[Tensor, Tensor] | None
     ) -> list[Tensor]:
-        """(prefix, suffix) grids for each EXTRA ordering, in site space.
+        """(prefix, suffix) grids for each extra ordering, in site space.
 
-        Returns 2 tensors per extra ordering, shaped (B, d, d, h) densely or
-        (B, P, h) under the triu gather -- ready to concatenate into the pair
-        readout's input alongside the row ordering's own pair.
+        Two tensors per extra ordering, (B, d, d, h) densely or (B, P, h)
+        under the triu gather, ready to concatenate into the readout input.
         """
         rows_out: list[Tensor] = []
         for name in self.site_orderings[1:]:
@@ -399,24 +312,17 @@ class IntervalSwapHead(nn.Module):
 
         Returns (prefix_summary, suffix_summary), each (B, d, h):
 
-            prefix_summary[:, i, :] depends ONLY on {t, x_0..x_{i-1}}  (x_{<i})
-            suffix_summary[:, j, :] depends ONLY on {t, x_{j+1}..x_{d-1}} (x_{>j})
+            prefix_summary[:, i, :] depends only on {t, x_0..x_{i-1}}  (x_{<i})
+            suffix_summary[:, j, :] depends only on {t, x_{j+1}..x_{d-1}} (x_{>j})
 
-        These are the leTF slice-trick objects read one slot short of the
-        hole. With cond_t prepended, the inclusive-causal fwd stack output
-        at slot m depends on slots <= m, i.e. cond_t plus tokens 0..m-1, so
-        slot i is the deepest state that has never seen x_i (i=0 gives the
-        cond_t-only state -- the empty-prefix summary, no edge case needed).
+        With cond_t prepended, the inclusive-causal fwd output at slot m
+        depends on cond_t plus tokens 0..m-1, so slot i is the deepest state
+        that has never seen x_i (i=0 is the cond_t-only empty-prefix state).
         The bwd stack runs on the flipped sequence with the same prepend;
-        after flipping its output back, slot k depends on x_{>=k}, so slot
-        j+1 is the deepest state blind to x_{<=j} (slot d = empty suffix).
-
-        The classic failure here is an off-by-one in either slice -- the
-        blindness tests flip x at the boundary sites specifically to catch
-        it. Follow `swap_readout._masked_body` for the exact stack-call
-        pattern (embed -> prepend cond_t -> fwd_stack / flipped bwd_stack).
-        The body lives in module-level `causal_stream_summaries` so the
-        factorised head can share it without inheriting this head's band.
+        flipped back, slot k depends on x_{>=k}, so slot j+1 is the deepest
+        state blind to x_{<=j} (slot d = empty suffix). The failure mode is an
+        off-by-one in either slice; the blindness tests flip the boundary
+        sites. Body in module-level `causal_stream_summaries`.
         """
         return causal_stream_summaries(self.backbone, x, t)
 
@@ -426,8 +332,8 @@ class IntervalSwapHead(nn.Module):
         """All-pairs middle-band statistics, (B, d, d, F); valid for i < j.
 
         F = band_feature_dim * (1 + len(pair_offsets)). Entry [:, i, j, :]
-        aggregates LOCAL features over the open interval (i, j), containing
-        no term that touches site i or site j:
+        aggregates local features over the open interval (i, j), with no term
+        touching site i or j:
 
             unary:            sum_{k = i+1 .. j-1}        v_k,
                               v_k = band_unary_features(emb(x_k))
@@ -435,33 +341,16 @@ class IntervalSwapHead(nn.Module):
                               u^delta_k
                                 = band_pair_features(emb(x_k) ++ emb(x_{k+delta}))
 
-        The offset-delta index range is the straddle exclusion: u^delta_k
-        touches sites (k, k+delta), so band-interior terms need k > i and
-        k + delta < j. Exclusion is decided by INDEX arithmetic only --
-        blindness cannot depend on the values being excluded.
-
-        Efficiency: build each family's prefix-sum once, O(d); every (i, j)
-        entry is then one subtraction, O(1)/pair. Empty ranges (adjacent
-        pairs, j - i <= delta) must yield exact zeros. Only the i < j
-        triangle is consumed (compute_pair_context symmetrises); the lower
-        triangle's content is unspecified.
-
-        fp caveat: subtractive assembly leaves ~ulp hole residue (module
-        docstring); the hole-free block-decomposition variant restores
-        bit-exact blindness if ATOL ever bites. (Sharper: x_j never enters
-        these cumsums at all -- every family stops short of j -- so the
-        residue is on the x_i side only.)
-
-        `t` is unused by design: band features are token statistics; time
-        dependence enters through the pair readout's summaries and time line.
-
-        `pairs` = (rows, cols) selects a LIST of pairs instead of the grid and
-        returns (B, P, F). Only the index tensors change shape -- every
-        prefix-sum and every exclusion mask below is written once and reads
-        (d, 1)/(1, d) broadcast indices or (P,) list indices interchangeably --
-        because the band is O(1) per pair either way. This is the entry point
-        the triu-pair gather uses (the band is DEFINED on i < j, so the
-        gathered form needs no mirror at all).
+        The offset range is the straddle exclusion: u^delta_k touches
+        (k, k+delta), so interior terms need k > i and k + delta < j.
+        Exclusion is index arithmetic only; blindness cannot depend on the
+        excluded values. Each family is one prefix-sum, O(d), then one
+        subtraction per pair; empty ranges (j - i <= delta + 1) must give
+        exact zeros. Only the i < j triangle is consumed; the lower triangle
+        is unspecified. The fp residue (module docstring) is on the x_i side
+        only, since x_j never enters the cumsums. `t` is unused: time enters
+        via the pair readout. `pairs` = (rows, cols) selects a list of pairs
+        and returns (B, P, F); only the index shapes change.
         """
         del t
         x_idx = ((x + 1) / 2).long()
@@ -509,7 +398,7 @@ class IntervalSwapHead(nn.Module):
     def hole_free_bond_totals(
         self, x: Tensor, pairs: tuple[Tensor, Tensor] | None = None
     ) -> Tensor:
-        """WHOLE-LATTICE bond sums with every hole-touching bond removed,
+        """Whole-lattice bond sums with every hole-touching bond removed,
         (B, d, d, F) or (B, P, F), F = band_feature_dim * len(pair_offsets).
 
         Entry [:, i, j] is
@@ -517,44 +406,21 @@ class IntervalSwapHead(nn.Module):
             sum over k in [0, d - delta)  of  u^delta_k,
             restricted to  k not in {i, j}  and  k + delta not in {i, j},   (*)
 
-        for each offset delta, concatenated. `band_summaries` gives the same
-        features summed over the OPEN INTERVAL (i, j); this gives them summed
-        over the whole lattice. Neither recovers the other -- a part is not a
-        total -- so a head carrying both can express their difference, the
-        EXTERIOR bond sum, which neither gives alone. That is already the
-        situation on the unary side, where the global term's per-site sum and
-        the band's unary sum coexist; this restores the missing basis vector
-        on the bond side.
+        per offset delta, concatenated. `band_summaries` sums the same
+        features over the open interval (i, j); a head carrying both can
+        express their difference, the exterior bond sum, which neither gives
+        alone. Exclusion in (*) is index arithmetic, so the result is blind.
 
-        Blindness. Exclusion in (*) is decided by INDEX arithmetic alone, so
-        the result cannot depend on the values excluded -- the same argument
-        as `band_summaries`, and the reason this is safe to feed the global
-        term's per-pair path.
-
-        THE FAILURE MODE THIS GUARDS AGAINST. u^delta_k touches sites k and
-        k + delta, so (*) drops k in {i, i-delta, j, j-delta} -- four gathers,
-        not the global term's two. That set COLLIDES when |i - j| = delta, and
-        with pair_offsets (1, D) those are exactly the nearest-neighbour pairs
-        the Ising energy is built from. Subtracting all four blindly removes
-        one term TWICE, which leaves -u^delta in the residual; u^delta depends
-        on the hole spins, so BLINDNESS FAILS, on the pairs that matter most.
-        Hence the inclusion-exclusion add-back below. The two boundary cases
-        (k = i - delta < 0, and i >= d - delta so u^delta_i does not exist)
-        are handled by the same clamp-and-mask idiom `band_summaries` uses for
-        its empty ranges.
-
-        Symmetric in (i, j) by construction -- the four gathers treat the two
-        holes identically -- which the global term requires, so unlike the
-        band this needs no mirror on either path.
-
-        VALID FOR i != j; the diagonal is unspecified, as `band_summaries`
-        leaves its lower triangle unspecified. At i == j the four gathers
-        reduce to two distinct indices, each subtracted twice, and the
-        add-back below does not fire (j - i = 0 is not an offset). Correcting
-        it would put two more masked adds on the per-pair path for entries
-        that cannot reach a result: the readout multiplies H by
-        omega_{x_i} - omega_{x_j}, which is identically zero on the diagonal,
-        and the head's exact antisymmetry pins G_ii = 0 for every input.
+        Failure mode guarded: u^delta_k touches k and k + delta, so (*) drops
+        k in {i, i-delta, j, j-delta}, and that set collides when |i - j| =
+        delta, which with pair_offsets (1, D) is exactly the nearest-neighbour
+        pairs. Subtracting all four removes one term twice and leaves
+        -u^delta, which depends on the hole spins, so blindness fails; hence
+        the inclusion-exclusion add-back below. Boundary cases (k < 0, or
+        u^delta_i not existing) use the clamp-and-mask idiom of
+        `band_summaries`. Symmetric in (i, j) by construction, so no mirror.
+        Valid for i != j; the diagonal is unspecified and never reaches G
+        (omega_{x_i} - omega_{x_j} = 0 there).
         """
         x_idx = ((x + 1) / 2).long()
         emb = self.backbone.token_embedder(x_idx)  # (B, d, h)
@@ -577,12 +443,9 @@ class IntervalSwapHead(nn.Module):
             def term_at(index: Tensor) -> Tensor:
                 """u^delta_index, or exact zero where no such bond exists.
 
-                The validity mask is shaped from the INDEX, not from the pair
-                grid: a single hole's index is (d, 1) / (1, d) on the dense
-                path and (P,) on the gathered one, so it broadcasts against
-                the pair shape rather than filling it. `mask_shape` below is
-                for the adjacency test, which is a function of BOTH holes and
-                so is pair-shaped already.
+                The validity mask is shaped from the index ((d, 1)/(1, d)
+                dense, (P,) gathered) so it broadcasts against the pair shape;
+                `mask_shape` is for the pair-shaped adjacency test.
                 """
                 inside = ((index >= 0) & (index < n_terms)).unsqueeze(0).unsqueeze(-1)
                 return torch.where(inside, terms[:, index.clamp(0, n_terms - 1)], 0.0)
@@ -596,9 +459,8 @@ class IntervalSwapHead(nn.Module):
                 - term_at(hole_j)
                 - term_at(hole_j - delta)
             )
-            # Inclusion-exclusion: when the pair IS a delta-bond, one term was
-            # reached by two of the four gathers above. Both signs, so the
-            # result stays symmetric in (i, j).
+            # Inclusion-exclusion: when the pair is a delta-bond, one term was
+            # reached by two gathers above. Both signs keep (i, j) symmetry.
             adjacent_forward = (hole_j - hole_i == delta).view(mask_shape)
             adjacent_backward = (hole_i - hole_j == delta).view(mask_shape)
             hole_free = (
@@ -619,20 +481,12 @@ class IntervalSwapHead(nn.Module):
                        ++ pos_emb(i) ++ pos_emb(j)
                    )) + time_embedder(t)
 
-        then H[:, j, i] := H[:, i, j] (label symmetry). All O(d^2) rows go
-        through pair_readout as one batched MLP over the trailing dim --
-        broadcast prefix over j, suffix over i, positions over batch.
-
-        Exposed separately from forward so the falsification tests can probe
-        blindness on H directly (flip x_i / x_j / both: H_ij must not move)
-        -- a strictly stronger check than G's antisymmetry, which a
-        symmetric leak (H depending on x_i + x_j, say) would survive.
-
-        Under `gather_triu_pairs` the same assembly runs on the d(d-1)/2
-        pairs with i < j and is mirrored by `scatter_symmetric_pairs`: the
-        mirror is what the dense path does anyway, so the lower triangle's
-        readout rows were always thrown away. Only the diagonal differs
-        (left at zero; it never reaches G -- see `scatter_symmetric_pairs`).
+        then H[:, j, i] := H[:, i, j]. All d^2 rows go through pair_readout
+        as one batched MLP. Exposed separately from forward so the tests can
+        probe blindness on H directly (flip x_i / x_j / both), which is
+        stronger than G's antisymmetry. Under `gather_triu_pairs` the same
+        assembly runs on the i < j pairs and is mirrored by
+        `scatter_symmetric_pairs`; only the diagonal differs (zero).
         """
         prefix_summary, suffix_summary = self.causal_summaries(x, t)
         batch, d, hidden = prefix_summary.shape
@@ -684,14 +538,10 @@ class IntervalSwapHead(nn.Module):
     ) -> Tensor:
         """`compute_pair_context` on the i < j pairs only (the memory lever).
 
-        Every tensor the pair readout touches drops from (B, d^2, .) to
-        (B, d(d-1)/2, .): the band -- for the masked-attention subclass, the
-        (B, d^2, n_terms) attention SCORES its docstring flags as the d = 256
-        price -- the readout's concatenated input, its hidden activation and
-        the LayerNorm. The bilinear exterior stays DENSE and is indexed after
-        the fact: it is a single (d x Rh)(Rh x d) matmul, which is faster
-        whole than a gathered elementwise product, and its output is the same
-        size as the (B, d, d, h) result the head must return regardless.
+        Every readout tensor drops from (B, d^2, .) to (B, d(d-1)/2, .),
+        including the masked-attention subclass's attention scores. The
+        bilinear exterior stays dense and is indexed afterwards: one
+        (d x Rh)(Rh x d) matmul is faster whole than a gathered product.
         """
         batch, d, hidden = prefix_summary.shape
         rows, cols = triu_pair_indices(d, x.device)
@@ -725,22 +575,17 @@ class IntervalSwapHead(nn.Module):
 
             G[:, i, j] = < H_ij, omega_{x_i} - omega_{x_j} >
 
-        (einsum over the hidden dim against the omega difference, exactly as
-        the swap_readout.py heads). The diagonal and same-spin pairs vanish
-        for free (zero token difference); index-antisymmetry G[j,i] = -G[i,j]
-        follows from H's label symmetry; state-swap antisymmetry follows
-        from H's value-blindness -- the property the whole head exists to
-        provide, and the only one training never touches.
+        Diagonal and same-spin pairs vanish (zero token difference);
+        G[j,i] = -G[i,j] follows from H's label symmetry, state-swap
+        antisymmetry from H's value-blindness.
         """
         x_idx = ((x + 1) / 2).long()
         omega = self.backbone.omega(x_idx)  # (B, d, h)
         token_difference = omega.unsqueeze(2) - omega.unsqueeze(1)
         H = self.compute_pair_context(x, t)
-        # mul+sum, NOT einsum: einsum is on the autocast lower-precision
-        # list, so under the Tier-2 eval_autocast_bf16 block it would emit
-        # bf16 G (crashing the fp32-only quantile rate diagnostic and
-        # departing from the dtype path Tier-2 was validated on); the
-        # mask-one readout keeps G fp32 the same way.
+        # mul+sum, not einsum: einsum is on the autocast lower-precision list,
+        # so under eval_autocast_bf16 it would emit bf16 G and crash the
+        # fp32-only quantile rate diagnostic; the mask-one readout does the same.
         scores = (token_difference * H).sum(-1)
         if self.readout_score_scale != 1.0:
             # muP readout compensation (see __init__); guarded so the
