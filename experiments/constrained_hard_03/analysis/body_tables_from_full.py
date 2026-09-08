@@ -84,13 +84,16 @@ def project(tex, label):
 # referent once that half is gone. The prefix-sum two-sweep dagger is a
 # sigma_c exclusion and stays.
 DROPPED_DAGGERS = {"masked-attention band, one sweep$^{\\dagger}$": "masked-attention band, one sweep"}
+# The ladder has no \resizebox and the reference label set its width (23.9pt over
+# the text width at \tabcolsep 4pt); the appendix tables keep the full label.
+RELABELS = {"Kawasaki (thesis engine), certified reference": "Kawasaki reference (thesis engine)"}
 
 
 def ladder(tex, labels, headings):
     blocks = []
     for label, heading in zip(labels, headings):
         rows = [sigma_c_row(r) for r in table_rows(tex, label) if r != "\\bottomrule"]
-        for marked, plain in DROPPED_DAGGERS.items():
+        for marked, plain in {**DROPPED_DAGGERS, **RELABELS}.items():
             rows = [r.replace(marked, plain) for r in rows]
         rows = ["\\addlinespace[2pt]" if r == "\\midrule" else r for r in rows]
         block = [f"\\multicolumn{{6}}{{l}}{{\\emph{{{heading}}}}} \\\\", *rows]

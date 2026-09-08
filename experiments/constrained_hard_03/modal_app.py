@@ -594,6 +594,20 @@ def zero_shot_transfer_remote(argv: str = ""):
     volume.commit()
 
 
+@app.function(gpu="L4", volumes={"/results": volume}, timeout=2 * 60 * 60)
+def cuau16_amortised_sweep_remote(argv: str = ""):
+    """Roll the 16-site composition-amortised Cu-Au checkpoints out on every
+    slice (experiments.alloy_ce.tools.cuau16_amortised_sweep). Minutes on a
+    GPU; the Mac measured 115 s per 500 draws per slice."""
+    import sys
+
+    sys.path.insert(0, "/repo")
+    from experiments.alloy_ce.tools.cuau16_amortised_sweep import main as sweep_main
+
+    sweep_main(argv.split())
+    volume.commit()
+
+
 @app.local_entrypoint()
 def zero_shot_transfer(
     seeds: str = "42,43,44",
