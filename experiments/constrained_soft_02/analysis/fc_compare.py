@@ -1,52 +1,37 @@
 """Overlay the DNFS soft F(c) against the mchammer canonical reference.
 
-This is the headline F(c) comparison. Everything lives on ONE canonical
-free-energy-per-site axis, and the figure carries three curves (no new runs):
+Three curves on one canonical free-energy-per-site axis, from existing runs:
 
-  1. **Ground truth** - the canonical (fixed-composition) free energy. At D=10
-     this is the native mchammer thermodynamic-integration reference built by
-     `fc_mchammer_reference.py` (results/.../fc_ref_d10.npz); at D<=4 it is
-     the exact enumeration `run.py` already stores as
-     `free_energy_per_site_exact`.
-  2. **DNFS soft, raw** - the soft/vcSGC ensemble's free energy as DNFS measures
-     it, converted from the report's reduced convention to plain nats per site
-     (multiply `free_energy_per_site` by 2*sigma, since the stored value is
-     -mean(log w)/(2*sigma*d)). This sits *below* canonical near the centre by
-     the soft->canonical offset and swings *above* in the tails where the IS
-     estimator bias grows. That deviation is the soft inexactness.
-  3. **DNFS soft, Laplace-corrected** - the soft estimate mapped to the canonical
+  1. Ground truth - the canonical (fixed-composition) free energy: at D=10 the
+     mchammer thermodynamic-integration reference built by
+     `fc_mchammer_reference.py` (results/.../fc_ref_d10.npz); at D<=4 the exact
+     enumeration `run.py` stores as `free_energy_per_site_exact`.
+  2. DNFS soft, raw - the soft/vcSGC ensemble's free energy in plain nats per
+     site (`free_energy_per_site` * 2*sigma, since the stored value is
+     -mean(log w)/(2*sigma*d)). It sits below canonical near the centre by the
+     soft->canonical offset and above in the tails where the IS bias grows.
+  3. DNFS soft, Laplace-corrected - the soft estimate mapped to the canonical
      curve by inverting the Gaussian composition convolution
      Z_lambda(c_t) = sum_c Z_can(c) * exp(-lambda*d*(c-c_t)^2). For a sharp
      penalty this gives, per window,
        F_can(c_t) = F_lambda(c_t) + log d + 1/2 log(pi/a) + f'^2/(4a),
        a = lambda*d - 1/2 f'' = lambda*d + 1/2 F_can''(c_t),  f' = -F_can'(c_t),
      with the canonical slope/curvature read off the reference curve (the leading
-     log d + 1/2 log(pi/(lambda d)) offset is reference-free; only the small
-     curvature/slope refinements use the reference shape). What is left after the
-     correction, `corrected - truth`, is the pure importance-sampling (Jensen)
-     bias: small at the centre, growing into the tails as ESS falls. That residual
-     is the cost signal.
+     log d + 1/2 log(pi/(lambda d)) offset is reference-free). The residual
+     `corrected - truth` is the importance-sampling (Jensen) bias.
 
-The vcSGC benchmark is deliberately NOT on this plot: mchammer has no native
-semigrand free-energy tool, and a literal VCSGCEnsemble run yields a *canonical*
-curve (via integrating its logged chemical potential) that simply overlays the
-ground truth. The apples-to-apples DNFS-vs-vcSGC check therefore lives in the
-weighted-thermodynamics comparison (composition marginal, energy, short-range
-order at matched kappa), not here.
+vcSGC is not plotted: mchammer has no native semigrand free-energy tool, and a
+literal VCSGCEnsemble run yields a canonical curve that overlays the ground
+truth; the DNFS-vs-vcSGC check lives in the weighted-thermodynamics comparison
+(composition marginal, energy, short-range order at matched kappa).
 
-DNFS error bars come from bootstrapping the per-window importance weights
-(`eval/log_weights.pt`); the correction offset is treated as exact.
-
-The sampled windows are RHS-heavy ({0.30,0.50,0.55,0.60,0.65}), so the figure
-also draws the Z_2 reflection of each off-centre point (F(c)=F(1-c) for zero-field
-Ising) to fill the left segment and the 0.70 tail. Those mirror points are drawn
-open-faced: they are symmetry-implied from the trained windows, not independently
-trained compositions.
-
-Caveat: the correction is the sharp-penalty *continuum* Laplace form. At
-lambda=50 the penalty width 1/sqrt(2*lambda*d) is about one composition step at
-D=10 (and narrower than a step at D=4), so the continuum offset is an
-approximation; the exact discrete deconvolution is a later refinement.
+Error bars bootstrap the per-window importance weights (`eval/log_weights.pt`);
+the correction offset is treated as exact. The sampled windows are RHS-heavy
+({0.30,0.50,0.55,0.60,0.65}), so each off-centre point is also drawn at its Z_2
+reflection, F(c)=F(1-c) for zero-field Ising. The correction is the sharp-penalty
+continuum Laplace form: at lambda=50 the penalty width 1/sqrt(2*lambda*d) is
+about one composition step at D=10 (narrower than a step at D=4), so the offset
+is an approximation; the exact discrete deconvolution is a later refinement.
 
 Example (the 8x8 house family against the D=8 TI reference;
 --eval_dir eval_ema reads the dual eval's shadow-weight draw, archived
@@ -114,7 +99,7 @@ def _bootstrap_F(
 def _bootstrap_slice_F(
     run_dir: Path, d: int, n_boot: int, rng, eval_dir: str, lam: float, c_t: float
 ) -> tuple[float, np.ndarray]:
-    """Canonical F/site at c_t read off the SOFT draw by the slice-mass identity.
+    """Canonical F/site at c_t read off the soft draw by the slice-mass identity.
 
     Conditioning the penalised target on the composition slice cancels the
     penalty (eq:reject-off-soft), so the canonical normaliser is the soft
@@ -122,17 +107,15 @@ def _bootstrap_slice_F(
 
         Z_can(c_t) = Z_lambda * pi_lambda(c = c_t) = E_Q[ w * 1[c(x) = c_t] ],
 
-    estimated by (1/B) sum_b w_b 1[c(x_b) = c_t] over ALL B draws (the
-    rejected draws stay in the denominator: dividing by the survivor count
-    would estimate Z_lambda instead). No Laplace offset, no reference shape
-    and no continuum approximation enter: the identity is exact at every
-    lambda and every lattice size, which is what lets it be gated against
-    exact enumeration at 4x4, where the Gaussian-sum offset fails (the
-    penalty is narrower than one composition step there). The price is the
-    acceptance pi_lambda(c = c_t) ~ sqrt(lambda / pi d) (0.92 at 4x4, 0.48
-    at 8x8), so the estimate uses that fraction of the draw. The bootstrap
-    resamples the B draws jointly with their on-slice indicator, so the
-    acceptance's own sampling noise is inside the error bar.
+    estimated by (1/B) sum_b w_b 1[c(x_b) = c_t] over all B draws; the rejected
+    draws stay in the denominator, since dividing by the survivor count would
+    estimate Z_lambda instead. The identity is exact at every lambda and every
+    lattice size, unlike the Gaussian-sum offset, which fails at 4x4 where the
+    penalty is narrower than one composition step. The price is the acceptance
+    pi_lambda(c = c_t) ~ sqrt(lambda / pi d) (0.92 at 4x4, 0.48 at 8x8), so the
+    estimate uses that fraction of the draw. The bootstrap resamples the B draws
+    jointly with their on-slice indicator, so the acceptance's own sampling noise
+    is inside the error bar.
     """
     logw = torch.load(run_dir / eval_dir / "log_weights.pt").double().numpy().ravel()
     samples = torch.load(run_dir / eval_dir / "samples.pt").double().numpy()
@@ -178,24 +161,21 @@ def _richardson_F(
 ) -> tuple[float, np.ndarray, tuple[int, int] | None]:
     """First-order Richardson extrapolation of F/site to the continuum grid.
 
-    The Euler-grid error is first order (measured step ratios 0.44-0.49
-    across ne64 -> 128 -> 256, and the ne128 retrain halved the residual
-    vs the TI truth in every window).
-    With g grid POINTS, torch.linspace spans g-1 intervals, so
+    The Euler-grid error is first order (measured step ratios 0.44-0.49 across
+    ne64 -> 128 -> 256, and the ne128 retrain halved the residual vs the TI truth
+    in every window). With g grid points, torch.linspace spans g-1 intervals, so
     F(g) = F(inf) + C/(g-1) and two grids g1 < g2 give
 
         F(inf) = ((g2-1) F(g2) - (g1-1) F(g1)) / (g2 - g1)
 
-    The two FINEST available
-    grids are used; the two draws are independent (fresh eval batches), so
-    the bootstrap resamples each grid's weights independently and combines
-    replicate-wise. Falls back to the native draw (pair = None) when the
-    checkpoint has no side-grid redraws -- the caller warns, so a partially
-    redrawn family cannot silently mix extrapolated and raw points.
-    `bootstrap` is the per-grid estimator, `_bootstrap_F` for the soft
-    free energy or a `_bootstrap_slice_F` partial for the canonical one;
-    both carry the same first-order Euler bias (measured: the slice-mass
-    residual halves per grid doubling at 8x8), so the same rule applies.
+    The two finest available grids are used; the two draws are independent (fresh
+    eval batches), so the bootstrap resamples each grid's weights independently
+    and combines replicate-wise. Falls back to the native draw (pair = None) when
+    the checkpoint has no side-grid redraws; the caller warns. `bootstrap` is the
+    per-grid estimator, `_bootstrap_F` for the soft free energy or a
+    `_bootstrap_slice_F` partial for the canonical one; both carry the same
+    first-order Euler bias (measured: the slice-mass residual halves per grid
+    doubling at 8x8), so the same rule applies.
     """
     grids = _grids_available(run_dir, native_ne, eval_dir)
     if len(grids) < 2:
@@ -223,11 +203,11 @@ def _enumerated_canonical(run_dir: Path) -> dict[float, float]:
     """Exact canonical F/site per composition at D <= 4, from the run's own target.
 
     log Z_can(u) is the unpenalised Ising density (`base_log_prob`, x^T J x in
-    the paper's convention) summed over the states of composition u; the
-    penalty must NOT enter, since it vanishes only on the run's own slice.
-    (`metrics.json`'s `free_energy_per_site_exact` is the SOFT exact
-    -log Z_lambda/(2 sigma d), not the canonical one, so it cannot serve as
-    the truth here.)
+    the paper's convention) summed over the states of composition u; the penalty
+    must not enter, since it vanishes only on the run's own slice.
+    `metrics.json`'s `free_energy_per_site_exact` is the soft exact
+    -log Z_lambda/(2 sigma d), not the canonical one, so it cannot serve as the
+    truth here.
     """
     from experiments.dnfs_baseline_01.run import _rebuild_from_run_dir
 
@@ -562,11 +542,10 @@ def main() -> None:
             )
 
     if args.plot is not None:
-        # The soft-ensemble truth: the canonical curve mapped INTO the
-        # penalised ensemble (truth minus the same Laplace offset the
-        # correction adds). The raw markers should sit ON this line; drawn
-        # so the raw-vs-canonical gap reads as the ensemble mapping, not
-        # as sampler error (the question every reader otherwise asks).
+        # The soft-ensemble truth: the canonical curve mapped into the penalised
+        # ensemble (truth minus the same Laplace offset the correction adds), so
+        # the raw markers, which should sit on this line, read as the ensemble
+        # mapping rather than as sampler error.
         soft_offsets = np.array(
             [_laplace_offset(lam, d, fp, fpp) / d for fp, fpp in zip(ref_Fp, ref_Fpp)]
         )
@@ -602,15 +581,13 @@ def _hard_series(
 
     Each probe JSON holds one seed's rows; at stop_time 1 the row carries
     `free_energy_nats_per_site` = -E[log w]/d, the slice free energy with no
-    ensemble offset (there is no ensemble to map out of: the base is uniform
-    on the slice and every move stays on it). Within-seed Monte Carlo error
-    of the mean log-weight is sqrt(Var[log w]/n)/d from the stored variance;
-    between-seed scatter is added in quadrature as for the soft series. With
-    a fine-grid redraw per seed the point is Richardson-extrapolated,
-    F(inf) = ((g2-1) F2 - (g1-1) F1)/(g2 - g1), because g grid points
-    span g-1 Euler intervals. This is the same first-order rule as
-    `_richardson_F` (the Euler bias is first order in the step for both
-    samplers). ESS is carried per composition because the estimate is a
+    ensemble offset (the base is uniform on the slice and every move stays on
+    it). Within-seed Monte Carlo error of the mean log-weight is
+    sqrt(Var[log w]/n)/d from the stored variance; between-seed scatter is added
+    in quadrature as for the soft series. With a fine-grid redraw per seed the
+    point is Richardson-extrapolated, F(inf) = ((g2-1) F2 - (g1-1) F1)/(g2 - g1),
+    because g grid points span g-1 Euler intervals (the same first-order rule as
+    `_richardson_F`). ESS is carried per composition because the estimate is a
     variational bound whose gap grows as the weights degrade.
     """
 
@@ -684,13 +661,12 @@ def _mirror_rows(rows: list[dict]) -> list[dict]:
 
     The sampled windows are RHS-heavy ({0.30,0.50,0.55,0.60,0.65}), so the left
     segment and the 0.70 tail are empty. Reflecting each off-centre point across
-    c=0.5 fills them in. These are symmetry-implied, NOT independently trained
+    c=0.5 fills them in. These are symmetry-implied, not independently trained
     compositions (the canonical reference's own Z_2 check is <=0.00013/site), so
     they reuse the source point's value/error and the same truth. They are drawn
-    identically to the trained windows — the filled/open marker split confused
-    more than it informed, so the reflection is
-    stated once in the dissertation body text instead of per-marker. Skip c=0.5
-    and any reflection that lands on an already-sampled window.
+    identically to the trained windows, with the reflection stated once in the
+    dissertation body text instead of per-marker. Skip c=0.5 and any reflection
+    that lands on an already-sampled window.
     """
     sampled = {round(r["c"], 4) for r in rows}
     mirrored = []
@@ -725,20 +701,16 @@ def _plot(
     """House-standard overlay + residual pair.
 
     Roles: TI truth = REFERENCE_INK line; our sampler = SAMPLER_HUE, with the
-    corrected estimate as the filled square (the deliverable) and the raw
-    soft-ensemble read as the open, lightened circle (the same object before
-    the ensemble mapping -- one role, two intensities, never a second hue).
-    The soft-ensemble truth (canonical minus the analytic offset) is the
-    raw markers' own reference line, in the raw hue, dashed. Compositions
-    in `flag_c` (plus their Z2 mirrors) get a muted provisional ring: the
-    point prints from a different training grid or awaits retrain, and the
-    caption says which.
+    corrected estimate as the filled square and the raw soft-ensemble read as the
+    open, lightened circle (one role, two intensities, never a second hue). The
+    soft-ensemble truth (canonical minus the analytic offset) is the raw markers'
+    own reference line, in the raw hue, dashed. Compositions in `flag_c` (plus
+    their Z2 mirrors) get a muted provisional ring: the point prints from a
+    different training grid or awaits retrain, and the caption says which.
 
-    Legend is FIGURE-level, below the panels: no in-axes placement
-    is shape-robust across couplings -- the "empty top-centre" that held
-    the legend on the U-shaped subcritical curve is exactly the peak of
-    the inverted critical one, where it occluded the truth line and its
-    sample glyphs printed at data height beside real markers.
+    The legend is figure-level, below the panels: no in-axes placement is
+    shape-robust across couplings, since the empty top-centre of the U-shaped
+    subcritical curve is the peak of the inverted critical one.
     """
     import matplotlib.pyplot as plt
 
@@ -757,8 +729,7 @@ def _plot(
     use_house_style()
     rows = [r for r in curve if not np.isnan(r["raw"])]
     mirror = _mirror_rows(rows)
-    # One uniform curve: sampled + symmetry-implied points drawn identically,
-    # sorted by composition (the reflection is stated in the body text).
+    # Sampled and symmetry-implied points drawn identically, sorted by c.
     allrows = sorted(rows + mirror, key=lambda r: r["c"])
     cs = [r["c"] for r in allrows]
     raw = [r["raw"] for r in allrows]
@@ -769,8 +740,8 @@ def _plot(
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
     raw_hue = parameter_ramp(SAMPLER_HUE, 2)[0]
 
-    # 2.7 in: the SHORT 2.4 in box plus the strip the below-panel figure
-    # legend needs (prints 6.9 cm vs 6.1 cm, +0.8 cm).
+    # 2.7 in: the short 2.4 in box plus the strip the below-panel figure legend
+    # needs (prints 6.9 cm vs 6.1 cm, +0.8 cm).
     fig, (ax, axr) = plt.subplots(1, 2, figsize=(FULL_WIDTH_IN, 2.7))
     ax.plot(ref_c, ref_F_persite, color=REFERENCE_INK, lw=1.4, label="TI truth")
     ax.plot(
@@ -781,11 +752,9 @@ def _plot(
         linestyle="--",
         label="soft, Laplace reference",
     )
-    # Capped bars, not a shaded band. Each abscissa here is a SEPARATELY
-    # TRAINED window (eleven of them, six trained plus their Z2 reflections),
-    # so there is no curve in c for a ribbon to be the envelope of: the marks
-    # are deliberately unjoined for the same reason. Bands are the house
-    # default only for uncertainty along a continuous x (figure_style).
+    # Capped bars, not a shaded band: each abscissa is a separately trained
+    # window (six trained plus their Z2 reflections), so there is no curve in c
+    # for a ribbon to envelope, and the marks are unjoined for the same reason.
     ax.errorbar(
         cs,
         raw,
@@ -859,9 +828,8 @@ def _plot(
                 linewidths=1.1,
                 zorder=4,
             )
-    # The ring alone marks the provisional windows; the caption says why
-    # (a ne64-trained point, or a retrain still owed). An in-panel word
-    # collides with the legend at these tail positions.
+    # The ring alone marks the provisional windows; the caption says why (a
+    # ne64-trained point, or a retrain still owed).
 
     for i, axis in enumerate((ax, axr)):
         style_axes(axis)

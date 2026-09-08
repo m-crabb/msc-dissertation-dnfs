@@ -13,19 +13,17 @@ This script assembles that comparison from artefacts already on disk:
     keys, so the two sides are directly comparable without re-deriving
     anything.
 
-Specialists are selected by their **config**, not their directory name: D, σ,
-the final penalty strength, the presence of the λ anneal, an unconditioned
-model, and a uniform base. The last of those matters — the c = 0.80 window has
-a `matched_anneal` sibling that trained against a Bernoulli(0.8) base, which is
-a different experiment (it fell below its own ESS floor) and must not be quoted as
-the specialist comparator. Run dirs predating the `base_composition` field are
-read as the then-default 0.5.
+Specialists are selected by their config, not their directory name: D, σ, the
+final penalty strength, the presence of the λ anneal, an unconditioned model,
+and a uniform base. The base matters — the c = 0.80 window has a
+`matched_anneal` sibling trained against a Bernoulli(0.8) base, a different
+experiment that must not be quoted as the specialist comparator. Run dirs
+predating the `base_composition` field are read as the then-default 0.5.
 
-The comparator set is NOT uniform in Euler budget: c = 0.50 has ne128 seeds,
+The comparator set is not uniform in Euler budget: c = 0.50 has ne128 seeds,
 the other windows are ne64, and ne128 alone moved c = 0.50 from 0.699 to 0.918
-mean ESS fraction. The Euler budget is therefore printed per row rather than
-averaged away, and an amortised (ne128) row compared against an ne64
-specialist is a comparison across two budgets — say so when quoting it.
+mean ESS fraction. The budget is therefore printed per row rather than averaged
+away; an amortised (ne128) row against an ne64 specialist compares two budgets.
 
 Example:
     python -m experiments.constrained_soft_02.analysis.amortised_vs_specialist \\
@@ -42,13 +40,10 @@ import pandas as pd
 from experiments.dnfs_baseline_01.run import HELD_OUT_COMPOSITIONS
 
 REPORTED = ["ess_fraction", "composition_mean"]
-# Declared so that "nothing collected" is still a frame with these columns —
-# the sweeps land after the specialists, so the half-populated table is the
-# normal state of this script, not an edge case.
-# `model_kind`, `hidden_dim` and `n_steps` are carried through to the detail
-# CSV rather than used for filtering: they are the confounds most likely to
-# creep into an "amortised vs specialist" claim, and they belong on the page
-# where a reader can check them.
+# Declared so that "nothing collected" is still a frame with these columns.
+# `model_kind`, `hidden_dim` and `n_steps` reach the detail CSV rather than
+# filter: they are the confounds most likely to creep into an "amortised vs
+# specialist" claim.
 SPECIALIST_COLUMNS = [
     "composition",
     "seed",
@@ -92,11 +87,10 @@ def collect_specialists(
     has both a leTF and an `lemlp` specialist, and quoting the wrong one turns
     an amortisation result into an architecture comparison.
 
-    `require_anneal` follows the comparator, not the code. At D = 10 the λ
-    anneal is the recipe that took seed survival from 1/4 to 4/4, so the
-    archived non-annealed cells are not the thing to beat. At D = 4, λ = 50
-    trained 4/4 from scratch and the archived comparators have no anneal at
-    all — requiring one there would silently return an empty comparator set.
+    `require_anneal` follows the comparator. At D = 10 the λ anneal took seed
+    survival from 1/4 to 4/4, so the archived non-annealed cells are not the
+    thing to beat; at D = 4, λ = 50 trained 4/4 from scratch and the archived
+    comparators have no anneal, so requiring one returns an empty set.
     """
     rows = []
     for run_dir, cfg in _run_dirs(results_dir):
@@ -151,16 +145,12 @@ def collect_amortised(results_dir: Path, cells: list[str]) -> pd.DataFrame:
 def _one_run_per_seed(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     """Keep the newest run dir per (group, seed); report what was dropped.
 
-    The archive holds repeated run dirs for the same cell and seed — a rerun
-    that replaced an earlier attempt, or the same run copied under a new
-    timestamp. Averaging over rows would weight such a seed twice, inflating
-    (or deflating) the seed mean while `n_seeds` still reports the honest
-    distinct-seed count, so the discrepancy is invisible in the output.
-
-    Newest wins because run dirs carry a trailing timestamp and a rerun is
-    the later word on that seed. Duplicates are printed rather than silently
-    collapsed: if two dirs for one seed disagree, that is something to look at,
-    not something for this function to decide quietly.
+    The archive holds repeated run dirs for the same cell and seed (a rerun,
+    or the same run copied under a new timestamp). Averaging over rows would
+    weight such a seed twice while `n_seeds` still reports the distinct-seed
+    count, so the discrepancy would be invisible. Newest wins because run dirs
+    carry a trailing timestamp; duplicates are printed rather than silently
+    collapsed.
     """
     subset = [*keys, "seed"]
     ordered = frame.sort_values("run")
@@ -175,13 +165,10 @@ def _aggregate(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
 
     `n_euler_steps` is always a grouping key, never averaged over: c = 0.50 and
     c = 0.80 each have both ne64 and ne128 specialists, and pooling them would
-    fold a known 0.699 → 0.918 effect into the seed mean of the very quantity
-    the amortised model is being compared on.
+    fold a known 0.699 → 0.918 effect into the seed mean.
 
-    The seed count is not decoration either: this leg's documented failure mode
-    is that some seeds never learn the physics at all (the c = 0.60 ne64 group
-    has a 0.000 among its four), so a mean quoted without n hides whether it
-    describes a working recipe or one survivor.
+    Seeds can fail to learn the physics at all (the c = 0.60 ne64 group has a
+    0.000 among its four), so the seed count stays next to the mean.
     """
     if frame.empty:
         return pd.DataFrame(columns=[*keys, "n_seeds", *REPORTED])
@@ -196,12 +183,10 @@ def _aggregate(frame: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
 def build_table(amortised: pd.DataFrame, specialists: pd.DataFrame) -> pd.DataFrame:
     """Join the two sides on composition; missing sides stay as NaN.
 
-    An outer join on purpose: the held-out compositions have no specialist by
-    construction, and a cell whose sweep has not run yet should show as absent
-    rather than silently drop the composition from the table. Where a
-    composition has specialists at two Euler budgets it contributes two
-    comparator rows, so the budget the amortised model is being compared
-    against is always on the page.
+    Outer join: the held-out compositions have no specialist by construction,
+    and a cell whose sweep has not run yet shows as absent rather than dropping
+    the composition. A composition with specialists at two Euler budgets
+    contributes two comparator rows.
     """
     amortised_agg = _aggregate(amortised, ["cell", "composition", "n_euler_steps"])
     specialist_agg = _aggregate(specialists, ["composition", "n_euler_steps"])

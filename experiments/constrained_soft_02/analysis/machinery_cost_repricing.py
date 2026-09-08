@@ -11,11 +11,11 @@ in the conditioning path; the two admissible outcomes are recorded in
 
 Three numbers are archived, all seed means over seeds 42-45:
 
-  * **machinery cost** = specialist - null, both read from `eval/metrics.json`
+  * machinery cost = specialist - null, both read from `eval/metrics.json`
     `ess_fraction` at c = 0.5. The null is the conditioned cell with a
     zero-width draw window: the same target reached through the whole
     conditioning path, so the difference isolates the machinery.
-  * **range-drawing gap** = null - amortised-at-centre, the amortised family's
+  * range-drawing gap = null - amortised-at-centre, the amortised family's
     c = 0.5 row from `eval/composition_sweep.json`. With the machinery priced
     separately, this is the part of the amortised family's centre deficit
     attributable to training over a range of compositions.
@@ -23,9 +23,8 @@ Three numbers are archived, all seed means over seeds 42-45:
     noise" is reproducible (the specialist's spread is 4x the null's, driven
     by seed 43).
 
-Guard: no machinery cost may be quoted if a null seed fails to train (ESS
-fraction < 0.1); the script asserts that veto rather than reporting around
-it.
+No machinery cost may be quoted if a null seed fails to train (ESS fraction
+< 0.1); the script asserts that veto rather than reporting around it.
 
 Usage:
     python -m experiments.constrained_soft_02.analysis.machinery_cost_repricing

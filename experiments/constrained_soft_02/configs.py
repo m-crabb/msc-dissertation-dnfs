@@ -124,19 +124,15 @@ CONFIGS: dict[str, StageCfg] = {
         wandb_project="dnfs-constraints",
     ),
     # Amortised validation cell at the small lattice: a controlled clone of
-    # S2_d4_c05_l50_letf above, differing ONLY in that the model is
+    # S2_d4_c05_l50_letf above, differing only in that the model is
     # conditioned on c and c is drawn per outer cycle instead of being fixed
     # at 0.5. Everything else — 10k steps, ne50, λ=50 held fixed, hidden 64 —
     # is copied, so a gap against the archived four-seed c=0.5 record
-    # (ess_fraction 0.58–0.85) is attributable to amortisation and nothing
-    # else. It runs before the D=10 cells because it is minutes rather than
-    # hours: a cheap end-to-end proof of the conditioning, the per-cycle draw,
-    # the buffered baseline and the per-composition sweep.
+    # (ess_fraction 0.58–0.85) is attributable to amortisation.
     #
-    # λ is NOT annealed here, unlike the D=10 cells. The anneal exists because
-    # λ=50 from scratch trains 1 seed in 4 at D=10; at D=4 the archived λ=50
-    # cell trained 4/4, and matching the comparator's recipe matters more than
-    # inheriting a fix for a problem this lattice does not have.
+    # λ is not annealed here, unlike the D=10 cells: λ=50 from scratch trains
+    # 1 seed in 4 at D=10, but the archived D=4 λ=50 cell trained 4/4, so the
+    # comparator's recipe is matched instead.
     #
     # The c-window still widens (0.05 → 0.15 → 0.30 at the same fractions of
     # the run as the D=10 schedule, 20% and 40%): the easy end is c ≈ 0.5,
@@ -179,24 +175,16 @@ CONFIGS: dict[str, StageCfg] = {
     # Narrow-window twin of the cell above: identical in every respect except
     # that the window stops widening at ±0.15 instead of ±0.30.
     #
-    # It exists to answer one question the wide run raised and could not
-    # settle. The wide run's conditioning came out heavily attenuated —
-    # realised composition tracked requested composition with slope 0.39,
-    # against 0.984 for the exact enumerated target — so the model travels
-    # under 40% of the distance it is asked to. Two explanations fit that
-    # equally well: the range is too wide to cover with a 10k-step budget
-    # (a coverage cost, which trades off and can be quantified), or the
-    # conditioning is attenuated however narrow the range gets (intrinsic,
-    # and no amount of budget-shuffling fixes it).
-    #
-    # Halving the final window separates them. If the slope rises toward 1
-    # inside [0.35, 0.65], the deficit is coverage and buys a real trade-off
-    # curve; if it stays near 0.4, the attenuation is intrinsic and the
-    # escalation is architectural rather than a matter of scheduling.
+    # The wide run's conditioning came out heavily attenuated — realised
+    # composition tracked requested composition with slope 0.39, against 0.984
+    # for the exact enumerated target. Halving the final window separates the
+    # two readings: if the slope rises toward 1 inside [0.35, 0.65] the deficit
+    # is coverage and buys a trade-off curve; if it stays near 0.4 the
+    # attenuation is intrinsic and the escalation is architectural.
     #
     # The sweep still evaluates the full ten compositions, so 0.30 and 0.80
-    # now sit OUTSIDE the training range by construction — those rows measure
-    # extrapolation, not interpolation, and must be read as such.
+    # now sit outside the training range by construction — those rows measure
+    # extrapolation, not interpolation.
     "S2_d4_camort_w15_l50_letf": StageCfg(
         name="S2_d4_camort_w15_l50_letf",
         ising=IsingCfg(
@@ -231,20 +219,18 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # Budget twin of S2_d4_camort_l50_letf: 50k steps instead of 10k, and
-    # NOTHING else changed — same Euler budget, same fixed λ, same capacity,
-    # same widening window. One variable, so a change in conditioning fidelity
-    # is attributable to training budget alone.
+    # Budget twin of S2_d4_camort_l50_letf: 50k steps instead of 10k, nothing
+    # else changed — same Euler budget, same fixed λ, same capacity, same
+    # widening window — so a change in conditioning fidelity is attributable
+    # to training budget alone.
     #
-    # This is not a proxy for the D=10 cells, and that distinction is the
-    # reason it is worth the GPU time. The attenuation result — realised
+    # Not a proxy for the D=10 cells: the attenuation result — realised
     # composition tracking requested composition at slope 0.39 against the
     # exact target's 0.984 — can only be stated where the target is
     # enumerable, i.e. d = 16 here. At D=10 the lattice is d = 100 sites, so
-    # there are 2^100 states, no exact slope exists to compare against, and
-    # the claim cannot be made at all. If attenuation survives a 5x budget it
-    # is a property of the method rather than of undertraining, and that is a
-    # far stronger statement than the 10k runs can support.
+    # there are 2^100 states and no exact slope exists to compare against. If
+    # attenuation survives a 5x budget it is a property of the method rather
+    # than of undertraining.
     "S2_d4_camort_50k_l50_letf": StageCfg(
         name="S2_d4_camort_50k_l50_letf",
         ising=IsingCfg(
@@ -269,7 +255,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         estimator="control_variate",
         # Same shape of widening, stretched over the longer run so the model
-        # spends the same FRACTION of training at each width as the 10k cell.
+        # spends the same fraction of training at each width as the 10k cell.
         composition=CompositionCfg(
             centre=0.5,
             half_width=0.05,
@@ -284,10 +270,10 @@ CONFIGS: dict[str, StageCfg] = {
     # The budget twin plus the lambda anneal, nothing else. The fixed-lambda
     # twin answered the obedience question (a surviving seed reaches the
     # exact target's slope at 5x budget) but reproduced the from-scratch
-    # fragility: seed 42 collapsed into one Z2 mode with ESS ~ 0.
-    # This cell tests the remaining attribution: does the
-    # anneal restore seed survival without giving back the obedience? The
-    # lambda schedule steps on the SAME boundaries as the window widening,
+    # fragility: seed 42 collapsed into one Z2 mode with ESS ~ 0. This cell
+    # tests whether the anneal restores seed survival without giving back the
+    # obedience. The lambda schedule steps on the same boundaries as the
+    # window widening,
     # so the penalty tightens exactly as the window opens (the D=10 cells'
     # coupling), and the final stage lands on the operating point lambda=50
     # so the reported target matches every comparator.
@@ -338,32 +324,27 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # OFFSET ANNEAL. Same lambda ramp as the annealed twin, but finished by
+    # Offset anneal. Same lambda ramp as the annealed twin, but finished by
     # step 5k -- before the composition window first widens at 10k.
     #
-    # Why this cell exists: the annealed twin collapsed on 3 of 4 seeds, and
-    # the training traces localise the damage to the exact steps where lambda
-    # steps up (median training ESS 4900 -> 11..630 at step 10k on all four
-    # seeds, and again at 20k), while the fixed-lambda twin passes the very
-    # same window boundaries almost unscathed (3456 -> 3255). At those shared
-    # boundaries the annealed cell takes three hits at once: the target moves
-    # (lambda 10 -> 25), the replay buffer is cleared because the target moved
-    # (`_clear_replay`), and the draw window triples. This cell separates the
-    # lambda discontinuity from that pile-up by moving the ramp off the window
-    # boundaries entirely, so each shock is absorbed on its own.
-    #
-    # Prediction if the pile-up is the cause: survival returns to the
-    # fixed-lambda twin's rate, because by the time the window opens the target
-    # has been at lambda=50 for 5k steps and the model has re-converged.
-    # Prediction if a lambda step is intrinsically fatal here: it still dies,
-    # just earlier, and the anneal is simply the wrong recipe at D=4.
+    # The annealed twin collapsed on 3 of 4 seeds, and the training traces
+    # localise the damage to the steps where lambda steps up (median training
+    # ESS 4900 -> 11..630 at step 10k on all four seeds, and again at 20k),
+    # while the fixed-lambda twin passes the same window boundaries almost
+    # unscathed (3456 -> 3255). At those shared boundaries the annealed cell
+    # takes three hits at once: the target moves (lambda 10 -> 25), the replay
+    # buffer is cleared because the target moved (`_clear_replay`), and the
+    # draw window triples. Moving the ramp off the window boundaries absorbs
+    # each shock on its own. Predicted: if the pile-up is the cause, survival
+    # returns to the fixed-lambda twin's rate; if a lambda step is
+    # intrinsically fatal here, it dies earlier and the anneal is the wrong
+    # recipe at D=4.
     #
     # 2k/5k rather than something later: the ramp must complete far enough
     # before 10k for the model to re-converge, but the low-lambda phase must
     # stay short, because at D=4 the composition quantum is 1/16 = 0.0625 --
     # wider than the stage-1 half-width of 0.05 -- so at lambda=10 the
-    # requested composition barely distinguishes the reachable states and the
-    # conditioning input carries almost no gradient signal.
+    # requested composition barely distinguishes the reachable states.
     "S2_d4_camort_50k_l50_letf_anneal_offset": StageCfg(
         name="S2_d4_camort_50k_l50_letf_anneal_offset",
         ising=IsingCfg(
@@ -411,37 +392,33 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # GRADIENT-CLIP PROBE, two strengths. Everything is the offset cell above;
+    # Gradient-clip probe, two strengths. Everything is the offset cell above;
     # only `grad_clip_max_norm` moves, from 500 down to 50 and 100.
     #
-    # Why: with the lambda ramp moved off the window boundaries, the acute
-    # collapse at the lambda steps disappears -- all four seeds cross every
-    # boundary healthy and are still at training ESS ~3400 at step 20k. Three
-    # of them then die *slowly*, over the following 10-30k steps, and the
-    # optimiser trace says why. At the final widening the pre-clip gradient
-    # norm goes from ~30 to 2.4e3-1.5e4 and the clip fires on 55-100% of every
-    # subsequent step; the one surviving seed peaks at 111, clips on 22% of
-    # steps for 2k steps, and returns to normal. The damage is uniform across
-    # the draw window (median training ESS is as bad at c=0.5 as at the edges),
-    # which rules out "the wider window asks for unreachable compositions" and
-    # points at the update itself rather than the target.
+    # With the lambda ramp moved off the window boundaries the acute collapse
+    # at the lambda steps disappears -- all four seeds cross every boundary
+    # healthy and are still at training ESS ~3400 at step 20k. Three then die
+    # slowly over the following 10-30k steps: at the final widening the
+    # pre-clip gradient norm goes from ~30 to 2.4e3-1.5e4 and the clip fires on
+    # 55-100% of every subsequent step, while the one surviving seed peaks at
+    # 111, clips on 22% of steps for 2k steps, and returns to normal. The
+    # damage is uniform across the draw window (median training ESS is as bad
+    # at c=0.5 as at the edges), which rules out "the wider window asks for
+    # unreachable compositions" and points at the update rather than the
+    # target.
     #
-    # The mechanism. `clip_grad_norm_` rescales rather than skips, so once the
-    # clip saturates every step has magnitude exactly max_norm -- about 17x a
-    # healthy step here -- in a direction estimated from importance weights
-    # that have just degenerated. Step size is then set by the clip, not by the
-    # gradient, so a batch carrying almost no information produces the largest
-    # update the run has ever taken. That is a runaway: worse model, higher
-    # weight variance, larger gradients, another maximal step. Clipping tighter
-    # bounds each such step to ~2-4x a healthy one, which is the smallest
-    # intervention consistent with the diagnosis.
+    # `clip_grad_norm_` rescales rather than skips, so once the clip saturates
+    # every step has magnitude exactly max_norm -- about 17x a healthy step
+    # here -- in a direction estimated from importance weights that have just
+    # degenerated: the least informative batch produces the largest update of
+    # the run, which worsens the model and raises the weight variance again.
+    # Clipping tighter bounds each such step to ~2-4x a healthy one.
     #
     # Two values because the healthy phase spikes as well -- the unconditioned
     # specialist trains to ESS 0.80 with 4% of steps above 500 and a p99 norm
     # near 4900 -- so clipping at 50 may squash tail gradients that were doing
-    # real work. 100 keeps more of that tail and still removes the runaway.
-    # If both survive 4/4 the tighter one is preferred as the stronger claim;
-    # if only 100 survives, the tail matters and that is worth reporting.
+    # real work, while 100 keeps more of that tail and still removes the
+    # runaway.
     "S2_d4_camort_50k_l50_letf_anneal_offset_clip50": StageCfg(
         name="S2_d4_camort_50k_l50_letf_anneal_offset_clip50",
         ising=IsingCfg(
@@ -546,29 +523,24 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # NULL CONTROL for the amortisation machinery. Conditioning is ON, but the
+    # Null control for the amortisation machinery. Conditioning is on, but the
     # draw window has zero width, so every outer cycle draws c = 0.5 exactly.
-    # Mathematically this IS the S2_d4_c05_l50_letf specialist — same target,
+    # Mathematically this is the S2_d4_c05_l50_letf specialist — same target,
     # same fixed composition — yet it reaches that target through the whole
     # amortisation path: the model adapter, the per-cycle draw, the per-state
     # composition buffer, the per-state c_t baseline, and the target binding.
-    #
-    # It exists because every other check on that path is partial. The exact
-    # enumeration validates the target; the archived specialists validate the
-    # sampler and the eval; neither touches the conditioning code, because a
-    # specialist has none. This cell is the one comparison where a discrepancy
-    # can only be the machinery.
+    # Every other check on that path is partial (a specialist has no
+    # conditioning code), so a discrepancy here can only be the machinery.
     #
     # Pass condition: it reproduces the specialist — ESS fraction ~0.74 over
     # seeds 42-45 and realised composition ~0.500. Anything materially worse
     # means the attenuation measured on the wide and narrow cells is an
     # artefact and every number from them needs re-reading.
     #
-    # It is NOT expected to be bit-identical, and that is the other reason it
-    # is worth running: amortised training replaced the specialist's "latest
-    # c_t grid applied to the whole buffer" approximation with a per-state
-    # buffered c_t. That change is research-bearing, rides on every amortised
-    # run, and no archived cell exercises it. This isolates it.
+    # Not expected to be bit-identical: amortised training replaced the
+    # specialist's "latest c_t grid applied to the whole buffer" approximation
+    # with a per-state buffered c_t, which rides on every amortised run and is
+    # exercised by no archived cell.
     "S2_d4_cnull_l50_letf": StageCfg(
         name="S2_d4_cnull_l50_letf",
         ising=IsingCfg(
@@ -595,31 +567,27 @@ CONFIGS: dict[str, StageCfg] = {
         composition=CompositionCfg(centre=0.5, half_width=0.0),
         wandb_project="dnfs-constraints",
     ),
-    # NULL CONTROL AT THE FINAL RECIPE. The original cnull pair above prices
+    # Null control at the final recipe. The original cnull pair above prices
     # the conditioning machinery at the pre-fix recipe (10k steps, clip 500),
     # where it measured a 0.155 ESS-fraction deficit against its matched
-    # specialist (0.801 -> 0.646, seed means). But the delivered amortised
-    # family (50k, clip 50, offset lambda anneal) sits at 0.754 at c = 0.5 —
-    # only ~0.05 below that specialist ceiling — so the 0.155 cannot be quoted
-    # as the cost of the final recipe. This pair re-prices the machinery with
-    # everything else set to the final recipe. Same isolation logic as the
-    # cell above: identical target, identical schedule, and the only
-    # difference between this cell and its `_c05_` twin below is the
-    # conditioning path itself.
+    # specialist (0.801 -> 0.646, seed means). The delivered amortised family
+    # (50k, clip 50, offset lambda anneal) sits at 0.754 at c = 0.5 — only
+    # ~0.05 below that specialist ceiling — so the 0.155 cannot be quoted as
+    # the cost of the final recipe. This pair re-prices the machinery with
+    # everything else set to the final recipe; the only difference between
+    # this cell and its `_c05_` twin below is the conditioning path.
     #
     # Expectations, recorded before any result (seed means at c = 0.5,
     # specialist-minus-null):
     #   - cost ~0.05: the 0.155 was recipe-confounded (short training and a
     #     saturating clip amplify the machinery's variance overhead) and the
-    #     writeup quotes this pair as the machinery cost of the system as
-    #     delivered.
+    #     writeup quotes this pair as the machinery cost as delivered.
     #   - cost ~0.155 persisting: the machinery cost is recipe-independent,
     #     and the amortised family's 0.754 beating its own null control means
-    #     drawing a RANGE of compositions helps training at the centre —
+    #     drawing a range of compositions helps training at the centre —
     #     report both facts, do not average them.
-    # Either branch is reportable; a null that fails to train at all (any
-    # seed ESS < 0.1) would instead indict the zero-width path and block
-    # quoting any machinery number.
+    # A null that fails to train at all (any seed ESS < 0.1) would instead
+    # indict the zero-width path and block quoting any machinery number.
     "S2_d4_cnull_50k_l50_letf_anneal_offset_clip50": StageCfg(
         name="S2_d4_cnull_50k_l50_letf_anneal_offset_clip50",
         ising=IsingCfg(
@@ -667,9 +635,9 @@ CONFIGS: dict[str, StageCfg] = {
     # The matched specialist ceiling for the null control above: identical in
     # every field except that conditioning is off and no composition is drawn.
     # The archived 10k/clip500 specialist ceiling (0.801) cannot serve here —
-    # reusing it against a 50k/clip50 null would rebuild exactly the recipe
-    # confound this pair exists to remove. The lambda anneal is target-level
-    # and independent of conditioning, so it applies cleanly to a specialist.
+    # reusing it against a 50k/clip50 null would rebuild the recipe confound.
+    # The lambda anneal is target-level and independent of conditioning, so it
+    # applies cleanly to a specialist.
     "S2_d4_c05_50k_l50_letf_anneal_offset_clip50": StageCfg(
         name="S2_d4_c05_50k_l50_letf_anneal_offset_clip50",
         ising=IsingCfg(
@@ -1310,18 +1278,17 @@ CONFIGS: dict[str, StageCfg] = {
         wandb_project="dnfs-constraints",
     ),
     # ---------------------------------------------------------------
-    # Amortised cells: ONE model conditioned on the target composition,
-    # to be measured against the six per-composition specialists above.
+    # Amortised cells: one model conditioned on the target composition,
+    # measured against the six per-composition specialists above.
     #
     # Both clone the surviving recipe verbatim — λ 10→25→50, ne128, warmup
-    # 2000, grad-clip 500 — because the λ anneal is what took D=10 seed
-    # survival from 1/4 to 4/4, and ne128 is what took the c=0.5 ESS
-    # fraction from 0.699 (3/4 seeds) to 0.918 (4/4).
+    # 2000, grad-clip 500 — because the λ anneal took D=10 seed survival from
+    # 1/4 to 4/4, and ne128 took the c=0.5 ESS fraction from 0.699 (3/4 seeds)
+    # to 0.918 (4/4).
     # ---------------------------------------------------------------
     # Continuous c on a widening window, mirroring the λ schedule step for
     # step: c ≈ 0.5 is the easy end (base and target compositions already
-    # agree) so the model learns there first, then generalises outward to
-    # the edges where the composition gap is largest.
+    # agree) so the model learns there first, then generalises outward.
     "S2_d10_camort_l50_letf_ne128_anneal": StageCfg(
         name="S2_d10_camort_l50_letf_ne128_anneal",
         ising=IsingCfg(
@@ -1376,34 +1343,30 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # The D=10 amortised recipe carrying BOTH D=4 fixes, and nothing else.
-    #
-    # Two changes from the cell above, each earned separately at D=4:
+    # The D=10 amortised recipe carrying both D=4 fixes, and nothing else.
     #
     #  1. The penalty ramp finishes at 5k, before the first window widening at
     #     10k. Sharing a boundary with the widening turns a lambda step into an
     #     unrecoverable collapse -- the target moves while coverage is being
-    #     stretched, and the sampler has no settled regime to fall back on.
-    #     Offsetting removed the acute collapse at D=4 in all four seeds.
-    #  2. grad_clip_max_norm 500 -> 50. This is the larger claim.
-    #     `clip_grad_norm_` RESCALES rather than skips, so once the clip
-    #     saturates every step has magnitude exactly max_norm regardless of how
-    #     trustworthy its direction is. At 500 that is ~17x a healthy step
-    #     (median norm ~30), taken along a direction estimated from importance
-    #     weights that have just degenerated -- so the least informative batch
-    #     produces the largest update of the run, which worsens the model,
-    #     which raises the weight variance again. At 50 a saturated step is
-    #     ~2x a healthy one and the loop cannot close: at D=4 the post-widening
+    #     stretched. Offsetting removed the acute collapse at D=4 in all four
+    #     seeds.
+    #  2. grad_clip_max_norm 500 -> 50. `clip_grad_norm_` rescales rather than
+    #     skips, so once the clip saturates every step has magnitude exactly
+    #     max_norm regardless of how trustworthy its direction is. At 500 that
+    #     is ~17x a healthy step (median norm ~30), taken along a direction
+    #     estimated from importance weights that have just degenerated -- so
+    #     the least informative batch produces the largest update of the run,
+    #     which worsens the model, which raises the weight variance again. At
+    #     50 a saturated step is ~2x a healthy one: at D=4 the post-widening
     #     norm falls back instead of escalating, and the three seeds that died
     #     at 500 all survive.
     #
-    # Deliberately NOT changed: replay_buffer_cycles stays at 4 (D=4 uses 8).
+    # Deliberately not changed: replay_buffer_cycles stays at 4 (D=4 uses 8).
     # Depth is the only thing that mixes compositions within a batch, so 4
     # means each batch spans ~4 compositions on a 100-site task -- a plausible
-    # contributor to the earlier D=10 collapses, but untested. This run buys
-    # one seed at ~15 h; adding a third simultaneous change would make a
-    # failure unattributable. Buffer depth is the next lever if this collapses
-    # at the widening with the same signature.
+    # contributor to the earlier D=10 collapses, but untested, and a third
+    # simultaneous change would make a failure unattributable. Buffer depth is
+    # the next lever if this collapses at the widening with the same signature.
     "S2_d10_camort_l50_letf_ne128_anneal_offset_clip50": StageCfg(
         name="S2_d10_camort_l50_letf_ne128_anneal_offset_clip50",
         ising=IsingCfg(
@@ -1463,7 +1426,7 @@ CONFIGS: dict[str, StageCfg] = {
     # ~76,000 across step 10,000 and never fell back, and ESS went from ~40 to
     # 1.0 for the remaining 40,000 steps. Clipping bounds the step but cannot
     # fix a batch whose composition labels are stale: with 4 cycles the replay
-    # buffer holds states drawn under the PREVIOUS half-width, so at a widening
+    # buffer holds states drawn under the previous half-width, so at a widening
     # the model is scored on compositions its buffer never visited. Doubling to
     # 8 cycles halves the rate at which fresh compositions enter relative to
     # optimiser steps, so the buffer tracks the widened window before the loss
@@ -1584,7 +1547,7 @@ CONFIGS: dict[str, StageCfg] = {
         ),
         wandb_project="dnfs-constraints",
     ),
-    # Control: amortise over ONLY the six compositions that have
+    # Control: amortise over only the six compositions that have
     # specialists. Held-out points between those atoms separate genuine
     # interpolation from memorising the training set.
     "S2_d10_cgrid_l50_letf_ne128_anneal": StageCfg(
@@ -1640,9 +1603,9 @@ CONFIGS: dict[str, StageCfg] = {
     # Neighbour log-ratio saturation. Four arms, all cloned from
     # `..._anneal_offset_clip50` above, which is the control and is on disk.
     #
-    # The mechanism. `residual_lenet` bounds log p̃_t(y)/p̃_t(x) at a ceiling
-    # (paper App. E.1.1 fixes it at 5, calibrated for an unpenalised Ising
-    # target). Flipping one site moves the composition by exactly 1/d, so the
+    # `residual_lenet` bounds log p̃_t(y)/p̃_t(x) at a ceiling (paper App.
+    # E.1.1 fixes it at 5, calibrated for an unpenalised Ising target).
+    # Flipping one site moves the composition by exactly 1/d, so the
     # penalty λd(c−c_target)² contributes ∓2λΔ to that ratio, Δ = c(x)−c_target.
     # The ceiling therefore starts binding once
     #
@@ -1652,26 +1615,22 @@ CONFIGS: dict[str, StageCfg] = {
     # sampler achieves; the control run sits at Δ = 0.078 with 26% of ratios
     # saturated and a 99th percentile of 9.9, against the 9.8 the expression
     # predicts. Once saturated, `site_terms` is evaluated at exp(5)=148 rather
-    # than the true exp(9.9)≈2e4, and because ∂_t log Z_t is the MEAN of
+    # than the true exp(9.9)≈2e4, and because ∂_t log Z_t is the mean of
     # (∂_t log p̃ + site_terms) it inherits the same inflation. The residual
     # then becomes a difference of two large numbers — 717.7 − 717.7 = 27.5 in
     # the control — and squaring that difference is what wrecks the gradient.
     #
     # Two ways to stop it binding, at two doses each, so they bracket:
-    #   LOWER λ    shrinks the true ratio. Keeps the paper's ceiling and every
-    #              comparator (the exact 4×4 0.984, and mchammer VC-SGC via
-    #              κ=λ). Costs constraint tightness.
-    #   RAISE the  leaves the ratio alone and stops truncating it. Keeps
-    #   ceiling    tightness, but exp(2λΔ) grows without bound if Δ drifts.
+    # lowering λ shrinks the true ratio, keeping the paper's ceiling and every
+    # comparator (the exact 4×4 0.984, mchammer VC-SGC via κ=λ) at the cost of
+    # constraint tightness; raising the ceiling keeps tightness but lets
+    # exp(2λΔ) grow without bound if Δ drifts.
     #
-    # Expected: λ=10 survives (Δ*=0.25);
-    # λ=25 marginal (Δ*=0.10); both ceiling arms fail by gradient runaway
-    # rather than by saturation, because they trade a bounded bias for an
-    # unbounded term. The ceiling arms are the ones that could refute the
-    # reading above: an offline probe over trained checkpoints showed the
-    # residual exploding as the ceiling rises, but those models had TRAINED at
-    # 5, so the probe cannot say what training at 20 from step 0 does — a
-    # model never allowed to truncate may simply never let Δ grow.
+    # Expected: λ=10 survives (Δ*=0.25); λ=25 marginal (Δ*=0.10); both ceiling
+    # arms fail by gradient runaway rather than by saturation. An offline probe
+    # over trained checkpoints showed the residual exploding as the ceiling
+    # rises, but those models had trained at 5, so it cannot say what training
+    # at 20 from step 0 does.
     # Read `log_ratio_clamp_frac` as the mediating variable in every arm.
     "S2_d10_camort_offset_clip50_lam10": StageCfg(
         name="S2_d10_camort_offset_clip50_lam10",
@@ -1703,11 +1662,9 @@ CONFIGS: dict[str, StageCfg] = {
             condition_on_composition=True,
         ),
         estimator="control_variate",
-        # No λ ramp: the terminal λ IS 10, so there is nothing to anneal to.
+        # No λ ramp: the terminal λ is 10, so there is nothing to anneal to.
         # Holding it fixed also removes the λ-step boundaries entirely, which
-        # keeps this arm from confounding "lower λ" with "fewer boundaries" —
-        # the control's own offset schedule already showed the boundaries
-        # survivable, so a fixed λ is the cleaner single-variable change.
+        # keeps this arm from confounding "lower λ" with "fewer boundaries".
         lambda_curriculum=None,
         composition=CompositionCfg(
             centre=0.5,
@@ -1721,21 +1678,21 @@ CONFIGS: dict[str, StageCfg] = {
         wandb_project="dnfs-constraints",
     ),
     # The staircase cell: flat λ=10 with coverage capped at half-width 0.20
-    # and widened gradually. Rationale, from the archived λ=10 arm above:
-    # that run was pristine through 20k (loss 2.76, grad 44, clamp_frac
-    # 0.0000 — no saturation at Δ*=0.25) and was knocked into a permanent
+    # and widened gradually. From the archived λ=10 arm above: that run was
+    # pristine through 20k (loss 2.76, grad 44, clamp_frac 0.0000 — no
+    # saturation at Δ*=0.25) and was knocked into a permanent
     # excursion/recovery cycle by the single hw 0.15→0.30 jump, a
     # penalty-variance transient (var_dt_log_p̃ 11→224 in one step), not a
-    # clamp event. Three changes follow directly:
-    #   CAP hw at 0.20 — covers requested compositions [0.3, 0.7] exactly;
+    # clamp event. Three changes follow:
+    #   Cap hw at 0.20 — covers requested compositions [0.3, 0.7] exactly;
     #     the inherited 0.30 over-covered to [0.2, 0.8], and the extra width
     #     is what delivered the killing variance dose (λd·hw² at 0.30 is
     #     2.25× the 0.20 value).
-    #   WIDEN in ≤0.05 increments with ≥8k dwell — the archived arm survived
+    #   Widen in ≤0.05 increments with ≥8k dwell — the archived arm survived
     #     a +0.10 widening at 10k (recovery ~5–6k steps under clip 50), so
     #     +0.05 per stage is a sub-fatal dose by construction. First widening
     #     at 20k so the hw=0.05 phase can prove in-loop ESS first.
-    #   CHECKPOINT every 2.5k — the λ=10 arm's final.pt landed mid-excursion
+    #   Checkpoint every 2.5k — the λ=10 arm's final.pt landed mid-excursion
     #     (obedience slope 0.079 against in-run states at loss ~5); eval must
     #     be able to select a healthy state by a rule fixed in advance
     #     (clamp_frac == 0, grad fallen back, CV ratio < 1).
@@ -2083,7 +2040,7 @@ CONFIGS[_flat_window_name] = replace(
 # the parents so recipe parity is by construction, not by copy-paste
 # discipline. The local-field regression motivating this measured the
 # closed form at ~95% of every trained lambda=50 specialist, with the
-# PENALTY column carrying it — the prediction under test is that the
+# penalty column carrying it — the prediction under test is that the
 # channel rescues the all-or-nothing 10x10 seeds (0.02/0.06/0.78/0.05 at
 # lambda=50).
 LAMBDA_SWEEP_PARENTS = tuple(
@@ -2102,7 +2059,7 @@ for _parent_name in LAMBDA_SWEEP_PARENTS:
 
 # ---------------------------------------------------------------------------
 # The 8x8 house family. Production moves to d=64 (the hard chapter's record
-# size, so the cross-route comparison is matched-size at BOTH couplings);
+# size, so the cross-route comparison is matched-size at both couplings);
 # one specialist family serves the F(c) curve and the house table.
 
 
@@ -2113,12 +2070,12 @@ def soft_house_recipe(cell: StageCfg) -> StageCfg:
     else: exact_field_channel=True (the closed-form penalty response —
     measured as a full 10x10 lambda=50 rescue, 0.95/0.93/0.94/0.96 against
     the parent's 0.02/0.06/0.78/0.05), compile_model=True (hard's measured
-    2.2x inner updates; checked by a d4+d64 loss-gap comparison against
-    eager before any fan-out, since compile has misbehaved on this codebase
-    before), ema_decay=0.9999 (dual eval — hard's marginal-seed rescue,
-    0.750 -> 0.830 class), and train.c_t_from_rollout=True (bit-identical
-    CV grid from the rollout's own forwards). Optimiser-side values (lr,
-    warmup 2000, clip 500, batch/buffer, 50k steps) stay PARENT-matched so
+    2.2x inner updates, checked by a d4+d64 loss-gap comparison against eager
+    before any fan-out), ema_decay=0.9999 (dual eval — hard's marginal-seed
+    rescue, 0.750 -> 0.830 class), and train.c_t_from_rollout=True
+    (bit-identical CV grid from the rollout's own forwards). Optimiser-side
+    values (lr, warmup 2000, clip 500, batch/buffer, 50k steps) stay
+    parent-matched so
     the before/after channel comparison carries no second change; evals
     stay fp32 end to end (bf16/SDPA are hard-chapter-only).
     """
@@ -2131,7 +2088,7 @@ def soft_house_recipe(cell: StageCfg) -> StageCfg:
 
 
 # The trained compositions: every c* is lattice-representable at d=64
-# (16/24/32 sites). 0.625 and 0.75 are NOT trained — F(c) = F(1-c) under a
+# (16/24/32 sites). 0.625 and 0.75 are not trained — F(c) = F(1-c) under a
 # global spin flip, so the printed curve mirrors them for free and a
 # trained 0.75 would duplicate 0.25. Composition tag = c_target x 1000
 # (the older x100 convention cannot write 0.375); 0.25 is the stress
@@ -2152,11 +2109,11 @@ for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
             )
         )
 
-# The channel control: house recipe MINUS the channel, critical coupling,
+# The channel control: house recipe minus the channel, critical coupling,
 # centre composition only. If this fails where _house_sc trains, the
 # failure->rescue story gets a measured second act at matched size; if
 # both train, the channel's sigma_c claim rests on the efficiency columns
-# instead. Channel flag is the ONLY lever this cell gives back.
+# instead. The channel flag is the only lever this cell gives back.
 _HOUSE_SC_CENTRE = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"]
 CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"] = replace(
     _HOUSE_SC_CENTRE,
@@ -2168,7 +2125,7 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_nochan"] = replace(
 # production size and coupling -- parent (= the nochan control), anneal,
 # channel -- so fig:penalty-variance can be drawn at 8x8 sigma_c instead
 # of 10x10 and the chapter body is single-size.
-# The nochan control PLUS the chapter's declared lambda schedule
+# The nochan control plus the chapter's declared lambda schedule
 # (10/25/50 at 0/10k/20k), one lever, test-pinned; the anneal's job is
 # the deferred-shock trace: it defers the lambda^2 Var[delta_P] shock
 # and repays at each boundary where the channel discharges it once.
@@ -2195,7 +2152,7 @@ CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc_anneal"] = replace(
 # centre cells. (1) nochan at sigma=0.1 completes the {coupling} x
 # {channel} 2x2 -- the sc nochan control trains 0/4 where the channel
 # trains 4/4, and this cell measures whether the bare penalty is benign
-# subcritically at d=64 on the SAME recipe (an earlier measurement said
+# subcritically at d=64 on the same recipe (an earlier measurement said
 # yes at 0.819 +/- 0.077, but on the pre-house recipe -- ne128 parent
 # without channel/compile/EMA/rollout-CV).
 # (2)+(3) lambda=100 twins, both couplings, carry the "raising lambda
@@ -2224,7 +2181,7 @@ for _lam, _lam_tag in ((10.0, "l10"), (100.0, "l100")):
             ising=replace(_lam_parent.ising, composition_penalty_strength=_lam),
         )
 
-# Matched-base twins: base_composition = c* at the OFF-CENTRE
+# Matched-base twins: base_composition = c* at the off-centre
 # windows, both couplings — at c* = 0.5 the house cells' Bernoulli(0.5)
 # base is already matched, so the centre rows anchor both columns
 # unchanged. What the pair measures: the s010 c=0.25 window is uniformly
@@ -2286,7 +2243,7 @@ CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(
 # curriculum — the D=10 family's staircase and anneal removed outright, not
 # survived), base matched to the drawn c per cycle (motivated by the 8x8 mb
 # twins: the off-centre specialist collapse was base reachability, one
-# lever, full rescue at every window). The base is Bernoulli(c), NOT hard's
+# lever, full rescue at every window). The base is Bernoulli(c), not hard's
 # slice-uniform mixture: single-flip dynamics leave a slice at the first
 # flip and the Eq. 4 path is -inf off-slice for t<1 under a slice base —
 # full support is a structural requirement, not a softening. The channel
@@ -2295,7 +2252,7 @@ CONFIGS["S2_d4_camort_50k_l50_letf_house"] = soft_house_recipe(
 # nothing if the matched base has absorbed its job. Exactly three levers
 # off the house centre cell, pinned by test_matched_base_amortisation.
 _CAMORT_SPINE = CompositionCfg(centre=0.5, half_width=0.0, values=(0.25, 0.375, 0.5))
-# The d8 cells draw uniform over EVERY realisable composition in
+# The d8 cells draw uniform over every realisable composition in
 # [0.25, 0.5] — the "quantised continuum", 17 values at 1/64 steps.
 # The D=4 cell exposed the cost of sparse
 # draws (held-out 0.4375 dipped to raw ESS 0.73 across a 0.125 gap while
@@ -2336,7 +2293,7 @@ for _sigma_suffix in ("", "_sc"):
     )
     if _sigma_suffix == "_sc":
         # Sigma-ladder twin: the sigma_c camort cell above (which does not
-        # train) starts at sigma_c COLD, while the hard chapter's amortised
+        # train) starts at sigma_c cold, while the hard chapter's amortised
         # sigma_c cell (and the baseline's critical recipe) train on a
         # 7-stage sigma ladder,
         # 0.1 -> sigma_c over 30k steps with the LR dropping at the
@@ -2345,7 +2302,7 @@ for _sigma_suffix in ("", "_sc"):
         # what the measured mechanism calls for: every amortised arm enters
         # the critical landscape cold at 10-40x the specialist's early loss
         # and gradient norm and settles in a bad optimum (loss plateau
-        # ~10-15 vs ~1.5). ONE lever: the ladder, stage tuple copied from
+        # ~10-15 vs ~1.5). One lever: the ladder, stage tuple copied from
         # the hard d64 recipe with the final stage at the exact sigma_c.
         _ladder_name = f"{_camort_name}_curr"
         CONFIGS[_ladder_name] = replace(
@@ -2359,7 +2316,7 @@ for _sigma_suffix in ("", "_sc"):
     # specialist's ~1.5), while the D=4 cell that motivated the design ran
     # at sigma=0.1 with the 3-value spine — so "mixed draws at criticality"
     # and "the later densification to 17 values" are confounded in the
-    # collapsed cell. ONE lever separates them: the draw set back to the
+    # collapsed cell. One lever separates them: the draw set back to the
     # D=4 spine (per-value exposure 1/3 instead of 1/17),
     # both couplings so sigma=0.1 keeps a should-stay-healthy control.
     _spine3_name = f"S2_d8_camort_spine3_l50_letf_ne128_house{_sigma_suffix}"
@@ -2371,7 +2328,7 @@ for _sigma_suffix in ("", "_sc"):
 
 # Specialist ladder twin: the camort ladder twin trains (centre ESS
 # 0.155-0.352 raw / 0.220-0.452 EMA on 4/4 seeds, vs the cold camort cell's
-# 0.001-0.010), so its yield ratio needs a specialist on the SAME ladder --
+# 0.001-0.010), so its yield ratio needs a specialist on the same ladder --
 # against the cold sigma_c specialist (0.67-0.74 raw) the ratio carries two
 # levers. One lever off the house sigma_c specialist: the ladder.
 _sc_specialist = CONFIGS["S2_d8_c0500_l50_letf_ne128_house_sc"]
@@ -2385,7 +2342,7 @@ CONFIGS[_sc_specialist_ladder_name] = replace(
 # Collapse-mechanism twins, sc only: spine3 sc collapses identically to the
 # 17-value cell (grid-uniform ESS 0.001-0.010, plateau ~10-15), and an
 # offline probe showed the disengaged channel gain is a casualty of the dead trunk,
-# not the cause (specialist-gain transplant RAISES loss 9->14/13->20/15->22
+# not the cause (specialist-gain transplant raises loss 9->14/13->20/15->22
 # and leaves 512-sample ESS at 0.003). spine1 keeps the full amortised
 # machinery at a single value {0.5} — machinery-vs-mixture; rb1 kills replay
 # staleness (each state scored against a c_t up to 4 cycles old) with one
@@ -2461,7 +2418,7 @@ CONFIGS["S2_d4_camort_mb_50k_l50_letf_house"] = replace(
     composition=_CAMORT_SPINE,
 )
 
-# The tab:amort-4x4 comparator rows, SAME recipe: pricing the
+# The tab:amort-4x4 comparator rows, same recipe: pricing the
 # conditioning machinery against comparators on the retired clip50
 # recipe would rebuild the recipe confound the archived cnull pair was
 # built to remove — so specialists and null re-run on the house recipe
@@ -2470,7 +2427,7 @@ CONFIGS["S2_d4_camort_mb_50k_l50_letf_house"] = replace(
 # count at d=16 (4/6/8 sites), unlike the retired {0.30, 0.65, 0.80}
 # grid (4.8/10.4/12.8). The scatter panels (app:logp-scatters, soft row)
 # read the c0500 and mirror-edge cells of exactly this family. The
-# obedience reference slope 0.976 was measured on the OLD request grid
+# obedience reference slope 0.976 was measured on the old request grid
 # and must be re-derived by enumeration before any new slope is quoted
 # against it.
 _D4_SPECIALIST_HOUSE_BASE = soft_house_recipe(
@@ -2489,12 +2446,12 @@ for _c_target, _c_tag in ((0.25, "c0250"), (0.375, "c0375")):
         ising=replace(_D4_SPECIALIST_HOUSE_BASE.ising, target_composition=_c_target),
     )
 
-# The 4x4 house TABLE family at the cross-chapter 4x4 budget: the
+# The 4x4 house table family at the cross-chapter 4x4 budget: the
 # baseline and hard chapters train every 4x4 cell for 10k steps, while the
 # _50k_ family above exists as the budget-matched comparator of the 50k
 # amortised 4x4 cell. tab:eval-soft-4x4 reads these 10k cells at both
 # couplings so its two halves and the other chapters' 4x4 tables share one
-# budget; ONE lever off the _50k_ cell (n_steps), sigma_c by one more.
+# budget; one lever off the _50k_ cell (n_steps), sigma_c by one more.
 for _c_target, _c_tag in SOFT_HOUSE_WINDOWS:
     for _sigma, _sigma_suffix in ((0.1, ""), (SIGMA_C, "_sc")):
         _budget_parent = CONFIGS[f"S2_d4_{_c_tag}_50k_l50_letf_house"]
@@ -2523,8 +2480,8 @@ for _sigma_suffix in ("", "_sc"):
         composition=_CAMORT_SPINE,
     )
 
-# Null control on the house recipe: conditioning path ON, window width
-# ZERO, so vs the c0500 specialist above the only differences are the
+# Null control on the house recipe: conditioning path on, window width
+# zero, so vs the c0500 specialist above the only differences are the
 # machinery itself (model flag + the zero-width composition config).
 CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(
     replace(
@@ -2545,7 +2502,7 @@ CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(
 # is bimodal (0.77 at x_Au = 0.5, CuAu L1_0; 0.15 at 0.25, Cu3Au L1_2) --
 # the free rung must cover both ordered phases, the penalised rung pins one.
 # Penalty strength and matched base follow the soft house recipe; the
-# closed-form flip channel is OFF on these base rungs and switched on by
+# closed-form flip channel is off on these base rungs and switched on by
 # the `_efc` twins below.
 K_B_EV = 8.617333262e-5
 
@@ -2692,7 +2649,7 @@ for _name in (
     CONFIGS[_name] = replace(CONFIGS[_name], curriculum=_cuau_house_curriculum(50_000))
 
 # 64-site flip-channel twins: at 16 sites the soft house
-# cells only ever ran WITH the channel (the channel-free soft cells died at the
+# cells only ever ran with the channel (the channel-free soft cells died at the
 # 1200 -> 800 K step) and the free cell read level with and without it, so the
 # 64-site soft cells carry the channel and the free cell runs both as the
 # channel's control at the production size.

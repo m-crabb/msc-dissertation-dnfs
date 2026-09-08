@@ -1,23 +1,21 @@
 """tab:amort-4x4 fill: conditioned vs specialist per composition, one currency.
 
-Revamp re-point (wave 3, plan 2026-08-30-soft-chapter-revamp-efc): the
-offset/clip family retired, so every row now comes from the house-recipe
-rerun (`*_house`, tag 20260831-softhouse-d16, fixed lambda=50 + exact
-field channel + EMA dual eval) and the composition axis moves to the
-revamp grid. The table structure is unchanged: every requested composition
-gets a SPECIALIST comparator row and both hardware-paired timing columns
-stay replaced by the house FLOP/es currency, so the table prices exactly
-what tab:eval-soft-8x8 prices and no cross-device second appears anywhere.
+Re-pointed in the soft-chapter revamp (2026-08-30, wave 3): the offset/clip
+family retired, so every row comes from the house-recipe rerun (`*_house`,
+tag 20260831-softhouse-d16, fixed lambda=50 + exact field channel + EMA dual
+eval) and the composition axis moves to the revamp grid. Structure unchanged:
+every requested composition gets a specialist comparator row, and the
+hardware-paired timing columns stay replaced by the house FLOP/es currency, so
+this table prices what tab:eval-soft-8x8 prices.
 
-The requested set is the five SPECIALIST compositions
+The requested set is the five specialist compositions
 {0.25, 0.375, 0.50, 0.625, 0.75}. Above 0.50 no specialist was trained
-(deliberate: 0.75-as-trained would duplicate 0.25 under the Z2 mirror), so
-those specialist rows are the trained 1-c twins read through the mirror
-identity delivered(c) = 1 - delivered(1-c); ESS and FLOP/es carry over
-unchanged (the mirror is a relabelling of the same distribution) and the
-JSON marks `mirror_of`. The four held-out compositions are NOT rows here:
-this table is amortised-vs-specialist at matched compute, and a held-out
-point has no comparator -- interpolation is the slope table's claim
+(0.75-as-trained would duplicate 0.25 under the Z2 mirror), so those rows are
+the trained 1-c twins read through delivered(c) = 1 - delivered(1-c); ESS and
+FLOP/es carry over unchanged (the mirror relabels the same distribution) and
+the JSON marks `mirror_of`. The four held-out compositions are not rows here:
+this table is amortised-vs-specialist at matched compute and a held-out point
+has no comparator -- interpolation is the slope table's claim
 (obedience_slope_table, scored against the revamp-grid exact reference
 0.9950, never the archived 0.976).
 
@@ -39,7 +37,7 @@ the other):
             before (prices the conditioning machinery; no FLOP/es of its
             own is quoted -- it exists for the ESS subtraction).
   reference -- the D=4 mchammer VC-SGC chains at kappa=lambda per
-            composition, measured DIRECTLY at all five compositions
+            composition, measured directly at all five compositions
             (chains are CPU-seconds at D=4, so the reference column needs
             no mirror), 3-decimal dir naming: the same per-trial constant
             and tau_int construction as the house tables, so "FLOP/es"
@@ -103,8 +101,8 @@ def forward_flops(run_dir: Path) -> int:
     """Measured eager forward at the run's architecture, batch 1.
 
     A conditioned model is measured through the CompositionConditioned
-    adapter -- the (x, t) call path sampling actually uses -- so the
-    conditioning embedding's cost is included, not assumed away.
+    adapter -- the (x, t) call path sampling uses -- so the conditioning
+    embedding's cost is included.
     """
     from experiments.dnfs_baseline_01.configs import ModelCfg
     from experiments.dnfs_baseline_01.run import _construct_model, _sub_config

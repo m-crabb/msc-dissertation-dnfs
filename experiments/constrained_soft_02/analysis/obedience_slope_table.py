@@ -4,26 +4,22 @@ Two numbers per run, both read off artefacts already on disk
 (`eval/composition_sweep.json`), so this is a pure re-derivation with no GPU
 and no training:
 
-  * **obedience slope** -- least-squares fit of delivered onto requested
+  * obedience slope -- least-squares fit of delivered onto requested
     composition over the claim band [0.3, 0.7]. 1.0 is perfect obedience;
     0.0 means the model emits one distribution whatever it is asked for.
-  * **Z2 mirror mismatch** -- the constrained target family is symmetric under
+  * Z2 mirror mismatch -- the constrained target family is symmetric under
     a global spin flip, which maps composition to 1-comp and the penalty
     (comp - c)^2 to (comp - (1-c))^2. The target at c is therefore the exact
     mirror of the target at 1-c, so a correct model must satisfy
     `delivered(c) = 1 - delivered(1-c)`. Nothing in the LeT architecture
     enforces this (it reads tokens in {0,1} with no spin-flip equivariance),
-    so the residual measures learning rather than restating an identity. It
-    needs no exact enumeration, which is what makes it usable at D=10 where
-    `enumerate_states` is impossible.
+    so the residual measures learning rather than restating an identity, and
+    it needs no enumeration, so it is usable at D=10.
 
-Why this script exists: the per-family slope comparison carries a
-correction that matters --
-grouping by family shows the "conditioning is attenuated, slope 0.39" reading
-came from a pre-fix family that averaged dead seeds together with healthy
-ones. Runs are therefore grouped by config family (name minus the `_seedNN`
-suffix) and BOTH the per-seed values and the healthy count are emitted: a
-family mean alone is exactly what produced the wrong conclusion.
+Runs are grouped by config family (name minus the `_seedNN` suffix) and both
+the per-seed values and the healthy count are emitted: the "conditioning is
+attenuated, slope 0.39" reading came from a pre-fix family whose mean
+averaged dead seeds together with healthy ones.
 
 Health threshold is a band fixed in advance (slope in [0.9, 1.1]) so the
 count is not tuned to the data it summarises.
@@ -50,12 +46,11 @@ HEALTHY_BAND = (0.9, 1.1)
 def slope_and_mirror(rows: list[dict]) -> tuple[float, float, float, str]:
     """Return (slope, mean Z2 mismatch, delivered span, fit grid name).
 
-    Grid convention: a sweep on the revamp grid is fitted over ALL nine
-    points, because the exact reference it scores against (0.9950 at
-    lambda=50, obedience_reference_revamp_grid.json) was fitted that way;
-    restricting to the claim band here would compare slopes fitted on
-    different point sets and call the difference "the model". Legacy
-    sweeps keep the claim-band fit and its 0.976-family references.
+    A sweep on the revamp grid is fitted over all nine points, because the
+    exact reference it scores against (0.9950 at lambda=50,
+    obedience_reference_revamp_grid.json) was fitted that way; a claim-band
+    fit here would compare slopes over different point sets. Legacy sweeps
+    keep the claim-band fit and its 0.976-family references.
     """
     delivered = {r["composition"]: r["composition_mean"] for r in rows}
     if set(delivered) == set(REVAMP_GRID):

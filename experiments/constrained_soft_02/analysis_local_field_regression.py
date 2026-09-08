@@ -1,56 +1,43 @@
-"""How much of a trained 4x4 SOFT sampler is closed-form? (flip analogue of
-the hard chapter's local-field regression, and the instrument that predicts
-whether an exact-field channel would pay in the soft chapter.)
+"""How much of a trained 4x4 soft sampler is closed-form?
+
+Flip analogue of the hard chapter's local-field regression, and the
+instrument that predicts whether an exact-field channel would pay here.
 
 The leTF emits G(i|x) = -x_i S_i(x) with S hollow at site i, so the learned
 object is the blind score S. The soft target's exact flip log-ratio is
-(tests/test_soft_field_regression.py pins this against brute force):
+(pinned against brute force by tests/test_soft_field_regression.py):
 
     Delta_i(x) = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ]
 
 with h_i = (A x)_i the local field and c_null_i the hole-excluded
-composition — exactly odd in x_i with a hollow coefficient, so the
-architecture's representable set contains this equilibrium log-ratio. That
-does not force the trained flow score to equal it. The equilibrium blind
-score is spanned by TWO
-closed-form columns: the LOCAL field h_i (the hard chapter's channel) and
-the GLOBAL-but-closed-form penalty offset (c_null_i - c*), which is the
-soft-specific channel — a single scalar per (state, site) that any head
-could be handed for the price of a running sum.
+composition — odd in x_i with a hollow coefficient, so the architecture can
+represent this equilibrium log-ratio, which does not force the trained flow
+score to equal it. The equilibrium blind score is spanned by two closed-form
+columns: the local field h_i (the hard chapter's channel) and the penalty
+offset (c_null_i - c*), the soft-specific channel, one scalar per
+(state, site) for the price of a running sum.
 
-This script asks how much of each trained specialist's S is
-  (a) the linear field alone,          r2_field
-  (b) the penalty offset alone,        r2_penalty
-  (c) their span = the exact channel,  r2_channel   <- the headline column
-  (d) + local/global quadratics,       r2_quadratic
-  (e) a cell-mean fit over site, 4 neighbour spins and hole-excluded up-count
-      (held-out lookup, with finite fit-cell counts),
-                                       r2_any_local_count
-  (f) and whether its held-out residual follows the hole-excluded bond sum
-      B_null (the blind global energy). This residual includes lookup
-      estimation error; it does not by itself certify nonlocal structure.
+Columns: r2_field (linear field alone), r2_penalty (offset alone),
+r2_channel (their span, the headline), r2_quadratic (+ local/global
+quadratics), r2_any_local_count (held-out cell-mean fit over site, 4
+neighbour spins and hole-excluded up-count), and whether the held-out
+residual follows the hole-excluded bond sum B_null. That last column
+includes lookup estimation error and does not certify nonlocal structure.
 
-Enumerates ALL 2^16 states (the soft process is unconstrained), so the linear
-regressions cover the full state space, up to numerical error. The lookup
-scores still depend on the fit split and unseen-cell fallback. Two
-weightings are reported for the linear
-designs: UNIFORM over states, mirroring the hard instrument, and
-p~_t-WEIGHTED, because the soft sampler concentrates near c* and a head is
-only trained where the rollout goes — a channel that looks half-useless
-uniformly but complete under p~_t is still a paying channel. The lookup
-tiers are uniform-only: reweighting up to 4,096 cell means by p~_t leaves many
-cells with tiny effective counts and the held-out R^2 becomes an estimate
-of weight noise rather than capacity.
+Enumerates all 2^16 states (the soft process is unconstrained), so the linear
+regressions cover the full state space up to numerical error; the lookup
+scores still depend on the fit split and unseen-cell fallback. Two weightings
+for the linear designs: uniform over states, mirroring the hard instrument,
+and p~_t-weighted, because the soft sampler concentrates near c* and a head
+is only trained where the rollout goes. The lookup tiers are uniform-only:
+reweighting up to 4,096 cell means by p~_t leaves many cells with tiny
+effective counts, and the held-out R^2 then measures weight noise.
 
-How to read the result: the archived hard 4x4 regression put the linear
-field at roughly half the variance, and the channel
-paid at 8x8. If r2_channel here is well above that, the case for wiring
-sigma*h and the lambda-offset into a soft head as fixed channels with
-learned gains is STRONGER than the one that already paid; if the gap
-(e)-(c) is large, the lookup captures dependence beyond the linear channel,
-including local nonlinearity. It is not evidence of nonlocality. Archived
-lookup scores used colliding site keys and centred residual variance;
-recomputed lookup scores are not numerically interchangeable. CPU, minutes.
+The archived hard 4x4 regression put the linear field at roughly half the
+variance and the channel paid at 8x8, which is the bar r2_channel is read
+against. Archived lookup scores used colliding site keys and centred residual
+variance; recomputed lookup scores are not numerically interchangeable.
+CPU, minutes.
 """
 
 import argparse
@@ -98,7 +85,7 @@ def r_squared(target_col, design, weights=None):
     under row weights (weighted LS, weighted variances).
 
     float64 with standardised columns, inherited from the hard instrument:
-    an fp32 solve there returned a superset design scoring BELOW its subset
+    an fp32 solve there returned a superset design scoring below its subset
     (conditioning, not signal).
     """
     y = target_col.double()
@@ -169,7 +156,7 @@ def analyse(run_dir, t_value):
     with torch.no_grad():
         G = torch.cat([model(xb, tb) for xb, tb in zip(x.split(2048), t.split(2048))])
     # G is (N, d, S) with the current token's slot zeroed, so summing over
-    # tokens IS the flip score for the binary vocabulary; S = -x * flip.
+    # tokens is the flip score for the binary vocabulary; S = -x * flip.
     S = -(x * G.sum(-1)).reshape(-1)  # (N*d,)
 
     h = x @ A  # (N, d)
@@ -187,7 +174,7 @@ def analyse(run_dir, t_value):
         "r2_channel": torch.stack([ones, h_f, p_f], 1),
         "r2_quadratic": torch.stack([ones, h_f, p_f, h_f**2, p_f**2, h_f * p_f], 1),
     }
-    # p~_t weights per STATE, repeated per site so each state's d rows share
+    # p~_t weights per state, repeated per site so each state's d rows share
     # its weight. exp-normalised in float64 to survive lambda*d swings.
     log_pt = (
         (1 - t_value) * target.base_log_eta(x) + t_value * target.log_prob(x)

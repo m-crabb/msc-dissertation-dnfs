@@ -13,10 +13,10 @@ declared lever apart --
                 down (finals 0.71 +/- 0.03).
 
 The y-axis is var_estimator_integrand from training_log.csv: the
-POST-control-variate variance, i.e. the noise the optimiser actually
-sees, which is why the no-channel plateau is the failure mechanism and
-not something more variance reduction could fix (the naive/post ratio at
-the end of training is 1.7-2.7x for nochan vs 27-28x for the channel).
+post-control-variate variance, i.e. the noise the optimiser actually sees,
+so the no-channel plateau is not something more variance reduction could
+fix (naive/post ratio at the end of training 1.7-2.7x for nochan vs 27-28x
+for the channel).
 Log y; rolling-median smoothing (window 51 logged steps) so per-seed
 lines stay readable without hiding the boundary spikes.
 """

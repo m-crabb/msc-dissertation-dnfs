@@ -1,49 +1,42 @@
 """Price the "why not just filter?" objection, exactly.
 
 The objection: training a composition-conditioned sampler is elaborate, when
-you could draw from the *unconstrained* Ising sampler and correct afterwards.
+you could draw from the unconstrained Ising sampler and correct afterwards.
 Two corrections, and they are not the same thing:
 
-  * SOFT (reweighting) — the like-for-like comparator, because it targets the
+  * Soft (reweighting) — the like-for-like comparator, because it targets the
     same distribution DNFS is trained on,
         p_soft(x) ∝ p_unc(x) · exp(-λ d (c(x) - c_t)²).
     Draw x ~ p_unc, attach w(x) = exp(-λ d (c(x) - c_t)²), and self-normalise.
     The price is the ESS fraction of those weights.
 
-  * HARD (rejection) — literally rejection sampling against the constraint
-    indicator 1[c(x) = c_t]: accept a draw only if its composition is exactly
-    the requested one. The price is the acceptance probability. This is a
-    *different, stricter* target (the fixed-composition ensemble), so it is
-    not the comparator for this leg's numbers — it prices the hard-constraint
-    leg, and it is the λ → ∞ limit of the soft row, which is what lets one
-    crossover composition be quoted for both.
+  * Hard (rejection) — rejection sampling against the constraint indicator
+    1[c(x) = c_t]. The price is the acceptance probability. This is a stricter
+    target (the fixed-composition ensemble), so it prices the hard-constraint
+    leg rather than this one, and it is the λ → ∞ limit of the soft row,
+    which is what lets one crossover composition be quoted for both.
 
-Reweighting rather than rejection for the soft row is deliberately the
-charitable reading. One *could* reject against p_soft with envelope constant
-max_x w(x) = 1, but its acceptance rate is E_unc[w], which is strictly worse
-than the self-normalised ESS fraction. The objection deserves its strongest
-form or the answer proves nothing.
+Reweighting rather than rejection for the soft row: rejecting against p_soft
+with envelope constant max_x w(x) = 1 has acceptance rate E_unc[w], strictly
+worse than the self-normalised ESS fraction.
 
-WHY THIS IS EXACT AND CHEAP. Both corrections depend on x only through c(x),
-so w is constant on a composition slice and everything collapses onto the
-unconstrained composition marginal π(n) = P_unc(N₊ = n), a vector of length
-d + 1:
+Both corrections depend on x only through c(x), so w is constant on a
+composition slice and everything collapses onto the unconstrained composition
+marginal π(n) = P_unc(N₊ = n), a vector of length d + 1:
 
     ESS_frac(c_t) = (Σ_n π(n) w_n)² / (Σ_n π(n) w_n²),  w_n = exp(-λ d (n/d - c_t)²)
     accept(c_t)   = π(c_t · d)                          (0 unless c_t·d ∈ ℤ)
 
 At D = 4 the marginal itself is an exact enumeration of all 2^16 states, so
-these are exact numbers, not sampled estimates. The reduction is checked
-against the brute-force state-level ESS in the tests rather than assumed.
+these are exact numbers, not sampled estimates; the reduction is checked
+against the brute-force state-level ESS in the tests.
 
-Cost follows by composition: to obtain one effective *constrained* sample you
-need 1/fraction effective *unconstrained* ones, so
+Cost follows by composition: one effective constrained sample needs 1/fraction
+effective unconstrained ones, so
 
     filter s/eff = (unconstrained s/eff) / fraction
 
-and the reference cost is taken from the DNFS sampler's own measured draw
-time, which is charitable to filtering — an unconstrained sampler at this size
-is no more expensive per draw than the constrained one.
+with the reference cost taken from the DNFS sampler's own measured draw time.
 
 Example:
     python -m experiments.constrained_soft_02.analysis.filter_row_comparator \\
@@ -64,14 +57,12 @@ SWEPT_COMPOSITIONS = (0.30, 0.35, 0.45, 0.50, 0.55, 0.575, 0.60, 0.65, 0.70, 0.8
 
 
 def unconstrained_composition_marginal(*, D: int, sigma: float) -> torch.Tensor:
-    """π(n) = P(N₊ = n) under the UNCONSTRAINED Ising target, exactly.
+    """π(n) = P(N₊ = n) under the unconstrained Ising target, exactly.
 
-    Unconstrained is the whole point: the filter's premise is that you already
-    have a sampler for the unpenalised model, so the marginal must carry no
-    composition penalty. Building it from `IsingTarget` rather than a binomial
-    matters — the Ising coupling makes this marginal strongly non-binomial,
-    and at σ below critical it is bimodal, which is exactly what determines
-    how expensive an off-centre composition request is.
+    No composition penalty: the filter's premise is a sampler for the
+    unpenalised model. Built from `IsingTarget` rather than a binomial because
+    the coupling makes this marginal strongly non-binomial, and bimodal at σ
+    below critical — which is what makes an off-centre request expensive.
 
     Returns a (d + 1,) tensor indexed by N₊, the number of up-spins.
     """
@@ -88,10 +79,9 @@ def soft_filter_ess_fraction(
 ) -> float:
     """ESS fraction of reweighting unconstrained draws onto the soft target.
 
-    Self-normalised IS, so the figure of merit is
-    (Σ π w)² / (Σ π w²) — the standard ESS with the weights' own mean folded
-    in, which is what makes it directly comparable to the `ess_fraction` DNFS
-    reports for its own draws.
+    Self-normalised IS, so the figure of merit is (Σ π w)² / (Σ π w²) — the
+    standard ESS, directly comparable to the `ess_fraction` DNFS reports for
+    its own draws.
     """
     n_plus = torch.arange(d + 1, dtype=marginal.dtype)
     log_weights = -lam * d * (n_plus / d - c_target) ** 2
@@ -104,11 +94,9 @@ def soft_filter_ess_fraction(
 def hard_filter_acceptance(marginal: torch.Tensor, *, c_target: float, d: int) -> float:
     """Acceptance rate of rejecting every draw off the requested composition.
 
-    Zero unless c_target·d is an integer, and that zero is the honest answer
-    rather than an edge case to smooth over: at D = 4 the composition quantum
-    is 1/16, so a request like c = 0.575 is unachievable and rejection cannot
-    service it at any cost. Reporting a small positive number there would hide
-    rejection sampling's sharpest limitation.
+    Zero unless c_target·d is an integer: at D = 4 the composition quantum is
+    1/16, so a request like c = 0.575 is unachievable and rejection cannot
+    service it at any cost.
     """
     n_requested = c_target * d
     if abs(n_requested - round(n_requested)) > 1e-9:
@@ -119,27 +107,22 @@ def hard_filter_acceptance(marginal: torch.Tensor, *, c_target: float, d: int) -
 def soft_target_slice_acceptance(
     *, D: int, sigma: float, c_target: float, lam: float
 ) -> float:
-    """P(c(x) = c_t) under the SOFT target — rejection off the trained sampler.
+    """P(c(x) = c_t) under the soft target — rejection off the trained sampler.
 
-    The third route, and the one that matters for hard constraints: keep only
-    those draws from the composition-constrained sampler whose composition is
-    exactly the requested one. It is exact rather than approximate, because on
-    the slice the penalty factor exp(-λ d (c(x) - c_t)²) equals 1 identically
-    and cancels from the conditional:
+    Keep only those draws from the composition-constrained sampler whose
+    composition is exactly the requested one. Exact rather than approximate:
+    on the slice the penalty factor exp(-λ d (c(x) - c_t)²) equals 1 and
+    cancels from the conditional,
 
         p_soft(x | c(x) = c_t) = p_unc(x | c(x) = c_t)   for every λ
 
-    so λ buys acceptance rate and costs no bias — the accepted samples are the
-    fixed-composition ensemble whatever λ was trained at. (Pinned by
+    so λ buys acceptance rate and costs no bias. (Pinned by
     `test_rejecting_off_the_soft_target_is_exactly_the_constrained_ensemble`.)
 
-    In practice the DNFS sampler returns importance weights rather than exact
-    draws, so this composes: restrict to the slice and renormalise the weights
-    already attached, which stays self-normalised-unbiased. The end-to-end
-    efficiency is then this acceptance times the sampler's own ESS fraction.
-
-    Computed by enumeration under the penalised target, not the unconstrained
-    one, so it reflects how much λ has already done.
+    DNFS returns importance weights rather than exact draws, so this composes:
+    restrict to the slice and renormalise, and the end-to-end efficiency is
+    this acceptance times the sampler's own ESS fraction. Enumerated under the
+    penalised target, so it reflects how much λ has already done.
     """
     d = D * D
     states = enumerate_states(d).float()

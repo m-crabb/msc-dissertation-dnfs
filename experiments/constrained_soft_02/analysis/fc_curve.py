@@ -3,30 +3,29 @@
 Reads a set of DNFS run dirs spanning a composition sweep and assembles the
 per-window free energy into a curve, with the two jobs the F(c) campaign needs:
 
-  1. **The curve itself.** Per c_target we already have a paper-convention
-     free-energy estimate in each run's `eval/metrics.json`
+  1. The curve itself. Per c_target each run's `eval/metrics.json` already
+     carries a paper-convention free-energy estimate
      (`free_energy_per_site`, = -mean(log w)/(2 sigma d), Eq. 37). We group by
      c_target, ESS-gate the seeds (a low-ESS seed's F is Jensen-biased high, so
-     it is excluded from the average and reported separately rather than
-     silently folded in), and aggregate to F(c) with a seed spread.
+     it is excluded from the average and reported separately), and aggregate to
+     F(c) with a seed spread.
 
-  2. **The integrator adjudicator (D <= 4).** Where the fixed-composition
-     sector enumerates, `run.py` also writes `free_energy_per_site_exact` and
-     the signed `free_energy_per_site_bias` (estimate - exact). The bias is the
-     Jensen bias of the IS estimator and grows as ESS falls, so it is expected
-     to be small at the centre and to balloon in the tails, which bends the
-     *shape* of F(c). Tabulating bias vs composition is how we decide whether a
-     finer Euler grid (more n_euler) is justified for the curve: small and flat
-     bias means the coarser grid is fine, bias that grows in the tails and
-     shrinks with n_euler is the case for the finer one.
+  2. The integrator adjudicator (D <= 4). Where the fixed-composition sector
+     enumerates, `run.py` also writes `free_energy_per_site_exact` and the
+     signed `free_energy_per_site_bias` (estimate - exact). That bias is the
+     Jensen bias of the IS estimator and grows as ESS falls, so it is small at
+     the centre and balloons in the tails, bending the shape of F(c).
+     Tabulating bias vs composition decides whether a finer Euler grid is
+     justified: flat bias means the coarser grid is fine, bias that grows in
+     the tails and shrinks with n_euler is the case for the finer one.
 
 Z_2 symmetry (no field) gives F(c) = F(1-c); where both c and 1-c are present
 the script prints the gap as a free sanity check.
 
-This is a metrics aggregator: it reuses the free energies `run.py` already
-computes in the paper convention rather than recomputing them, so the numbers
-match the per-run eval exactly. Weighted thermodynamics with bootstrap error
-bars and the vcSGC-TI reference at D=10 are a later pass.
+A metrics aggregator: it reuses the free energies `run.py` already computes in
+the paper convention, so the numbers match the per-run eval exactly. Weighted
+thermodynamics with bootstrap error bars and the vcSGC-TI reference at D=10 are
+a later pass.
 
 Example (the 8x8 house family; --eval_dir eval_ema reads the dual
 eval's shadow-weight draw, archived pre-EMA cells keep the default):
@@ -206,11 +205,10 @@ def main() -> None:
 def _plot(curve, has_exact, n_euler, out: Path) -> None:
     """Working plot of the assembled curve (house palette and geometry).
 
-    The seed spread is drawn as a shaded band rather than capped bars: this
-    panel joins its points into a curve in c, so the uncertainty is an
-    envelope along that curve. (The thesis's F(c) figure, fc_compare.py, keeps
-    capped bars because it draws its windows as discrete marks -- see the
-    uncertainty grammar in figure_style.)
+    The seed spread is a shaded band rather than capped bars: this panel joins
+    its points into a curve in c, so the uncertainty is an envelope along it.
+    (The thesis figure fc_compare.py keeps capped bars, drawing its windows as
+    discrete marks -- the uncertainty grammar is in figure_style.)
     """
     import matplotlib.pyplot as plt
     import numpy as np

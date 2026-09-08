@@ -9,7 +9,7 @@ disk: var_estimator_integrand over training for the four soft
 S2_d10_c05_l50_letf_ne64 seeds vs the four matched unconstrained
 stage_4_d10_budget seeds (identical architecture/budget/settings, no penalty).
 
-The full Var[delta_I] / lambda^2 Var[delta_P] decomposition is NOT logged, so
+The full Var[delta_I] / lambda^2 Var[delta_P] decomposition is not logged, so
 this is the two-trace version: total integrand variance, soft vs unconstrained.
 """
 

@@ -1,9 +1,9 @@
 """8x8 house results cell for the soft chapter: energy and composition marginals.
 
 The house results cell (baseline fig:unconstrained-clean, hard fig:hard-clean-8x8)
-is (a) the marginal of the BARE Ising energy per site on its exact levels and
+is (a) the marginal of the bare Ising energy per site on its exact levels and
 (b) a Z2 read. For the penalised target the magnetisation is 2c - 1, so the Z2
-read IS the composition marginal, and that is the second row here. One column
+read is the composition marginal, and that is the second row here. One column
 per trained window at the critical coupling, the matched-base recipe off centre
 (the centre has no matched-base twin: Bernoulli(1/2) is already matched there).
 
@@ -13,8 +13,8 @@ Three things are drawn per panel:
                kappa = lambda, phi = -2 c_target (results/mchammer_vcsgc); the
                same chains the house table's error floors are built from.
   DNFS      -- importance-weighted marginal per seed, seed mean with a min-max
-               band, EVERY seed (the chapter's every-seed rule; at sigma_c on
-               the matched base every seed is alive, ESS 0.71-0.81).
+               band, every seed (the chapter's every-seed rule; at sigma_c
+               on the matched base every seed is alive, ESS 0.71-0.81).
   envelope  -- composition row only: the analytic exp(-lambda d (c - c_t)^2) on
                the c = k/d grid, width 1/sqrt(2 lambda d) = 0.0125. A guide, not
                a reference: it drops the canonical density of states Z_can(c),
@@ -174,9 +174,8 @@ def plot_panel(ax, support, ref_pmf, seed_pmfs, tv, floor, label):
         fontweight="bold",
         va="top",
     )
-    # Right-hand shoulder: the marginals peak at the centre and the label
-    # owns the top-left, so the only empty strip is the upper right below
-    # the label line.
+    # The marginals peak at the centre and the panel label owns the top
+    # left, so the annotation goes on the upper-right shoulder.
     ax.text(
         0.98,
         0.80,

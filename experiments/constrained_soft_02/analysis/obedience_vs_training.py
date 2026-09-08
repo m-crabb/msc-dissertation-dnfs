@@ -3,30 +3,27 @@
 The D=10 amortised run reached the end of training with a healthy sampler but
 a broken controller: eval ESS at c=0.5 was 0.392 (fine), while the obedience
 slope d(delivered)/d(requested) over the claim band [0.3, 0.7] was 0.206
-(the target was >= 0.9). A single end-of-run number cannot
-distinguish the two explanations that matter:
+(target >= 0.9). A single end-of-run number cannot separate the two
+explanations:
 
-  * UNDERTRAINED — the slope is climbing and simply ran out of steps. The
+  * undertrained — the slope is climbing and ran out of steps. The
     optimisation was throttled by grad-clip 50 (it learns ~20x slower than the
     clip-500 twin), so more steps or a faster spine would land the claim.
-  * STUCK — the slope is flat across the whole final coverage stage. Then no
-    amount of the same training fixes it, and the limit is capacity, the
-    conditioning pathway, or the estimator's signal-to-noise at this D.
+  * stuck — the slope is flat across the whole final coverage stage, and the
+    limit is capacity, the conditioning pathway, or the estimator's
+    signal-to-noise at this D.
 
 This script separates them by re-drawing the sweep from step-tagged
-checkpoints and fitting the slope at each. Only checkpoints from the FINAL
-coverage stage (half-width 0.20, from step 36k) are directly comparable to one
-another: earlier ones were trained on a narrower window, so their behaviour at
-c = 0.3 is extrapolation and a rising slope across a widening would be an
-artefact of coverage rather than of learning. The two pre-36k checkpoints are
-drawn anyway, reported separately, as the coverage-era context.
+checkpoints and fitting the slope at each. Only checkpoints from the final
+coverage stage (half-width 0.20, from step 36k) are comparable to one another:
+earlier ones were trained on a narrower window, so their behaviour at c = 0.3
+is extrapolation and a rising slope across a widening would be an artefact of
+coverage. The two pre-36k checkpoints are drawn anyway and reported separately.
 
-A confound this design has to survive: the run ends in an excursion/recovery
-limit cycle, so individual checkpoints land in trough or peak states almost at
-random (grad median 36.7 at step 50k versus 2,147 at 37.5k). Reading a trend
-off two checkpoints would measure that luck. Sampling every 2.5k across the
-final stage means the cycle averages out and a real trend has to show through
-it -- which is why the trend is fitted over all final-stage points rather than
+The run ends in an excursion/recovery limit cycle, so individual checkpoints
+land in trough or peak states almost at random (grad median 36.7 at step 50k
+versus 2,147 at 37.5k). Sampling every 2.5k across the final stage averages the
+cycle out, and the trend is fitted over all final-stage points rather than
 taken as an endpoint difference.
 
 Rows use common random numbers (`composition_sweep` reseeds per composition),

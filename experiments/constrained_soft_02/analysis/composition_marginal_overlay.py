@@ -1,23 +1,20 @@
-"""§3.2 figure: the composition marginal under a HARD vs SOFT constraint.
+"""§3.2 figure: the composition marginal under a hard vs a soft constraint.
 
-The chapter's claim is that a soft (VCSGC-style) penalty does not actually
-enforce c(x) = c_target; it only *prefers* it, leaving a residual spread. This
-one-panel figure makes that visible by overlaying three composition marginals
-for the d=4, c_target=0.5 binary alloy:
+A soft (VCSGC-style) penalty does not enforce c(x) = c_target; it only prefers
+it, leaving a residual spread. Three composition marginals for the d=4,
+c_target=0.5 binary alloy make that visible:
 
-  (a) HARD constraint  -- the exact target puts ALL mass on the c=0.5 slice:
-      a single spike at c_target. This is the object of interest.
-  (b) SOFT target (exact) -- the penalised target enumerated over all 2^16
-      states. It is a spread *around* c_target, not a spike. Its width is set
-      by the penalty strength lambda, not the physics: for the quadratic
-      penalty lambda*d*(c - c_target)^2 the Gaussian approximation gives
-      sigma = 1/sqrt(2*lambda*d), which is **temperature-independent** -- it
-      does not depend on sigma (the Ising coupling), so the inexactness this
-      figure shows at the subcritical sigma transfers unchanged to sigma_c.
+  (a) hard constraint -- the exact target puts all mass on the c=0.5 slice, a
+      single spike at c_target.
+  (b) soft target (exact) -- the penalised target enumerated over all 2^16
+      states: a spread around c_target, not a spike. Its width is set by lambda,
+      not the physics: for the quadratic penalty lambda*d*(c - c_target)^2 the
+      Gaussian approximation gives sigma = 1/sqrt(2*lambda*d), independent of
+      the Ising coupling, so the inexactness shown here at the subcritical
+      coupling transfers unchanged to sigma_c.
   (c) DNFS (IS-weighted) -- samples from the trained sampler, importance-
-      weighted. These should track the SOFT target (b), confirming DNFS
-      faithfully samples the distribution it was given; the gap to (a) is the
-      constraint formulation's fault, not the sampler's.
+      weighted. These should track (b): the gap to (a) is the constraint
+      formulation's, not the sampler's.
 
 Pass one run dir to prototype, or all of seeds 42-45 for the report figure: with
 several the DNFS marginal is drawn as the across-seed mean with a min-max band.
@@ -25,28 +22,24 @@ several the DNFS marginal is drawn as the across-seed mean with a min-max band.
 Two modes (--mode):
   single      -- the d=4 figure above, in two panels: (a) the grouped-bar
                  marginal at the operating lambda, (b) the violating mass swept
-                 over lambda with BOTH ends of the trade starred (54.4% at
+                 over lambda with both ends of the trade starred (54.4% at
                  lam=10, 7.9% at lam=50). Panel (b) is the thesis's only copy of
-                 that sweep. lambda-pair once carried a byte-identical duplicate
-                 of it, since dropped: this copy is cited twice in the body and
-                 that one never was, and removing it also left each figure on a
-                 single lattice (this one d=4, lambda-pair d=10) instead of
-                 mixing the two inside one float.
-  lambda-pair -- the companion overlay figure for the lambda-sweep
-                 comparison: D=10 composition marginals at a weak and a
-                 strong lambda overlaid as curves. Exact enumeration is impossible
-                 at 2^100 states, so the trusted reference per lambda is a long
-                 penalty-aware Gibbs chain (the report's D=10 convention; cached
-                 under results/02_constrained_soft/), with the analytic envelope
-                 ~ exp(-lambda*d*(c - c_target)^2) as a thin guide and the
-                 D=4 exact-vs-envelope deviation printed to stdout. DNFS
-                 IS-weighted marginals are plotted on top (pass only healthy
-                 seeds for the strong lambda; stuck seeds give garbage IS
-                 estimates). Also computes the strong-lambda-reweighted ESS of
-                 the weak-lambda samples (multiply the IS weights by the target
-                 ratio exp(-(lam_s - lam_w)*d*(c - c_target)^2)): the ESS those
-                 samples are worth AGAINST THE STRONG TARGET, which is the
-                 apples-to-apples number the figure caption quotes.
+                 that sweep.
+  lambda-pair -- the companion overlay for the lambda-sweep comparison: D=10
+                 composition marginals at a weak and a strong lambda, as curves.
+                 Exact enumeration is impossible at 2^100 states, so the
+                 reference per lambda is a long penalty-aware Gibbs chain (the
+                 report's D=10 convention; cached under
+                 results/02_constrained_soft/), with the analytic envelope
+                 ~ exp(-lambda*d*(c - c_target)^2) as a thin guide and the D=4
+                 exact-vs-envelope deviation printed to stdout. DNFS IS-weighted
+                 marginals are plotted on top (pass only healthy seeds for the
+                 strong lambda; stuck seeds give garbage IS estimates). Also
+                 computes the strong-lambda-reweighted ESS of the weak-lambda
+                 samples (IS weights times the target ratio
+                 exp(-(lam_s - lam_w)*d*(c - c_target)^2)): what those samples
+                 are worth against the strong target, the number the figure
+                 caption quotes.
 """
 
 import argparse
@@ -122,10 +115,10 @@ def gibbs_reference_pmf(
 ) -> torch.Tensor:
     """Composition marginal from a long penalty-aware Gibbs reference.
 
-    Final states of n_chains independent heat-bath chains (the same trusted-
-    reference pattern as the section 3.2 witness and the stage-2 d10 gibbs
-    reference). Cached: delete the .pt to re-run. Prints the chain-mean log-prob
-    at the first/middle/last record as the plateau (mixing) check when run.
+    Final states of n_chains independent heat-bath chains, as in the section 3.2
+    witness and the stage-2 d10 gibbs reference. Cached: delete the .pt to
+    re-run. Prints the chain-mean log-prob at the first/middle/last record as the
+    plateau (mixing) check.
     """
     if cache.exists():
         samples = torch.load(cache, weights_only=True)
@@ -163,9 +156,9 @@ def reweighted_ess_fraction(
     """(own-target ESS fraction, ESS fraction after reweighting to lam_to).
 
     The reweighting multiplies the IS weights by the unnormalised target ratio
-    pi_to/pi_from = exp(-(lam_to - lam_from)*d*(c - c_t)^2), so the second
-    number is what the run's samples are worth as importance samples for the
-    STRONG target -- the like-for-like comparison across lambdas.
+    pi_to/pi_from = exp(-(lam_to - lam_from)*d*(c - c_t)^2), so the second number
+    is what the run's samples are worth as importance samples for the strong
+    target -- the like-for-like comparison across lambdas.
     """
     samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
     log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
@@ -271,10 +264,9 @@ def run_single(args: argparse.Namespace) -> None:
     dnfs_lo, dnfs_hi = dnfs_pmfs.min(dim=0).values, dnfs_pmfs.max(dim=0).values
 
     # Panel (b) data: violating mass vs penalty strength (temperature-independent).
-    # 64 points rather than a coarse grid because the two operating points are
-    # marked at their exact values and lambda=10 is not itself a grid point: on
-    # a coarse grid the curve chords under the convex true curve and the marker
-    # floats visibly above its own line.
+    # 64 points because the operating points are marked at their exact values and
+    # lambda=10 is not a grid point: a coarse grid chords under the convex curve
+    # and the marker then floats above its own line.
     lam_grid = torch.logspace(0, 2.7, 64)  # ~1 .. ~500
     off_grid = torch.tensor(
         [
@@ -283,9 +275,7 @@ def run_single(args: argparse.Namespace) -> None:
         ]
     )
     # The weak end of the trade, starred beside the operating point: at lam=10
-    # more than half the mass violates (54.4%) against 7.9% at lam=50, which is
-    # the contrast the lambda-sweep discussion makes in words and the lambda ->
-    # infinity argument needs on an axis.
+    # more than half the mass violates (54.4%) against 7.9% at lam=50.
     off_slice_weak = (
         1.0 - soft_composition_pmf(cfg, args.weak_lambda, states_f)[target_idx].item()
     )
@@ -300,7 +290,7 @@ def run_single(args: argparse.Namespace) -> None:
     )
 
     # --- Figure: (a) grouped bars near c_target (linear-y), (b) violating mass vs lambda ---
-    # Hue carries the ROLE per the house palette: ink is the exact-enumeration
+    # Hue carries the role per the house palette: ink is the exact-enumeration
     # reference, blue is our sampler, red is the hard-constraint limit. Lambda
     # never gets a hue of its own -- on panel (b) the two operating points share
     # the limit hue and separate by marker shape.
@@ -384,8 +374,7 @@ def run_single(args: argparse.Namespace) -> None:
     )
 
     # (b) violating mass vs lambda: never reaches 0 at finite, samplable lambda.
-    # Both ends of the trade are marked, so the panel shows what raising lambda
-    # buys as well as that it never buys exactness.
+    # Both ends of the trade are marked, so the panel shows what lambda buys.
     axr.plot(lam_grid, off_grid, "-", color=REFERENCE_INK, lw=1.6, zorder=3)
     axr.plot(
         [args.weak_lambda],
@@ -470,8 +459,8 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
     s_mean = dnfs_s.mean(dim=0)
 
     # Envelope sanity at d=4, where the exact marginal is enumerable. The
-    # envelope drops the entropic Z_can(c) factor, so this records how much
-    # that costs; the FIGURE's reference curves are the Gibbs chains.
+    # envelope drops the entropic Z_can(c) factor, so this records how much that
+    # costs; the figure's reference curves are the Gibbs chains.
     states_f = enumerate_states(N_SITES).float()
     cfg4 = dict(cfg_w, D=4)
     for lam in (lam_w, lam_s):
@@ -498,12 +487,8 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
         f"    reweighted survival: {rews.mean().item():.3f} +/- {rews.std().item():.3f}"
     )
 
-    # Cross-check against the single-mode figure, which is where the sweep over
-    # lambda is drawn: 54.4% of the mass violates at lam=10 against 7.9% at
-    # lam=50. This figure used to carry a second copy of that sweep as its own
-    # panel (b); it was a d=4 object inside a d=10 float, no body text cited it,
-    # and it was computed from the same grid, so it was dropped and only the
-    # print survives as the agreement check between the two figures.
+    # Cross-check against the single-mode figure, which draws the sweep over
+    # lambda: 54.4% of the mass violates at lam=10 against 7.9% at lam=50.
     off_w4 = (
         1.0
         - soft_composition_pmf(cfg4, lam_w, states_f)[round(c_target * N_SITES)].item()
@@ -517,14 +502,13 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
     )
 
     # --- Figure: the D=10 composition marginals, weak vs strong lambda ---
-    # One panel, one lattice. Hue carries the ROLE per the house palette (ink =
+    # One panel, one lattice. Hue carries the role per the house palette (ink =
     # the Gibbs reference this figure is scored against, blue = our sampler, red
     # = the hard-constraint limit). Lambda is a parameter level, not a role, so
-    # the two references separate by lightness within the ink family rather than
-    # by linestyle: two solid black curves at 1.6pt tangle at the peak, which is
-    # what dash-dot was hiding badly. Each envelope then takes its own lambda's
-    # value, so colour says WHICH lambda and the dotted pattern says analytic
-    # rather than measured.
+    # the two references separate by lightness within the ink family: two solid
+    # black curves at 1.6pt tangle at the peak. Each envelope takes its own
+    # lambda's value, so colour says which lambda and the dotted pattern says
+    # analytic rather than measured.
     use_house_style()
     reference_weak_hue, reference_strong_hue = parameter_ramp(REFERENCE_INK, 2)
     fig, ax = plt.subplots(figsize=FIGSIZE_FULL_WIDE_SINGLE)
@@ -555,8 +539,7 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
         label=f"soft target, $\\lambda={lam_s:g}$ (Gibbs)",
     )
     # The envelope's formula lives in the caption, not the legend entry: spelled
-    # out here it set the legend's width, and the legend sits under a 6.3 in
-    # panel where width is the binding constraint.
+    # out here it set the legend's width under a 6.3 in panel.
     (envelope,) = ax.plot(
         xs,
         env_w[ks],
@@ -600,17 +583,15 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
     )
     ax.set_xlabel(r"composition $c_+$")
     ax.set_ylabel("probability mass")
-    # No panel title: the caption already names the lattice, and on a single
-    # panel the title was 0.25 in of the figure's height for no information.
+    # No panel title: the caption names the lattice, and on a single panel the
+    # title cost 0.25 in of figure height.
     style_axes(ax)
     # Explicit handle order: matplotlib sorts error-bar containers after plain
-    # lines, which would otherwise list the sampler at lam=50 above the one at
-    # lam=10 while the reference curves above them run the other way.
-    # Legend BELOW the figure in three columns. Inside the panel it covered the
-    # peak (the one feature the figure exists to show) once the figure came
-    # down to house width; column-major fill keeps the two references adjacent
-    # and the two DNFS series adjacent. Anchored to the FIGURE, not the axes,
-    # so the three columns get the full 6.3 in rather than the axes' ~5.5 in.
+    # lines, which would list the sampler at lam=50 above the one at lam=10 while
+    # the reference curves above them run the other way. The legend goes below
+    # the figure in three columns; inside the panel it covered the peak at house
+    # width. Anchored to the figure, not the axes, so the three columns get the
+    # full 6.3 in rather than the axes' ~5.5 in.
     fig.legend(
         handles=[
             hard_marker,

@@ -3,7 +3,7 @@
 The c=0.3 d=4 target (16 sites) is exactly enumerable (2^16 = 65,536 states),
 so the constrained pmf is known exactly. The eval samples are CTMC proposal
 draws with importance log-weights; the faithful estimate of any target
-expectation is the SELF-NORMALISED IS estimate softmax(log_w)·f, NOT the raw
+expectation is the self-normalised IS estimate softmax(log_w)·f, not the raw
 sample mean (the stored metrics.json `composition_mean` is the unweighted
 proposal mean).
 

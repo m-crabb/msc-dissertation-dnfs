@@ -5,35 +5,31 @@ compile has priors on this codebase (~40% catastrophic seeds on the
 factorised chassis at sigma_c), so leTF + channel + compile is gated
 before any fan-out. Two parts, the GFN launch-bench pattern:
 
-1. **Single-batch parity, eager vs compiled.** Identically-seeded models
+1. Single-batch parity, eager vs compiled. Identically-seeded models
    (the channel wrapper's zero-init gains make init bit-identical to the
    parent), one seeded batch through the real training loss
    (`kolmogorov.loss` -> residual_lenet, Eq. 10). Loss gap and every
-   parameter gradient must agree to 1e-5 relative — the sharp test: a
-   kernel that changes the math fails here before any optimiser
-   amplification can excuse it.
-2. **Short matched-seed train pair.** The full `train` entry on the gate
+   parameter gradient must agree to 1e-5 relative: a kernel that changes
+   the math fails here, before any optimiser amplification.
+2. Short matched-seed train pair. The full `train` entry on the gate
    config and its eager twin, n_steps cut to GATE_TRAIN_STEPS, same seed.
-   Catches what single-step parity cannot: divergence entering through
-   the rollout -> replay-buffer -> optimiser path, which is where the
-   factorised chassis's compile failures actually lived. The 1e-5-class
-   criterion applies over the PRE-AMPLIFICATION window only: this
-   codebase has measured that a 2-ULP step-0 gradient difference
-   decorrelates a 50k run entirely (identical config + seed gave ESS
-   0.423 vs 0.899 across venues), so no same-math kernel pair can hold a
-   1e-5 trace gap over hundreds of optimiser steps. In the reference D=4
-   run the pair was bit-identical through step 25, showed its first
-   representable gap at step ~50 (4.7e-7), and amplified to O(1e-1) by
-   step 200 while both arms trained healthily — that profile IS the
-   same-math signature. The late trace therefore gets a health check
-   (finite everywhere, both arms' loss clearly declined), not a parity
-   tolerance; a genuine compile pathology fails part 1, breaks the
-   early window, or shows up as one arm not training.
+   Catches divergence entering through the rollout -> replay-buffer ->
+   optimiser path, where the factorised chassis's compile failures lived.
+   The 1e-5-class criterion applies over the pre-amplification window
+   only: a 2-ULP step-0 gradient difference decorrelates a 50k run
+   entirely (identical config + seed gave ESS 0.423 vs 0.899 across
+   venues), so no same-math kernel pair can hold a 1e-5 trace gap over
+   hundreds of optimiser steps. In the reference D=4 run the pair was
+   bit-identical through step 25, first showed a representable gap at
+   step ~50 (4.7e-7), and amplified to O(1e-1) by step 200 while both
+   arms trained healthily — the same-math signature. The late trace
+   therefore gets a health check (finite everywhere, both arms' loss
+   clearly declined), not a parity tolerance; a genuine compile pathology
+   fails part 1, breaks the early window, or leaves one arm untrained.
 
 Pass = both parts within tolerance. This CPU pass checks the compiled
-graph's math; the venue's CUDA backend is checked separately by a single
-d64 run on the venue before the family fans out (kernels differ per
-backend).
+graph's math; kernels differ per backend, so the venue's CUDA backend is
+checked separately by a single d64 run there before the family fans out.
 
 Run:
     pixi run -e dev python -m experiments.constrained_soft_02.compile_gate
@@ -61,27 +57,23 @@ GATE_TRAIN_STEPS = 300  # 3 outer cycles: rollout + replay both exercised
 GATE_OUTPUT_DIR = "results/02_constrained_soft"
 GATE_TAG = "gate0e"  # fixed tag: a rerun resumes/skips, never forks
 
-# The structurally-zero gradient (the hard compile gate's pair_mlp.2.bias
-# case, re-derived here for this architecture): a key
-# projection's bias adds the same vector b to every key, so for query i
-# each score gains the identical constant q_i . b / sqrt(d_k), and softmax
-# over keys removes any per-query constant — d loss / d b == 0 exactly,
-# and only float rounding residue survives (measured 1.1e-6 on loss scale
-# 1.7e3 in the reference D=4 run). A relative test on that residue flags a
-# non-error, so any parameter ending in one of these suffixes is instead
-# asserted SMALL on both sides.
+# Structurally-zero gradient (the hard gate's pair_mlp.2.bias case, re-derived
+# for this architecture): a key projection's bias adds the same vector b to
+# every key, so for query i each score gains the constant q_i . b / sqrt(d_k),
+# and softmax over keys removes any per-query constant — d loss / d b == 0
+# exactly, leaving only rounding residue (measured 1.1e-6 on loss scale 1.7e3
+# in the reference D=4 run). A relative test on that residue flags a non-error,
+# so these suffixes are asserted small on both sides instead.
 STRUCTURAL_ZERO_SUFFIXES = ("k_proj.bias",)
 STRUCTURAL_ZERO_ABSOLUTE_TOLERANCE = 1e-4
 
-# Trace steps over which the matched-seed pair must agree to 1e-5-class:
-# the window before Adam + replay feedback amplifies ULP-level rounding
-# into macroscopic separation (first representable gap at step ~50 in the
-# reference D=4 run; module docstring has the measured profile).
+# Trace steps over which the matched-seed pair must agree to 1e-5-class: the
+# window before Adam + replay feedback amplifies ULP-level rounding into
+# macroscopic separation (first representable gap at step ~50, reference D=4).
 PRE_AMPLIFICATION_STEPS = 50
-# Health floor for the late trace: both arms' trailing-mean loss must sit
-# well below the shared step-0 loss (a factor-4 decline over 300 steps is
-# far under what either healthy arm achieved — measured ~25-45x —
-# while a dead arm stays at or above its start).
+# Health floor for the late trace: both arms' trailing-mean loss must sit well
+# below the shared step-0 loss (a factor-4 decline over 300 steps is far under
+# the measured ~25-45x, while a dead arm stays at or above its start).
 HEALTH_DECLINE_FACTOR = 4.0
 
 

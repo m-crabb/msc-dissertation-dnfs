@@ -1,37 +1,30 @@
 """Cost-vs-quality grid: seconds per effective sample, DNFS against mchammer.
 
-The supervisor's ask is a grid of time-per-good-sample rather than two
-unrelated quality tables, because wall-clock is the only currency the neural
-sampler and the MCMC reference actually share. Quality alone flatters whichever
-method was given more compute; cost alone ignores that a fast sampler drawing
-correlated junk is worthless. The joining quantity is therefore
+Wall-clock is the only currency the neural sampler and the MCMC reference
+share, and quality alone flatters whichever method was given more compute. The
+joining quantity is
 
     seconds per effective sample = wall-clock to produce a batch / ESS of it
 
-which both sides can report honestly, because both already carry an ESS whose
-denominator means "how many independent draws was this batch worth".
+and both sides already carry an ESS whose denominator means "how many
+independent draws was this batch worth". They compute it differently:
 
-The two sides compute that ESS differently, and the difference is the point:
-
-  * DNFS draws i.i.d. samples and pays in *weight* variance, so its ESS is the
+  * DNFS draws i.i.d. samples and pays in weight variance, so its ESS is the
     self-normalised importance-sampling ESS, `ess_fraction * n_eval_samples`.
     Cost is `eval_draw_seconds`, the measured time to draw the eval batch.
-  * mchammer draws correlated samples and pays in *autocorrelation*, so its ESS
+  * mchammer draws correlated samples and pays in autocorrelation, so its ESS
     is `n_frames / tau_int_frames`. `seconds_per_effective_sample` is already
     computed per observable in its summary.
 
-A consequence worth stating rather than hiding: the mchammer figure is
-per-observable (composition mixes faster than potential, so quoting the
-composition number alone understates its cost for thermodynamic estimands).
-Both are reported.
+The mchammer figure is therefore per-observable (composition mixes faster than
+potential, so the composition number alone understates its cost for
+thermodynamic estimands), and both are reported.
 
-HARDWARE PAIRING — mchammer runs on an Apple M-series CPU, DNFS on an NVIDIA
-a30 GPU, and this script prints the hostnames rather than letting the reader
-assume a common machine. That pairing is deliberate and conservative: mchammer
-is framed as a reference, not a rival, so timing it on the fastest hardware to
-hand makes the baseline as strong as possible and understates any DNFS
-advantage. The same cells on a cluster CPU ran ~3x slower, which would have
-flattered DNFS.
+Hardware pairing: mchammer runs on an Apple M-series CPU, DNFS on an NVIDIA
+a30 GPU, and the hostnames are printed rather than assumed common. mchammer is
+a reference, not a rival, so timing it on the fastest hardware to hand
+understates any DNFS advantage — the same cells on a cluster CPU ran ~3x
+slower.
 
 Example:
     python -m experiments.constrained_soft_02.analysis.cost_vs_quality \\
@@ -50,9 +43,8 @@ MCHAMMER_SOFT = Path("results/mchammer_vcsgc")
 def _seconds_per_effective_sample(metrics: dict) -> float | None:
     """DNFS cost, or None when the run predates the timing fields.
 
-    Guarded rather than defaulted: a missing `eval_draw_seconds` means the run
-    was never timed, and inventing a zero (or reusing another run's) would put
-    a fabricated number in the one table whose whole purpose is cost.
+    A missing `eval_draw_seconds` means the run was never timed; defaulting it
+    would put a fabricated number in a table whose whole purpose is cost.
     """
     seconds = metrics.get("eval_draw_seconds")
     ess = metrics.get("ess")
@@ -70,13 +62,11 @@ def collect_dnfs(
     composition from `composition_sweep.json`, a specialist contributes its
     single `metrics.json` row at its own target composition.
 
-    `seeds` restricts which runs are read, and it exists because cost here is
-    1/ESS: a seed that collapsed contributes a huge number that dominates the
-    seed-mean, so the averaged row describes no run that was ever performed.
-    The amortised cells mix collapsed and healthy seeds, and the two questions
-    "what does this recipe cost when it works" and "how often does it work"
-    have to be answered separately. Quote a filtered row only alongside the
-    survival rate — on its own it is cherry-picking.
+    `seeds` restricts which runs are read, because cost here is 1/ESS: a
+    collapsed seed contributes a huge number that dominates the seed-mean, so
+    the averaged row describes no run that was performed. The amortised cells
+    mix collapsed and healthy seeds; quote a filtered row only alongside the
+    cell's survival rate.
     """
     rows = []
     for config_path in sorted(results_dir.glob("*/config.json")):
@@ -143,15 +133,13 @@ def collect_mchammer(baseline_dir: Path, *, D: int) -> pd.DataFrame:
 def build_grid(dnfs: pd.DataFrame, mcmc: pd.DataFrame) -> pd.DataFrame:
     """Seed-mean each side, join on composition, and form the cost ratio.
 
-    Seed-meaned before joining because the two sides do not share a seed
-    axis — DNFS seed 42 and mchammer seed 42 are unrelated random streams, so
-    pairing them row-wise would imply a correspondence that does not exist.
+    Seed-meaned before joining because the two sides do not share a seed axis:
+    DNFS seed 42 and mchammer seed 42 are unrelated random streams.
 
     The ratio is mchammer over DNFS, i.e. how many seconds of MCMC one second
-    of DNFS is worth per effective sample; >1 favours DNFS. It is deliberately
-    not computed against the potential column as well, because a single
-    headline ratio invites quoting the flattering observable — the potential
-    cost is on the page for the reader to form that ratio themselves.
+    of DNFS is worth per effective sample; >1 favours DNFS. Only against the
+    composition column: the potential cost is on the page for the reader to
+    form that ratio themselves.
     """
     if dnfs.empty or mcmc.empty:
         return pd.DataFrame()

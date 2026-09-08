@@ -1,35 +1,33 @@
 """DNFS soft vs mchammer vcSGC at matched kappa=lambda: weighted thermodynamics.
 
-This is the apples-to-apples DNFS-vs-vcSGC comparison the F(c) overlay
-(`fc_compare.py`) deliberately left off its plot. Both samplers target the SAME
-semigrand object here: the soft/penalised 2D Ising at penalty strength lambda is
-exactly mchammer's variance-constrained semigrand-canonical (vcSGC) ensemble at
-kappa = lambda, phi_1 = -2*c_target (the mapping lives in
-`discrete_flow_sampler.mcmc.mchammer_ising`, pinned by
-`tests/test_mchammer_ising.py`). So at each window DNFS's importance-weighted
-observables lie directly against a literal VCSGCEnsemble chain, no
-free-energy reconciliation needed.
+The DNFS-vs-vcSGC comparison the F(c) overlay (`fc_compare.py`) leaves off its
+plot. Both samplers target the same semigrand object: the soft/penalised 2D
+Ising at penalty strength lambda is mchammer's variance-constrained
+semigrand-canonical (vcSGC) ensemble at kappa = lambda, phi_1 = -2*c_target (the
+mapping lives in `discrete_flow_sampler.mcmc.mchammer_ising`, pinned by
+`tests/test_mchammer_ising.py`), so at each window DNFS's importance-weighted
+observables lie directly against a literal VCSGCEnsemble chain.
 
 Per composition window three observables are compared:
 
-  1. **Composition marginal** - weighted mean and std of c. Both samplers fluctuate
+  1. Composition marginal - weighted mean and std of c. Both samplers fluctuate
      around c_target with the penalty-set width 1/sqrt(2*lambda*d); this is the
-     constraint axis (does the soft sampler reproduce the vcSGC composition spread,
-     not just its mean).
-  2. **Energy per site** - E(x)/d with E(x) = -log p(x) the cluster-expansion
+     constraint axis (does the soft sampler reproduce the vcSGC composition
+     spread, not just its mean).
+  2. Energy per site - E(x)/d with E(x) = -log p(x) the cluster-expansion
      energy. On the DNFS side E(x) = -sigma * S_ord(x), where S_ord is the
-     nearest-neighbour product summed over the 4-neighbour torus (each undirected
-     bond counted twice); this matches icet's `ClusterExpansionCalculator` total
-     energy bit-for-bit (verified against `ce.predict` at D=4). On the vcSGC side it
-     is the logged `potential` per site.
-  3. **Nearest-neighbour short-range order** - the mean NN pair product
+     nearest-neighbour product summed over the 4-neighbour torus (each
+     undirected bond counted twice); this matches icet's
+     `ClusterExpansionCalculator` total energy bit-for-bit (verified against
+     `ce.predict` at D=4). On the vcSGC side it is the logged `potential` per
+     site.
+  3. Nearest-neighbour short-range order - the mean NN pair product
      <x_i x_j> over undirected bonds, S_und/(2d) = S_ord/(4d), in [-1, 1].
 
-Note (honest): with a single NN-pair orbit and no field, energy/site and the NN
-SRO are affine-related (SRO = -E_persite / (4*sigma)), so they are one comparison
-in two units rather than two independent checks. Both are reported because energy is
-the thermodynamic quantity and SRO is the interpretable correlation; agreement on
-one is agreement on the other.
+With a single NN-pair orbit and no field, energy/site and the NN SRO are
+affine-related (SRO = -E_persite / (4*sigma)), so they are one comparison in two
+units; both are reported because energy is the thermodynamic quantity and SRO
+the interpretable correlation.
 
 DNFS estimates are self-normalised importance-weighted means from
 `eval/{samples.pt, log_weights.pt}`, with seeds ESS-gated (floor 0.30, same as the
@@ -151,10 +149,9 @@ def vcsgc_observables(
 ):
     """Native VCSGCEnsemble reference at kappa=lam, phi=-2*c_target, kT=1.
 
-    Chains are delegated to `mchammer_ising.run_vcsgc`, which keeps the same
-    on-target init, 1/3 burn-in and write interval this function used when the
-    loop was inline. Returns per-observable (mean over seeds, between-seed
-    std). c_std is the within-chain composition spread averaged over seeds.
+    Chains are delegated to `mchammer_ising.run_vcsgc` (on-target init, 1/3
+    burn-in). Returns per-observable (mean over seeds, between-seed std); c_std
+    is the within-chain composition spread averaged over seeds.
     """
     d = D * D
     per_seed = {k: [] for k in ("c_mean", "c_std", "e_site", "sro")}
@@ -349,10 +346,8 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
     ({0.30,0.50,0.55,0.60,0.65}) on the left. Skip c=0.5 and any reflection that
     lands on an already-sampled window. Returns (c, vc, vc_err, dn, dn_err)
     tuples reusing the source window's errors; these are symmetry-implied, not
-    independently sampled, but they are drawn identically to the sampled windows
-    — the filled/open marker split confused more than it informed, so the
-    reflection is stated once in the dissertation body text instead of
-    per-marker.
+    independently sampled, but are drawn identically to the sampled windows, with
+    the reflection stated once in the dissertation body text.
     """
     sampled = {round(r["c"], 4) for r in have}
     flip = (lambda v: 1.0 - v) if key == "c_mean" else (lambda v: v)
@@ -374,31 +369,25 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
 
 
 def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
-    """House-standard 2x2 at 0.72\\textwidth (was a 1x4 row, before that a
-    full-width 2x2).
+    """House-standard 2x2 at 0.72\\textwidth.
 
-    The full-width 2x2 printed 14.1 cm tall; the 1x4 fixed that at 6.4 cm
-    but left ~0.63 in of data axis per panel -- 60% of the canvas went to
-    labels and gaps, and eleven abscissae in 1.6 cm overprinted the two
-    series. This 2x2 draws at SINGLE_PANEL_WIDTH_IN (4.54 in) and prints
-    at 0.72\\textwidth (soft.tex must match, or the 1:1 type contract
-    breaks): ~2.6x the data area per panel, 9 pt stays 9 pt, prints
-    ~9.7 cm -- still 4.4 cm under the rejected full-width 2x2. The two
-    series are x-dodged by +/-0.004 in c (stated in the caption) so the
-    comparator circle is never fully under the sampler square. Panel
-    order (a)-(d) unchanged.
+    Drawn at SINGLE_PANEL_WIDTH_IN (4.54 in) and printed at 0.72\\textwidth --
+    soft.tex must match, or the 1:1 type contract breaks -- which prints ~9.7 cm
+    tall and keeps 9 pt at 9 pt. The two series are x-dodged by +/-0.004 in c
+    (stated in the caption) so the comparator circle is never fully under the
+    sampler square.
 
-    Roles: VC-SGC chains = CLASSICAL_HUE (the classical comparator, not the
-    ink truth -- these are matched chains, not TI); our sampler =
-    SAMPLER_HUE; analytic guides dashed ANALYTIC_GUIDE. At 1.6 in per panel
-    an in-axes legend covers the data, so the two series are named once in a
-    figure-level legend under the row and each analytic guide is labelled in
-    place beside its own line. Compositions in `flag_c` (plus Z2 mirrors) get
-    the provisional ring on the sampler series, explained in the caption.
+    Roles: vcSGC chains = CLASSICAL_HUE (the classical comparator, not the ink
+    truth -- these are matched chains, not TI); our sampler = SAMPLER_HUE;
+    analytic guides dashed ANALYTIC_GUIDE. At 1.6 in per panel an in-axes legend
+    covers the data, so the two series are named once in a figure-level legend
+    under the row and each analytic guide is labelled beside its own line.
+    Compositions in `flag_c` (plus Z2 mirrors) get the provisional ring on the
+    sampler series, explained in the caption.
 
     Error bars, not bands: each abscissa is a separately trained window laid
-    against its own reference chain, so a ribbon would draw a continuum in c
-    that neither sampler measures (figure_style's uncertainty grammar).
+    against its own reference chain, so a ribbon would draw a continuum in c that
+    neither sampler measures.
     """
     import matplotlib.pyplot as plt
 
@@ -425,8 +414,8 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
     fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_SINGLE_2X2)
     for i, (ax, (key, ylab)) in enumerate(zip(axes.ravel(), panels)):
-        # sampled + Z_2-reflected points merged into one uniformly-drawn series,
-        # sorted by composition (the reflection is stated in the body text)
+        # sampled + Z_2-reflected points as one uniformly-drawn series, sorted
+        # by composition
         mir = _zmirror(have, key)
         pts = sorted(
             [
@@ -444,14 +433,11 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         pc = [p[0] for p in pts]
         vc, vce = [p[1] for p in pts], [p[2] for p in pts]
         dn, dne = [p[3] for p in pts], [p[4] for p in pts]
-        # both series as discrete markers (no connecting line): the comparison is
-        # per-composition agreement at matched windows, not a trend, so a
-        # joining line would imply interpolation neither sampler measures.
-        # +/-0.004 x-dodge: at matched windows the two series agree to a few
-        # 1e-4, so drawn at the same abscissa the sampler square (drawn
-        # second) fully hides the comparator circle -- the one mark the
-        # figure exists to show. The dodge is visual only, stated in the
-        # caption.
+        # Both series as discrete markers (no connecting line): the comparison is
+        # per-composition agreement at matched windows, not a trend.
+        # +/-0.004 x-dodge, visual only and stated in the caption: at matched
+        # windows the two series agree to a few 1e-4, so at the same abscissa the
+        # sampler square (drawn second) fully hides the comparator circle.
         dodge = 0.004
         ax.errorbar(
             [c - dodge for c in pc],
@@ -507,11 +493,10 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         if key == "c_std":
             ax.axhline(analytic_cstd, ls="--", color=ANALYTIC_GUIDE, lw=0.8)
             # std(c) is near-constant ~0.010, so autoscale zooms into the noise;
-            # pin a +/-0.001 window around the analytic value so the tiny (and
-            # expected) IS-vs-chain differences don't dominate the panel. Three
-            # explicit ticks (set AFTER the locator, which would otherwise
-            # replace them): 0.0090/0.0100/0.0110 are the widest labels in the
-            # figure and five of them will not fit a 1.6 in panel.
+            # pin a +/-0.001 window around the analytic value. Three explicit
+            # ticks, set after the locator, which would otherwise replace them:
+            # 0.0090/0.0100/0.0110 are the widest labels in the figure and five
+            # of them will not fit a 1.6 in panel.
             ax.set_ylim(analytic_cstd - 0.001, analytic_cstd + 0.001)
             ax.set_yticks([analytic_cstd - 0.001, analytic_cstd, analytic_cstd + 0.001])
             ax.text(
@@ -533,8 +518,7 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
             fontweight="bold",
             va="bottom",
         )
-    # One figure-level legend for the two series, which are shared by all four
-    # panels; naming them once was already the 2x2's convention.
+    # One figure-level legend: the two series are shared by all four panels.
     handles, labels = axes.ravel()[0].get_legend_handles_labels()
     fig.legend(handles, labels, frameon=False, ncol=2, loc="lower center")
     fig.tight_layout(rect=(0, 0.07, 1, 1), w_pad=0.6)

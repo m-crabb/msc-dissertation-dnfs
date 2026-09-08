@@ -1,16 +1,13 @@
-"""fig:soft-clean -- the soft chapter's K2 results cell, house standard.
+"""fig:soft-clean -- the soft chapter's results cell, house standard.
 
-The house figure set (c=0.50 window; the lambda-trade figure stays
-separate) gives the soft
-chapter the same two-panel results-cell as the other results chapters, at
-the headline 10x10 size, lambda=50, c_target=0.50, sigma=0.1:
+The house figure set (c=0.50 window; the lambda-trade figure stays separate)
+gives the soft chapter the same two-panel results cell as the other results
+chapters, at the headline 10x10 size, lambda=50, c_target=0.50, sigma=0.1:
 
-  (a) energy marginal on the EXACT levels of the BARE Ising energy, E/d
+  (a) energy marginal on the exact levels of the bare Ising energy, E/d
       axis. The penalty is excluded, matching the house table's EW2
-      convention (the quality question is whether the sampler gets the
-      *physics* right inside the constrained ensemble; the penalty term is
-      shared bookkeeping). On the periodic lattice E = -2d + 4k, so binning
-      on that support carries no aliasing.
+      convention. On the periodic lattice E = -2d + 4k, so binning on that
+      support carries no aliasing.
   (b) composition marginal on its exact 101-point support k/d -- the
       chapter's order-parameter/coverage read: the soft target holds c in a
       band of width 1/sqrt(2*lambda*d) around the target, and the panel
@@ -18,14 +15,12 @@ the headline 10x10 size, lambda=50, c_target=0.50, sigma=0.1:
 
 Reference = the pooled mchammer VC-SGC chains at matched kappa=lambda (the
 chapter's like-for-like ensemble, sec:fc), order-checked against the
-validated embedding exactly as in house_table_soft_10x10. The caption quotes
-each panel's total-variation distance beside the reference's own sampling
-floor. The floor is the table's construction verbatim -- N_EVAL-frame BLOCK
-bootstrap replicates of the pool scored against the pool -- NOT the
+validated embedding as in house_table_soft_10x10. The caption quotes each
+panel's total-variation distance beside the reference's own sampling floor.
+The floor is the table's construction verbatim -- N_EVAL-frame block
+bootstrap replicates of the pool scored against the pool -- not the
 chain-resampling bootstrap the unconstrained chapter uses: with only 4
-VC-SGC chains a chain-level resample is too coarse to price sampling
-noise, and reusing the table's blocks keeps "at the floor" meaning the same
-thing in this chapter's figure and table.
+VC-SGC chains a chain-level resample is too coarse to price sampling noise.
 """
 
 import argparse
@@ -54,7 +49,7 @@ VCSGC_RESULTS = REPO_ROOT / "results" / "mchammer_vcsgc"
 L, SIGMA = 10, 0.1
 D_SITES = L * L
 N_EVAL = 5000  # replicate size = the neural draw count (the table's floor)
-FLOOR_BLOCK = 10  # frames per bootstrap block (the table's BLOCK)
+FLOOR_BLOCK = 10  # frames per bootstrap block (the table's block)
 N_FLOOR_BOOTSTRAP = 200
 
 
@@ -69,9 +64,8 @@ def energy_level_index(x: torch.Tensor) -> torch.Tensor:
     """Exact-level index of the bare Ising energy (penalty excluded).
 
     E = -base_log_prob / (2 sigma); on the periodic lattice E = -2d + 4k.
-    The rounding assert guards the support assumption, as in the
-    unconstrained cell: off-level energies mean a changed convention and
-    the figure must not silently rebin.
+    The rounding assert guards that support: off-level energies mean a
+    changed convention, and the figure must not silently rebin.
     """
     energy = -TARGET.base_log_prob(x) / (2.0 * SIGMA)
     level = (energy + 2.0 * D_SITES) / 4.0

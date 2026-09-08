@@ -1,38 +1,37 @@
 """Fill pass for tab:eval-soft-4x4: the soft house table at the enumerable
-size, in the HOUSE layout (columns as tab:eval-hard-4x4 / the 10x10 house
+size, in the house layout (columns as tab:eval-hard-4x4 / the 10x10 house
 tables; an earlier cut with TV / Z2 / std(c) / dF columns is retired).
 
   reference -- exact enumeration: all 2^16 states weighted by the soft
                target's own normalised probabilities (the soft target is
                unconstrained, so no slice); the error columns read against
                truth and the reference row is exactly zero.
-  floor     -- the error a PERFECT sampler shows at the neural cells' own
+  floor     -- the error a perfect sampler shows at the neural cells' own
                draw count (5000 exact multinomial draws from the enumerated
                target, 200 replicates): a cell at or below it is
                indistinguishable from exact at its N. (hard's house_table_4x4
                convention; the 10x10 fills bootstrap a sampled reference
-               instead because there the reference is itself sampled.)
+               instead.)
   cells     -- lambda=50 house specialists at c* in {0.25, 0.375, 0.5}
                at the cross-chapter 4x4 budget of 10k steps (the _10k_
                family, tag softhouse-d16-10k; the _50k_ family is the
-               amortised comparator set) and the lambda=100 centre cell (efc-sweep:
-               the channel recipe pre-house, the only 4x4 lambda=100 cells
-               with the channel); every seed reported, mean +- SD.
+               amortised comparator set) and the lambda=100 centre cell
+               (efc-sweep, the only 4x4 lambda=100 cells with the channel);
+               every seed reported, mean +- SD.
   FLOP/es   -- measured eager forward at the run's architecture x n_euler
                / frozen ESS, as the 8x8 fill (house_table_soft_8x8.py).
   couplings -- sigma=0.1 and sigma_c halves; a half with no runs on disk
                prints as skipped.
   conditioned -- the 10k conditioned twin (matched base, spine draw over
                the three windows) scored at each window from the frames its
-               composition sweep filed there, so the row beside a specialist
-               is the same model asked for that specialist's composition;
-               skipped at a window until the sweep has run.
+               composition sweep filed there; skipped at a window until the
+               sweep has run.
 
 Extras kept in the JSON for the comments only: delivered std(c) vs the
-ENUMERATED spread (not the Gaussian envelope 1/sqrt(2 lambda d), which at
-d=16 is wider than the composition step and so is not the marginal), and
-the IS free-energy bias vs the exact -log Z/(2 sigma d) (the Euler-grid
-bias of the weight integral at n_euler=50, drive-proportional).
+enumerated spread (not the Gaussian envelope 1/sqrt(2 lambda d), which at
+d=16 is wider than the composition step), and the IS free-energy bias vs
+the exact -log Z/(2 sigma d) (the Euler-grid bias of the weight integral at
+n_euler=50, drive-proportional).
 """
 
 import json

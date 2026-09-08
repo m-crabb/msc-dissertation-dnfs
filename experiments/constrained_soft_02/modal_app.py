@@ -17,7 +17,7 @@ Usage (after `modal token new` and `modal secret create wandb-secret ...`):
         experiments.constrained_soft_02.modal_app::batch_seeds \\
         --cfg-name S2_d4_c05_l50_letf --seeds "42,43,44,45"
 
-    # Multi-seed PACKED onto one card (wall-clock from packed runs is
+    # Multi-seed packed onto one card (wall-clock from packed runs is
     # contention-contaminated, see train_pack_remote):
     pixi run -e dev modal run --detach -m \\
         experiments.constrained_soft_02.modal_app::batch_seeds_packed \\
@@ -97,18 +97,16 @@ def _validate_cfg_name(cfg_name: str) -> None:
 
 @app.function(
     # Pinned to the 80GB SKU rather than the bare `gpu="A100"` (= 40GB), which
-    # Modal may serve from more than one card variant. Nothing here needs the
-    # memory: the reason is that the dominant known nuisance channel on this
-    # codebase is cross-device FP non-determinism -- `seeding.py` sets
-    # `cudnn.deterministic` but never `torch.use_deterministic_algorithms`, and
-    # leTF's two `nn.Embedding` backwards use order-dependent atomic
-    # scatter-adds, so a 2-ULP step-0 gradient difference decorrelates a 50k
-    # run entirely. Identical config + seed has been measured at ESS/N 0.423 vs
-    # 0.899 across venues, which is the size of the effects these cells are
-    # asked to resolve. Leaving the SKU free would let that channel vary WITHIN
-    # a seed-replicate comparison, i.e. inside the very measurement meant to
-    # bound it. `train` records `get_device_name(0)` so homogeneity stays
-    # checkable after the fact instead of assumed.
+    # Modal may serve from more than one card variant. Not for the memory: the
+    # dominant nuisance channel here is cross-device FP non-determinism --
+    # `seeding.py` sets `cudnn.deterministic` but never
+    # `torch.use_deterministic_algorithms`, and leTF's two `nn.Embedding`
+    # backwards use order-dependent atomic scatter-adds, so a 2-ULP step-0
+    # gradient difference decorrelates a 50k run entirely. Identical config +
+    # seed measured ESS/N 0.423 vs 0.899 across venues, the size of the effects
+    # these cells must resolve, so a free SKU would let that channel vary within
+    # a seed-replicate comparison. `train` records `get_device_name(0)` so
+    # homogeneity stays checkable after the fact.
     gpu="A100-80GB",
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -118,13 +116,12 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     """Run a single constrained-soft training config on Modal.
 
     `tag` replaces the run dir's timestamp suffix (see `run.train`); "" is the
-    "no tag" sentinel because Modal's CLI cannot pass None. It does two jobs.
-    A seed-replicate family stays greppable as one unit — several of these
-    cells already have more than one archived dir at the same seed, and a
-    bare timestamp leaves the analysis picking the right one by date. And a
-    preemption re-runs this function with identical inputs, so a stable tag
-    lands the retry in the SAME run dir, where `checkpoints/resume.pt` makes
-    it continue from the last outer-cycle boundary instead of step 0.
+    "no tag" sentinel because Modal's CLI cannot pass None. It keeps a
+    seed-replicate family greppable as one unit (several cells have more than
+    one archived dir at the same seed), and a preemption re-runs this function
+    with identical inputs, so a stable tag lands the retry in the same run dir,
+    where `checkpoints/resume.pt` continues from the last outer-cycle boundary
+    instead of step 0.
     """
     import sys
 
@@ -137,10 +134,9 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
         seed=seed,
         output_dir="/results",
         tag=tag or None,
-        # A preemption gets no chance to flush, so the resume checkpoint has
-        # to be committed to the volume the moment it is written -- otherwise
-        # the retry finds nothing and restarts from step 0, which is exactly
-        # the failure this whole path exists to prevent.
+        # A preemption gets no chance to flush, so the resume checkpoint is
+        # committed to the volume the moment it is written; otherwise the retry
+        # finds nothing and restarts from step 0.
         on_checkpoint=volume.commit,
     )
     volume.commit()
@@ -148,27 +144,26 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
 
 @app.function(
     # Same SKU pin as train_remote, same reason: the determinism channel is
-    # device CLASS, and packing seeds onto one card does not vary it.
+    # device class, and packing seeds onto one card does not vary it.
     gpu="A100-80GB",
     volumes={"/results": volume},
     secrets=[wandb_secret],
     timeout=24 * 60 * 60,
 )
 def train_pack_remote(cfg_name: str, seeds: str, tag: str = ""):
-    """Run several seeds of one config CONCURRENTLY on the one rented card.
+    """Run several seeds of one config concurrently on the one rented card.
 
-    Modal cannot cohabit containers on a GPU, so co-residency happens
-    INSIDE the container: one subprocess per seed sharing the A100 this
-    function rents. At d64 the leTF cells are small and launch-bound, so
-    four co-resident runs overlap well and the pack cuts the bill ~4x
-    while keeping the SKU pin.
+    Modal cannot cohabit containers on a GPU, so co-residency happens inside the
+    container: one subprocess per seed sharing the A100 this function rents. At
+    d64 the leTF cells are small and launch-bound, so four co-resident runs
+    overlap well and the pack cuts the bill ~4x while keeping the SKU pin.
 
-    Two accepted costs. (1) Wall-clock columns from packed runs are
-    contention-contaminated — never quote them; ESS, fidelity and the
-    analytic FLOP/es are untouched, and the house table's cost column is
-    FLOP/es. (2) A preemption interrupts every co-resident seed at once;
-    the fixed tag plus the commit loop below make the retry resume each
-    seed from its last outer-cycle boundary rather than step 0.
+    Two accepted costs. Wall-clock columns from packed runs are
+    contention-contaminated and must not be quoted; ESS, fidelity and the
+    analytic FLOP/es (the house table's cost column) are untouched. And a
+    preemption interrupts every co-resident seed at once; the fixed tag plus the
+    commit loop below make the retry resume each seed from its last outer-cycle
+    boundary rather than step 0.
     """
     import subprocess
     import sys
@@ -249,16 +244,13 @@ def redraw_remote(run_dir_name: str, n_euler: int):
 )
 def sweep_remote(run_dir_name: str, checkpoint: str = "final.pt", force: bool = False):
     """Per-composition request-grid sweep of one amortised run dir on the
-    volume (run.composition_sweep — the measurement the amortisation claim
-    rests on; one CRN-paired eval row per requested c).
+    volume (run.composition_sweep; one CRN-paired eval row per requested c).
 
-    `checkpoint` keys the artefact dir exactly as composition_sweep does:
-    final.pt -> eval/composition_sweep.json, final_ema.pt ->
-    eval_ema/composition_sweep.json. Skip-if-exists makes a batch re-run
-    idempotent (the redraw_remote pattern); `force` redoes a recorded
-    sweep, for sweeps filed before the per-composition frames were kept.
-    Needs config.json and checkpoints/<checkpoint> in the run dir; nothing
-    else is read.
+    `checkpoint` keys the artefact dir as composition_sweep does: final.pt ->
+    eval/composition_sweep.json, final_ema.pt -> eval_ema/composition_sweep.json.
+    Skip-if-exists makes a batch re-run idempotent; `force` redoes a recorded
+    sweep, for sweeps filed before the per-composition frames were kept. Needs
+    config.json and checkpoints/<checkpoint> in the run dir.
     """
     import sys
 
@@ -295,12 +287,10 @@ def sweep_batch(
 
 
 @app.function(
-    # Smallest card Modal serves: D=4 GATE RUNS ONLY. The A100-80GB pin
-    # above exists because cross-device FP non-determinism sits inside
-    # seed-replicate comparisons; a gate is a single-seed pass/fail
-    # against a coarse bar (~0.99 vs collapse), so SKU homogeneity is not
-    # part of the measurement. Never route a cell that will be compared
-    # seed-to-seed against A100 runs through here.
+    # Smallest card Modal serves: D=4 gate runs only. A gate is a single-seed
+    # pass/fail against a coarse bar (~0.99 vs collapse), so the SKU homogeneity
+    # the A100-80GB pin buys is not part of the measurement. Never route a cell
+    # that will be compared seed-to-seed against A100 runs through here.
     gpu="T4",
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -325,12 +315,11 @@ def train_gate_remote(cfg_name: str, seed: int = 42, tag: str = ""):
 
 
 @app.function(
-    # Small-card DIAGNOSTICS ONLY (same scope logic as the T4 gate above):
-    # pass/fail against a coarse bar — here "trains vs the 0.001-0.01 dead
-    # floor" — so SKU homogeneity is not part of the measurement. L4 not T4
-    # because a d64 50k cell needs headroom under the timeout. Never route
-    # a cell that will be compared seed-to-seed against A100 runs through
-    # here; `train` records the card name so provenance stays checkable.
+    # Small-card diagnostics only (same scope logic as the T4 gate above):
+    # pass/fail against a coarse bar, here "trains vs the 0.001-0.01 dead
+    # floor". L4 not T4 because a d64 50k cell needs headroom under the timeout.
+    # Never route a cell that will be compared seed-to-seed against A100 runs
+    # through here; `train` records the card name.
     gpu="L4",
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -391,11 +380,11 @@ def redraw_batch(run_dirs: str, grids: str):
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call.
 
-    The tag is minted HERE, once, rather than defaulted inside the container:
-    a preemption re-runs `train_remote` with identical inputs, so a tag fixed
-    at spawn time lands the retry in the same run dir and lets it resume,
-    while a container-side timestamp would mint a fresh sibling dir and start
-    over. `batch_seeds` takes the tag from the caller for the same reason.
+    The tag is minted here, once, rather than defaulted inside the container: a
+    preemption re-runs `train_remote` with identical inputs, so a tag fixed at
+    spawn time lands the retry in the same run dir and lets it resume, while a
+    container-side timestamp would mint a fresh sibling dir and start over.
+    `batch_seeds` takes the tag from the caller for the same reason.
     """
     _validate_cfg_name(cfg_name)
     train_remote.remote(

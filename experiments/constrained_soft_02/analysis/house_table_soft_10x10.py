@@ -23,32 +23,31 @@ What differs for the soft target:
             to be 5000 samples, so its full-size replicate already meant "a
             5000-draw from the reference"; here the reference is 5x larger and
             a full-size replicate would understate the floor by sqrt(5).
-  energy  -- EW2 is on the *Ising* energy per site, penalty excluded: the
+  energy  -- EW2 is on the Ising energy per site, penalty excluded: the
             penalty is the constraint, not the physics, and both sampler and
-            reference draw from the same penalised law so the comparison is
-            like for like. E/d = -base_log_prob(x) / (2 sigma d).
+            reference draw from the same penalised law.
+            E/d = -base_log_prob(x) / (2 sigma d).
   seeds   -- every seed is scored and printed; the chapter's 0.30 ESS floor is
             applied only in the summary line, with n_pass/n_total, so the
             table can print either rule and the failed seeds are never hidden.
 
 FLOP/es cells (same conventions as the unconstrained fill):
 
-  neural  -- MEASURED eager forward at the run's own architecture and
+  neural  -- measured eager forward at the run's own architecture and
             shapes (FlopCounterMode, batch 1, batch-linear) x n_euler
             forwards + counted-but-negligible target evals, / the frozen
             eval ESS fraction. Measured once per cell; n_euler read per
             run so a mixed-grid glob cannot silently misprice.
   chain   -- analytic VC-SGC per-trial constant (flops.py: Gibbs-class
             single-flip + cached-composition penalty update) x 1M trials
-            per chain INCLUDING burn-in, / (pooled frames / tau_int).
+            per chain including burn-in, / (pooled frames / tau_int).
             tau_int = the slower of mchammer's own composition/potential
             reads (summary.json, frame units), floored at 1.
 
-The matched-budget VC-SGC row was DROPPED: mchammer's ~1e5x
-package overhead makes a matched-FLOP run unrunnable, the same argument
-that made the unconstrained baseline row run-long, and the run-long
-reference with its actually-spent FLOP/es already carries the cost story
-(reference-not-rival). sigma_c is not run in this chapter.
+The matched-budget VC-SGC row was dropped: mchammer's ~1e5x package overhead
+makes a matched-FLOP run unrunnable, and the run-long reference with its
+actually-spent FLOP/es already carries the cost story. sigma_c is not run in
+this chapter.
 """
 
 import json
@@ -96,7 +95,7 @@ CELLS = {
     # 0.30 ESS floor at 0.777/0.912 and agree to 0.002/site in F and 2e-4 in
     # delivered c -- tighter than the ne64 trio's 0.015 spread; the glob
     # sweeps all 8 dirs and summarise()'s floor keeps the passing pair.
-    # c=0.80 prints the N11 campaign's uniform-base CONTROL arm (shared tag =
+    # c=0.80 prints the N11 campaign's uniform-base control arm (shared tag =
     # one launch family, one dir per seed): the untagged glob would also
     # sweep in the two replicate seed-45 runs kept as the FP-nondeterminism
     # record (ESS 0.423 vs 0.899 on an identical config+seed).
@@ -170,12 +169,11 @@ def load_vcsgc_reference(penalty_strength, c_target):
 def specialist_flops_per_forward(run_dir: Path) -> int:
     """Measured FLOPs of one rate-matrix forward at this run's architecture.
 
-    Eager build from the run's own config at batch 1, exactly as the
-    unconstrained fill: a compiled wrapper can hide ops from the
-    dispatch-level counter, and the counter is batch-linear (test-pinned).
-    Soft configs reuse the baseline ModelCfg, so the baseline constructor
-    applies; the model's shape depends only on the lattice, so the plain
-    Ising target supplies the example input.
+    Eager build from the run's own config at batch 1, as in the unconstrained
+    fill: a compiled wrapper can hide ops from the dispatch-level counter, and
+    the counter is batch-linear (test-pinned). Soft configs reuse the baseline
+    ModelCfg; the model's shape depends only on the lattice, so the plain Ising
+    target supplies the example input.
     """
     from experiments.dnfs_baseline_01.configs import ModelCfg
     from experiments.dnfs_baseline_01.run import _construct_model, _sub_config

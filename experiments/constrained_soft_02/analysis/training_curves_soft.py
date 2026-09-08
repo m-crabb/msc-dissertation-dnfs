@@ -1,4 +1,4 @@
-"""App I figure: soft-chapter ESS-over-training, house standard (K4).
+"""App I figure: soft-chapter ESS-over-training, house standard.
 
 The appendix kit's training-curve figure for the soft chapter, mirroring
 training_curves_unconstrained: in-training evaluation ESS fraction over
@@ -17,9 +17,8 @@ unreliable rather than cropped. The fixed family has no schedule; its
 whole trace reads against the final target.
 
 The fixed-lambda family predates the ne128 recipe (n_e = 64); the caption
-carries that clause. The in-training read is the diagnostic, not the
-frozen eval the house table prints -- no table number appears here
-(settled rule).
+carries that clause. The in-training read is the diagnostic, not the frozen
+eval the house table prints, so no table number appears here.
 """
 
 import argparse

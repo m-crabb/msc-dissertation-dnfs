@@ -1,4 +1,4 @@
-"""Per-configuration exact-recovery scatter, SOFT 4x4 (app:logp-scatters).
+"""Per-configuration exact-recovery scatter, soft 4x4 (app:logp-scatters).
 
 ARCHIVED FIGURE (6 September 2026). The rationale below is historical:
 DNFS path weights cannot generally be inverted into an endpoint log-density.
@@ -6,10 +6,9 @@ For configuration-probability validation use scripts/configuration_calibration_4
 and scripts/plot_configuration_calibration_4x4.py instead. This script remains
 only to reproduce the retired image, whose density interpretation was incorrect.
 
-The third and last section of the appendix: the hard chapter's counterpart is
-experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py and the
-unconstrained one is experiments/dnfs_baseline_01/analysis/
-plot_logp_scatter_4x4.py. This script deliberately mirrors both so the three
+The third and last section of the appendix; it mirrors
+experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py and
+experiments/dnfs_baseline_01/analysis/plot_logp_scatter_4x4.py so the three
 figures read alike.
 
 The estimator is the importance-weight identity
@@ -17,19 +16,18 @@ The estimator is the importance-weight identity
     w(x) = pi~(x) / q(x)   =>   log q(x) = log pi~(x) - log w(x),
 
 with q the sampler's own (normalised) path-marginal density, so the y-axis
-needs no fitted constant IF the stored log-weights are the raw ratio. In
+needs no fitted constant if the stored log-weights are the raw ratio. In
 practice the eval's log-weights carry one common additive shift (base and
 time-grid constants cancel in the normalised weights but ride along in the
-raw ones), so the script PRINTS the median offset per panel and removes it
+raw ones), so the script prints the median offset per panel and removes it
 before plotting. A healthy sampler shows a tight cloud on the diagonal;
 probability mass misallocated between equal-energy configurations --
 invisible to every energy-based instrument -- shows as vertical scatter that
 no offset can hide.
 
-WHAT MAKES THIS THE SOFT VERSION, and why its panels differ from the other
-two sections'.
+How the soft panels differ from the other two sections':
 
-  * THE TARGET IS PENALISED, NOT CONSTRAINED. The reference is the full
+  * The target is penalised, not constrained. The reference is the full
     2^16 = 65,536-state enumeration of
 
         log pi(x) = base_log_prob(x) - lambda * d * (c_+(x) - c_target)^2
@@ -38,11 +36,10 @@ two sections'.
     probability and there is no feasible slice to condition on -- as in the
     unconstrained section, and unlike the hard section, whose x-axis is the
     enumerated conditional over the C(16,8) = 12,870 feasible states.
-    The exhibit therefore asks whether the sampler recovers the PENALISED
-    target, which is the sampler-fidelity question; whether that target's
-    composition is the requested one is a separate question the soft
-    chapter's delivered-composition instruments already own.
-  * THE PANEL AXIS IS COMPOSITION, NOT COUPLING. The soft 4x4 family is run
+    The exhibit therefore asks whether the sampler recovers the penalised
+    target; whether that target's composition is the requested one is a
+    separate question, owned by the delivered-composition instruments.
+  * The panel axis is composition, not coupling. The soft 4x4 family is run
     at one coupling (sigma = 0.1) and one penalty strength (lambda = 50);
     what varies across the chapter's 4x4 cells is the requested composition.
     Panels are therefore c = 0.50 and c = 0.80: the symmetric case, where
@@ -52,7 +49,7 @@ two sections'.
     of the target disagree. Choosing the two sigma values instead would
     print the same distribution twice.
 
-Reads the per-composition SPECIALIST cells (the same artefacts
+Reads the per-composition specialist cells (the same artefacts
 tab:amort-4x4 scores), seeds 42-45 pooled, 5000 draws each.
 """
 
@@ -95,10 +92,10 @@ def state_keys(states):
 
 def panel_series(results_dir=None):
     """Plot-ready panels, shared by main() and the combined app:logp-scatters
-    figure so the two can never disagree about what is being plotted.
+    figure so the two cannot disagree about what is plotted.
 
-    One entry per panel (the panels are compositions, not couplings), each
-    carrying a single series with the per-panel median offset removed.
+    One entry per panel (compositions, not couplings), each carrying a single
+    series with the per-panel median offset removed.
     """
     results_dir = Path(results_dir or REPO_ROOT / "results" / "02_constrained_soft")
     all_states = enumerate_states(D_SITES)

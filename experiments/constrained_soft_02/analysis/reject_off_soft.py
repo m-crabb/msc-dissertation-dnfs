@@ -1,7 +1,7 @@
 """Rejecting off the soft sampler at every window the soft chapter trains.
 
 The soft chapter's closing section asks: given the trained soft sampler at a
-window, what does it cost to recover the EXACT fixed-composition ensemble by
+window, what does it cost to recover the exact fixed-composition ensemble by
 keeping only the draws on the slice c(x) = c_target?  The hard chapter's
 `rejection_rows.py` prices this at c = 0.5 only, against a Kawasaki reference,
 for its own tables.  This scorer prices it at every soft window and both
@@ -9,14 +9,14 @@ couplings, at both soft sizes (4x4 exact-enumeration rung, 8x8 production
 rung), and reports the three numbers the argument needs and nothing else:
 
   * acceptance       -- fraction of draws on the slice (measured, all seeds),
-  * ESS on the slice -- self-normalised ESS of the SURVIVORS' original weights,
+  * ESS on the slice -- self-normalised ESS of the survivors' original weights,
                         which is an ESS against the hard target because the
                         penalty is identically zero on the slice (see the
                         docstring of rejection_rows.py for the derivation),
-  * FLOP/es          -- the sampler's per-draw bill divided by BOTH the
+  * FLOP/es          -- the sampler's per-draw bill divided by both the
                         acceptance and the ESS, so a rejected draw is charged.
 
-Beside the measured acceptance sits the ANALYTIC prediction from the soft
+Beside the measured acceptance sits the analytic prediction from the soft
 target's composition envelope: grouped by composition the penalty multiplies
 the target by exp(-lambda d (c - c_t)^2), and on the composition grid
 c = k/d the mass on the exact slice under the envelope alone is
@@ -27,7 +27,7 @@ which is 0.92 at d=16 and 0.50 at d=64 for lambda=50 -- the 4x4 "near-free"
 overhead of 1.09x becomes 2x at the production size, and continues as
 sqrt(pi d / (2 lambda)) for large d.  The envelope drops the canonical density
 of states Z_can(c), which tilts the true marginal toward half filling, so the
-measured acceptance at an off-centre window is expected to sit BELOW the
+measured acceptance at an off-centre window is expected to sit below the
 envelope prediction; the gap is the entropic tilt, not sampler error.
 
 The soft sampler priced at each window is the chapter's delivered recipe (the

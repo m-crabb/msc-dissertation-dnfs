@@ -22,9 +22,9 @@ ECI = [0, -bias, -4*sigma]. We work in natural units (kT = 1: temperature = 1,
 boltzmann_constant = 1) so exp(-E/kT) = exp(-E) = p, matching the DNFS target.
 
 The free energy returned by mchammer is total (not per site); we report F/site to
-match the DNFS `free_energy_per_site` convention. NOTE this is the *canonical*
-free energy; reconciling it with the DNFS soft IS-logZ (Laplace / kappa-match) is
-a separate step. Here we build and validate the reference itself.
+match the DNFS `free_energy_per_site` convention. This is the canonical free
+energy; reconciling it with the DNFS soft IS-logZ (Laplace / kappa-match) is a
+separate step.
 
 Validation (`--validate`, D<=4): the canonical sector enumerates (2^(D*D) states),
 so F_exact(c) = -log sum_{c(x)=c} p(x) is available and the TI curve is checked

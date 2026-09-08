@@ -1,22 +1,20 @@
 """House evaluation table for tab:eval-soft-8x8.
 
-ARCHIVED TABLE EXPORTER: its reference_floor below retains the historical
-chain/block-bootstrap convention for reproducing archived JSON. Current
-thesis reference rows and iid floors are computed separately by
-scripts/thesis_reference_diagnostics.py, preserving the neural exports.
-Do not paste this export over the revised thesis table: the new table has
-separate reference-uncertainty and iid-floor rows, and the soft layout was
-split into specialist, ablation and amortisation tables.
-
+Archived table exporter: its reference_floor below retains the historical
+chain/block-bootstrap convention for reproducing archived JSON. Current thesis
+reference rows and iid floors are computed separately by
+scripts/thesis_reference_diagnostics.py, preserving the neural exports. Do not
+paste this export over the revised thesis table: the new table has separate
+reference-uncertainty and iid-floor rows, and the soft layout was split into
+specialist, ablation and amortisation tables.
 
 Uses the 10x10 conventions (house_table_soft_10x10.py):
 
   lattice   -- 8x8 (d=64), the hard chapter's record size, so the
                cross-route comparison is matched-size at both couplings.
-  couplings -- sigma=0.1 AND SIGMA_C, the table's two halves. A missing
-               reference or empty cell prints and skips rather than
-               failing the fill: the table must be reviewable while cells
-               are still landing (hard's house-fill behaviour).
+  couplings -- sigma=0.1 and sigma_c, the table's two halves. A missing
+               reference or empty cell prints and skips rather than failing
+               the fill, so the table stays reviewable while cells land.
   families  -- the house specialists (S2_d8_*_l50_letf_ne128_house{_sc})
                and, at the critical centre only, the nochan control (house
                recipe minus the channel: the one measured channel-off/on
@@ -26,12 +24,10 @@ Uses the 10x10 conventions (house_table_soft_10x10.py):
                base_composition = c* at the off-centre windows; decides
                base-reachability vs target-itself where the uniform-base
                family is marginal or dead) and the lambda-curriculum arm
-               (`anneal`, nochan + the 10/25/50 schedule at sigma_c
-               centre; the third fate of the nochan/anneal/channel trio).
-  dual eval -- every family is scored from eval/ AND eval_ema/ (hard's
-               house convention: a second `_ema` entry per family). The
-               raw entry keeps the un-averaged model on record; EMA is
-               the instrument that rescued hard's marginal seeds.
+               (`anneal`, nochan + the 10/25/50 schedule at sigma_c centre).
+  dual eval -- every family is scored from eval/ and eval_ema/ (a second
+               `_ema` entry per family). The raw entry keeps the un-averaged
+               model on record; EMA rescued hard's marginal seeds.
   reference -- mchammer VC-SGC chains at kappa=lambda, phi=-2c*, under
                the 3-decimal composition naming (0.375 has no faithful
                2dp tag). potential.npy must equal the Ising energy
@@ -42,15 +38,14 @@ Uses the 10x10 conventions (house_table_soft_10x10.py):
                min 10 frames): at sigma_c the 100-trial write interval no
                longer guarantees near-uncorrelated frames, and the fixed
                BLOCK=10 of the sigma=0.1 fill would understate the floor.
-  energy    -- EW2 on the *Ising* energy per site, penalty excluded, as
-               in the 10x10 fill: the penalty is the constraint, not the
+  energy    -- EW2 on the Ising energy per site, penalty excluded, as in
+               the 10x10 fill: the penalty is the constraint, not the
                physics, and both sides draw from the same penalised law.
 
-FLOP/es cells follow the 10x10 fill exactly: measured eager forward at
-the run's own architecture (batch 1, batch-linear) x n_euler forwards /
-frozen ESS fraction for the neural rows; analytic VC-SGC per-trial
-constant x total trials (burn-in included) / (pooled frames / tau_int)
-for the reference row.
+FLOP/es cells follow the 10x10 fill: measured eager forward at the run's own
+architecture (batch 1, batch-linear) x n_euler forwards / frozen ESS fraction
+for the neural rows; analytic VC-SGC per-trial constant x total trials (burn-in
+included) / (pooled frames / tau_int) for the reference row.
 """
 
 import json
@@ -92,9 +87,8 @@ LAM = 50.0
 COUPLINGS = (("s010", 0.1), ("sc", SIGMA_C))
 ESS_FLOOR = 0.30
 N_BOOTSTRAP, N_EVAL = 200, 5000
-# Families scored from the frames their composition sweep filed at the
-# window's c (one conditioned model, asked for each specialist's
-# composition) rather than from the frozen centre eval.
+# Families scored from the frames their composition sweep filed at the window's
+# c (one conditioned model per window) rather than from the frozen centre eval.
 CONDITIONED_FAMILIES = {"conditioned", "conditioned_ladder"}
 
 
@@ -119,9 +113,9 @@ def load_vcsgc_reference(target, sigma, c_target, lam=LAM):
 
     Returns the pooled frames, the chains' cost record for the FLOP/es cell
     (total trials including burn-in; mchammer's own slowest per-observable
-    tau_int in frame units), and that tau for the floor's block length.
-    The reference is the chain at kappa = lam: a lambda twin is scored
-    against ITS OWN penalised law, never against the lambda=50 chains.
+    tau_int in frame units), and that tau for the floor's block length. The
+    reference is the chain at kappa = lam, so a lambda twin is scored against its
+    own penalised law, never against the lambda=50 chains.
     """
     frames, wall_seconds, chains = [], 0.0, 0
     total_trials, tau_ints = 0, []
@@ -157,8 +151,8 @@ def specialist_flops_per_forward(run_dir: Path, target, composition) -> int:
 
     Eager build from the run's own config at batch 1 (compile stripped: a
     compiled wrapper can hide ops from the dispatch-level counter). The
-    exact-field channel rides along -- its closed form is part of every
-    forward the sampler pays for, so it belongs in the bill.
+    exact-field channel rides along, since its closed form is part of every
+    forward the sampler pays for.
     """
     from experiments.dnfs_baseline_01.configs import ModelCfg
     from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
