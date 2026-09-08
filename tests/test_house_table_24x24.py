@@ -167,8 +167,63 @@ def test_latex_body_is_single_coupling():
     }
     body = latex_table(table)
     data_rows = [line for line in body.splitlines() if line.strip().endswith(r"\\")]
-    assert len(data_rows) == 4
+    # reference, floor, two swap arms, two GFN comparator rows
+    assert len(data_rows) == 6
     for line in data_rows:
         assert line.count("&") == 5, line
     assert r"\mathbf{0.700" in body  # ESS bold goes to R=4
     assert r"\mathbf{2.0\times10^{11}}" in body  # FLOP/es bold goes to R=3
+
+
+def test_gfn_cells_name_registered_d576_configs():
+    """The GFN rows are pinned by name, like the swap arms; a renamed cell
+    would otherwise print as a permanently blank row."""
+    from experiments.constrained_hard_03.analysis.house_table_24x24 import (
+        GFN_ARMS,
+        GFN_CELL_NAME,
+        GFN_TAG,
+        SIGMA_LABELS,
+    )
+    from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
+
+    assert set(GFN_TAG) == set(GFN_ARMS)
+    assert set(GFN_CELL_NAME) == set(SIGMA_LABELS)
+    for sigma_label in SIGMA_LABELS:
+        for gfn_arm in GFN_ARMS:
+            name = GFN_CELL_NAME[sigma_label].format(
+                objective=gfn_arm.removeprefix("gfn_")
+            )
+            assert name in GFN_CONFIGS, name
+            assert GFN_CONFIGS[name].D == L, name
+
+
+def test_gfn_rows_stay_outside_the_bold_comparison():
+    """A GFN cell holding the best number in a column must not take the
+    bold, which marks the best swap cell; the never-launched FL-DB row
+    prints as five dashes, not an empty half."""
+    from experiments.constrained_hard_03.analysis import house_table_24x24 as h24
+
+    assert not set(h24.GFN_ARMS) & set(h24.ARMS)
+    printed = [row[0] for row in h24.LATEX_ROWS if row]
+    assert set(h24.GFN_ARMS) <= set(printed)
+
+    def entry(ess, flops):
+        return {
+            "ESS": (ess, 0.001),
+            "dMag": (0.05, 0.01),
+            "dCorr": (0.05, 0.01),
+            "EW2": (0.05, 0.01),
+            "FLOP/es": (flops, 0.0),
+        }
+
+    table = {
+        "thp4_w5bf16_s220": entry(0.70, 1.0e11),
+        "gfn_tb_s220": entry(0.74, 1.0e8),
+    }
+    body = h24.latex_table(table)
+    swap_line = next(line for line in body.splitlines() if "$R=4$" in line)
+    gfn_line = next(line for line in body.splitlines() if "trajectory balance" in line)
+    assert "\\mathbf{0.700" in swap_line and "\\mathbf{1.0" in swap_line
+    assert "\\mathbf" not in gfn_line
+    fldb_line = next(line for line in body.splitlines() if "forward-looking" in line)
+    assert fldb_line.count("--") == 5

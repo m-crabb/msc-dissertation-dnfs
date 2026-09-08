@@ -10,7 +10,8 @@ spread across four tables.
 VALUES ARE THE PRINTED HOUSE-TABLE CELLS (tab:eval-hard-{4x4,8x8,16x16,20x20,24x24}),
 each of which is itself the output of its emitter and was re-verified cell by cell on
 2026-09-03 (24x24 added 2026-09-06 from house_table_24x24.py; the GFlowNet TB 20x20
-point added 2026-09-07 from house_table_20x20.py, tag 20260904-gfn-d400-tb). The read
+point added 2026-09-07 from house_table_20x20.py, tag 20260904-gfn-d400-tb; its 24x24
+point 2026-09-08 from house_table_24x24.py, tag 20260906-gfn-d576-sc). The read
 convention follows the tables: raw at 4x4 and 8x8, averaged (EMA) at 16x16 and above; the
 marker fill encodes which. The 24x24 rung is sigma_c only, two patch radii. Update this
 dict when a table changes.
@@ -71,7 +72,13 @@ SERIES = [
         "GFlowNet TB",
         NEURAL_COMPARATOR_HUE,
         "-",
-        {4: (0.991, 3.2e6), 8: (0.955, 1.3e7), 16: (0.883, 6.4e7), 20: (0.735, 1.4e8)},
+        {
+            4: (0.991, 3.2e6),
+            8: (0.955, 1.3e7),
+            16: (0.883, 6.4e7),
+            20: (0.735, 1.4e8),
+            24: (0.144, 2.0e9),
+        },
     ),
 ]
 # Between-seed SD from the same printed cells, in SERIES order. These are
@@ -85,7 +92,7 @@ ESS_SD = [
     {16: 0.015, 20: 0.025},
     {20: 0.004, 24: 0.054},
     {24: 0.007},
-    {4: 0.002, 8: 0.005, 16: 0.018, 20: 0.068},
+    {4: 0.002, 8: 0.005, 16: 0.018, 20: 0.068, 24: 0.095},
 ]
 KAWASAKI_FLOP_PER_ES = {4: 1.6e3, 8: 8.4e3, 16: 3.4e5, 20: 8.2e5, 24: 1.6e6}
 

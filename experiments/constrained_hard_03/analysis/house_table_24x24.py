@@ -25,6 +25,11 @@ FLOP/es: every lattice-bound helper is imported from the 20x20 fill with the
 side passed explicitly; at their defaults they would bill the reference at
 (20/24)^2 = 0.69 of its proposals and score the profiles on the wrong lattice.
 Pinned by tests/test_house_table_24x24.py.
+
+GFN rows (added 2026-09-08, tag 20260906-gfn-d576-sc): the 20x20 block
+carried up, TB only, hidden 76 at this lattice; FL-DB stays "--" as at 20x20.
+The bill is one KV-cached rollout plus one target eval, handed to
+`neural_cell` as `flops_raw` exactly as at 20x20.
 """
 
 import argparse
@@ -42,6 +47,7 @@ from experiments.constrained_hard_03.analysis.house_table_8x8 import (
     aggregate,
     flop_billing_config,
     fmt,
+    gfn_registry_config_for,
     reference_standard_error,
     registry_config_for,
     sampling_floor_from_reference,
@@ -56,7 +62,10 @@ from experiments.constrained_hard_03.analysis.house_table_20x20 import (
     reference_trial_counts,
 )
 
-from discrete_flow_sampler.diagnostics.flops import measured_forward_flops
+from discrete_flow_sampler.diagnostics.flops import (
+    ising_energy_eval_flops,
+    measured_forward_flops,
+)
 from discrete_flow_sampler.targets.ising import SIGMA_C
 
 L = 24
@@ -76,11 +85,23 @@ ARM_CONFIGS = {
     }
     for radius in ("thp3", "thp4")
 }
+# GFlowNet comparator rows, outside the bold comparison (`best` runs over
+# ARMS, which these are not in). The fldb cell is registered but was never
+# launched above 16x16.
+GFN_ARMS = {
+    "gfn_tb": "GFlowNet, trajectory balance",
+    "gfn_fldb": "GFlowNet, forward-looking DB",
+}
+GFN_TAG = {"gfn_tb": "20260906-gfn-d576-sc", "gfn_fldb": "20260906-gfn-d576-sc"}
+GFN_CELL_NAME = {"s220": "GFN_d576_c50_s220_{objective}_100k_par"}
+
 LATEX_ROWS = (
     ("reference", "Kawasaki (mchammer), certified reference"),
     ("floor", "sampling floor at $N=5000$"),
     None,
     *((arm, label) for arm, label in ARMS.items()),
+    None,
+    *((arm, label) for arm, label in GFN_ARMS.items()),
 )
 
 
@@ -244,6 +265,46 @@ def main(argv=None):
                     reference_energy=reference_energy,
                 ).items()
             }
+
+    for gfn_arm in GFN_ARMS:
+        from experiments.constrained_hard_03.run_gfn import build_target_and_policy
+
+        name = GFN_CELL_NAME[sigma_label].format(objective=gfn_arm.removeprefix("gfn_"))
+        run_dirs = [
+            d
+            for d in find_cells(args.results_dir, name, GFN_TAG[gfn_arm])
+            if (d / args.eval_subdir / "metrics.json").is_file()
+        ]
+        if not run_dirs:
+            print(f"no landed cells for {gfn_arm} at {sigma_label}", file=sys.stderr)
+            continue
+        gfn_cfg = gfn_registry_config_for(run_dirs[0])
+        assert abs(gfn_cfg.sigma - target.sigma) < 1e-9, (
+            f"{name}: trains at sigma={gfn_cfg.sigma} against the reference's {target.sigma}"
+        )
+        _, policy = build_target_and_policy(gfn_cfg, "cpu")
+        flops_per_raw = measured_forward_flops(policy.sample, (1,)) + ising_energy_eval_flops(
+            D_SITES
+        )
+        rows = [
+            neural_cell(
+                d,
+                target,
+                reference,
+                reference_energy,
+                per_forward=None,
+                n_euler=None,
+                eval_subdir=args.eval_subdir,
+                lattice_side=L,
+                flops_raw=flops_per_raw,
+            )
+            for d in run_dirs
+        ]
+        cell = aggregate(rows)
+        cell["per_sample_flops"] = flops_per_raw
+        cell["n_seeds"] = len(run_dirs)
+        cell["per_seed_ess"] = [r["ESS"] for r in rows]
+        table[f"{gfn_arm}_{sigma_label}"] = cell
 
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "house_table_24x24.json").write_text(json.dumps(table, indent=2))
