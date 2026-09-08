@@ -1,0 +1,14 @@
+{
+  "family": "hard",
+  "source_run": "H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3_seed42_20260826-d256-sc",
+  "source_directory": "results/03_hard/H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3_seed42_20260826-d256-sc",
+  "checkpoint": "checkpoints/final_ema.pt",
+  "sha256": {
+    "config.json": "c899127d4cd9f70abf09fa5aa4f9791af4d64a601fa0688740f70ce4705a86ca",
+    "checkpoints/final_ema.pt": "86063b9a54add3582b532cb50a6748f00e0af9c14a554b7f1a06a85d58f5c1c9"
+  },
+  "selection": "Seed 42 example; retained final weights, not selected by a new sampling score.",
+  "purpose": "Inference example, not an optimizer/resume checkpoint or a full reproduction archive.",
+  "license": "MIT",
+  "config_note": "train.halt_on_cv_inversion_after normalised from 5000 to null to match the registry cell; a training-only tripwire that never fired on this run, with no effect on inference."
+}

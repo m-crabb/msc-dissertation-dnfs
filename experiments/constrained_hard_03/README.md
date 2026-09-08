@@ -78,6 +78,9 @@ current code; they do not establish bit-for-bit historical training reproduction
 House tables have their own frozen seed/tag/reference selections and raw/EMA
 defaults. The README now uses the bundled EMA model's
 [24×24 recording](../../assets/hard_rate_field_strip_24x24.npz); the report's
+`fig:rate-field-strip` is the [16×16 recording](../../assets/hard_rate_field_strip_16x16.npz)
+(bundle `checkpoints/ising_hard_16x16`, seed 20260906, chosen for visual clarity among
+ten seeds 20260905–20260914, rendered with `--recorded-stride 32`); the earlier
 [20×20 recording](../../assets/hard_rate_field_strip_20x20.npz) remains available.
 Their `--recorded` rendering mode needs no checkpoint. The static renderer's live
 mode uses a different draw contract. See [visual provenance](../../assets/readme/README.md).

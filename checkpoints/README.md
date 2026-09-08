@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Experiment guide](../experiments/README.md)
 
-These four bundles are included directly in Git (about 4.3 MiB total). No external
+These five bundles are included directly in Git (about 4.8 MiB total). No external
 download, account or training is needed. Run commands from the repository root
 after `pixi install --locked -e dev`.
 
@@ -11,6 +11,7 @@ after `pixi install --locked -e dev`.
 | [ising_baseline_4x4](ising_baseline_4x4/manifest.json) | Unconstrained 4×4, exact critical coupling | Final raw, seed 42 | 10,000 steps |
 | [ising_soft_4x4](ising_soft_4x4/manifest.json) | Soft 4×4, exact critical coupling, composition 0.5, penalty 50 | Final raw, seed 42 | 10,000 steps |
 | [ising_hard_4x4](ising_hard_4x4/manifest.json) | Hard 4×4, coupling 0.1, exactly 8 sites of each species | Final raw, seed 42 | 2,000 steps |
+| [ising_hard_16x16](ising_hard_16x16/manifest.json) | Hard 16×16, exact critical coupling, exactly 128 sites of each species; patch radius 2 | Final EMA, seed 42 | 100,000 steps, coupling curriculum |
 | [ising_hard_24x24](ising_hard_24x24/manifest.json) | Hard 24×24, exact critical coupling, exactly 288 sites of each species; patch radius 3 | Final EMA, seed 42 | 100,000 steps, coupling curriculum, bf16 training |
 
 The exact critical coupling used here is `0.22034339675488573`. The small hard

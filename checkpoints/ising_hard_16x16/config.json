@@ -1,0 +1,134 @@
+{
+  "name": "H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3",
+  "ising": {
+    "D": 16,
+    "sigma": 0.22034339675488573,
+    "bias": 0.0,
+    "target_composition": 0.5,
+    "composition_penalty_strength": 0.0,
+    "base_composition": 0.5,
+    "log_ratio_clamp": 5.0
+  },
+  "train": {
+    "n_steps": 100000,
+    "batch_size": 512,
+    "lr": 0.001,
+    "seed": 42,
+    "inner_steps_per_outer": 100,
+    "outer_batch_size": null,
+    "replay_buffer_cycles": 8,
+    "grad_clip_max_norm": 500.0,
+    "loss_microbatch_size": null,
+    "warmup_steps": 500,
+    "optimiser": "adamw",
+    "rewarmup_on_stage": false,
+    "flush_replay_on_stage": true,
+    "halt_on_cv_inversion_after": null,
+    "halt_cv_inversion_window": 10,
+    "stage_best_checkpoints": false,
+    "checkpoint_every": null,
+    "resume_every_outer": 10,
+    "c_t_ema_halflife_cycles": 0.0,
+    "c_t_batch": null,
+    "c_t_grid_chunk_rows": null,
+    "c_t_from_rollout": true,
+    "rollout_resample_ess_fraction": null
+  },
+  "ctmc": {
+    "n_euler_steps": 128,
+    "time_grid": "uniform",
+    "use_matching_step": true
+  },
+  "eval": {
+    "eval_every": 500,
+    "n_eval_samples": 5000,
+    "eval_sample_chunk": 512,
+    "n_eval_samples_training": 256,
+    "eval_autocast_bf16": true
+  },
+  "model": {
+    "kind": "letf",
+    "hidden_dim": 32,
+    "n_layers": 2,
+    "kernel_schedule": [],
+    "hollow_global_context": false,
+    "n_heads": 4,
+    "use_sdpa_readout": true,
+    "vocab_size": 2,
+    "condition_on_composition": false,
+    "patch_size": 1,
+    "compile_model": false
+  },
+  "estimator": "control_variate",
+  "curriculum": {
+    "stages": [
+      {
+        "start_step": 0,
+        "sigma": 0.1,
+        "lr": 0.001
+      },
+      {
+        "start_step": 5000,
+        "sigma": 0.14,
+        "lr": 0.001
+      },
+      {
+        "start_step": 10000,
+        "sigma": 0.17,
+        "lr": 0.001
+      },
+      {
+        "start_step": 15000,
+        "sigma": 0.19,
+        "lr": 0.001
+      },
+      {
+        "start_step": 20000,
+        "sigma": 0.205,
+        "lr": 0.0003
+      },
+      {
+        "start_step": 25000,
+        "sigma": 0.215,
+        "lr": 0.0003
+      },
+      {
+        "start_step": 30000,
+        "sigma": 0.22034339675488573,
+        "lr": 0.0003
+      }
+    ]
+  },
+  "lambda_curriculum": null,
+  "composition": null,
+  "wandb_project": "dnfs-constraints",
+  "head_kind": "two_hole_patch",
+  "anchor_chunk_size": null,
+  "compile_head": true,
+  "band_feature_dim": null,
+  "attention_dim": null,
+  "pair_offsets": null,
+  "use_stencil": false,
+  "readout_score_scale": 1.0,
+  "n_groups": null,
+  "grouping": "diagonal",
+  "group_chunk_size": null,
+  "bilinear_rank": null,
+  "factor_dim": null,
+  "global_feature_dim": null,
+  "use_bilinear": true,
+  "use_global": true,
+  "site_orderings": [
+    "row",
+    "col"
+  ],
+  "interior_band": null,
+  "gather_triu_pairs": false,
+  "exterior_combiner": "mlp",
+  "exact_field_channel": false,
+  "patch_radius": 2,
+  "patch_feature_dim": null,
+  "ema_decay": 0.9999,
+  "target_kind": "ising",
+  "potts_composition": null
+}
