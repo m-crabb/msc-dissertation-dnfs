@@ -1,17 +1,12 @@
-"""Same-container eager-vs-compiled bench of the flip-route trainer
+"""Same-container eager-vs-compiled bench of the flip-route trainer.
 
-Method:
-  * BOTH arms run in ONE process/container, so the ratio is same-device
-    by construction.
-  * Update time is the trainer's own `wall_clock_step_s` column, which
-    times ONLY the inner loss update (its documented scope) — median over
-    the tail so the compiled arm's first-step compilation cost is
-    excluded.
-  * The rollout slice is timed separately around `sample_ctmc` in
-    trajectory mode (the outer step's buffer rebuild), warmup pass first.
-
-Nothing lands on the results volume: this is a bench, and its numbers are
-only printed.
+Both arms run in one process, so the ratio is same-device by construction.
+Update time is the trainer's own `wall_clock_step_s` column, which times only
+the inner loss update, taken as the median over the tail so the compiled arm's
+first-step compilation cost is excluded. The rollout slice is timed separately
+around `sample_ctmc` in trajectory mode (the outer step's buffer rebuild),
+warmup pass first. Numbers are printed only; nothing lands on the results
+volume.
 
 Run on Modal:
     pixi run -e dev modal run -m \

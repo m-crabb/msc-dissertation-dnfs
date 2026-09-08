@@ -8,7 +8,7 @@ here, by two independent instruments:
   1. Wolff single-cluster pools (z ~ 0.25, tunnels the Z2 sectors freely) at
      matched sample count — the sample-level check on the full energy and
      |M| marginals, not just means;
-  2. the exact Kaufman / Ferdinand--Fisher internal energy at the OPERATING
+  2. the exact Kaufman / Ferdinand--Fisher internal energy at the operating
      coupling (ising_exact; note DNFS Table 2's critical column is evaluated
      at exact criticality 0.220343, not at 0.22305).
 

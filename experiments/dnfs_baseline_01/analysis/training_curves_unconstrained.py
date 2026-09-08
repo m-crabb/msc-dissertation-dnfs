@@ -1,4 +1,4 @@
-"""App I figure: unconstrained ESS-over-training, house standard (K4).
+"""App I figure: unconstrained ESS-over-training, house standard.
 
 The appendix kit's training-curve figure for the unconstrained chapter: the
 in-training evaluation ESS fraction over the 200k-step budget, both 10x10
@@ -7,18 +7,16 @@ the house seed-band grammar. The two families share one role (our sampler),
 so they take a ``parameter_ramp`` on the sampler hue -- light = subcritical,
 dark = critical -- rather than two roles.
 
-EGM-style early-phase shading: the critical family
-trains under a sigma curriculum, so until the final stage begins its ESS is
-measured against the *current stage's* target, not the final sigma_c -- a
-read against a moving goalpost. That span is shaded as unreliable rather
-than cropped, so the reader sees the whole trajectory and knows which part
-supports conclusions. The subcritical family has no curriculum; the shading
-belongs to the critical trace only, which the caption states.
+Early-phase shading: the critical family trains under a sigma curriculum, so
+until the final stage begins its ESS is measured against the *current stage's*
+target, not the final sigma_c -- a read against a moving goalpost. That span
+is shaded as unreliable rather than cropped, so the whole trajectory stays
+visible. The subcritical family has no curriculum; the shading belongs to the
+critical trace only, which the caption states.
 
-The y values are the IN-TRAINING diagnostic (n_eval_samples draws at each
-eval step), not the frozen end-of-run evaluation the house table prints --
-figure titles and captions carry no house-table number by the settled rule,
-and the two reads genuinely differ (the frozen eval redraws under the final
+The y values are the in-training diagnostic (n_eval_samples draws at each
+eval step), not the frozen end-of-run evaluation the house table prints; the
+two reads genuinely differ (the frozen eval redraws under the final
 parameters).
 """
 

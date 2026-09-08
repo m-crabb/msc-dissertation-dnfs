@@ -4,8 +4,8 @@ baseline chapter's sample-level ground truth.
 Pool structure mirrors the Gibbs pools exactly (100 independent chains x 50
 records, pooled record-major, same dict keys) so the house-table filler's
 chain-block bootstrap works unchanged; burn_in / thin are measured in Wolff
-CLUSTERS, not sweeps, and the chains are genuinely independent (fresh seed
-each), which makes the Gelman--Rubin diagnostic a real multi-start check.
+clusters, not sweeps, and the chains are independent (fresh seed each), which
+makes the Gelman--Rubin diagnostic a real multi-start check.
 
 Writes: results/01_baseline/wolff_ref_d10_sigma{0.1,0.220343,0.22305}.pt
 (~a minute each; 0.220343 = SIGMA_C to :g precision).
@@ -32,15 +32,15 @@ BASE_SEED = 20260824
 
 
 def recount_flops(sigma: float) -> None:
-    """FLOP-recount an EXISTING pool for the house table's cost column.
+    """FLOP-recount an existing pool for the house table's cost column.
 
     Replays every chain with the build seeds and the cluster-size log, then
     verifies bit-identity against the stored samples -- wolff_sample is
-    deterministic in its seed and the log is observation-only, so this
-    prices the certified pool exactly without rebuilding it. A failed
-    identity check means the sampler code drifted since the pool was built,
-    and the recount must not be trusted (rebuild-and-recertify instead).
-    Writes a <pool>.pt.flops.json sidecar; the pool file is never touched.
+    deterministic in its seed and the log is observation-only, so this prices
+    the certified pool without rebuilding it. A failed identity check means
+    the sampler code drifted since the pool was built and the recount must not
+    be trusted; rebuild and recertify instead. Writes a <pool>.pt.flops.json
+    sidecar; the pool file is never touched.
     """
     from discrete_flow_sampler.diagnostics.flops import (
         WOLFF_FLOPS_PER_CLUSTER_SITE,
@@ -122,7 +122,7 @@ def build_pool(sigma: float) -> None:
 
 
 if __name__ == "__main__":
-    # 0.22305 is the LEGACY pool (pairs with the archived pre-migration runs,
+    # 0.22305 is the legacy pool (pairs with the archived pre-migration runs,
     # kept on disk); SIGMA_C is the pool every post-migration run evaluates
     # against. Existing pool files are not rebuilt.
     for sigma in (0.1, SIGMA_C, 0.22305):

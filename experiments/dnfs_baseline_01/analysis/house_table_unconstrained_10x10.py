@@ -1,23 +1,21 @@
 """Fill pass for tab:eval-unconstrained-10x10 (the house evaluation table).
 
-ARCHIVED TABLE EXPORTER: its reference_floor below retains the historical
-chain/block-bootstrap convention for reproducing archived JSON. Current
-thesis reference rows and iid floors are computed separately by
-scripts/thesis_reference_diagnostics.py, preserving the neural exports.
-Do not paste this export over the revised thesis table: the new table has
-separate reference-uncertainty and iid-floor rows, and the soft layout was
-split into specialist, ablation and amortisation tables.
-
+Archived exporter: `reference_floor` below keeps the historical chain/block-
+bootstrap convention so the archived JSON reproduces. Current thesis reference
+rows and iid floors come from scripts/thesis_reference_diagnostics.py. Do not
+paste this export over the revised thesis table: that table has separate
+reference-uncertainty and iid-floor rows, and the soft layout was split into
+specialist, ablation and amortisation tables.
 
 Reads the frozen eval artefacts of the eight Stage-4 10x10 runs (samples.pt,
 log_weights.pt, metrics.json; seeds 42-45 at sigma = 0.1 and sigma_c) and the
-two cached WOLFF references, and prints the table's observable cells:
+two cached Wolff references, and prints the table's observable cells:
 
-  ESS    -- frozen eval/ess_fraction, re-read not recomputed (the tabled value);
+  ESS    -- frozen eval/ess_fraction, re-read not recomputed;
   dMag   -- MDNS Eq. 26, dCorr -- MDNS Eq. 28, EW2 -- 1-D W2 on E(x)/d (DASBS),
             each on importance-reweighted samples against the reference;
   reference row -- the sampling floor under each column: resample the 100
-            WOLFF chains with replacement (chain-block bootstrap, the chain is
+            Wolff chains with replacement (chain-block bootstrap, the chain is
             the independent unit) and score the replicate against the full
             reference. A neural cell at or below this floor is indistinguishable
             from the reference at N = 5000.
@@ -29,15 +27,13 @@ two cached WOLFF references, and prints the table's observable cells:
 Per-site energy follows the chapter's convention E/d = -log p~(x) / (2 sigma d)
 (metrics.internal_energy_estimate).
 
-sigma_c MIGRATION: the sigma_c point now reads the Wave-1
-`_sc` retrains at the ONE critical coupling SIGMA_C = ln(1+sqrt(2))/4 =
-0.220343, against the matching 0.220343 Wolff pool. It previously read the
-legacy 0.22305 family; those runs are archived records and are not edited.
-The retrains clear their expected floors 4/4 in every family (final fp32
+sigma_c migration: the sigma_c point reads the Wave-1 `_sc` retrains at
+SIGMA_C = ln(1+sqrt(2))/4 = 0.220343, against the matching 0.220343 Wolff
+pool, not the legacy 0.22305 family (archived records, not edited). The
+retrains clear their expected floors 4/4 in every family (final fp32
 5000-draw eval ESS: d10 0.902 +- 0.019 over 0.86, d8 0.962 +- 0.008 over
-0.89, d4 0.986 +- 0.004 over 0.93), which is what justifies the swap.
-Never mix couplings in one comparison: sigma_c runs pair with the sigma_c
-pool, legacy with legacy.
+0.89, d4 0.986 +- 0.004 over 0.93). Never mix couplings in one comparison:
+sigma_c runs pair with the sigma_c pool, legacy with legacy.
 """
 
 import json
@@ -125,9 +121,8 @@ def mean_sd(values):
 def family_flops_per_forward(run_dir: Path, target: IsingTarget) -> int:
     """Measured FLOPs of one rate-matrix forward at this run's architecture.
 
-    Built eager from the run's own config (a compiled wrapper can hide ops
-    from the dispatch-level counter; compilation changes scheduling, not
-    the mathematics) at batch 1 -- the counter is batch-linear, test-pinned.
+    Built eager from the run's own config at batch 1: a compiled wrapper can
+    hide ops from the dispatch-level counter, and the counter is batch-linear.
     """
     from experiments.dnfs_baseline_01.configs import ModelCfg
     from experiments.dnfs_baseline_01.run import _construct_model, _sub_config
@@ -184,19 +179,17 @@ def score_sgc_row():
     """Practitioner row "mchammer (SGC)": eight independent single-flip chains
     per coupling (results/mchammer_sgc, Delta-mu = 0 so the chain targets the
     same p~(x) as the DNFS row), scored on their post-burn-in spin frames,
-    unweighted, against the SAME Wolff pool and metric functions as the DNFS
+    unweighted, against the same Wolff pool and metric functions as the DNFS
     row. Cells are the per-chain error averaged over the 8 chains +- SD, the
-    same construction as the DNFS row's per-seed average, so the two rows
-    are comparable.
+    DNFS row's per-seed construction, so the two rows are comparable.
 
-    FLOP/es follows the Wolff reference row exactly: sgc_run_flops =
-    12 x n_trials (a free single-site flip is a bare Gibbs site update,
-    burn-in trials included) over N / tau_int, with tau_int the slowest of
-    the magnetisation and energy reads (slowest_observable_tau_int, chain-
-    averaged, frame units -- spins.npy frame k is the state at trial
-    k x data_write_interval, so N and tau_int share the unit). The bill is
-    linear in tau_int, so the pooled cell equals the mean of the per-chain
-    bills; the per-chain bill is also recorded so its spread is visible.
+    FLOP/es follows the Wolff reference row: sgc_run_flops = 12 x n_trials
+    (a free single-site flip is a bare Gibbs site update, burn-in included)
+    over N / tau_int, with tau_int the slowest of the magnetisation and energy
+    reads (slowest_observable_tau_int, chain-averaged, frame units -- spins.npy
+    frame k is the state at trial k x data_write_interval, so N and tau_int
+    share the unit). The bill is linear in tau_int, so the pooled cell equals
+    the mean of the per-chain bills, which are recorded to show their spread.
     """
     table = {}
     for point, spec in OPERATING_POINTS.items():

@@ -1,26 +1,19 @@
-"""Modal wrapper for DNFS Ising baseline training. Delegates the actual
-training to `run.train` so the remote and local code paths share a single
-implementation.
+"""Modal wrapper for DNFS Ising baseline training. Delegates to `run.train`
+so the remote and local code paths share one implementation.
 
-The container image is built by installing pixi inside the container and
-running `pixi install --environment dev --locked` against the project's
-`pixi.lock`, so the remote runtime stack (pytorch, numpy, ...) matches
-local dev byte-for-byte. One source of truth is `pixi.lock` -- there is
-no second dep list living in this file.
-
-The `CONDA_OVERRIDE_CUDA=12.4` env var is required because the build
-container has no GPU and pixi's `__cuda` virtual package check would
-otherwise fail; runtime containers get a real GPU from Modal.
+The container image installs pixi inside the container and runs
+`pixi install --environment dev --locked` against `pixi.lock`, so the remote
+runtime stack matches local dev byte-for-byte. `CONDA_OVERRIDE_CUDA=12.4` is
+needed because the build container has no GPU and pixi's `__cuda` virtual
+package check would otherwise fail.
 
 Usage (after `modal token new` and `modal secret create wandb-secret ...`):
-    # Single config:
     pixi run -e dev modal run -m \\
         experiments.dnfs_baseline_01.modal_app::main \\
         --cfg-name stage_1_d4 --seed 42
 
-    # All 8 stage 0-2 configs in parallel. `--detach` is REQUIRED:
-    # without it, the ephemeral app stops when the entrypoint returns and
-    # all spawned FunctionCalls are cancelled before any container runs.
+    # `--detach` is required: without it the ephemeral app stops when the
+    # entrypoint returns and spawned FunctionCalls are cancelled.
     pixi run -e dev modal run --detach -m \\
         experiments.dnfs_baseline_01.modal_app::batch --scale all
 """
@@ -37,14 +30,9 @@ PROJECT_DIR = "/repo"
 APP_NAME = os.environ.get("DNFS_MODAL_APP", "dnfs-baseline")
 PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
 
-# Build the container image from `pixi.lock`. The repo is added at /repo;
-# pixi installs the dev env in-place; PATH points at the pixi env's bin.
-#
-# Local-only directories (`.pixi/` env tree, past `results/`, `wandb/` run
-# logs, `.git`, caches) are excluded from the upload. They are large,
-# irrelevant on the remote, and `.pixi/` in particular causes "modified
-# during build" failures when any local pixi-run command touches conda
-# metadata while the Modal uploader is still streaming bytes.
+# Local-only directories are excluded from the upload: `.pixi/` in particular
+# causes "modified during build" failures when a local pixi-run command
+# touches conda metadata while the Modal uploader is still streaming.
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "curl", "ca-certificates")
@@ -71,13 +59,11 @@ image = (
     .run_commands(
         f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
         "pixi install --environment cuda --locked",
-        # torch.compile needs the CUDA driver-API header: inductor compiles
-        # a small cuda_utils.c with the system gcc, and the locked pixi env
-        # ships no CUDA dev headers. The runtime wheel carries
-        # include/cuda.h; installed --no-deps so the locked env's
-        # torch/nvidia libs are untouched, and CPATH below puts the header
-        # on gcc's search path (same fix as the hard app; the
-        # unconstrained compile bench runs on this image).
+        # torch.compile needs the CUDA driver-API header: inductor compiles a
+        # small cuda_utils.c with the system gcc and the locked pixi env ships
+        # no CUDA dev headers. The runtime wheel carries include/cuda.h;
+        # --no-deps leaves the locked env's torch/nvidia libs untouched, and
+        # CPATH below puts the header on gcc's search path.
         f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m ensurepip && "
         f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m pip install "
         "--no-deps nvidia-cuda-runtime-cu12",
@@ -100,11 +86,11 @@ image = (
 )
 
 # Persistent volume for run artefacts (training_log.csv, checkpoints, eval
-# tensors). One volume across runs lets us re-pull anything later via
+# tensors); one volume across runs lets us re-pull anything via
 # `modal volume get`.
 volume = modal.Volume.from_name("dnfs-results", create_if_missing=True)
 
-# wandb API key lives in a Modal secret, NOT in the image. `modal secret
+# wandb API key lives in a Modal secret, not in the image. `modal secret
 # create wandb-secret WANDB_API_KEY=...` makes it available as an env var.
 wandb_secret = modal.Secret.from_name("wandb-secret")
 
@@ -118,14 +104,10 @@ def _validate_cfg_name(cfg_name: str) -> None:
 
 
 @app.function(
-    # A100 for Stage 4 leTF re-launch (attention-bound; 2x faster wall-clock
-    # vs L4 at d=100). Earlier MLP/leconv stages ran fine on L4; if cost
-    # matters for non-attention runs, downgrade per-launch by editing here.
-    # Launch-time lever (the decorator is evaluated where `modal run`
-    # executes): the 80 GB card by default because b512 at d=256 needs it
-    # and the hard-recipe ladder's 8x8/16x16 siblings ran on it, so a
-    # same-recipe cell keeps the venue homogeneous. Running apps keep their
-    # spawn-time spec.
+    # A100-80GB by default: b512 at d=256 needs the 80 GB card, and the
+    # hard-recipe ladder's 8x8/16x16 siblings ran on it. The decorator is
+    # evaluated where `modal run` executes, so this is a launch-time lever
+    # (running apps keep their spawn-time spec); non-attention stages fit an L4.
     gpu=os.environ.get("DNFS_TRAIN_GPU", "A100-80GB"),
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -142,16 +124,16 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
 
     `tag` replaces the run dir's timestamp suffix (see `run.train`); "" is
     the "no tag" sentinel because Modal's CLI cannot pass None. A preemption
-    re-runs this function with identical inputs, so a tag fixed at spawn
-    lands the retry in the SAME run dir, where `checkpoints/resume.pt` lets
-    it continue from the last outer-cycle boundary. Without one the retry
-    mints a fresh timestamped sibling and restarts from step 0: the
-    2-Sep hard-recipe 8x8/16x16 seeds each left two dirs this way.
+    re-runs this function with identical inputs, so a tag fixed at spawn lands
+    the retry in the same run dir, where `checkpoints/resume.pt` continues
+    from the last outer-cycle boundary. Without one the retry mints a fresh
+    timestamped sibling and restarts from step 0 (2-Sep hard-recipe 8x8/16x16
+    seeds each left two dirs this way).
     """
     import sys
 
-    # /repo is the mount point of `add_local_dir`. Inserting it onto sys.path
-    # lets `experiments.dnfs_baseline_01.run` import resolve correctly.
+    # /repo is the mount point of `add_local_dir`; on sys.path so the
+    # `experiments.dnfs_baseline_01.run` import resolves.
     sys.path.insert(0, "/repo")
     from experiments.dnfs_baseline_01.configs import CONFIGS
     from experiments.dnfs_baseline_01.run import train
@@ -172,13 +154,11 @@ def train_remote(cfg_name: str, seed: int = 42, tag: str = ""):
 
 
 @app.function(
-    # L4 variant: the cheap card for SMALL-footprint cells.
-    # Sizing lesson from the d16 control's failed first launch: the eval
-    # protocol sets peak memory, not training — an unchunked 5000-draw
-    # eval through the dense readout is a (5000, 4, d, 2d) score tensor,
-    # 9.77 GiB at d=256, which OOMs the L4's 22 GiB. Check
-    # n_eval_samples x heads x d x 2d x 4B against ~20 GiB before
-    # routing a cell here; d <= 100 cells all fit.
+    # L4 variant, for small-footprint cells. The eval protocol sets peak
+    # memory, not training: an unchunked 5000-draw eval through the dense
+    # readout is a (5000, 4, d, 2d) score tensor, 9.77 GiB at d=256, which
+    # OOMs the L4's 22 GiB. Check n_eval_samples x heads x d x 2d x 4B
+    # against ~20 GiB before routing a cell here; d <= 100 cells all fit.
     gpu="L4",
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -197,11 +177,10 @@ def train_remote_l4(cfg_name: str, seed: int = 42):
 
 
 @app.function(
-    # A100 deliberately, matching train_remote: the archived evals were drawn
-    # on the training card, so a re-eval on the SAME device isolates whatever
-    # the re-eval changed (e.g. the corrected base draw for the matched
-    # base runs) as the single moved variable. A CPU re-run would move
-    # device and draw at once and the read becomes unattributable.
+    # A100, matching train_remote: the archived evals were drawn on the
+    # training card, so a re-eval on the same device leaves whatever the
+    # re-eval changed as the single moved variable. On CPU, device and draw
+    # would move at once and the read becomes unattributable.
     gpu="A100",
     volumes={"/results": volume},
     # Eval-only: one 5000-draw batch, minutes at D=10; 2h is generous.
@@ -215,22 +194,19 @@ def eval_remote(
 ):
     """Re-run the end-of-run eval for a run dir already on the volume.
 
-    Mirrors `constrained_hard_03.modal_app.eval_remote` but calls the
-    BASELINE `eval_only`, which is what the baseline and soft cells actually
-    use — the hard app's eval path reads hard-experiment configs and cannot
-    recover these runs.
+    Mirrors `constrained_hard_03.modal_app.eval_remote` but calls the baseline
+    `eval_only`: the hard app's eval path reads hard-experiment configs and
+    cannot recover these runs.
 
     `redraw=False` rescores the saved tensors; `redraw=True` draws a fresh
     eval batch from `checkpoints/final.pt` (archiving the stale `eval/` to
-    `eval_archived_pre_redraw/` on the volume first) — required when the
-    archived DRAW itself was wrong, since a wrong x0 is baked into the
-    saved log-weights and no rescoring can remove it.
+    `eval_archived_pre_redraw/` on the volume first), needed when the archived
+    draw itself was wrong, since a wrong x0 is baked into the saved
+    log-weights and no rescoring can remove it.
 
     `n_euler_override > 0` re-draws on that Euler grid instead of the run's
-    own (artefacts to eval_ne<k>/, frozen eval/ untouched and unarchived —
-    the grid-offset measurement; see run.eval_only); 0 is the "no override"
-    sentinel, mirroring the hard app's convention, because Modal's CLI
-    cannot pass None.
+    own (artefacts to eval_ne<k>/, frozen eval/ untouched; see run.eval_only);
+    0 is the "no override" sentinel because Modal's CLI cannot pass None.
     """
     import json
     import sys
@@ -271,7 +247,7 @@ def compile_bench(cfg_name: str = "stage_4_d10", n_steps: int = 400, tail: int =
 def main(cfg_name: str, seed: int = 42):
     """Local CLI entry: spawns `train_remote` as a remote Modal call.
 
-    The tag is minted HERE, once, so a preemption retry lands in the same
+    The tag is minted here, once, so a preemption retry lands in the same
     run dir; `batch_seeds` takes it from the caller for the same reason.
     """
     _validate_cfg_name(cfg_name)
@@ -329,10 +305,8 @@ def batch_eval(
 ):
     """Spawn one eval per comma-separated run dir, in parallel.
 
-    The grid-offset studies re-draw the same 8 fixed checkpoints at each
-    Euler grid, and running them one `modal run` at a time serialises
-    minutes-scale work into a sitting. Spawned, not called, so the set
-    survives the client exiting -- pair with `--detach`.
+    Spawned, not called, so the set survives the client exiting -- pair with
+    `--detach`.
     """
     dirs = [d.strip() for d in run_dirs.split(",") if d.strip()]
     for run_dir in dirs:

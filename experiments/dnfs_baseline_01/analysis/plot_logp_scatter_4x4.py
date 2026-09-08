@@ -1,45 +1,42 @@
-"""Per-configuration exact-recovery scatter, UNCONSTRAINED 4x4 (app:logp-scatters).
+"""Per-configuration exact-recovery scatter, unconstrained 4x4 (app:logp-scatters).
 
-ARCHIVED FIGURE. The rationale below is historical:
-DNFS path weights cannot generally be inverted into an endpoint log-density.
-For configuration-probability validation use scripts/configuration_calibration_4x4.py
-and scripts/plot_configuration_calibration_4x4.py instead. This script remains
-only to reproduce the retired image, whose density interpretation was incorrect.
+Archived figure: DNFS path weights cannot generally be inverted into an
+endpoint log-density, so its density interpretation was incorrect. For
+configuration-probability validation use scripts/configuration_calibration_4x4.py
+and scripts/plot_configuration_calibration_4x4.py; this script remains only to
+reproduce the retired image.
 
-The house tables deliberately exclude TV/KL over configurations; the
-replacement at enumerable sizes is this scatter, one section per results
-chapter. This is the unconstrained chapter's section; the hard chapter's
-counterpart is experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py
-and this script deliberately mirrors it so the two figures read alike.
+The house tables exclude TV/KL over configurations; the replacement at
+enumerable sizes is this scatter, one section per results chapter. The hard
+chapter's counterpart is
+experiments/constrained_hard_03/analysis/plot_logp_scatter_4x4.py, mirrored
+here so the two figures read alike.
 
 The estimator is the importance-weight identity
 
     w(x) = pi~(x) / q(x)   =>   log q(x) = log pi~(x) - log w(x),
 
 with q the sampler's own (normalised) path-marginal density, so the y-axis
-needs no fitted constant IF the stored log-weights are the raw ratio. In
+needs no fitted constant if the stored log-weights are the raw ratio. In
 practice the eval's log-weights carry one common additive shift (base and
 time-grid constants cancel in the normalised weights but ride along in the
-raw ones), so the script PRINTS the median offset per family and removes it
+raw ones), so the script prints the median offset per family and removes it
 before plotting. A healthy sampler then shows a tight cloud on the diagonal,
 and probability mass misallocated between equal-energy configurations --
 invisible to every energy-based instrument -- shows as vertical scatter that
 no offset can hide.
 
-WHY THIS IS THE UNCONSTRAINED VERSION, AND HOW IT DIFFERS FROM THE HARD ONE:
-the hard chapter conditions on a fixed composition, so its x-axis is the
-enumerated CONDITIONAL over the C(16,8) = 12,870 feasible states. Here there
-is no constraint, so the reference is the full 2^16 = 65,536-state
-enumeration normalised to one (`exact_log_probs`, logsumexp = 0). That makes
-this the stronger exhibit of the two: every state the sampler can emit has an
-exact probability, with no slice to condition on.
+The hard chapter conditions on a fixed composition, so its x-axis is the
+enumerated conditional over the C(16,8) = 12,870 feasible states. Here there
+is no constraint, so the reference is the full 2^16 = 65,536-state enumeration
+normalised to one (`exact_log_probs`, logsumexp = 0): every state the sampler
+can emit has an exact probability, with no slice to condition on.
 
 Panels are the chapter's two operating points. The sigma_c panel reads the
-Wave-1 `_sc` retrains at the ONE critical coupling SIGMA_C = 0.220343 (final
-fp32 5000-draw eval ESS 0.986 +- 0.004 over an expected floor of 0.93, 4/4
-seeds); the sigma = 0.1 panel is untouched by
-that migration and reads the original family. Never mix couplings in one
-comparison.
+Wave-1 `_sc` retrains at SIGMA_C = 0.220343 (final fp32 5000-draw eval ESS
+0.986 +- 0.004 over an expected floor of 0.93, 4/4 seeds); the sigma = 0.1
+panel is untouched by that migration and reads the original family. Never mix
+couplings in one comparison.
 """
 
 import argparse

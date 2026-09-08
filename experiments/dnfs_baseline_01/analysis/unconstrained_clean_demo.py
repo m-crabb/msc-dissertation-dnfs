@@ -1,31 +1,29 @@
-"""fig:unconstrained-clean -- the chapter's K2 results cell, house standard.
+"""fig:unconstrained-clean -- the unconstrained chapter's results-cell figure.
 
-The house figure set makes this the unconstrained chapter's
-two-panel results-cell figure at the headline 10x10 size:
+Two panels at the headline 10x10 size:
 
-  (a) energy marginal drawn on the EXACT energy levels, E/d axis (the same
+  (a) energy marginal drawn on the exact energy levels, E/d axis (the same
       per-site convention as the house table's EW2 column). The periodic
       D x D lattice has 2d bonds and E changes by multiples of 4, so the
-      support is E in {-2d, -2d+4, ..., 2d}; binning ON that support is what
-      kills the 40-uniform-bin aliasing the old figure carried.
+      support is E in {-2d, -2d+4, ..., 2d}; binning on that support avoids
+      the 40-uniform-bin aliasing the old figure carried.
   (b) magnetisation marginal on its exact 101-point support (2k - d)/d --
-      the Z2-ODD coverage read: the target is symmetric, so a sampler that
-      covers both phases puts ~half its weighted mass in each mode, which is
-      exactly what the Kawasaki chains of the hard chapter cannot do.
+      the Z2-odd coverage read: the target is symmetric, so a sampler that
+      covers both phases puts ~half its weighted mass in each mode, which
+      the hard chapter's Kawasaki chains cannot do.
 
-Reference = the certified Wolff cluster pool (the chapter's ground truth;
-built by wolff_reference_pool.py, R-hat <= 1.002). The pool
-file is keyed by the RUN's own coupling, so legacy runs meet the legacy pool
-and sigma_c retrains meet the 0.220343 pool -- couplings are never mixed.
+Reference = the certified Wolff cluster pool (built by
+wolff_reference_pool.py, R-hat <= 1.002). The pool file is keyed by the run's
+own coupling, so legacy runs meet the legacy pool and sigma_c retrains meet
+the 0.220343 pool -- couplings are never mixed.
 
 The caption quotes each panel's total-variation distance beside an iid
 sampling floor: the mean TV of 5000 independently resampled frames against
 the empirical reference pool. Pool uncertainty is a separate diagnostic;
 proximity to this mean does not establish statistical equivalence.
 
-The subcritical appendix figure (log-density marginal, uniform bins -- a
-genuinely continuous axis) stays in its pre-house form: the approved board
-keeps it as-is, so its code path is unchanged.
+The subcritical appendix figure (log-density marginal, uniform bins on a
+continuous axis) stays in its pre-house form.
 """
 
 import argparse
@@ -183,8 +181,8 @@ def populated_window(
 def plot_house_panel(
     ax, support, ref_pmf, seed_pmfs, xlabel, panel_label, n_reference, with_legend
 ):
-    """One K2 panel: reference as ink steps on the discrete support, sampler
-    as the seed-band grammar, bold corner label, house axes."""
+    """One panel: reference as ink steps on the discrete support, sampler as
+    the seed-band grammar, bold corner label, house axes."""
     ax.step(
         support,
         ref_pmf,
@@ -229,8 +227,7 @@ def log_density_marginal(
     target: IsingTarget, ref_samples: torch.Tensor, seed_runs: list[dict]
 ) -> dict:
     """Pre-house subcritical appendix panel: log p~ marginal on uniform bins
-    (continuous axis; bin count quoted in its caption). Unchanged on purpose:
-    the approved board keeps the appendix twin as-is."""
+    (continuous axis; bin count quoted in its caption)."""
     ref_values = target.log_prob(ref_samples)
     seed_values = [target.log_prob(run["samples"]) for run in seed_runs]
     lo = min(ref_values.min(), *(v.min() for v in seed_values)).item()
@@ -262,7 +259,7 @@ def load_point(run_dirs: list[Path]) -> dict:
     """Everything one coupling needs: target, Wolff pool, per-seed evals."""
     config = json.loads((run_dirs[0] / "config.json").read_text())
     ising_cfg = config["ising"]
-    # A curriculum run stores its STARTING coupling under ising.sigma; the
+    # A curriculum run stores its starting coupling under ising.sigma; the
     # frozen eval is at the final stage's coupling, which keys the pool.
     sigma = final_sigma(config)
     target = IsingTarget(D=ising_cfg["D"], sigma=sigma, bias=ising_cfg["bias"])
@@ -303,7 +300,7 @@ def main() -> None:
     args = parser.parse_args()
     use_house_style()
 
-    # --- critical K2 cell (body figure) ------------------------------------
+    # --- critical cell (body figure) ---------------------------------------
     critical = load_point(args.critical_runs)
     target, ref = critical["target"], critical["ref_samples"]
     energy = energy_level_pmfs(target, ref, critical["seed_runs"])

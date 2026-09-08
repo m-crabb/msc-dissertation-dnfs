@@ -13,8 +13,8 @@ each composition in turn and write per-composition rows:
     pixi run -e dev python -m experiments.dnfs_baseline_01.run \\
         --sweep --run-dir results/02_constrained_soft/S2_d10_camort_..._seed42
 
-The same `train(cfg, seed, ...)` function is also imported by
-`modal_app.py` for remote runs, so both paths share artefacts and metadata.
+`modal_app.py` imports the same `train(cfg, seed, ...)` for remote runs, so
+both paths share artefacts and metadata.
 """
 
 import argparse
@@ -59,22 +59,20 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 
 # State-count cutoff for exact-enumeration "Optimal Value" references at
 # small D. Paper Table 2 row 1 lists analytical (Ferdinand & Fisher 1969)
-# optima for D = 10×10; for D ≤ 20 we use direct enumeration, the
-# small-lattice analog. Beyond D = 20 enumeration is memory-bound and
-# the analytical solution is the right call.
+# optima for D = 10×10; at D ≤ 20 direct enumeration is the small-lattice
+# analogue, and beyond it enumeration is memory-bound.
 ENUMERATION_MAX_SPINS = 20
 
 # The compositions an amortised model is measured at: every value is an
-# integer site count at d=16 (multiples
-# of 1/16), unlike the retired {0.30 ... 0.80} grid. The first group has a
-# per-composition specialist on disk under results/02_constrained_soft —
-# directly for c <= 0.5, via the Z2 mirror identity
-# delivered(c) = 1 - delivered(1-c) for 0.625/0.75, whose specialists are
-# the trained 0.375/0.25 cells — so those rows are a direct
-# amortised-vs-specialist comparison at matched compute. The second group
-# was never trained by anything: it sits between the specialists' values,
-# so it separates a model that interpolates across the composition axis
-# from one that memorised the atoms it was trained on.
+# integer site count at d=16 (a multiple of 1/16), unlike the retired
+# {0.30 ... 0.80} grid. The first group has a per-composition specialist on
+# disk under results/02_constrained_soft — directly for c <= 0.5, and via the
+# Z2 mirror identity delivered(c) = 1 - delivered(1-c) at 0.625/0.75, whose
+# specialists are the trained 0.375/0.25 cells — so those rows compare
+# amortised against specialist at matched compute. The second group was never
+# trained by anything and sits between the specialists' values, separating a
+# model that interpolates across the composition axis from one that memorised
+# the atoms it was trained on.
 SPECIALIST_COMPOSITIONS = (0.25, 0.375, 0.50, 0.625, 0.75)
 HELD_OUT_COMPOSITIONS = (0.3125, 0.4375, 0.5625, 0.6875)
 SWEEP_COMPOSITIONS = tuple(sorted(SPECIALIST_COMPOSITIONS + HELD_OUT_COMPOSITIONS))
@@ -87,19 +85,18 @@ def _construct_target(
     composition_penalty_strength=None,
     log_ratio_clamp=None,
 ):
-    """Build the IsingTarget from an IsingCfg — the ONE construction seam.
+    """Build the IsingTarget from an IsingCfg — the single construction seam.
 
-    Both the train path and the rebuild-eval path go through here, so a
-    field added to IsingCfg cannot reach training while silently missing
-    from eval (the divergence that would, for `base_matches_composition`,
-    eval a matched-base run against a uniform base — the archived-eval bug
-    described in `eval_only`).
+    Both the train path and the rebuild-eval path go through here, so a field
+    added to IsingCfg cannot reach training while missing from eval (for
+    `base_matches_composition` that would eval a matched-base run against a
+    uniform base — the archived-eval bug described in `eval_only`).
 
-    `sigma` / `composition_penalty_strength` override the config values at
-    the train site, where a curriculum starts the run at its first stage.
-    `log_ratio_clamp=None` keeps the IsingTarget default: the rebuild path
-    has always evaluated at the default clamp regardless of the trained
-    value, and archived evals are frozen artefacts — do not change it here.
+    `sigma` / `composition_penalty_strength` override the config values at the
+    train site, where a curriculum starts the run at its first stage.
+    `log_ratio_clamp=None` keeps the IsingTarget default: the rebuild path has
+    always evaluated at the default clamp regardless of the trained value, and
+    archived evals are frozen artefacts — do not change it here.
     """
     kwargs = {}
     if log_ratio_clamp is not None:
@@ -139,9 +136,8 @@ def _build_model(cfg, target):
             ExactFieldFlipModel,
         )
 
-        # Wrapped BEFORE compile so `.compile()` reaches the inner model
-        # (the channel's own arithmetic is three elementwise lines and
-        # stays eager, mirroring the hard route's wrapper).
+        # Wrapped before compile so `.compile()` reaches the inner model; the
+        # channel's own arithmetic is three elementwise lines and stays eager.
         model = ExactFieldFlipModel(
             model,
             target,
@@ -152,8 +148,7 @@ def _build_model(cfg, target):
     if getattr(cfg.model, "compile_model", False):
         # In-place nn.Module.compile: state_dict keys stay unprefixed
         # (torch.compile(module) wrapping would add `_orig_mod.`), so
-        # checkpoints round-trip; same contract as the hard route's
-        # compile_head.
+        # checkpoints round-trip.
         model.compile()
     return model
 
@@ -201,12 +196,10 @@ def _construct_model(cfg, target):
 def _trailing_ess_metrics(run_dir: Path, k: int = 10) -> dict:
     """Last-K training-time ESS aggregates (median/min/max).
 
-    Addresses single-snapshot eval timing concern: the final ESS reported in
-    eval/metrics.json is one trajectory draw at t = n_steps; if the trained
-    model oscillates near the end, the snapshot is a lottery. The trailing-K
-    window reports the recent training-time ESS distribution for a more
-    honest "where did training actually land" reading. Note: training-time
-    ESS is over outer_batch_size, not n_eval_samples — interpret in absolute
+    The ESS in eval/metrics.json is one trajectory draw at t = n_steps, so a
+    model oscillating near the end makes that snapshot a lottery; the
+    trailing-K window reports the recent distribution instead. Training-time
+    ESS is over outer_batch_size, not n_eval_samples — read it in absolute
     counts, not as a fraction comparable to eval/ess_fraction.
     """
     recent = pd.read_csv(run_dir / "training_log.csv")["ess"].dropna().tail(k)
@@ -251,11 +244,11 @@ def _compute_eval_metrics(
         target: IsingTarget (or any duck with `.d`, `.device`, `.log_prob`,
             `.sigma`).
         composition: the composition this eval was conditioned on, or None to
-            read the target's own scalar. It has to be passed explicitly
-            because an amortised eval's composition lives in the target's
-            binding, not in `target.target_composition` — labelling the
-            observables from the fallback scalar would quietly attribute a
-            c = 0.80 draw to whatever the config happened to record.
+            read the target's own scalar. Passed explicitly because an
+            amortised eval's composition lives in the target's binding, not
+            in `target.target_composition`, so labelling from the fallback
+            scalar would attribute a c = 0.80 draw to whatever the config
+            recorded.
     """
     sigma = float(target.sigma)
     D = int(target.d)
@@ -313,15 +306,14 @@ def _compute_eval_metrics(
 def _composition_binding(target, composition: float | None, device):
     """(model wrapper, target binding) for one composition, or the bare pair.
 
-    `composition=None` is the specialist route: the model is called as it
-    always was and nothing is bound, so an archived cell executes exactly the
-    code it did before amortisation existed.
+    `composition=None` is the specialist route: nothing is bound and the model
+    is called as it was before amortisation existed.
 
     Otherwise the composition is bound in both places it is read. The model
-    needs it as an input — a conditioned model raises when c is missing rather
-    than silently predicting rates for some other composition — and the target
-    needs it because the composition penalty (and, on the fixed-composition
-    route, the manifold itself) is what makes p_c differ from p.
+    needs it as an input (a conditioned model raises when c is missing rather
+    than predicting rates for some other composition), and the target needs it
+    because the composition penalty — on the fixed-composition route, the
+    manifold itself — is what makes p_c differ from p.
     """
     if composition is None:
         return (lambda model: model), nullcontext()
@@ -337,20 +329,18 @@ def _eval_at_composition(model, target, cfg, composition: float | None, device):
 
     Returns `(samples, log_weights, metrics)`.
 
-    The draw and the scoring deliberately share ONE binding. The IS
-    log-weights are accumulated along the path against log p̃_t at the bound
-    composition, so the free energy (Eq. 37) and internal energy (Eq. 38) read
-    off them must use that same composition; scoring them under a different
-    one — or unbound, where the target falls back to its scalar
-    `target_composition` — mixes two densities into a single estimate and
-    raises nothing at all.
+    The draw and the scoring share one binding. The IS log-weights are
+    accumulated along the path against log p̃_t at the bound composition, so
+    the free energy (Eq. 37) and internal energy (Eq. 38) read off them must
+    use that same composition; scoring under a different one — or unbound,
+    where the target falls back to its scalar `target_composition` — mixes two
+    densities into one estimate and raises nothing.
 
     The base draw goes through `target.sample_base` rather than an inline
     `torch.randint`. At the uniform base the two are identical draws (same RNG
     consumption, so archived runs still reproduce bit-for-bit), but the base is
-    a property of the target: a composition-dependent base — a Bernoulli(c)
-    base, or the fixed-composition route's slice — would make an inline draw
-    silently wrong.
+    a property of the target: a composition-dependent base — Bernoulli(c), or
+    the fixed-composition route's slice — would make an inline draw wrong.
     """
     time_grid = torch.linspace(0.0, 1.0, cfg.ctmc.n_euler_steps, device=device)
     wrap, binding = _composition_binding(target, composition, device)
@@ -371,17 +361,15 @@ def _eval_at_composition(model, target, cfg, composition: float | None, device):
             samples, log_weights, target, composition=composition
         )
     # Cost of the draw, recorded because it cannot be recovered later: no
-    # archived run carries any timing, and the runs are spread across several
-    # machines, so a cost axis has to start accumulating from here.
+    # archived run carries timing. `wall_clock_step_s` in the training log is
+    # not this — it times the inner loss update only, excluding trajectory
+    # generation and the eval draw.
     #
-    # `wall_clock_step_s` in the training log is NOT this: it times only the
-    # inner loss update, excluding trajectory generation and the eval draw.
-    #
-    # Seconds are machine-specific, so the derived quantity is the one to
-    # quote across runs: `nfe_per_effective_sample` is Euler steps × samples
-    # drawn, divided by ESS — a hardware-independent cost-per-good-sample that
-    # prices the Euler budget honestly (ne128 costs 2× ne64 per sample and has
-    # to earn it back in ESS) and is comparable to published pure-IS tables.
+    # Seconds are machine-specific, so quote the derived quantity across runs:
+    # `nfe_per_effective_sample` = Euler steps × samples drawn / ESS, a
+    # hardware-independent cost per good sample that prices the Euler budget
+    # (ne128 costs 2× ne64 per sample and must earn it back in ESS) and is
+    # comparable to published pure-IS tables.
     metrics["eval_draw_seconds"] = draw_seconds
     metrics["eval_device"] = "cuda" if torch.cuda.is_available() else "cpu"
     effective = metrics["ess"]
@@ -396,17 +384,15 @@ def _eval_at_composition(model, target, cfg, composition: float | None, device):
 def write_host_metadata(run_dir: Path) -> None:
     """Append this attempt's host record to `<run_dir>/metadata.json`.
 
-    The load-bearing field is `device`. A run's wall clocks are only
-    comparable to another's when both ran on the same GPU class -- mars is a
-    shared B200 that MPS-shares GPUs between configs, so its step times must
-    never be read against a DoC a100's, and `wall_clock_step_s` is
-    uninterpretable without knowing which machine produced it. Without this
-    record the venue can only be reconstructed from submission logs.
+    The load-bearing field is `device`: wall clocks compare only within a GPU
+    class, and mars MPS-shares a B200 between configs, so its step times must
+    not be read against a DoC a100's. Without this record the venue is
+    recoverable only from submission logs.
 
     Appended, not overwritten: a resumed run can be requeued onto a different
     node, and then both hosts are true for different step ranges of the same
-    directory. `config.json` is written once for the opposite reason -- it is
-    the record of what the run started as, and a resume must not rewrite it.
+    directory. `config.json` is written once instead — it records what the run
+    started as, and a resume must not rewrite it.
     """
     path = run_dir / "metadata.json"
     attempts = json.loads(path.read_text()) if path.exists() else []
@@ -433,17 +419,16 @@ def train(
 ):
     """Top-level training entry. Importable from CLI or modal_app.
 
-    Builds the target / model / estimator from the resolved config, kicks off
+    Builds the target / model / estimator from the resolved config, runs
     `samplers.training.train`, and persists end-of-run eval samples + IS
     log-weights for downstream analysis notebooks.
 
-    `tag` replaces the run dir's wall-clock timestamp suffix (mirroring the
-    hard experiment's runner): a Slurm job resubmitted after preemption then
-    lands in the SAME run dir instead of minting a sibling, and a run that
-    already finished is detected and skipped, and a `checkpoints/resume.pt`
-    there makes `train_loop` CONTINUE from its outer-cycle boundary rather
-    than restart at step 0 (a matched-base family once lost eight runs at
-    ~94% of budget for want of it; see
+    `tag` replaces the run dir's wall-clock timestamp suffix: a Slurm job
+    resubmitted after preemption lands in the same run dir instead of minting
+    a sibling, a finished run is detected and skipped, and a
+    `checkpoints/resume.pt` there makes `train_loop` continue from its
+    outer-cycle boundary rather than restart at step 0 (a matched-base family
+    once lost eight runs at ~94% of budget for want of it; see
     `samplers.training.train` for what travels in the checkpoint).
 
     `on_checkpoint` is forwarded to the trainer and fires after each resume
@@ -456,13 +441,11 @@ def train(
     tag = tag or time.strftime("%Y%m%d-%H%M%S")
     run_dir = Path(output_dir) / f"{cfg.name}_seed{seed}_{tag}"
     # eval/metrics.json is the last artefact train writes, so its presence
-    # means the run completed; the guard must fire before any file is
-    # (re)written so a resubmitted finished job leaves the record untouched.
-    # With the default timestamp suffix the dir is always fresh and this
-    # never triggers, keeping every archived run's semantics unchanged.
-    # An EMA-armed cell completes only when BOTH eval dirs exist: a
-    # fixed-tag relaunch that finds eval/ without eval_ema/ must fill the
-    # gap, not skip (the same short-circuit trap the GFN comparator hit).
+    # means the run completed; the guard fires before any file is (re)written
+    # so a resubmitted finished job leaves the record untouched. With the
+    # default timestamp suffix the dir is always fresh and this never fires.
+    # An EMA-armed cell completes only when both eval dirs exist: a fixed-tag
+    # relaunch finding eval/ without eval_ema/ must fill the gap, not skip.
     eval_complete = (run_dir / "eval" / "metrics.json").exists()
     ema_complete = (
         getattr(cfg, "ema_decay", 0.0) <= 0
@@ -473,10 +456,9 @@ def train(
         return run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # Persist the resolved config and host metadata next to the artefacts
-    # so the run is reproducible from the directory alone.
-    # Written once: on a resumed attempt the original file is the record of
-    # what the run started as, and rewriting it would erase that.
+    # Persist the resolved config and host metadata next to the artefacts so
+    # the run is reproducible from the directory alone. Written once: on a
+    # resumed attempt the original file records what the run started as.
     if not (run_dir / "config.json").exists():
         (run_dir / "config.json").write_text(json.dumps(asdict(cfg), indent=2))
     write_host_metadata(run_dir)
@@ -503,9 +485,9 @@ def train(
             )
 
         # Reuse the first attempt's wandb run on resume so the curve stays a
-        # single run (steps already logged past the checkpoint are dropped by
-        # wandb's monotonic-step rule -- the same rows the log truncation
-        # discards locally).
+        # single run; steps already logged past the checkpoint are dropped by
+        # wandb's monotonic-step rule, as the log truncation drops them
+        # locally.
         wandb_id_path = run_dir / "wandb_run_id.txt"
         stored_run_id = (
             wandb_id_path.read_text().strip() if wandb_id_path.exists() else None
@@ -530,11 +512,10 @@ def train(
     else:
         target_sigma_init = cfg.ising.sigma
     # λ anneal mirrors the σ curriculum: the target starts at the stage-0
-    # penalty strength and train_loop tightens it through the stages. It is
-    # plumbed here, not in constrained_soft_02, because this `train` is the
-    # shared entry point that the constrained modal_app delegates to; for
-    # baseline (unconstrained) configs lambda_curriculum is None and this
-    # block is a no-op.
+    # penalty strength and train_loop tightens it through the stages. Plumbed
+    # here rather than in constrained_soft_02 because this `train` is the
+    # shared entry point the constrained modal_app delegates to; for
+    # unconstrained configs lambda_curriculum is None and this is a no-op.
     if cfg.lambda_curriculum is not None:
         target_lambda_init = cfg.lambda_curriculum.stages[
             0
@@ -582,22 +563,19 @@ def train(
     )
 
     # End-of-run eval: a final batch of (samples, IS log-weights) over the
-    # full t = 0 -> 1 trajectory. Analysis notebooks read these directly.
+    # full t = 0 -> 1 trajectory, read directly by the analysis notebooks.
     #
-    # An amortised model serves a whole range of compositions, so a single
-    # draw has to pick one. It picks the window centre, matching the in-loop
-    # ESS probe, so the training curve and this final number describe the same
-    # conditional model. The per-composition picture is a separate sweep
-    # (`composition_sweep`) over the trained checkpoint — this draw is not it,
-    # and must not be read as it.
+    # An amortised model serves a range of compositions, so one draw has to
+    # pick a value: the window centre, matching the in-loop ESS probe, so the
+    # training curve and this number describe the same conditional model. The
+    # per-composition picture is the separate `composition_sweep`.
     eval_composition = (
         None if cfg.composition is None else float(cfg.composition.centre)
     )
     eval_dir = run_dir / "eval"
-    # Per-dir idempotence: a fixed-tag rerun that arrives with eval/ already
-    # written (e.g. only eval_ema/ was missing) must not redraw it — the
-    # frozen eval is a frozen artefact and a redraw would silently replace
-    # it under the same path.
+    # Per-dir idempotence: a fixed-tag rerun arriving with eval/ already
+    # written (e.g. only eval_ema/ missing) must not redraw it — a redraw
+    # would replace a frozen artefact under the same path.
     if (eval_dir / "metrics.json").exists():
         eval_metrics = json.loads((eval_dir / "metrics.json").read_text())
     else:
@@ -612,9 +590,9 @@ def train(
         (eval_dir / "metrics.json").write_text(json.dumps(eval_metrics, indent=2))
 
     # EMA dual eval: the same draw through the shadow weights
-    # (checkpoints/final_ema.pt), landing in eval_ema/ with the identical
-    # metric schema so the house-table ingestion reads either dir. The raw
-    # weights are restored afterwards so nothing downstream sees the swap.
+    # (checkpoints/final_ema.pt), landing in eval_ema/ with the same metric
+    # schema so the house-table ingestion reads either dir. The raw weights
+    # are restored afterwards.
     ema_metrics = None
     if cfg.ema_decay > 0 and not (run_dir / "eval_ema" / "metrics.json").exists():
         raw_state = {
@@ -669,8 +647,8 @@ def _sub_config(cls, values: dict):
     """Rebuild one config dataclass from a run dir's `config.json`.
 
     Keys the dataclass no longer has are dropped, and keys it has since gained
-    fall back to their defaults. A run dir is meant to stay evaluable from the
-    directory alone, and a strict constructor makes every historical run
+    fall back to their defaults: a run dir has to stay evaluable from the
+    directory alone, and a strict constructor would make every historical run
     un-evaluable the moment a config grows a knob.
     """
     known = {field.name for field in fields(cls)}
@@ -680,16 +658,16 @@ def _sub_config(cls, values: dict):
 def _rebuild_from_run_dir(run_dir: Path):
     """(cfg, target, device) for a finished run, from `config.json` alone.
 
-    Saved `ising` can hold the initial σ or λ. Resolve each saved curriculum's
-    terminal value before building both the target and the eval config: a
-    rescore must use the same density as the final training draw. Training
-    validates increasing stages with every start_step < n_steps, so the last
-    stage is active at completion. This is the final target, not a recovery
-    of the operating point of an interrupted or intermediate checkpoint.
+    Saved `ising` can hold the initial σ or λ. Each saved curriculum's
+    terminal value is resolved before building the target and the eval config,
+    because a rescore must use the same density as the final training draw;
+    training validates increasing stages with every start_step < n_steps, so
+    the last stage is active at completion. This is the final target, not the
+    operating point of an interrupted or intermediate checkpoint.
 
-    For an alloy σ = β/2; retaining its initial value would score a 500 K
-    final draw at the 1200 K starting temperature. Absent curricula retain
-    the saved fixed-target values. No saved config is rewritten.
+    For an alloy σ = β/2, so retaining the initial value would score a 500 K
+    final draw at the 1200 K starting temperature. Absent curricula retain the
+    saved fixed-target values. No saved config is rewritten.
     """
     cfg_dict = json.loads((run_dir / "config.json").read_text())
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -707,8 +685,8 @@ def _rebuild_from_run_dir(run_dir: Path):
         model=_sub_config(ModelCfg, cfg_dict["model"]),
         ctmc=_sub_config(CTMCCfg, cfg_dict["ctmc"]),
         eval=_sub_config(EvalCfg, cfg_dict["eval"]),
-        # The window centre is the composition a single eval draw is
-        # conditioned on; None for a specialist run.
+        # The composition a single eval draw is conditioned on; None for a
+        # specialist run.
         composition_centre=(
             None
             if cfg_dict.get("composition") is None
@@ -729,43 +707,39 @@ def eval_only(
 ) -> dict:
     """Recompute eval metrics from a finished run's saved samples.
 
-    Loads `eval/samples.pt` + `eval/log_weights.pt`, reconstructs the
-    target from `config.json`, and writes / overwrites `eval/metrics.json`
-    in the run directory. Useful for backfilling diagnostics on older
-    runs whose training pre-dated the metrics-aggregation block.
+    Loads `eval/samples.pt` + `eval/log_weights.pt`, reconstructs the target
+    from `config.json`, and writes / overwrites `eval/metrics.json` in the run
+    directory — for backfilling diagnostics on runs whose training pre-dated
+    the metrics-aggregation block.
 
     For an amortised run the saved samples were drawn at the window centre, so
-    the metrics are recomputed under that binding — both to score them against
-    the density they actually came from, and to label them with it. Reading
-    the target's fallback scalar instead would relabel the numbers silently.
+    the metrics are recomputed under that binding, both to score them against
+    the density they came from and to label them with it; the target's
+    fallback scalar would relabel them silently.
 
     With `redraw=True` the saved tensors are ignored: the model is rebuilt
-    from `checkpoints/final.pt` and a fresh eval batch is drawn through the
-    production `_eval_at_composition` path, replacing all three `eval/`
-    artefacts. This exists because rescoring cannot repair a corrupted DRAW:
-    evals archived before the base draw went through `target.sample_base`
-    drew x0 from an inline uniform `torch.randint` while a matched base was
-    Bernoulli(0.8), omitting the
+    from `checkpoints/final.pt` and a fresh eval batch is drawn through
+    `_eval_at_composition`, replacing all three `eval/` artefacts. Rescoring
+    cannot repair a corrupted draw — evals archived before the base draw went
+    through `target.sample_base` drew x0 from an inline uniform
+    `torch.randint` while a matched base was Bernoulli(0.8), omitting the
     initial-state weight term log w0 = log[p_uniform(x0)/eta(x0)] (sd ~6.9
-    nats at D=10, c=0.8) from every saved log-weight. The first redraw
-    copies the stale `eval/` to `eval_archived_pre_redraw/` (skipped when
-    an `eval_archived_*` sibling already preserves it) — the buggy numbers
-    stay on disk as the record of what the old code produced. `redraw_seed`
-    seeds the fresh draw and is recorded in the metrics, since a redraw is
-    a NEW measurement, never a reproduction of the archived one.
+    nats at D=10, c=0.8) from every saved log-weight. The first redraw copies
+    the stale `eval/` to `eval_archived_pre_redraw/` (skipped when an
+    `eval_archived_*` sibling already preserves it), keeping the buggy numbers
+    on disk as the record of what the old code produced. `redraw_seed` seeds
+    the fresh draw and is recorded in the metrics: a redraw is a new
+    measurement, not a reproduction of the archived one.
 
-    With `n_euler_override` set (mirroring the hard experiment's convention;
-    0 and None both mean "no override"), the redraw runs on that Euler time
-    grid instead of the run's own and its artefacts go to `eval_ne<k>/`,
-    leaving the frozen `eval/` byte-untouched and unarchived. This exists for
-    the eval-grid-offset measurement: F/site read at ne64 vs ne128 differs
-    (quadrature error plus finite-ESS self-normalisation bias move together
-    with the grid), and separating the eval-grid component from the training
-    grid needs the SAME checkpoint redrawn on both grids side by side — while
-    the archived `eval/` stays the untouched record the printed numbers came
-    from. The archive step is only for in-place `eval/` overwrites, so it is
-    skipped here. Requires `redraw=True`: the saved tensors were drawn on the
-    run's own grid, so a rescore cannot move it.
+    With `n_euler_override` set (0 and None both mean "no override") the
+    redraw runs on that Euler time grid instead of the run's own and its
+    artefacts go to `eval_ne<k>/`, leaving the frozen `eval/` byte-untouched
+    and unarchived. This is for the eval-grid-offset measurement: F/site read
+    at ne64 vs ne128 differs (quadrature error and finite-ESS
+    self-normalisation bias move together with the grid), and separating the
+    eval-grid component from the training grid needs the same checkpoint
+    redrawn on both grids. Requires `redraw=True`, since the saved tensors
+    were drawn on the run's own grid.
     """
     if n_euler_override == 0:
         n_euler_override = None
@@ -801,8 +775,8 @@ def eval_only(
             model, target, cfg, cfg.composition_centre, device
         )
         eval_metrics["redraw_seed"] = redraw_seed
-        # The grid the draw ACTUALLY ran on — with an override this differs
-        # from config.json, and the metrics file must be self-describing.
+        # The grid the draw ran on — with an override this differs from
+        # config.json, and the metrics file must be self-describing.
         eval_metrics["n_euler_steps"] = cfg.ctmc.n_euler_steps
         eval_dir.mkdir(exist_ok=True)
         torch.save(eval_samples.cpu(), eval_dir / "samples.pt")
@@ -840,25 +814,22 @@ def composition_sweep(
 ) -> list[dict]:
     """Re-draw a trained amortised run's eval at each composition in turn.
 
-    This is the measurement the amortisation claim rests on: ONE model, many
-    compositions, each row directly comparable to the specialist trained for
-    that composition alone — the archived
+    The measurement the amortisation claim rests on: one model, many
+    compositions, each row comparable to the specialist trained for that
+    composition alone (the archived
     `results/02_constrained_soft/*/eval/metrics.json` carry the same
-    `ess_fraction` and `composition_mean` keys. Rows at the held-out
-    compositions are the interpolation test: no specialist was ever trained
-    there, and the grid control never drew them.
+    `ess_fraction` and `composition_mean` keys). Rows at the held-out
+    compositions are the interpolation test: no specialist was trained there
+    and the grid control never drew them.
 
-    Rows, not one flat dict, because every quantity here is a function of c.
-    A single `target_composition` scalar in a metrics dict cannot express
-    "worked at 0.50, drifted at 0.80", which is exactly the failure the sweep
-    is looking for.
+    Rows rather than one flat dict because every quantity here is a function
+    of c: a single `target_composition` scalar cannot express "worked at 0.50,
+    drifted at 0.80", the failure the sweep looks for.
 
-    Each row is drawn under COMMON RANDOM NUMBERS: the sampler is reseeded to
+    Each row is drawn under common random numbers — the sampler is reseeded to
     `seed` before every composition, so all rows start from the same base
-    states and consume the same noise stream. Differences down the sweep are
-    then the model's response to c rather than which draw a row happened to
-    get — the same reason paired comparisons beat independent ones, and it
-    costs nothing here because the draws are independent anyway.
+    states and consume the same noise stream, and differences down the sweep
+    are the model's response to c rather than which draw a row got.
 
     Args:
         run_dir: a finished run directory (config.json + checkpoints/).
@@ -867,13 +838,13 @@ def composition_sweep(
         checkpoint: file under `checkpoints/`; `final.pt` is the end-of-run
             state, `latest.pt` the most recent eval-cadence snapshot.
         seed: common-random-numbers seed, shared by every row.
-        save: write `eval/composition_sweep.json` and, beside it, each
-            row's frames under `eval/composition_sweep/c<c>/` (`samples.pt`
-            + `log_weights.pt`). The JSON row is scalars; the house error
-            columns (dMag, dCorr, EW2) score frames against a reference,
-            so without the frames a conditioned run can never take a row
-            in a house table. Skip for exploratory runs that should not
-            overwrite a recorded sweep.
+        save: write `eval/composition_sweep.json` and, beside it, each row's
+            frames under `eval/composition_sweep/c<c>/` (`samples.pt` +
+            `log_weights.pt`). The JSON row is scalars, while the house error
+            columns (dMag, dCorr, EW2) score frames against a reference, so
+            without the frames a conditioned run cannot take a house-table
+            row. Skip for exploratory runs that must not overwrite a recorded
+            sweep.
 
     Returns:
         One dict per composition — the full eval metrics plus `composition`
@@ -897,9 +868,9 @@ def composition_sweep(
         )
     )
 
-    # Keyed by the parameter state that produced the rows: an EMA-shadow
-    # sweep lands beside the shadow's own frozen eval, never over the raw
-    # model's sweep.
+    # Keyed by the parameter state that produced the rows, so an EMA-shadow
+    # sweep lands beside the shadow's own frozen eval, not over the raw
+    # model's.
     eval_dir = run_dir / ("eval_ema" if checkpoint == "final_ema.pt" else "eval")
 
     rows = []

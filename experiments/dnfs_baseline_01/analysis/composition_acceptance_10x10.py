@@ -1,35 +1,33 @@
 """Composition-acceptance taster at 10x10: the cost of asking the
-UNCONSTRAINED sampler for a fixed composition by rejection.
+unconstrained sampler for a fixed composition by rejection.
 
 The baseline chapter's sampler targets the plain Ising model, so a request
 for composition c = n_plus / d has to be met by drawing and discarding: keep
-the draws whose +1 count equals n_plus, with their ORIGINAL importance
+the draws whose +1 count equals n_plus, with their original importance
 weights (restricting an importance sample to an event and keeping its weights
 is importance sampling for the conditional -- the normaliser cancels in the
 self-normalised estimator; see rejection_rows.py in the hard chapter). The
-table this script feeds is the taster for the constrained chapters: it
-prices the route the rest of the thesis exists to replace.
+table this script feeds is the taster for the constrained chapters.
 
-What the numbers say. At sigma = 0.1 the target is disordered, so its
-composition marginal is a near-binomial peaked at c = 1/2: acceptance is
-largest at the centre (about 5%, below the uniform sampler's 8% because
-the ferromagnetic coupling already fattens the tails) and falls with
-|c - 1/2| to about 0.03% by c = 0.25. At sigma_c the picture inverts:
-the critical target has moved its mass towards the ORDERED tails, so the
-balanced slice is starved (about 0.3%) and acceptance is flat-to-rising
-across 0.25 <= c <= 0.5 rather than peaked. Rejection is therefore cheapest
-exactly where it is least needed.
+At sigma = 0.1 the target is disordered, so its composition marginal is a
+near-binomial peaked at c = 1/2: acceptance is largest at the centre (about
+5%, below the uniform sampler's 8% because the ferromagnetic coupling already
+fattens the tails) and falls with |c - 1/2| to about 0.03% by c = 0.25. At
+sigma_c the picture inverts: the critical target has moved its mass towards
+the ordered tails, so the balanced slice is starved (about 0.3%) and
+acceptance is flat-to-rising across 0.25 <= c <= 0.5 rather than peaked.
+Rejection is cheapest exactly where it is least needed.
 
-TWO ACCEPTANCES ARE COMPUTED; THE TABLE PRINTS THE RAW ONE. The raw
+Two acceptances are computed and the table prints the raw one. The raw
 acceptance n_kept / n_drawn is the proposal's hit rate on the manifold, and
 it is what the overhead 1 / acceptance charges for: every rejected draw cost
 a full forward pass. The weighted acceptance, the normalised-weight mass on
-the slice, is instead the sampler's estimate of the TARGET's composition
-mass pi(C). The hard chapter's rejection rows print the acceptance of DRAWS
-(rejection_rows.py's convention), and this table follows it; both land in
-the JSON; at ESS fractions of 0.99 (sigma = 0.1) and 0.90 (sigma_c) they
-agree to the printed precision at sigma = 0.1 and differ by about one seed
-SD (0.28% raw vs 0.23% weighted at c = 1/2) at sigma_c.
+the slice, is instead the sampler's estimate of the target's composition
+mass pi(C). The hard chapter's rejection rows print the acceptance of draws
+(rejection_rows.py's convention) and this table follows it; both land in the
+JSON; at ESS fractions of 0.99 (sigma = 0.1) and 0.90 (sigma_c) they agree to
+the printed precision at sigma = 0.1 and differ by about one seed SD (0.28%
+raw vs 0.23% weighted at c = 1/2) at sigma_c.
 
 Caveat for the caption: the sigma_c cells rest on 50-90 kept draws pooled
 over four seeds, so their spread is dominated by counting noise and the
