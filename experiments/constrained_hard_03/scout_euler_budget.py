@@ -2,21 +2,19 @@
 swap-CTMC clip fraction under threshold, or is the matching multi-event step
 needed as d grows?
 
-Decision infra, not a research-bearing computation: orchestrates the tested
-swap stack and aggregates the two frozen diagnostics for the total swap
-escape rate Λ(x, t) = Σ_{i<j} [G_swap(i,j | x)]_+ and dt = 1/(n_euler_steps−1):
+Aggregates the two frozen diagnostics for the total swap escape rate
+Λ(x, t) = Σ_{i<j} [G_swap(i,j | x)]_+ and dt = 1/(n_euler_steps−1):
     - expected events per site per step = mean(Λ·dt)/d   (threshold ≤ 0.1)
     - clipped-step fraction              = P(Λ·dt > 1)    (threshold < 1%)
-The one-event step fires ≤1 swap/step, so Λ·dt > 1 is exactly where it
-under-fires.
+The one-event step fires ≤1 swap/step, so Λ·dt > 1 is where it under-fires.
 
-The decisive question is how Λ scales with d. Λ splits into a LOCAL part over
-the 2d adjacent pairs (swap ΔE touches only bonds at i, j) and a part over the
-~d²/2 non-adjacent pairs. If the non-adjacent per-pair rate is non-negligible,
-Λ grows like d² and the one-event budget blows up; if Λ is adjacency-dominated
-it grows like d and O(d) steps suffice at every scale. Both per-pair rates are
-set by the (intensive) local energetics, so they are ~d-invariant — which lets
-the CONVERGED D=4 σ_c checkpoint predict d=64 and d=256 without retraining.
+Λ splits into a local part over the 2d adjacent pairs (swap ΔE touches only
+bonds at i, j) and a part over the ~d²/2 non-adjacent pairs: if the
+non-adjacent per-pair rate is non-negligible Λ grows like d² and the one-event
+budget blows up, otherwise it grows like d and O(d) steps suffice at every
+scale. Both per-pair rates are set by the intensive local energetics, so they
+are ~d-invariant, which lets the converged D=4 σ_c checkpoint predict d=64 and
+d=256 without retraining.
 
 Modes:
   --checkpoint PATH   measure a trained head (fast; the D=4 anchor path)
@@ -51,7 +49,7 @@ from discrete_flow_sampler.seeding import seed_everything
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
 SIGMA_C = (
-    0.22305  # LEGACY value: this scout profiled the archived (pre-migration) cells
+    0.22305  # legacy value: this scout profiled the archived (pre-migration) cells
 )
 CANDIDATE_STEPS = (16, 32, 64, 128, 256, 512)
 EXTRAPOLATE_TO = (4, 8, 12, 16)

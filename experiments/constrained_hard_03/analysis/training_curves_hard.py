@@ -12,9 +12,8 @@ The curriculum ramp (stages before the final sigma_c stage) is shaded as in the 
 panels: until the final stage begins the diagnostic reads against the current stage's
 target, not the final coupling.
 
-The y values are the IN-TRAINING diagnostic (`n_eval_samples_training` draws, reduced
-precision, every 500 steps), not the frozen fp32 evaluation the house table prints; the
-caption says so, and no house-table number appears in the figure.
+The y values are the in-training diagnostic (`n_eval_samples_training` draws, reduced
+precision, every 500 steps), not the frozen fp32 evaluation the house table prints.
 """
 
 import argparse

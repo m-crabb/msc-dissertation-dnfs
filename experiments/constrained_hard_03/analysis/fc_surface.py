@@ -1,10 +1,10 @@
-"""F(c, sigma) surface from ONE amortised 8x8 sampler, no new training.
+"""F(c, sigma) surface from one amortised 8x8 sampler, no new training.
 
 The hard sampler's annealing path on the fixed-composition slice is a coupling
 anneal (probe_zero_shot_transfer, axis 1): the base density is uniform on the
 slice, so p~_t is the Ising target at coupling t * sigma, and the running
 importance weight at grid time t is the path estimator of log Z_t. One draw per
-composition therefore prices the free energy at EVERY coupling between zero and
+composition therefore prices the free energy at every coupling between zero and
 the trained one:
 
     F(c, t sigma) / d = -[ E_q log w_t + (1 - t) log C(d, N_A) ] / d      (Jensen: a bound from above)
@@ -12,57 +12,53 @@ the trained one:
 The classical toolchain needs one thermodynamic-integration ladder per (c, T)
 point (icet ThermodynamicIntegrationEnsemble) or one chain per (phi, T) in
 VC-SGC; here the whole temperature ray at fixed composition falls out of the
-weights the sampler already computes. That asymmetry is the exhibit.
+weights the sampler already computes.
 
 Inputs (already on disk, tag 20260905-camort-d64-perslice, checkpoint
-final_ema.pt, ne128; the 20260831 twin pooled the c_t baseline across slices
-and read the same surface to 3e-4 nats/site, but is not the one read): each seed's `zero_shot_fc.json`, seven stop times k/127 for
-k = 16, 32, 58, 76, 95, 111, 127 by seven compositions. Reference: mchammer TI at
-the same couplings (`fc_ref_d8_k{K}.npz` from fc_mchammer_reference.py, run
-per stop time; `fc_ref_d8_sc.npz` is the printed t = 1 truth on five
-compositions). Compositions 0.3125 and 0.4375 are mirrored to 0.6875 and
-0.5625 under the target family's exact Z2 symmetry (the printed F(c) figure
-does the same), and the caption says so.
+final_ema.pt, ne128; the 20260831 twin pooled the c_t baseline across slices and
+read the same surface to 3e-4 nats/site, but is not the one read): each seed's
+`zero_shot_fc.json`, seven stop times k/127 for k = 16, 32, 58, 76, 95, 111, 127
+by seven compositions. Reference: mchammer TI at the same couplings
+(`fc_ref_d8_k{K}.npz` from fc_mchammer_reference.py, run per stop time;
+`fc_ref_d8_sc.npz` is the printed t = 1 truth on five compositions).
+Compositions 0.3125 and 0.4375 are mirrored to 0.6875 and 0.5625 under the
+target family's exact Z2 symmetry, and the caption says so.
 
-Panel (a): F/d vs c, one curve per coupling on the sampler hue's lightness
-ramp (light = weak coupling, dark = sigma_c; figure_style.parameter_ramp),
-band = min-max over three seeds, plus the analytic sigma = 0 limit
--log C(d, N_A)/d as a guide. Panel (b): residual against the TI truth wherever
-a reference exists, same ramp, with the sign the bound requires (>= 0 up to
-the Euler-grid bias, which Richardson removed in the printed t = 1 series and
-is NOT removed here: this is the native ne128 read). Panel (c): the
-central curvature, the second difference [F(0.4375) - 2F(0.5) + F(0.5625)]/d
-over the composition step 1/16, against sigma/sigma_c. It changes sign between
-0.75 and 0.87 sigma_c: above that the fixed-composition ensemble on this torus
-lowers its free energy by demixing, the finite-size signature of the ordering
-transition (the infinite-volume F is convex everywhere and flat inside the
-binodal; on an 8x8 torus at sigma_c the correlation length exceeds the box).
-Read from ONE model's running weights, at every coupling, with the TI truth
-beside it where it exists.
+Panel (a): F/d vs c, one curve per coupling on the sampler hue's lightness ramp
+(light = weak coupling, dark = sigma_c; figure_style.parameter_ramp), band =
+min-max over three seeds, plus the analytic sigma = 0 limit -log C(d, N_A)/d as
+a guide. Panel (b): residual against the TI truth wherever a reference exists,
+same ramp, with the sign the bound requires (>= 0 up to the Euler-grid bias,
+which Richardson removed in the printed t = 1 series and is not removed here:
+this is the native ne128 read). Panel (c): the central curvature, the second
+difference [F(0.4375) - 2F(0.5) + F(0.5625)]/d over the composition step 1/16,
+against sigma/sigma_c. It changes sign between 0.75 and 0.87 sigma_c: above
+that the fixed-composition ensemble on this torus lowers its free energy by
+demixing, the finite-size signature of the ordering transition (the
+infinite-volume F is convex everywhere and flat inside the binodal; on an 8x8
+torus at sigma_c the correlation length exceeds the box).
 
 Dense composition grid. Where a seed dir also holds `zero_shot_fc_grid.json`
-(the dense probe over EVERY slice, n_+ = 1..63, same seven stop times;
+(the dense probe over every slice, n_+ = 1..63, same seven stop times;
 ESS >= 0.72 on all 63 at sigma_c from a model trained on five compositions in
-[0.3125, 0.5]) it replaces the seven-point file, and a third figure
-(`_dfdc`) draws the free-energy derivative dF/dc by central differences over
-neighbouring slices, one curve per coupling: the quantity the VC-SGC
-tutorials integrate a chemical potential to obtain, here read off the
-absolute surface. Its turnover (dF/dc decreasing with c) is the concave
-stretch of panel (c).
+[0.3125, 0.5]) it replaces the seven-point file, and a third figure (`_dfdc`)
+draws dF/dc by central differences over neighbouring slices, one curve per
+coupling: the quantity the VC-SGC tutorials integrate a chemical potential to
+obtain, here read off the absolute surface. Its turnover (dF/dc decreasing with
+c) is the concave stretch of panel (c).
 
-Companion figure (`_sro`): the Warren-Cowley short-range-order parameter
-from the same rows' weighted nearest-neighbour spin product g = <x_i x_j>.
-With occupations n = (1 + x)/2 the ordered-pair fraction P_AB = (1 - g)/4, so
+Companion figure (`_sro`): the Warren-Cowley short-range-order parameter from
+the same rows' weighted nearest-neighbour spin product g = <x_i x_j>. With
+occupations n = (1 + x)/2 the ordered-pair fraction P_AB = (1 - g)/4, so
 
     alpha_1(c, sigma) = 1 - P_{A|B} / c_A = 1 - (1 - g) (d - 1) / (4 c (1 - c) d),
 
 zero at random mixing, positive for like-neighbour clustering (the
 ferromagnet), negative for ordering. The (d - 1)/d is the fixed-N baseline:
-placing N_A up-spins WITHOUT replacement gives an unlike-pair probability
+placing N_A up-spins without replacement gives an unlike-pair probability
 c(1 - c) d/(d - 1), not c(1 - c), and without it a single up-spin on the 8x8
-reads alpha = -0.016 while being exactly random. Composition is exact on
-every draw, so this is the canonical SRO at fixed c with no reweighting --
-the panel the CE tutorials draw from a VC-SGC chain per (phi, T).
+reads alpha = -0.016 while being exactly random. Composition is exact on every
+draw, so this is the canonical SRO at fixed c with no reweighting.
 """
 
 from __future__ import annotations
@@ -137,17 +133,16 @@ def load_reference(
     reference_dir: Path, ti_prefix: str | None, printed_first=True
 ) -> dict:
     """{(composition, k): F_per_site} from every TI file present. With
-    `printed_first=False` only the per-coupling k-files are read: the
-    curvature stencil must difference ONE TI run, since two runs at sigma_c
-    differ by ~0.002/site and the stencil multiplies that by 256."""
+    `printed_first=False` only the per-coupling k-files are read: the curvature
+    stencil must difference one TI run, since two runs at sigma_c differ by
+    ~0.002/site and the stencil multiplies that by 256."""
     reference: dict = {}
     if ti_prefix is None:
         return reference
     # The printed t = 1 truth takes precedence where it overlaps the k = 127
-    # replicate, so the surface's t = 1 residuals are the printed ones. The two
-    # independent TI runs differ by up to 0.0024 nats/site at c = 0.375
-    # (-0.8469 vs -0.8493), above the ~0.001/site hysteresis bracket each
-    # reports: the TI's own replicate spread is the reference floor here.
+    # replicate. The two independent TI runs differ by up to 0.0024 nats/site at
+    # c = 0.375 (-0.8469 vs -0.8493), above the ~0.001/site hysteresis bracket
+    # each reports, so the TI's own replicate spread is the reference floor.
     printed = reference_dir / f"{ti_prefix}_sc.npz"
     if printed_first and printed.is_file():
         z = np.load(printed)
@@ -295,8 +290,7 @@ def plot_dfdc(surface: dict, out: Path, D: int) -> None:
         cs = sorted(c for c, kk in surface if kk == k)
         per_seed = np.array([surface[(c, k)]["F"] for c in cs]).T  # (seeds, c)
         # Slice spacing of the probed grid: 1/64 at both rungs (every slice at
-        # 8x8, every fourth site at 16x16), so read it off the grid rather
-        # than assuming one site.
+        # 8x8, every fourth site at 16x16), so read it off the grid.
         step = min(np.diff(cs))
         interior = [
             i
@@ -333,9 +327,8 @@ def concave_region(surface: dict, k: int, half_width: int = 4) -> tuple | None:
     """Composition range where the second difference of F/d over +-half_width
     slices is negative at coupling k, or None. The +-4-slice stencil (1/16 in c
     on the 8x8) is the one panel (c) uses; a +-1 stencil multiplies the 1e-4
-    seed noise by 64^2 and reads noise. Mirrors the +-1/16 spacing exactly, so
-    the range is the finite-size 'spinodal' the tutorial draws its boundary
-    from the free-energy analysis of."""
+    seed noise by 64^2 and reads noise. The range is the finite-size 'spinodal'
+    the tutorial draws from a free-energy analysis."""
     cs = sorted(c for c, kk in surface if kk == k)
     F = np.array([np.mean(surface[(c, k)]["F"]) for c in cs])
     concave = [
@@ -350,7 +343,7 @@ def plot_sro_map(surface: dict, out: Path, D: int) -> None:
     """The tutorial's (composition, temperature) SRO map: alpha_1 as filled
     contours over the dense grid, with the boundary of the concave region
     (negative curvature of F, the finite-size spinodal) overlaid from the same
-    draws -- their overlay comes from a separate free-energy analysis."""
+    draws, where the tutorial's overlay needs a separate free-energy analysis."""
     import matplotlib.pyplot as plt
     from matplotlib.colors import LinearSegmentedColormap
 

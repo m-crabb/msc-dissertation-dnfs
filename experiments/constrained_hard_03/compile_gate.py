@@ -6,21 +6,18 @@ before compiled cells ship.
 
 Two checks:
 
-1. **Head test file under compilation.** The full two-hole-patch head test
-   file runs with every `_head`-factory head compiled in place — the tests
-   encode antisymmetry, per-pair oracles and Kolmogorov contracts, so a
-   compiled kernel that changes the math fails loudly here.
-2. **Gradient parity, eager vs compiled.** `loss_swap` forward + backward
-   on a seeded 4x4 cell from identically-initialised heads. The loss must
-   agree to 1e-5 and every gradient to 1e-5 relative on its norm.
-   `pair_mlp.2.bias` is compared ABSOLUTELY: its gradient is structurally
-   zero — the shared last-layer bias cancels exactly in the antisymmetric
-   readout H_ij = P_ij − P_ji — so a relative metric on rounding residue
-   (~1e-8) would flag a non-error.
+1. The two-hole-patch head test file runs with every `_head`-factory head
+   compiled in place; those tests encode antisymmetry, per-pair oracles and
+   Kolmogorov contracts, so a compiled kernel that changes the math fails here.
+2. Gradient parity, eager vs compiled: `loss_swap` forward + backward on a
+   seeded 4x4 cell from identically-initialised heads. The loss must agree to
+   1e-5 and every gradient to 1e-5 relative on its norm. `pair_mlp.2.bias` is
+   compared absolutely: its gradient is structurally zero — the shared
+   last-layer bias cancels in the antisymmetric readout H_ij = P_ij − P_ji —
+   so a relative metric on rounding residue (~1e-8) would flag a non-error.
 
-Pass criterion: pytest exit code 0 AND parity within tolerance. Compiled
-runs remain 1e-5-class vs eager checkpoints — this gate certifies "same
-math", never bit-parity.
+Pass criterion: pytest exit code 0 and parity within tolerance; the gate
+certifies "same math", never bit-parity.
 
 Run locally (CPU inductor) or on the GPU venue:
     pixi run -e dev python -m experiments.constrained_hard_03.compile_gate
@@ -36,8 +33,7 @@ import torch
 from discrete_flow_sampler.samplers.swap_kolmogorov import loss_swap
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
 
-# The structurally-zero gradient: the shared last-layer bias cancels in
-# H_ij = P_ij - P_ji, so only float rounding residue survives.
+# Structurally zero: the shared last-layer bias cancels in H_ij = P_ij - P_ji.
 STRUCTURAL_ZERO_PARAMS = ("pair_mlp.2.bias",)
 LOSS_TOLERANCE = 1e-5
 GRAD_RELATIVE_TOLERANCE = 1e-5
@@ -92,9 +88,8 @@ def run_gradient_parity(device) -> tuple[bool, list[str]]:
         loss = loss_swap(x, t, dt_log_Zt, head, target)
         loss.backward()
         losses.append(loss.detach())
-        # Backbone parameters outside the head's forward path carry no
-        # grad at all — keep them as None so a grad EXISTING on one side
-        # only is itself a parity failure.
+        # Backbone parameters outside the head's forward path carry no grad;
+        # kept as None so a grad existing on one side only is a parity failure.
         grads.append(
             {
                 name: None if p.grad is None else p.grad.detach().clone()

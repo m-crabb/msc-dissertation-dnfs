@@ -1,65 +1,58 @@
 """Fill pass for the 20x20 rung of the house evaluation table.
 
-A THIN table by design: the d400 wave (tag 20260827-d400-s010) is four cells
--- two patch radii x two eval precisions -- at TWO seeds and ONE coupling. It
-is a scaling probe, not a head survey, and the table should read as one.
+A thin table by design: the d400 wave (tag 20260827-d400-s010) is four cells --
+two patch radii x two eval precisions -- at two seeds and one coupling. It is a
+scaling probe, not a head survey, and the table should read as one.
 
-WHAT IS DIFFERENT FROM EVERY RUNG BELOW, and why each difference is real
-rather than an omission:
+Differences from every rung below:
 
-  * TWO COUPLINGS SINCE 2026-08-30 (single-coupling before that: an empty
-    sigma_c half would have read as "not yet landed" rather than "never
-    run"). The sigma_c wave (tag 20260829-d400-sc, 12 cells, 100k steps,
-    curriculum ending at exact SIGMA_C from step 30k) landed with its own
-    certified reference. The two waves carry DIFFERENT config names (50k
-    flat vs 100k_curr) and DIFFERENT tags, so cells are pinned per
-    (row, coupling) in ARM_CONFIGS rather than globbed from one template.
-  * SEED COUNTS ARE MIXED and recorded per cell (`n_seeds`): s010 thp2 rows
-    carry three seeds since 2026-08-30 (DoC 280229/280230), s010 thp3 rows
-    two, every sigma_c cell three. No claim should rest on a two-seed
-    spread.
-  * THE ARMS ARE A RADIUS x TRAINING-PRECISION GRID, not different heads.
-    Every cell is the two-hole patch head. `w4` vs `w4bf16` is
-    `train.train_autocast_bf16` and NOTHING ELSE -- verified against the
-    registry, it is the single field that differs. It is a TRAINING lever, not
-    an evaluation one: `eval.eval_autocast_bf16` is True on ALL FOUR cells, so
-    every row here is evaluated identically and the arms differ only in the
-    precision the 50k training steps ran at. Labelling the pair "bf16
+  * Two couplings since 2026-08-30 (single-coupling before that: an empty
+    sigma_c half would have read as "not yet landed" rather than "never run").
+    The sigma_c wave (tag 20260829-d400-sc, 12 cells, 100k steps, curriculum
+    ending at exact SIGMA_C from step 30k) landed with its own certified
+    reference. The two waves carry different config names (50k flat vs
+    100k_curr) and different tags, so cells are pinned per (row, coupling) in
+    ARM_CONFIGS rather than globbed from one template.
+  * Seed counts are mixed and recorded per cell (`n_seeds`): s010 thp2 rows
+    carry three seeds since 2026-08-30 (DoC 280229/280230), s010 thp3 rows two,
+    every sigma_c cell three. No claim should rest on a two-seed spread.
+  * The arms are a radius x training-precision grid, not different heads. Every
+    cell is the two-hole patch head, and `w4` vs `w4bf16` is
+    `train.train_autocast_bf16` and nothing else. It is a training lever, not an
+    evaluation one: `eval.eval_autocast_bf16` is True on all four cells, so
+    every row here is evaluated identically. Labelling the pair "bf16
     evaluation" would imply the w4 rows evaluate in fp32, which they do not.
-    That the FLOP/es column is unmoved between the two is a consistency check
-    rather than a finding: the bill is derived from the architecture, and
-    training precision changes no architecture.
 
-THE REFERENCES, one per coupling, same generator and sweep budget (8 chains,
+The references, one per coupling, same generator and sweep budget (8 chains,
 100k burn-in + 102,400 sampling sweeps, thinned at 2x the worst chain's tau,
 every draw at exactly 200 up-spins):
 
   * `kawasaki_ref_d400_s010` (2026-08-29, 30.4 s): tau 2.10 sweeps at D = 20
-    against 2.11 at D = 16 -- no size penalty, because the tau ~ D^1.5
-    growth in fig:kawasaki-slowing is a CRITICAL phenomenon and sigma = 0.1
-    is far from it. 136,536 stored draws, Gelman-Rubin 0.999985.
+    against 2.11 at D = 16 -- no size penalty, because the tau ~ D^1.5 growth
+    in fig:kawasaki-slowing is a critical phenomenon and sigma = 0.1 is far
+    from it. 136,536 stored draws, Gelman-Rubin 0.999985.
   * `kawasaki_ref_d400_sc` (2026-08-30, ~5 min): tau 18.9 sweeps -- right on
-    the D^1.5 prediction from the d256 sc pool's 13.8 -- still swallowed
-    whole by the fixed 100k burn-in. 21,560 stored draws (the tau enters
-    through thinning, not wall clock), Gelman-Rubin 0.99993, sigma recorded
-    at EXACT SIGMA_C (the d256 sc pool is on record mislabelled at 0.22305).
+    the D^1.5 prediction from the d256 sc pool's 13.8 -- still swallowed whole
+    by the fixed 100k burn-in. 21,560 stored draws (the tau enters through
+    thinning, not wall clock), Gelman-Rubin 0.99993, sigma recorded at exact
+    SIGMA_C (the d256 sc pool is on record mislabelled at 0.22305).
 
-NO EXTERNAL ANCHOR AT EITHER COUPLING, and both certifications say so. The
-mchammer nn anchor is a property of (sigma_c, d256) jointly --
-`external_nn_anchor` gates on both since 2026-08-30 -- so the s010 pool sits
-off the anchor's coupling and the sc pool off its lattice. Certification
-therefore rests on the internal checks -- Gelman-Rubin, start-condition
-agreement, the energy-convention gap and the exact-composition assertion.
+Neither coupling has an external anchor, and both certifications say so: the
+mchammer nn anchor is a property of (sigma_c, d256) jointly
+(`external_nn_anchor` gates on both since 2026-08-30), so the s010 pool sits off
+the anchor's coupling and the sc pool off its lattice. Certification therefore
+rests on the internal checks -- Gelman-Rubin, start-condition agreement, the
+energy-convention gap and the exact-composition assertion.
 
-GFN ROWS (added 2026-09-07, tag 20260904-gfn-d400-tb). The 16x16 GFN block
+GFN rows (added 2026-09-07, tag 20260904-gfn-d400-tb). The 16x16 GFN block
 carried up: TB only, hidden 72 = the parity re-size at this lattice (155,522
 params vs thp2 158,848 / thp3 159,616; hidden 68 carried up would sit 11.6%
-under both). FL-DB was dead at 256-step trajectories and was never launched
-at 400, so its row stays "--" with the 16x16 verdict as the footnote. The
-bill is one KV-cached rollout plus one target eval for the IS weight, not an
-Euler grid, so the GFN rows hand `neural_cell` their raw-sample price directly.
+under both). FL-DB was dead at 256-step trajectories and was never launched at
+400, so its row stays "--" with the 16x16 verdict as the footnote. The bill is
+one KV-cached rollout plus one target eval for the IS weight, not an Euler grid,
+so the GFN rows hand `neural_cell` their raw-sample price directly.
 
-FLOP/es. The reference's algorithmic bill is derived from THIS rung's lattice
+FLOP/es. The reference's algorithmic bill is derived from this rung's lattice
 (`reference_trial_counts`), never from the d256 default that
 `house_table_16x16.chain_trial_counts` carries -- taking that default would
 under-bill by (16/20)^2 = 0.64. Neural cells are billed from their own saved
@@ -163,12 +156,12 @@ ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 
 
 def reference_trial_counts(provenance, lattice_side=L):
-    """Swap PROPOSALS per chain at THIS rung's lattice, burn-in included.
+    """Swap proposals per chain at this rung's lattice, burn-in included.
 
-    Deliberately not `house_table_16x16.chain_trial_counts(provenance)`: that
-    function's `lattice_edge` defaults to 16, and taking the default here
-    would under-bill the reference chain by (16/20)^2 = 0.64 with nothing in
-    the output to show it. Pinned by test_house_table_20x20.
+    Not `house_table_16x16.chain_trial_counts(provenance)`: that function's
+    `lattice_edge` defaults to 16, and taking the default here would under-bill
+    the reference chain by (16/20)^2 = 0.64 with nothing in the output to show
+    it. Pinned by test_house_table_20x20.
     """
     per_chain = (
         provenance["burn_in_sweeps"] + provenance["sampling_sweeps_per_chain"]
@@ -179,10 +172,9 @@ def reference_trial_counts(provenance, lattice_side=L):
 def load_reference(directory, sigma_key, lattice_side=L):
     """Certified chains for the one coupling, one tensor per chain.
 
-    Asserts the pool's recorded LATTICE as well as its sigma: a reference is
-    a reference only for the lattice it was drawn at, and at this rung a
-    d256 pool would load, split and score without complaint while measuring
-    a different system.
+    Asserts the pool's recorded lattice as well as its sigma: at this rung a
+    d256 pool would otherwise load, split and score without complaint while
+    measuring a different system.
     """
     directory = Path(directory)
     provenance = json.loads((directory / "provenance.json").read_text())
@@ -213,9 +205,9 @@ def energy_per_site(target, states, chunk=4096):
 
 def find_cells(results_dir, config_name, tag):
     """Run dirs for one (cell, coupling), seed order; empty rather than
-    raising. The config name pins the cell, the tag pins the campaign, so
-    the glob needs no head-token anchoring of the kind the rungs below need
-    to stop `thp` matching `thp2`.
+    raising. The config name pins the cell and the tag pins the campaign, so
+    the glob needs no head-token anchoring of the kind the rungs below need to
+    stop `thp` matching `thp2`.
     """
     found = []
     for run_dir in sorted(Path(results_dir).glob(f"{config_name}_seed*_{tag}")):
@@ -277,10 +269,9 @@ def neural_cell(
 
 
 def latex_table(table, n_draws=5000):
-    """Two-coupling body, same conventions as tab:eval-hard-16x16. What the
-    bold does NOT claim: where the error columns sit at the sampling floor
-    (the whole s010 half) a bolded cell marks the smallest number measured,
-    not a separation. The caption says so."""
+    """Two-coupling body, same conventions as tab:eval-hard-16x16. Where the
+    error columns sit at the sampling floor (the whole s010 half) a bolded cell
+    marks the smallest number measured, not a separation; the caption says so."""
 
     def key_for(arm, sigma_label):
         if arm == "reference":

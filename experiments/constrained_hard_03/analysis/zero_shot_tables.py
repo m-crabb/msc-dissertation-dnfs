@@ -3,14 +3,14 @@
 Two tables from the probe JSONs (`probe_zero_shot_transfer.py` output,
 `zero_shot_transfer.json` in each run dir):
 
-  * TEMPERATURE (tab:zero-shot-coupling): the trained slice (c = 0.5) down
+  * temperature (tab:zero-shot-coupling): the trained slice (c = 0.5) down
     the coupling column at 16x16 — one sigma_c checkpoint early-stopped at
     t* = sigma'/sigma serves every subcritical coupling. Rows are the
-    probe's EXACT Euler grid points (k/127), so no coupling is a rounded
+    probe's exact Euler grid points (k/127), so no coupling is a rounded
     fiction; the k=58 row sits at 0.1006, a 0.6% offset from the certified
     0.1 reference, which matters to correlation comparisons but not to
     ESS.
-  * COMPOSITION (tab:zero-shot-composition): the composition grid at
+  * composition (tab:zero-shot-composition): the composition grid at
     t* = 1, three columns — 16x16 at sigma_c (the collapse), 16x16 at
     sigma' = 0.1006 (nearly free: the criticality x distance interaction),
     and 8x8 at sigma_c (much milder: the finite-size cutoff of the
@@ -18,15 +18,14 @@ Two tables from the probe JSONs (`probe_zero_shot_transfer.py` output,
     amortised (mixture-trained) checkpoints' probe output exists — the
     trained arm beside its null, never before it lands.
 
-RELIABILITY DAGGERS, and why they are principled rather than cosmetic.
-The probe stores exp(-Var[log w]) as `ess_fraction_predicted`; when the
-identity measured ~= predicted holds the estimator is healthy, and when
-measured/predicted >> 1 the measured ESS is a finite-draw FLOOR (at 5000
-draws a dead cell cannot read below ~1/5000 x the weight ceiling), i.e.
-an upper bound and not a measurement. Cells whose 3-seed mean ratio
-exceeds RELIABILITY_BAR are daggered and the caption says what the dagger
-means. The d256 sigma_c column trips it below n+ = 112 (ratios 2.0 / 6.5
-/ ~116 at n+ = 96 / 80 / 64); every other column is clean.
+Reliability daggers: the probe stores exp(-Var[log w]) as
+`ess_fraction_predicted`; when measured ~= predicted the estimator is
+healthy, and when measured/predicted >> 1 the measured ESS is a finite-draw
+floor (at 5000 draws a dead cell cannot read below ~1/5000 x the weight
+ceiling), i.e. an upper bound and not a measurement. Cells whose 3-seed mean
+ratio exceeds RELIABILITY_BAR are daggered. The d256 sigma_c column trips it
+below n+ = 112 (ratios 2.0 / 6.5 / ~116 at n+ = 96 / 80 / 64); every other
+column is clean.
 
 Seeds are aggregated mean +- SD, matching every house table.
 """
@@ -63,13 +62,13 @@ D256_CAMORT_TEMPLATE = (
     "H2_d256_camort_s220_letf_thp2_100k_curr_seed{seed}_20260905-camort-d256-perslice"
 )
 
-# The cross-chapter composition spine: fractions
-# realisable at EVERY rung (n+ = 4/6/8 at d16, 16/24/32 at d64, 64/96/128
-# at d256), shared verbatim by any future soft-chapter zero-shot table.
-# The finer d256 probe fractions (0.46875, 0.4375, 0.3125) stay in the
-# JSONs and resolve the collapse ONSET — a prose point, not rows (0.46875
-# does not even exist at d16). 0.625 (the Z2 mirror of 0.375) is also NOT
-# a row: it measures the trained head's Z2 symmetry, not transfer.
+# The cross-chapter composition spine: fractions realisable at every rung
+# (n+ = 4/6/8 at d16, 16/24/32 at d64, 64/96/128 at d256), shared verbatim
+# by any future soft-chapter zero-shot table. The finer d256 probe fractions
+# (0.46875, 0.4375, 0.3125) stay in the JSONs and resolve the collapse onset
+# — a prose point, not rows (0.46875 does not exist at d16). 0.625 (the Z2
+# mirror of 0.375) is not a row either: it measures the trained head's Z2
+# symmetry, not transfer.
 COMPOSITION_ROWS = (0.25, 0.375, 0.5)  # ascending, as every house table in the thesis
 
 

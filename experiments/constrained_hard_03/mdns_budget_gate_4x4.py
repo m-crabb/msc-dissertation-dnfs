@@ -1,13 +1,12 @@
 """The budget-masked MDNS 4x4 CPU/GPU gate: arms against exact enumeration.
 
 Second instantiation of the move-restriction principle: where the swap CTMC
-restricts the MOVE SET of a flip sampler, the budget-masked reference
-restricts the SPECIES DRAW of a masked-diffusion sampler. All ingredients
-are individually derived and exhaustively verified (see
-samplers/budget_masked.py and the three tests/test_budget_* modules); this
-gate tests whether they COMPOSE into a working from-scratch sampler at the
-enumerable size — 4x4 torus, d = 16, c = 0.5, the C(16,8) = 12,870-state
-fibre, exact conditional by enumeration.
+restricts the move set of a flip sampler, the budget-masked reference
+restricts the species draw of a masked-diffusion sampler. The ingredients are
+derived and tested individually (samplers/budget_masked.py, the three
+tests/test_budget_* modules); this gate tests whether they compose into a
+working from-scratch sampler at the enumerable size — 4x4 torus, d = 16,
+c = 0.5, the C(16,8) = 12,870-state fibre, exact conditional by enumeration.
 
 Arms (a = the method, b/c = its ablations):
   a budget_tilted — budget-masked reference + preconditioner V0.
@@ -21,18 +20,16 @@ Two passes share this driver:
   2. Second pass (2026-08-13, a30 GPU): --steps 10000 --seeds 42,43,44
      --sigmas 0.10,0.223 — budget-only change, justified by the first
      pass's finding that the G1 miss was budget-shaped (no plateau anywhere;
-     KL mass in rare near-boundary/late-generation contexts). Primary
-     purpose: the DNFS 4x4 side-by-side, hence the two added eval
-     INSTRUMENTS (within-level excess TV and per-site free-energy bias,
-     both the DNFS gate's own constructions) — instruments only, the
-     eval SAMPLING protocol is unchanged and eval contexts are drawn on
-     CPU RNG so the sigma_c context set is identical across passes.
+     KL mass in rare near-boundary/late-generation contexts). The two added
+     eval instruments (within-level excess TV and per-site free-energy bias,
+     both the DNFS gate's own constructions) are instruments only: the eval
+     sampling protocol is unchanged and eval contexts are drawn on CPU RNG,
+     so the sigma_c context set is identical across passes.
 
-Free-energy note (why the logged weights need no constant bookkeeping):
-the full unnormalised trajectory weight is
+Free energy: the full unnormalised trajectory weight is
     w = Q0(traj) p~(X_1) / (base(X_1) P_model(traj)),
 and the reference's assignment product (the trajectory constant
-N_+!(d-N_+)!/d!) is EXACTLY 1/C(d, N_+) = base(X_1), so they cancel:
+N_+!(d-N_+)!/d!) is exactly 1/C(d, N_+) = base(X_1), so they cancel:
 log w = log p~(X_1) - sum log q_model. logmeanexp of the logged weights
 therefore estimates log Z_slice directly and free_energy_lb_estimate
 (paper Eq. 37 convention) applies verbatim, comparable to the DNFS gate's
@@ -89,10 +86,9 @@ N_PLUS = 8
 def configure_lattice(lattice_side):
     """Rebind the CLI lattice globals at call time.
 
-    Keep n_plus_target explicit: a definition-time N_PLUS default would
+    Callers keep n_plus_target explicit: a definition-time N_PLUS default would
     retain the 4x4 fibre after configure_lattice(8). Half-filling sets
-    N_PLUS = N_SITES // 2; the library remains parameterised.
-    tests/test_mdns_gate_driver.py pins the original 4x4 numbers.
+    N_PLUS = N_SITES // 2.
     """
     global LATTICE_SIDE, N_SITES, N_PLUS
     if lattice_side < 2 or lattice_side % 2:
@@ -119,14 +115,12 @@ PLATEAU_ESS_FRACTION = 0.5
 PLATEAU_WINDOW = 51
 LATE_GENERATION_MAX_MASKED = 4
 
-# arm -> (preconditioner mode, constrained). "Constrained" = the budget-
-# masked reference on the C(16,8) fibre; arm "u" is the
-# UNCONSTRAINED CONTROL: the paper's own masked diffusion on the free 4x4
-# Ising (uniform species-1/2 reference, no clamp, zero-imputation
-# preconditioner = their App. D.4), against full 2^16 enumeration — the
-# arm that reproduces MDNS's published Table-4 critical cell on OUR
-# implementation, so recipe parity is calibrated internally rather than
-# against their reported numbers.
+# arm -> (preconditioner mode, constrained). "Constrained" = the budget-masked
+# reference on the C(16,8) fibre. Arm "u" is the unconstrained control: the
+# paper's own masked diffusion on the free 4x4 Ising (uniform species-1/2
+# reference, no clamp, zero-imputation preconditioner = their App. D.4) against
+# full 2^16 enumeration, which reproduces MDNS's published Table-4 critical
+# cell on this implementation, calibrating recipe parity internally.
 ARMS = {
     "a": ("budget_tilted", True),
     "b": ("none", True),
@@ -149,8 +143,8 @@ CUTS = {
 
 def make_logit_fn(net, adjacency, sigma, mode):
     """(logit_fn, extra_trainables): the gated arm carries two learnable
-    scale parameters alongside the trunk; every other arm's offset is a
-    pure function."""
+    scale parameters alongside the trunk; every other arm's offset is a pure
+    function."""
     if mode == "budget_tilted_gated":
         gated_offset = GatedBudgetTiltOffset(adjacency, sigma, N_PLUS)
 
@@ -170,10 +164,10 @@ def make_logit_fn(net, adjacency, sigma, mode):
 def draw_eval_contexts(
     slice_states, slice_log_p_cond, generator, n_contexts=EVAL_CONTEXTS
 ):
-    """Corruption contexts from the population WDCE law with EXACT weights:
+    """Corruption contexts from the population WDCE law with exact weights:
     terminal ~ exact fibre conditional, lambda ~ U(0,1), sites masked
-    independently, empty masks redrawn. Drawn ONCE on CPU RNG and shared by
-    every arm, seed, and pass, so all KL numbers are matched."""
+    independently, empty masks redrawn. Drawn once on CPU RNG and shared by
+    every arm, seed and pass, so all KL numbers are matched."""
     terminal_rows = torch.multinomial(
         slice_log_p_cond.exp(),
         n_contexts,
@@ -194,8 +188,8 @@ def draw_eval_contexts(
 
 def exact_conditional_per_context(context, slice_states, slice_log_p_cond):
     """Exact Pr(X^i = +1 | unmasked part) for every masked site i of one
-    context, by selecting the fibre states consistent with the unmasked
-    pattern and renormalising — pure reuse of the enumerated conditional."""
+    context, by selecting the fibre states consistent with the unmasked pattern
+    and renormalising."""
     unmasked = context != 0.0
     consistent = (slice_states[:, unmasked].float() == context[unmasked]).all(dim=1)
     log_p = slice_log_p_cond[consistent]
@@ -209,9 +203,9 @@ def conditional_kl_and_late_error(
 ):
     """Mean KL(exact || model) over (context, masked site) pairs — exact per
     context, no sampling floor — plus the late-generation (m <= 4) mean
-    absolute error. The model conditional carries the same feasibility
-    clamp generation uses (none for the unconstrained arm,
-    n_plus_target=None): the metric scores the sampler's law."""
+    absolute error. The model conditional carries the same feasibility clamp
+    generation uses (none for the unconstrained arm, n_plus_target=None), so
+    the metric scores the sampler's law."""
     with torch.no_grad():
         logits = logit_fn(contexts.to(device)).cpu()
     masked_count, budget = masked_count_and_budget(
@@ -263,20 +257,18 @@ def evaluate_arm(
     exact_log_z=None,
     free_energy_ref=None,
 ):
-    """Eval rollouts -> ESS fraction, G0 count, energy-marginal TV, plus the
-    two DNFS-shared instruments: within-level excess TV and
-    per-site free-energy bias. Saves terminals + log-weights so any later
-    instrument can rerun off artefacts instead of GPU.
+    """Eval rollouts -> ESS fraction, G0 count, energy-marginal TV, plus the two
+    DNFS-shared instruments: within-level excess TV and per-site free-energy
+    bias. Saves terminals + log-weights so a later instrument can rerun off
+    artefacts instead of GPU.
 
-    `slice_states=None` is the non-enumerable regime (8x8, where the
-    fibre is C(64,32) ~ 1.8e18): the within-level instrument needs the
-    enumerated slice and is DROPPED rather than approximated, and
-    `free_energy_ref` must then be supplied — the slice-TI constant, which
-    is the same quantity `on_slice_free_energy_reference` computes and
-    agrees with it to 5 decimals where both are computable (pinned in
-    tests/test_mdns_gate_driver.py). ESS, off-fibre count and the energy TV
-    are unaffected: they only need the reference HISTOGRAM, which comes
-    from the certified chains at 8x8 instead of enumeration."""
+    `slice_states=None` is the non-enumerable regime (8x8, fibre C(64,32) ~
+    1.8e18): the within-level instrument needs the enumerated slice and is
+    dropped rather than approximated, and `free_energy_ref` must then be
+    supplied — the slice-TI constant, the same quantity
+    `on_slice_free_energy_reference` computes, agreeing to 5 decimals where
+    both are computable. ESS, off-fibre count and the energy TV only need the
+    reference histogram, which comes from the certified chains at 8x8."""
     terminals_all, log_w_all = [], []
     generator = torch.Generator(device=device).manual_seed(EVAL_SEED)
     with torch.no_grad():
@@ -300,11 +292,9 @@ def evaluate_arm(
         )
 
     if n_plus_target is None:
-        # Free-space (arm-u) instrument set = what MDNS's own tables
-        # report: ESS, marginal TV vs enumeration, and the log-Z error of
-        # the self-normalised estimate (their abs. log-Zhat metric). The
-        # fibre instruments (off-fibre count, within-level excess,
-        # on-slice free-energy reference) are undefined off the slice.
+        # Free-space (arm-u) instruments = what MDNS's own tables report: ESS,
+        # marginal TV vs enumeration, and the log-Z error of the self-normalised
+        # estimate. The fibre instruments are undefined off the slice.
         log_z_estimate = torch.logsumexp(log_w, dim=0) - torch.log(
             torch.tensor(float(len(log_w)))
         )
@@ -356,8 +346,8 @@ def evaluate_arm(
 
 
 class _CpuTargetView:
-    """CPU view of a possibly-GPU target for the slice free-energy
-    reference (the slice tensors live on CPU throughout)."""
+    """CPU view of a possibly-GPU target for the slice free-energy reference;
+    the slice tensors live on CPU throughout."""
 
     def __init__(self, target):
         self.sigma, self.d = target.sigma, target.d
@@ -384,10 +374,9 @@ from discrete_flow_sampler.ema import ExponentialMovingAverage  # noqa: E402
 
 
 def near_boundary_loss_weight(boost):
-    """eta(context) = 1 + boost*1[b in {1, m-1}] — minimiser-safe (context-
-    measurable; see wdce_cross_entropy's docstring) gradient reallocation
-    towards the starved near-boundary contexts the first pass's KL
-    decompositions localised."""
+    """eta(context) = 1 + boost*1[b in {1, m-1}]: context-measurable, hence
+    minimiser-safe (see wdce_cross_entropy), reallocating gradient towards the
+    near-boundary contexts the first pass's KL decompositions localised."""
 
     def eta(corrupted):
         masked_count, budget = masked_count_and_budget(corrupted, N_PLUS)
@@ -521,22 +510,18 @@ def train_arm(
 
 
 def chain_reference_energies(probe_root, point, adjacency):
-    """Pooled post-burn-in energies of the certified Kawasaki reference
-    chains — the 8x8 stand-in for exact enumeration.
+    """Pooled post-burn-in energies of the certified Kawasaki reference chains,
+    the 8x8 stand-in for exact enumeration.
 
-    Two conventions have to match the enumerated path exactly or the TV is
-    meaningless, and both are matched here BY CONSTRUCTION rather than by
-    assumption:
+    Two conventions must match the enumerated path or the TV is meaningless:
 
     * Energy is `_energy(x, A) = x^T A x`, the same function
-      `slice_energy_hist` applies to the model's samples. (This is also
-      what the probe's own `observable_values("energy", ...)` resolves to,
-      so this reader agrees with `plot_probe_8x8.reference_energies`.)
-    * Burn-in discard is the second half of each chain — the probe's
-      convention, applied before any moment of these chains is trusted.
+      `slice_energy_hist` applies to the model's samples, and what the probe's
+      `observable_values("energy", ...)` resolves to.
+    * Burn-in discard is the second half of each chain, the probe's convention.
 
-    The chains are equilibrium draws, so they enter the histogram with
-    UNIFORM weight; there is no importance weight to carry.
+    The chains are equilibrium draws, so they enter the histogram with uniform
+    weight; there is no importance weight to carry.
     """
     chain_dirs = sorted((Path(probe_root) / "reference" / point).glob("chain_*"))
     if not chain_dirs:
@@ -563,26 +548,20 @@ def build_space(
     probe_point=None,
     free_energy_ref=None,
 ):
-    """Everything an arm's training/eval needs that depends only on which
-    STATE SPACE it lives on: the fibre (constrained arms) or the free
-    2^d space (arm u).
+    """Everything an arm's training/eval needs that depends only on its state
+    space: the fibre (constrained arms) or the free 2^d space (arm u).
 
     Two reference regimes:
 
-    * **Enumeration** (`probe_root=None`, the 4x4 path, unchanged). Exact
-      both ways — the free space is 65,536 states, still trivially
-      enumerable, which is what makes the unconstrained control a
-      like-for-like reproduction of the paper's 4x4 protocol rather than a
-      chain-referenced comparison.
-    * **Chain-referenced** (8x8). C(64,32) ~ 1.8e18 rules
-      enumeration out, so the energy histogram comes from the certified
-      8-chain Kawasaki reference and the free-energy reference from the
-      slice-TI constant. What is LOST is everything that needs the
-      enumerated slice as a population: the exact fibre conditional, hence
-      `contexts`, hence the conditional-KL and late-generation
-      instruments, and within-level uniformity. Those are dropped rather
-      than approximated — a sampled "exact conditional" would be a
-      different metric wearing the same name.
+    * Enumeration (`probe_root=None`, the 4x4 path). Exact both ways — the free
+      space is 65,536 states, still enumerable, which makes the unconstrained
+      control a like-for-like reproduction of the paper's 4x4 protocol.
+    * Chain-referenced (8x8). C(64,32) ~ 1.8e18 rules enumeration out, so the
+      energy histogram comes from the certified 8-chain Kawasaki reference and
+      the free-energy reference from the slice-TI constant. Everything needing
+      the enumerated slice as a population is dropped rather than approximated:
+      the exact fibre conditional, hence `contexts`, hence the conditional-KL
+      and late-generation instruments, and within-level uniformity.
     """
     if probe_root is not None and not constrained:
         raise ValueError(
@@ -614,9 +593,8 @@ def build_space(
         )
         bins = _categorical_energy_bins(reference_energies)
         uniform = torch.ones(len(reference_energies))
-        # slice_energy_hist recomputes the energy from states, but the
-        # chain reference already IS energies — histogram them directly
-        # against the same bin edges the model's samples will use.
+        # The chain reference is already energies, so histogram them directly
+        # against the bin edges the model's samples will use.
         lower, upper = bins[:-1], bins[1:]
         membership = (reference_energies[:, None] >= lower[None, :]) & (
             reference_energies[:, None] < upper[None, :]
@@ -643,9 +621,8 @@ def build_space(
     else:
         space_states = states
         space_log_p = log_pi  # exact_log_probs is already normalised
-        # log Z must come from the UNNORMALISED densities — exact_log_probs
-        # returns log-probs with logsumexp = 0 by contract, whose
-        # normaliser is the quantity wanted here.
+        # log Z must come from the unnormalised densities: exact_log_probs
+        # returns log-probs with logsumexp = 0 by contract.
         exact_log_z = torch.logsumexp(cpu_target.log_prob(states.float()), dim=0).item()
     space_energies = _energy(space_states.float(), adjacency_cpu)
     bins = _categorical_energy_bins(space_energies)
@@ -723,9 +700,8 @@ def run_slate(
             init_fn, init_gated = make_logit_fn(init_net, target.A, sigma, mode)
             if init_gated is not None:
                 init_gated.to(device)
-            # No enumerated slice -> no exact fibre conditional -> the KL
-            # and late-generation instruments are undefined, not merely
-            # expensive. NaN so the recorded report keeps its schema.
+            # No enumerated slice -> no exact fibre conditional -> the KL and
+            # late-generation instruments are undefined. NaN keeps the schema.
             init_kl, init_late_error = (
                 conditional_kl_and_late_error(
                     init_fn,

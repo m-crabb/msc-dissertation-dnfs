@@ -1,100 +1,57 @@
 """Sample montages: what the draws themselves look like, across the thesis.
 
-Every other figure in this project reduces configurations to a scalar --
-energy, composition, phi, ESS. Those scalars are what the arguments are
-made of, but they hide two things a reader legitimately wants to check by
-eye:
-
-  1. that the samples are *configurations of the right kind* (domains at
-     sigma_c, exact 50/50 composition under swap dynamics), not noise that
-     happens to reproduce one marginal, and
-  2. what the 16x16 estimator channel actually costs: plain importance
-     sampling puts a third of the weight on one draw, and the SMC fix that
-     removes that heavy tail pays for it in duplicated lineages.
-
-Three montages, all drawn from artefacts already on local disk. Nothing
-here re-runs a sampler or a chain; the script loads saved tensors and
-draws them.
+Every other figure reduces a configuration to a scalar -- energy, composition,
+phi, ESS -- which hides whether the samples are configurations of the right
+kind (domains at sigma_c, exact 50/50 composition under swap dynamics) and
+what the 16x16 estimator channel costs. Three montages, all built from
+artefacts already on local disk; nothing here re-runs a sampler or a chain.
 
   headline_8x8.png   -- DNFS draws at (sigma_c, 8x8, c = 0.5) over the
-      certified non-local Kawasaki reference chains at the same cell. The
-      DNFS row is weight-resampled (see below) so both rows are samples of
-      the same measure and the comparison is like-for-like.
-  d256_plain_vs_smc.png -- the 16x16 checkpoint sampled two ways: plain IS
-      and SMC with adaptive resampling at tau = 0.9. Each column is the
-      most similar PAIR of draws inside one 512-particle eval population.
-      WHAT TO LOOK FOR: on the left the closest pair still differs in ~58
-      of 256 sites and the two tiles look unrelated; on the right the
-      closest pairs are identical or one swap apart, so the column reads as
-      the same lattice twice. That is resampling duplicating lineages.
+      certified non-local Kawasaki reference chains at the same cell, the
+      DNFS row weight-resampled so both rows sample the same measure.
+  d256_plain_vs_smc.png -- the 16x16 checkpoint sampled plain IS and SMC
+      with adaptive resampling at tau = 0.9. Each column is the most similar
+      pair of draws inside one 512-particle eval population: on the left the
+      closest pair still differs in ~58 of 256 sites, on the right the
+      closest pairs are identical or one swap apart -- resampling
+      duplicating lineages.
   spine_row.png      -- one block per constraint regime at sigma = 0.10:
-      unconstrained (chapter 3), soft composition penalty (chapter 4),
-      hard fixed-composition swap dynamics (chapter 5). The narrative
-      spine of the thesis in one row.
+      unconstrained (chapter 3), soft composition penalty (chapter 4), hard
+      fixed-composition swap dynamics (chapter 5).
 
-Why duplication is measured by Hamming distance, not by exact repeats
----------------------------------------------------------------------
-The obvious degeneracy check is "how many distinct configurations are
-left", and the eval records exactly that (`n_unique_samples`, a
-`torch.unique(samples, dim=0)` over rows). At d = 256 that statistic is
-useless in both directions: a particle cloned at a resampling event keeps
-evolving, and ONE accepted swap after the event makes it a different row
-while it is still the same lineage. Exact-row counts therefore sit near
-the population size whether or not resampling created clones, and no
-conclusion about degeneracy may be drawn from them here.
+Duplication is measured by nearest-sibling Hamming distance within each
+independent eval population rather than by exact repeats: at d = 256 a
+cloned particle keeps evolving and one accepted swap makes it a different
+row, so the eval's `n_unique_samples` sits near the population size whether
+or not resampling created clones. Populations are independent because eval
+draws run in `eval_sample_chunk`-sized batches and a lineage can only be
+cloned inside its own batch. Plain IS supplies the null: independent draws
+from this model never land closer than ~52 sites apart.
 
-The ancestry-aware substitute used in this figure is the nearest-sibling
-Hamming distance within each independent eval population (populations are
-independent because eval draws run in `eval_sample_chunk`-sized batches,
-and a lineage can only be cloned inside its own batch). Plain IS supplies
-the null: independent draws from this model never land closer than ~52
-sites apart, so any pair below that is resampling-induced, not chance.
-
-Why the neural rows are weight-resampled, not raw
--------------------------------------------------
 A plain-IS eval returns proposal draws x_i with log importance weights
-log w_i; the target expectation is the *weighted* average, so the raw
-draws are NOT a sample from pi. Showing raw draws as if they were would
-be the same category error the chapters spend their time avoiding. Tiles
-for the headline and spine montages are therefore selected by systematic
+log w_i and the target expectation is the weighted average, so raw draws are
+not a sample from pi. Headline and spine tiles are selected by systematic
 resampling on the archived weights, reusing
-`samplers.resampling.systematic_resample_indices` -- the identical
-resampler the SMC eval path uses, so the figures and the SMC machinery
-cannot drift apart. Systematic rather than multinomial because its
-per-particle multiplicity is pinned to {floor(N w_i), ceil(N w_i)}: the
-picture then shows the weights, not resampling noise on top of them.
+`samplers.resampling.systematic_resample_indices` -- the resampler the SMC
+eval path uses, so figures and machinery cannot drift apart. Systematic
+rather than multinomial because its per-particle multiplicity is pinned to
+{floor(N w_i), ceil(N w_i)}, so the picture shows the weights and not
+resampling noise on top of them. The SMC draws are shown as saved: their
+post-event weights are already near-uniform, and reweighting for display
+would double-count the correction. Tiles are taken at a fixed stride N/K
+through the ascending ancestor array, which is itself a K-point systematic
+resample (stride N/K on positions (u+k)/N gives K positions spaced 1/K
+apart), so tile multiplicities track the weights. The pair montage instead
+takes the most similar disjoint pairs under the same statistic on both
+sides: taking the extreme of one statistic is only fair if the comparator
+is built by the identical rule.
 
-The SMC draws in the second montage are shown AS SAVED, with no further
-resampling: they are already the output of the resampling sampler and
-their post-event weights are near-uniform by construction, so reweighting
-them for display would double-count the correction.
-
-Which tiles get shown
----------------------
-`systematic_resample_indices` returns ancestors in ascending order, so
-the first K of them are the K lowest-index survivors -- a biased window.
-Tiles are instead taken at a fixed stride N/K through that ancestor
-array, which is exactly a K-point systematic resample of the same
-population (stride N/K on positions (u+k)/N gives K positions spaced
-1/K apart). Multiplicities among the shown tiles are therefore
-proportional to the weights, and no draw is hand-picked for effect.
-
-The pair montage uses the opposite, and equally rule-bound, selection:
-the most similar disjoint pairs under the same statistic on BOTH sides.
-Selecting the extreme of one statistic is only fair if the same extreme
-is taken from the comparator, which is why the plain-IS block is built by
-the identical rule rather than from typical draws.
-
-Colour
-------
 Spins use the house spin map everywhere (figure_style.SPIN_CMAP: indigo =
-spin -1, gold = spin +1, the pair from background.tex fig:ising-phases),
-which is luminance-separated and so survives greyscale print unchanged.
-Colour identity is carried by the tile FRAME instead, taking
-the house role hues -- our sampler blue, classical MCMC amber, the
-hard-constraint delta red where the point is the constraint or the clone
-structure -- so no figure needs the reader to distinguish two
-mid-luminance fills.
+spin -1, gold = spin +1, from background.tex fig:ising-phases), luminance-
+separated so greyscale print survives. Colour identity is carried by the
+tile frame instead, in the house role hues -- sampler blue, classical MCMC
+amber, hard-constraint delta red -- so no figure asks the reader to
+distinguish two mid-luminance fills.
 
 Run with (add --dry-run to check data selection without rendering):
   pixi run -e dev python experiments/constrained_hard_03/analysis_sample_montages.py
@@ -132,15 +89,12 @@ RESULTS_ROOT = REPO_ROOT / "results"
 OUTPUT_DIR = RESULTS_ROOT / "03_hard" / "sample_montages"
 
 # Spin fills: the house spin map (indigo = -1 / down, gold = +1 / up),
-# established at background.tex fig:ising-phases. The first cut of this
-# script invented a grey/ink pair, which reads as a different system next
-# to every other lattice figure in the thesis.
+# established at background.tex fig:ising-phases.
 SPIN_COLOUR_MAP = SPIN_CMAP
 
 # --- run selection --------------------------------------------------------
 # Every default below is a run the thesis already cites, so a reader can
-# match a montage to a number they have already seen. Alternatives were
-# rejected for the reasons given inline.
+# match a montage to a number they have already seen.
 
 # The sigma_c 8x8 headline run: same run dir the probe figures use as their
 # sigma_c default. Its `eval/` holds metrics only -- the draws live in the
@@ -154,10 +108,8 @@ HEADLINE_8X8_RUN = (
 HEADLINE_8X8_EVAL_SUBDIR = "eval_replicate_s101"
 
 # The certified reference for that same cell: eight non-local Kawasaki
-# chains, 1e6 sweeps each, R-hat <= 1.01 on all four observables. Their
-# snapshots are the only on-disk configurations certified against this
-# target, which is why the reference row is chains and not, say, a longer
-# neural run.
+# chains, 1e6 sweeps each, R-hat <= 1.01 on all four observables -- the only
+# on-disk configurations certified against this target.
 HEADLINE_8X8_REFERENCE_DIR = RESULTS_ROOT / "kawasaki_probe" / "reference" / "sc"
 
 # The 16x16 recipe run the SMC tau-sweep was run on -- the archive's live
@@ -170,24 +122,18 @@ D256_RUN = (
 )
 # Plain-IS side: `eval` (not `eval_ema`) is the frozen protocol, the only
 # draw set comparable to the published ESS tables, and the SMC evals were
-# run off the same raw checkpoint weights -- so this is the like-for-like
-# comparator, not merely the more dramatic one.
+# run off the same raw checkpoint weights.
 D256_PLAIN_EVAL_SUBDIR = "eval"
 # SMC side: tau = 0.9 rather than 0.5. Firing earlier and more often kills
-# fewer lineages per event and leaves the survivors longer to decorrelate,
-# which is why it is the better operating point for observables despite a
-# lower pooled ESS (that drop is a log-Z banking artefact, not a
-# regression).
+# fewer lineages per event and leaves survivors longer to decorrelate, the
+# better operating point for observables despite a lower pooled ESS (a
+# log-Z banking artefact, not a regression).
 D256_SMC_EVAL_SUBDIR = "eval_smc_tau0.9"
 
-# The spine, matched at sigma = 0.10 rather than matched at lattice size.
-# No unconstrained 8x8 run exists locally at sigma = 0.10 (the only 8x8
-# unconstrained run is at sigma_c), so the row had to give up one match or
-# the other. Coupling was kept because sigma is what sets domain texture:
-# a row whose unconstrained panel sat at sigma_c would invite the reader to
-# read a coupling difference as a constraint effect, which is precisely the
-# misreading this figure exists to prevent. The lattice-size difference is
-# labelled on the panel instead.
+# The spine, matched at sigma = 0.10 rather than at lattice size: no
+# unconstrained 8x8 run exists locally at sigma = 0.10, and sigma is what
+# sets domain texture, so a mismatched coupling would read as a constraint
+# effect. The lattice-size difference is labelled on the panel instead.
 SPINE_RUNS = (
     (
         "unconstrained",
@@ -211,7 +157,7 @@ SPINE_RUNS = (
 N_TILES_HEADLINE_PER_ROW = 8
 # Four pairs per side: enough that a lucky coincidence cannot carry the
 # picture, few enough that a 16x16 lattice still prints large enough to
-# recognise as the SAME lattice rather than merely a similar one.
+# recognise as the same lattice rather than merely a similar one.
 N_PAIRS_D256_PER_BLOCK = 4
 N_TILES_SPINE_PER_REGIME = 4
 
@@ -232,10 +178,10 @@ class DrawSet:
     (the row-major flattening the Ising coupling matrix is built with, so a
     reshape to (side, side) is the physical lattice, on a torus).
     `log_weights` is None for chain snapshots, which are already
-    target-distributed and must NOT be reweighted. `population_size` is the
-    eval's sampling chunk: draws in different chunks were generated by
-    independent sampler runs, so no clone relationship can cross that
-    boundary and every sibling statistic is computed within it.
+    target-distributed and must not be reweighted. `population_size` is the
+    eval's sampling chunk: chunks were generated by independent sampler runs,
+    so no clone relationship crosses that boundary and every sibling
+    statistic is computed within it.
     """
 
     label: str
@@ -272,12 +218,8 @@ class DrawSet:
 
 
 def require(path: Path, what: str) -> Path:
-    """Fail loudly on a missing artefact instead of silently regenerating it.
-
-    Regenerating any of these means re-running a sampler or an MCMC chain,
-    which is off-limits on the laptop this script is written for; a missing
-    file is a stop condition, not a task.
-    """
+    """Fail loudly on a missing artefact: regenerating one means re-running a
+    sampler or an MCMC chain, off-limits on the laptop this script targets."""
     if not path.exists():
         raise FileNotFoundError(f"missing {what}: {path}")
     return path
@@ -326,15 +268,13 @@ def load_neural_draws(run_dir: Path, eval_subdir: str, label: str) -> DrawSet:
 
 
 def load_kawasaki_reference_draws(reference_dir: Path, label: str) -> DrawSet:
-    """The FINAL snapshot of each certified reference chain, one draw per chain.
+    """The final snapshot of each certified reference chain, one draw per chain.
 
-    One draw per chain rather than many draws from one chain: consecutive
-    snapshots of a Kawasaki chain at sigma_c are correlated over hundreds of
-    sweeps, so a montage built from a single chain would show the same
-    slowly-relaxing domain pattern eight times and read as degeneracy that
-    is really autocorrelation. The last snapshot is the furthest point from
-    each chain's phase-separated initialisation, i.e. unambiguously past any
-    burn-in rule.
+    One draw per chain, not many from one chain: consecutive snapshots at
+    sigma_c are correlated over hundreds of sweeps, so a single-chain montage
+    would show one slowly-relaxing domain pattern eight times and read as
+    degeneracy that is really autocorrelation. The last snapshot is the
+    furthest point from the phase-separated initialisation.
     """
     chain_dirs = sorted(reference_dir.glob("chain_*"))
     if not chain_dirs:
@@ -376,11 +316,10 @@ def normalised_weights(log_weights: np.ndarray) -> np.ndarray:
 def resampled_ancestors(draws: DrawSet) -> tuple[np.ndarray, int, float]:
     """Ancestor index per slot of a full N-particle systematic resample.
 
-    Returns (ancestors, n_distinct_ancestors, largest_normalised_weight).
-    The distinct count here is over ANCESTOR INDICES -- lineage identity,
-    which is exact by construction -- and must not be confused with a count
-    of distinct configurations: at d = 256 the latter saturates because a
-    clone stops being an identical row after a single swap.
+    Returns (ancestors, n_distinct_ancestors, largest_normalised_weight). The
+    distinct count is over ancestor indices -- lineage identity, exact by
+    construction -- not over distinct configurations, which saturate at
+    d = 256 because a clone stops being an identical row after one swap.
     """
     ancestors = systematic_resample_indices(
         torch.from_numpy(draws.log_weights), uniform=RESAMPLE_JITTER
@@ -394,8 +333,7 @@ def tiles_from_resample(ancestors: np.ndarray, n_tiles: int) -> np.ndarray:
 
     A stride of N/K through the ascending ancestor array is itself a K-point
     systematic resample (see module docstring), so tile multiplicities track
-    the weights. Taking the first K instead would show only the low-index end
-    of the population.
+    the weights.
     """
     stride = max(1, len(ancestors) // n_tiles)
     return ancestors[::stride][:n_tiles]
@@ -412,7 +350,7 @@ def population_slices(draws: DrawSet) -> list[slice]:
 def within_population_hamming(draws: DrawSet, block: slice) -> np.ndarray:
     """Pairwise Hamming distances inside one population, diagonal masked out.
 
-    For spins in {-1, +1} the number of AGREEING sites is (d + x.y)/2, so
+    For spins in {-1, +1} the number of agreeing sites is (d + x.y)/2, so
     the Hamming distance is (d - x.y)/2 and the whole matrix is one dot
     product -- no O(d) python loop over pairs. Self-distance is set to d
     (the maximum) so a draw is never its own nearest sibling.
@@ -550,14 +488,10 @@ def build_d256_plain_vs_smc(
 ) -> tuple[plt.Figure, str]:
     """Closest within-population draw pairs, plain IS beside SMC.
 
-    What a reader should look for: each column is the two most similar draws
-    inside one independent eval population. On the plain-IS side the closest
-    pair anywhere still differs in roughly a quarter of the lattice, and the
-    two tiles read as unrelated configurations. On the SMC side the closest
-    pairs are identical or one swap apart -- the column is visibly the same
-    lattice twice. That difference is the cost of the resampling fix, and it
-    is invisible to any exact-duplicate count at this lattice size (see the
-    module docstring).
+    Each column is the two most similar draws inside one independent eval
+    population: roughly a quarter of the lattice apart under plain IS,
+    identical or one swap apart under SMC. That gap is the cost of the
+    resampling fix, invisible to any exact-duplicate count at this size.
     """
     plain_pairs = closest_disjoint_pairs(plain, n_pairs)
     smc_pairs = closest_disjoint_pairs(smc, n_pairs)
@@ -680,9 +614,8 @@ def describe_draw_set(
     """One draw set's provenance, shape and selection statistics.
 
     `with_resample` is off for the pair montage: its tiles are chosen by
-    distance, not by resampling, and printing a hypothetical resample of
-    an already-resampled SMC population would suggest the figure does
-    something it does not.
+    distance, so a hypothetical resample of an already-resampled SMC
+    population would describe something the figure does not do.
     """
     lines = [
         f"  {draws.label}",

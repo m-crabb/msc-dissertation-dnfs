@@ -7,36 +7,29 @@ records, and renders three PNGs:
   cost_quality_crossover.png -- cumulative N_eff(energy) against cumulative
       wall-clock seconds (log-log), one panel per operating point. Chain
       curves use the Sokal accumulation N_eff(t) = post-burn-in sweeps /
-      (2 tau_int) with the per-chain tau_int (batch means) and the
-      burn-in rule, so the curve starts where the rule
-      starts counting; endpoints agree with the headline table's Var/MSE
-      N_eff up to the two constructions' usual gap (the Var/MSE form
-      credits cross-chain averaging; printed at build time). The neural
-      sampler appears twice: sampling cost alone (marginal accounting)
-      and sampling plus one-off training wall-clock (the total-cost
-      accounting).
-  fidelity_coverage_sc.png -- the community-native exhibit at the headline
-      cell, two panels: LEFT the energy marginal (IS-weighted neural
-      histogram, 8 replicates pooled, over the certified reference
-      chains' post-discard histogram -- the DNFS-paper Figure-5 format,
-      and the same instrument as the 4x4 demo's energy_marginals.png one
-      size up); RIGHT the mode order parameter phi (same construction).
-      Each panel annotates total variation against the reference and the
-      95% finite-sample noise floors of both the neural replicate pool
-      and the competitor chains, so agreement is read against what
-      perfect sampling would show at these effective sizes, not against
-      zero. The figure illustrates; the numeric test decides.
-  fidelity_coverage_s010.png -- the same two-panel figure at the
-      subcritical floor (appendix companion).
+      (2 tau_int) with the per-chain tau_int (batch means), so the curve
+      starts where the burn-in rule starts counting; endpoints agree with
+      the headline table's Var/MSE N_eff up to the two constructions'
+      usual gap (the Var/MSE form credits cross-chain averaging; printed
+      at build time). The neural sampler appears twice: sampling cost
+      alone, and sampling plus one-off training wall-clock.
+  fidelity_coverage_sc.png -- two panels at the headline cell: the energy
+      marginal (IS-weighted neural histogram, 8 replicates pooled, over
+      the certified reference chains' post-discard histogram -- the
+      DNFS-paper Figure-5 format) and the mode order parameter phi. Each
+      panel annotates total variation against the reference and the 95%
+      finite-sample noise floors of both the neural replicate pool and the
+      competitor chains, so agreement is read against what perfect
+      sampling would show at these effective sizes, not against zero.
+  fidelity_coverage_s010.png -- the same figure at the subcritical floor.
 
 Energy histogram support: the sigma-free slice energy x^T A x is integer-
 valued on the +/-1 lattice (steps of 8 under swap moves), so both sides
-are binned on the union of exact observed levels -- the 8x8 analogue of
-the demo pack's exact-level bin centres; no continuous binning choice
-enters. TV floors reuse the tv_noise_floor construction with the
-published effective sizes: Kish ESS for the weighted neural pool and
-n/tau_int for the chains, tau_int(energy) for the energy panel and the
-published tau_int(phi)-based count for the phi panel.
+are binned on the union of exact observed levels; no continuous binning
+choice enters. TV floors reuse tv_noise_floor with the published
+effective sizes: Kish ESS for the weighted neural pool and n/tau_int for
+the chains, tau_int(energy) for the energy panel and the published
+tau_int(phi)-based count for the phi panel.
 
 Wall-clock provenance (each method on its own best hardware, disclosed):
   * neural eval: 92.4 s per 5,000-draw replicate on one NVIDIA A30
@@ -46,15 +39,14 @@ Wall-clock provenance (each method on its own best hardware, disclosed):
     end-to-end rate for this head and recipe (1.3 h per 50k steps,
     tab:head-ess-d8) -> 2.6 h; floor record = 50k run, 1.8 h continuous
     artefact span (config.json -> final checkpoint). The sigma_c record's
-    own artefact span (44.6 h) is unusable: it crosses queue gaps and a
-    resume.
+    own artefact span (44.6 h) crosses queue gaps and a resume, so it is
+    unusable.
   * kawasaki chains: wall_seconds_run from each chain's meta.json
     (MC loop only, setup excluded), run on the Mac (Apple silicon CPU);
     local = numba nearest-neighbour (~40M proposals/s), nonlocal =
-    literal mchammer (~130k proposals/s). The mchammer rate prices the
-    materials-community tool as shipped, per the reference-not-rival
-    framing; a native all-pair implementation would sit near the numba
-    rate, which the caption discloses.
+    literal mchammer (~130k proposals/s) -- the tool as shipped; a native
+    all-pair implementation would sit near the numba rate, which the
+    caption discloses.
 
 Hues fixed per sampler entity (validated colourblind-safe, worst adjacent
 CVD dE 22.4, light surface): neural #2a78d6 (house masked-attention hue),
@@ -229,9 +221,8 @@ def plot_cost_quality(analysis, probe_root, out_path, summary_rows):
             }
         )
 
-        # The gap reported when no break-even crossing occurs in range:
-        # post-burn-in rates are constant, so the rate
-        # ratio holds at every wall-clock beyond the chain's burn-in.
+        # Reported when no break-even crossing occurs in range: post-burn-in
+        # rates are constant, so the ratio holds at every later wall-clock.
         gap_text = "chain lead at equal wall-clock:\n" + "\n".join(
             f"  {variant}: {gap:,.0f}x" if gap >= 100 else f"  {variant}: {gap:.1f}x"
             for variant, gap in gaps
@@ -486,10 +477,9 @@ def plot_fidelity_coverage(
 
 
 def endpoint_sanity(analysis):
-    """Print the tau-form endpoint against the analysis's Var/MSE table so the
-    two constructions' agreement is on the record whenever figures are
-    rebuilt (they answer the same question with different credit for
-    cross-chain averaging; a large gap would mean a broken input)."""
+    """Print the tau-form endpoint against the analysis's Var/MSE table; the
+    two differ only in credit for cross-chain averaging, so a large gap means
+    a broken input."""
     for point in ("sc", "s010"):
         for variant in ("local", "nonlocal"):
             block = analysis["results"][point]["kawasaki"][variant]

@@ -1,52 +1,47 @@
-"""Measure a cell's training FLOPs at short horizons, extrapolate, and check
-the extrapolation against the count the loop structure derives.
+"""Measure a cell's training FLOPs at short horizons and extrapolate.
 
-Why this exists. The house table's FLOP/es column prices SAMPLING only, by
-design -- "training cost is amortised and lives in the appendix recipe table".
-But the amortisation defence of that column is the claim that one training run
-serves many targets, and that claim is unpriceable without a training number.
-Nothing in `run.py` records one.
+The house table's FLOP/es column prices sampling only, by design; but the
+amortisation defence of that column claims one training run serves many
+targets, and that claim is unpriceable without a training number, which
+nothing in `run.py` records. The extrapolation is checked against the count
+the loop structure derives.
 
-Method, and why it is a fit rather than a single measurement:
+Why a fit rather than a single measurement:
 
   * The loop is exactly periodic -- `n_outer` cycles of (one `n_euler_steps`
     rollout at `outer_batch`) + (`inner_steps_per_outer` updates at
     `batch_size`) -- so total FLOPs should be `fixed + per_cycle * n_outer`.
-  * Running at three horizons and fitting recovers `per_cycle` while CANCELLING
-    the fixed prefix. That prefix is not negligible: `replay_buffer_cycles` is 8
-    on the production cells, so the first eight cycles run with a partly-filled
-    buffer and are not the steady state being extrapolated. Measuring once and
-    dividing folds that distortion straight into the per-cycle rate.
-  * The fit's residual is the extrapolation's licence. If per-cycle cost drifts,
-    the residual says so instead of the slope quietly absorbing it.
+  * Fitting three horizons recovers `per_cycle` while cancelling the fixed
+    prefix. That prefix is not negligible: `replay_buffer_cycles` is 8 on the
+    production cells, so the first eight cycles run with a partly-filled
+    buffer and are not the steady state being extrapolated.
+  * The fit's residual is the extrapolation's licence: if per-cycle cost
+    drifts, the residual says so instead of the slope absorbing it.
 
 Horizons come from `valid_measurement_horizons`, i.e. multiples of
-lcm(inner_steps_per_outer, eval_every). Total FLOPs are a STEP function of
+lcm(inner_steps_per_outer, eval_every). Total FLOPs are a step function of
 n_steps -- they jump when a rollout lands and again when the periodic
 in-training eval fires -- so a horizon that cuts a cycle or straddles an eval
 sits off the line for reasons unrelated to per-cycle cost.
 
-The cross-check, which is the actual output. `training_run_flops` derives the
-same total from `measured_forward_flops` at the two batch shapes times the
-forward count the recipe implies. It has to assume backward = 2x forward, and
-that nothing is doing forwards the recipe does not mention. The measured leg
-has to assume linearity. Comparing them tests both assumptions at once, and a
-gap is a FINDING about the loop -- an unaccounted forward, a backward that is
-not 2x, a c_t grid pass that is not actually being skipped -- rather than two
-numbers to average.
+The cross-check is the actual output. `training_run_flops` derives the same
+total from `measured_forward_flops` at the two batch shapes times the forward
+count the recipe implies, assuming backward = 2x forward and no forwards the
+recipe does not mention; the measured leg assumes linearity. Comparing them
+tests both assumptions at once, and a gap is a finding about the loop -- an
+unaccounted forward, a backward that is not 2x, a c_t grid pass that is not
+actually being skipped -- rather than two numbers to average.
 
-One assumption the short horizons cannot test, stated rather than hidden: the
-sigma curriculum's first boundary is at step 5,000, well past any measurement
-horizon, so the measured slope is the FIRST stage's per-cycle rate. It is taken
-as the whole run's rate because sigma is a scalar multiplying the target and
-changes no tensor shape -- later stages do the identical arithmetic. What a
-stage boundary does change is the replay-buffer flush, which alters what the
+The short horizons cannot test one assumption: the sigma curriculum's first
+boundary is at step 5,000, well past any measurement horizon, so the measured
+slope is the first stage's per-cycle rate. It is taken as the whole run's
+rate because sigma is a scalar multiplying the target and changes no tensor
+shape. A stage boundary does flush the replay buffer, which alters what the
 buffer holds but not how many forwards happen.
 
-Nothing here modifies the trainer. FlopCounterMode is a dispatch mode, so it
-wraps the existing `train_swap` call: the trainer is untouched and archived
-runs stay byte-identical. The cost is that the counter's interception
-slows the loop, which is exactly why this runs at short horizons.
+FlopCounterMode is a dispatch mode, so it wraps the existing `train_swap`
+call: the trainer is untouched and archived runs stay byte-identical. Its
+interception slows the loop, which is why this runs at short horizons.
 """
 
 from __future__ import annotations
@@ -74,14 +69,11 @@ from discrete_flow_sampler.samplers.swap_training import train_swap
 
 
 def curriculum_within(curriculum, horizon: int):
-    """Stages that start inside the horizon — the smoke-cell pattern
-    (`_SMOKE12K_SIGMA_LADDER`): the trainer's validator correctly rejects
+    """Stages that start inside the horizon — the trainer's validator rejects
     stages starting at or beyond n_steps, and passing the full production
     ladder to a 500-step measurement trips it. Truncation changes nothing
-    about what is measured: every valid horizon sits inside the first
-    stage (first boundary 5,000 vs horizons ≤ 1,500), and the module
-    docstring already scopes the measured slope to the first stage's
-    rate."""
+    about what is measured: every valid horizon sits inside the first stage
+    (first boundary 5,000 vs horizons <= 1,500)."""
     if curriculum is None:
         return None
     return tuple(s for s in curriculum.stages if s.start_step < horizon)
@@ -209,12 +201,11 @@ def main(argv: list[str] | None = None):
     one_eval_draw_set = derived["sampling_flops_per_eval_draw_set"]
 
     # Three-way split (decided 2026-08-31, after the d64 certification
-    # reconciled the measured-vs-derived gap to the instrument within
-    # 0.8%): training-proper is the ALGORITHM's bill and the printed
-    # appendix number; the periodic in-training eval is severable
-    # instrumentation priced beside it, never folded in; and the
-    # certification ratio compares the measurement against the SUM, since
-    # the counter necessarily measured both.
+    # reconciled the measured-vs-derived gap to the instrument within 0.8%):
+    # training-proper is the algorithm's bill and the printed appendix
+    # number; the periodic in-training eval is severable instrumentation
+    # priced beside it, never folded in; the certification ratio compares
+    # the measurement against the sum, since the counter measured both.
     training_proper = derived["total_flops"]
     diagnostic = diagnostic_eval_flops(
         derived["update_forward_flops"],

@@ -6,9 +6,9 @@ same move set as the swap CTMC and the stronger classical variant
 validated binary cluster expansion (ECI [0, -bias, -4*sigma], natural units
 kT = 1), imported rather than re-derived.
 
-Compute-currency accounting: mchammer counts TRIAL steps, one closed-form
+Compute-currency accounting: mchammer counts trial steps, one closed-form
 Delta-E evaluation each, and its analyze_data correlation lengths are in
-trial steps, NOT data entries. Snapshots land every `snapshot_interval`
+trial steps, not data entries. Snapshots land every `snapshot_interval`
 trial steps; downstream N_eff(O) conversions work in trial steps throughout.
 
 Local CPU only (no GPU, no Modal). One npz per (sigma, seed).

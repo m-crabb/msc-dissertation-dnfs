@@ -8,7 +8,7 @@ The archive includes the displayed frames and checkpoint/rollout provenance.
 For the dense README recording, use hard_rate_field_strip_24x24.npz with
 --recorded-stride 32 to display five times.
 
-Three rows per displayed time t_k of ONE rollout from a uniform-on-slice base:
+Three rows per displayed time t_k of one rollout from a uniform-on-slice base:
   1. the state x_{t_k}, with a fixed anchor site marked;
   2. the learned one-way rate [G(a, j | x, t)]_+ for swapping anchor a with site j
      (zero on like-spin partners by antisymmetry; G is index-antisymmetric, so
@@ -22,7 +22,6 @@ which has another factor t. It is not a rate: learned swaps may raise energy.
 
 The rate is a magnitude (light -> dark sampler blue); the channel is signed
 (two poles about neutral mid-grey); the state uses the house spin colours.
-Runs on CPU in seconds at 8x8 (one head forward per displayed time, plus rollout).
 """
 
 import argparse
@@ -223,7 +222,7 @@ def main():
         with torch.no_grad():
             G = head(x.unsqueeze(0), ts[k].expand(1))[0]
         # G is index-antisymmetric (G[j,i] = -G[i,j]); the one-way rate of the unordered
-        # pair {a, j} is the relu of the UPPER-triangle entry, so read G[min, max].
+        # pair {a, j} is the relu of the upper-triangle entry, so read G[min, max].
         js = torch.arange(d)
         signed = torch.where(js > anchor, G[anchor, js], G[js, anchor])
         rate = torch.relu(signed)

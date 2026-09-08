@@ -1,7 +1,5 @@
-"""Decompose the sampler's bond-correlation transport into GROSS and NET.
+"""Decompose the sampler's bond-correlation transport into gross and net.
 
-WHAT THIS MEASURES, AND WHY THE NET NUMBER ALONE IS NOT ENOUGH
---------------------------------------------------------------
 The fixed-composition sampler has to move the mean bond alignment
 
     S(x) = sum_{<ij>} x_i x_j = 0.5 * x^T A x
@@ -9,27 +7,17 @@ The fixed-composition sampler has to move the mean bond alignment
 from its base value to the target's.  Per site, and using the code's own
 nearest-neighbour correlation C(x) = x^T A x / A.sum() (numerator and
 denominator both double-count each undirected bond, so C is the mean
-correlation PER BOND and S = 2 d C on a D x D torus, where 2 = bonds per
+correlation per bond and S = 2 d C on a D x D torus, where 2 = bonds per
 site = z/2):
 
     required edge-units/site = 2 (C_target - C_base)
 
-The eval already reports the NET achievement -- the endpoint gap actually
-closed -- and the jump counters report how many state-changing swaps were
-fired.  Dividing one by the other gives "edge-units achieved per swap", which
-at d64 measures 3.907.  But that ratio cannot distinguish two completely
-different samplers:
-
-  * TARGETING problem -- every swap individually achieves little.  The head
-    is putting its rate mass on low-|Delta S| pairs.  The fix lives in the
-    architecture / rate parameterisation (can the head even represent the
-    long-range pair structure it needs?).
-  * CANCELLATION problem -- individual swaps are large but undo one another,
-    so transport is diffusive rather than directed.  The fix lives in the
-    reference-process weight construction.
-
-They call for different work, and the net ratio is blind to the difference.
-This script separates them by accumulating, along each trajectory,
+The eval reports the net achievement and the jump counters report how many
+state-changing swaps fired; their ratio (3.907 edge-units per swap at d64)
+cannot separate a targeting problem -- rate mass on low-|Delta S| pairs,
+fixed in the architecture -- from a cancellation problem -- large swaps that
+undo one another, fixed in the reference-process weight construction.  This
+script separates them by accumulating, along each trajectory,
 
     net   = S(x_N) - S(x_0)                     (what the eval already sees)
     gross = sum_k |S(x_{k+1}) - S(x_k)|         (the work actually done)
@@ -37,37 +25,22 @@ This script separates them by accumulating, along each trajectory,
 
     cancellation fraction = 1 - |net| / gross
 
-A cancellation fraction near 0 means ballistic transport: essentially every
-swap contributes to the endpoint.  Near 1 means diffusive: the sampler is
-doing a random walk in S with a small drift, and most of its per-swap
-capacity is spent undoing itself.  With `gross / n_state_changing_swaps` you
-also get the honest per-swap MAGNITUDE, which is the number the "targeting"
-reading needs and which the net ratio understates by exactly the
-cancellation factor.
+Near 0 is ballistic transport, near 1 diffusive.  `gross /
+n_state_changing_swaps` gives the per-swap magnitude the targeting reading
+needs, which the net ratio understates by exactly the cancellation factor.
 
-DESIGN CHOICE: Delta S FROM CONSECUTIVE STATES, NOT A CLOSED FORM
------------------------------------------------------------------
-Delta S for a swap of sites i, j has an exact closed form,
-(x_j - x_i)(h_i - h_j) - A_ij (x_j - x_i)^2 with h = A x, and using it would
-be cheaper.  It is deliberately NOT used here.  Recomputing S from the stored
-states makes the measurement independent of the step kind (one-event or
-matching), of how many swaps a step fired, and -- the reason that matters
-most -- of any assumption that the base density is constant.  A warm-base
-run would silently break a closed-form shortcut in exactly the regime this
-diagnostic is meant to interrogate.  The cost is one (B, d) @ (d, d) product
-per Euler step, which is negligible beside the head call already happening
-there.
+Delta S is recomputed from consecutive states rather than from its exact
+closed form (x_j - x_i)(h_i - h_j) - A_ij (x_j - x_i)^2 with h = A x.  The
+recomputation is independent of the step kind, of how many swaps a step
+fired, and of any assumption that the base density is constant -- a warm-base
+run would silently break the shortcut in exactly the regime this diagnostic
+interrogates.  The cost is one (B, d) @ (d, d) product per Euler step.
 
-`return_all_states=True` provides the full per-step distribution without
-adding a diagnostic counter or threading adjacency through the shared
-training/evaluation `_euler_step_swap` path.
-
-FAILURE MODE GUARDED: `return_all_states=True` is mutually exclusive with
-`return_log_weights=True` (the trajectory mode deliberately withholds
-log-weights, which post-reset are a per-segment residue).  So this draw
-produces NO importance weights and its samples must never be quoted as an
-eval: they are a fresh draw for a transport diagnostic only.  The script
-therefore writes to `transport_decomposition.json` and never touches `eval/`.
+`return_all_states=True` gives the full per-step distribution without a new
+diagnostic counter, but is mutually exclusive with `return_log_weights=True`,
+so this draw produces no importance weights and its samples must never be
+quoted as an eval; output goes to `transport_decomposition.json`, never
+`eval/`.
 
 Run remotely:  modal run modal_app.py::transport_decomposition_remote \
                    --run-dir-name <dir>
@@ -171,7 +144,7 @@ def decompose_run(
     forward = torch.cat(forward_all) / n_sites
     backward = torch.cat(backward_all) / n_sites
 
-    # EXACTLY run.py's normalisation (its jumps_per_site_* block), so this
+    # Exactly run.py's normalisation (its jumps_per_site_* block), so this
     # number is directly comparable with the eval metrics: state_steps
     # accumulates batch_size per Euler step, so it equals N * n_euler_steps
     # and the norm reduces to 1 / (N * d) -- swaps per site per trajectory.

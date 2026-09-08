@@ -1,9 +1,9 @@
 """fig:hard-clean-ladder (and the older per-rung cells): the hard results cells.
 
 Every results chapter carries the same two-panel results cell (energy
-marginal on exact levels + a Z2-ODD order-parameter marginal). The hard
+marginal on exact levels + a Z2-odd order-parameter marginal). The hard
 body printed that cell at 8x8 and 16x16 as two separate figures until
-2026-09-07; it now prints ONE critical-coupling grid, `--layout grid`:
+2026-09-07; it now prints one critical-coupling grid, `--layout grid`:
 columns are the four rungs (8, 16, 20, 24), rows are the two marginals,
 and each column carries the patch head at the radius its house table
 prints (GRID_CELLS). The per-rung `--lattice-edge` cells remain for the
@@ -11,57 +11,42 @@ appendix and for a single-rung read. Only sigma_c is gridded: the 24x24
 rung was run at the critical coupling alone, and the sigma = 0.1 rows sit
 at the floor in every table.
 
-WHAT CHANGES FROM THE OTHER TWO CHAPTERS' CELLS, and why it is not a port.
+The coverage panel is not the magnetisation marginal. The swap process
+cannot leave c = 0.5, so sum_i s_i = 0 on every draw and that marginal is a
+spike at zero. The observable that survives the constraint is the
+half-magnetisation order parameter
 
-(1) THE COVERAGE PANEL CANNOT BE THE MAGNETISATION MARGINAL. The other two
-    chapters read mode coverage off total magnetisation. Here the swap
-    process cannot leave c = 0.5, so sum_i s_i = 0 on every draw of every
-    run and that marginal is a spike at zero: it would look perfect for
-    every head, at both couplings, while measuring only that the constraint
-    holds -- which the chapter already establishes bitwise. The observable
-    that survives the constraint is the half-magnetisation order parameter
+    phi = (m_left - m_right) / 2,
 
-        phi = (m_left - m_right) / 2,
+the mean spin of the left half minus that of the right, halved into [-1, 1].
+The two phase-separated configurations sit at phi = +-1 while the total stays
+pinned at zero, and E_pi[phi] = 0 by the global spin-flip symmetry of the
+slice, so phi is Z2-odd as the cell requires. On the c = 0.5 slice the halves'
+magnetisations are equal and opposite, so phi reduces to m_left exactly.
 
-    the mean spin of the left half minus that of the right, halved into
-    [-1, 1]. The two phase-separated configurations sit at phi = +-1 while
-    the total stays pinned at zero, and E_pi[phi] = 0 by the global
-    spin-flip symmetry of the slice, so phi is Z2-odd as the cell requires.
-    On the c = 0.5 slice the halves' magnetisations are equal and opposite,
-    so phi reduces to m_left exactly.
+At these sizes the certified references are unimodal and symmetric about zero
+at both couplings and both rungs -- SD 0.098 (16x16, sigma = 0.1) rising to
+0.260 at sigma_c, and 0.181 to 0.296 at 8x8 -- so the panel is not evidence of
+two-mode coverage; it discriminates on width and shape. A sampler that
+under-orders or collapses gives a phi marginal too narrow, and one that has
+lost the symmetry gives a skewed one.
 
-    WHAT THE PANEL ACTUALLY READS AT THESE SIZES. The certified references
-    are unimodal and symmetric about zero at both couplings and both rungs
-    -- SD 0.098 (16x16, sigma = 0.1) rising to 0.260 at sigma_c, and 0.181
-    to 0.296 at 8x8 -- and every chain's own mean sits at zero whatever side
-    it started from. So at these sizes the equilibrium is NOT two locked
-    modes to be covered; it is one broad distribution whose WIDTH is the
-    critical-fluctuation signal, roughly tripling from sigma = 0.1 to
-    sigma_c. The panel therefore discriminates on width and shape: a
-    sampler that under-orders or collapses gives a phi marginal too narrow,
-    and one that has lost the symmetry gives a skewed one. Stated here
-    rather than in the caption because it bounds what the figure may be
-    claimed to show -- it is not evidence of two-mode coverage.
+Both couplings are on the figure: the hard house tables carry sigma = 0.1 and
+sigma_c as a first-class axis, and the phi width is the observable that most
+visibly separates them, so the cell is 2x2 (rows the coupling, columns the
+two panels).
 
-(2) BOTH COUPLINGS ARE ON THE FIGURE. The soft and unconstrained cells are
-    1x2 at a single headline condition; the hard chapter carries sigma =
-    0.1 and sigma_c as a first-class axis in every one of its house tables,
-    and the phi width is the observable that most visibly separates them, so
-    the cell is 2x2: rows are the coupling, columns are the two panels.
+Both panels bin on their exact support, never on a bin count. Energy: the
+periodic lattice moves E by multiples of 4, so the support is
+{-2d, -2d+4, ..., 2d} and the axis is E/d, matching the house table's EW2
+convention. Phi: m_left takes the d/2 + 1 values (2k - d/2)/(d/2), spacing
+0.0625 at 8x8 and 0.015625 at 16x16. A uniform grid that does not divide that
+spacing aliases -- a 17-bin histogram of the certified D8 pool reads
+... 16283 28522 16371 28226 16191 ..., alternating high/low, which is the bin
+grid and not the physics.
 
-(3) BINNING. Both panels bin on their EXACT support, never on a bin count.
-    Energy: the periodic lattice moves E by multiples of 4, so the support
-    is {-2d, -2d+4, ..., 2d} and the axis is E/d, matching the house
-    table's EW2 convention. Phi: m_left takes the d/2 + 1 values
-    (2k - d/2)/(d/2), spacing 0.0625 at 8x8 and 0.015625 at 16x16. A
-    uniform grid that does not divide that spacing aliases -- a 17-bin
-    histogram of the certified D8 pool reads ... 16283 28522 16371 28226
-    16191 ..., alternating high/low, which is the bin grid and not the
-    physics. This is the same failure a 40-bin uniform grid produces on the
-    energy panel.
-
-REFERENCES, and their two shipping formats. At 8x8 the reference is the
-per-chain mchammer Kawasaki pool (results/03_hard/kawasaki_w2,
+References ship in two formats. At 8x8 the reference is the per-chain
+mchammer Kawasaki pool (results/03_hard/kawasaki_w2,
 kawasaki_D8_{s100,s220}_seed*.npz), the same pool tab:eval-hard-8x8 scores
 against. At 16x16 it is the certified single-tensor pool
 (results/kawasaki_ref_d256_{s010,s220}/samples.pt), 8 chains concatenated
@@ -69,15 +54,15 @@ chain-block contiguous after thinning: chains 0-1 start phase-separated on
 one side, 2-3 on the other, 4-7 random, so the pool's phi symmetry is
 earned rather than assumed. Chain identity is recovered by equal-width
 slicing because the floor needs the chain as its unit of independence.
-`kawasaki_ref_d256_sc` is MISLABELLED (actually sigma = 0.22305, not
-0.220343) and is never read here.
+`kawasaki_ref_d256_sc` is mislabelled (sigma = 0.22305, not 0.220343) and is
+never read here.
 
-THE FLOOR is the mean TVD of N independently resampled reference frames
-against the full pool. It represents ideal draw noise conditional on that
-pool. The earlier hierarchical bootstrap (chains, then frames) also included
-reference uncertainty and was not comparable to the table's iid floor.
-Reference uncertainty is now reported separately in the tables. Neither
-proximity to this mean nor a smaller error establishes equivalence.
+The floor is the mean TVD of N independently resampled reference frames
+against the full pool: ideal draw noise conditional on that pool. The earlier
+hierarchical bootstrap (chains, then frames) also included reference
+uncertainty and was not comparable to the table's iid floor; reference
+uncertainty is now reported separately in the tables. Neither proximity to
+this mean nor a smaller error establishes equivalence.
 """
 
 import argparse
@@ -111,13 +96,13 @@ from discrete_flow_sampler.targets.ising import IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The two couplings the hard house tables carry. sigma_c is the EXACT
+# The two couplings the hard house tables carry. sigma_c is the exact
 # critical value used project-wide; 0.223 is the legacy coupling of the
 # older archive and must never share a panel with it.
 SIGMA = {"s010": 0.1, "s220": 0.22034339675488573}
 SIGMA_LABEL = {"s010": r"$\sigma = 0.1$", "s220": r"$\sigma = \sigma_c$"}
 
-# The grid's column per rung: (head token, a run-dir token the cell must ALSO
+# The grid's column per rung: (head token, a run-dir token the cell must also
 # carry). The 20x20 fp32 and bf16-trained twins share the thp3 token and only
 # the fp32 row is printed bold-eligible in tab:eval-hard-20x20, so the fp32
 # `_w4_` twin is pinned; 24x24 exists only as the bf16-trained cell.
@@ -147,7 +132,7 @@ def phi_support(lattice_edge):
 
     phi = m_left there, and m_left is the mean of d/2 spins of which k are
     up, so phi = (2k - d/2)/(d/2) for k = 0 .. d/2. Returned as the bin
-    CENTRES; the figure draws atoms, never a density.
+    centres; the figure draws atoms, never a density.
     """
     half = lattice_edge * lattice_edge // 2
     return (2.0 * np.arange(half + 1) - half) / half
@@ -180,10 +165,10 @@ def _bare_target(lattice_edge):
 
     E = -log p~ / (2 sigma) and log p~ = x^T J x is linear in sigma, so the
     energy the panel plots does not depend on which coupling the draws came
-    from -- which is exactly what lets both rows share one energy axis. No
-    composition penalty: the constraint is enforced by the process, so the
-    chapter's energy is the BARE one, matching the soft cell's convention
-    and the house table's EW2 column.
+    from, which is what lets both rows share one energy axis. No composition
+    penalty: the constraint is enforced by the process, so the chapter's
+    energy is the bare one, matching the soft cell's convention and the house
+    table's EW2 column.
     """
     return IsingTarget(D=lattice_edge, sigma=1.0)
 
@@ -295,17 +280,15 @@ def energy_floor(chains, lattice_edge, n_draws, n_replicates=64, seed=0):
 def is_tripwire_truncated(run_dir):
     """True if the cold-CV inversion tripwire halted this run early.
 
-    `halt_on_cv_inversion_after` was a SCREENING rule that rode into the
+    `halt_on_cv_inversion_after` was a screening rule that rode into the
     d256 w3 production cells through the shared house-cell builder and
     stopped four of them at step 5000 of 50000 on controlled-to-naive
     ratios of just 1.08-1.76. The tell is this file in the run dir; the
     cross-check is the row count (5001 against a healthy twin's 50001).
-
-    Excluding them is not tidiness. Their frozen evals read ESS fraction
-    0.0009 against the relaunches' 0.898, so a loader that swept both into
-    one seed band would put a training-infrastructure artefact on the page
-    as a catastrophic head. The relaunches carry the `-r2` tag and are the
-    cells that count.
+    Their frozen evals read ESS fraction 0.0009 against the relaunches'
+    0.898, so a loader that swept both into one seed band would print a
+    training-infrastructure artefact as a catastrophic head. The relaunches
+    carry the `-r2` tag and are the cells that count.
     """
     return (run_dir / "cv_inversion_halt.json").exists()
 
@@ -359,7 +342,7 @@ def _occupied_limits(support, *pmfs, pad_fraction=0.04):
     Both supports are far wider than the occupied window -- the energy level
     set spans [-2, 2] in E/d while the mass sits in a band of width ~1 --
     so drawing the full support flattens the panel into a spike. Taken over
-    reference AND sampler so a head with a fatter tail is not cropped into
+    reference and sampler so a head with a fatter tail is not cropped into
     looking like the reference.
     """
     occupied = np.nonzero(np.sum([np.asarray(p) for p in pmfs], axis=0) > 1e-9)[0]
@@ -377,14 +360,12 @@ HEAD_DASHES = ((), (4.5, 1.6), (1.4, 1.4), (6.0, 1.5, 1.4, 1.5))
 def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
     """One panel carrying every head, mean-over-seeds lines only.
 
-    NO seed bands here. Four min-max bands at 0.18 alpha overlap into a
-    single wash that hides the very separation the figure is drawn to show;
+    No seed bands here: four min-max bands at 0.18 alpha overlap into a
+    single wash that hides the separation the figure is drawn to show, and
     the per-head seed spread is the single-head figure's job. Colours come
-    from parameter_ramp on SAMPLER_HUE rather than from new palette
-    entries: every curve is OUR sampler and the contrast is the head, which
-    is a parameter within one role, so borrowing CLASSICAL_HUE for a third
-    head would tell a reader who has learned the palette that the
-    factorised head is a classical chain.
+    from parameter_ramp on SAMPLER_HUE rather than from new palette entries
+    -- every curve is our sampler and the contrast is the head, so borrowing
+    CLASSICAL_HUE would read as a classical chain.
     """
     ax.plot(
         support,
@@ -640,7 +621,7 @@ def build_grid(results_dir, eval_subdir, out_path, n_replicates, sigma_key="s220
     floor in the column title -- so the read is the same as the per-rung
     figures, side by side. What the grid adds is the trend the tables carry
     only as numbers: the energy marginal drifting off the reference as the
-    lattice grows while phi stays near its floor. Panels do NOT share an
+    lattice grows while phi stays near its floor. Panels do not share an
     x-axis: E/d and phi both narrow with size (the occupied window is set
     per panel, as in the single cells), so a shared axis would flatten the
     large rungs into spikes. Widths follow the print: four columns across

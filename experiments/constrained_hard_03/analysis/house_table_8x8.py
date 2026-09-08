@@ -2,73 +2,60 @@
 
 Reads the Wave-2 d64 matrix (tag 20260825-hard-w2-d64: five arms x two
 sigma x seeds 42/43/44) and prints the house columns of
-tab:eval-unconstrained-10x10 for each cell, exactly as house_table_4x4.py
-does one rung down.
-
-WHAT CHANGES FROM THE 4x4 FILL, and why it is not a cosmetic port.
+tab:eval-unconstrained-10x10 for each cell, as house_table_4x4.py does one
+rung down.
 
 The 4x4 slice is exactly enumerable -- C(16,8) = 12,870 states -- so that
-fill's reference IS the true conditional: its error cells are zero by
-construction and only the sampler side needs a floor. Here the slice holds
-C(64,32) ~ 1.8e18 states, enumeration is out, and the reference becomes the
-certified mchammer Kawasaki chain pool. Three consequences:
+fill's reference is the true conditional and its error cells are zero by
+construction. Here the slice holds C(64,32) ~ 1.8e18 states, so the
+reference becomes the certified mchammer Kawasaki chain pool, with three
+consequences. The reference has its own precision and cannot print zero
+without claiming the chain exact, so its error cells carry approximate
+uncertainty, which is what the float's caption promises. Reference and
+chain baseline are the same engine, so they are one row rather than the 4x4
+fill's two: scoring the chain against itself would be identically zero, and
+the single row reports the reference's uncertainty in the error columns and
+its own algorithmic bill in FLOP/es. The floor is estimated rather than
+drawn from an exact PMF, by resampling the reference pool at the neural
+cells' own N.
 
-  * THE REFERENCE HAS ITS OWN PRECISION. It cannot print zero without
-    claiming the chain is exact. Its error cells carry approximate uncertainty
-    instead, which is what the float's caption already promises.
-  * THE REFERENCE AND THE CHAIN BASELINE ARE THE SAME ENGINE, so they are
-    one row rather than the 4x4 fill's two. At 4x4 the "Kawasaki, run long"
-    row was a separate object from the enumerated reference; here scoring
-    the chain against itself would be identically zero, and the honest
-    single row reports the reference's uncertainty in the error columns and its own
-    algorithmic bill in FLOP/es.
-  * THE FLOOR IS ESTIMATED, NOT DRAWN FROM AN EXACT PMF. It resamples the
-    reference pool at the neural cells' own N.
+Reference uncertainty partitions whole chains into two disjoint groups,
+measures their distance and halves it (historical function and key names
+are retained for archived callers, but the result is approximate
+uncertainty, not an exact SE). The factor two follows the noise scale for
+equally sized independent halves and a regular root-N statistic; it is a
+heuristic for nonlinear distances such as W2 and for unequal groups, and
+repeated splits of a fixed set are not fresh chains. The iid floor
+resamples individual reference frames with replacement and scores the draws
+against the full empirical pool, so it measures ideal draw noise
+conditional on that pool, excluding the pool's own uncertainty; it is not a
+lower bound or a significance test and does not independently validate the
+reference.
 
-REFERENCE UNCERTAINTY: retain the historical function/key names for archived
-callers, but label the result approximate uncertainty. Partition whole chains
-into two disjoint groups, measure their distance and halve it. The factor two
-follows the noise scale for equally sized independent halves and a regular
-root-N statistic; it is a heuristic for nonlinear distances such as W2, and
-for unequal groups. Repeated splits of a fixed set are not fresh chains.
+The pool is precise enough to be a reference: snapshots are thinned 100
+trials apart, so the integrated autocorrelation of the energy-per-site
+series is 1.08 snapshots at sigma = 0.1 and 2.81 at sigma_c. The 15-chain
+pool therefore carries 110,741 and 42,686 effective draws against the
+neural cells' N = 5,000 -- 22x and 8.5x -- and certifies at Gelman-Rubin
+1.0000 and 1.0001 on energy (split-half 1.0000 / 1.0004) against the
+caption's claimed <= 1.01. Magnetisation R-hat is formally infinite because
+composition is exact on the slice: all 300,030 shipped snapshots carry net
+magnetisation identically zero, so within-chain variance vanishes -- the
+constraint holding, not a diagnostic failure.
 
-THE IID FLOOR resamples individual reference frames with replacement and
-scores the draws against the full empirical pool. It measures ideal draw
-noise conditional on that pool, excluding the pool's own uncertainty. It is
-not a lower bound or a significance test, and does not independently validate
-the reference. Reference uncertainty is therefore reported separately.
-
-WHY THE POOL IS PRECISE ENOUGH TO BE A REFERENCE AT ALL. Snapshots are
-thinned 100 trials apart, so the integrated autocorrelation of the
-energy-per-site series is 1.08 snapshots at sigma = 0.1 and 2.81 at
-sigma_c. The 15-chain pool therefore carries 110,741 and 42,686 effective
-draws against the neural cells' N = 5,000 -- 22x and 8.5x -- and certifies
-at Gelman-Rubin 1.0000 and 1.0001 on energy (split-half 1.0000 / 1.0004)
-against the caption's claimed <= 1.01. Magnetisation R-hat is formally
-infinite because composition is exact on the slice: all 300,030 shipped
-snapshots carry net magnetisation identically zero, so within-chain
-variance vanishes. That is the constraint holding, not a diagnostic
-failure.
-
-FLOP/es PROVENANCE. Each cell's architecture is read from its OWN saved
+FLOP/es provenance: each cell's architecture is read from its own saved
 config.json and asserted equal to the live registry entry before the
 forward is measured, so a cell trained before a lever landed can never be
-billed at today's architecture. Checked across all 36 d64 cells and all 36
-4x4 cells: zero drift.
-
-ONE FIELD IS DELIBERATELY EXEMPT FROM THAT RULE, and only one:
-`separable_band_scores` (see `flop_billing_config`). Every masked-attention
-cell is billed separable whatever it trained under, because the flag is an
-EXACT rewrite of the band -- 1.5e-7 forward agreement, gradients matched
-parameter by parameter -- so the model is identical and only the
-contraction order differs. The archived MA cells trained dense purely
-because the identity was derived on 2026-08-28, after they ran. FLOP/es is
-an intensive property of an architecture and is already measured on today's
-code, so the honest bill is the cheapest exact evaluation of the same
-function; billing dense prices a tensor nobody needs to build. Measured
-1.44x at d=64 and 1.98x at d=256. WALL CLOCK IS NOT RE-BILLABLE the same
-way -- the chapter's "1.3 hours, a 5.3x speed-up" is what those dense jobs
-took, and stays as measured.
+billed at today's architecture (checked across all 36 d64 cells and all 36
+4x4 cells: zero drift). One field is exempt, `separable_band_scores` (see
+`flop_billing_config`): every masked-attention cell is billed separable
+whatever it trained under, because the flag is an exact rewrite of the band
+-- 1.5e-7 forward agreement, gradients matched parameter by parameter -- so
+the model is identical and only the contraction order differs. The archived
+MA cells trained dense because the identity was derived on 2026-08-28,
+after they ran. Measured 1.44x at d=64 and 1.98x at d=256. Wall clock is
+not re-billable the same way: the chapter's "1.3 hours, a 5.3x speed-up" is
+what those dense jobs took, and stays as measured.
 
 Per-site energy follows the chapter's convention E/d = -log p~(x) /
 (2 sigma d). Neural cells aggregate mean +- SD over the three seeds.
@@ -106,11 +93,11 @@ TAG = "20260825-hard-w2-d64"
 ARMS = {
     "mo": "mask-one head",
     "ma": "masked-attention band, one sweep",
-    # The floor rung's anchor: the SAME MODEL as `ma`, run with the band's
-    # exact separable contraction so the floor chain `-> mamo2` moves the
-    # orderings alone. WHETHER IT REPLACES THE `ma` FLOOR CELL OR PRINTS
-    # BESIDE IT IS AN OPEN EDITORIAL DECISION -- the dense `ma` floor run
-    # (0.9845) remains valid, and the two differ only by trajectory noise.
+    # The floor rung's anchor: the same model as `ma` run with the band's
+    # exact separable contraction, so the floor chain `-> mamo2` moves the
+    # orderings alone. Open editorial decision whether it replaces the `ma`
+    # floor cell or prints beside it: the dense `ma` floor run (0.9845)
+    # remains valid and the two differ only by trajectory noise.
     "masep": "masked-attention band, one sweep (separable twin)",
     "mamo2": "masked-attention band, two sweeps",
     "mamo2ef": "masked-attention band, two sweeps + exact field",
@@ -119,9 +106,9 @@ ARMS = {
     "ivmo2ef": "prefix-sum band, two sweeps + exact field",
     "thp": "two-hole patch head",
 }
-# Campaign overrides are keyed by (arm, coupling): the ladder's critical
-# and floor columns ran under separate tags. A config name alone does not
-# identify a campaign; using an arm-only key would miss the floor runs.
+# Campaign overrides are keyed by (arm, coupling): the ladder's critical and
+# floor columns ran under separate tags, so an arm-only key misses the floor
+# runs.
 ARM_PROVENANCE = {
     **{
         (arm, "s220"): "20260828-rasterord-d64"
@@ -156,16 +143,14 @@ FLOP_BEARING_FIELDS = (
 
 # GFlowNet comparator rows: the d64 `_par` centres, 4x4 parity recipe
 # at the wave-2 d64 budget (policy 104,450 params vs ma's 108,256, -3.5%).
-# Two departures from the 4x4 fill's GFN block, both simplifications:
-#   * DRAW PARITY HOLDS AT THIS RUNG -- both sides store 5000 draws -- so the
-#     row reads its frozen ess_fraction like every house row, and the 4x4's
-#     declared truncate-and-recompute deviation does not apply here.
-#   * DUAL EVAL: the d64 GFN cells carry eval/ AND eval_ema/ (house EMA
-#     0.9999, matched at launch), read through the same subdir loop as the
-#     swap arms.
-# The bill is the KV-cached autoregressive rollout -- the cheapest exact
-# evaluation of the sequential sampler, the separable-band precedent -- plus
-# one target eval for the IS weight; no Euler grid exists to multiply by.
+# Draw parity holds at this rung -- both sides store 5000 draws -- so the row
+# reads its frozen ess_fraction like every house row and the 4x4's
+# truncate-and-recompute deviation does not apply. The d64 GFN cells carry
+# both eval/ and eval_ema/ (house EMA 0.9999, matched at launch), read
+# through the same subdir loop as the swap arms. The bill is the KV-cached
+# autoregressive rollout -- the cheapest exact evaluation of the sequential
+# sampler, the separable-band precedent -- plus one target eval for the IS
+# weight; no Euler grid exists to multiply by.
 GFN_ARMS = {
     "gfn_tb": "GFlowNet, trajectory balance",
     "gfn_fldb": "GFlowNet, forward-looking DB",
@@ -180,9 +165,9 @@ GFN_FLOP_BEARING_FIELDS = ("hidden_dim", "n_layers", "n_heads", "with_flow_head"
 
 def gfn_registry_config_for(run_dir):
     """The registered GFN config for a run, asserted against the run's own
-    saved config on every architecture field -- the same promise
-    `registry_config_for` makes for the swap rows: a policy trained at one
-    width can never be billed at another's."""
+    saved config on every architecture field, as `registry_config_for` does
+    for the swap rows: a policy trained at one width is never billed at
+    another's."""
     from experiments.constrained_hard_03.gfn_configs import GFN_CONFIGS
 
     saved = json.loads((Path(run_dir) / "config.json").read_text())
@@ -324,7 +309,7 @@ def sampling_floor_from_reference(
 
 
 def run_dir_config(run_dir):
-    """The run's OWN saved config, defaults backfilled the way the eval-only
+    """The run's own saved config, defaults backfilled the way the eval-only
     route backfills them, so a config written before a field existed still
     compares against today's dataclass."""
     from experiments.constrained_hard_03.configs import HardStageCfg
@@ -362,31 +347,17 @@ def config_drift(saved, live, fields=FLOP_BEARING_FIELDS):
 
 def flop_billing_config(cfg):
     """The config the FLOP forward is measured at, which for a
-    masked-attention head is NOT the one it trained under.
+    masked-attention head is not the one it trained under.
 
-    WHY THE BILL MAY LEGITIMATELY DIFFER FROM THE RUN, here and nowhere
-    else. FLOP/es is an INTENSIVE per-sample property of an architecture --
-    "what does this head cost to sample from" -- and it is already measured
-    on today's code by rebuilding the model from the saved config, never
-    read back from the training job. `separable_band_scores` computes the
-    band's EXACT function: forward agreement 1.5e-7 at production shape,
-    gradients matched parameter by parameter, no approximation and no
-    variance price. The MODEL is therefore identical and only the
-    contraction order changes, so the honest bill for any masked-attention
-    head is the cheapest exact way to evaluate it. Every archived MA cell
-    trained dense purely because the identity was derived on 2026-08-28,
-    after they ran; billing them dense prices a tensor nobody needs to
-    build. Measured saving on the head forward: 1.44x at d=64, 1.98x at
-    d=256, the ratio growing with d because the term removed is the
-    d^2 n A score einsum.
-
-    WHAT THIS IS NOT, and the line matters. It is NOT the general
-    permission to bill an archived row at today's registry -- that would
-    misattribute, which is why `registry_config_for` refuses on any
-    FLOP_BEARING_FIELDS drift and this function runs after it. Those fields
-    change the FUNCTION the head computes; this one does not. It is also
-    NOT re-billable to WALL CLOCK: the chapter's "1.3 hours, a 5.3x
-    speed-up" is what those dense jobs actually took and stays as measured.
+    `separable_band_scores` computes the band's exact function (forward
+    agreement 1.5e-7 at production shape, gradients matched parameter by
+    parameter), so the model is identical and only the contraction order
+    changes; the head's saving is 1.44x at d=64 and 1.98x at d=256, the
+    ratio growing with d because the term removed is the d^2 n A score
+    einsum. This is not general permission to bill an archived row at
+    today's registry: FLOP_BEARING_FIELDS change the function the head
+    computes, and `registry_config_for` refuses on any drift there before
+    this function runs. See the module docstring for the full argument.
 
     The prefix-sum arms are returned untouched -- they have no score tensor
     to factorise, and `IntervalSwapHead` is never handed the flag.
@@ -437,15 +408,13 @@ def neural_cell(
     run_dir, target, reference, reference_energy, flops_per_raw, eval_subdir="eval"
 ):
     """One seed's row: frozen ESS, weighted errors vs the chain reference,
-    and FLOP/es from the PER-RAW-SAMPLE bill handed in by the caller.
+    and FLOP/es from the per-raw-sample bill handed in by the caller.
 
-    The bill is a parameter rather than computed here because the two
-    paradigms in this table price a raw sample differently: a swap cell
-    pays per_forward x n_euler Euler forwards plus the rate bookkeeping
-    (neural_sampling_flops_per_sample), while a GFN cell pays one KV-cached
-    autoregressive rollout plus the IS-weight target eval and has no Euler
-    grid at all. Everything downstream of the bill is identical, so the
-    scoring lives in one function and the bill lives at the call site.
+    The bill is a parameter because the two paradigms price a raw sample
+    differently: a swap cell pays per_forward x n_euler Euler forwards plus
+    the rate bookkeeping (neural_sampling_flops_per_sample), a GFN cell one
+    KV-cached rollout plus the IS-weight target eval, with no Euler grid.
+    Everything downstream of the bill is identical.
     """
     run_dir = Path(run_dir)
     metrics = json.loads((run_dir / eval_subdir / "metrics.json").read_text())
@@ -475,14 +444,14 @@ def neural_cell(
 
 
 def reference_row(chains, chain_energies, trial_counts):
-    """The certified chain, as BOTH reference and classical baseline.
+    """The certified chain, as both reference and classical baseline.
 
-    Error cells are the reference's own standard error (the reference row
-    scored against itself would be identically zero and would claim the
-    chain is exact). FLOP/es is the algorithmic chain bill over ALL trials
-    -- burn-in included, mirroring the other chain bills -- divided by the
-    effective record count n_kept / tau_int, with tau_int measured per chain
-    on the energy-per-site series.
+    Error cells are the reference's own standard error (scored against
+    itself it would be identically zero, claiming the chain is exact).
+    FLOP/es is the algorithmic chain bill over all trials -- burn-in
+    included, mirroring the other chain bills -- divided by the effective
+    record count n_kept / tau_int, tau_int measured per chain on the
+    energy-per-site series.
     """
     taus = [max(1.0, integrated_autocorr(e.numpy())) for e in chain_energies]
     per_chain = [
@@ -533,9 +502,9 @@ LATEX_ROWS = (
     None,
     ("thp", "two-hole patch head"),
     None,
-    # Different sampling paradigm: outside the bold comparison, which falls
-    # out structurally -- `best` is computed over ARMS and the GFN arms are
-    # not in it (pinned by test_gfn_rows_stay_outside_the_bold_comparison).
+    # Different sampling paradigm, so outside the bold comparison: `best` is
+    # computed over ARMS, which excludes the GFN arms (pinned by
+    # test_gfn_rows_stay_outside_the_bold_comparison).
     ("gfn_tb", "GFlowNet, trajectory balance"),
     ("gfn_fldb", "GFlowNet, forward-looking DB"),
     None,
@@ -548,7 +517,7 @@ def _sci(value):
     """One-decimal scientific notation, renormalised after rounding.
 
     The carry matters: 9.95e10 floors to exponent 10 and its mantissa then
-    ROUNDS UP to 10.0, printing "10.0 x 10^10" beside a sibling cell reading
+    rounds up to 10.0, printing "10.0 x 10^10" beside a sibling cell reading
     "1.2 x 10^11". Both are correct and the pair is unreadable. Bumping the
     exponent when the rounded mantissa reaches 10 keeps every cell in a
     column on the same power. Only values at or above 9.95e{k} are affected,
@@ -556,7 +525,7 @@ def _sci(value):
     """
     exponent = int(np.floor(np.log10(value)))
     mantissa = value / 10**exponent
-    # Tested on the FORMATTED string, not on round(mantissa, 1): the two can
+    # Tested on the formatted string, not on round(mantissa, 1): the two can
     # disagree at the boundary because 9.95 is not exactly representable, and
     # it is the printed text that has to be right.
     if f"{mantissa:.1f}" == "10.0":
@@ -571,7 +540,7 @@ def latex_table(table, n_draws=5000):
     bold does and does not claim in the error columns: at sigma_c the
     reference's own standard error (2.7) is comparable to the whole spread
     across heads (5.1-6.6), so a bolded error cell marks the smallest number
-    measured, NOT a separation from the others. The caption says so.
+    measured, not a separation from the others. The caption says so.
     """
 
     def cell(key, column, sci=False):

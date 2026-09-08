@@ -1,14 +1,14 @@
 """Offline characterisation of a warm (spatially ordered) base for the
 fixed-composition sampler, from archived Kawasaki reference draws.
 
-The current base is uniform on the c = N_A/d slice, so log eta is CONSTANT
+The current base is uniform on the c = N_A/d slice, so log eta is constant
 on the reachable set and its nearest-neighbour correlation is exactly
 -1/(d-1) by exchangeability.  A warm base moves that value positive, which
 shortens the transport the sampler must supply and shrinks the drive
 variance it must fit.  This script measures both, for the block-occupancy
 family B(b, w), against the certified Kawasaki reference sets.
 
-The quantities, and why each one is the right object:
+The quantities:
 
   log rho(x) = sigma * x^T A x        the unnormalised target (Eq. 4 path end)
   log eta(x)                          the base's exact log-density
@@ -30,8 +30,8 @@ The quantities, and why each one is the right object:
                       d c_t/dt = Var_{p_t}[D] >= 0.  Endpoint evaluation gives
                       the integral exactly and says nothing about its shape.
 
-All variances are POPULATION variances under the stated law (ddof = 0), which
-is what the identities above refer to.
+All variances are population variances under the stated law (ddof = 0),
+which is what the identities above refer to.
 
 Run:  pixi run -e default python warm_base_offline_table.py [--sigma 0.223]
 """
@@ -80,7 +80,7 @@ def load_d256() -> np.ndarray:
 def load_d64(thin: int = 28) -> tuple[np.ndarray, dict]:
     """Pool the 8 archived 8x8 non-local Kawasaki chains.
 
-    Burn-in: drop the FIRST HALF of every chain -- the discard rule the probe's
+    Burn-in: drop the first half of every chain -- the discard rule the probe's
     own `reference_summary.json` applies to its frozen moments.  Thinning: the
     snapshots are already every 10 sweeps and the lag-1 autocorrelation of
     x^T A x on the post-discard half is ~0.02, so any thinning is a safety
@@ -145,9 +145,9 @@ def measure(reference: np.ndarray, side: int, sigma: float, seed: int) -> dict:
         )
         # Decomposition of (3.3):  Delta c = [E_p1 log rho - E_p0 log rho]
         #                                  - [E_p1 log eta - E_p0 log eta].
-        # The first bracket is sigma * 4d * (nn_target - nn_base) -- pure energy,
-        # the same object as the transport requirement.  The second is the
-        # base-entropy term, which is identically ZERO for the uniform base and
+        # The first bracket is sigma * 4d * (nn_target - nn_base) -- pure
+        # energy, the same object as the transport requirement.  The second is
+        # the base-entropy term, identically zero for the uniform base and
         # nonzero for every warm one.  Reported separately because the doc's
         # Delta c column tracks the first bracket alone.
         delta_c_energy = sigma * (quad_ref.mean() - quad_base.mean())

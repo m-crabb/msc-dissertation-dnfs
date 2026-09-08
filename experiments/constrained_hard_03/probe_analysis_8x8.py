@@ -5,21 +5,20 @@ Machinery mirrors demo_4x4.py — the same metric
 
     N_eff(O) = Var_pi[O] / MSE(O_hat)
 
-— with ONE substitution: ground truth comes from the mode-balance-seeded
+— with one substitution: ground truth comes from the mode-balance-seeded
 mchammer reference chains (R-hat <= 1.01 validity bar, met at both
 operating points) instead of exact enumeration, because 2^64 states cannot
 be enumerated. MSE is against the reference mean over R = 8 replicates,
 jackknife-over-replicates SE (n_eff_observable, reused verbatim).
 
-Cost accounting (two hardware-neutral currencies, reported separately,
-never blended):
+Cost accounting uses two hardware-neutral currencies, reported separately and
+never blended:
 
 * Neural, network passes: one backbone call per Euler step, reused for the
   weight integrand (swap_ctmc.py lines 43-45), so
-  backbone_rows = n_samples * n_euler_steps exactly — no hook needed for the
-  masked_attention head, the count is structural. (The demo's hook exists to
-  charge mask_one's stacked passes honestly; this cell is masked_attention.)
-* Neural, energy evaluations: the DYNAMICS consult the target zero times —
+  backbone_rows = n_samples * n_euler_steps exactly; the count is structural
+  for the masked_attention head this cell uses.
+* Neural, energy evaluations: the dynamics consult the target zero times —
   rates come from the head alone. Every target evaluation belongs to the
   importance weight: xi_t evaluates the closed-form swap log-ratio for all
   d(d-1)/2 pairs per sample-step (pair_delta_e_evals) plus one
@@ -27,16 +26,16 @@ never blended):
   folding it in at any reasonable pair-equivalent rate shifts the total by
   ~1-2%, stated rather than blended).
 * Kawasaki: one closed-form pair-Delta-E per trial step, total proposals
-  with burn-in CHARGED — Kawasaki pays its burn-in in real use (demo_4x4
+  with burn-in charged — Kawasaki pays its burn-in in real use (demo_4x4
   precedent).
 
-Competitor burn-in: discard
-max(1e4 sweeps, 20 * tau_int(energy)) with tau_int from BATCH MEANS at block
-length >= 10 * tau_int. tau_int is estimated on the second half of each
-chain (clearly post-transient at 1e6 sweeps) so the transient cannot inflate
-its own discard window. The Sokal windowed estimate (integrated_autocorr) is
-reported alongside as the secondary diagnostic, converted snapshot -> trial
-units explicitly (the analyze_data trial-step gotcha).
+Competitor burn-in: discard max(1e4 sweeps, 20 * tau_int(energy)) with
+tau_int from batch means at block length >= 10 * tau_int. tau_int is
+estimated on the second half of each chain (clearly post-transient at 1e6
+sweeps) so the transient cannot inflate its own discard window. The Sokal
+windowed estimate (integrated_autocorr) is reported alongside as the
+secondary diagnostic, converted snapshot -> trial units explicitly (the
+analyze_data trial-step gotcha).
 
 Coverage axis: neural Z2 mass balance + weighted phi histogram against the
 reference's own phi histogram (total variation on the exact 33-point
@@ -44,18 +43,16 @@ support), Kawasaki's mode-seeded split-half R-hat(phi) and its own phi TV
 alongside. "Covers modes at least as well as Kawasaki" is operationalised
 as TV_neural <= TV_kawasaki with the 50/50 balance within 0.1.
 
-Outcome: frozen_verdict applies the three-way rule mechanically. A win
-("GO") needs BOTH currencies at 95% CI excluding parity AND point >= 1.5x,
-the floor not worse, coverage at least as good, the 4x4 gate holding.
-Without the floor's neural replicates the outcome is "PROVISIONAL" by
-construction — the function cannot report a win with the floor unknown.
+frozen_verdict applies the three-way rule mechanically. A win ("GO") needs
+both currencies at 95% CI excluding parity and point >= 1.5x, the floor not
+worse, coverage at least as good, the 4x4 gate holding. Without the floor's
+neural replicates the outcome is "PROVISIONAL" by construction.
 
-The cross-currency division (Kawasaki performs zero network passes) is
-operationalised as: each ratio prices BOTH samplers per unit of ONE
-currency's honest count — the energy-eval ratio charges the neural side
-its pair-Delta-E bill; the network-pass ratio charges the neural side its
-backbone rows against Kawasaki's per-trial bill (its elementary operation
-and its energy evaluation coincide).
+Kawasaki performs zero network passes, so each ratio prices both samplers per
+unit of one currency's honest count: the energy-eval ratio charges the neural
+side its pair-Delta-E bill; the network-pass ratio charges its backbone rows
+against Kawasaki's per-trial bill, whose elementary operation and energy
+evaluation coincide.
 """
 
 import argparse
@@ -178,7 +175,7 @@ def ratio_with_ci(n_eff_num, se_num, cost_num, n_eff_den, se_den, cost_den):
 def ratio_with_f_ci(n_eff_num, cost_num, r_num, n_eff_den, cost_den, r_den):
     """Per-compute N_eff ratio with a variance-ratio (F) 95% CI.
 
-    N_eff = Var_pi/MSE with the SAME Var_pi on both sides, so the ratio is
+    N_eff = Var_pi/MSE with the same Var_pi on both sides, so the ratio is
     an MSE ratio times a deterministic cost ratio. With R mean-zero normal
     replicate errors each side, R*MSE/sigma^2 ~ chi2(R) and the MSE ratio is
     F(R_den, R_num)-distributed around the true variance ratio, giving
@@ -187,9 +184,9 @@ def ratio_with_f_ci(n_eff_num, cost_num, r_num, n_eff_den, cost_den, r_den):
     the delta method on jackknifed N_eff, whose SE is itself heavy-tail
     noisy at R=8.
 
-    Approximation stated: a replicate BIAS makes the MSE noncentral chi2
-    and the interval anti-conservative; the per-replicate estimate tables
-    are published so the bias term is visible directly.
+    A replicate bias makes the MSE noncentral chi2 and the interval
+    anti-conservative; the per-replicate estimate tables are published so the
+    bias term is visible.
     """
     from scipy.stats import f as f_distribution
 
@@ -215,7 +212,7 @@ def frozen_verdict(
 ):
     """The three-way outcome rule, applied mechanically.
 
-    Inputs are the sigma_c ratios vs the BEST tuned Kawasaki variant (each a
+    Inputs are the sigma_c ratios vs the best tuned Kawasaki variant (each a
     dict with point/excludes_parity), plus the auxiliary conditions. The
     margin rule is two-part per currency: 95% CI excluding parity AND point
     >= 1.5x. floor_not_worse=None (replicates missing) makes "GO"
@@ -294,9 +291,8 @@ def frozen_verdict(
 
 def reference_block(probe_root, point, target):
     """Reference moments from reference_summary.json, verified by recomputing
-    the pooled post-discard moments from the raw snapshots (a sloppy
-    reference contaminates every downstream N_eff, so the numbers the
-    analysis reads are re-derived, not trusted)."""
+    the pooled post-discard moments from the raw snapshots: a sloppy reference
+    contaminates every downstream N_eff."""
     summary = json.loads(
         (probe_root / "reference" / point / "reference_summary.json").read_text()
     )
@@ -401,12 +397,12 @@ def neural_replicate_rows(run_dir, target, n_euler_steps):
                 "phi_mass_positive": float(weights_np[phi_values > 0].sum()),
                 "phi_mass_negative": float(weights_np[phi_values < 0].sum()),
                 "phi_mass_zero": float(weights_np[phi_values == 0].sum()),
-                # Weighted vs unweighted second moment: the guard against the
-                # symmetry trap — a Z2-symmetric but mode-collapsed sampler
-                # scores a spuriously high N_eff on the phi MEAN (truth 0 by
-                # symmetry); E[phi^2] matching the reference variance is what
-                # certifies genuine mode coverage. The unweighted moment shows
-                # what the raw process visits before weights correct it.
+                # Weighted vs unweighted second moment: a Z2-symmetric but
+                # mode-collapsed sampler scores a spuriously high N_eff on the
+                # phi mean (truth 0 by symmetry), so E[phi^2] against the
+                # reference variance is what certifies mode coverage. The
+                # unweighted moment shows what the raw process visits before
+                # weights correct it.
                 "phi_sq_weighted": float((weights_np * phi_values**2).sum()),
                 "phi_sq_unweighted": float((phi_values**2).mean()),
                 "phi_hist": phi_mass_on_support(phi_values, weights_np, LATTICE_SIDE),
@@ -422,7 +418,7 @@ def neural_replicate_rows(run_dir, target, n_euler_steps):
 
 def kawasaki_chain_rows(probe_root, point, variant, target):
     """Per-chain post-burn-in estimates, with the burn-in rule applied per
-    chain and the cost charged as TOTAL proposals."""
+    chain and the cost charged as total proposals."""
     variant_dir = probe_root / "competitor" / point / variant
     rows = []
     for chain_dir in sorted(variant_dir.glob("chain_*")):
@@ -505,7 +501,7 @@ def total_variation(mass_a, mass_b):
 
 
 def tv_noise_floor(reference_hist, n_effective, rng, n_boot=200):
-    """95th-percentile TV a PERFECT sampler would show at this effective
+    """95th-percentile TV a perfect sampler would show at this effective
     sample size: multinomial pseudo-samples drawn from the reference law
     itself. Comparing raw TVs across samplers with very different draw
     counts (790k Kawasaki snapshots vs ~34k effective neural draws) reads
@@ -528,10 +524,9 @@ def coverage_block(neural_rows, kawasaki_rows, reference):
     reported separately), the phi second-moment check (weighted E[phi^2] vs
     the reference variance — the guard against symmetry-inflated phi-mean
     scores), and the pooled weighted phi histogram vs the reference's own
-    (total variation on the exact support, compared against each side's OWN
+    (total variation on the exact support, compared against each side's own
     finite-sample noise floor). Kawasaki: split-half R-hat(phi) across the
-    mode-seeded chains (the seeded-modes Gelman-Rubin construction) + the
-    same floor-adjusted TV.
+    mode-seeded chains + the same floor-adjusted TV.
 
     coverage_ok = (neural TV excess over its floor <= kawasaki's excess)
     AND |balance - 0.5| <= 0.1.

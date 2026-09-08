@@ -1,26 +1,15 @@
 """The block-occupancy base B(b, w) of the warm-base design, §2.2.
 
-WHAT THIS IS
-------------
 A probability law on the fixed-composition slice
     S(d, N_A) = { x in {-1,+1}^d : #{i : x_i = +1} = N_A }
-of the D x D torus (d = D^2) that is
+of the D x D torus (d = D^2) that is (i) exactly samplable, (ii) exactly
+normalised with a closed-form log-density, (iii) supported on the whole slice,
+(iv) spatially ordered (nn-correlation strictly positive), and (v) Z2- and
+translation-symmetric.
 
-  (i)   exactly samplable,
-  (ii)  exactly normalised with a closed-form log-density,
-  (iii) supported on the whole slice,
-  (iv)  spatially ordered (nn-correlation strictly positive), and
-  (v)   Z2- and translation-symmetric,
-
-i.e. the five requirements a replacement for the current uniform-on-slice base
-has to satisfy.
-
-WHY THE CONSTRUCTION LOOKS LIKE THIS
-------------------------------------
-The natural warm base is a site-dependent product Bernoulli conditioned on the
-slice.  Its normaliser
-    sum_{x in S} prod_i p_i^{[x_i=+1]} (1-p_i)^{[x_i=-1]}
-is a permanent-like sum with no closed form in general.  It IS closed form when
+A site-dependent product Bernoulli conditioned on the slice has normaliser
+    sum_{x in S} prod_i p_i^{[x_i=+1]} (1-p_i)^{[x_i=-1]} ,
+a permanent-like sum with no closed form in general.  It is closed form when
 the field p_i is piecewise constant on a partition of the lattice: the
 conditional law then factorises into "how many up-spins in each block" times
 "uniform within each block", and the block-occupancy normaliser is a
@@ -34,41 +23,33 @@ uniformly random m_t-subset of tile t.  The density is
     eta_k(x) = prod_t w(m_t(x)) / ( Z_w * prod_t C(s, m_t(x)) ) ,
     Z_w      = sum_{ sum_t m_t = N_A } prod_t w(m_t) .                    (2.2)
 
-Normalisation check (this is the whole point of the C(s, m) denominator):
+Normalisation, which is what the C(s, m) denominator is for:
     sum_{x in S} eta_k(x)
       = sum_{m : sum m_t = N_A} (#x with those occupancies) * prod_t w(m_t)
                                 / (Z_w prod_t C(s, m_t))
       = sum_m prod_t C(s, m_t) * prod_t w(m_t) / (Z_w prod_t C(s, m_t))
       = Z_w / Z_w = 1 .
 
-SYMMETRY
---------
 Z2: impose w(m) = w(s - m).  The global flip maps m_t -> s - m_t and
-N_A -> d - N_A, which at c = 0.5 is N_A again, so EACH component is
-individually Z2-invariant -- no mixture is needed for this.
+N_A -> d - N_A, which at c = 0.5 is N_A again, so each component is
+individually Z2-invariant.
 
 Translation: a single tiling is invariant only under translations by multiples
-of b.  Mixing uniformly over the K = b^2 offsets of the tiling (its translation
-orbit) restores exact translation invariance while keeping the density a
-closed-form finite sum and keeping sampling exact (draw k uniformly, then run
-the exact DP sampler for tiling k):
+of b.  Mixing uniformly over the K = b^2 offsets of the tiling restores exact
+translation invariance while keeping the density a closed-form finite sum and
+sampling exact (draw k uniformly, then run the exact DP sampler for tiling k):
 
     eta(x) = (1/K) sum_{k=1..K} eta_k(x) .
 
-FLOOR
------
-w <- (1 - eps) w + eps / (s + 1), eps = 1e-3, so every slice configuration keeps
-strictly positive mass (requirement iii) and log eta is finite everywhere.
-Without this an occupancy value never seen in the fitting draws would get
-w(m) = 0 and a whole face of the slice would be assigned -inf log-density --
-a coverage failure that the importance weights would report as NaN, not as a
-number.
+Floor: w <- (1 - eps) w + eps / (s + 1), eps = 1e-3, so every slice
+configuration keeps strictly positive mass (requirement iii) and log eta is
+finite everywhere.  Without it an occupancy value never seen in the fitting
+draws gets w(m) = 0 and a whole face of the slice gets -inf log-density, which
+the importance weights report as NaN rather than as a number.
 
-FAILURE MODE GUARDED AGAINST
-----------------------------
-Everything here is done in the log domain with logsumexp.  Z_w at d = 256 is a
-sum over the compositions of 128 into 64 parts each <= 4; the linear-domain
-value overflows float64 long before the DP finishes.
+Everything is in the log domain with logsumexp: Z_w at d = 256 is a sum over
+the compositions of 128 into 64 parts each <= 4, and the linear-domain value
+overflows float64 long before the DP finishes.
 """
 
 from __future__ import annotations
@@ -88,7 +69,7 @@ def torus_adjacency(lattice_side: int) -> np.ndarray:
         x^T A x = 2 * sum_{undirected <ij>} x_i x_j ,   sum(A) = 4d ,
         C(x)    = x^T A x / sum(A) .
 
-    Duplicated rather than imported so this probe is self-contained; the
+    Duplicated rather than imported to keep this probe self-contained; the
     self-test asserts it is elementwise identical to the library's.
     """
     side = lattice_side
@@ -202,8 +183,8 @@ class BlockOccupancyBase:
         """Flat site index -> tile index for the tiling shifted by (dr, dc).
 
         The shift is taken modulo D so the partition stays a partition of the
-        torus (a tile may wrap around the boundary; that is exactly what makes
-        the offset orbit a symmetry rather than an edge effect).
+        torus; a tile may wrap around the boundary, which is what makes the
+        offset orbit a symmetry rather than an edge effect.
         """
         side, b = self.lattice_side, self.block_side
         tiles_per_row = side // b
@@ -265,9 +246,8 @@ class BlockOccupancyBase:
         Two stages, both exact:
           1. the DP run backwards -- draw m_B proportional to
              w(m) * exp(forward_dp[B-1, n_rem - m]), then m_{B-1}, ...;
-          2. a uniformly random m_t-subset of each tile, done by ranking i.i.d.
-             uniform keys within the tile (the vectorised form of the
-             `randperm` idiom in `sample_base`).
+          2. a uniformly random m_t-subset of each tile, by ranking i.i.d.
+             uniform keys within the tile.
         """
         which_offset = rng.integers(self.n_offsets, size=n_samples)
         spins = np.empty((n_samples, self.d), dtype=np.int8)
@@ -323,13 +303,12 @@ class BlockOccupancyBase:
         epsilon: float = 1e-3,
     ) -> BlockOccupancyBase:
         """Moment-match w to the target's own tile-occupancy marginal, pooled
-        over the FULL K = b^2 offset orbit (so the fitted w is
-        translation-symmetric by construction even for the K = 1 ablation).
+        over the full K = b^2 offset orbit, so the fitted w is
+        translation-symmetric by construction even for the K = 1 ablation.
 
-        This is the moment-matched choice within the "independent tiles,
-        uniform inside a tile" family, and is close to but not exactly the
-        KL-optimum: the sum_t m_t = N_A conditioning couples the tiles, an
-        O(1/B) mismatch.
+        Close to but not exactly the KL-optimum within the "independent tiles,
+        uniform inside a tile" family: the sum_t m_t = N_A conditioning couples
+        the tiles, an O(1/B) mismatch.
         """
         n_up = int((spins[0] > 0).sum())
         s = block_side * block_side
@@ -356,12 +335,12 @@ class BlockOccupancyBase:
 
 
 class UniformSliceBase:
-    """The base actually in force today: uniform on the slice.
+    """The base in force today: uniform on the slice.
 
     `FixedCompositionIsingTarget.sample_base` (`ising.py:390-400`) draws a
     uniform N_A-subset, so log eta = -log C(d, N_A) for every slice state and
-    Var[log eta] = 0 exactly.  Its nn-correlation is -1/(d-1) exactly (not
-    asymptotically): exchangeability plus sum_{i != j} x_i x_j = M^2 - d with
+    Var[log eta] = 0.  Its nn-correlation is -1/(d-1) exactly, not
+    asymptotically: exchangeability plus sum_{i != j} x_i x_j = M^2 - d with
     M = 2 N_A - d constant on the slice.
     """
 

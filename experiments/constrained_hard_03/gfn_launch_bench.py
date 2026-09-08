@@ -1,6 +1,6 @@
 """d64 GFN launch bench: compile parity gate + rollout wall-clock.
 
-Runs ONCE on the training venue's GPU before the 8x8 wave ships (the house
+Runs once on the training venue's GPU before the 8x8 wave ships (the house
 compile-certification pattern, compile_gate.py): inductor generates
 different kernels per backend, so the d16 CPU tests certify nothing about
 the venue stack. The d64 cells ship with compile_policy=True; this gate is
@@ -12,15 +12,13 @@ identical seeded batches. Loss must agree to 1e-5; every gradient to 1e-5
 relative on its norm (grads absent from an objective — e.g. log_z under
 FL-DB — must be absent on both sides).
 
-Part 2 — wall-clock, PHASE AND BATCH NAMED (a timing is scoped to its
-phase and batch). Three timings at d64:
+Part 2 — wall-clock at d64, each timing scoped to its phase and batch:
   * rollout, B=128  — the per-step training draw (KV-cached, eager)
   * rollout, B=512  — the eval chunk
   * train step, B=128 — rollout + loss forward/backward + optimiser step
-The train-step timing x 50k projects the job wall-time; the rollout
-timings seed the wall-clock-per-effective-sample column that rides beside
-FLOP/es in the table (the latency counterpoint: FLOP/es prices arithmetic,
-not the AR policy's d sequential one-token kernels).
+The train-step timing x 50k projects the job wall-time; the rollout timings
+seed the wall-clock-per-effective-sample column beside FLOP/es, which prices
+arithmetic and not the AR policy's d sequential one-token kernels.
 
     pixi run -e dev python -m experiments.constrained_hard_03.gfn_launch_bench
 """
@@ -51,7 +49,7 @@ def _grads_by_name(policy):
 def parity_gate(cfg, device) -> bool:
     """Eager vs compiled loss + gradient parity on one seeded batch."""
     ok = True
-    # Two identically-initialised policies; ONE shared batch sampled from
+    # Two identically-initialised policies; one shared batch sampled from
     # the eager policy (the sampler is eager in both configs, but sharing
     # the batch removes even rollout nondeterminism from the comparison).
     torch.manual_seed(0)
@@ -145,7 +143,7 @@ def wall_clock_bench(cfg, device):
     )
 
 
-# Inductor kernels differ per SIZE as well as per backend, so each rung's
+# Inductor kernels differ per size as well as per backend, so each rung's
 # sigma_c centres gate their own launch (the d256 wave must not ride the
 # d64 certification).
 _RUNG_GATE_CELLS = {

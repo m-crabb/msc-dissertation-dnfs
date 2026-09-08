@@ -11,7 +11,7 @@ probe's null rows.
 Bars:
   * energy-marginal TV <= 0.02 on every slice — the house 4x4 gate bar;
   * per-slice ESS fraction >= 0.30 on every slice — a filter, not a
-    quality claim (the d16 sigma_c thp SPECIALIST reads ~0.99; the gate
+    quality claim (the d16 sigma_c thp specialist reads ~0.99; the gate
     asks "is no slice dead"; quality is the d64 cells' question).
 A miss on either bar on any slice fails the gate.
 
@@ -48,7 +48,7 @@ ESS_BAR = 0.30
 
 
 def per_slice_row(head, mixture_target, composition, n_draws, n_euler, device):
-    """Score the trained head against ONE slice's enumerated conditional."""
+    """Score the trained head against one slice's enumerated conditional."""
     target = FixedCompositionIsingTarget(
         D=4,
         sigma=mixture_target.sigma,

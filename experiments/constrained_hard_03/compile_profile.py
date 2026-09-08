@@ -10,7 +10,7 @@ Regions (each warmed up past compilation before profiling):
      patch construction.
   2. loss_swap forward + backward, B = inner microbatch — the training
      update unit the 2.21x compile speed-up was measured on.
-  3. rollout slice, production batch and PRODUCTION dt (a leading slice of
+  3. rollout slice, production batch and production dt (a leading slice of
      the 128-step grid, so thinning probabilities match production) —
      matching rounds, .any() syncs, apply_swaps.
   4. xi_t_swap_from_scores on pre-gathered scores — the ~12-kernel

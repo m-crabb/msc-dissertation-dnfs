@@ -1,40 +1,24 @@
 """The strengthened 4x4 exact-enumeration pass/fail gate + both negative controls.
 
 `FixedCompositionIsingTarget(D=4, sigma, c=0.5)` gives d=16, N_A=8, a slice of
-C(16,8)=12,870 states. On the slice Sigma(x) is constant, so the conditional is
-a pure function of energy, pi(x|C) proportional to exp(sigma * x^T A x). A trained
+C(16,8)=12,870 states. On the slice Sigma(x) is constant, so the conditional is a
+pure function of energy, pi(x|C) proportional to exp(sigma * x^T A x). A trained
 swap head is evaluated by drawing IS-weighted samples with the swap CTMC
 (`sample_swap_ctmc(return_log_weights=True, target=target)`) and comparing every
-observable against the EXACTLY enumerated conditional. This is the correctness
-gate for the swap analogue of DNFS: the whole edifice (single-pass reverse rate
-via readout antisymmetry, on-manifold base, ELBO IS weights) must reproduce the
-exact conditional across a sigma-ladder that crosses the Ising transition, and
-both negative controls must fail as designed.
+observable against the exactly enumerated conditional, across a sigma-ladder that
+crosses the Ising transition.
 
-Why each metric:
+Energy-marginal TV is the headline distance the paper reports (App D.1), but it
+only constrains cross-level weights: pi(x|C) is uniform within each energy level.
+Within-level uniformity closes that blind spot against a weight-matched
+perfect-sampler baseline. <E> and nn_correlation are energy-tied observables;
+diagonal_correlation is the independent within-level spatial one (checkerboard:
+nn = -1 but diag = +1). On-slice IS-ESS is estimator health, not a mixing claim.
+The eval-time antisymmetry check G(i,j | Swap2 x) + G(i,j | x) = 0 is structural
+for the dh/mask_one heads and is what the non_antisym control must trip.
 
-- Energy-marginal TV is the headline distance the paper reports (App D.1), but
-  on the slice it only constrains CROSS-level weights: pi(x|C) is uniform WITHIN
-  each energy level, so energy-TV is blind to within-level structure.
-- Within-level uniformity closes that blind spot. A raw within-level TV is
-  uninterpretable when the per-level sample count n_k is much smaller than the
-  degeneracy g_k (a perfect sampler still shows TV ~ 1 - n_k/g_k -- the TVD-floor
-  trap) or when the IS weights are dispersed, so a WEIGHT-MATCHED
-  perfect-sampler baseline (the observed IS weights assigned to uniform
-  on-level draws) is subtracted and the EXCESS reported.
-- <E> and nn_correlation are energy-tied observables; diagonal_correlation is the
-  INDEPENDENT within-level spatial observable (checkerboard: nn = -1 but diag =
-  +1), so it can move even when the energy marginal is right.
-- On-slice IS-ESS is reported as estimator HEALTH only -- NOT a mixing claim.
-- The eval-time antisymmetry check is the discriminator the non_antisym control
-  must trip: G(i,j | Swap2 x) + G(i,j | x) = 0 is structural for the dh/mask_one
-  heads (so ~0) but broken for a non-antisymmetric head (so the reverse rate,
-  hence the IS weight, is biased). It validates that antisymmetry is NECESSARY.
-
-Run through the local CLI or Modal gate wrapper. Sampling/evaluation uses
-torch.no_grad().
+Run through the local CLI or Modal gate wrapper. Sampling uses torch.no_grad().
 """
-
 import argparse
 import csv
 import json
@@ -81,12 +65,10 @@ def _energy(states, adjacency):
 def slice_energy_hist(states, weights, adjacency, bins):
     """IS-weighted histogram of the slice energy x^T A x over `bins` edges.
 
-    Returns (bin_centres, mass): `bin_centres` are edge midpoints (plot labels);
-    `mass` is the normalised weight per bin. `weights` need not be normalised --
-    they are normalised here. Energy outside [bins[0], bins[-1]) is dropped, so
-    the mass can sum to < 1: that lost mass is itself the off-slice-leakage
-    signal the product-Bernoulli control reads off (its samples wander to
-    energies the slice bins do not cover).
+    Returns (bin_centres, mass): `bin_centres` are edge midpoints, `mass` the
+    normalised weight per bin. `weights` are normalised here. Energy outside
+    [bins[0], bins[-1]) is dropped, so the mass can sum to < 1; that lost mass is
+    the off-slice leakage the product-Bernoulli control reads off.
     """
     energy = _energy(states, adjacency)
     weights = weights.float()
@@ -120,13 +102,11 @@ def on_slice_free_energy_reference(target, slice_states):
 
         F_ref/D = -logsumexp_{x in C} log p_tilde(x) / (2 sigma d)
 
-    matching the exact per-site normalisation of `free_energy_lb_estimate`
-    (metrics.py) so F_dnfs - F_ref is meaningful. Do NOT use `exact_free_energy`:
-    it enumerates the FULL 2^d space, whereas the swap CTMC only ever visits the
-    fixed-N slice, so a full-space log Z is the wrong reference. The on-manifold
-    base constant -log C(d, N_A) enters the DNFS log-weight (via base_log_eta at
-    t=0) and this reference identically, so it cancels in the difference and no
-    explicit constant appears here.
+    matching the per-site normalisation of `free_energy_lb_estimate` (metrics.py)
+    so F_dnfs - F_ref is meaningful. Not `exact_free_energy`: it enumerates the
+    full 2^d space, whereas the swap CTMC only visits the fixed-N slice. The
+    on-manifold base constant -log C(d, N_A) enters the DNFS log-weight (via
+    base_log_eta at t=0) and this reference identically, so it cancels.
     """
     sigma = float(target.sigma)
     d = int(target.d)
@@ -152,33 +132,25 @@ def within_level_uniformity(
     n_ref_replicates=20,
     seed=0,
 ):
-    """Per-energy-level within-level uniformity, the WITHIN-level check.
+    """Per-energy-level within-level uniformity.
 
     pi(x|C) is uniform within each energy level, so energy-TV alone cannot see
     within-level structure. For each level with raw sample count n_k >= min_count,
     map every sample to its slice-state identity, form the IS-weighted
     distribution over the level's g_k states, and compute TV_k against
-    uniform(1/g_k). A raw TV_k is uninterpretable on its own for two reasons:
+    uniform(1/g_k). A raw TV_k is uninterpretable on its own: a perfect sampler
+    still shows TV ~ 1 - n_k/g_k when n_k << g_k (the TVD-floor trap), and skewed
+    IS weights inflate TV_k further because n_eff_k = (Sigma w)^2 / Sigma w^2 < n_k.
 
-    * the sample-size floor (a perfect sampler still shows TV ~ 1 - n_k/g_k
-      when n_k << g_k -- the known TVD-floor trap), and
-    * IS-weight dispersion: skewed weights inflate TV_k even when the states
-      themselves cover the level uniformly, because the within-level effective
-      sample size n_eff_k = (Sigma w)^2 / Sigma w^2 < n_k.
-
-    So a WEIGHT-MATCHED perfect-sampler baseline is subtracted: each of the
-    R = n_ref_replicates replicates keeps the level's OBSERVED normalised IS
-    weight vector (the same one used for TV_k) and assigns it to n_k uniform
-    draws over the g_k states, accumulated exactly as for the real samples.
-    Under the null hypothesis -- sampler uniform within the level, weights
-    independent of within-level identity -- this IS the distribution of the
-    statistic, so EXCESS = TV_k - TV_k^ref is centred at ~0 for a faithful
-    sampler. An UNWEIGHTED (equal-weight) baseline would model only the
-    sample-size floor, not the weight dispersion, so TV_ref would sit below
-    the true null and the excess would be biased upward one-sidedly -- a
-    low-within-level-ESS rung (sigma=0.40) could spuriously fail the gate.
-    n_eff_k is reported per level so weight dispersion is visible alongside
-    the excess. Returns one dict per well-populated level.
+    So a weight-matched perfect-sampler baseline is subtracted: each of the
+    R = n_ref_replicates replicates keeps the level's observed normalised IS
+    weight vector and assigns it to n_k uniform draws over the g_k states. Under
+    the null -- sampler uniform within the level, weights independent of
+    within-level identity -- that is the distribution of the statistic, so
+    excess = TV_k - TV_k^ref is centred at ~0 for a faithful sampler. An
+    equal-weight baseline instead models only the sample-size floor and would
+    bias the excess upward, failing a low-ESS rung (sigma=0.40) spuriously.
+    Returns one dict per well-populated level, n_eff_k included.
     """
     generator = torch.Generator().manual_seed(seed)
     sample_keys = _pack_spin_keys(sample_states)
@@ -241,12 +213,10 @@ def latest_run_dir(results_dir, cfg_name, seed):
 def load_run(run_dir, device):
     """Rebuild (head, target) from a run dir's config.json + checkpoints/final.pt.
 
-    Delegates to `run.build_target_and_head` so the gate can never drift from
-    the trainer in how it instantiates the backbone/head (the rope_vit backbone
-    and the two_hole_patch head would otherwise need re-dispatching here).
-    The head wraps the backbone, so final.pt's keys are prefixed `backbone.`
-    and load onto the head module directly. Evaluate with the head kind
-    recorded in config.json (the ladder trained mask_one, which is
+    Delegates to `run.build_target_and_head` so the gate cannot drift from the
+    trainer in how it instantiates the backbone/head. The head wraps the backbone,
+    so final.pt's keys are prefixed `backbone.` and load onto the head module
+    directly. The head kind comes from config.json (the ladder trained mask_one,
     bit-exact-equal to doubly_hollow per the d=16 oracle pin).
     """
     from experiments.constrained_hard_03.run import build_target_and_head
@@ -276,9 +246,9 @@ def _finite_column(rows, column):
 
 def clamp_fractions(run_dir):
     """Final and max Lambda*dt>1 clip-fraction and log-ratio clamp-hit fraction
-    from training_log.csv. Lambda*dt>1 forces exactly one swap that step (a
-    coarse-time-step signal, watch the sigma=0.40 rung); a nonzero log-ratio
-    clamp-hit fraction would flag IS-weight bias (expected ~0 across the ladder).
+    from training_log.csv. Lambda*dt>1 forces one swap that step (a coarse-
+    time-step signal, watch the sigma=0.40 rung); a nonzero log-ratio clamp-hit
+    fraction would flag IS-weight bias (expected ~0 across the ladder).
     """
     rows = list(csv.DictReader((run_dir / "training_log.csv").open()))
     lam = _finite_column(rows, "lambda_dt_clipped_frac")
@@ -297,9 +267,9 @@ def clamp_fractions(run_dir):
 def _antisymmetry_violation(head, states, d):
     """max_{i<j} |G(i,j | Swap2 x) + G(i,j | x)| over the state subsample.
 
-    121 head calls at batch len(states): one base pass + one swapped pass per
-    i<j pair. Structural ~0 for the dh/mask_one heads; the non_antisym control
-    must make it large (biased single-pass reverse rate).
+    One base pass plus one swapped pass per i<j pair. Structural ~0 for the
+    dh/mask_one heads; the non_antisym control must make it large (biased
+    single-pass reverse rate).
     """
     t = torch.full((states.shape[0],), 0.5, device=states.device)
     base = head(states, t)
@@ -317,8 +287,8 @@ def run_gate(head, target, n_samples, n_euler_steps, seed):
 
     Draws IS-weighted swap-CTMC samples and compares energy marginal, <E>,
     NN/diagonal correlations, within-level uniformity and F/D against the exactly
-    enumerated conditional. Returns every raw number; the booleans/aggregation
-    are `main`'s job (pass/fail rules live there). Everything is under no_grad.
+    enumerated conditional. Returns raw numbers only; the pass/fail rules live in
+    `_aggregate_rung`.
     """
     device = next(head.parameters()).device
     d = int(target.d)
@@ -464,11 +434,11 @@ def _aggregate_rung(per_seed):
 
 
 def _control_product_bernoulli(results_dir, seeds, n_samples, device):
-    """Negative control (i): re-sample the TRAINED s010 head from a product-
+    """Negative control (i): re-sample the trained s010 head from a product-
     Bernoulli(0.5) base (no manifold projection). Swaps conserve each sample's
-    initial composition, so the composition histogram stays binomial (std ~
-    0.125 in composition units) rather than collapsing to N_A. This falsifies the
-    on-manifold BASE, not the head.
+    initial composition, so the composition histogram stays binomial (std ~ 0.125
+    in composition units) rather than collapsing to N_A. This falsifies the
+    on-manifold base, not the head.
     """
     cfg_name = RUNGS["s010"]
     n_euler = CONFIGS[cfg_name].ctmc.n_euler_steps
@@ -527,10 +497,9 @@ def _control_product_bernoulli(results_dir, seeds, n_samples, device):
 
 
 def _control_non_antisym(results_dir, seeds, n_samples, device):
-    """Negative control (ii): the trained non_antisym cell, put through the FULL
+    """Negative control (ii): the trained non_antisym cell put through the full
     positive-gate eval. Its single-pass reverse rates are biased, so the eval-time
-    antisymmetry check must trip (violation >> tol) -- the scientifically specific
-    control that validates antisymmetry is NECESSARY, not assumed.
+    antisymmetry check must trip (violation >> tol).
     """
     cfg_name = NON_ANTISYM_CELL
     n_euler = CONFIGS[cfg_name].ctmc.n_euler_steps

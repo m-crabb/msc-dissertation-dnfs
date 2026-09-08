@@ -1,20 +1,18 @@
 """Config cells for the GFlowNet comparator (hard chapter).
 
-A deliberately flat dataclass, SEPARATE from HardStageCfg: the GFN has no
-time grid, no Euler steps, no swap head and no CTMC knobs, so inheriting the
-swap-stack config would carry dead fields that a recipe-parity audit then has
-to explain away. The two families meet at the artefact level instead — run
-dirs, eval/metrics.json schema and composition observables are shared, so
+A flat dataclass, separate from HardStageCfg: the GFN has no time grid, no
+Euler steps, no swap head and no CTMC knobs, so inheriting the swap-stack
+config would carry dead fields. The two families meet at the artefact level —
+run dirs, eval/metrics.json schema and composition observables are shared, so
 the table scripts ingest GFN rows unchanged.
 
-Fairness protocol: the plain (correctness) cells ran hidden 128 / 3
-layers, i.e. 597.6k params against 79.5k-101k for the wave-2 d16 heads —
-the `_par` cells are the comparison cells at measured parameter parity
-(hidden 64 / 2 layers / 4 heads = 101.4k params ~= the ma head's 101.0k;
-batch 128). sigma_stages is the
-beta-annealing knob (the VAN-line criticality mitigation); the 4x4 cells
-train flat, mirroring the wave-2 house convention that the floor/4x4 rung
-measures the operating point, not the curriculum.
+Fairness protocol: the plain (correctness) cells ran hidden 128 / 3 layers,
+597.6k params against 79.5k-101k for the wave-2 d16 heads; the `_par` cells
+are the comparison cells at measured parameter parity (hidden 64 / 2 layers /
+4 heads = 101.4k params ~= the ma head's 101.0k; batch 128). sigma_stages is
+the beta-annealing knob (the VAN-line criticality mitigation); the 4x4 cells
+train flat, mirroring the wave-2 convention that the floor/4x4 rung measures
+the operating point, not the curriculum.
 """
 
 from dataclasses import dataclass, replace
@@ -36,11 +34,10 @@ class GFNCellCfg:
     n_layers: int = 3
     n_heads: int = 4
     with_flow_head: bool = False  # forced True for fldb in the builder below
-    # Standalone flow module instead of the shared-trunk linear readout:
-    # the torchgfn-conventional parameterisation — a separate MLP
-    # over the one-hot prefix state — which also DECOUPLES flow gradients
-    # from the policy trunk (the shielding mechanism the flow-lr arms
-    # surfaced). False = every archived cell, byte-identical.
+    # Standalone flow module instead of the shared-trunk linear readout: a
+    # separate MLP over the one-hot prefix state (the torchgfn convention),
+    # decoupling flow gradients from the policy trunk. False = every archived
+    # cell, byte-identical.
     standalone_flow_head: bool = False
     # Training.
     n_steps: int = 10_000
@@ -49,61 +46,53 @@ class GFNCellCfg:
     # Separate Adam lr for the TB arm's scalar log_z (None = share
     # learning_rate). Adam moves a scalar at ~lr/step under a consistent
     # gradient, so at the flat 1e-3 the plain cells' log Z (init 0) climbed at
-    # its measured speed limit (+7e-4/step) and sat 2.4 nats below the exact
-    # slice value 10.81 at 10k steps — it arithmetically could not arrive.
-    # ~100x on log_z alone is the Malkin et al. / torchgfn convention.
+    # +7e-4/step and sat 2.4 nats below the exact slice value 10.81 at 10k
+    # steps. ~100x on log_z alone is the Malkin et al. / torchgfn convention.
     log_z_learning_rate: float | None = None
-    # The FL-DB analogue of the split above. The flow head is the
-    # FL-DB arm's normaliser: its output must reach the tens-of-nats
-    # completion-entropy scale (log C(64,32) ~ 43 nats enters the prefix
-    # flows), and Adam moves a final-layer bias at ~lr/step, so at the
-    # shared 1e-3 the d64 sigma_c centres were STILL CLIMBING at 50k
-    # (frozen ESS 0.45 -> 0.75 over the last 25k while TB converged by
-    # 35k, DB residual loss already ~1e-3 — near-satisfied objective,
-    # starved normaliser). A GLOBAL lr raise is ruled out by the star
-    # (3e-3 destabilised the policy: one seed spent 10k steps near ESS
-    # 0.04). None = share learning_rate; every archived cell reproduced
-    # exactly.
+    # The FL-DB analogue of the split above. The flow head is that arm's
+    # normaliser: its output must reach the completion-entropy scale
+    # (log C(64,32) ~ 43 nats enters the prefix flows), and Adam moves a
+    # final-layer bias at ~lr/step, so at the shared 1e-3 the d64 sigma_c
+    # centres were still climbing at 50k (frozen ESS 0.45 -> 0.75 over the
+    # last 25k while TB converged by 35k, DB residual loss already ~1e-3).
+    # A global lr raise is ruled out by the star: 3e-3 destabilised the policy,
+    # one seed spending 10k steps near ESS 0.04. None = share learning_rate;
+    # every archived cell reproduced exactly.
     flow_head_learning_rate: float | None = None
     epsilon: float = 0.05  # uniform behaviour mix; off-policy, TB-tolerated
-    # torch.compile the SCORING path (site_log_probs and the FL-DB variant)
-    # — the GFN analogue of optimised_recipe's compile_head. Default False:
+    # torch.compile the scoring path (site_log_probs and the FL-DB variant),
+    # the GFN analogue of optimised_recipe's compile_head. Default False:
     # archived cells never retro-flip, and the flag flips for new 8x8+ cells
-    # only after a GPU numerical-parity gate at the 8x8 launch bench (the
-    # house compile certification pattern). The SAMPLER stays eager either
-    # way: its per-step shapes vary with the KV-cache length, which is
-    # recompile territory, and the cache already took the rollout from
-    # O(d^3) to O(d^2) attention.
+    # only after a GPU numerical-parity gate at the 8x8 launch bench. The
+    # sampler stays eager either way: its per-step shapes vary with the
+    # KV-cache length, which is recompile territory, and the cache already
+    # took the rollout from O(d^3) to O(d^2) attention.
     compile_policy: bool = False
     sigma_stages: tuple[float, ...] = ()  # annealing ladder; () = train flat
-    # House-recipe training levers, added for the d64 rung. Every
-    # default is ARCHIVED-INERT: 0 / None / False reproduces the d16 waves
-    # byte-identically, so archived cells never retro-flip and the sweep
-    # twin test's field-by-field comparison needs no exemptions.
+    # House-recipe training levers, added for the d64 rung. Every default is
+    # archived-inert: 0 / None / False reproduces the d16 waves
+    # byte-identically, so archived cells never retro-flip.
     # Linear lr ramp over the first `warmup_steps` updates (house d64 value
-    # 500), applied to the NETWORK group only: the TB log_z group exists
-    # because Adam starves a scalar at the shared lr (see
-    # log_z_learning_rate above), and re-throttling it for the ramp would
-    # re-create a mild version of that failure at the start of every run.
+    # 500), applied to the network group only: re-throttling the TB log_z
+    # group for the ramp would re-create the Adam-starved-scalar failure
+    # above at the start of every run.
     warmup_steps: int = 0
     # clip_grad_norm_ max-norm (house d64 value 500.0); None = no clipping.
     # The pre-clip total norm is logged as `grad_norm` either way — whether
     # the rail engaged is readable from the training log.
     grad_clip_max_norm: float | None = None
     # Eval-side EMA shadow (house ema_decay 0.9999, warmup-corrected);
-    # 0.0 = off. When on, the final eval runs TWICE — raw weights into
-    # eval/, shadow weights into eval_ema/ — mirroring run.py's dual-eval
-    # instrument so the table scripts ingest GFN rows unchanged.
+    # 0.0 = off. When on, the final eval runs twice — raw weights into eval/,
+    # shadow weights into eval_ema/ — mirroring run.py's dual eval.
     ema_decay: float = 0.0
     # bf16 autocast around eval sampling+scoring (house d64 evals carry
     # eval_autocast_bf16=true); False = fp32 end to end (the d16 waves).
     eval_autocast_bf16: bool = False
     # In-training frozen-ESS diagnostic every `eval_every` steps (house
     # eval_every=200): n_eval_samples_training draws at epsilon=0, raw
-    # weights, CURRENT stage sigma. 0 = off. This is the telltale the
-    # behaviour-batch ESS cannot be — on-policy draws score their own
-    # policy healthily even when it has mode-collapsed (reverse-KL
-    # blindness; Malkin et al. 2023 Prop. 1).
+    # weights, current stage sigma. 0 = off. The behaviour-batch ESS cannot
+    # serve here — on-policy draws score their own policy healthily even when
+    # it has mode-collapsed (reverse-KL blindness; Malkin et al. 2023 Prop. 1).
     eval_every: int = 0
     n_eval_samples_training: int = 512
     # Eval (house protocol: 5000 draws, chunked).
@@ -140,14 +129,14 @@ def _gfn_d16_cell(objective: str, sigma_label: str, sigma: float) -> GFNCellCfg:
 
 def _gfn_d16_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNCellCfg:
     """Parity cells: parameter parity with the wave-2 heads and the split
-    log_z lr on the TB arm. The plain cells above are the correctness
-    cells, kept as archived configs (never retro-flipped).
+    log_z lr on the TB arm. The plain cells above are the correctness cells,
+    kept as archived configs (never retro-flipped).
 
-    Parity is measured in PARAMETERS, not copied hyperparameters: the house
+    Parity is measured in parameters, not copied hyperparameters: the house
     d16 sizing (hidden 32 / 2 layers) gives this policy only 26.1k params
     because the swap cells' 79.5k-101k live in a backbone+head stack the
     policy doesn't have. hidden 64 / 2 layers = 101,378 params, within 0.4%
-    of the masked-attention head (100,960) — the flagship comparator row."""
+    of the masked-attention head (100,960)."""
     cell = replace(
         _gfn_d16_cell(objective, sigma_label, sigma),
         hidden_dim=64,
@@ -160,15 +149,13 @@ def _gfn_d16_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNC
     return cell
 
 
-# Fair-tuning grid around the `_par` recipe: lr x epsilon, sigma_c
-# only (the discriminating coupling), centre EXCLUDED because the centre IS
-# the `_par` cell. The 4x4 gate is a FILTER, not a signal (the window-arm
-# lesson: a disjoint 4x4 separation reversed at 8x8), so this grid exists
-# to show the house recipe sits in no hole and to exclude configs that
-# break cheaply — the discriminating sweep belongs at 8x8. Warmup and grad
-# clip are deliberately NOT folded in: all 24 GFN cells to date converged
-# without them, so there is nothing for them to rescue, and changing the
-# centre would orphan the archived `_par` cells.
+# Fair-tuning grid around the `_par` recipe: lr x epsilon, sigma_c only (the
+# discriminating coupling), centre excluded because the centre is the `_par`
+# cell. The 4x4 gate filters rather than discriminates (a disjoint 4x4
+# separation reversed at 8x8), so this grid only shows the house recipe sits
+# in no hole; the discriminating sweep belongs at 8x8. Warmup and grad clip
+# are not folded in: all 24 GFN cells to date converged without them, and
+# changing the centre would orphan the archived `_par` cells.
 _SWEEP_LR_GRID = {"l3e4": 3e-4, "l1e3": 1e-3, "l3e3": 3e-3}
 _SWEEP_EPSILON_GRID = {"e000": 0.0, "e005": 0.05, "e010": 0.1}
 _SWEEP_CENTRE = ("l1e3", "e005")
@@ -184,13 +171,13 @@ def _gfn_d16_sweep_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCel
     )
 
 
-# The 8x8 rung. The sigma_c stage ladder mirrors the house
-# _D64_SIGMA_LADDER exactly, INCLUDING its 20k final plateau: _stage_sigma
-# gives every entry an equal n_steps/len share, so ten 5k-step stages with
-# the final sigma repeated four times reproduce the house start-steps
-# 0/5k/10k/15k/20k/25k/30k with 20k on the cell's own coupling. (The house
-# ladder also drops lr 1e-3 -> 3e-4 at step 20k; the GFN trains flat-lr —
-# a declared deviation the star's flat 3e-4 arm brackets.)
+# The 8x8 rung. The sigma_c stage ladder mirrors the house _D64_SIGMA_LADDER
+# including its 20k final plateau: _stage_sigma gives every entry an equal
+# n_steps/len share, so ten 5k-step stages with the final sigma repeated four
+# times reproduce the house start-steps 0/5k/10k/15k/20k/25k/30k with 20k on
+# the cell's own coupling. (The house ladder also drops lr 1e-3 -> 3e-4 at
+# step 20k; the GFN trains flat-lr, a declared deviation the star's flat
+# 3e-4 arm brackets.)
 _D64_GFN_SIGMA_STAGES = (
     0.100,
     0.140,
@@ -221,16 +208,15 @@ _D64_STAR_ARMS = (
 def _gfn_d64_parity_cell(objective: str, sigma_label: str, sigma: float) -> GFNCellCfg:
     """8x8 centre: the validated 4x4 parity recipe at the house d64 budget.
 
-    Parity is measured params again: the SAME hidden 64 / 2 layers / 4
-    heads policy lands at 104,450 params at D=8, within 3.5% (under) of
-    the wave-2 d64 masked-attention head's 108,256. Budget levers match
-    the wave-2 recipe field by field (50k steps, batch 128, warmup 500,
-    grad clip 500, EMA 0.9999 dual eval, bf16 eval autocast, in-training
-    frozen eval every 200 steps on 512 draws); compile_policy ships ON,
-    gated by the GPU numerical-parity check at the launch bench.
-    Declared deviations from the house recipe: flat lr (no 20k-step drop
-    to 3e-4 — the star's flat 3e-4 arm brackets it) and no lr ramp on the
-    TB log_z group (see warmup_steps above).
+    Parity is measured params again: the same hidden 64 / 2 layers / 4 heads
+    policy lands at 104,450 params at D=8, within 3.5% (under) of the wave-2
+    d64 masked-attention head's 108,256. Budget levers match the wave-2 recipe
+    field by field (50k steps, batch 128, warmup 500, grad clip 500, EMA
+    0.9999 dual eval, bf16 eval autocast, in-training frozen eval every 200
+    steps on 512 draws); compile_policy ships on, gated by the GPU
+    numerical-parity check at the launch bench. Declared deviations from the
+    house recipe: flat lr (no 20k-step drop to 3e-4) and no lr ramp on the TB
+    log_z group.
     """
     cell = replace(
         _gfn_d16_parity_cell(objective, sigma_label, sigma),
@@ -258,13 +244,12 @@ def _gfn_d64_star_cell(objective: str, lr_key: str, epsilon_key: str) -> GFNCell
     )
 
 
-# Flow-head split-lr arms, FL-DB at sigma_c only: the fairness fix the
-# training logs point at — see flow_head_learning_rate on the cfg. Two
-# values bracket the unknown: 1e-1 is the log_z precedent (~100x), 1e-2 a
-# conservative 10x. ONE LEVER off the fldb centre (pinned by
-# test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever); everything else
-# would confound the diagnosis. sigma_c only because the s010 fldb centre
-# already sits at 0.97.
+# Flow-head split-lr arms, FL-DB at sigma_c only; see
+# flow_head_learning_rate on the cfg. Two values bracket the unknown: 1e-1 is
+# the log_z precedent (~100x), 1e-2 a conservative 10x. One lever off the
+# fldb centre (pinned by
+# test_flow_lr_cells_are_fldb_centre_twins_plus_one_lever). sigma_c only
+# because the s010 fldb centre already sits at 0.97.
 _FLOW_LR_GRID = {"flr1e1": 1e-1, "flr1e2": 1e-2}
 
 
@@ -304,17 +289,15 @@ GFN_CONFIGS.update(
     {cell.name: cell for cell in map(_gfn_d64_flow_lr_cell, _FLOW_LR_GRID)}
 )
 
-# Budget-doubled FLDB diagnostic: settles "slow vs broken". The
-# seed-42 flow-lr logs showed the centre's slow ESS climb is the POLICY
-# converging (DB loss ~0.007 by 15k, ESS still +0.06/5k at 50k) and a hot
-# flow head makes things WORSE (dose-monotone), so the remaining question
-# is whether FLDB simply needs more steps. One lever: n_steps 100k. NOTE
-# the sigma ladder DILATES with it (equal step shares: 10k/stage, 40k
-# final plateau) — declared; the endpoint question is unaffected but
-# mid-training step-matched comparisons against the 50k centre are
-# confounded during the ladder. NEVER a table row (breaks budget parity);
-# it buys the sentence "comparable quality at twice the budget, TB
-# dominates at matched budget" — or refutes it.
+# Budget-doubled FLDB diagnostic: settles "slow vs broken". The seed-42
+# flow-lr logs showed the centre's slow ESS climb is the policy converging
+# (DB loss ~0.007 by 15k, ESS still +0.06/5k at 50k) and a hot flow head
+# makes things worse (dose-monotone), so the remaining question is whether
+# FLDB simply needs more steps. One lever: n_steps 100k. The sigma ladder
+# dilates with it (equal step shares: 10k/stage, 40k final plateau), so
+# mid-training step-matched comparisons against the 50k centre are confounded
+# during the ladder; the endpoint question is unaffected. Never a table row
+# (breaks budget parity).
 GFN_CONFIGS.update(
     {
         cell.name: cell
@@ -324,12 +307,11 @@ GFN_CONFIGS.update(
                 name="GFN_d64_c50_s220_fldb_100k_par",
                 n_steps=100_000,
             ),
-            # Standalone-flow arm: the torchgfn-conventional parameterisation
-            # at the matched 50k budget, ONE lever off the centre. Compared
-            # against the centre (policy identical), so
-            # the added flow-MLP params (~17k at d64) are a declared delta,
-            # not a parity break — parity with the house heads binds the
-            # PRINTED centre rows, and this arm's comparison never leaves the
+            # Standalone-flow arm: the torchgfn parameterisation at the
+            # matched 50k budget, one lever off the centre (policy identical),
+            # so the added flow-MLP params (~17k at d64) are a declared delta
+            # rather than a parity break — parity with the house heads binds
+            # the printed centre rows, and this comparison never leaves the
             # fldb family.
             replace(
                 _gfn_d64_parity_cell("fldb", "s220", SIGMA_C),
@@ -367,24 +349,20 @@ _D256_GFN_SIGMA_STAGES = (
 def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
     """16x16 centre: the d64 recipe with only the rung levers moved.
 
-    Parity is measured params a third time, and this rung is the first
-    where the policy must be RE-SIZED to keep it: the d64 sizing's only
-    d-dependent parameters are the position embedding (256 x hidden), so
-    carrying hidden 64 up unchanged lands at 116,738 params — 12.6% under
-    the chapter's thp2 stack (133,632) and 15.1% under the ma cell
-    (137,440), against the +0.4%/-3.5% precedent at d16/d64. hidden 68
-    (17 dims per head) gives 130,562: within 2.3% of thp2 and 5.0% of ma,
-    i.e. at parity with BOTH candidate anchors, so the anchor question
-    (the flagship ma comparator vs the chapter's head at a rung where ma
-    fails) dissolves rather than needing a defence. Alternatives rejected:
-    hidden 72 overshoots both anchors (+8.6%/+5.6%); a third layer blows
-    past by 25%.
+    Parity is measured params a third time, and this rung is the first where
+    the policy must be re-sized to keep it: the d64 sizing's only d-dependent
+    parameters are the position embedding (256 x hidden), so carrying hidden
+    64 up unchanged lands at 116,738 params — 12.6% under the chapter's thp2
+    stack (133,632) and 15.1% under the ma cell (137,440), against the
+    +0.4%/-3.5% precedent at d16/d64. hidden 68 (17 dims per head) gives
+    130,562: within 2.3% of thp2 and 5.0% of ma, i.e. at parity with both
+    candidate anchors. hidden 72 overshoots both (+8.6%/+5.6%).
 
-    Every other lever rides the d64 `_par` recipe unchanged
-    (batch 128, warmup 500, grad clip 500, EMA 0.9999 dual eval, bf16
-    eval autocast, in-training frozen eval every 200 steps, compile ON
-    gated by the launch bench at THIS size on the venue stack).
-    NOTE (cost-ladder tripwire): registering this cell at hidden 68
+    Every other lever rides the d64 `_par` recipe unchanged (batch 128,
+    warmup 500, grad clip 500, EMA 0.9999 dual eval, bf16 eval autocast,
+    in-training frozen eval every 200 steps, compile on gated by the launch
+    bench at this size on the venue stack).
+    Cost-ladder tripwire: registering this cell at hidden 68
     obsoletes tab:head-cost-ladder's d256 GFN entries, which price the
     d64 recipe re-realised at D=16 — profile_swap's gfn modes re-point
     here automatically; re-run modal_app::bench when the rows are next
@@ -396,13 +374,12 @@ def _gfn_d256_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
         hidden_dim=68,
         n_steps=100_000 if sigma_c else 50_000,
         sigma_stages=_D256_GFN_SIGMA_STAGES if sigma_c else (),
-        # In-training eval cadence moved to the HOUSE d256 regime
+        # In-training eval cadence moved to the house d256 regime
         # (eval_every=500, 256 draws, bf16 autocast — the swap-head cells'
-        # exact schedule) rather than riding the d64 wave's 200/512:
-        # these rows sit beside the house cells in tab:eval-hard-16x16,
-        # so within-rung parity outranks cross-rung GFN consistency. The
-        # headline 5000-draw final eval is untouched. bf16 eval autocast
-        # is already inherited from the d64 parity cell.
+        # schedule) rather than riding the d64 wave's 200/512: these rows sit
+        # beside the house cells in tab:eval-hard-16x16, so within-rung parity
+        # outranks cross-rung GFN consistency. The headline 5000-draw final
+        # eval is untouched.
         eval_every=500,
         n_eval_samples_training=256,
     )
@@ -426,9 +403,8 @@ GFN_CONFIGS.update(
 
 # The 20x20 rung: the TB comparator carried to the chapter's largest
 # printed swap-head table (tab:eval-hard-20x20, whose GFN rows read "--").
-# Only TB is run -- FL-DB was dead at 256-step trajectories with the
-# same construction and is printed that way, so its 400-step row would buy
-# a predictable zero for a GPU-day; the fldb cell is registered so the
+# Only TB is run: FL-DB was dead at 256-step trajectories with the same
+# construction and is printed that way. The fldb cell is registered so the
 # rung's gate and any later completeness run need no new code.
 def _gfn_d400_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
     """20x20 centre: the d256 recipe with the lattice and the parity
@@ -445,9 +421,9 @@ def _gfn_d400_parity_cell(objective: str, sigma_label: str) -> GFNCellCfg:
     Budgets (50k floor / 100k sigma_c), the sigma ladder (the house d400
     cells reuse the d256 ladder unrescaled, absolute start-steps) and the
     house in-training eval cadence (500 / 256 draws, bf16 autocast) all ride
-    the d256 cell unchanged. Compile stays ON, gated by gfn_launch_bench
-    --rung d400 on the launch venue: inductor kernels are certified per
-    venue AND size (the d256 gate carries nothing at 400 tokens)."""
+    the d256 cell unchanged. Compile stays on, gated by gfn_launch_bench
+    --rung d400 on the launch venue: inductor kernels are certified per venue
+    and size (the d256 gate carries nothing at 400 tokens)."""
     steps_label = "100k" if sigma_label == "s220" else "50k"
     cell = _gfn_d256_parity_cell(objective, sigma_label)
     return replace(

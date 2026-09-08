@@ -5,65 +5,49 @@ Reads the d256 w3 wave (tags `20260826-d256-s010` at sigma = 0.1 and
 42/43/44) and prints the same house columns the 8x8 fill prints one rung
 down.
 
-WHAT IS SHARED, AND WHY. The 8x8 fill is where the chain-pool reference
-machinery was written and verified against the 8x8 table: the
-half-split standard error, the estimated sampling floor, the error metrics,
-and the FLOP provenance that reads each cell's OWN saved config and asserts
-it against the live registry. All of that is lattice-generic and is
-IMPORTED here rather than restated. What is defined locally is only the
-handful of functions that close over the 8x8 module's `L` / `D_SITES`
-constants (`energy_per_site`, `neural_cell`, `latex_table`) plus this
-rung's own reference loader -- a deliberate ~90 lines rather than a third
-near-copy of a 550-line script.
+The lattice-generic machinery -- half-split standard error, sampling floor,
+error metrics, and the FLOP provenance that reads each cell's own saved config
+and asserts it against the live registry -- is imported from the 8x8 fill.
+Defined locally: only what closes over this rung's `L` / `D_SITES`
+(`energy_per_site`, `neural_cell`, `latex_table`) plus this rung's reference
+loader.
 
-WHAT CHANGES FROM THE 8x8 FILL. Four things, each a way to print a wrong
-number that the 8x8 fill cannot get wrong.
+Four differences from the 8x8 fill, each a way to print a wrong number:
 
-  * THE REFERENCE SHIPS POOLED, NOT PER CHAIN. At 8x8 each certified chain
-    is its own npz. Here `generate_kawasaki_reference_d256.py` concatenates
-    the thinned chains into ONE tensor and records the chain metadata
-    beside it, so chain identity -- which the half-split needs as its unit
-    of independence -- has to be recovered by equal-width slicing. The
-    blocks are equal because every chain records the same count and is
-    thinned by the same interval.
+  * The reference ships pooled, not per chain.
+    `generate_kawasaki_reference_d256.py` concatenates the thinned chains into
+    one tensor, so chain identity -- the half-split's unit of independence --
+    is recovered by equal-width slicing. The blocks are equal because every
+    chain records the same count and is thinned by the same interval.
 
-  * THE FLOP BILL IS IN DIFFERENT UNITS. The 8x8 npz records
-    `n_trial_steps`, a count of swap PROPOSALS. The d256 provenance records
-    SWEEPS, and one sweep is `N_SITES = 256` proposals
+  * The FLOP bill is in different units. The 8x8 npz records `n_trial_steps`,
+    a count of swap proposals; the d256 provenance records sweeps, and one
+    sweep is `N_SITES = 256` proposals
     (generate_kawasaki_reference_d256.py:137). Passing sweeps straight to
-    `kawasaki_run_flops` would under-price the reference chain by 256x --
-    the one error direction that flatters our own sampler in the FLOP/es
-    column, which is why `chain_trial_counts` converts explicitly and is
-    tested on both rungs' site counts.
+    `kawasaki_run_flops` would under-price the reference chain by 256x, so
+    `chain_trial_counts` converts explicitly and is tested on both rungs'
+    site counts.
 
-  * THE COUPLING IS ASSERTED, NOT ASSUMED. `kawasaki_ref_d256_sc` is
-    MISLABELLED: it sits at sigma = 0.22305 rather than the frozen sigma_c
-    = 0.220343, and it certifies cleanly against the LEGACY 0.588 anchor,
-    so nothing but its provenance reveals the problem. The loader reads
-    sigma from provenance and refuses a mismatch. The two directories this
-    fill does read are `kawasaki_ref_d256_s010` (sigma = 0.1, 136,536
-    draws) and `kawasaki_ref_d256_s220` (exact sigma_c, 31,512 draws,
-    certified at nn-correlation 0.5790 +- 0.0003 against the mchammer
-    anchor 0.578756).
+  * The coupling is asserted, not assumed. `kawasaki_ref_d256_sc` is
+    mislabelled: it sits at sigma = 0.22305 rather than the frozen sigma_c =
+    0.220343, and it certifies cleanly against the legacy 0.588 anchor, so
+    only its provenance reveals the problem. The directories read here are
+    `kawasaki_ref_d256_s010` (sigma = 0.1, 136,536 draws) and
+    `kawasaki_ref_d256_s220` (exact sigma_c, 31,512 draws, certified at
+    nn-correlation 0.5790 +- 0.0003 against the mchammer anchor 0.578756).
 
-  * THE ARM SET IS FOUR HEADS AND THERE IS NO REJECTION ROW. There is no
-    plain-`fimo2` row: the exact-field lever is already answered at 4x4
-    and 8x8. Rejection rows stay at the two smaller rungs because neither
-    the unconstrained nor the soft chapter has a d256 case to reject off,
-    so a row here would have no counterpart.
+  * Four heads and no rejection row: the exact-field lever is already answered
+    at 4x4 and 8x8, and neither the unconstrained nor the soft chapter has a
+    d256 case to reject off.
 
-TAU AND THE EFFECTIVE COUNT. Measured with `integrated_autocorr` on each
-chain's STORED energy-per-site series and floored at 1.0, exactly as the
-8x8 fill does. The provenance also records tau in sweeps, but the stored
-draws are thinned at twice the worst chain's tau, so that figure would have
-to be divided by the thinning interval and would land below one; measuring
-on the stored series and flooring keeps one method across both rungs.
+tau_int is measured with `integrated_autocorr` on each chain's stored
+energy-per-site series and floored at 1.0, as in the 8x8 fill. The
+provenance's tau in sweeps would have to be divided by the thinning interval
+(twice the worst chain's tau) and would land below one.
 
-CELLS THE COLD-CV TRIPWIRE TRUNCATED ARE DROPPED. Four sigma = 0.1 cells
-carry `cv_inversion_halt.json` and stopped at step 5000 of 50000; their
-evals read ESS fraction ~0.0009 against their relaunched twins' 0.898, so
-they are an infrastructure artefact, not a head. The relaunches carry the
-`-r2` tag.
+Four sigma = 0.1 cells carry `cv_inversion_halt.json` and stopped at step 5000
+of 50000; their evals read ESS fraction ~0.0009 against their relaunched
+twins' 0.898, so they are dropped. The relaunches carry the `-r2` tag.
 
 Per-site energy follows the chapter's convention E/d = -log p~(x) /
 (2 sigma d). Neural cells aggregate mean +- SD over the three seeds.
@@ -118,11 +102,9 @@ ARMS = {
     "ma": "masked-attention band, one sweep",
     "thp": "two-hole patch head",
     "thp2": "two-hole patch head, $R=2$",
-    # The raster-ordering ladder at this rung (tag 20260830-rasterord-d256,
-    # labels as the 8x8 fill): does the ordering lever rescue the rung
-    # where bare `ma` fails at sigma_c? `masep` runs at the floor only
-    # (separable is an exact rewrite of `ma`; the archived dense sigma_c
-    # failure stands as the anchor).
+    # Raster-ordering ladder at this rung (tag 20260830-rasterord-d256). `masep`
+    # runs at the floor only; separable is an exact rewrite of `ma`, so the
+    # archived dense sigma_c failure stands as the anchor.
     "masep": "masked-attention band, one sweep (separable twin)",
     "mamo2": "masked-attention band, two sweeps",
     "mamo2ef": "masked-attention band, two sweeps + exact field",
@@ -131,7 +113,7 @@ ARMS = {
     "ivmo2ef": "prefix-sum band, two sweeps + exact field",
 }
 
-# Row order of tab:eval-hard-16x16, FLAT like the 4x4 and 8x8 tables (the
+# Row order of tab:eval-hard-16x16, flat like the 4x4 and 8x8 tables (the
 # nested "two orderings / \quad + exact-field" pair was retired 2026-08-27).
 # `None` is a \midrule. No rejection row at this rung -- see the docstring.
 LATEX_ROWS = (
@@ -142,7 +124,7 @@ LATEX_ROWS = (
     ("thp", "two-hole patch head"),
     ("thp2", "\\quad $R=2$"),
     None,
-    # masep (the separable-trained twin) is NOT a row (decided 2026-09-03): one
+    # masep (the separable-trained twin) is not a row (decided 2026-09-03): one
     # masked-attention row per rung, billed separable; the twin's 2/3 collapsed
     # floor seeds are a caveat in the Experimental Setup, not a cell.
     ("mamo2", "masked-attention band, two sweeps"),
@@ -151,22 +133,19 @@ LATEX_ROWS = (
     ("ivmo2", "prefix-sum band, two sweeps"),
     ("ivmo2ef", "\\quad + exact field"),
     None,
-    # Different sampling paradigm: outside the bold comparison, which falls
-    # out structurally -- `best` is computed over ARMS and the GFN arms are
-    # not in it (pinned by test_gfn_rows_stay_outside_the_bold_comparison).
+    # Different sampling paradigm, so outside the bold comparison: `best` is
+    # computed over ARMS, which the GFN arms are not in.
     ("gfn_tb", "GFlowNet, trajectory balance"),
     ("gfn_fldb", "GFlowNet, forward-looking DB"),
 )
 ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 
-# GFlowNet comparator rows: the 256-step fairness rung, the 8x8 fill's GFN
-# block with its lattice-generic parts imported. The bill is the KV-cached
-# rollout plus one target eval for the IS weight (no Euler grid), and the
-# rows read the same eval subdir as the swap arms. Tags are PER ARM: the
-# first wave's TB centres (tag 20260831-gfn-d256) stalled with log Z pinned
-# at 100 by AdamW's default weight decay (run_gfn.build_optimiser) and are
-# re-run under their own tag; the FL-DB loss carries no log Z, so those
-# cells are kept.
+# GFlowNet comparator rows at the 256-step fairness rung. The bill is the
+# KV-cached rollout plus one target eval for the IS weight (no Euler grid).
+# Tags are per arm: the first wave's TB centres (tag 20260831-gfn-d256) stalled
+# with log Z pinned at 100 by AdamW's default weight decay
+# (run_gfn.build_optimiser) and are re-run under their own tag; the FL-DB loss
+# carries no log Z, so those cells are kept.
 GFN_ARMS = {
     "gfn_tb": "GFlowNet, trajectory balance",
     "gfn_fldb": "GFlowNet, forward-looking DB",
@@ -177,29 +156,25 @@ GFN_CELL_NAME = {
     "s220": "GFN_d256_c50_s220_{objective}_100k_par",
 }
 
-# Matched on the tokens that carry meaning -- size, composition, coupling,
-# head, wave -- and NOT on the budget or optimiser infixes. Those differ
-# legitimately across the wave (the sigma_c cells train 100k with the
-# widening curriculum, the sigma = 0.1 floor cells 50k flat) and the `ma`
-# sigma_c trio ran under its own tag, so pinning them would silently
-# drop cells rather than fail loudly. The coupling token already excludes
-# the legacy archive, which is `s223` rather than `s010`/`s220`, and the
-# `_w3_` marker excludes anything older at the same coupling.
+# Matched on size, composition, coupling, head and wave, not on the budget or
+# optimiser infixes: those differ legitimately across the wave (sigma_c cells
+# train 100k with the widening curriculum, sigma = 0.1 floor cells 50k flat),
+# so pinning them would silently drop cells rather than fail loudly. The
+# coupling token excludes the legacy archive (`s223`) and `_w3_` excludes
+# anything older at the same coupling.
 CELL_GLOB = "H2_d{d}_c50_{sigma}_letf_{arm}_*_w3_seed*"
 
-# Seeds excluded as DEGENERATE, and daggered in the table where excluded.
-# Distinct from the tripwire drops below, which are an infrastructure
-# artefact: this run trained its full 50k steps and still collapsed its
-# weights. Across all 50 landed cells at both rungs its single largest
-# self-normalised weight is 0.1839 -- one draw of 5000 carrying 18% of the
-# mass -- where every other cell sits at or below 0.0053; its ESS fraction
-# is 0.0032 against its siblings' 0.805 and 0.918. Averaging it into the
-# row would report a number describing no seed that exists.
+# Seeds excluded as degenerate, and daggered in the table where excluded.
+# Distinct from the tripwire drops: this run trained its full 50k steps and
+# still collapsed its weights. Its largest self-normalised weight is 0.1839
+# (one draw of 5000 carrying 18% of the mass) where every other cell across the
+# 50 landed cells at both rungs sits at or below 0.0053; its ESS fraction is
+# 0.0032 against its siblings' 0.805 and 0.918.
 DEGENERATE_SEEDS = {
     ("ma", "s010", 43),
-    # ivmo2 seed 44 at sigma_c: raw 0.790 but EMA 0.001 (the EMA-splits pattern) --
-    # a floor read on the EMA table this row prints, excluded under the same rule
-    # (decided 2026-09-03: every seed prints unless its frozen ESS is at the floor).
+    # ivmo2 seed 44 at sigma_c: raw 0.790 but EMA 0.001, a floor read on the EMA
+    # table this row prints (decided 2026-09-03: every seed prints unless its
+    # frozen ESS is at the floor).
     ("ivmo2", "s220", 44),
 }
 
@@ -210,11 +185,11 @@ DEGENERATE_SEEDS = {
 def split_pooled_into_chains(pooled, n_chains):
     """Recover chain blocks from the single pooled reference tensor.
 
-    CONTIGUOUS slices, never a stride: the generator concatenates whole
-    chains in index order, so a strided split would put one snapshot of
-    every chain into each block and make the half-split read within-chain
-    correlation as between-chain, collapsing the reference's stated error
-    toward zero. Any remainder is dropped rather than smeared.
+    Contiguous slices, never a stride: the generator concatenates whole chains
+    in index order, so a strided split would put one snapshot of every chain
+    into each block and make the half-split read within-chain correlation as
+    between-chain, collapsing the reference's stated error toward zero. Any
+    remainder is dropped rather than smeared.
     """
     block = len(pooled) // n_chains
     return [pooled[i * block : (i + 1) * block] for i in range(n_chains)]
@@ -242,12 +217,12 @@ def load_reference(directory, sigma_key):
 
 
 def chain_trial_counts(provenance, lattice_edge=L):
-    """Swap PROPOSALS per chain, burn-in included.
+    """Swap proposals per chain, burn-in included.
 
-    One sweep is `lattice_edge**2` proposals; the bill prices proposals and
-    burn-in is paid before the first usable record, so it belongs in the
-    total (kawasaki_run_flops' own convention). The site factor is derived,
-    not hard-coded, so another rung built this way cannot be mis-billed.
+    One sweep is `lattice_edge**2` proposals; the bill prices proposals, and
+    burn-in is paid before the first usable record, so it belongs in the total
+    (kawasaki_run_flops' convention). The site factor is derived, not
+    hard-coded.
     """
     per_chain = (
         (provenance["burn_in_sweeps"] + provenance["sampling_sweeps_per_chain"])
@@ -258,7 +233,7 @@ def chain_trial_counts(provenance, lattice_edge=L):
 
 
 def reference_row(chains, chain_energies, trial_counts):
-    """The certified chain as BOTH reference and classical baseline.
+    """The certified chain as both reference and classical baseline.
 
     Error cells carry the reference's own standard error (scored against
     itself it would be identically zero, which would claim the chain is
@@ -283,18 +258,16 @@ def reference_row(chains, chain_energies, trial_counts):
 def find_cells(results_dir, sigma_key, arm, eval_subdir="eval_ema"):
     """Healthy run dirs for one head at one coupling, seed order.
 
-    Drops cells the cold-CV tripwire halted, and matches the head token
-    between underscores so `thp` cannot sweep up `thp2` -- both are heads
-    at this rung and separate rows of the table. A head whose runs have not
-    landed returns empty rather than raising, so a missing arm leaves a
-    blank row instead of aborting the fill.
+    Drops cells the cold-CV tripwire halted, and matches the head token between
+    underscores so `thp` cannot sweep up `thp2` -- separate rows of the table.
+    A head whose runs have not landed returns empty rather than raising, so a
+    missing arm leaves a blank row instead of aborting the fill.
     """
     found = []
     for run_dir in sorted(
         Path(results_dir).glob(CELL_GLOB.format(d=D_SITES, sigma=sigma_key, arm=arm))
     ):
-        # The glob's `{arm}_*` already anchors the token on the left; this
-        # anchors it on the right, so `thp` cannot match `thp2`.
+        # Right-anchors the token the glob already anchored on the left.
         if f"_{arm}_" not in run_dir.name:
             continue
         if (run_dir / "cv_inversion_halt.json").exists():
@@ -331,9 +304,9 @@ def energy_per_site(target, states, chunk=4096):
 def neural_cell(
     run_dir, target, reference, reference_energy, flops_per_raw, eval_subdir="eval"
 ):
-    """One seed's row. The per-raw-sample bill is the caller's, as in the
-    8x8 fill: a swap cell pays per_forward x n_euler Euler forwards, a GFN
-    cell one cached rollout plus a target eval."""
+    """One seed's row. The per-raw-sample bill is the caller's: a swap cell
+    pays per_forward x n_euler Euler forwards, a GFN cell one cached rollout
+    plus a target eval."""
     run_dir = Path(run_dir)
     metrics = json.loads((run_dir / eval_subdir / "metrics.json").read_text())
     samples = torch.load(
@@ -367,10 +340,10 @@ def neural_cell(
 def latex_table(table, n_draws=5000):
     """Emit the table body, bolding the best neural cell in each column.
 
-    Same conventions as tab:eval-hard-8x8. What the bold does NOT claim:
-    where the reference's own standard error is comparable to the spread
-    across heads, a bolded error cell marks the smallest number measured,
-    not a separation from the others. The caption says so.
+    Same conventions as tab:eval-hard-8x8. Where the reference's own standard
+    error is comparable to the spread across heads, a bolded error cell marks
+    the smallest number measured, not a separation from the others; the caption
+    says so.
     """
 
     def key_for(arm, sigma_label):
@@ -480,8 +453,8 @@ def main(argv=None):
         )
         reference = torch.cat(chains)
 
-        # One target per coupling, built from a landed cell's OWN config so
-        # the coupling on the neural side provably matches the reference's.
+        # One target per coupling, built from a landed cell's own config so the
+        # coupling on the neural side provably matches the reference's.
         probe = next(
             (
                 find_cells(args.results_dir, sigma_label, a, args.eval_subdir)

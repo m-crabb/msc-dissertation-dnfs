@@ -13,32 +13,30 @@ diagonal_correlation, and phi (left-minus-right half magnetisation, in the
 
 Two stages:
 
-* reference — mchammer CanonicalEnsemble (NON-local unlike-pair swaps) only,
+* reference — mchammer CanonicalEnsemble (non-local unlike-pair swaps) only,
   8 chains per point, mode-balanced seeding (chains 0-3 phase-separated in
   the phi > 0 mode, 4-7 in the phi < 0 mode). Validity bar: split-half R-hat
   <= 1.01 on every observable, computed after dropping the first half of each
-  chain (the same discard the moment rule applies; the full-trace
-  R-hat is reported alongside for transparency). On failure the chain length
-  is DOUBLED and the point rerun — mechanically, no judgement — up to 3
-  doublings, then the failure is reported loudly and the exit code is
-  non-zero. Doubling rule: rerun-longer with the SAME seeds, not in-place
-  extension. mchammer seeds Python's global RNG at ensemble construction, so
-  the doubled chain reproduces the shorter run's trajectory as its prefix and
-  extends it — a realization-level extension without keeping worker state
-  alive across attempts (in-place extension was rejected as it would pin one
-  live ensemble per chain across the whole doubling loop).
+  chain (the same discard the moment rule applies; the full-trace R-hat is
+  reported alongside). On failure the chain length is doubled and the point
+  rerun — mechanically, no judgement — up to 3 doublings, then the failure is
+  reported loudly and the exit code is non-zero. Doubling rule: rerun-longer
+  with the same seeds, not in-place extension. mchammer seeds Python's global
+  RNG at ensemble construction, so the doubled chain reproduces the shorter
+  run's trajectory as its prefix and extends it, without keeping worker state
+  alive across attempts.
 
-* competitor — BOTH variants: `local` (numba nearest-neighbour swap,
+* competitor — both variants: `local` (numba nearest-neighbour swap,
   kawasaki.run_local_swap_chain_snapshots) and `nonlocal` (mchammer, the same
   engine as the reference). 8 chains per variant per point: chains 0-3 seeded
-  at RANDOM composition-0.5 states (competitors start neutrally), chains 4-5
+  at random composition-0.5 states (competitors start neutrally), chains 4-5
   in phi mode A and 6-7 in mode B (the mode-seeded exception the coverage
   axis needs); which is which is recorded in meta.json. Everything is
-  recorded from step 0 with NO burn-in discard — the analysis stage owns
+  recorded from step 0 with no burn-in discard — the analysis stage owns
   burn-in, and the crossover curve needs the full trace. R-hat here is a
   health floor (1.1), reported, never gating.
 
-Currencies: the trial-step currency is the PROPOSAL count, recorded exactly
+Currencies: the trial-step currency is the proposal count, recorded exactly
 for both variants (numba: n_steps by construction; mchammer: ensemble.step
 read back). For the local variant like-spin bond proposals are identity moves
 but still cost one proposal — see run_local_swap_chain_snapshots. Wall-clock

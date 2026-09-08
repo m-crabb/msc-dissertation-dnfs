@@ -3,7 +3,7 @@
 For binary tokens exact swap antisymmetry forces G(i,j|x) = (x_i - x_j) S_ij(x)
 with S blind to both holes, and for the Ising target the exact energy change
 under a swap is  Delta E = sigma (x_i - x_j)(h_i - h_j)  with
-h_i = sum_{k in N(i), k != j} x_k  the local field at i EXCLUDING the swap
+h_i = sum_{k in N(i), k != j} x_k  the local field at i excluding the swap
 partner (the i-j bond is invariant under the swap). So the equilibrium
 log-ratio is a rank-1, linear, hole-subtracted per-site field difference.
 
@@ -42,7 +42,7 @@ def r_squared(target, design):
 
     float64 with standardised columns: powers like E_ext^2 * delta_h span
     orders of magnitude and an fp32 solve returned a superset design scoring
-    BELOW its subset (conditioning, not signal).
+    below its subset (conditioning, not signal).
     """
     design = design.double()
     scale = design.std(0).clamp(min=1e-12)
@@ -92,7 +92,7 @@ def analyse(run_dir, t_value, device="cpu"):
     delta_h, sum_h = (h_i - h_j)[differing], (h_i + h_j)[differing]
     adjacent = A[i_idx, j_idx].expand_as(xi)[differing]
     # exterior energy: all bonds not touching either hole (blind, a hole-
-    # subtracted BOND sum); E = E_ext + (x_i - x_j)(h_i - h_j)/2 - A_ij on
+    # subtracted bond sum); E = E_ext + (x_i - x_j)(h_i - h_j)/2 - A_ij on
     # differing pairs, so (E_ext, h_i, h_j, A_ij) carry everything about E.
     energy = -0.5 * (x * field).sum(1, keepdim=True)  # -sum_bonds x_k x_l
     E_ext = (energy + xi * h_i + xj * h_j + A[i_idx, j_idx] * xi * xj)[differing]

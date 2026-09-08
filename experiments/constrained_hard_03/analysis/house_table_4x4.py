@@ -17,17 +17,17 @@ and prints the house columns of tab:eval-unconstrained-10x10 for each cell:
 Two structural differences from the 10x10 fills, both consequences of the
 4x4 slice being exactly enumerable (C(16,8) = 12,870 states):
 
-  * The REFERENCE is the exactly enumerated conditional, not a certified
+  * The reference is the exactly enumerated conditional, not a certified
     chain: slice states + exact Boltzmann probabilities enter the metric
     trio through their `reference_weights` parameter, so the error columns
-    read against truth and the reference row has NO sampling floor -- its
-    error cells are identically zero by construction and the bootstrap
-    floor machinery of the 10x10 fills has nothing to estimate.
+    read against truth and the reference row has no sampling floor -- its
+    error cells are identically zero and the bootstrap floor machinery of
+    the 10x10 fills has nothing to estimate.
   * The MCMC row is the materials-side engine itself (mchammer
     CanonicalEnsemble = non-local unlike-pair swap, the same move set as
     the swap CTMC), scored per chain against the exact reference with
     uniform weights over post-burn-in snapshots. Its FLOP/es is the
-    analytic kawasaki_run_flops bill over ALL trials (burn-in is paid
+    analytic kawasaki_run_flops bill over all trials (burn-in is paid
     before the first usable record, mirroring the other chain bills)
     divided by the effective record count n_kept / tau_int, with tau_int
     measured per chain on the energy-per-site series -- the slowest tabled
@@ -73,9 +73,9 @@ D_SITES = L * L
 TAG = "20260825-hard-w2"
 ARMS = {
     # The O(d^2) architecture-agnostic gate: one fully-masked pair forward
-    # per candidate swap. mask_one is documented as agreeing with it
-    # NUMERICALLY, so its fidelity cells are expected to reproduce the
-    # mask-one row within seed noise and the information is in FLOP/es.
+    # per candidate swap. mask_one agrees with it numerically, so its
+    # fidelity cells reproduce the mask-one row within seed noise and the
+    # information is in FLOP/es.
     "dh": "doubly-hollow oracle",
     "mo": "mask-one head",
     "ma": "masked-attention head",
@@ -94,7 +94,7 @@ ARMS = {
 # Unlike house_table_8x8.ARM_PROVENANCE, this map needs only the arm key:
 # the 8x8 ladder uses separate critical and floor campaign tags.
 ARM_PROVENANCE = {
-    # The oracle's six runs ran under their own tag; the CONFIG is a
+    # The oracle's six runs ran under their own tag; the config is a
     # wave-2 cell, so the suffix stays w2.
     "dh": ("w2", "20260829-dh-oracle-d16"),
     "mal": ("win", "20260828-win-gate"),
@@ -107,17 +107,15 @@ SIGMA_LABELS = ("s010", "s220")
 SEEDS = (42, 43, 44)
 HELD = set()
 
-# GFlowNet comparator rows: the `_par` cells — parameter parity
-# with the ma head (101,378 vs 100,960 params), split lr_Z on the TB arm.
-# These rows do NOT run through CONFIGS/build_target_and_head: the policy IS
-# the sampler (no Euler grid, no swap head), so the bill is the measured
-# FLOPs of `policy.sample` itself — the naive prefix re-encode actually
-# implemented, d sequential forwards — plus one target eval per sample for
-# the IS weight. Draw parity: the GFN eval stored 5000 draws against the
-# swap cells' 512, so its rows are computed on the FIRST 512 draws and
-# their weights (the equalise-draws rule), with ESS recomputed on that
-# window rather than re-read from the frozen 5000-draw metrics — declared
-# here because everywhere else in this file ESS is frozen-not-recomputed.
+# GFlowNet comparator rows: the `_par` cells — parameter parity with the ma
+# head (101,378 vs 100,960 params), split lr_Z on the TB arm. These rows do
+# not run through CONFIGS/build_target_and_head: the policy is the sampler
+# (no Euler grid, no swap head), so the bill is the measured FLOPs of
+# `policy.sample` itself — the naive prefix re-encode as implemented, d
+# sequential forwards — plus one target eval per sample for the IS weight.
+# Draw parity: the GFN eval stored 5000 draws against the swap cells' 512,
+# so its rows use the first 512 draws and their weights, with ESS recomputed
+# on that window — everywhere else in this file ESS is frozen-not-recomputed.
 GFN_ARMS = {
     "gfn_tb": "GFlowNet, trajectory balance",
     "gfn_fldb": "GFlowNet, forward-looking DB",
@@ -242,13 +240,12 @@ def kawasaki_cell(
 
 
 def sampling_floor(target, ref_states, ref_probs, n_draws, n_bootstrap=200, seed=0):
-    """The error a PERFECT sampler would still show at the neural cells'
+    """The error a perfect sampler would still show at the neural cells'
     draw count: n_draws exact multinomial draws from the enumerated
     conditional, scored against it, averaged over bootstrap replicates.
-    The 10x10 fills bootstrap the reference against itself because the
-    reference there is itself sampled; here the reference is exact, so the
-    floor belongs to the sampler side -- a neural cell at or below this
-    row is indistinguishable from exact at its own N."""
+    The reference here is exact, so the floor belongs to the sampler side --
+    a neural cell at or below this row is indistinguishable from exact at
+    its own N."""
     generator = torch.Generator().manual_seed(seed)
     replicates = []
     for _ in range(n_bootstrap):
@@ -326,10 +323,10 @@ def main(argv=None):
                 recipe_suffix, tag = "w2", TAG
             cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_{arm}_10k_{recipe_suffix}"]
             # The head carries the FLOP forward, so it is built at the
-            # BILLING config -- separable for a masked-attention head,
-            # whatever it trained under. Same function, cheaper contraction;
-            # see house_table_8x8.flop_billing_config. The reference itself
-            # is unaffected: it comes from the target, not the head.
+            # billing config -- separable for a masked-attention head,
+            # whatever it trained under (same function, cheaper contraction;
+            # see house_table_8x8.flop_billing_config). The reference comes
+            # from the target, not the head, so it is unaffected.
             _, head, _, _ = exact_reference(flop_billing_config(cfg))
             example_x = ref_states[:1]
             example_t = torch.full((1,), 0.5)

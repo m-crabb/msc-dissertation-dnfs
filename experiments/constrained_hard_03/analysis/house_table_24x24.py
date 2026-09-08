@@ -1,32 +1,30 @@
 """Fill pass for the 24x24 rung of the house evaluation table.
 
-THE THINNEST RUNG: one coupling (sigma_c), two cells (patch radius 3 and
-4), three seeds each, tag 20260903-d576-sc, launched 2026-09-03 on the DoC
-a100 partition and landed 2026-09-04/06. It is a scaling probe of the d400
-sigma_c recipe, and the table reads as one.
+The thinnest rung: one coupling (sigma_c), two cells (patch radius 3 and 4),
+three seeds each, tag 20260903-d576-sc, launched 2026-09-03 on the DoC a100
+partition and landed 2026-09-04/06. It is a scaling probe of the d400 sigma_c
+recipe, and the table reads as one.
 
-  * SINGLE COUPLING BY CONSTRUCTION. No sigma = 0.1 wave was run at d576
-    (every rung below saturates there), so the body has one five-column
-    half rather than an empty sigma = 0.1 half that would read as "not yet
-    landed".
-  * THE R=3 CELL IS THE d400 sigma_c R=3 bf16 CELL MOVED TO THE LATTICE
-    (tests/test_configs.py pins exactly two changed fields: the lattice and
-    a loss microbatch of 128, which is gradient-exact and rides for memory
-    only). R=4 moves the radius and nothing else. Capacity is held.
-  * bf16 TRAINING ONLY, fp32 evaluation, as at d400.
+  * One coupling by construction: no sigma = 0.1 wave was run at d576 (every
+    rung below saturates there), so the body has one five-column half rather
+    than an empty sigma = 0.1 half that would read as "not yet landed".
+  * The R=3 cell is the d400 sigma_c R=3 bf16 cell moved to the lattice
+    (tests/test_configs.py pins two changed fields: the lattice and a loss
+    microbatch of 128, gradient-exact and there for memory only). R=4 moves
+    the radius and nothing else; capacity is held.
+  * bf16 training only, fp32 evaluation, as at d400.
 
-THE REFERENCE: `kawasaki_ref_d576_sc` (2026-09-03, 42 s on the Mac): same
-generator and sweep budget as the rungs below (8 chains, 100k burn-in +
-102,400 sampling sweeps, thinned at 2x the worst chain's tau), sigma
-recorded at EXACT SIGMA_C. tau 21.6-26.2 sweeps per chain against the
-D^1.5 prediction of ~25 from the d400 pool's 18.9; 15,176 stored draws;
-no external mchammer anchor (a d256 property), certification on the
-internal checks alone.
+Reference `kawasaki_ref_d576_sc` (2026-09-03, 42 s on the Mac): same generator
+and sweep budget as the rungs below (8 chains, 100k burn-in + 102,400 sampling
+sweeps, thinned at 2x the worst chain's tau), sigma recorded at exactly
+SIGMA_C. tau 21.6-26.2 sweeps per chain against the D^1.5 prediction of ~25
+from the d400 pool's 18.9; 15,176 stored draws; no external mchammer anchor
+(a d256 property), certification on the internal checks alone.
 
-FLOP/es. Every lattice-bound helper is imported from the 20x20 fill WITH
-THE SIDE PASSED EXPLICITLY: at their defaults they would bill the reference
-at (20/24)^2 = 0.69 of its proposals and score the profiles on the wrong
-lattice. Pinned by tests/test_house_table_24x24.py.
+FLOP/es: every lattice-bound helper is imported from the 20x20 fill with the
+side passed explicitly; at their defaults they would bill the reference at
+(20/24)^2 = 0.69 of its proposals and score the profiles on the wrong lattice.
+Pinned by tests/test_house_table_24x24.py.
 """
 
 import argparse

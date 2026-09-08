@@ -1,101 +1,92 @@
 """Rejection rows for the hard house tables: sample off-manifold, then filter.
 
-Two routes reach the fixed-composition target WITHOUT a composition-preserving
+Two routes reach the fixed-composition target without a composition-preserving
 sampler, and both belong in the hard tables as the null the swap CTMC is
 measured against:
 
-  * UNCONSTRAINED + REJECT -- draw from the plain Ising sampler of Chapter 3
+  * unconstrained + reject -- draw from the plain Ising sampler of Chapter 3
     and keep only the draws that happen to land on c = 1/2.
-  * REJECT OFF SOFT -- draw from the penalised sampler of Chapter 4 and do
+  * reject off soft -- draw from the penalised sampler of Chapter 4 and do
     the same.
 
-BOTH ARE EXACT, which is the point worth stating before any cost claim. For
-importance-weighted draws {(x, w)} targeting pi, restricting to the event
-{x in C} and keeping the same weights is importance sampling for the
-conditional pi(. | C): the restriction changes the normaliser, and the
-normaliser cancels in the self-normalised estimator. For the SOFT sampler the
-argument needs one extra step and gives a stronger conclusion: on the manifold
-the penalty term lambda*d*(c_+(x) - c_target)^2 is IDENTICALLY ZERO because
-c_+(x) = c_target exactly, so
+Both are exact. For importance-weighted draws {(x, w)} targeting pi,
+restricting to the event {x in C} and keeping the same weights is importance
+sampling for the conditional pi(. | C): the restriction changes the normaliser,
+and the normaliser cancels in the self-normalised estimator. For the soft
+sampler the argument needs one extra step and gives a stronger conclusion: on
+the manifold the penalty lambda*d*(c_+(x) - c_target)^2 is identically zero
+because c_+(x) = c_target exactly, so
 
     pi_soft(x) restricted to C  ==  pi_Ising(x) restricted to C  ==  pi_C(x),
 
-i.e. filtering the soft sampler targets the HARD chapter's distribution with
-no penalty residue at all. That is why the kept draws score an ESS fraction in
-the nineties rather than paying for the penalty.
+i.e. filtering the soft sampler targets the hard chapter's distribution with no
+penalty residue, which is why the kept draws score an ESS fraction in the
+nineties rather than paying for the penalty.
 
-WHICH TARGET THE ESS REFERS TO -- an examiner will ask, and the answer is
-"both, and they are the same number". The stored log-weights are
-log pi~(x) - log q(x) for the sampler's ORIGINAL target pi~. Targeting the
-constrained pi_C = pi~ 1[x in C] / Z_C with the rejection-filtered proposal
-q_C = q 1[x in C] / q(C) needs
+Which target the ESS refers to: both, and they are the same number. The stored
+log-weights are log pi~(x) - log q(x) for the sampler's original target pi~.
+Targeting the constrained pi_C = pi~ 1[x in C] / Z_C with the
+rejection-filtered proposal q_C = q 1[x in C] / q(C) needs
 
     w_C(x) = pi_C(x) / q_C(x) = [pi~(x)/Z_C] [q(C)/q(x)] = (q(C)/Z_C) w(x),
 
-i.e. the ORIGINAL weights times a constant. Self-normalised ESS is invariant
-under w -> c w, so no reweighting is required and the printed number is the
-ESS with respect to the constrained target. Verified 2026-08-27 on the soft
-c=0.5 cell: 0.973194 from the stored weights, 0.973194 rebuilt against the
-hard chapter's own log_prob, 0.973194 after adding an arbitrary +7.3 offset.
-Two identities make the constant exactly constant rather than nearly so, both
-measured on the kept draws: the soft penalty's contribution is 0.00e+00 on
-the manifold, and log pi_Ising - log pi_hard has spread 0.00e+00 there (the
-fixed-composition base differs by a pure constant).
+the original weights times a constant. Self-normalised ESS is invariant under
+w -> c w, so no reweighting is required and the printed number is the ESS with
+respect to the constrained target. Verified 2026-08-27 on the soft c=0.5 cell:
+0.973194 from the stored weights, 0.973194 rebuilt against the hard chapter's
+own log_prob, 0.973194 after adding an arbitrary +7.3 offset. Two identities
+make the constant exactly constant, both measured on the kept draws: the soft
+penalty contributes 0.00e+00 on the manifold, and log pi_Ising - log pi_hard
+has spread 0.00e+00 there (the fixed-composition base differs by a pure
+constant).
 
-BUT THE ESS PRICES THE SURVIVORS, NOT THE REJECTION -- never quote it alone
-for these rows. At 8x8 sigma_c it reads 0.936 on the 16 draws per seed that
-lived and is silent on the 4,984 that did not; all of that cost sits in
-FLOP/es through the 1/acceptance factor. Read alone the column suggests the
-unconstrained route is competitive at criticality, where the paired
-FLOP/es says 4.2e12 against the two-hole patch head's 3.2e9. An ESS
-estimated from 16 weights is also noisy: 0.936 +- 0.038 means "consistent
-with exact", not a measurement.
+The ESS prices the survivors, not the rejection, so never quote it alone for
+these rows. At 8x8 sigma_c it reads 0.936 on the 16 draws per seed that lived
+and is silent on the 4,984 that did not; that cost sits in FLOP/es through the
+1/acceptance factor. Read alone the column suggests the unconstrained route is
+competitive at criticality, where the paired FLOP/es says 4.2e12 against the
+two-hole patch head's 3.2e9. An ESS estimated from 16 weights is also noisy:
+0.936 +- 0.038 means "consistent with exact", not a measurement.
 
-WHAT SEPARATES THE ROUTES IS WASTE, NOT BIAS, and the measurement is stark.
-Acceptance on the shipped evals:
+What separates the routes is waste, not bias. Acceptance on the shipped evals:
 
     unconstrained + reject   11.2% (4x4 sigma=0.1)   1.24% (4x4 sigma_c)
                                                      0.33% (8x8 sigma_c)
     reject off soft          91.0% (4x4 sigma=0.1)
     swap CTMC                100% by construction, every size and coupling
 
-The collapse at criticality is the Ising model concentrating on ORDERED
-configurations, which are exactly the ones far from balanced: a uniform
-sampler would land on the 4x4 manifold 19.6% of the time
-(C(16,8)/2^16), and the critical target manages 1.24%. FLOP/es therefore
-carries the whole argument -- it is the raw per-sample bill divided by BOTH
-the acceptance rate and the ESS fraction, so a rejected draw is charged for.
+The collapse at criticality is the Ising model concentrating on ordered
+configurations, which are the ones far from balanced: a uniform sampler would
+land on the 4x4 manifold 19.6% of the time (C(16,8)/2^16), and the critical
+target manages 1.24%. FLOP/es carries the whole argument -- the raw per-sample
+bill divided by both the acceptance rate and the ESS fraction, so a rejected
+draw is charged for.
 
-WHY ONE CELL IS BLANK. The unconstrained 8x8 cell at sigma = 0.1 was never
-run (the baseline chapter's 8x8 rung is sigma_c only); every soft cell now
-exists at both sizes and couplings (the soft chapter moved its production
-size to 8x8 and filled its 4x4 sigma_c half on 2026-09-02). The blank is
-left in the table as the reminder of which one.
+One cell is blank: the unconstrained 8x8 cell at sigma = 0.1 was never run (the
+baseline chapter's 8x8 rung is sigma_c only). Every soft cell exists at both
+sizes and couplings (the soft chapter moved its production size to 8x8 and
+filled its 4x4 sigma_c half on 2026-09-02).
 
-WHAT THE 8x8 SOFT ROW SAYS. The on-slice acceptance is ~0.50 at 64 sites
-against 0.91 at 16 (the envelope exp(-lambda d (c - c_t)^2) on the c = k/d
-grid puts 0.919 / 0.499 of its mass on the exact slice at d = 16 / 64), so
-the "near-free" 1.09x overhead of the enumerable size is 2x at production
-and grows as sqrt(pi d / lambda). The survivors' ESS equals the specialist's
-own ESS in the soft table, which is the weights-are-already-correct
-argument above made measurable.
+The 8x8 soft row: on-slice acceptance is ~0.50 at 64 sites against 0.91 at 16
+(the envelope exp(-lambda d (c - c_t)^2) on the c = k/d grid puts 0.919 / 0.499
+of its mass on the exact slice at d = 16 / 64), so the "near-free" 1.09x
+overhead of the enumerable size is 2x at production and grows as
+sqrt(pi d / lambda). The survivors' ESS equals the specialist's own ESS in the
+soft table.
 
-THE ERROR COLUMNS ARE SCORED AT THE RUNG'S OWN DRAW COUNT, NOT AT WHATEVER
-REJECTION HAPPENED TO LEAVE. Rejection changes N by the acceptance rate --
-2,247 and 18,207 kept at the 4x4 floor coupling against the neural rows' 512,
-249 and 66 at criticality -- and profile errors scale with N, so scoring a
-rejection cell at its own kept count would let a route look accurate purely
-for having survived more draws (or inaccurate purely for having survived
-fewer). Every filled cell is therefore SUBSAMPLED WITHOUT REPLACEMENT to the
-rung's own draw count and averaged over replicates, exactly as the floor row
-resamples, so the numbers sit on one scale across every row of the table.
+Error columns are scored at the rung's own draw count, not at whatever
+rejection left. Rejection changes N by the acceptance rate -- 2,247 and 18,207
+kept at the 4x4 floor coupling against the neural rows' 512, 249 and 66 at
+criticality -- and profile errors scale with N, so scoring a rejection cell at
+its own kept count would let a route look accurate purely for having survived
+more draws. Every filled cell is subsampled without replacement to the rung's
+own draw count and averaged over replicates, as the floor row resamples.
 
-Where the kept count falls BELOW the rung's draw count the cell cannot be
-equalised downward and prints "--": subsampling up is not a thing, and the fix
-is a larger eval. `draws_needed` records how large -- about 41,000 raw draws
-to reach 512 kept at 4x4 sigma_c (8x the current eval) and about 1.5 million
-to reach 5,000 at 8x8 sigma_c (300x). Both are re-evals of trained
-checkpoints, not retrains.
+Where the kept count falls below the rung's draw count the cell cannot be
+equalised downward and prints "--"; `draws_needed` records how large an eval
+would reach it: about 41,000 raw draws for 512 kept at 4x4 sigma_c (8x the
+current eval) and about 1.5 million for 5,000 kept at 8x8 sigma_c (300x). Both
+are re-evals of trained checkpoints, not retrains.
 """
 
 import argparse
@@ -121,9 +112,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
 )
 
 # (paradigm, rung, coupling) -> run-dir glob, or None where no run exists.
-# Rungs are named by SITE COUNT to match the hard chapter (d16 = 4x4,
-# d64 = 8x8); the baseline and soft chapters name their cells by lattice
-# EDGE (d4, d8), which is why the globs read d4/d8 for the same lattices.
+# Rungs are named by site count to match the hard chapter (d16 = 4x4,
+# d64 = 8x8); the baseline and soft chapters name their cells by lattice edge
+# (d4, d8), which is why the globs read d4/d8 for the same lattices.
 CELLS = {
     ("unconstrained", 16, "s010"): ("01_baseline", "stage_4_d4_seed{seed}_20260609-*"),
     ("unconstrained", 16, "s220"): (
@@ -135,11 +126,9 @@ CELLS = {
         "01_baseline",
         "stage_4_d8_critical_paper_curriculum_sc_seed{seed}_20260824-wave1-sc",
     ),
-    # Soft cells are the SAME runs the soft chapter's house tables print
-    # (tab:eval-soft-4x4 = the 10k house family, tab:eval-soft-8x8 = the 8x8
-    # house specialists), so the rejection row and the soft table are priced
-    # off identical draws. The old 50k anneal cell (S2_d4_c05_50k_l50_letf_
-    # anneal_offset_clip50) was a different sampler from the one soft prints.
+    # The same runs the soft chapter's house tables print (tab:eval-soft-4x4 =
+    # the 10k house family, tab:eval-soft-8x8 = the 8x8 house specialists), so
+    # the rejection row and the soft table are priced off identical draws.
     ("soft", 16, "s010"): (
         "02_constrained_soft",
         "S2_d4_c0500_10k_l50_letf_house_seed{seed}_20260902-softhouse-d16-10k",
@@ -159,17 +148,17 @@ CELLS = {
 }
 SEEDS = (42, 43, 44, 45)
 # The draw count each rung's neural rows are evaluated at; a rejection cell
-# whose KEPT count falls below this cannot support the error columns.
+# whose kept count falls below this cannot support the error columns.
 FLOOR_DRAWS = {16: 512, 64: 5000}
 
 
 def kept_draws(run_dir, n_plus):
     """Draws on the manifold, with their original log-weights.
 
-    The weights are NOT recomputed: restricting an importance sample to an
+    The weights are not recomputed: restricting an importance sample to an
     event and keeping its weights is importance sampling for the conditional
-    (see the module docstring), so the stored weights are already the right
-    ones and any renormalisation cancels in the self-normalised estimator.
+    (see the module docstring), and any renormalisation cancels in the
+    self-normalised estimator.
     """
     samples = torch.load(run_dir / "eval" / "samples.pt", weights_only=True).float()
     log_w = torch.load(run_dir / "eval" / "log_weights.pt", weights_only=True)
@@ -189,7 +178,7 @@ def _seed_errors(
     n_replicates,
     generator,
 ):
-    """The three error columns for ONE seed, scored at `floor_draws`.
+    """The three error columns for one seed, scored at `floor_draws`.
 
     Subsampled without replacement and averaged over replicates so the number
     sits at the rung's own draw count rather than at whatever rejection left
@@ -244,12 +233,11 @@ def rejection_cell(
 ):
     """One (paradigm, rung, coupling) cell as mean +- SD over seeds.
 
-    PER SEED, not pooled, so the row reports the same statistic as every
-    neural row above it. Pooling was checked and is safe here -- the raw
-    log-weight medians agree across seeds to 0.02-0.15 nats, so no run
-    dominates a pooled softmax, and the pooled ESS matches the per-seed mean
-    to about 0.001 -- but it discards the seed spread, which is exactly what
-    tells a reader that the 8x8 critical cell rests on 15-18 draws per seed.
+    Per seed, not pooled, so the row reports the same statistic as every neural
+    row above it. Pooling is safe here (log-weight medians agree across seeds to
+    0.02-0.15 nats and the pooled ESS matches the per-seed mean to about 0.001)
+    but discards the seed spread, which is what tells a reader that the 8x8
+    critical cell rests on 15-18 draws per seed.
     """
     from experiments.dnfs_baseline_01.run import _build_model, _rebuild_from_run_dir
 
@@ -287,7 +275,7 @@ def rejection_cell(
     if run_dir is None:
         return None
 
-    # FLOP/es charges for the REJECTED draws: the raw per-sample bill is paid
+    # FLOP/es charges for the rejected draws: the raw per-sample bill is paid
     # on every draw, and only `acceptance` of them survive to be weighted.
     cfg, target, _device = _rebuild_from_run_dir(run_dir)
     model = _build_model(cfg, target)
@@ -361,26 +349,18 @@ ERROR_COLUMNS = ("dMag", "dCorr", "EW2")
 def latex_rows(table, rung, print_errors=False):
     """The two rejection rows for one rung: ESS and FLOP/es only.
 
-    THE ERROR COLUMNS ARE DELIBERATELY NOT PRINTED, even for the two cells
-    where the kept count supports them. Three reasons, and the third is the
-    decisive one:
+    The error columns are not printed even where the kept count supports them.
+    Equalised to the rung's own N every route sits at the floor (unconstrained
+    + reject 5.8/12.2/6.5, reject off soft 7.4/11.8/6.9, floor 7.2/10.9/6.5),
+    and the draw counts allow only one coupling, so the block would be half
+    filled and would restate the floor row. The rows exist for the cost
+    argument, which ESS and FLOP/es carry: both routes are exact, and what
+    separates them is acceptance (11.24% / 1.24% / 0.33% against the swap
+    CTMC's 100%). The numbers still land in the JSON; `print_errors=True`
+    emits them.
 
-      * they do not discriminate. Equalised to the rung's own N every route
-        sits at the floor -- unconstrained + reject reads 5.8/12.2/6.5 and
-        reject off soft 7.4/11.8/6.9 against a floor of 7.2/10.9/6.5 -- so
-        the cells restate the floor row rather than separating anything;
-      * these rows exist for the COST argument, which ESS and FLOP/es carry
-        in full: both routes are exact, and what separates them is acceptance
-        (11.24% / 1.24% / 0.33% against the swap CTMC's 100%);
-      * printing them at only ONE coupling, which is all the draw counts
-        allow, leaves a half-filled block whose asymmetry a reader must chase
-        into the caption. A uniformly blank error block says one thing.
-
-    The numbers are still computed and land in the JSON; `print_errors=True`
-    emits them if the disposition is ever revisited.
-
-    Nothing here is bolded: these rows are the null the neural rows are
-    measured against, not competitors for a best-in-column mark.
+    Nothing is bolded: these rows are the null the neural rows are measured
+    against, not competitors for a best-in-column mark.
     """
     lines = []
     for paradigm in ("unconstrained", "soft"):

@@ -1,10 +1,7 @@
-"""Modal wrapper for hard-constraint swap-CTMC training. Delegates the
-actual training to `experiments.constrained_hard_03.run.train` so the
-remote and local code paths share a single implementation.
-
-The container image is built by installing pixi inside the container and
-running `pixi install --environment dev --locked` against the project's
-`pixi.lock`, so the remote runtime stack matches local dev byte-for-byte.
+"""Modal wrapper for hard-constraint swap-CTMC training. Training itself is
+`experiments.constrained_hard_03.run.train`, so remote and local share one
+implementation. The image installs pixi against the project's `pixi.lock`
+(`pixi install --environment dev --locked`), matching the local dev stack.
 
 Usage (after `modal token new` and `modal secret create wandb-secret ...`):
     # Single config, blocking (used for smoke checks):
@@ -39,9 +36,8 @@ PROJECT_DIR = "/repo"
 APP_NAME = "dnfs-hard"
 PIXI_ENV_BIN = f"{PROJECT_DIR}/.pixi/envs/cuda/bin"
 
-# The sigma-ladder cells that `ladder()` fans out over: same D=16,
-# c_target=0.5, leTF, doubly_hollow head; sigma is the only thing that
-# varies (subcritical / critical / supercritical, operating sigma_c = 0.22305).
+# Cells `ladder()` fans out over: D=16, c_target=0.5, leTF, doubly_hollow;
+# sigma alone varies (sub/critical/supercritical, sigma_c = 0.22305).
 LADDER_CFGS = (
     "H2_d16_c50_s010_letf_dh",
     "H2_d16_c50_s223_letf_dh",
@@ -75,15 +71,11 @@ image = (
     .run_commands(
         f"cd {PROJECT_DIR} && CONDA_OVERRIDE_CUDA=12.4 "
         "pixi install --environment cuda --locked",
-        # torch.compile needs the CUDA driver-API header: inductor compiles a
-        # small cuda_utils.c with the system gcc, and the locked pixi env
-        # ships no CUDA dev headers (no cuda.h anywhere in the image). The
-        # runtime wheel carries include/cuda.h; installed --no-deps
-        # so the locked env's torch/nvidia libs are untouched, and CPATH below
-        # puts the header on gcc's search path.
-        # (env python called directly: `pixi run` would re-validate the cuda
-        # virtual package, which no build container can satisfy; the env
-        # ships no pip, so ensurepip bootstraps it first)
+        # torch.compile's inductor builds cuda_utils.c with the system gcc and
+        # the locked env ships no cuda.h; the runtime wheel carries one, added
+        # --no-deps so torch/nvidia stay put, with CPATH below pointing gcc at
+        # it. Env python directly: `pixi run` would re-validate the cuda virtual
+        # package, unsatisfiable in a build container; ensurepip supplies pip.
         f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m ensurepip && "
         f"{PROJECT_DIR}/.pixi/envs/cuda/bin/python -m pip install "
         "--no-deps nvidia-cuda-runtime-cu12",
@@ -98,8 +90,7 @@ image = (
                 f"{PROJECT_DIR}/.pixi/envs/cuda/lib/python3.11/"
                 "site-packages/nvidia/cuda_runtime/include"
             ),
-            # Venue parity with the DoC sbatch scripts, which export this.
-            # Allocator headroom on
+            # Venue parity with the DoC sbatch scripts; allocator headroom on
             # the 40 GB Modal A100s, not a speed lever.
             "PYTORCH_ALLOC_CONF": "expandable_segments:True",
         }
@@ -129,9 +120,9 @@ def _resolve_head_kind(head_kind: str) -> str | None:
 
 
 @app.function(
-    # L4 deliberately (2026-08-30): the GFN 4x4 cells are tiny (d=16, hidden
-    # 128, 10k steps) and latency-bound on the sequential 16-step sampler,
-    # where the A100's bandwidth buys nothing. Minutes-scale per cell.
+    # L4 (2026-08-30): the GFN 4x4 cells are tiny (d=16, hidden 128, 10k steps)
+    # and latency-bound on the sequential 16-step sampler, where the A100's
+    # bandwidth buys nothing.
     gpu="L4",
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -140,16 +131,13 @@ def _resolve_head_kind(head_kind: str) -> str | None:
 def train_gfn_remote(cfg_name: str, seed: int = 42, tag: str = ""):
     """Run a single GFN comparator cell on Modal (small-lattice venue).
 
-    Same stable-tag preemption contract as train_remote: the tag is minted
-    once at spawn time, a retry lands in the same run dir and resumes from
-    checkpoints/resume.pt; volume.commit rides the checkpoint hook."""
+    Same stable-tag preemption contract as train_remote."""
     _train_gfn_on_volume(cfg_name, seed, tag)
 
 
 @app.function(
-    # The d256 GFN cells: ~9 h per 100k seed on an A30, so the TB re-run
-    # after the log Z weight-decay fix runs here. Same card family as the archived
-    # d256 swap cells; DNFS_TRAIN_GPU overrides as for train_remote.
+    # The d256 GFN cells: ~9 h per 100k seed on an A30. Same card family as the
+    # archived d256 swap cells; DNFS_TRAIN_GPU overrides as for train_remote.
     gpu=os.environ.get("DNFS_TRAIN_GPU", "A100-80GB"),
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -178,21 +166,14 @@ def _train_gfn_on_volume(cfg_name: str, seed: int, tag: str) -> None:
 
 
 @app.function(
-    # A100 for seed runs (decision 2026-07-06): the perf profile showed the
-    # workload bandwidth-bound (layernorm/copies), where the L4 is weakest;
-    # the win concentrates in the eval slices. (bench_remote moved to A100
-    # too on 2026-07-23, so eval-cost numbers match production hardware.)
-    # 80GB spelled out 2026-08-14: Modal's bare "A100" is the 40 GB variant,
-    # and the d=256 cells were sized on the DoC cluster's 80 GB a100s. A
-    # 40 GB card here is not hardware-matched to any archived d=256 run and
-    # will OOM the enlarged-rollout knobs (c_t_batch=512 peaks ~20 GB on top
-    # of training state). Small-lattice apps elsewhere in the repo keep the
-    # cheaper default deliberately.
-    # DNFS_TRAIN_GPU (2026-08-26): launch-time venue override, read where
-    # `modal run` executes. A100-80GB stays the default; the d64 w2 mo
-    # migration runs A100-40GB (sm_80-identical to the archived namesakes,
-    # which trained on 40 GB Modal A100s) and d256 follow-on seeds may pass
-    # H100/H200 — record the card in the run's provenance when overridden.
+    # A100 for seed runs (2026-07-06): the workload is bandwidth-bound
+    # (layernorm/copies), where the L4 is weakest, and the win concentrates in
+    # the eval slices. 80GB spelled out 2026-08-14: Modal's bare "A100" is the
+    # 40 GB variant, but the d=256 cells were sized on the DoC cluster's 80 GB
+    # a100s and a 40 GB card OOMs the enlarged-rollout knobs (c_t_batch=512
+    # peaks ~20 GB on top of training state). DNFS_TRAIN_GPU (2026-08-26) is a
+    # launch-time venue override read where `modal run` executes; record the
+    # card in the run's provenance when overridden.
     gpu=os.environ.get("DNFS_TRAIN_GPU", "A100-80GB"),
     volumes={"/results": volume},
     secrets=[wandb_secret],
@@ -207,13 +188,11 @@ def train_remote(
 ):
     """Run a single hard-constraint training config on Modal.
 
-    `tag` is minted ONCE at spawn time by the local entrypoints: a Modal
-    preemption retry re-runs this function with identical inputs, so a stable
-    tag makes the retry land in the same run dir and resume from
-    checkpoints/resume.pt instead of training from scratch (a 100k mask_one
-    run once restarted from step 0 for want of exactly this).
-    `volume.commit` rides along as the checkpoint hook so resume state is on
-    the volume even if a preemption skips the death-flush."""
+    `tag` is minted once at spawn time by the local entrypoints: a preemption
+    retry re-runs this function with identical inputs, so a stable tag lands it
+    in the same run dir and resumes from checkpoints/resume.pt instead of
+    training from scratch. `volume.commit` rides the checkpoint hook so resume
+    state survives a preemption that skips the death-flush."""
     import sys
     from dataclasses import replace
 
@@ -338,15 +317,13 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
 def _resolve_multi_event_trit(multi_event: int):
     """Map the CLI-facing trit onto eval_only's three-valued multi_event.
 
-    Modal's CLI has no way to pass None, and eval_only's None is the value
-    that matters most: it defers to the cell's own canonical trajectory
-    step, which is what makes recovery evals and grid probes land in the
-    canonical eval/ (or eval_ne<k>/) dirs that frozen comparisons read.
-    A bool default therefore cannot work — False would silently force the
-    one-event step on a matching-step cell — and the `or None` trick the
-    float/int sentinels use would make an explicit one-event probe
-    (False) unrequestable. Hence a trit: -1 -> None (canonical, default),
-    0 -> False (force one-event), 1 -> True (force matching step)."""
+    Modal's CLI cannot pass None, and None is the value that matters most: it
+    defers to the cell's own canonical trajectory step, so recovery evals and
+    grid probes land in the canonical eval/ (or eval_ne<k>/) dirs that frozen
+    comparisons read. A bool cannot carry that, since False would silently
+    force the one-event step on a matching-step cell. Hence a trit:
+    -1 -> None (canonical, default), 0 -> False (force one-event),
+    1 -> True (force matching step)."""
     trit_to_multi_event = {-1: None, 0: False, 1: True}
     if multi_event not in trit_to_multi_event:
         raise ValueError(
@@ -375,31 +352,21 @@ def eval_remote(
     stage_best: int = -1,
     use_ema: bool = False,
 ):
-    """Re-run the end-of-run eval for a run dir already on the volume
-    (recovery for trainings whose final eval died, e.g. the 2026-07-06
-    d=64 OOMs before final_eval chunked its draw). `multi_event` is a
-    three-state flag because the underlying eval has three behaviours and
-    Modal's CLI cannot pass None: -1 (default) defers to the cell's own
-    canonical trajectory step, so recovery/probe evals land in the
-    canonical eval/ (or eval_ne<k>/) dirs the frozen comparisons read;
-    0 forces the one-event step and 1 the matching step, each writing a
-    contrast dir (eval_one_event*/ or eval_multi_event*/) when it is the
-    non-canonical choice for the cell. A plain bool cannot carry this: an
-    explicit False silently forces one-event on a matching-step cell,
-    diverting the eval away from its canonical dir. `smc_tau > 0` runs
-    the SMC-resampled eval instead (artefacts to eval_smc_tau<τ>/,
-    alongside the untouched plain-IS eval/); 0.0 is the "plain eval"
-    sentinel — a τ=0 trigger never fires anyway, so the sentinel can't
-    collide with a real sweep point. `n_euler_override > 0` re-draws on
-    that sampling grid instead of the cell's own (artefacts to
-    eval_ne<k>/; the grid-decoupling probe — see run.eval_only); 0 is the
-    same can't-collide sentinel. `stage_best >= 0` draws from
-    best_stage<k>.pt instead of final.pt (artefacts to eval_stage<k>/,
-    the checkpoint-selection read); -1 is its sentinel,
-    since stage 0 is a real stage and cannot serve as one. `use_ema` draws
-    from final_ema.pt; combined with no grid override it is the recovery
-    for a run whose EMA eval died before landing (eval_only refuses that
-    combination whenever a frozen eval_ema/ already exists)."""
+    """Re-run the end-of-run eval for a run dir already on the volume (recovery
+    for trainings whose final eval died, e.g. the 2026-07-06 d=64 OOMs before
+    final_eval chunked its draw).
+
+    Sentinels, since Modal's CLI cannot pass None: `multi_event` -1 defers to
+    the cell's own canonical trajectory step (see _resolve_multi_event_trit),
+    0 forces the one-event step and 1 the matching step, each writing a contrast
+    dir (eval_one_event*/ or eval_multi_event*/) when non-canonical for the
+    cell. `smc_tau > 0` runs the SMC-resampled eval into eval_smc_tau<τ>/
+    beside the untouched plain-IS eval/; a τ=0 trigger never fires, so 0.0
+    cannot collide with a real sweep point. `n_euler_override > 0` re-draws on
+    that sampling grid into eval_ne<k>/ (the grid-decoupling probe; see
+    run.eval_only). `stage_best >= 0` draws best_stage<k>.pt into
+    eval_stage<k>/, -1 being its sentinel since stage 0 is a real stage.
+    `use_ema` draws from final_ema.pt."""
     import sys
     from pathlib import Path
 
@@ -421,10 +388,9 @@ def eval_remote(
 
 
 @app.function(
-    # Same A100-80GB class as eval_remote: this draws the eval's own sample
-    # count on the eval's own grid, and additionally holds the full
-    # (n_euler_steps + 1, chunk, d) trajectory, so it is strictly heavier
-    # than the eval it mirrors.
+    # Same A100-80GB class as eval_remote and strictly heavier: it draws the
+    # eval's own samples on the eval's own grid while holding the full
+    # (n_euler_steps + 1, chunk, d) trajectory.
     gpu="A100-80GB",
     volumes={"/results": volume},
     timeout=6 * 60 * 60,
@@ -495,32 +461,27 @@ def mdns_gate(argv: str = ""):
 
 @app.function(gpu="A100-80GB", timeout=2 * 60 * 60)
 def bench_remote(argv: str = "", isolate: bool = True):
-    """Run the profile/benchmark harness on the production GPU. `argv` is
-    the space-separated profile_swap CLI string, e.g.
-    "--mode eval --d 64 --batch 256 --n-euler-steps 128". Several
-    configurations separated by ";" run back to back in the one container,
-    so a whole head ladder pays the cold start once.
+    """Run the profile/benchmark harness on the production GPU. `argv` is the
+    space-separated profile_swap CLI string, e.g. "--mode eval --d 64 --batch
+    256 --n-euler-steps 128"; several configurations separated by ";" run back
+    to back in the one container, so a head ladder pays one cold start.
 
-    `isolate` (the default) gives each configuration a FRESH SUBPROCESS
-    inside that one container, because a benched row must not depend on what
-    was benched before it and several kinds of torch state are per-process,
-    not per-module. The one that was actually corrupting the table is the
-    dynamo recompile budget (see profile_swap._CompileGaveUp): it is spent
-    per forward CODE OBJECT, so interval / masked_attention / stencil share
-    it, four configurations exhaust it, and every later one silently runs
-    EAGER -- measured on an A100 2026-08-29 as 26.4 ms / 2.96 GB against
-    10.1 ms / 1.76 GB for the identical interval d=256 B=32 row benched
-    first. `--tf32` leaks the same way: it leaves
-    set_float32_matmul_precision("high") on for every following row.
-    A subprocess costs one torch import (~15 s) and removes the whole class.
-    Pass isolate=False only to reproduce an in-process roster on purpose.
+    `isolate` (the default) gives each configuration a fresh subprocess inside
+    that container, because torch state that corrupts a benched row is
+    per-process. The dynamo recompile budget (profile_swap._CompileGaveUp) is
+    spent per forward code object, which interval / masked_attention / stencil
+    share, so four configurations exhaust it and every later one silently runs
+    eager -- measured on an A100 2026-08-29 as 26.4 ms / 2.96 GB against
+    10.1 ms / 1.76 GB for the identical interval d=256 B=32 row benched first.
+    `--tf32` leaks the same way, leaving set_float32_matmul_precision("high")
+    on for every following row. Pass isolate=False only to reproduce an
+    in-process roster on purpose.
 
-    A100-80GB is spelled out deliberately: Modal's bare "A100" is the 40 GB
-    variant, which OOMs the large-batch arms this harness exists to measure
-    (masked_attention peaks 5.0 GB at d=256 B=32, so a B=512 arm wants
-    ~80 GB). It also matches the DoC cluster's a100 partition, so benched
-    costs stay comparable to the recorded run wall-clocks — which is the
-    whole point of benching on production hardware."""
+    A100-80GB is spelled out because Modal's bare "A100" is the 40 GB variant,
+    which OOMs the large-batch arms this harness exists to measure
+    (masked_attention peaks 5.0 GB at d=256 B=32, so a B=512 arm wants ~80 GB);
+    it also matches the DoC cluster's a100 partition, keeping benched costs
+    comparable to the recorded run wall-clocks."""
     import os
     import subprocess
     import sys
@@ -586,15 +547,11 @@ def training_flops(argv: str = ""):
 
 
 @app.function(
-    # A100-80GB, spelled out: Modal's bare "A100" is the 40 GB variant, and
-    # every other function in this file inherits that 40 GB default. The
+    # A100-80GB, spelled out: Modal's bare "A100" is the 40 GB variant. The
     # distinction bites on d=256 batch sizing — a masked-attention forward
     # peaks 5.0 GB at B=32, so a B=512 arm wants ~80 GB and silently OOMs a
-    # 40 GB card. Measured on Modal 2026-08-14; the DoC cluster's a100
-    # partition is 80 GB, so cluster-tuned batch sizes do NOT transfer to a
-    # bare gpu="A100" Modal function.
-    # The dev Mac's MPS is the wrong home for this entirely: one d=256 arm
-    # runs about an hour there and starves the machine.
+    # 40 GB card (measured on Modal 2026-08-14). The DoC a100 partition is
+    # 80 GB, so cluster-tuned batch sizes do not transfer to a bare "A100".
     gpu="A100-80GB",
     volumes={"/results": volume},
     timeout=4 * 60 * 60,
@@ -648,14 +605,12 @@ def zero_shot_transfer(
     compositions: str = "0.5,0.46875,0.4375,0.375,0.3125,0.25,0.625",
     # Exact Euler grid points k/127 for k = 16, 32, 58, 76, 95, 111, 127, so no
     # stop time snaps and every row's coupling is exact. k=58 is the closest the
-    # production grid comes to the certified sigma=0.1 reference (it gives
-    # 0.100629, a 0.6% offset -- fine for ESS, which needs no reference, but a
-    # correlation comparison there wants a reference regenerated at 0.100629).
-    # Composition 0.625 is the Z2 mirror of 0.375: the target family is exactly
-    # symmetric under the global flip, and thp is not equivariant by
-    # construction, so the pair measures the trained head's Z2 symmetry rather
-    # than the probe's correctness. Measured 2026-08-27: symmetric within seed
-    # noise.
+    # production grid comes to the certified sigma=0.1 reference (0.100629, a
+    # 0.6% offset -- fine for ESS, but a correlation comparison there wants a
+    # reference regenerated at 0.100629). Composition 0.625 is the Z2 mirror of
+    # 0.375: the target family is symmetric under the global flip and thp is not
+    # equivariant by construction, so the pair measures the trained head's Z2
+    # symmetry. Measured 2026-08-27: symmetric within seed noise.
     stop_times: str = (
         "0.125984252,0.251968504,0.456692913,0.598425197,0.748031496,0.874015748,1.0"
     ),
@@ -667,12 +622,10 @@ def zero_shot_transfer(
     """Local CLI entry: one spawned container per seed, so the three run
     concurrently rather than serialised behind one cold start.
 
-    Spawned (not blocking): the seeds are independent and nothing downstream
-    needs them in order. `checkpoint` defaults to final_ema.pt because the
-    published 16x16 table cell is the EMA eval -- the three seeds' EMA readings
-    are 0.805/0.838/0.836, mean 0.826, which is the printed number. Probing
-    final.pt instead would show a ~2.5-point deficit at the t*=1, c=0.5 anchor
-    that is checkpoint choice, not failed transfer."""
+    `checkpoint` defaults to final_ema.pt because the published 16x16 table
+    cell is the EMA eval -- the three seeds read 0.805/0.838/0.836, mean 0.826,
+    which is the printed number. final.pt instead shows a ~2.5-point deficit at
+    the t*=1, c=0.5 anchor that is checkpoint choice, not failed transfer."""
     handles = []
     for seed in seeds.split(","):
         run_dir = "/results/" + run_template.format(seed=seed.strip())
@@ -807,14 +760,11 @@ def evalonly(
     n_euler_override: int = 0,
 ):
     """Spawn eval-only recovery over comma-separated run dir names on the
-    volume (fire-and-forget: launch with --detach). `multi_event` is a
-    trit, because Modal's CLI cannot pass None and the eval has three
-    behaviours: -1 (default) uses each cell's own canonical trajectory
-    step so artefacts land in the canonical eval/ (or eval_ne<k>/) dirs;
-    0 forces the one-event step; 1 forces the matching step (the
-    non-canonical choice writes a contrast dir instead). `smc_tau > 0`
-    runs the SMC-resampled eval variant instead of the plain-IS one;
-    `n_euler_override > 0` the grid-decoupling probe (eval_ne<k>/)."""
+    volume (fire-and-forget: launch with --detach). `multi_event` is a trit
+    (see _resolve_multi_event_trit): -1 uses each cell's own canonical
+    trajectory step, 0 forces the one-event step, 1 the matching step.
+    `smc_tau > 0` runs the SMC-resampled eval variant instead of the plain-IS
+    one; `n_euler_override > 0` the grid-decoupling probe (eval_ne<k>/)."""
     _resolve_multi_event_trit(multi_event)  # fail fast locally on bad values
     names = [n.strip() for n in run_dirs.split(",") if n.strip()]
     for name in names:

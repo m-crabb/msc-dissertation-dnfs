@@ -2,21 +2,17 @@
 Ising model at the critical coupling.
 
 Produces an output directory (default results/kawasaki_ref_d256_sc/) containing
-STORED DRAWS (samples.pt), not just scalar statistics, for downstream
+stored draws (samples.pt), not just scalar statistics, for downstream
 observable-decoupling analysis and sample-montage figures.
 
 The coupling sigma and the output directory are command-line parameters whose
-defaults reproduce the original certified reference exactly. Sigma has to be a
-parameter because a reference set is a reference only for the sigma it was
-generated at: every certified number below (nn-correlation, energy per site,
-the Gelman-Rubin values) is a property of p(x) proportional to
-exp(sigma * x^T A x) at that one sigma. Judging model samples trained at one
-sigma against a reference drawn at another injects a systematic shift of size
-d<nn>/dsigma * delta-sigma into every comparison, which no amount of extra
-reference sampling removes. Making sigma explicit at the call site is what
-stops a stale hard-coded value from silently becoming that systematic.
+defaults reproduce the original certified reference exactly. A reference set is
+a reference only for the sigma it was generated at: every certified number below
+is a property of p(x) proportional to exp(sigma * x^T A x) at that one sigma, so
+judging model samples trained at another sigma injects a systematic of size
+d<nn>/dsigma * delta-sigma that no amount of extra reference sampling removes.
 
-What makes this a CERTIFIED reference rather than just "some MCMC output":
+Certification rests on five checks:
 
 * Matched energy convention. The chain accepts on the exact unnormalised
   target log-density log p(x) = sigma * x^T A x used by
@@ -33,7 +29,7 @@ What makes this a CERTIFIED reference rather than just "some MCMC output":
   independent and plain stderr on the set is honest.
 * Multi-start mode balance. At fixed c = 0.5 the Z2 spin-flip maps the slice
   to itself and the near-critical system phase-separates, so chains are seeded
-  from BOTH ordered (phase-separated, both orientations) and random starts;
+  from both ordered (phase-separated, both orientations) and random starts;
   certification includes Gelman-Rubin across all chains and an explicit
   ordered-vs-random start-condition agreement check. A chain stuck in its
   starting basin would fail these, not silently bias the set.
@@ -44,9 +40,9 @@ What makes this a CERTIFIED reference rather than just "some MCMC output":
   the data kept for inspection, never deleted.
 
 Sampler machinery is reused from discrete_flow_sampler.mcmc.kawasaki (the
-non-local unlike-pair swap chain, the deliberately strong practitioner
-baseline — NOT the slow-mixing local variant); observables and diagnostics
-from discrete_flow_sampler.diagnostics.metrics.
+non-local unlike-pair swap chain, the deliberately strong practitioner baseline,
+not the slow-mixing local variant); observables and diagnostics from
+discrete_flow_sampler.diagnostics.metrics.
 
 Run:  pixi run -e default python -m experiments.constrained_hard_03.generate_kawasaki_reference_d256
       (add --sigma / --out-dir to generate a sigma-matched twin elsewhere)
@@ -75,10 +71,9 @@ from discrete_flow_sampler.mcmc.kawasaki import (
 )
 from discrete_flow_sampler.targets.ising import SIGMA_C, FixedCompositionIsingTarget
 
-# `main` sets these defaults from --lattice-side before generating chains.
-# build_initial_spins and run_one_chain read this shared size; imported use
-# at multiple sizes would need explicit size arguments. The tested
-# external_nn_anchor helper already takes its lattice side explicitly.
+# `main` sets these defaults from --lattice-side before generating chains;
+# build_initial_spins and run_one_chain read the shared size. Imported use at
+# multiple sizes would need explicit size arguments.
 LATTICE_SIDE = 16
 N_SITES = LATTICE_SIDE * LATTICE_SIDE  # 256
 DEFAULT_SIGMA = SIGMA_C  # exact sigma_c; the archived
@@ -133,10 +128,8 @@ def run_one_chain(chain_index, sigma):
     (snapshots int8 (n_record, d), meta dict).
 
     sigma is threaded through rather than read from a module constant so that
-    burn-in and sampling provably use the SAME coupling as the certification
-    statistics computed downstream — a reference whose burn-in equilibrated at
-    one sigma and whose draws were accepted at another would certify cleanly
-    and still be wrong.
+    burn-in and sampling provably use the same coupling as the certification
+    statistics computed downstream.
     """
     init_kind, init_side = CHAIN_START_CONDITIONS[chain_index]
     burn_seed = SEED_BASE + chain_index
@@ -242,14 +235,13 @@ def external_nn_anchor(sigma, lattice_side):
     """The mchammer-measured 0.578756 +- 0.004 external anchor, or None off
     (sigma_c AND d256).
 
-    The anchor is the independently measured equilibrium nn-correlation AT
-    sigma_c ON the 16x16 lattice; it is a property of that one (coupling,
-    size) pair. Off sigma_c it would fail spuriously through d<nn>/dsigma;
-    at another lattice it would mis-certify through finite-size effects,
-    which PEAK at criticality — the d400 sigma_c reference (2026-08-30) is
-    the case that forced the second gate. Without the anchor the
-    certification rests on the internal checks alone (Gelman-Rubin,
-    start-condition agreement) and records that no external anchor exists.
+    The anchor is the independently measured equilibrium nn-correlation at
+    sigma_c on the 16x16 lattice, a property of that one (coupling, size) pair.
+    Off sigma_c it would fail spuriously through d<nn>/dsigma; at another lattice
+    it would mis-certify through finite-size effects, which peak at criticality
+    — the d400 sigma_c reference (2026-08-30) is the case that forced the second
+    gate. Without the anchor, certification rests on the internal checks alone
+    (Gelman-Rubin, start-condition agreement) and records that fact.
     """
     if sigma == SIGMA_C and lattice_side == 16:
         return CERTIFICATION_NN_TARGET, CERTIFICATION_NN_TOLERANCE
@@ -259,9 +251,9 @@ def external_nn_anchor(sigma, lattice_side):
 def main():
     args = parse_args()
     sigma, out_dir = args.sigma, args.out_dir
-    # Rebound HERE, before the target, the chains or any statistic touch them.
-    # Every downstream use reads the module constant, so this is the single
-    # point at which the run's lattice is fixed.
+    # Rebound before the target, the chains or any statistic touch them: every
+    # downstream use reads the module constant, so this is the single point at
+    # which the run's lattice is fixed.
     global LATTICE_SIDE, N_SITES
     LATTICE_SIDE = args.lattice_side
     N_SITES = LATTICE_SIDE * LATTICE_SIDE

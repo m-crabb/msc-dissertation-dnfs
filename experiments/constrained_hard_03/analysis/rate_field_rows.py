@@ -15,8 +15,8 @@ The row is the mean of the last `--tail` evaluations of each seed (the run's fin
 coupling), then mean +- SD over seeds. Rate diagnostics use raw parameters and
 training minibatches sampled across path times; matching load comes from the
 corresponding rollout batch. Runs must be completed, use one common configuration,
-and have distinct seeds. The adjacent/non-adjacent split is NOT logged
-and needs a head forward; it is left blank here on purpose.
+and have distinct seeds. The adjacent/non-adjacent split is not logged and
+needs a head forward; it is left blank here.
 """
 
 import argparse
@@ -50,10 +50,9 @@ def row_for(run_dirs, tail):
             )
         seeds.add(seed)
         log = pd.read_csv(run_dir / "training_log.csv")
-        # Including a four-step smoke run alongside the full seed-42 run
-        # reproduces the erroneous 4x4 row (Lambda=1.8 rather than 2.4).
-        # Its eight-step grid also matches the old caption, whereas the
-        # completed runs used 100 steps.
+        # A four-step smoke run alongside the full seed-42 run reproduces the
+        # erroneous 4x4 row (Lambda=1.8 rather than 2.4); its eight-step grid
+        # matches the old caption, while the completed runs used 100 steps.
         if log.empty or int(log["step"].iloc[-1]) != cfg["train"]["n_steps"] - 1:
             raise ValueError(f"incomplete training log: {run_dir}")
         log = log.dropna(subset=["rate_pair_mean"]).tail(tail)

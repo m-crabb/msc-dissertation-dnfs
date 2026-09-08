@@ -67,40 +67,33 @@ def build_target_and_policy(cfg: GFNCellCfg, device):
 
 
 def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
-    """AdamW over the policy, with each arm's NORMALISER optionally in its
+    """AdamW over the policy, with each arm's normaliser optionally in its
     own faster lr group: log_z for TB, the flow head for FL-DB.
 
-    See GFNCellCfg.log_z_learning_rate and .flow_head_learning_rate for
-    the two whys — the same failure at two scales (Adam's ~lr/step speed
-    limit left TB's log Z 2.4 nats short at d16, and the FL-DB flow head
-    still climbing toward the ~43-nat completion-entropy scale at d64's
-    full 50k budget). Splitting changes NOTHING for cells with the fields
-    unset: the archived flat construction is reproduced exactly, so every
-    archived cell stays comparable.
+    Adam's ~lr/step speed limit left TB's log Z 2.4 nats short at d16, and
+    the FL-DB flow head still climbing toward the ~43-nat completion-entropy
+    scale at d64's full 50k budget (see GFNCellCfg.log_z_learning_rate and
+    .flow_head_learning_rate). With the fields unset the archived flat
+    construction is reproduced exactly.
 
     Requesting a flow-head group on a policy built without one (a TB cell)
-    raises rather than silently training nothing at the fast lr.
-
-    Groups carry a "name" key so the warmup ramp can target the network
-    group alone (see apply_lr_warmup).
+    raises rather than silently training nothing at the fast lr. Groups carry
+    a "name" key so the warmup ramp can target the network group alone.
     """
     groups = []
     split_out = set()
     if cfg.log_z_learning_rate is not None:
-        # weight_decay 0: log Z is a normaliser, not a weight.
-        # AdamW's decoupled decay caps any scalar at 1/wd -- Adam's
-        # normalised step saturates at magnitude 1 and the decay term
-        # wd*theta balances it there -- i.e. 100 at torch's default 0.01.
-        # Harmless at d16/d64 (slice log Z 44-54; the learned value sat
-        # 0.08-0.11 nat under the IS estimate, ESS unaffected), but the d256
-        # slice sits at ~183 (sigma 0.1) / ~230 (sigma_c) and the whole
-        # 16x16 TB wave (tag 20260831-gfn-d256) stalled with log Z pinned at
-        # 100.0 +- 0.1 on all six seeds, the ~73-nat residual acting as a
-        # wrong REINFORCE baseline (zero-mean, variance-inflating; grad norm
-        # 5.9e3 at step 0 against the 500 clip). The archived d16/d64 cells
-        # trained under the decay and are not re-run. The network group
-        # keeps torch's default 0.01, a declared deviation from the house
-        # trainer's 1e-4.
+        # weight_decay 0: AdamW's decoupled decay caps any scalar at 1/wd
+        # (Adam's normalised step saturates at magnitude 1, balanced by
+        # wd*theta) -- 100 at torch's default 0.01. Harmless at d16/d64
+        # (slice log Z 44-54, learned value 0.08-0.11 nat under the IS
+        # estimate), but the d256 slice sits at ~183 (sigma 0.1) / ~230
+        # (sigma_c) and the 16x16 TB wave (tag 20260831-gfn-d256) stalled
+        # with log Z pinned at 100.0 +- 0.1 on all six seeds, the ~73-nat
+        # residual acting as a wrong REINFORCE baseline (grad norm 5.9e3 at
+        # step 0 against the 500 clip). Archived d16/d64 cells trained under
+        # the decay and are not re-run. The network group keeps torch's
+        # default 0.01, a declared deviation from the house trainer's 1e-4.
         groups.append(
             {
                 "params": [policy.log_z],
@@ -137,12 +130,10 @@ def build_optimiser(cfg: GFNCellCfg, policy) -> torch.optim.AdamW:
 
 def apply_lr_warmup(optimiser, cfg: GFNCellCfg, step: int) -> None:
     """House-mirror linear lr ramp (training.py): (step+1)/warmup_steps over
-    the first warmup_steps updates, then the full lr. Applied to the
-    NETWORK group only — the split groups (TB's log_z, FL-DB's flow head)
-    exist because Adam starves the normaliser at the shared lr, and
-    re-throttling them for the ramp would re-create a mild version of that
-    failure at the start of every run.
-    A no-op when warmup_steps is 0 (every archived d16 cell)."""
+    the first warmup_steps updates, then the full lr. Applied to the network
+    group only, since re-throttling the split normaliser groups would
+    re-create the starvation they exist to fix. A no-op when warmup_steps is
+    0 (every archived d16 cell)."""
     if cfg.warmup_steps <= 0 or step > cfg.warmup_steps:
         return
     scale = min(1.0, (step + 1) / cfg.warmup_steps)
@@ -337,16 +328,14 @@ def train_gfn(
         "log_z",
         "ess_fraction_train",
         "sigma",
-        # d64 failure-triage columns. grad_norm is the PRE-clip total
-        # norm (clip_grad_norm_'s return value), so whether the rail engaged
-        # is readable as grad_norm > grad_clip_max_norm. mean_log_q is the
-        # entropy proxy: RISING mean log q with healthy batch ESS is the
-        # mode-collapse signature the on-policy ESS cannot see (reverse-KL
-        # blindness). log_z_is_batch is the live IS estimate of the slice
-        # log Z — at d64 there is no enumeration to arbitrate the TB
-        # learned value, so learned-vs-IS gap + tail slope replace the 4x4
-        # exact arbitration. ess_frozen is the eval_every diagnostic
-        # (epsilon=0, n_eval_samples_training draws, current stage sigma).
+        # d64 failure-triage columns. grad_norm is the pre-clip total norm,
+        # so rail engagement reads as grad_norm > grad_clip_max_norm.
+        # mean_log_q is the entropy proxy: rising mean log q with healthy
+        # batch ESS is the mode collapse the on-policy ESS cannot see.
+        # log_z_is_batch is the live IS estimate of the slice log Z; at d64
+        # there is no enumeration to arbitrate the TB learned value, so the
+        # learned-vs-IS gap replaces the 4x4 exact check. ess_frozen is the
+        # eval_every diagnostic (epsilon=0, current stage sigma).
         "grad_norm",
         "mean_log_q",
         "log_z_is_batch",

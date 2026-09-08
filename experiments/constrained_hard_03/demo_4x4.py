@@ -1,18 +1,16 @@
 """4x4 demo analysis: exact-enumeration fidelity + the N_eff(O) metric for
 the 10k MA/MO cells and the mchammer Kawasaki chains.
 
-FRAMING: gate-adjacent validation and demo at the enumerable size -- NOT the
-mixing probe itself (probe sizes are 8x8/16x16). It reuses the probe's
-metric so the machinery transfers:
+Validation at the enumerable size, not the mixing probe itself (probe sizes
+are 8x8/16x16); it reuses the probe's metric,
 
     N_eff(O) = Var_pi[O] / MSE(O_hat)
 
-with exact E_pi[O], Var_pi[O] from the enumerated 12,870-state slice (the one
-rung where ground truth has zero uncertainty) and MSE over replicate
-estimates. Compute currencies stay separate: backbone fwd_stack
-ROWS for the neural cells (counted by hook, so mask_one's stacked per-anchor
-passes are charged honestly), TRIAL steps = closed-form energy evaluations
-for Kawasaki. Never blended.
+with exact E_pi[O], Var_pi[O] from the enumerated 12,870-state slice and MSE
+over replicate estimates. Compute currencies stay separate and are never
+blended: backbone fwd_stack rows for the neural cells (counted by hook, so
+mask_one's stacked per-anchor passes are charged honestly), trial steps =
+closed-form energy evaluations for Kawasaki.
 
 Two stages:
   gpu   -- (Modal, via modal_app::demo) fidelity via the gate's run_gate +
@@ -92,10 +90,9 @@ def exact_moments(target):
 
 
 def n_eff_observable(estimates, exact_mean, exact_var):
-    """N_eff(O) = Var_pi[O] / MSE(O_hat), MSE against the EXACT mean over R
-    replicate estimates (no bias/variance split needed: truth is enumerated).
-    Jackknife-over-replicates standard error, since N_eff is a nonlinear
-    functional of the replicate errors."""
+    """N_eff(O) = Var_pi[O] / MSE(O_hat), MSE against the exact mean over R
+    replicate estimates. Jackknife-over-replicates standard error, since
+    N_eff is a nonlinear functional of the replicate errors."""
     estimates = np.asarray(estimates, dtype=float)
     squared_errors = (estimates - exact_mean) ** 2
     n_replicates = len(squared_errors)
@@ -111,10 +108,9 @@ def n_eff_observable(estimates, exact_mean, exact_var):
 
 class BackbonePassRowCounter:
     """Counts rows through the backbone's fwd_stack: the network-pass
-    currency. Every body pass (masked, anchor-stacked, or plain) calls
-    fwd_stack exactly once with the TRUE stacked row count, so the measure is
-    invariant to whether a head runs one pass (masked_attention) or stacks d
-    per-anchor passes into the batch dimension (mask_one)."""
+    currency. Every body pass calls fwd_stack once with the stacked row count,
+    so the measure is invariant to whether a head runs one pass
+    (masked_attention) or stacks d per-anchor passes (mask_one)."""
 
     def __init__(self, backbone):
         self.rows = 0
@@ -287,12 +283,11 @@ def kawasaki_phi_mass(kawasaki_dir, sigma, target, burn_in_trials):
 
 
 def kawasaki_cell_estimates(kawasaki_dir, sigma, target, burn_in_trials):
-    """Per chain: post-burn-in snapshot-mean estimates; cost = TOTAL trial
+    """Per chain: post-burn-in snapshot-mean estimates; cost = total trial
     steps (burn-in charged -- Kawasaki pays it in real use). Chains are
-    selected by the sigma stored IN each npz, not by filename tag. tau_int on
+    selected by the sigma stored in each npz, not by filename tag. tau_int on
     the energy series is a secondary diagnostic, converted snapshot -> trial
-    units explicitly (the analyze_data trial-step gotcha applies to any
-    snapshot-indexed autocorrelation, including our integrated_autocorr)."""
+    units explicitly."""
     rows = []
     for npz_path in sorted(Path(kawasaki_dir).glob("*.npz")):
         data = np.load(npz_path)

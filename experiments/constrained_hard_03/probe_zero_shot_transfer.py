@@ -1,68 +1,54 @@
-"""Zero-shot transfer probe: what a trained swap sampler delivers OFF its
-training target, with no retraining and no architectural change.
+"""Zero-shot transfer probe: a trained swap sampler off its training target.
 
-Measures transfer across coupling and composition from existing checkpoints.
+Measures transfer across coupling and composition from existing checkpoints,
+with no retraining and no architectural change.
 
--------------------------------------------------------------------------------
-Axis 1: coupling (temperature), by early stopping. No retraining, no new base.
--------------------------------------------------------------------------------
+Axis 1: coupling (temperature), by early stopping.
 On the fixed-composition slice, `base_log_eta` is the constant -log C(d, N_A)
 (`ising.py`, FixedCompositionIsingTarget.base_log_eta). Substituting into the
 geometric path
 
     log p~_t(x) = (1 - t) * base_log_eta(x) + t * log_prob(x)
 
-the (1 - t) term is an additive constant in x, so it cancels from every ratio —
-which is exactly why `swap_log_ratio` collapses to t*sigma*Delta(x^T A x) alone.
-Therefore, ON THE SLICE,
+the (1 - t) term is an additive constant in x, so it cancels from every ratio,
+which is why `swap_log_ratio` collapses to t*sigma*Delta(x^T A x) alone.
+Therefore, on the slice,
 
     p~_t  ∝  exp( t * sigma * x^T A x )   =   the Ising target at coupling t*sigma.
 
-The annealing path IS a coupling anneal. A model trained to endpoint sigma
-traverses the entire family {sigma' : 0 <= sigma' <= sigma} on its way there, so
-stopping at t* = sigma'/sigma lands on the target at sigma' exactly.
+The annealing path is a coupling anneal: a model trained to endpoint sigma
+traverses the whole family {sigma' : 0 <= sigma' <= sigma} on its way there, so
+stopping at t* = sigma'/sigma lands on the target at sigma' exactly. The weights
+stay valid because `sample_swap_ctmc` accumulates `log_weights += xi_t * dt` at
+the left endpoint — a running Riemann sum with no reference to t=1 or to a
+terminal state — so log w(t*) = int_0^{t*} xi_s ds is by construction the
+importance weight for p~_{t*}. Early stopping reads the integral before it
+finishes; it is not an approximation.
 
-Why the weights stay valid. `sample_swap_ctmc` accumulates
-`log_weights += xi_t * dt` at the left endpoint — a running Riemann sum with no
-reference to t=1 or to a terminal state. So log w(t*) = int_0^{t*} xi_s ds is by
-construction the importance weight for p~_{t*}. Early stopping is not an
-approximation; it reads the integral before it finishes.
-
--------------------------------------------------------------------------------
-Axis 2: composition, by amending the target's slice. No retraining either.
--------------------------------------------------------------------------------
+Axis 2: composition, by amending the target's slice.
 The swap heads take (x, t) only — they never see c except through x — so a head
 transfers to another slice unchanged. Amending the target changes `sample_base`
 (a different number of up-sites) and the slice constant. That constant enters
-xi_t as a constant, hence contributes a constant to every log w, hence CANCELS
+xi_t as a constant, hence contributes a constant to every log w, hence cancels
 from self-normalised weights: ESS is untouched by it and only the absolute
-log Z-hat shifts. So the composition axis is measured on a clean metric.
+log Z-hat shifts, so the composition axis is measured on a clean metric.
 
--------------------------------------------------------------------------------
-Both axes are EXACT whatever the model does.
--------------------------------------------------------------------------------
-The learned rates supply only a proposal; xi_t is evaluated against whichever
-target is handed in, so the importance weights re-target by construction. A
-model that transfers badly produces a low ESS, never a biased answer. That is
-what makes this probe safe to run before committing to any training design: the
-downside is a wasted sampling run, not a wrong number.
+Both axes are exact whatever the model does. The learned rates supply only a
+proposal; xi_t is evaluated against whichever target is handed in, so the
+importance weights re-target by construction and a model that transfers badly
+produces a low ESS, never a biased answer. The failure mode guarded is the
+opposite one — reading a good ESS as proof of transfer when the weights were
+never re-targeted at all; the tests pin the re-targeting against exact 4x4
+enumeration there.
 
-The failure mode it guards against is the opposite one — reading a good ESS as
-proof of transfer when the weights were never re-targeted at all. The tests pin
-the re-targeting against exact 4x4 enumeration precisely there.
-
--------------------------------------------------------------------------------
-Design choice: one pass per composition, not one per stopping time.
--------------------------------------------------------------------------------
-`return_cv_integrand=True` hands back xi_t at every step and
-`return_all_states=True` hands back the ensemble at every step, so
-cumsum(xi * dt) reconstructs the weights at EVERY stopping time from a single
-sampler pass. The rejected alternative — one truncated run per t* — costs
-len(stop_times) times as much for the same output, agreeing to float32
-summation order (pinned by `test_running_weights_match_a_truncated_run`).
-
-The composition axis cannot be collapsed the same way: a different slice means a
-different base draw, so it genuinely needs its own pass.
+One pass per composition, not one per stopping time: `return_cv_integrand=True`
+hands back xi_t at every step and `return_all_states=True` the ensemble at every
+step, so cumsum(xi * dt) reconstructs the weights at every stopping time from a
+single sampler pass. One truncated run per t* costs len(stop_times) times as
+much for the same output, agreeing to float32 summation order (pinned by
+`test_running_weights_match_a_truncated_run`). The composition axis cannot be
+collapsed the same way: a different slice means a different base draw, so it
+genuinely needs its own pass.
 """
 
 from __future__ import annotations
@@ -90,14 +76,14 @@ MAX_ENUMERABLE_SITES = 20
 
 
 def running_log_weights(head, target, x0, ts, *, multi_event: bool = False):
-    """Trajectory and importance weights at EVERY grid time, from one pass.
+    """Trajectory and importance weights at every grid time, from one pass.
 
     Returns (trajectory, running) with trajectory (T, B, d) and running (T, B),
     aligned so that `running[k]` is the correct importance log-weight for the
     ensemble `trajectory[k]` against the target p~_{ts[k]}.
 
     An off-by-one shifts every reported coupling: `cv_integrand[k]` is xi_t
-    at (trajectory[k], ts[k]), the LEFT endpoint of step k. The weight at
+    at (trajectory[k], ts[k]), the left endpoint of step k. The weight at
     trajectory[k] sums increments 0..k-1; running[0] = 0 because the t=0
     ensemble is the base and the weight integral is empty.
     """
@@ -168,8 +154,8 @@ def slice_free_energy_per_site(
         Z_t = exp[-(1 - t) log C] * sum_x exp[t sigma x^T A x]
             = exp[-(1 - t) log C] * Z_slice(t sigma),       Z_0 = 1,
 
-    and Jensen gives E_q[log w_t] <= log Z_t (paper Eq. 37: a variational LOWER
-    bound on log Z, hence an UPPER bound on F). Adding the slice constant back,
+    and Jensen gives E_q[log w_t] <= log Z_t (paper Eq. 37: a variational lower
+    bound on log Z, hence an upper bound on F). Adding the slice constant back,
 
         log Z_slice(t sigma) >= E_q[log w_t] + (1 - t) log C(d, n_plus),
 
@@ -260,7 +246,7 @@ def transfer_grid(
     `sample_chunk` streams the draw the way the production eval does: the
     (T, B, d) trajectory is the memory wall at d=256 (128 x 5000 x 256 floats is
     ~650 MB before the head's own pair activations), and only the requested
-    stopping slices are retained per chunk. ESS is computed on the POOLED
+    stopping slices are retained per chunk. ESS is computed on the pooled
     weights afterwards — computing it per chunk and averaging would report the
     chunk size as the ceiling.
     """
@@ -319,22 +305,19 @@ def transfer_grid(
 def check_sampling_provenance(saved: dict, current: dict, run_dir=None) -> dict:
     """Assert the run's recorded config still describes what we are sampling.
 
-    Scoped deliberately narrower than run.py's eval-only guard, which demands
-    whole-config equality. That is right for a LAUNCH: the whole recipe is the
-    provenance. It is wrong here, because a sampling-only probe cannot be
-    reached by the training subtree — no optimiser runs, no loss is formed — and
-    whole-config equality would make the probe unrunnable against any finished
-    cell whose training-side config has moved since.
+    Scoped narrower than run.py's eval-only guard, which demands whole-config
+    equality: a sampling-only probe cannot be reached by the training subtree —
+    no optimiser runs, no loss is formed — and whole-config equality would make
+    the probe unrunnable against any finished cell whose training-side config
+    has moved since. The thp2 cells are that case: `halt_on_cv_inversion_after`
+    was cleared to None after they launched, and those runs completed their
+    full 100k horizon without the cold-CV screening halt firing.
 
-    These thp2 cells are exactly that case: `halt_on_cv_inversion_after` was
-    cleared to None after they launched. It is a cold-CV screening halt, and
-    these runs completed their full 100k horizon without it firing.
-
-    Strict on everything OUTSIDE `train` — model shape, sigma, composition,
+    Strict on everything outside `train` — model shape, sigma, composition,
     head kind and n_euler_steps all change what is being sampled, and a silent
     mismatch there would be attributed to failed transfer rather than to the
     wrong model. Returns the training-side drift for the caller to log, so the
-    relaxation is always visible in the run's output rather than implicit.
+    relaxation stays visible in the run's output.
     """
     sampling_drift = {
         key: (saved.get(key), current.get(key))
@@ -408,7 +391,7 @@ def main():
     parser.add_argument("--n-euler-steps", type=int, default=None)
     parser.add_argument("--sample-chunk", type=int, default=None)
     # Tri-state, not a bare flag: `final_eval` resolves multi_event to
-    # cfg.ctmc.use_matching_step, and this cell trains with it ON. A probe that
+    # cfg.ctmc.use_matching_step, and this cell trains with it on. A probe that
     # silently ran one-event would miss the t*=1 anchor against the published
     # ESS and the gap would read as failed transfer rather than a wrong step.
     parser.add_argument(

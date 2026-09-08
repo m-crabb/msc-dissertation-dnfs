@@ -1,32 +1,30 @@
 """Per-configuration exact-recovery scatter at the 4x4 gate (app:logp-scatters).
 
-ARCHIVED FIGURE (6 September 2026). The rationale below is historical:
-DNFS path weights cannot generally be inverted into an endpoint log-density.
-For configuration-probability validation use scripts/configuration_calibration_4x4.py
-and scripts/plot_configuration_calibration_4x4.py instead. This script remains
-only to reproduce the retired image, whose density interpretation was incorrect.
+Archived figure (6 September 2026), whose density interpretation was
+incorrect: DNFS path weights cannot generally be inverted into an endpoint
+log-density. For configuration-probability validation use
+scripts/configuration_calibration_4x4.py and
+scripts/plot_configuration_calibration_4x4.py instead; this script remains
+only to reproduce the retired image.
 
-The house tables deliberately exclude TV/KL over configurations; the agreed
-replacement at enumerable sizes is this scatter: estimated sampler
-log-density against the exactly enumerated conditional, one point per drawn
-sample. The estimator is the importance-weight identity
+The scatter plots estimated sampler log-density against the exactly
+enumerated conditional, one point per drawn sample, via the importance-weight
+identity
 
     w(x) = pi~(x) / q(x)   =>   log q(x) = log pi~(x) - log w(x),
 
 with q the sampler's own (normalised) path-marginal density, so the y-axis
-needs no fitted constant IF the stored log-weights are the raw ratio. In
-practice the swap eval's log-weights carry one common additive shift (the
-on-manifold base constant and any time-grid constant cancel in the
-normalised weights but ride along in the raw ones -- see the App. C ELBO
-note), so the script PRINTS the weighted mean offset per run and removes
-the per-arm MEDIAN offset before plotting; a healthy sampler then shows a
-tight cloud on the diagonal, and mass misallocation shows as vertical
-scatter that no offset can hide. The x-axis is log pi_cond = log pi~ -
-logsumexp over the enumerated C(16,8) slice, exact by construction.
+needs no fitted constant if the stored log-weights are the raw ratio. The
+swap eval's log-weights carry one common additive shift (the on-manifold base
+constant and any time-grid constant cancel in the normalised weights but ride
+along in the raw ones -- see the App. C ELBO note), so the script prints the
+weighted mean offset per run and removes the per-arm median offset before
+plotting; mass misallocation then shows as vertical scatter that no offset
+can hide. The x-axis is log pi_cond = log pi~ - logsumexp over the enumerated
+C(16,8) slice, exact by construction.
 
-Reads the Wave-2 runs (tag 20260825-hard-w2) for the three printed arms;
-the two held factorised sigma_c cells are omitted on purpose -- this is a
-print exhibit and they are held from print.
+Reads the Wave-2 runs (tag 20260825-hard-w2) for the three printed arms; the
+two held factorised sigma_c cells are omitted.
 """
 
 import argparse
@@ -58,11 +56,10 @@ ARM_STYLE = {
     "ma": ("masked-attention", "tab:blue"),
     "thp": ("two-hole patch", "tab:orange"),
 }
-# GFlowNet comparator arms (the `_par` parity cells). Their y-axis is
-# EXACT: the AR policy is normalised by construction, so log q = log pi~ -
-# log w with no additive shift — the printed median offset is a sanity
-# check expected ~0, removed anyway for uniform treatment. Draw parity
-# with the swap arms' 512-draw evals: first 512 of the stored 5000.
+# GFlowNet comparator arms (the `_par` parity cells): the AR policy is normalised
+# by construction, so log q = log pi~ - log w carries no additive shift and the
+# printed median offset is a ~0 sanity check, removed anyway for uniform
+# treatment. Draws: first 512 of the stored 5000, parity with the swap arms.
 GFN_ARM_STYLE = {
     "gfn_tb": ("GFN, trajectory balance", "tab:red"),
     "gfn_fldb": ("GFN, forward-looking DB", "tab:purple"),
@@ -93,7 +90,7 @@ def state_keys(states):
 
 def panel_series(results_dir=None):
     """Plot-ready panels, shared by main() and the combined app:logp-scatters
-    figure so the two can never disagree about what is being plotted.
+    figure.
 
     One entry per panel: the exact-reference limits, the axis label, and one
     (label, colour, x, y) series per printed arm with the per-arm median

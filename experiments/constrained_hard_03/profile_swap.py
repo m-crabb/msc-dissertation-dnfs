@@ -2,7 +2,7 @@
 
 Modes isolate the pipeline layers so the eval/train cost ranking (backbone
 passes vs readout vs Euler sampling logic vs syncs vs Python dispatch) is
-measured rather than guessed:
+measured:
 
     head        one LeTFMaskOneSwapHead forward (no_grad): the (d*B)-row pass
     train_step  one inner gradient step: loss_swap forward + backward + AdamW
@@ -15,9 +15,8 @@ Timing protocol: fixed seeds, `--warmup` calls (default one), then `--repeats`
 timed calls with torch.cuda.synchronize() around each on CUDA. Peak counters
 are reset after warmup, excluding compilation/setup peaks. Reports median/min
 seconds and additional CUDA memory; BENCH_JSON also records every timing and
-total allocated peak, including model, prepared batch and optimiser state.
-`--profile` additionally wraps one call in torch.profiler
-and prints the top ops by self time (CPU table locally, CUDA table on GPU).
+the total allocated peak. `--profile` wraps one call in torch.profiler and
+prints the top ops by self time (CPU table locally, CUDA table on GPU).
 
 Usage (local CPU):
     pixi run -e dev python -m experiments.constrained_hard_03.profile_swap \\
@@ -85,19 +84,16 @@ def build_head_and_target(
 ):
     """Production-shape head/target (hidden 32, 2 layers, 4 heads, sigma_c).
 
-    head_kind defaults to mask_one so every recorded baseline stays
-    comparable; "interval" benches the one-pass spike head (K3 A/B);
-    "masked_attention" benches the reported exclusion-mask head; "stencil"
-    benches the MA head with the 5-point lattice-stencil band family (the
-    ladder's 0.8046/0.86034 cell); "factorised" benches the rank-8
-    bilinear+global head at its fab8-arm defaults; "naive" benches the
-    O(d^2) doubly-hollow oracle (mask BOTH sites of every ordered pair,
-    sequential loop — bit-exact to mask_one at the d=16 gate, so it
-    prices the naive rung of the forward-pass ladder rather than shipping
-    as a sampler; measurable only at small d); "two_hole_patch" benches the
-    ordering-free patch + pooled-levels head at radius `patch_radius`.
-    Parity with the production cells is pinned by
-    tests/test_profile_swap_heads.py."""
+    head_kind defaults to mask_one so every recorded baseline stays comparable.
+    "interval" is the one-pass spike head; "masked_attention" the exclusion-mask
+    head; "stencil" the MA head with the 5-point lattice-stencil band family (the
+    ladder's 0.8046/0.86034 cell); "factorised" the rank-8 bilinear+global head at
+    its fab8-arm defaults; "naive" the O(d^2) doubly-hollow oracle (masks both
+    sites of every ordered pair in a sequential loop, bit-exact to mask_one at the
+    d=16 gate, so it prices the naive rung rather than shipping as a sampler, and
+    is only measurable at small d); "two_hole_patch" the ordering-free patch +
+    pooled-levels head at radius `patch_radius`. Parity with the production cells
+    is pinned by tests/test_profile_swap_heads.py."""
     side = int(round(d**0.5))
     if side * side != d:
         raise ValueError(f"--d must be a square lattice site count, got {d}")
@@ -189,17 +185,14 @@ def _report(
     transient cost.
 
     `reset_peak_memory_stats()` resets the peak, not the allocator: a later
-    `max_memory_allocated()` still counts every tensor alive at reset time.
-    That is a real hazard whenever `main` is called more than once in a
-    process, and the subtraction also removes this configuration's own
-    parameters, which is the right call at ~100k of them (0.4 MB) -- what the
-    column is for is the transient cost of a forward, not the checkpoint size.
+    `max_memory_allocated()` still counts every tensor alive at reset time, which
+    bites whenever `main` runs more than once in a process. The subtraction also
+    removes this configuration's own ~100k parameters (0.4 MB), which is wanted.
 
-    It is NOT, however, what inflated the multi-configuration bench: measured
-    2026-08-29, subtracting the baseline moved the interval d=256 reading from
-    2.97 GB to 2.96 GB against 1.76 GB for the same configuration benched
-    first. Predecessors were being freed. The 1.2 GB was torch.compile giving
-    up and falling back to eager -- see _CompileGaveUp.
+    It is not what inflated the multi-configuration bench: measured 2026-08-29,
+    subtracting the baseline moved the interval d=256 reading from 2.97 GB to
+    2.96 GB, against 1.76 GB for the same configuration benched first. The 1.2 GB
+    was torch.compile falling back to eager -- see _CompileGaveUp.
     """
     peak_gb = (
         (torch.cuda.max_memory_allocated() - baseline_bytes) / 1e9
@@ -280,8 +273,7 @@ def _runners(args, head, target, device: torch.device) -> dict:
 
         def run_train_step_microbatched():
             # The production path when loss_microbatch_size is set: the same
-            # gradient, accumulated over row slices instead of materialising
-            # one graph over all of them.
+            # gradient, accumulated over row slices.
             optimiser.zero_grad()
             with torch.autocast(**train_autocast_kwargs):
                 loss_swap_backward_microbatched(
@@ -319,7 +311,7 @@ def _runners(args, head, target, device: torch.device) -> dict:
 
         def eval_quality_diagnostics():
             """One seeded draw: ESS fraction + composition for the flag-on vs
-            flag-off within-noise comparison (Tier-2 evidence)."""
+            flag-off within-noise comparison."""
             from discrete_flow_sampler.diagnostics.metrics import (
                 ess_from_log_weights,
             )
@@ -366,29 +358,26 @@ def _runners(args, head, target, device: torch.device) -> dict:
 class _CompileGaveUp(logging.Handler):
     """Tell whether torch.compile silently abandoned this configuration.
 
-    `nn.Module.compile()` caches per FORWARD CODE OBJECT, never per module
+    `nn.Module.compile()` caches per forward code object, not per module
     instance, and `MaskedAttentionSwapHead` subclasses `IntervalSwapHead`
     without overriding `forward` -- so interval, masked_attention and stencil
-    share ONE dynamo budget of `torch._dynamo.config.recompile_limit` (8 by
-    default). Each freshly built head spends TWO entries of it, because
+    share one dynamo budget of `torch._dynamo.config.recompile_limit` (8 by
+    default). Each freshly built head spends two entries of it, because
     `LeTFRateMatrix._cached_causal_mask` sets `_causal_mask` lazily: the first
-    trace guards the attribute ABSENT, the call after it appears fails that
-    guard and retraces. Four configurations of that family therefore exhaust
-    the budget, after which dynamo marks the code object skipped for the rest
-    of the PROCESS and every later configuration runs eager -- while still
-    printing `compile=True`, which is what makes the corruption invisible.
+    trace guards the attribute absent, the call after it appears fails that
+    guard and retraces. Four configurations of that family exhaust the budget,
+    after which dynamo skips the code object for the rest of the process and
+    every later configuration runs eager while still printing `compile=True`.
 
     Measured on an A100 2026-08-29, `--mode head --batch 32 --sdpa --d 256
     --head-kind interval`: 10.1 ms / 1.76 GB as the first configuration of a
     process, 26.4 ms / 2.96 GB as the sixth, with nothing but roster position
     changed. Raising the limit to 256 restored 10.1 ms / 1.74 GB in the same
-    six-configuration process, which is the measurement that isolates it.
-    The compiled figure is the true one: production cells set
-    `compile_head=True` and build exactly one head per process.
+    six-configuration process. The compiled figure is the true one: production
+    cells set `compile_head=True` and build one head per process.
 
     `torch._dynamo.reset()` before each `head.compile()` is the fix; this
-    handler is the alarm that says the fix stopped working, because a wrong
-    number here is otherwise perfectly plausible.
+    handler is the alarm that says the fix stopped working.
     """
 
     def __init__(self):
@@ -400,9 +389,9 @@ class _CompileGaveUp(logging.Handler):
             self.gave_up = True
 
     def arm(self) -> "_CompileGaveUp":
-        """Watch the next configuration. Installed once and re-armed rather
-        than re-added: `main` is called in a loop by `modal_app.bench_remote`,
-        and a handler per call would pile up on the logger."""
+        """Watch the next configuration. Installed once and re-armed rather than
+        re-added: `main` runs in a loop under `modal_app.bench_remote`, and a
+        handler per call would pile up on the logger."""
         self.gave_up = False
         logger = logging.getLogger("torch._dynamo")
         if self not in logger.handlers:
@@ -416,24 +405,20 @@ _COMPILE_WATCH = _CompileGaveUp()
 def _run_gfn_bench(args, device: torch.device) -> None:
     """GFN comparator rows for tab:head-cost-ladder.
 
-    The GFN has no per-Euler-step head forward: its sampler IS the
-    KV-cached autoregressive rollout (d sequential one-token steps, EAGER
-    BY CONSTRUCTION -- the per-step cache shapes are recompile territory),
-    so the "forward" this mode prices is the WHOLE per-sample rollout at
-    the bench batch, and the table's caption must say so. The policy is
-    built from the registry's d64 `_par` recipe exactly as the comparator
-    cells run it (hidden 64/2/4 = measured-param parity with the
-    masked-attention head; a different --d re-realises the same policy at
-    that lattice, the same convention the head rows use for sizes no cell
-    was trained at). Train step = eager rollout + scoring loss
-    forward/backward (compiled under --compile, the shipped
-    compile_policy=True configuration) + AdamW with the arm's own split
-    lr groups.
+    The GFN has no per-Euler-step head forward: its sampler is the KV-cached
+    autoregressive rollout (d sequential one-token steps, eager by construction
+    -- the per-step cache shapes are recompile territory), so the "forward" this
+    mode prices is the whole per-sample rollout at the bench batch, and the
+    table's caption must say so. The policy comes from the registry's d64 `_par`
+    recipe as the comparator cells run it (hidden 64/2/4 = measured-param parity
+    with the masked-attention head; a different --d re-realises the same policy
+    at that lattice). Train step = eager rollout + scoring loss forward/backward
+    (compiled under --compile) + AdamW with the arm's own split lr groups.
 
-    gfn_update instead prepares and detaches one batch before timing, then
-    reuses it for loss evaluation, backward and AdamW. This matches the
-    swap train_step boundary: neither includes trajectory generation. It
-    measures update cost, not total training cost or convergence speed.
+    gfn_update instead prepares and detaches one batch before timing, then reuses
+    it for loss evaluation, backward and AdamW. This matches the swap train_step
+    boundary: neither includes trajectory generation, so it measures update cost,
+    not total training cost or convergence speed.
     """
     from dataclasses import replace as dataclass_replace
 
@@ -675,10 +660,9 @@ def main(argv=None):
         separable_band_scores=args.separable_band_scores,
     )
     if args.tf32:
-        # TF32 also affects the target field h = x @ A and importance weights.
-        # Inputs are exactly representable integers (x is +/-1; A is the
-        # 0/1 torus adjacency counted twice per edge), and A100 accumulates
-        # in fp32. Check the residual: a nonzero value changes the estimator.
+        # TF32 also affects the target field h = x @ A and the importance
+        # weights. Inputs are exactly representable integers and A100
+        # accumulates in fp32; a nonzero residual changes the estimator.
         probe = target.sample_base(min(args.batch, 64), device=device).float()
         adjacency = target.A.float()
         torch.set_float32_matmul_precision("high")
@@ -693,9 +677,9 @@ def main(argv=None):
 
     compile_watch = None
     if args.compile:
-        # Fresh dynamo state per configuration -- see _CompileGaveUp. The
-        # caches are keyed by forward CODE OBJECT, so a roster benched in one
-        # process spends one shared budget; this hands each row its own.
+        # Fresh dynamo state per configuration -- see _CompileGaveUp. Caches are
+        # keyed by forward code object, so a roster benched in one process would
+        # otherwise share one budget.
         torch._dynamo.reset()
         compile_watch = _COMPILE_WATCH.arm()
         head.compile()

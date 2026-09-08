@@ -1,66 +1,36 @@
 """Absolute on-slice free energy by thermodynamic integration (slice TI).
 
-WHY THIS EXISTS. The neural sampler's free-energy estimate at the 8x8
-headline cell (F/d = -1.89703 +/- 0.00014 at sigma_c, from the archived
-replicate log-weights via `free_energy_lb_estimate`) is a variational
-BOUND: log Z >= E_Q[w] (paper Eq. 37), so F_hat = -E_Q[w]/(2 sigma d) sits
-at or above the truth. At 4x4 the gate compared it against exact slice
-enumeration; at 8x8 the slice has C(64,32) ~ 1.8e18 states and no
-enumeration exists, so an absolute reference must be MANUFACTURED. This
-module does that by thermodynamic integration over Kawasaki chains.
+At 4x4 the gate scores the sampler against exact slice enumeration; at 8x8
+the slice has C(64,32) ~ 1.8e18 states, so the absolute reference is built
+here instead. The sampler's own estimate is a variational bound,
+log Z >= E_Q[w] (paper Eq. 37), so its F sits at or above the truth (8x8
+sigma_c archived replicates: F/d = -1.89703 +/- 0.00014).
 
-THE EQUATIONS. On the fixed-composition slice the unnormalised law is
-log p_tilde(x) = sigma * x^T A x with A the double-counted torus adjacency
-(x^T A x = 2 * sum_<ij> s_i s_j, matching `initial_log_prob_ising` and
-`IsingTarget.A`). Then
+On the fixed-composition slice log p_tilde(x) = sigma * x^T A x with A the
+double-counted torus adjacency (x^T A x = 2 * sum_<ij> s_i s_j, matching
+`initial_log_prob_ising` and `IsingTarget.A`). Then
 
     d(log Z_slice)/d(sigma) = <x^T A x>_sigma          (TI identity)
     log Z_slice(0)          = log C(d, n_plus)          (uniform slice)
     F(sigma)/d              = -log Z_slice(sigma) / (2 sigma d)
 
 so integrating chain estimates of the mean energy over a sigma-grid from 0
-to the operating point yields the absolute reference in EXACTLY the
-convention of `free_energy_lb_estimate` / `on_slice_free_energy_reference`
-(the factor 1/(2 sigma d) is the paper's beta = 2 sigma; the gate's known
-value -2.98043 at (4x4, sigma=0.10) pins it in the tests).
+to the operating point gives the reference in the convention of
+`free_energy_lb_estimate` / `on_slice_free_energy_reference` (the factor
+1/(2 sigma d) is the paper's beta = 2 sigma; the tests pin it at -2.98043
+for 4x4, sigma=0.10).
 
-DESIGN CHOICES (and rejected alternatives):
-  * Engine: the NON-LOCAL numba Kawasaki runner `run_chain` at every grid
-    point. The probe measured tau_int(energy) ~ 10 sweeps for this variant
-    at BOTH 8x8 operating points (no critical slowing at this size), so the
-    near-sigma_c engine switch the local variant would force is unnecessary.
-    Rejected: mchammer (same move set but a separate energy-convention
-    surface to verify, and ~300x slower than the numba kernel); the local
-    NN-swap runner as primary (tau_int rises to ~55 sweeps at sigma_c) --
-    it is instead used as an independent-dynamics CROSS-CHECK at sigma_c.
-  * Quadrature: composite Simpson on a uniform grid (integrand is analytic
-    in sigma on a finite lattice -- no phase transition at finite d), with a
-    half-grid convergence check that must land well inside the statistical
-    error. Rejected: trapezoid (needless O(h^2) bias); adaptive quadrature
-    (obscures error propagation for no benefit on a smooth integrand).
-  * Uncertainty: R independent chains per grid point; the point SE is the
-    cross-chain standard error (which prices tau_int implicitly), checked
-    against batch-means tau_int from the probe's own estimator. Quadrature
-    SE follows from independence: Var = sum_i (w_i * SE_i)^2.
-  * Equilibration: the frozen competitor rule, burn-in =
-    max(1e4 sweeps, 20 * tau_int(energy)), tau_int measured per chain by
-    batch means on the post-floor trace; plus mode-seeded inits
-    (phase-separated, both sides) at sigma_c as an explicit equilibration
-    failure probe.
+Engine: the non-local numba Kawasaki runner, tau_int(energy) ~ 10 sweeps at
+both 8x8 operating points; the local NN-swap runner (tau_int ~ 55 at
+sigma_c) is an independent-dynamics cross-check. Quadrature is composite
+Simpson with a half-grid check reported next to the statistical error, and
+burn-in is max(1e4 sweeps, 20 * tau_int) with mode-seeded inits at sigma_c
+as an equilibration probe.
 
-FAILURE MODES GUARDED:
-  * Convention drift (sign, 2-sigma-d, single- vs double-counted A): the
-    end-to-end test integrates the EXACT 4x4 enumeration curve and must
-    reproduce `on_slice_free_energy_reference` to quadrature precision.
-  * Under-equilibrated chains near sigma_c: frozen burn-in rule + the
-    mode-seeded and local-dynamics cross-checks.
-  * Quadrature bias masquerading as agreement: the half-grid check is
-    reported next to the statistical error, not silently absorbed.
-
-Stages: `--stage validate4x4` runs the full chain pipeline where the exact
-answer is enumerable (the validate-at-D=4 rule) and prints estimate vs
-exact; `--stage run8x8` produces the production reference at (0.10, 8x8)
-and (0.223, 8x8) plus the neural-bias statement.
+Stages: `--stage validate4x4` runs the chain pipeline where the exact
+answer is enumerable and prints estimate vs exact; `--stage run8x8`
+produces the production reference at (0.10, 8x8) and (0.223, 8x8) plus the
+neural-bias statement.
 """
 
 import argparse
@@ -91,7 +61,7 @@ REPLICATE_CHAINS = 4
 
 
 # --------------------------------------------------------------------------
-# quadrature and closed-form pieces (unit-tested before the chains run)
+# quadrature and closed-form pieces
 # --------------------------------------------------------------------------
 
 
@@ -129,7 +99,7 @@ def _simpson_weights(grid):
 
 
 def quadrature_error(grid, standard_errors):
-    """SE of the Simpson integral for INDEPENDENT point estimates:
+    """SE of the Simpson integral for independent point estimates:
     Var = sum_i (w_i * SE_i)^2. Independence holds by construction (fresh
     chains per grid point, disjoint seeds)."""
     weights = _simpson_weights(np.asarray(grid, dtype=float))
@@ -138,7 +108,7 @@ def quadrature_error(grid, standard_errors):
 
 
 def uniform_slice_mean_energy(lattice_side):
-    """<x^T A x> under the UNIFORM half-filled slice (the sigma = 0 endpoint),
+    """<x^T A x> under the uniform half-filled slice (the sigma = 0 endpoint),
     in closed form. The fixed total magnetisation has zero variance, so
     sum_{i != j} E[x_i x_j] = -d, giving E[x_i x_j] = -1/(d-1) and
     <x^T A x>_0 = -(sum_ij A_ij)/(d-1) = -4d/(d-1) on the double-counted
@@ -181,11 +151,10 @@ def slice_ti_free_energy_per_site(grid, integrand, lattice_side, n_plus):
 def _one_chain_mean_energy(lattice_side, sigma, seed, sweeps, init="random"):
     """Post-burn-in mean of x^T A x from one non-local Kawasaki chain.
 
-    `run_chain` natively records log_prob = sigma * x^T A x per proposal;
-    dividing by sigma recovers the energy (sigma > 0 always holds here --
-    sigma = 0 is the closed-form endpoint, never a chain). The per-proposal
-    trace is thinned to per-sweep before tau/burn-in analysis so tau_int is
-    in sweeps, the frozen rule's unit."""
+    `run_chain` records log_prob = sigma * x^T A x per proposal; dividing by
+    sigma recovers the energy (sigma = 0 is the closed-form endpoint, never a
+    chain). The trace is thinned to per-sweep before tau/burn-in analysis so
+    tau_int is in sweeps, the burn-in rule's unit."""
     d = lattice_side * lattice_side
     rng = np.random.default_rng(seed)
     if init == "random":
@@ -274,8 +243,8 @@ def ti_reference(
 
 def sigma_c_cross_checks(result, lattice_side=8, sweeps=CHAIN_SWEEPS):
     """Two equilibration probes at the hardest grid point (sigma_c):
-    (a) mode-seeded non-local chains (phase-separated inits, both sides);
-    (b) the LOCAL NN-swap runner -- different dynamics, same target."""
+    mode-seeded non-local chains (phase-separated inits, both sides), and the
+    local NN-swap runner -- different dynamics, same target."""
     sigma = result["sigma"]
     d = lattice_side * lattice_side
     mode_means = []
@@ -313,9 +282,7 @@ def sigma_c_cross_checks(result, lattice_side=8, sweeps=CHAIN_SWEEPS):
 
 
 def validate_4x4():
-    """Run the REAL chain pipeline at 4x4 and score it against enumeration --
-    the validate-at-D=4 rule: prove the instrument where the answer is exact
-    before spending it where the answer is the deliverable."""
+    """Run the chain pipeline at 4x4 and score it against exact enumeration."""
     from experiments.constrained_hard_03.gate_4x4 import (
         on_slice_free_energy_reference,
     )

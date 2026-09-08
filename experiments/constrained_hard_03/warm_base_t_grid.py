@@ -1,38 +1,30 @@
-"""Gate G9 -- the SHAPE of the drive variance along the annealing path, and
-the conditional per-swap ceiling.
+"""Shape of the drive variance along the annealing path, and the conditional
+per-swap ceiling.
 
-WHY THIS EXISTS
----------------
-The warm-base design measures Var[D] only at t = 1 (reference draws) and
-t = 0 (base draws), and gets the integral
+The warm-base design measures Var[D] only at t = 1 (reference draws) and t = 0
+(base draws), which gives the integral
 
     Delta c = c_1 - c_0 = int_0^1 Var_{p_t}[D] dt
 
-exactly from those two endpoints -- but learns nothing about the SHAPE, and
-the shape is what decides the design:
+exactly, but says nothing about the shape, and the shape decides the design:
 
     warm base    Delta c / Var_{p_1}[D] = 66.1 / 38.7  = 1.71x
     uniform base                        = 135.0/170.2 = 0.79x
 
-(measured at d256 by warm_base_offline_table.py)
+(measured at d256 by warm_base_offline_table.py), i.e. the warm base's drive
+variance must average 1.7x its t=1 value across the path while the uniform
+base's averages 0.8x.  Its difficulty is therefore front-loaded near t = 0,
+exactly where the design has no measurement and where three other hazards live
+(the closed-form swap_log_ratio break, the epsilon-floor clamp stress and the
+extra |Dlog eta| range all peak at t->0).
 
-i.e. the warm base's drive variance must AVERAGE 1.7x its t=1 value across
-the path while the uniform base's averages 0.8x.  The warm base's difficulty
-is therefore front-loaded near t = 0 -- exactly where the design has no
-measurement, and exactly where three other hazards also live (the closed-form
-swap_log_ratio break is worst at t->0, the epsilon-floor stresses the clamp at
-t->0, and the extra |Dlog eta| range peaks at t->0).
+Measured at d256 by this script: the warm base sits below the uniform base at
+every t, so the design is not overturned, but the ratio runs from 0.70x at
+t = 0 to 0.24x at t = 1, path-averaged 0.49x.  The two curves peak at opposite
+ends (uniform back-loaded at t ~ 0.8, warm front-loaded at t ~ 0.4), so an
+endpoint-only comparison at t = 1 pits the uniform base near its worst against
+the warm base at its best.  Quote the path-averaged number.
 
-MEASURED ANSWER (d256, this script): the warm base sits below the uniform
-base at EVERY t, so the design is not overturned -- but the ratio runs from
-0.70x at t = 0 to 0.24x at t = 1, path-averaged 0.49x.  The two curves peak
-at opposite ends (uniform back-loaded at t ~ 0.8, warm front-loaded at
-t ~ 0.4), so an endpoint-only comparison at t = 1 pits the uniform base near
-its worst against the warm base at its best.  Quote the path-averaged
-number, not the t = 1 number.
-
-THE MATH
---------
 The annealing path is the exponential family
 
     p_t(x)  ∝  p~_t(x) = eta(x)^(1-t) rho(x)^t = exp( log eta(x) + t D(x) ),
@@ -45,42 +37,31 @@ with D as the sufficient statistic, so
 
 Endpoint evaluation gives int_0^1 Var dt exactly; this probe measures the
 integrand pointwise by running a composition-preserving (Kawasaki) Metropolis
-chain against p~_t at each t on a grid, and then checks the trapezoid integral
-back against the endpoint Delta c.  That agreement is the probe's own
-correctness gate: if the measured curve does not integrate to the
-independently-known Delta c, the chain has not mixed and no shape claim is made.
+chain against p~_t at each t on a grid, then checks the trapezoid integral back
+against the endpoint Delta c.  If the measured curve does not integrate to the
+independently known Delta c, the chain has not mixed and no shape claim is made.
 
-THE SWAP MOVE, AND WHY THE CLOSED FORM IS SAFE HERE
----------------------------------------------------
-Swapping sites i, j with x_i = a != b = x_j leaves the i-j cross term
-2 A_ij a b unchanged (it becomes 2 A_ij b a), so
+Swapping sites i, j with x_i = a != b = x_j leaves the i-j cross term 2 A_ij a b
+unchanged (it becomes 2 A_ij b a), so
 
     Delta(x^T A x) = 2 (b - a) (h_i - h_j) - 2 A_ij (b - a)^2,   h = A x
 
-which is the same identity the production closed form uses -- but here it is
-applied only to the TARGET term sigma x^T A x, never to the base.  The base's
-contribution to the acceptance ratio is evaluated by a full call to
-`log_density`, i.e. the marginal mixture logsumexp, never a per-component
-shortcut.  (Using eta_k for the component a state was "drawn from" breaks
-normalisation and every weight downstream.)
+the same identity the production closed form uses, but applied here only to the
+target term sigma x^T A x, never to the base.  The base's contribution to the
+acceptance ratio comes from a full `log_density` call, i.e. the marginal mixture
+logsumexp; using eta_k for the component a state was "drawn from" would break
+normalisation and every weight downstream.
 
-THE CONDITIONAL CEILING
------------------------
-max Delta S per swap = 2z = 16 on the square torus (12 if restricted to
-adjacent pairs), attained only when |h_i - h_j| = 8, i.e. site i has all four
-neighbours up and site j all four down, with a down-spin at i and an up-spin
-at j.  Those are two isolated point defects in two oppositely-saturated
-domains, simultaneously -- rare at sigma_c.  So the measured "3.44 achieved
-edge-units per swap = 22% of ceiling" compares against a bound that may never
-bind.  This probe reports, for states actually drawn from p_t, the
-distribution of Delta S over all valid pairs: its max (what an oracle pair
-choice could get), its mean (what a uniform-random pair choice gets), and
-upper quantiles.  That is the denominator the efficiency claim needs.
-
-MEASURED: the oracle ceiling is 9.18 at d64 and 14.44 at d256, and a
-uniformly random valid swap DESTROYS 7.61 / 9.39 edge-units.  So an achieved
-+3.44 captures 65.8% (d64) / 53.8% (d256) of the random-to-oracle range --
-and that capture FALLS with lattice size.
+Conditional ceiling: max Delta S per swap = 2z = 16 on the square torus (12 if
+restricted to adjacent pairs), attained only when |h_i - h_j| = 8 -- two
+isolated point defects in two oppositely-saturated domains at once, rare at
+sigma_c.  So the measured 3.44 achieved edge-units per swap ("22% of ceiling")
+is measured against a bound that may never bind.  This probe instead reports,
+for states actually drawn from p_t, the distribution of Delta S over all valid
+pairs: the oracle max is 9.18 at d64 and 14.44 at d256, a uniformly random valid
+swap destroys 7.61 / 9.39 edge-units, so an achieved +3.44 captures 65.8% (d64)
+/ 53.8% (d256) of the random-to-oracle range -- a capture that falls with
+lattice size.
 
 Run:  pixi run -e default python warm_base_t_grid.py [--side 8] [--steps 6000]
 """
@@ -124,9 +105,9 @@ class AnnealedKawasakiChain:
     """Metropolis on the fixed-composition slice targeting p~_t.
 
     One proposal per chain per step: pick a uniformly random up-site and a
-    uniformly random down-site and swap them.  This is the composition-
-    preserving move set, so every state stays on the slice by construction and
-    the base's support condition is never tested by an off-slice proposal.
+    uniformly random down-site and swap them.  Composition-preserving, so every
+    state stays on the slice and no off-slice proposal ever tests the base's
+    support condition.
 
     Acceptance uses log p~_t = log eta + t D, i.e.
 
@@ -163,10 +144,9 @@ class AnnealedKawasakiChain:
     def _propose_pair(self) -> tuple[np.ndarray, np.ndarray]:
         """One (up-site, down-site) pair per chain, uniformly at random.
 
-        argsort of per-row uniforms is a uniform random permutation; taking the
-        first up-site and first down-site it encounters is therefore a uniform
-        draw from each group -- the same idiom the production `sample_base`
-        uses, one level down.
+        argsort of per-row uniforms is a uniform random permutation, so taking
+        the first up-site and first down-site it encounters is a uniform draw
+        from each group -- the idiom the production `sample_base` uses.
         """
         keys = self.rng.random((self.n_chains, self.d))
         up_keys = np.where(self.spins > 0, keys, np.inf)
@@ -268,7 +248,7 @@ def run_t_grid(
 def conditional_ceiling(
     spins: np.ndarray, lattice_side: int, max_states: int, rng: np.random.Generator
 ) -> dict:
-    """Distribution of Delta S over ALL valid (up, down) pairs, per state.
+    """Distribution of Delta S over all valid (up, down) pairs, per state.
 
     Delta S = (b - a)(h_i - h_j) - A_ij (b - a)^2 with (b - a) = -2 for an
     (up, down) ordered pair.  Returns the oracle max, the uniform-random mean,
