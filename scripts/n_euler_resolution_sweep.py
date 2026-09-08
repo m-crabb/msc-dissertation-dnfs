@@ -1,43 +1,33 @@
 """Does the IS weight variance depend on the time discretisation?
 
-The question. Every archived cell integrates the trajectory on a uniform
-t-grid whose resolution was chosen per size and then never scaled: 100
-steps at 4x4, 128 at 8x8, and still 128 at 16x16 -- 4x the sites at the
-same resolution. Beskos, Crisan & Jasra (Ann. Appl. Probab. 24(4), 2014)
-prove that a single importance-sampling step needs sample size growing
-exponentially in dimension, while a SEQUENCE of intermediate targets keeps
-the effective sample size non-degenerate at fixed N -- but only if the
-number of intermediate targets grows with the dimension. Holding the grid
-fixed while quadrupling the sites is exactly the regime that theorem says
-degenerates.
+Every archived cell integrates the trajectory on a uniform t-grid whose
+resolution was chosen per size and then never scaled: 100 steps at 4x4, 128
+at 8x8, and still 128 at 16x16 -- 4x the sites at the same resolution.
+Beskos, Crisan & Jasra (Ann. Appl. Probab. 24(4), 2014) prove that a single
+importance-sampling step needs sample size growing exponentially in
+dimension, while a sequence of intermediate targets keeps the effective
+sample size non-degenerate at fixed N -- but only if the number of
+intermediate targets grows with the dimension. Holding the grid fixed while
+quadrupling the sites is exactly the regime that theorem says degenerates.
 
-Why the existing grid analysis does not answer this. That study reanalysed
-already-recorded 128-step rollouts, comparing 128 against subsampled 64/32
-and warped-64 grids. Every arm it could construct had at most 128 points,
-so its negative result is about ALLOCATION at a fixed budget. RESOLUTION
--- more points than the run used -- was never testable from those
-artefacts and has never been measured in either direction.
+The earlier grid analysis reanalysed already-recorded 128-step rollouts
+against subsampled 64/32 and warped-64 grids, so its negative result is
+about allocation at a fixed budget; resolution -- more points than the run
+used -- was never testable from those artefacts.
 
-What this measures. Fresh rollouts off a frozen checkpoint at several
-n_euler values, reporting Var[log w] rather than ESS. That choice is
-forced, not stylistic: the lognormal identity ESS/N = exp(-Var[log w])
+Fresh rollouts off a frozen checkpoint at several n_euler values, reporting
+Var[log w] rather than ESS. The lognormal identity ESS/N = exp(-Var[log w])
 reproduces every healthy archived run to within 2%, but at 16x16 the run
 carries Var[log w] = 18.1, for which exp(-18.1) = 1.4e-8 -- far below the
-1/N floor of a 5000-draw self-normalised estimator. The reported 0.0031
-there is the estimator hitting its floor, not a measurement of sampler
-quality. Var[log w] still estimates cleanly (log w is near-Gaussian,
-skew 0.15), so it is the only diagnostic that survives at that size.
+1/N floor of a 5000-draw self-normalised estimator, so the reported 0.0031
+there is the estimator hitting its floor. Var[log w] still estimates
+cleanly (log w is near-Gaussian, skew 0.15).
 
-Confound stated plainly. n_euler drives BOTH the trajectory law (Euler
-steps) and the weight quadrature, so a drop in Var[log w] at finer
-resolution cannot be attributed to quadrature alone -- the proposal
-improves too. That is deliberate: the decision this informs is whether to
-spend wall-clock on resolution, and either mechanism justifies the spend
-equally. What it CANNOT do is separate the two.
-
-Cost note. n_euler is a sequential loop, so its cost is LINEAR in wall
-clock and flat in memory -- the rollout is no-grad and states are
-discarded per step. It is not a memory lever.
+n_euler drives both the trajectory law (Euler steps) and the weight
+quadrature, so a drop in Var[log w] at finer resolution cannot be
+attributed to quadrature alone. That is deliberate: the decision this
+informs is whether to spend wall-clock on resolution, and either mechanism
+justifies the spend equally.
 
 Usage:
     python -m scripts.n_euler_resolution_sweep --run-dir <dir> \

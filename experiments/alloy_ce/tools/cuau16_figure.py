@@ -13,11 +13,10 @@ Layout (MetaDNS Fig. 5 as the model, exact enumeration where they have a chain):
   (g)     the residual F_IS - F_exact of the same points in meV/site, min-max over seeds,
           where the result actually lives: on (f) every point sits on the curve.
 
-Why raw draws in (c,d,e) and IS estimates in (f,g): the histograms show what the sampler itself
-produces (the MetaDNS panels are KDEs of raw x_Au); the free energy is by definition the IS
-normaliser read off the weights (paper Eq. 37 gives the bound; -logmeanexp is the estimate).
-Why absolute meV/site rather than kT above the minimum: the table's dF column uses meV/site,
-and an alloy reader knows -41 meV/site at CuAu means something; kT per cell does not travel.
+The histograms show what the sampler itself produces (the MetaDNS panels are KDEs of raw x_Au);
+the free energy is by definition the IS normaliser read off the weights (paper Eq. 37 gives the
+bound; -logmeanexp is the estimate). Units are absolute meV/site to match the table's dF column,
+where -41 meV/site at CuAu is a reading an alloy reader can use.
 
 Usage: pixi run -e dev python -m experiments.alloy_ce.tools.cuau16_figure \\
            --free "results/02_constrained_soft/A1_cuau16_T1200*fc" \\

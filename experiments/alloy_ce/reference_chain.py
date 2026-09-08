@@ -1,13 +1,13 @@
 """Classical references for the alloy cells: Metropolis chains and a beta-ladder TI.
 
-WHY. On the Ising torus the references are certified elsewhere (Wolff pools,
-numba Kawasaki, mchammer, Ferdinand-Fisher). The Cu-Au expansion has none of
-those, and mchammer cannot read its CLEASE-format ECIs, so the reference is
-built here on the SAME exported energy the samplers use (`BinaryExpansionSpec`),
-which removes the energy-convention surface entirely: any disagreement between
+On the Ising torus the references are certified elsewhere (Wolff pools, numba
+Kawasaki, mchammer, Ferdinand-Fisher). The Cu-Au expansion has none of those,
+and mchammer cannot read its CLEASE-format ECIs, so the reference is built here
+on the same exported energy the samplers use (`BinaryExpansionSpec`), which
+removes the energy-convention surface entirely: any disagreement between
 sampler and chain is then a sampling statement, not a units one.
 
-TWO ENSEMBLES, ONE MOVE EACH. Free composition (the unconstrained and the
+Two ensembles, one move each. Free composition (the unconstrained and the
 penalised targets): single-site Metropolis, propose one flip per chain per
 step, accept with min(1, exp(delta log p)). Fixed composition (canonical):
 Kawasaki, propose one unlike pair per chain, accept the same way; the move set
@@ -15,8 +15,8 @@ conserves the count by construction, exactly as the swap sampler does. Both
 use `target.log_prob`, so the penalised target is the same chain with the
 penalty inside delta log p -- the VC-SGC chain in its penalty form.
 
-ABSOLUTE FREE ENERGY BY THERMODYNAMIC INTEGRATION IN beta. A chain returns
-averages, never a normaliser, so F needs a path from a solvable point:
+A chain returns averages, never a normaliser, so the absolute free energy needs
+thermodynamic integration in beta from a solvable point:
 
     d log Z / d beta = -<E>_beta,   log Z(0) = log |Omega|,
     log Z(beta) = log |Omega| - int_0^beta <E>_b db,
@@ -26,15 +26,14 @@ the coupling-ladder integration icet's ThermodynamicIntegrationEnsemble runs
 (there from the ideal solution up to the real energy), the comparator the
 hard sampler is measured against: one draw per composition against a ladder
 of chains per composition. Composite Simpson on a uniform beta grid; the
-integrand is analytic on a finite cell; the half-grid shift is reported next
-to the statistical error so quadrature bias cannot hide inside it.
+half-grid shift is reported next to the statistical error so quadrature bias
+cannot hide inside it.
 
-FAILURE MODES GUARDED. Ordering at 500 K freezes single-flip and swap chains
-(the alloy's own critical slowing): every point runs R independent chains
-from random starts, reports the cross-chain SE, and the TI ladder walks beta
-UPWARD so each rung starts from the previous rung's equilibrated states (the
-frozen competitor rule: burn-in then thinned records). On the 16-site cell
-everything here is checked against exact enumeration in the tests.
+Ordering at 500 K freezes single-flip and swap chains, so every point runs R
+independent chains from random starts, reports the cross-chain SE, and the TI
+ladder walks beta upward, each rung starting from the previous rung's
+equilibrated states. On the 16-site cell everything here is checked against
+exact enumeration in the tests.
 """
 
 from __future__ import annotations

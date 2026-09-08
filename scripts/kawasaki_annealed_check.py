@@ -1,38 +1,31 @@
 """Annealed-start robustness check for the §5.1 Kawasaki failure demos.
 
-The dissertation's neural sampler reaches sigma_c through a training-time
-sigma-curriculum, which the writeup itself frames as "Kawasaki's tempering
-paid once". Fairness therefore demands the mirror-image control: give the
-Kawasaki chains the same courtesy — a simulated-annealing initialisation
-that walks a sigma-ladder up to the target before anything is measured —
-and ask whether either §5.1 failure demo was a cold-start artefact.
+The neural sampler reaches sigma_c through a training-time sigma-curriculum,
+so fairness demands the mirror-image control: give the Kawasaki chains a
+simulated-annealing initialisation that walks a sigma-ladder up to the target
+before anything is measured, and ask whether either §5.1 failure demo was a
+cold-start artefact.
 
-Design and expected outcomes:
-
-  tau_int comparison at the measurement couplings, D in {10, 16, 24}: the
-     annealed arm should land inside the cold arm's seed band. tau_int is a property
-     of the stationary dynamics; annealing can only repair burn-in, and the
-     cold protocol already spends 200k steps of burn-in. A genuine shift
-     here would mean the printed slowing-down curves carry an
-     initialisation artefact and must be corrected.
-  R-hat(phi) and mode occupancy at D=24, sigma in {0.32, 0.40}: annealed chains start
-     DISORDERED (random at the target composition) and condense into a
-     phase-separated mode during the anneal. If each chain freezes into
+  tau_int at the measurement couplings, D in {10, 16, 24}: the annealed arm
+     should land inside the cold arm's seed band, since tau_int is a property
+     of the stationary dynamics and annealing can only repair burn-in (the
+     cold protocol already spends 200k steps of it). A genuine shift means the
+     printed slowing-down curves carry an initialisation artefact.
+  R-hat(phi) and mode occupancy at D=24, sigma in {0.32, 0.40}: annealed
+     chains start disordered (random at the target composition) and condense
+     into a phase-separated mode during the anneal. If each chain freezes into
      whichever mode it condensed into, either R-hat stays >> 1 (chains
-     disagree) or — the sharper outcome — all chains condense into the
-     SAME mode and R-hat looks healthy while half the target's mass is
-     silently missing, exactly the coverage trap hard.tex Section 5.1
-     warns that slowing-down statistics can hide. The demo is weakened
-     only if annealed chains genuinely CROSS between modes: R-hat near 1
-     AND both modes visited within each chain.
+     disagree) or — the sharper outcome — all chains condense into the same
+     mode and R-hat looks healthy while half the target's mass is silently
+     missing. The demo is weakened only if annealed chains genuinely cross
+     between modes: R-hat near 1 and both modes visited within each chain.
 
 The anneal ladder mirrors the training curriculum's rungs (0.10 to 0.223,
 the d64 recipe) and extends by steps of at most 0.04 when the target lies
-beyond sigma_c. Each rung dwells for the cold protocol's full burn-in
-budget (200k swap steps), so the annealed arm is strictly more generous
-than the cold one. Parallel tempering is deliberately NOT used here: it is
-an orthogonal wrapper that would equally accelerate the neural sampler, so
-it belongs to neither side of the comparison.
+beyond sigma_c. Each rung dwells for the cold protocol's full burn-in budget
+(200k swap steps), so the annealed arm is the more generous of the two.
+Parallel tempering is not used: it is an orthogonal wrapper that would equally
+accelerate the neural sampler, so it belongs to neither side.
 
 Run:  pixi run python -m scripts.kawasaki_annealed_check
       pixi run python -m scripts.kawasaki_annealed_check full_curve
@@ -91,12 +84,11 @@ def annealed_init(D, sigma_target, seed, dwell_steps=DWELL_STEPS):
     """Random composition-0.5 start, walked up the ladder one dwell per rung.
 
     Reuses the scalar-sigma numba kernel per rung with the configuration
-    carried forward; the composition assert catches any conservation bug
-    the chaining could hide. `dwell_steps` is the per-rung budget in raw swap
-    attempts; it is a parameter rather than the module constant because the
-    failure-curve figure runs a d-scaled protocol (a fixed number of SWEEPS at
-    every lattice size), and a fixed raw-step dwell would anneal a 32x32
-    lattice sixteen times less thoroughly than an 8x8 one."""
+    carried forward. `dwell_steps` is the per-rung budget in raw swap attempts,
+    a parameter rather than the module constant because the failure-curve
+    figure runs a d-scaled protocol (a fixed number of sweeps at every lattice
+    size) and a fixed raw-step dwell would anneal a 32x32 lattice sixteen times
+    less thoroughly than an 8x8 one."""
     d = D * D
     rng = np.random.default_rng(seed)
     x = init_random_at_composition(d, 0.5, rng)
@@ -143,14 +135,10 @@ def tau_arm():
 def full_curve_arm():
     """Annealed tau_int at every sigma failure_curves() plots.
 
-    The spot check above answers the fairness question in prose; the printed
-    figure plots the full CURVE_SIGMAS grid, so for the chapter's opening
-    figure to preempt the cold-start question itself it needs an annealed
+    The figure plots the full CURVE_SIGMAS grid, so it needs an annealed
     marker at every plotted sigma. The protocol is identical to tau_arm (same
     budgets, thinning and seed base), so (D, sigma) cells already measured in
-    an archived summary.json are reused rather than recomputed: a recompute
-    under an identical protocol could only add noise, and the archived numbers
-    are the ones the prose already quotes.
+    an archived summary.json are reused rather than recomputed.
     """
     prior = {}
     summary_path = OUT / "summary.json"

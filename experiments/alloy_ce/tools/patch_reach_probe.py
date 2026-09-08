@@ -1,20 +1,19 @@
 """Reach probe for the two-hole patch head on a cluster-expansion cell.
 
-QUESTION. The head's window sees one neighbour shell (2.7 A on fcc), the
-Cu-Au expansion carries pair terms out to 9.3 A, so unlike nearest-neighbour
-Ising the exact swap log-ratio is NOT inside the one-shell function class:
-the pooled levels must carry the far field. Before a GPU run, measure how
-much of that log-ratio each window reach can represent.
+The head's window sees one neighbour shell (2.7 A on fcc), the Cu-Au
+expansion carries pair terms out to 9.3 A, so unlike nearest-neighbour Ising
+the exact swap log-ratio is not inside the one-shell function class: the
+pooled levels must carry the far field. Before a GPU run, measure how much of
+that log-ratio each window reach can represent.
 
-METHOD. Supervised fit, no sampler. The physical pair score G[min, max]
+Supervised fit, no sampler. The physical pair score G[min, max]
 and the swap log-ratio Delta_ij = -beta DeltaE_swap share a symmetry class
 (label-symmetric, odd under the state swap), so regress one on the other:
 minimise the MSE of G over unlike pairs against Delta on uniform random
 fixed-composition states, and report held-out R^2. A constant scale is
 absorbed by the readout, so R^2, not the MSE, is the reach statistic.
 Uniform slice states are the base distribution; ordered states at 500 K are
-harder for a local head, so this is an optimistic bound on reach, not a
-training prediction.
+harder for a local head, so this is an optimistic bound on reach.
 
 Usage (CPU, minutes):
     pixi run -e dev python -m experiments.alloy_ce.tools.patch_reach_probe \\

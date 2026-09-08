@@ -1,20 +1,18 @@
 """Build a cross-size warm-start state dict for the swap head (e.g. d64 -> d256).
 
-Why this exists: the 16x16 rung diverged from COLD initialisation -- ~96% of
-its step-0 loss is the head's own init noise, an unnormalised coherent sum
-over d(d-1)/2 pair scores (adversarial review 2026-08-11). The converged 8x8
-checkpoint already encodes a near-Kolmogorov-consistent rate field, and the
-target rate field is local and intensive per pair (the swap log-ratio is a
-5-point stencil function), so its weights are the right starting basin at any
-lattice size the architecture can address.
+The 16x16 rung diverged from cold initialisation: ~96% of its step-0 loss is
+the head's own init noise, an unnormalised coherent sum over d(d-1)/2 pair
+scores (review 2026-08-11). The converged 8x8 checkpoint already encodes a
+near-Kolmogorov-consistent rate field, and that field is local and intensive
+per pair (the swap log-ratio is a 5-point stencil function), so its weights are
+the right starting basin at any lattice size the architecture can address.
 
-Why it is legitimate: all but a handful of parameter tensors are
-shape-identical across D. The backbone is a set-attention architecture over
-sites, so every Linear/attention/LayerNorm tensor is (hidden_dim, hidden_dim)
-shaped; the band-family MLPs are indexed by RELATIVE offset, so the delta=D
-"column neighbour" family maps onto the new D's column neighbour with
-identical weights. The only d-dependent tensors are learned POSITIONAL
-tables:
+All but a handful of parameter tensors are shape-identical across D. The
+backbone is a set-attention architecture over sites, so every
+Linear/attention/LayerNorm tensor is (hidden_dim, hidden_dim) shaped; the
+band-family MLPs are indexed by relative offset, so the delta=D "column
+neighbour" family maps onto the new D's column neighbour with identical
+weights. The only d-dependent tensors are learned positional tables:
 
     backbone.{fwd,bwd}_stack.blocks.*.pos_embed   (1 + d, hidden_dim)
     backbone.attention_readout.pos_embed          (d, d_k)
@@ -25,25 +23,19 @@ Those live on the D x D grid and are resampled by `_resize_grid_rows`.
 Tables carrying a leading non-grid row (the cond_t slot at row 0) keep that
 row verbatim.
 
-Resampling choice, and the alternatives rejected (see `_resize_grid_rows`):
-BICUBIC with align_corners=False -- the standard resolution-transfer
-operation for learned ViT position embeddings -- over a CIRCULARLY padded
-grid, because the lattice is a torus.
+Resampling is bicubic with align_corners=False over a circularly padded grid,
+because the lattice is a torus (see `_resize_grid_rows`).
 
-`skip_prefixes` defaults to EMPTY: transfer everything that fits. It is
-tempting to drop `backbone.attention_readout.*` because the one-pass band
-heads (interval, masked_attention, factorised) replace that module and never
-call it -- but it is the LIVE compute path for the mask_one and
-doubly_hollow heads, and dropping it there would leave the only module that
-reads the lattice at fresh init on top of a fully transferred trunk. For the
-band heads those tensors are inert (they receive no gradient), so carrying
-them costs nothing but checkpoint bytes; that asymmetry is why "copy
-everything" is the safe default and skipping is opt-in.
+`skip_prefixes` defaults to empty: transfer everything that fits.
+`backbone.attention_readout.*` is the live compute path for the mask_one and
+doubly_hollow heads, so dropping it there would leave the only module that
+reads the lattice at fresh init on top of a fully transferred trunk; for the
+one-pass band heads those tensors are inert and cost only checkpoint bytes.
 
-Provenance note: the archived 2026-08-11 d64 -> d256 transfer predates this
-module's current defaults. It was built with bilinear/edge resampling and
-with the attention_readout tensors skipped, so it is not reproduced
-byte-for-byte here; that checkpoint file is its own record.
+The archived 2026-08-11 d64 -> d256 transfer predates these defaults: it was
+built with bilinear/edge resampling and with the attention_readout tensors
+skipped, so it is not reproduced byte-for-byte here; that checkpoint file is
+its own record.
 
 Usage:
     pixi run python -m scripts.warm_start_swap_head \
@@ -66,35 +58,32 @@ def _resize_grid_rows(rows: torch.Tensor, d_src: int, d_tgt: int) -> torch.Tenso
     """Resample (d_src, C) grid-flattened rows to (d_tgt, C) on the torus.
 
     Rows are raster-ordered over a sqrt(d) x sqrt(d) lattice. Interpolation is
-    BICUBIC with align_corners=False -- the operation used to transfer learned
-    ViT position embeddings between input resolutions, and the reason to
-    prefer it over bilinear is that a position table is a smooth field being
-    read at new sample points, where the cubic kernel's continuous first
-    derivative avoids the faceting bilinear leaves at the original grid lines.
-    align_corners=False keeps the mapping a pure rescaling of pixel CENTRES,
-    so no site is treated as an anchor pinned to the grid corner.
+    bicubic with align_corners=False, the operation used to transfer learned
+    ViT position embeddings between input resolutions: a position table is a
+    smooth field read at new sample points, where the cubic kernel's continuous
+    first derivative avoids the faceting bilinear leaves at the original grid
+    lines, and align_corners=False keeps the mapping a pure rescaling of pixel
+    centres.
 
-    The torus, and why circular padding: the lattice has periodic boundary
-    conditions, so the field being resampled is periodic and no site is
-    distinguished. PyTorch's default edge handling replicates the boundary
-    row/column into the kernel's support, which manufactures exactly such a
-    distinguished edge -- the transferred table would carry a boundary
-    artefact on a system that is site-transitive. Circular padding is
-    implemented by tiling the grid 3x3 and cropping the centre after
-    resampling: with align_corners=False the scale factor is unchanged by the
-    tiling (3*L_dst / 3*L_src), so the centre block sees exactly the periodic
+    The lattice has periodic boundary conditions, so the field being resampled
+    is periodic and no site is distinguished; PyTorch's default edge handling
+    replicates the boundary row/column into the kernel's support and would
+    manufacture such a distinguished edge. Circular padding is implemented by
+    tiling the grid 3x3 and cropping the centre after resampling: with
+    align_corners=False the scale factor is unchanged by the tiling
+    (3*L_dst / 3*L_src), so the centre block sees exactly the periodic
     extension of the source at every sample point, for any L_src -> L_dst
-    ratio. Rejected alternative: padding by a fixed 2-pixel collar, which is
-    only correct for integer scale factors.
+    ratio. Padding by a fixed 2-pixel collar is only correct for integer scale
+    factors.
 
     Commutes with the 180-degree raster reversal -- the kernel is symmetric
     and the sampling grid is centred -- which is what makes it correct to
     resample the bwd stack's table, whose site rows run in reversed raster
     order because that stack reads x.flip(1), as an ordinary grid.
 
-    Failure mode guarded: silently resampling a non-grid row. Callers must
-    strip any leading conditioning row BEFORE calling this; the assertion
-    below only catches a non-square row count, not a mis-sliced one.
+    Callers must strip any leading conditioning row before calling this; the
+    assertion below catches only a non-square row count, not a mis-sliced
+    one.
     """
     side_src, side_tgt = int(round(d_src ** 0.5)), int(round(d_tgt ** 0.5))
     assert side_src ** 2 == d_src and side_tgt ** 2 == d_tgt, "non-square grid"

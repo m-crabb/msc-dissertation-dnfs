@@ -1,45 +1,34 @@
 """Kawasaki failure-mode sweep → dissertation §5.1 figures.
 
 Produces:
-  (1) failure_curves.png — τ_int and ESS vs σ for D∈{8,16,24} (sizes the thesis
-      trains a neural sampler at, drawn solid) and D=32 (never trained at, drawn
-      dotted: the classical chain extrapolated past the reach of the learned
-      one), with σ=0.1 (the DNFS operating point) and σ_c marked. 24 moved from
-      dotted to solid on 2026-09-07 once the 24x24 rung was in print; the
-      linestyle is decided at plot time from TRAINED_D, so the cached
-      `trained_at` flags (written 2026-08-26) are stale metadata, not the
-      style's source.
-      Critical slowing-down: mixing is fine at the subcritical operating point
-      and degrades sharply as σ enters the ordered, constrained low-T regime —
-      worsening with system size, which is the scaling claim the figure exists
-      to make. The σ grid stops at 0.26: past there acceptance → 0 (the chain
-      freezes) and the τ_int estimator is no longer reliable; that deep-frozen
-      regime is the subject of the ergodicity figure instead.
+  (1) failure_curves.png — τ_int and ESS vs σ for D∈{8,16,24} (trained at,
+      solid) and D=32 (never trained at, dotted), with σ=0.1 (the DNFS
+      operating point) and σ_c marked. Linestyle is decided at plot time from
+      TRAINED_D, so the cached `trained_at` flags (2026-08-26) are stale
+      metadata; 24 moved from dotted to solid on 2026-09-07 once the 24x24 rung
+      was in print. Mixing is fine at the subcritical operating point and
+      degrades sharply as σ enters the ordered low-T regime, worsening with
+      system size. The σ grid stops at 0.26: past there acceptance → 0 and the
+      τ_int estimator is no longer reliable.
 
-      PROTOCOL (per-site, not per-step). Every (D, σ) cell spends the same
-      number of SWEEPS — MEASURE_SWEEPS after BURN_SWEEPS, one sweep = d = D²
-      swap attempts — so the four lattice sizes are compared under one budget
-      per site rather than one budget per raw swap. A fixed raw-step budget
-      (the pre-2026-08-26 protocol) gave the 32×32 chain 1/16 of the 8×8
-      chain's sweeps and would have manufactured part of the size trend the
-      figure reports. Thinning is likewise d-scaled (RECORDS_PER_SWEEP records
-      per sweep), so the τ_int estimator has the same resolution in sweeps at
-      every size; with a fixed raw thin of 50 the 8×8 τ_int was floored at
-      50/64 ≈ 0.78 sweeps by the sampling interval alone.
+      Protocol is per-site: every (D, σ) cell spends MEASURE_SWEEPS sweeps
+      after BURN_SWEEPS, one sweep = d = D² swap attempts, so the four sizes
+      share one budget per site. A fixed raw-step budget (pre-2026-08-26) gave
+      the 32×32 chain 1/16 of the 8×8 chain's sweeps; thinning is d-scaled
+      (RECORDS_PER_SWEEP per sweep) because a fixed raw thin of 50 floored the
+      8×8 τ_int at 50/64 ≈ 0.78 sweeps by the sampling interval alone.
 
-      ANNEALING is run for EVERY (D, σ) cell of both panels, not as a spot
-      check: each annealed chain is initialised by walking the training
-      curriculum's σ-ladder (scripts.kawasaki_annealed_check.anneal_ladder,
-      dwelling BURN_SWEEPS sweeps per rung) and then measured under the
-      identical protocol. Cold-start curves that slowed down only because a
-      random start had not relaxed would show annealed markers sitting below
-      the band; markers inside the band say the slowing-down is the dynamics.
-  (2) mode_coverage.png — DIFFERENT-INITIALISATION ergodicity test. Chains are
-      seeded in distinct modes (+domain left vs right) and we track a mode-
-      sensitive order parameter φ = left − right sublattice magnetisation. If the
-      sampler is ergodic the chains forget their init and φ's between-chain R̂→1;
-      if mode coverage fails they stay stuck (R̂≫1). High-σ is the failure, low-σ
-      (σ=0.1, the operating point) is the built-in positive control.
+      Annealing runs for every (D, σ) cell of both panels: each annealed chain
+      walks the training curriculum's σ-ladder
+      (scripts.kawasaki_annealed_check.anneal_ladder, BURN_SWEEPS sweeps per
+      rung) before the identical measurement. Annealed markers inside the
+      cold-start band say the slowing-down is the dynamics, not an unrelaxed
+      start.
+  (2) mode_coverage.png — different-initialisation ergodicity test. Chains are
+      seeded in distinct modes (+domain left vs right) and tracked through the
+      order parameter φ = left − right sublattice magnetisation. Ergodic chains
+      forget their init and R̂(φ) → 1; failed mode coverage stays stuck (R̂≫1).
+      High-σ is the failure, σ=0.1 (the operating point) the positive control.
 
 Run:  pixi run python -m scripts.kawasaki_sweep            # both figures
       pixi run python -m scripts.kawasaki_sweep curves     # failure curves only
@@ -83,22 +72,18 @@ TRAINED_D = [8, 16, 24]  # the lattices this thesis trains a neural sampler at
 EXTRAPOLATED_D = [32]    # never trained at: the classical chain run on alone
 DEMO_D = TRAINED_D + EXTRAPOLATED_D
 ERGO_D = 24
-# R̂ is a between-chain statistic, so a band on it means repeating the whole
-# 4-chain ensemble under independent base seeds. The illustrative panels
-# (φ traces, trapped snapshots, φ histogram) are taken from the first seed only.
+# R̂ is a between-chain statistic, so a band on it repeats the whole 4-chain
+# ensemble under independent base seeds; illustrative panels use the first seed.
 ERGO_SEEDS = [300, 400, 500, 600]
 
 # Each (D, σ, init) point runs N_CHAINS independent chains (seeds
-# CHAIN_SEED..CHAIN_SEED+N_CHAINS-1), so τ_int is estimated N_CHAINS times over.
-# We plot the across-chain mean with a min–max band (the house uncertainty
-# grammar) rather than a single bare point, so the reported degradation carries
-# its own spread. The numba inner loop makes the extra chains cheap.
+# CHAIN_SEED..CHAIN_SEED+N_CHAINS-1), plotted as the across-chain mean with a
+# min–max band so the reported degradation carries its own spread.
 N_CHAINS = 8
 CHAIN_SEED = 100
 
-# Per-site budget: one sweep = d = D² swap attempts. See the module docstring
-# for why these are sweeps and not raw steps. 30k sweeps is ≳400 τ_int even at
-# the slowest cell measured (32×32 at σ=0.26, τ_int ≈ 70 sweeps).
+# Per-site budget: one sweep = d = D² swap attempts. 30k sweeps is ≳400 τ_int
+# even at the slowest cell measured (32×32 at σ=0.26, τ_int ≈ 70 sweeps).
 MEASURE_SWEEPS = 30_000
 BURN_SWEEPS = 3_000       # also the dwell per rung of the annealing ladder
 RECORDS_PER_SWEEP = 5     # thinning: d // 5 raw steps between recorded energies
@@ -109,16 +94,14 @@ def _measure_cell(D, sigma, init_kind):
 
     tau_int is Sokal-windowed on the post-burn-in thinned energy trace and
     converted to sweeps by (tau_records * thin) / d, so the unit is "swap
-    attempts per site" and lattice sizes are directly comparable: a local move
-    touches 2 of d sites, so any such sampler needs ~1 sweep per independent
-    configuration and quoting tau_int in raw swaps would make every large
-    lattice look slow purely from the step definition.
+    attempts per site": a local move touches 2 of d sites, so quoting tau_int
+    in raw swaps would make every large lattice look slow purely from the step
+    definition.
 
     init_kind "cold" starts from a uniform random configuration at c = 0.5;
-    "annealed" starts from the same random configuration walked up the training
-    curriculum's sigma-ladder, BURN_SWEEPS sweeps per rung, before the
-    identical measurement begins. Both then burn BURN_SWEEPS more sweeps, so
-    the annealed arm is strictly the more generous of the two.
+    "annealed" walks that configuration up the training curriculum's
+    sigma-ladder, BURN_SWEEPS sweeps per rung, first. Both then burn
+    BURN_SWEEPS more sweeps.
     """
     from scripts.kawasaki_annealed_check import annealed_init
 
@@ -148,11 +131,9 @@ def _measure_cell(D, sigma, init_kind):
 def curve_data():
     """Run every (D, sigma) cell of both init arms and cache the result.
 
-    Split from the plotting so a restyle never recomputes chains (the figure
-    was previously flagged "NOT regenerable from archive" for exactly that
-    reason). Normalised ESS = independent configurations per sweep, capped at
-    1, matching the (0, 1] scale of the IS-ESS reported for the neural
-    samplers elsewhere in the thesis.
+    Split from the plotting so a restyle never recomputes chains. Normalised
+    ESS = independent configurations per sweep, capped at 1, matching the
+    (0, 1] scale of the IS-ESS reported for the neural samplers elsewhere.
     """
     rows = []
     for D in DEMO_D:
@@ -189,12 +170,9 @@ def curve_data():
 
 def _sigma_guides(ax, label=True):
     """The two vertical reference couplings, labelled in-axes rather than in
-    the legend: the legend already carries four sizes plus the marker grammar,
-    and two more entries would push it back over the data. Labels are kept to
-    the bare symbol (the caption names the operating point) and sit along the
-    BOTTOM of the tau panel, whose lower edge is the one strip both the curves
-    and the two legends leave empty; above the top spine they collided with
-    the panel title."""
+    the legend, which already carries four sizes plus the marker grammar.
+    Labels are the bare symbol and sit along the bottom of the tau panel, the
+    one strip both the curves and the two legends leave empty."""
     for sigma, text in [(SIGMA_OPERATING, r"$\sigma_\mathrm{op}$"),
                         (SIGMA_CRITICAL, r"$\sigma_c$")]:
         ax.axvline(sigma, color=fs.ANALYTIC_GUIDE, ls=(0, (4, 3)), lw=0.8,
@@ -208,22 +186,16 @@ def _sigma_guides(ax, label=True):
 def failure_curves(payload=None):
     """Plot the two failure panels from the cache (computing it if absent).
 
-    Colour: four DISTINCT hues, one per lattice size, drawn from the house
-    palette's CVD-validated five-hue set. The house module's stated exception
-    for parameter-level contrasts (a lightness ramp within one role) was tried
-    first and rejected on review -- at four levels the ramp's neighbouring
-    steps were not separable on the printed page, which is the failure the
-    exception exists to avoid, so separability wins over role purity here.
-    Linestyle carries the orthogonal distinction the chapter needs: solid for
-    the sizes a neural sampler is trained at, dotted for the sizes only the
-    classical chain reaches.
+    Colour: four distinct hues, one per lattice size, from the house palette's
+    CVD-validated five-hue set; a lightness ramp within one role was not
+    separable at four levels on the printed page. Linestyle carries the
+    orthogonal distinction: solid for the sizes a neural sampler is trained at,
+    dotted for the sizes only the classical chain reaches.
 
-    Identity is carried by a LEGEND rather than by labels at the curve ends.
-    Direct labels were tried and were unreadable at print size: the figure is
-    ~2.4 in tall, so the four right-hand ends fall within a few points of each
-    other and the de-overlap nudge left the text too small and too crowded to
-    read. The legend sits in the tau panel's empty upper-left corner -- the
-    same corner the pre-2026-08-26 version used.
+    Identity is carried by a legend rather than by labels at the curve ends:
+    the figure is ~2.4 in tall, so the four right-hand ends fall within a few
+    points of each other. The legend sits in the tau panel's empty upper-left
+    corner.
     """
     payload = payload or json.loads(CURVE_CACHE.read_text())
     rows = {(row["D"], round(row["sigma"], 6)): row for row in payload["rows"]}
@@ -234,9 +206,8 @@ def failure_curves(payload=None):
                                 fs.CLASSICAL_ALT_HUE, fs.HARD_DELTA_HUE]))
 
     fs.use_house_style()
-    # Aspect restored to the pre-restyle figure's 12:4.5 = 2.667, at the house
-    # 1:1 print width (6.3 in = \textwidth), so the figure occupies the same
-    # share of the page as before while its text is set at a true 9 pt.
+    # Aspect 12:4.5 = 2.667 at the house print width (6.3 in = \textwidth),
+    # so the text is set at a true 9 pt.
     fig, ax = plt.subplots(1, 2, figsize=(fs.FULL_WIDTH_IN,
                                           fs.FULL_WIDTH_IN * 4.5 / 12.0))
     size_entries = []
@@ -281,11 +252,8 @@ def failure_curves(payload=None):
               label=f"min-max, {n_chains} chains"),
     ]
     # Two small legends, each in a corner its own panel leaves empty: the sizes
-    # in the tau panel's upper left (its curves rise from bottom-left to
-    # top-right), the marker grammar in the ESS panel's lower left (its curves
-    # sit at 1 until sigma_op and then fall away to the right). The rejected
-    # placement put all six entries in the ESS panel, where they covered half
-    # the data.
+    # in the tau panel's upper left, the marker grammar in the ESS panel's
+    # lower left.
     size_legend = ax[0].legend(handles=size_entries, loc="upper left",
                                handlelength=1.9, labelspacing=0.25,
                                borderpad=0.3, borderaxespad=0.3,

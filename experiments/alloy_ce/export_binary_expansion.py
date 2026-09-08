@@ -1,15 +1,15 @@
 """Export a fitted cluster expansion as a binary spin-product expansion (JSON).
 
-WHY. The samplers need the alloy energy as a batched torch function with
-closed-form flip and swap energy changes, and neither icet nor CLEASE offers
-that: both evaluate one configuration at a time through their own orbit
-bookkeeping. On a fixed periodic cell with two species, ANY cluster expansion
-is exactly a polynomial in spins s_i in {-1, +1},
+The samplers need the alloy energy as a batched torch function with closed-form
+flip and swap energy changes, and neither icet nor CLEASE offers that: both
+evaluate one configuration at a time through their own orbit bookkeeping. On a
+fixed periodic cell with two species, any cluster expansion is exactly a
+polynomial in spins s_i in {-1, +1},
 
     E(s) = J_0 + sum_terms J_term * sum_{tuples in term} prod_{i in tuple} s_i,
 
 because every per-site basis function of a binary occupation is affine in s.
-So the library is used here only as an ORACLE: the tuples are enumerated
+So the library is used here only as an oracle: the tuples are enumerated
 geometrically on the cell, grouped by shape (the multiset of pairwise
 distances, which is what a space-group orbit preserves), and the coefficients
 are fitted by least squares to oracle energies. A correct enumeration leaves a
