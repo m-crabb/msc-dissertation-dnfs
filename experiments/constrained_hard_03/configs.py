@@ -8,7 +8,53 @@ sigma_c cells import SIGMA_C.
 
 `HardStageCfg` adds `head_kind` (the swap-readout head) to the baseline
 schema. Composition is enforced by the swap move set, so there is no penalty
-or lambda curriculum. Cell names: `H<S>_d<dim>_c<c_x100>_s<sigma>_letf_<head>`.
+or lambda curriculum.
+
+Cell names are the results-directory names and are never renamed. Tokens:
+  H2 / cuau16 / cuau64   S=2 Potts (Ising) lattice / 16- or 64-site Cu-Au cell
+  d16 d64 d256 d400 d576 sites d = D^2 (4x4, 8x8, 16x16, 20x20, 24x24)
+  c50                    target composition 0.50
+  s010 s220 s223         coupling sigma 0.10 (floor), SIGMA_C, legacy 0.223;
+                         T500 = Cu-Au 500 K
+  letf                   leTF trunk; h128 / L3 / lr03 = hidden 128, 3 layers, lr 3e-4
+  head tokens            dh doubly_hollow; mo mask_one; na non_antisym control;
+                         iv interval; ma masked_attention (mal whole-lattice
+                         window, mar relative pair code, masep separable scores,
+                         mabef bonds + exact field, mamo2 two orderings);
+                         ga8/ga16 grouped_anchor k=8/16; fab8/fab16 factorised
+                         bilinear+global rank 8/16, fbil bilinear-only, fglo
+                         global-only, fmp40 matched-parameter factor_dim 40;
+                         fmo2 factorised, two site orderings (row, col);
+                         fimo2 = fmo2 + prefix interior band; ef = exact-field
+                         channel (fimo2ef); thp/thp2/thp3/thp4 two_hole_patch R=1..4
+  10k ... 100k           training steps; scr5k / smoke12k = 5k screen / 12k smoke run
+  curr / sc              sigma curriculum (the ladder) / trained flat at sigma_c
+  b512 / ob512 / ctb512  batch_size 512 (loss batch; outer defaults to it) /
+                         outer batch 512 only / c_t estimation batch 512
+  ne128 ne512            Euler steps per rollout
+  naive / cv / cv2       estimator: naive Monte Carlo / control variate / control
+                         variate with the cv-inversion halt (tripwire) armed
+  cyc16 buf2 rw noflush  replay 16 cycles / doubled buffer / re-warmup on stage /
+                         replay not flushed on stage
+  w2 w3 w4 (w2e w2sig)   campaign index at that lattice size, kept for key
+                         uniqueness only (w2e eager head, w2sig legacy sigma)
+  camort / house / lowlr composition-amortised / the house recipe / lr cut
+
+Working vocabulary used in the comments below:
+  house recipe   the shared training recipe a table row is built on
+  twin           a cell that differs from its parent by the declared levers only
+  arm            one cell of a family run for comparison; lever/knob = a setting
+  rung / ladder  one lattice size / the sigma curriculum or the size sequence
+  floor          sigma = 0.10, the easy end of the table; sigma_c = criticality
+  gate / screen  a short run that must pass before the full cell / a 5k pilot
+  smoke          a short run checking the pipeline, not a result
+  rescue         the configuration that recovered a cell which had diverged
+  tripwire       halt_on_cv_inversion_after: stop when the control variate inverts
+  cold-CV        control variate from step 0; cvcont = CV continuation of a run
+  chassis        the base cell a family is built from by `replace`
+  judged / read  the recorded result of the run (EMA = EMA-weights eval)
+  pinned by      enforced by the named test in tests/
+  archived       a completed run whose literals must not change
 """
 
 from dataclasses import dataclass, replace
