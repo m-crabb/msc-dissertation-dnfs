@@ -230,7 +230,14 @@ def main() -> None:
     rng = np.random.default_rng(0)
     if args.curve_cache is not None and args.curve_cache.exists():
         cached = json.loads(args.curve_cache.read_text())
-        _plot(cached["curve"], cached["lam"], cached["analytic_cstd"], args.flag_c, args.plot, args.layout)
+        _plot(
+            cached["curve"],
+            cached["lam"],
+            cached["analytic_cstd"],
+            args.flag_c,
+            args.plot,
+            args.layout,
+        )
         return
 
     # --- collect DNFS runs, group by composition ------------------------

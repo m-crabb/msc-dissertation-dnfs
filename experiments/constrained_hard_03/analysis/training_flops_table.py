@@ -57,25 +57,115 @@ PROBE_BATCH = 4
 # one-sweep cell.
 SWAP_ROWS = [
     ("8x8", "H2_d64_c50_s220_letf_mo_50k_curr_w2", "mask-one head", False),
-    ("8x8", "H2_d64_c50_s220_letf_ma_50k_curr_w2", "masked-attention band, one sweep", True),
-    ("8x8", "H2_d64_c50_s220_letf_mamo2_50k_curr_w2", "masked-attention band, two sweeps", True),
-    ("8x8", "H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2", "\\quad + exact field (masked attention)", True),
+    (
+        "8x8",
+        "H2_d64_c50_s220_letf_ma_50k_curr_w2",
+        "masked-attention band, one sweep",
+        True,
+    ),
+    (
+        "8x8",
+        "H2_d64_c50_s220_letf_mamo2_50k_curr_w2",
+        "masked-attention band, two sweeps",
+        True,
+    ),
+    (
+        "8x8",
+        "H2_d64_c50_s220_letf_mamo2ef_50k_curr_w2",
+        "\\quad + exact field (masked attention)",
+        True,
+    ),
     ("8x8", "H2_d64_c50_s220_letf_iv_50k_curr_w2", "prefix-sum band, one sweep", False),
-    ("8x8", "H2_d64_c50_s220_letf_ivmo2_50k_curr_w2", "prefix-sum band, two sweeps", False),
-    ("8x8", "H2_d64_c50_s220_letf_ivmo2ef_50k_curr_w2", "\\quad + exact field (prefix sum)", False),
-    ("8x8", "H2_d64_c50_s220_letf_thp_50k_curr_w2", "two-hole patch head, $R=1$", False),
-    ("16x16", "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3", "masked-attention band, one sweep", True),
-    ("16x16", "H2_d256_c50_s220_letf_mamo2_100k_curr_b512_ne128_cv2_w3", "masked-attention band, two sweeps", False),
-    ("16x16", "H2_d256_c50_s220_letf_mamo2ef_100k_curr_b512_ne128_cv2_w3", "\\quad + exact field (masked attention)", False),
-    ("16x16", "H2_d256_c50_s220_letf_iv_100k_curr_b512_ne128_cv2_w3", "prefix-sum band, one sweep", False),
-    ("16x16", "H2_d256_c50_s220_letf_ivmo2_100k_curr_b512_ne128_cv2_w3", "prefix-sum band, two sweeps", False),
-    ("16x16", "H2_d256_c50_s220_letf_ivmo2ef_100k_curr_b512_ne128_cv2_w3", "\\quad + exact field (prefix sum)", False),
-    ("16x16", "H2_d256_c50_s220_letf_thp_100k_curr_b512_ne128_cv2_w3", "two-hole patch head, $R=1$", False),
-    ("16x16", "H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3", "two-hole patch head, $R=2$", False),
-    ("20x20", "H2_d400_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w4bf16", "two-hole patch head, $R=2$", False),
-    ("20x20", "H2_d400_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w4bf16", "two-hole patch head, $R=3$", False),
-    ("24x24", "H2_d576_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w5bf16", "two-hole patch head, $R=3$", False),
-    ("24x24", "H2_d576_c50_s220_letf_thp4_100k_curr_b512_ne128_cv2_w5bf16", "two-hole patch head, $R=4$", False),
+    (
+        "8x8",
+        "H2_d64_c50_s220_letf_ivmo2_50k_curr_w2",
+        "prefix-sum band, two sweeps",
+        False,
+    ),
+    (
+        "8x8",
+        "H2_d64_c50_s220_letf_ivmo2ef_50k_curr_w2",
+        "\\quad + exact field (prefix sum)",
+        False,
+    ),
+    (
+        "8x8",
+        "H2_d64_c50_s220_letf_thp_50k_curr_w2",
+        "two-hole patch head, $R=1$",
+        False,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3",
+        "masked-attention band, one sweep",
+        True,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_mamo2_100k_curr_b512_ne128_cv2_w3",
+        "masked-attention band, two sweeps",
+        False,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_mamo2ef_100k_curr_b512_ne128_cv2_w3",
+        "\\quad + exact field (masked attention)",
+        False,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_iv_100k_curr_b512_ne128_cv2_w3",
+        "prefix-sum band, one sweep",
+        False,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_ivmo2_100k_curr_b512_ne128_cv2_w3",
+        "prefix-sum band, two sweeps",
+        False,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_ivmo2ef_100k_curr_b512_ne128_cv2_w3",
+        "\\quad + exact field (prefix sum)",
+        False,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_thp_100k_curr_b512_ne128_cv2_w3",
+        "two-hole patch head, $R=1$",
+        False,
+    ),
+    (
+        "16x16",
+        "H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3",
+        "two-hole patch head, $R=2$",
+        False,
+    ),
+    (
+        "20x20",
+        "H2_d400_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w4bf16",
+        "two-hole patch head, $R=2$",
+        False,
+    ),
+    (
+        "20x20",
+        "H2_d400_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w4bf16",
+        "two-hole patch head, $R=3$",
+        False,
+    ),
+    (
+        "24x24",
+        "H2_d576_c50_s220_letf_thp3_100k_curr_b512_ne128_cv2_w5bf16",
+        "two-hole patch head, $R=3$",
+        False,
+    ),
+    (
+        "24x24",
+        "H2_d576_c50_s220_letf_thp4_100k_curr_b512_ne128_cv2_w5bf16",
+        "two-hole patch head, $R=4$",
+        False,
+    ),
 ]
 GFN_ROWS = [
     ("8x8", "GFN_d64_c50_s220_tb_50k_par", "GFlowNet, trajectory balance"),
@@ -92,7 +182,9 @@ LABELS = {key: label for _, key, label, _ in SWAP_ROWS} | {
 # and with the in-training eval included.
 MEASURED = {
     "H2_d64_c50_s220_letf_thp_50k_curr_w2": "training_flops_d64_thp_sc.json",
-    "H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3": "training_flops_d256_thp2_sc.json",
+    "H2_d256_c50_s220_letf_thp2_100k_curr_b512_ne128_cv2_w3": (
+        "training_flops_d256_thp2_sc.json"
+    ),
 }
 
 
@@ -102,7 +194,9 @@ def swap_cell(key: str) -> dict:
     target, head = build_target_and_head(cfg, "cpu")
     x = target.sample_base(PROBE_BATCH, device="cpu")
     with torch.no_grad():
-        per_sample = measured_forward_flops(head, (x, torch.rand(PROBE_BATCH))) / PROBE_BATCH
+        per_sample = (
+            measured_forward_flops(head, (x, torch.rand(PROBE_BATCH))) / PROBE_BATCH
+        )
     outer_batch = cfg.train.outer_batch_size or cfg.train.batch_size
     training = training_run_flops(
         per_sample * outer_batch,
@@ -122,7 +216,8 @@ def swap_cell(key: str) -> dict:
         n_steps=cfg.train.n_steps,
         eval_every=getattr(cfg.eval, "eval_every", None),
         n_eval_draws=(
-            getattr(cfg.eval, "n_eval_samples_training", None) or cfg.eval.n_eval_samples
+            getattr(cfg.eval, "n_eval_samples_training", None)
+            or cfg.eval.n_eval_samples
         ),
     )
     return {
@@ -154,7 +249,9 @@ def gfn_cell(key: str) -> dict:
     per_sample_step = per_step[PROBE_BATCH]
     linearity = per_step[2] / per_sample_step
     if abs(linearity - 1.0) > 1e-3:
-        raise RuntimeError(f"{key}: GFN step FLOPs not linear in batch ({linearity:.4f})")
+        raise RuntimeError(
+            f"{key}: GFN step FLOPs not linear in batch ({linearity:.4f})"
+        )
     training = per_sample_step * cfg.batch_size * cfg.n_steps
     policy.eval()
     with torch.no_grad():
@@ -202,7 +299,9 @@ def latex_rows(table: dict) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--out", type=Path, default=Path("results/03_hard/training_flops"))
+    parser.add_argument(
+        "--out", type=Path, default=Path("results/03_hard/training_flops")
+    )
     parser.add_argument(
         "--reuse", action="store_true", help="re-emit the LaTeX from the saved JSON"
     )
@@ -219,15 +318,25 @@ def main():
         cell = swap_cell(key)
         if key in MEASURED:
             measured = json.loads((args.out / MEASURED[key]).read_text())
-            cell["measured_over_accounted"] = measured["extrapolated_training_flops"] / (
-                cell["training_flops"] + cell["diagnostic_eval_flops"]
-            )
-        rows.append({"size": size, "cfg": key, "label": label, "trained_dense": dense, **cell})
-        print(f"{size:>6} {label:<40} {cell['training_flops']:.2e}  {cell['training_in_eval_draw_sets']:6.0f} evals")
+            cell["measured_over_accounted"] = measured[
+                "extrapolated_training_flops"
+            ] / (cell["training_flops"] + cell["diagnostic_eval_flops"])
+        rows.append(
+            {"size": size, "cfg": key, "label": label, "trained_dense": dense, **cell}
+        )
+        print(
+            f"{size:>6} {label:<40} {cell['training_flops']:.2e}  "
+            f"{cell['training_in_eval_draw_sets']:6.0f} evals"
+        )
     for size, key, label in GFN_ROWS:
         cell = gfn_cell(key)
-        rows.append({"size": size, "cfg": key, "label": label, "trained_dense": False, **cell})
-        print(f"{size:>6} {label:<40} {cell['training_flops']:.2e}  {cell['training_in_eval_draw_sets']:6.0f} evals")
+        rows.append(
+            {"size": size, "cfg": key, "label": label, "trained_dense": False, **cell}
+        )
+        print(
+            f"{size:>6} {label:<40} {cell['training_flops']:.2e}  "
+            f"{cell['training_in_eval_draw_sets']:6.0f} evals"
+        )
 
     table = {"probe_batch": PROBE_BATCH, "rows": rows}
     args.out.mkdir(parents=True, exist_ok=True)
