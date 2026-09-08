@@ -112,8 +112,9 @@ def derived_flops(cfg, head, target, device: str, n_steps: int) -> dict:
     """The loop-structure count, priced by two measured per-forward readings.
 
     Two readings because the rollout runs at `outer_batch` and the update at
-    `batch_size`, and the counter's number is not linear in batch -- per-call
-    fixed work does not scale with rows.
+    `batch_size`. The counter is exactly linear in batch (checked 2026-09-08 at
+    batch 1, 4 and 128), so one reading would do; two keeps each leg priced at
+    its own shape.
     """
     outer_batch = cfg.train.outer_batch_size or cfg.train.batch_size
 
@@ -195,9 +196,7 @@ def main(argv: list[str] | None = None):
         derived = derived_flops(cfg, head, target, device, cfg.train.n_steps)
 
     # Price training in frozen-eval draw sets: each additional target served
-    # by one checkpoint amortises this cost. Use the same measured forward
-    # at the same batch as the training leg; per-call fixed work means the
-    # counter is not linear in batch, so a per-sample price would misstate it.
+    # by one checkpoint amortises this cost.
     one_eval_draw_set = derived["sampling_flops_per_eval_draw_set"]
 
     # Three-way split (decided 2026-08-31, after the d64 certification

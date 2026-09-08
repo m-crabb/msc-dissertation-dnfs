@@ -221,8 +221,8 @@ def training_run_flops(
     """Derived training cost: forward counts times measured per-forward FLOPs.
 
     Two per-forward numbers because the loops run at different batch sizes
-    (`outer_batch` for the rollout, `batch_size` for the update) and the
-    counter's reading is not linear in batch.
+    (`outer_batch` for the rollout, `batch_size` for the update); the counter
+    is linear in batch, so either may be a small-batch reading scaled up.
 
     `backward_multiplier` is the one soft assumption, default 2x; the
     measured leg tests it. Rollouts are under no_grad (the paper's
