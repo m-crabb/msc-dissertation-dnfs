@@ -198,6 +198,19 @@ def main() -> None:
     p.add_argument("--vcsgc_steps", type=int, default=300_000)
     p.add_argument("--plot", type=Path, default=None)
     p.add_argument(
+        "--curve_cache",
+        type=Path,
+        default=None,
+        help="JSON of the assembled curve; read instead of re-running the "
+        "chains when it exists, written after a run otherwise",
+    )
+    p.add_argument(
+        "--layout",
+        choices=["2x2", "row"],
+        default="2x2",
+        help="2x2 at 0.72\\textwidth, or one thin 1x4 row at full width",
+    )
+    p.add_argument(
         "--flag_c",
         nargs="*",
         type=float,
@@ -215,6 +228,10 @@ def main() -> None:
     )
     args = p.parse_args()
     rng = np.random.default_rng(0)
+    if args.curve_cache is not None and args.curve_cache.exists():
+        cached = json.loads(args.curve_cache.read_text())
+        _plot(cached["curve"], cached["lam"], cached["analytic_cstd"], args.flag_c, args.plot, args.layout)
+        return
 
     # --- collect DNFS runs, group by composition ------------------------
     metas, missing = [], []
@@ -331,8 +348,12 @@ def main() -> None:
             dict(c=c_t, vcsgc=v_pt, vcsgc_err=v_err, dnfs=d_pt, dnfs_err=d_err)
         )
 
+    if args.curve_cache is not None:
+        args.curve_cache.write_text(
+            json.dumps(dict(curve=curve, lam=lam, analytic_cstd=analytic_cstd))
+        )
     if args.plot is not None:
-        _plot(curve, lam, analytic_cstd, args.flag_c, args.plot)
+        _plot(curve, lam, analytic_cstd, args.flag_c, args.plot, args.layout)
 
 
 def _zmirror(have: list[dict], key: str) -> list[tuple]:
@@ -368,8 +389,8 @@ def _zmirror(have: list[dict], key: str) -> list[tuple]:
     return out
 
 
-def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
-    """House-standard 2x2 at 0.72\\textwidth.
+def _plot(curve, lam, analytic_cstd, flag_c, out: Path, layout: str = "2x2") -> None:
+    """House-standard 2x2 at 0.72\\textwidth, or a 1x4 row at full width.
 
     Drawn at SINGLE_PANEL_WIDTH_IN (4.54 in) and printed at 0.72\\textwidth --
     soft.tex must match, or the 1:1 type contract breaks -- which prints ~9.7 cm
@@ -394,6 +415,7 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
     from discrete_flow_sampler.diagnostics.figure_style import (
         ANALYTIC_GUIDE,
         CLASSICAL_HUE,
+        FIGSIZE_FULL_1X4,
         FIGSIZE_SINGLE_2X2,
         FONT_SIZE_ANNOTATION,
         MUTED,
@@ -412,7 +434,10 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         ("sro", r"$\langle x_i x_j\rangle_{NN}$"),
     ]
     flagged = {round(c, 4) for c in flag_c} | {round(1 - c, 4) for c in flag_c}
-    fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_SINGLE_2X2)
+    if layout == "row":
+        fig, axes = plt.subplots(1, 4, figsize=FIGSIZE_FULL_1X4)
+    else:
+        fig, axes = plt.subplots(2, 2, figsize=FIGSIZE_SINGLE_2X2)
     for i, (ax, (key, ylab)) in enumerate(zip(axes.ravel(), panels)):
         # sampled + Z_2-reflected points as one uniformly-drawn series, sorted
         # by composition
@@ -520,8 +545,20 @@ def _plot(curve, lam, analytic_cstd, flag_c, out: Path) -> None:
         )
     # One figure-level legend: the two series are shared by all four panels.
     handles, labels = axes.ravel()[0].get_legend_handles_labels()
-    fig.legend(handles, labels, frameon=False, ncol=2, loc="lower center")
-    fig.tight_layout(rect=(0, 0.07, 1, 1), w_pad=0.6)
+    if layout == "row":
+        # Hang the legend just under the axes row; bbox_inches="tight" keeps it.
+        fig.tight_layout(w_pad=0.6)
+        fig.legend(
+            handles,
+            labels,
+            frameon=False,
+            ncol=2,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.0),
+        )
+    else:
+        fig.legend(handles, labels, frameon=False, ncol=2, loc="lower center")
+        fig.tight_layout(rect=(0, 0.07, 1, 1), w_pad=0.6)
     fig.savefig(out, dpi=SAVEFIG_DPI, bbox_inches="tight")
     print(f"wrote {out}")
 
