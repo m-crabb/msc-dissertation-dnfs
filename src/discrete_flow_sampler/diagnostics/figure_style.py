@@ -190,9 +190,10 @@ def seed_band(ax, x, per_seed_values, hue, label, step=False):
     )
 
 
-def point_errorbars(ax, x, y, yerr, hue, label, marker="o"):
+def point_errorbars(ax, x, y, yerr, hue, label, marker="o", hollow=False):
     """Discrete capped error bars for point estimates (replicate spread or
-    a stated interval; state which in the legend label)."""
+    a stated interval; state which in the legend label). `hollow` marks a
+    point that is the same estimator read outside its trained range."""
     ax.errorbar(
         x,
         y,
@@ -201,6 +202,7 @@ def point_errorbars(ax, x, y, yerr, hue, label, marker="o"):
         label=label,
         marker=marker,
         markersize=4,
+        markerfacecolor="white" if hollow else hue,
         linestyle="none",
         capsize=2.5,
         linewidth=1.2,

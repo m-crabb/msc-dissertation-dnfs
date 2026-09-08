@@ -4,10 +4,10 @@ probe (c = k/64: every slice at 8x8, every fourth at 16x16) over three training
 seeds. Existing evaluations only; no sampling or training. Run templates come
 from `zero_shot_tables`, so both exhibits move together when a run tag changes.
 
-The centre-trained curves are the sparse six-composition probes of
-`tab:zero-shot-composition`. Show measured compositions directly, without
-mirroring the learned sampler: the target's spin-flip symmetry does not
-establish model equivariance.
+The centre-trained curves read the same dense grid (`zero_shot_fc_grid.json`,
+t* = 1 only; `tab:zero-shot-composition` keeps its sparse `zero_shot_transfer.json`).
+Show measured compositions directly, without mirroring the learned sampler:
+the target's spin-flip symmetry does not establish model equivariance.
 """
 
 import json
@@ -109,7 +109,7 @@ record["d64_specialist"] = curve(
     axes[0],
     D64_TEMPLATE,
     (42, 43, 44),
-    "zero_shot_transfer.json",
+    "zero_shot_fc_grid.json",
     NEURAL_COMPARATOR_HUE,
     "Centre-trained, zero-shot",
     "--",
@@ -126,7 +126,7 @@ record["d256_specialist"] = curve(
     axes[1],
     D256_TEMPLATE,
     (42, 43, 44),
-    "zero_shot_transfer.json",
+    "zero_shot_fc_grid.json",
     NEURAL_COMPARATOR_HUE,
     "Centre-trained, zero-shot",
     "--",

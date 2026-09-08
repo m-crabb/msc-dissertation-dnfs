@@ -31,6 +31,7 @@ Usage: pixi run -e dev python -m experiments.alloy_ce.tools.cuau16_figure \\
 import argparse
 import glob
 import itertools
+import json
 import math
 import os
 
@@ -232,6 +233,15 @@ def slice_estimates(runs, beta, split_by_slice):
     return by_c
 
 
+def mixture_of(runs):
+    """The composition slices the amortised checkpoints trained on (config.json)."""
+    mixtures = {
+        tuple(json.load(open(f"{run}/config.json"))["composition_mixture"]) for run in runs
+    }
+    assert len(mixtures) == 1, mixtures
+    return sorted(mixtures.pop())
+
+
 def draw_free_energy(ax_curve, ax_resid, specialists, amortised, T):
     beta = 1.0 / (K_B * T)
     exact = MEV * exact_slice_free_energy(T)
@@ -272,27 +282,45 @@ def draw_free_energy(ax_curve, ax_resid, specialists, amortised, T):
             "amortised cell (one checkpoint)",
         ),
     )
+    mixture = mixture_of(amortised)
     for by_c, hue, marker, dodge, label in series:
         cs = np.array(sorted(by_c))
         values = np.array([by_c[c] for c in cs])  # (n_c, n_seeds)
-        ax_curve.plot(
-            cs + dodge,
-            values.mean(1),
-            marker,
-            color=hue,
-            ms=4.5,
-            zorder=4,
-            label=label,
-            markeredgecolor="white",
-            markeredgewidth=0.6,
-        )
         residual = values - exact[(cs * D).round().astype(int)][:, None]
         spread = np.stack(
             [residual.mean(1) - residual.min(1), residual.max(1) - residual.mean(1)]
         )
-        point_errorbars(
-            ax_resid, cs + dodge, residual.mean(1), spread, hue, None, marker=marker
-        )
+        # An amortised read outside the slices it trained on is zero-shot
+        # composition transfer of the same checkpoint: hollow, not filled.
+        outside = ~np.isin(cs, mixture) if marker == "s" else np.zeros(len(cs), bool)
+        for keep, hollow, series_label in (
+            (~outside, False, label),
+            (outside, True, "same checkpoint, slices outside its mixture"),
+        ):
+            if not keep.any():
+                continue
+            ax_curve.plot(
+                cs[keep] + dodge,
+                values[keep].mean(1),
+                marker,
+                color=hue,
+                ms=4.5,
+                zorder=4,
+                label=series_label,
+                markerfacecolor="white" if hollow else hue,
+                markeredgecolor=hue if hollow else "white",
+                markeredgewidth=0.8 if hollow else 0.6,
+            )
+            point_errorbars(
+                ax_resid,
+                cs[keep] + dodge,
+                residual[keep].mean(1),
+                spread[:, keep],
+                hue,
+                None,
+                marker=marker,
+                hollow=hollow,
+            )
     ax_curve.set_xlim(-0.03, 1.03)
     ax_curve.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
     ax_curve.set_xlabel("$c_\\mathrm{Au}$", labelpad=1)
@@ -310,11 +338,15 @@ def draw_free_energy(ax_curve, ax_resid, specialists, amortised, T):
         labelspacing=0.4,
     )
     ax_resid.axhline(0, color=REFERENCE_INK, lw=0.8, zorder=1)
-    ax_resid.set_xlim(0.2, 0.55)
-    ax_resid.set_xticks([0.25, 0.375, 0.5])
-    ax_resid.set_xticklabels(["0.25", "0.375", "0.5"])
-    ax_resid.set_ylim(-0.2, 0.45)
-    ax_resid.set_yticks([0, 0.2, 0.4])
+    if len(mixture) < len(cs):
+        ax_resid.set_xlim(-0.03, 1.03)
+        ax_resid.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+    else:
+        ax_resid.set_xlim(0.2, 0.55)
+        ax_resid.set_xticks([0.25, 0.375, 0.5])
+        ax_resid.set_xticklabels(["0.25", "0.375", "0.5"])
+        ax_resid.set_ylim(-0.2, 0.45)
+        ax_resid.set_yticks([0, 0.2, 0.4])
     ax_resid.set_xlabel("$c_\\mathrm{Au}$", labelpad=1)
     ax_resid.set_ylabel("$F_\\mathrm{IS} - F_\\mathrm{exact}$ (meV/site)", labelpad=2)
     ax_resid.set_title("residual", fontsize=FONT_SIZE_LABEL, pad=3)
