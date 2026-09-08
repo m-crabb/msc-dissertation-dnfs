@@ -135,12 +135,13 @@ BAND_ALPHA = 0.18  # one alpha for every shaded interval: two overlapping
 # bands (0.33 effective) still read as a third shade, not an opaque block.
 
 
-def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None):
+def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None, step=False):
     """The house shaded interval: series hue, BAND_ALPHA, no edge line.
 
     No edge because a stroked band boundary reads as a data curve. zorder 2
     sits above the grid (0) and below the centre line or markers (3+).
     For point estimates use ``point_errorbars``; see the module docstring.
+    ``step`` fills mid-centred steps, matching ``seed_band(step=True)``.
     """
     return ax.fill_between(
         x,
@@ -151,26 +152,41 @@ def uncertainty_band(ax, x, lower, upper, hue, zorder=2, label=None):
         linewidth=0,
         zorder=zorder,
         label=label,
+        step="mid" if step else None,
     )
 
 
-def seed_band(ax, x, per_seed_values, hue, label):
+def seed_band(ax, x, per_seed_values, hue, label, step=False):
     """Mean line + min-max shaded band for a family of seed curves; the
     legend entry carries n. min-max rather than +/-sd because seed counts
-    are 3-6."""
+    are 3-6.
+
+    ``step`` draws mean and band as mid-centred steps. Use it for every
+    probability mass function on a discrete support (the marginal panels):
+    a line through the levels invents mass between them, and drawn next to
+    a stepped reference it made the sampler look smoother than the chain.
+    Training curves keep the default line.
+    """
     per_seed_values = np.asarray(per_seed_values)
     n_seeds = per_seed_values.shape[0]
     mean = per_seed_values.mean(axis=0)
     uncertainty_band(
-        ax, x, per_seed_values.min(axis=0), per_seed_values.max(axis=0), hue
+        ax,
+        x,
+        per_seed_values.min(axis=0),
+        per_seed_values.max(axis=0),
+        hue,
+        step=step,
     )
-    ax.plot(
+    draw = ax.step if step else ax.plot
+    draw(
         x,
         mean,
         color=hue,
         linewidth=1.6,
         zorder=3,
         label=f"{label} (mean, band = min-max over {n_seeds} seeds)",
+        **({"where": "mid"} if step else {}),
     )
 
 

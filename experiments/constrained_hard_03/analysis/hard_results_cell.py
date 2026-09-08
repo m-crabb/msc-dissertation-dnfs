@@ -367,9 +367,10 @@ def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
     -- every curve is our sampler and the contrast is the head, so borrowing
     CLASSICAL_HUE would read as a classical chain.
     """
-    ax.plot(
+    ax.step(
         support,
         reference_pmf,
+        where="mid",
         color=REFERENCE_INK,
         linewidth=1.3,
         zorder=5,
@@ -387,9 +388,10 @@ def _multi_head_panel(ax, support, reference_pmf, per_head, floors, xlabel):
                 for p in pmfs
             ]
         )
-        ax.plot(
+        ax.step(
             support,
             mean_pmf,
+            where="mid",
             color=hues[index],
             linewidth=1.5,
             dashes=HEAD_DASHES[index % len(HEAD_DASHES)],
@@ -417,9 +419,10 @@ def _panel(
     into the panel title after it instead of an in-axes annotation, which
     collides at row height; an empty string prints the read alone. `n_ticks`
     caps the x locator: the grid's narrow panels take three."""
-    ax.plot(
+    ax.step(
         support,
         reference_pmf,
+        where="mid",
         color=REFERENCE_INK,
         linewidth=1.3,
         zorder=4,
@@ -428,7 +431,7 @@ def _panel(
     if len(seed_pmfs):
         # DNFS spelled out: matplotlib has no glossary, so a \gls{} would
         # print verbatim into the figure.
-        seed_band(ax, support, seed_pmfs, hue, "DNFS")
+        seed_band(ax, support, seed_pmfs, hue, "DNFS", step=True)
         tvds = [
             marginal_tvd(torch.from_numpy(p), torch.from_numpy(reference_pmf))
             for p in seed_pmfs

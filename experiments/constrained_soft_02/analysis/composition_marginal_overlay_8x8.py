@@ -163,7 +163,7 @@ def plot_panel(ax, support, ref_pmf, seed_pmfs, tv, floor, label):
         zorder=3,
         label="VC-SGC chains",
     )
-    seed_band(ax, support, seed_pmfs, SAMPLER_HUE, "soft DNFS, IS-weighted")
+    seed_band(ax, support, seed_pmfs, SAMPLER_HUE, "soft DNFS, IS-weighted", step=True)
     ax.set_xlim(*populated_window(support, ref_pmf, *seed_pmfs))
     ax.text(
         0.02,
@@ -234,9 +234,10 @@ def main():
                 f"({next(panel_labels)}) $c_\\mathrm{{target}} = {c_target:g}$",
             )
             if key == "composition":
-                ax.plot(
+                ax.step(
                     COMPOSITION_SUPPORT,
                     envelope_pmf(c_target),
+                    where="mid",
                     color=ANALYTIC_GUIDE,
                     lw=1.0,
                     ls="--",

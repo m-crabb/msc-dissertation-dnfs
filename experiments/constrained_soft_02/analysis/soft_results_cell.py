@@ -166,7 +166,7 @@ def plot_house_panel(
         zorder=3,
         label="VC-SGC",
     )
-    seed_band(ax, support, seed_pmfs, SAMPLER_HUE, "DNFS")
+    seed_band(ax, support, seed_pmfs, SAMPLER_HUE, "DNFS", step=True)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("probability mass")
     ax.set_xlim(*populated_window(support, ref_pmf, *seed_pmfs))
