@@ -11,7 +11,6 @@ training and report entrypoints are mapped in the
 | [icet_agpb_tutorial.ipynb](icet_agpb_tutorial.ipynb) | Walkthrough adapted from the icet getting-started tutorial: Ag–Pd cluster-expansion fitting, structure enumeration, SGC/VCSGC sampling and diagnostics |
 | [mixing_energy.ce](mixing_energy.ce) | Retained Ag–Pd cluster expansion produced by that notebook |
 | `*.png` | Retained notebook plots of fitted energies, ECIs, mixing energies, free-energy derivatives, acceptance and ESS |
-| [stage_2_d10_constrained_gibbs_reference.py](stage_2_d10_constrained_gibbs_reference.py) | Historical long Gibbs-reference producer for soft-constrained Stage 2; saves samples and a mixing plot under `results/02_constrained_soft/` |
 
 The notebook filename contains `agpb`, but its actual species are **Ag–Pd**.
 The filename is retained for existing references. Open it through `pixi run
