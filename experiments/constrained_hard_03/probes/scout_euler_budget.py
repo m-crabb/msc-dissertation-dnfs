@@ -21,7 +21,7 @@ Modes:
   --n-steps N         train D=D at σ_c then measure (GPU; the empirical D≥8 path)
 
 Usage:
-  pixi run -e dev python -m experiments.constrained_hard_03.scout_euler_budget \\
+  pixi run -e dev python -m experiments.constrained_hard_03.probes.scout_euler_budget \\
       --checkpoint <run_dir>/checkpoints/final.pt --D 4
 """
 

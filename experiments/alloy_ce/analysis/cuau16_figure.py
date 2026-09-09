@@ -18,7 +18,7 @@ the free energy is by definition the IS normaliser read off the weights (paper E
 bound; -logmeanexp is the estimate). Units are absolute meV/site to match the table's dF column,
 where -41 meV/site at CuAu is a reading an alloy reader can use.
 
-Usage: pixi run -e dev python -m experiments.alloy_ce.tools.cuau16_figure \\
+Usage: pixi run -e dev python -m experiments.alloy_ce.analysis.cuau16_figure \\
            --free "results/02_constrained_soft/A1_cuau16_T1200*fc" \\
                   "results/02_constrained_soft/A1_cuau16_T680*fc" \\
                   "results/02_constrained_soft/A1_cuau16_T500_letf_50k_house_seed*free" \\
@@ -38,13 +38,13 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from experiments.alloy_ce.tools.fcc_render import (
+from experiments.alloy_ce.analysis.fcc_render import (
     JMOL,
     conventional_cell,
     draw_structure,
     rectangular_tiling,
 )
-from experiments.alloy_ce.tools.patch_reach_probe import ordered_states
+from experiments.alloy_ce.probes.patch_reach_probe import ordered_states
 from matplotlib.gridspec import GridSpec
 
 from discrete_flow_sampler.diagnostics.figure_style import (
@@ -236,7 +236,8 @@ def slice_estimates(runs, beta, split_by_slice):
 def mixture_of(runs):
     """The composition slices the amortised checkpoints trained on (config.json)."""
     mixtures = {
-        tuple(json.load(open(f"{run}/config.json"))["composition_mixture"]) for run in runs
+        tuple(json.load(open(f"{run}/config.json"))["composition_mixture"])
+        for run in runs
     }
     assert len(mixtures) == 1, mixtures
     return sorted(mixtures.pop())

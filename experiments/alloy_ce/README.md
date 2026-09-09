@@ -1,12 +1,12 @@
 # Cu–Au cluster-expansion experiments
 
-[All experiments](../README.md) · [Cu–Au tools](tools/README.md)
+[All experiments](../README.md) · [Cu–Au launchers](launchers/README.md)
 
 The materials application evaluates free, softly constrained and exactly
 constrained sampling on a binary Cu–Au cluster expansion. Exported coefficients
 for the 16-site and 64-site FCC cells are committed under [data/ce/](../../data/ce/).
-[export_binary_expansion.py](export_binary_expansion.py) prepares coefficients;
-[reference_chain.py](reference_chain.py) supplies classical reference sampling.
+[export_binary_expansion.py](probes/export_binary_expansion.py) prepares coefficients;
+[reference_chain.py](probes/reference_chain.py) supplies classical reference sampling.
 The earlier fitting workflow is in [icet-ce/](../../icet-ce/README.md).
 
 Training reuses the existing experiment families:
@@ -37,16 +37,34 @@ Cu–Au checkpoints are not bundled; the [pretrained Ising examples](../../check
 provide a smaller starting point without training. This indicative recipe does
 not replace the selected historical runs discussed below.
 
-[judge_16site_cells.py](judge_16site_cells.py) uses exact enumeration;
-[judge_64site_cells.py](judge_64site_cells.py) compares larger-cell outputs.
+[judge_16site_cells.py](analysis/judge_16site_cells.py) uses exact enumeration;
+[judge_64site_cells.py](analysis/judge_64site_cells.py) compares larger-cell outputs.
 The 16-site judge performs enumeration and judging at module level. The 64-site
 judge takes a positional glob rather than an argparse help flag. Read their
 sources before execution.
+
+## Figures and diagnostics
+
+| Task | Script |
+| --- | --- |
+| Exact 16-site composition/free-energy exhibit | [cuau16_figure.py](analysis/cuau16_figure.py) |
+| FCC configurations and ordered structures | [fcc_render.py](analysis/fcc_render.py) |
+| Composition histograms | [composition_histograms.py](analysis/composition_histograms.py) |
+| Flow versus uniform-slice statistics | [static_flow_report.py](analysis/static_flow_report.py), [samples_vs_static.py](analysis/samples_vs_static.py) |
+| Training history and curriculum comparisons | [train_ess_trajectory.py](analysis/train_ess_trajectory.py), [compare_training_logs.py](analysis/compare_training_logs.py) |
+| Exact curriculum slice statistics | [ladder_desk_stats.py](analysis/ladder_desk_stats.py) |
+| Two-hole patch reach regression | [patch_reach_probe.py](probes/patch_reach_probe.py) |
+| Composition-amortised rollout on every slice | [cuau16_amortised_sweep.py](probes/cuau16_amortised_sweep.py) |
+
+Several of these enumerate states, fit models, or inspect run files on
+execution or import; read the source before using them. The retained
+composition-amortised exhibit selects corrected-tagged `*camort*perslice`
+outputs. Older `*camort*fc` examples select pooled predecessors.
 
 For the retained 16-site composition-amortised figure, the selected tag ends in
 `camort*perslice`; the older pooled `camort*fc` selection is a distinct result.
 Local corrected-tagged evaluations do not establish the exact training revision
 or checkpoint identity. Some original 64-site 500 K hard producers are missing
 locally; later revival runs have different budgets/settings and cannot replace
-them in a reproduction. The [tools guide](tools/README.md) identifies the retained
+them in a reproduction. The [launcher guide](launchers/README.md) identifies the retained
 campaign and transfer wrappers.

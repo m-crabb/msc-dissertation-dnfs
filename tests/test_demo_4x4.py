@@ -6,12 +6,12 @@ and the pass-row counter's mask_one vs masked_attention ratio.
 import numpy as np
 import pytest
 import torch
-from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
-from experiments.constrained_hard_03.demo_4x4 import (
+from experiments.constrained_hard_03.analysis.demo_4x4 import (
     BackbonePassRowCounter,
     exact_moments,
     n_eff_observable,
 )
+from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
 
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
@@ -71,7 +71,7 @@ def test_phi_support_and_exact_pmf_symmetry():
     """phi support at D=4 is the 9 points -1..1 step 1/4 (phi = sum_L/8 on
     the slice); the exact pmf is normalised and Z2-symmetric, with equal mass
     in the two sectors -- the enumerated mode-coverage reference."""
-    from experiments.constrained_hard_03.demo_4x4 import (
+    from experiments.constrained_hard_03.analysis.demo_4x4 import (
         exact_phi_pmf,
         phi_mass_on_support,
         phi_support,

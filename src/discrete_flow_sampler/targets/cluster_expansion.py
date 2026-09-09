@@ -11,7 +11,7 @@ polynomial in spins s_i in {-1, +1} (Au = +1, Cu = -1):
     E(s) = J_0 + sum_k c_k sum_{tuples T in class k} prod_{i in T} s_i,           (1)
 
 with tuple lists and coefficients exported once by
-`experiments/alloy_ce/export_binary_expansion.py`, which fits (1) to the
+`experiments/alloy_ce/probes/export_binary_expansion.py`, which fits (1) to the
 library's own energies and refuses to write unless the residual is at
 floating-point precision. The target is p(s) ∝ exp[-beta E(s)]; the project's
 beta = 2 sigma convention is kept, so `sigma` = beta/2 and

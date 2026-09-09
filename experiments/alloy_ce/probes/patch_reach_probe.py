@@ -16,7 +16,7 @@ Uniform slice states are the base distribution; ordered states at 500 K are
 harder for a local head, so this is an optimistic bound on reach.
 
 Usage (CPU, minutes):
-    pixi run -e dev python -m experiments.alloy_ce.tools.patch_reach_probe \\
+    pixi run -e dev python -m experiments.alloy_ce.probes.patch_reach_probe \\
         --spec data/ce/cuau_fcc_4x4x4.json --composition 0.25 --shells 1 2
 """
 

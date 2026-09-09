@@ -44,7 +44,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from experiments.constrained_hard_03.gate_4x4 import (
+from experiments.constrained_hard_03.probes.gate_4x4 import (
     _categorical_energy_bins,
     _energy,
     energy_marginal_tv,

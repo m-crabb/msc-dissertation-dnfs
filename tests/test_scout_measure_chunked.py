@@ -7,7 +7,10 @@ batch shape, so fp32 reductions carry ~1e-9 residue — hence ATOL, not `==`
 (same pattern as `test_swap_head_vectorised._assert_matches`)."""
 
 import torch
-from experiments.constrained_hard_03.scout_euler_budget import _build_head, measure
+from experiments.constrained_hard_03.probes.scout_euler_budget import (
+    _build_head,
+    measure,
+)
 
 from discrete_flow_sampler.targets.ising import SIGMA_C, FixedCompositionIsingTarget
 

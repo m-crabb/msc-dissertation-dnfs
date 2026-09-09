@@ -235,7 +235,7 @@ def gate_remote(
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.gate_4x4 import main as gate_main
+    from experiments.constrained_hard_03.probes.gate_4x4 import main as gate_main
 
     argv = [
         "--results-dir",
@@ -265,7 +265,7 @@ def demo_remote(seeds: str = "42,43,44", n_samples: int = 5000, n_replicates: in
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.demo_4x4 import main as demo_main
+    from experiments.constrained_hard_03.analysis.demo_4x4 import main as demo_main
 
     demo_main(
         [
@@ -294,7 +294,7 @@ def phi_hist_remote(seeds: str = "42,43,44", n_samples: int = 5000):
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.demo_4x4 import main as demo_main
+    from experiments.constrained_hard_03.analysis.demo_4x4 import main as demo_main
 
     demo_main(
         [
@@ -408,7 +408,7 @@ def transport_decomposition_remote(run_dir_name: str, n_samples: int = 0):
     from pathlib import Path
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.analysis_transport_decomposition import (
+    from experiments.constrained_hard_03.probes.transport_decomposition import (
         decompose_run,
     )
 
@@ -427,7 +427,9 @@ def scout_remote(run_dir_name: str, D: int, head_kind: str = "mask_one"):
     from pathlib import Path
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.scout_euler_budget import from_checkpoint
+    from experiments.constrained_hard_03.probes.scout_euler_budget import (
+        from_checkpoint,
+    )
 
     ckpt = Path("/results") / run_dir_name / "checkpoints" / "final.pt"
     from_checkpoint(ckpt, D, head_kind, "/results/scout")
@@ -444,7 +446,7 @@ def mdns_gate_remote(argv: str = ""):
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
+    from experiments.constrained_hard_03.probes.mdns_budget_gate_4x4 import (
         main as mdns_gate_main,
     )
 
@@ -489,7 +491,9 @@ def bench_remote(argv: str = "", isolate: bool = True):
     sys.path.insert(0, "/repo")
     configs = [one.split() for one in argv.split(";")]
     if not isolate:
-        from experiments.constrained_hard_03.profile_swap import main as bench_main
+        from experiments.constrained_hard_03.probes.profile_swap import (
+            main as bench_main,
+        )
 
         for one in configs:
             bench_main(one)
@@ -502,7 +506,7 @@ def bench_remote(argv: str = "", isolate: bool = True):
             [
                 sys.executable,
                 "-m",
-                "experiments.constrained_hard_03.profile_swap",
+                "experiments.constrained_hard_03.probes.profile_swap",
                 *one,
             ],
             cwd=PROJECT_DIR,
@@ -531,7 +535,7 @@ def training_flops_remote(argv: str = ""):
     import sys
 
     sys.path.insert(0, PROJECT_DIR)
-    from experiments.constrained_hard_03.measure_training_flops import (
+    from experiments.constrained_hard_03.probes.measure_training_flops import (
         main as training_flops_main,
     )
 
@@ -585,7 +589,7 @@ def zero_shot_transfer_remote(argv: str = ""):
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.constrained_hard_03.probe_zero_shot_transfer import (
+    from experiments.constrained_hard_03.probes.probe_zero_shot_transfer import (
         main as probe_main,
     )
 
@@ -597,12 +601,12 @@ def zero_shot_transfer_remote(argv: str = ""):
 @app.function(gpu="L4", volumes={"/results": volume}, timeout=2 * 60 * 60)
 def cuau16_amortised_sweep_remote(argv: str = ""):
     """Roll the 16-site composition-amortised Cu-Au checkpoints out on every
-    slice (experiments.alloy_ce.tools.cuau16_amortised_sweep). Minutes on a
+    slice (experiments.alloy_ce.probes.cuau16_amortised_sweep). Minutes on a
     GPU; the Mac measured 115 s per 500 draws per slice."""
     import sys
 
     sys.path.insert(0, "/repo")
-    from experiments.alloy_ce.tools.cuau16_amortised_sweep import main as sweep_main
+    from experiments.alloy_ce.probes.cuau16_amortised_sweep import main as sweep_main
 
     sweep_main(argv.split())
     volume.commit()
@@ -702,7 +706,7 @@ def gate(
 def compile_gate_remote():
     """Run the CPU-passed compile gate on the training GPU stack: Inductor
     generates different kernels per backend. Raise on a failed gate."""
-    from experiments.constrained_hard_03.compile_gate import main as gate_main
+    from experiments.constrained_hard_03.probes.compile_gate import main as gate_main
 
     if gate_main() != 0:
         raise RuntimeError("compile gate FAILED on the GPU stack")
@@ -724,7 +728,7 @@ def compile_profile_remote(
     """Post-compile region profile of the production swap stack (method and
     region list in compile_profile.py). Prints tables; nothing on the
     volume."""
-    from experiments.constrained_hard_03.compile_profile import (
+    from experiments.constrained_hard_03.probes.compile_profile import (
         THP2_CELL,
         run_profile,
     )

@@ -1,7 +1,7 @@
 """The binary cluster-expansion target.
 
 The target evaluates E(s) = J_0 + sum_k c_k sum_tuples prod s on a periodic
-cell exported by `experiments/alloy_ce/export_binary_expansion.py`, and hands
+cell exported by `experiments/alloy_ce/probes/export_binary_expansion.py`, and hands
 the samplers closed-form flip and swap energy changes. Three things must hold:
 
 1. It reproduces the fitting library's energies on the reference

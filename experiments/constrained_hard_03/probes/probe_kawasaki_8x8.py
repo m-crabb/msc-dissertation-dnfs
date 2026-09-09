@@ -52,7 +52,7 @@ Smoke mode (--smoke): D = 4, 2_000 sweeps, 2 chains per seeding mode,
 2 workers, output routed to <out>/smoke/ — end-to-end plumbing test only.
 
 Example:
-    pixi run -e default python -m experiments.constrained_hard_03.probe_kawasaki_8x8 \\
+    pixi run -e default python -m experiments.constrained_hard_03.probes.probe_kawasaki_8x8 \\
         --stage reference --smoke
 """
 
@@ -222,7 +222,7 @@ def observable_traces(
     """Per-observable (n_chains, n_snapshots) arrays from the saved npzs,
     computed with the demo_4x4 observable set."""
     import torch
-    from experiments.constrained_hard_03.demo_4x4 import (
+    from experiments.constrained_hard_03.analysis.demo_4x4 import (
         OBSERVABLE_NAMES,
         observable_values,
     )

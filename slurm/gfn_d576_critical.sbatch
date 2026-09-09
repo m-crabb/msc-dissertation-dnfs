@@ -34,7 +34,7 @@ sha256sum experiments/constrained_hard_03/{gfn_configs,gfn_launch_bench,run_gfn}
 GATE_LOG=$(mktemp)
 trap 'rm -f "$GATE_LOG"' EXIT
 "$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.gfn_launch_bench --rung d576 | tee "$GATE_LOG"
+    experiments.constrained_hard_03.probes.gfn_launch_bench --rung d576 | tee "$GATE_LOG"
 grep -q 'GATE PASSED' "$GATE_LOG" || { echo 'GATE DID NOT PASS'; exit 1; }
 
 "$PIXI" run --frozen -e cuda python -m \

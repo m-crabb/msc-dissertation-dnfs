@@ -19,7 +19,7 @@ demo_4x4 machinery:
 
 import numpy as np
 import pytest
-from experiments.constrained_hard_03.probe_analysis_8x8 import (
+from experiments.constrained_hard_03.analysis.probe_analysis_8x8 import (
     batch_means_tau_int,
     frozen_verdict,
     kawasaki_burn_in_sweeps,

@@ -29,7 +29,7 @@ echo "node=$(hostname)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 RUN="$PIXI run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.mdns_budget_gate_4x4"
+    experiments.constrained_hard_03.probes.mdns_budget_gate_4x4"
 
 # arm 0: unconstrained control, their protocol + 10k twins, both objectives
 $RUN $RECIPE --arms u --steps 2000  --replicates 16 \

@@ -20,7 +20,7 @@ script reads what the sampler's own artefacts can certify:
 Free-ensemble cells (A1_*) have no slice: E_ground, swaps and the static variance use the
 uniform free ensemble at the sampled composition, and the sample composition is printed.
 
-Usage:  pixi run -e dev python -m experiments.alloy_ce.judge_64site_cells "results/03_hard/*cuau64* results/02_constrained_soft/*cuau64*"
+Usage:  pixi run -e dev python -m experiments.alloy_ce.analysis.judge_64site_cells "results/03_hard/*cuau64* results/02_constrained_soft/*cuau64*"
 """
 
 import glob
@@ -31,7 +31,7 @@ import sys
 
 import pandas as pd
 import torch
-from experiments.alloy_ce.tools.patch_reach_probe import (
+from experiments.alloy_ce.probes.patch_reach_probe import (
     ordered_states,
     random_slice_states,
 )

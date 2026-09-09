@@ -23,7 +23,7 @@ import json
 from pathlib import Path
 
 import torch
-from experiments.constrained_hard_03.gate_4x4 import load_run
+from experiments.constrained_hard_03.probes.gate_4x4 import load_run
 
 from discrete_flow_sampler.samplers._swap_neighbours import upper_tri_pairs
 

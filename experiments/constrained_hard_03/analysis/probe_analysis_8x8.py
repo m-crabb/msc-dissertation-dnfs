@@ -62,7 +62,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from experiments.constrained_hard_03.demo_4x4 import (
+from experiments.constrained_hard_03.analysis.demo_4x4 import (
     OBSERVABLE_NAMES,
     n_eff_observable,
     observable_values,

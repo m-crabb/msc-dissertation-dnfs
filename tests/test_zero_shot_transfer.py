@@ -38,7 +38,7 @@ import math
 
 import pytest
 import torch
-from experiments.constrained_hard_03.probe_zero_shot_transfer import (
+from experiments.constrained_hard_03.probes.probe_zero_shot_transfer import (
     check_sampling_provenance,
     exact_slice_statistics,
     running_log_weights,
@@ -337,7 +337,7 @@ def test_slice_free_energy_recovers_the_enumerated_slice_normaliser():
     density must give back -log Z_slice(t sigma)/d exactly -- including the
     (1 - t) log C(d, n_plus) slice constant that the base contributes at t < 1
     and that cancels only at t = 1."""
-    from experiments.constrained_hard_03.probe_zero_shot_transfer import (
+    from experiments.constrained_hard_03.probes.probe_zero_shot_transfer import (
         slice_free_energy_per_site,
     )
 

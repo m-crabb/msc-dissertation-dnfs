@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from experiments.alloy_ce.reference_chain import (
+from experiments.alloy_ce.probes.reference_chain import (
     K_B_EV,
     beta_ladder_free_energy,
     build_target,

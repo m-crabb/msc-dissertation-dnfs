@@ -5,7 +5,7 @@ width (hidden 32, 2 layers, 4 heads): parameters, counted forward FLOPs, and
 CPU wall time of one head forward. CPU only, small batch; the numbers are
 per-sample and relative, not a GPU throughput claim.
 
-    pixi run -e dev python -m experiments.constrained_hard_03.bench_rope_vit
+    pixi run -e dev python -m experiments.constrained_hard_03.probes.bench_rope_vit
 """
 
 import argparse

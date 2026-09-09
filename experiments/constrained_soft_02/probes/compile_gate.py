@@ -32,7 +32,7 @@ graph's math; kernels differ per backend, so the venue's CUDA backend is
 checked separately by a single d64 run there before the family fans out.
 
 Run:
-    pixi run -e dev python -m experiments.constrained_soft_02.compile_gate
+    pixi run -e dev python -m experiments.constrained_soft_02.probes.compile_gate
 """
 
 import sys

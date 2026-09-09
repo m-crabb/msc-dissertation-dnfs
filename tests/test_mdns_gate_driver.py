@@ -36,7 +36,7 @@ quantity.
 import tempfile
 from pathlib import Path
 
-import experiments.constrained_hard_03.mdns_budget_gate_4x4 as gate
+import experiments.constrained_hard_03.probes.mdns_budget_gate_4x4 as gate
 import pytest
 import torch
 
@@ -300,7 +300,7 @@ def test_chain_reference_matches_the_probes_own_energy_convention(lattice_8x8):
     applies `_energy` directly; the probe's `reference_energies` routes via
     `observable_values("energy", ...)`. They must agree exactly -- if they
     diverge, every 8x8 TV silently becomes meaningless."""
-    from experiments.constrained_hard_03.plot_probe_8x8 import (
+    from experiments.constrained_hard_03.analysis.plot_probe_8x8 import (
         reference_energies,
     )
 

@@ -49,7 +49,7 @@ from experiments.constrained_soft_02.analysis._common import latest_run_dir
 
 from discrete_flow_sampler.diagnostics.metrics import enumerate_states
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SPECIALISTS = (
     "S2_d4_c03_50k_l50_letf_anneal_offset_clip50",
     "S2_d4_c05_50k_l50_letf_anneal_offset_clip50",

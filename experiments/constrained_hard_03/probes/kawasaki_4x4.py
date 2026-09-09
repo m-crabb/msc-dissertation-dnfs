@@ -14,7 +14,7 @@ trial steps; downstream N_eff(O) conversions work in trial steps throughout.
 Local CPU only (no GPU, no Modal). One npz per (sigma, seed).
 
 Example:
-    pixi run -e dev python -m experiments.constrained_hard_03.kawasaki_4x4 \
+    pixi run -e dev python -m experiments.constrained_hard_03.probes.kawasaki_4x4 \
         --sigmas 0.10 0.223 --n-trial-steps 200000
 """
 

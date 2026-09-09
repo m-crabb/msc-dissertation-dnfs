@@ -54,7 +54,7 @@ amber, hard-constraint delta red -- so no figure asks the reader to
 distinguish two mid-luminance fills.
 
 Run with (add --dry-run to check data selection without rendering):
-  pixi run -e dev python experiments/constrained_hard_03/analysis_sample_montages.py
+  pixi run -e dev python experiments/constrained_hard_03/analysis/sample_montages.py
 
 CPU-only: the heaviest step is a 512x512 dot product per eval population.
 """
@@ -84,7 +84,7 @@ from discrete_flow_sampler.diagnostics.figure_style import (
 )
 from discrete_flow_sampler.samplers.resampling import systematic_resample_indices
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 RESULTS_ROOT = REPO_ROOT / "results"
 OUTPUT_DIR = RESULTS_ROOT / "03_hard" / "sample_montages"
 

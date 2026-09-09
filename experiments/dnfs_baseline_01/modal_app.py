@@ -232,7 +232,7 @@ def compile_bench_remote(
     """Same-container eager-vs-compiled bench of the flip-route trainer
     (method in compile_bench.py — both arms in one container so the ratio
     is same-device by construction)."""
-    from experiments.dnfs_baseline_01.compile_bench import run_bench
+    from experiments.dnfs_baseline_01.probes.compile_bench import run_bench
 
     return run_bench(cfg_name=cfg_name, n_steps=n_steps, tail=tail)
 

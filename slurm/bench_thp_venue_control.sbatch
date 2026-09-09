@@ -32,7 +32,7 @@ for ARGS in \
     "--mode train_step --d 256 --batch 128 --repeats 5 --head-kind two_hole_patch --patch-radius 2" \
     "--mode train_step --d 64 --batch 128 --repeats 5 --head-kind factorised --site-orderings row,col --sdpa" \
     "--mode train_step --d 64 --batch 128 --repeats 5 --head-kind two_hole_patch"; do
-    "$PIXI" run --frozen -e cuda python -m experiments.constrained_hard_03.profile_swap $ARGS
+    "$PIXI" run --frozen -e cuda python -m experiments.constrained_hard_03.probes.profile_swap $ARGS
     echo
 done
 

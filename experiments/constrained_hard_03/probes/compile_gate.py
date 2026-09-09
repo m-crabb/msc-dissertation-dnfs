@@ -20,7 +20,7 @@ Pass criterion: pytest exit code 0 and parity within tolerance; the gate
 certifies "same math", never bit-parity.
 
 Run locally (CPU inductor) or on the GPU venue:
-    pixi run -e dev python -m experiments.constrained_hard_03.compile_gate
+    pixi run -e dev python -m experiments.constrained_hard_03.probes.compile_gate
     pixi run -e dev modal run -m \
         experiments.constrained_hard_03.modal_app::compile_gate
 """

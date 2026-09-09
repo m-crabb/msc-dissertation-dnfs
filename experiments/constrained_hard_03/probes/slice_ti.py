@@ -39,7 +39,7 @@ import math
 from pathlib import Path
 
 import numpy as np
-from experiments.constrained_hard_03.probe_analysis_8x8 import (
+from experiments.constrained_hard_03.analysis.probe_analysis_8x8 import (
     batch_means_tau_int,
     kawasaki_burn_in_sweeps,
 )
@@ -283,7 +283,7 @@ def sigma_c_cross_checks(result, lattice_side=8, sweeps=CHAIN_SWEEPS):
 
 def validate_4x4():
     """Run the chain pipeline at 4x4 and score it against exact enumeration."""
-    from experiments.constrained_hard_03.gate_4x4 import (
+    from experiments.constrained_hard_03.probes.gate_4x4 import (
         on_slice_free_energy_reference,
     )
 

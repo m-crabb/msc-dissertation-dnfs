@@ -2166,7 +2166,7 @@ CONFIGS["S2_d4_cnull_50k_l50_letf_house"] = soft_house_recipe(
 
 # ---------------------------------------------------------------------------
 # Cu-Au alloy rungs: free-composition and penalised samplers on the MetaDNS/Damewood
-# Cu-Au fcc expansion (data/ce/, from experiments/alloy_ce/export_binary_expansion.py).
+# Cu-Au fcc expansion (data/ce/, from experiments/alloy_ce/probes/export_binary_expansion.py).
 # `sigma` is beta/2 = 1/(2 k_B T) in 1/eV; the curriculum cools 1200 K -> 500 K, where
 # the 16-site exact composition marginal is bimodal (0.77 at x_Au = 0.5, L1_0; 0.15
 # at 0.25, L1_2). The flip channel is off here and on in the `_efc` twins below.

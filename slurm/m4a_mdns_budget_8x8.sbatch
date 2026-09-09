@@ -76,7 +76,7 @@ echo "node=$(hostname) cell=m4a-mdns-8x8 seeds=42,43,44"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 "$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.mdns_budget_gate_4x4 \
+    experiments.constrained_hard_03.probes.mdns_budget_gate_4x4 \
     --lattice-side 8 \
     --probe-root results/kawasaki_probe --probe-point sc \
     --free-energy-ref -1.90410 \

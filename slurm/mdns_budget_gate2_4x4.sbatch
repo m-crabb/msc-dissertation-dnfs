@@ -13,7 +13,7 @@
 # runs. The 2k-step CPU pass took ~24 s/arm training + ~40 s eval, so the
 # full slate is well under an hour even CPU-bound; 4 h is headroom.
 # Primary purpose: the DNFS 4x4 side-by-side (comparison harness:
-# experiments/constrained_hard_03/mdns_vs_dnfs_4x4.py, runs locally off
+# experiments/constrained_hard_03/analysis/mdns_vs_dnfs_4x4.py, runs locally off
 # the rsynced results).
 export CONDA_OVERRIDE_CUDA=12.9
 export PIXI_CACHE_DIR=/vol/gpudata/mc625-dnfs/.pixi-cache
@@ -29,7 +29,7 @@ echo "node=$(hostname) tag=$TAG"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 "$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.mdns_budget_gate_4x4 \
+    experiments.constrained_hard_03.probes.mdns_budget_gate_4x4 \
     --steps 10000 --seeds 42,43,44 --sigmas 0.10,0.223 --arms a,b,c \
     --device cuda --tag "$TAG" \
     --results-dir results/03_hard/mdns_budget_gate2_4x4

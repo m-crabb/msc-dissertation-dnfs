@@ -4,8 +4,8 @@ import itertools
 
 import pytest
 import torch
-from experiments.constrained_hard_03 import analysis_local_field_regression as hard
-from experiments.constrained_soft_02 import analysis_local_field_regression as soft
+from experiments.constrained_hard_03.analysis import local_field_regression as hard
+from experiments.constrained_soft_02.analysis import local_field_regression as soft
 
 from discrete_flow_sampler.targets.ising import IsingTarget
 

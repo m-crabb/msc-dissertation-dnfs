@@ -63,7 +63,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from experiments.constrained_hard_03.probe_analysis_8x8 import (
+from experiments.constrained_hard_03.analysis.probe_analysis_8x8 import (
     LATTICE_SIDE,
     OPERATING_POINTS,
     kawasaki_chain_rows,

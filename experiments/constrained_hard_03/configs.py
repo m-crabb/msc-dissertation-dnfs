@@ -3047,7 +3047,7 @@ CONFIGS.update(
 
 # ---------------------------------------------------------------------------
 # Cu-Au alloy rungs: the canonical sampler on the MetaDNS/Damewood Cu-Au fcc
-# cluster expansion in data/ce/ (experiments/alloy_ce/export_binary_expansion.py).
+# cluster expansion in data/ce/ (experiments/alloy_ce/probes/export_binary_expansion.py).
 # `sigma` = beta/2 = 1/(2 k_B T) in 1/eV; the curriculum cools 1200 K -> 500 K
 # into the L1_2 (x_Au = 0.25) / L1_0 (x_Au = 0.5) ordered regime. Head =
 # mask_one, the one swap head with no 2D-torus assumption (fcc adjacency, not a

@@ -9,7 +9,7 @@ CTMC, so it is not tested locally -- the controller runs the real gate.
 import itertools
 
 import torch
-from experiments.constrained_hard_03.gate_4x4 import (
+from experiments.constrained_hard_03.probes.gate_4x4 import (
     energy_marginal_tv,
     on_slice_free_energy_reference,
     slice_energy_hist,

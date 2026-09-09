@@ -20,7 +20,7 @@ The train-step timing x 50k projects the job wall-time; the rollout timings
 seed the wall-clock-per-effective-sample column beside FLOP/es, which prices
 arithmetic and not the AR policy's d sequential one-token kernels.
 
-    pixi run -e dev python -m experiments.constrained_hard_03.gfn_launch_bench
+    pixi run -e dev python -m experiments.constrained_hard_03.probes.gfn_launch_bench
 """
 
 import argparse

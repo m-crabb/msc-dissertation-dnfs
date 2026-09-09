@@ -5,7 +5,7 @@ draws (one histogram per seed, raw draws) beside the single-flip Metropolis chai
 (reference_chain.py, filled). Composition is discrete, n_Au / 64, so the bins are the sites.
 Missing cells or chains leave their panel annotated rather than failing the figure.
 
-Usage: pixi run -e dev python -m experiments.alloy_ce.tools.composition_histograms \\
+Usage: pixi run -e dev python -m experiments.alloy_ce.analysis.composition_histograms \\
            --cells "results/02_constrained_soft/A1_cuau64_T1200*grid" \\
                    "results/02_constrained_soft/A1_cuau64_T680*grid" \\
                    "results/02_constrained_soft/A1_cuau64_T500*house" \\

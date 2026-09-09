@@ -9,7 +9,7 @@ concatenated into one eval/ directory beside the source run, in the layout
 cuau16_figure.py already splits by slice; config.json is copied so the figure
 can tell mixture slices from transfer slices.
 
-Usage: pixi run -e dev python -m experiments.alloy_ce.tools.cuau16_amortised_sweep \\
+Usage: pixi run -e dev python -m experiments.alloy_ce.probes.cuau16_amortised_sweep \\
            --run-dirs "results/03_hard/H2_cuau16_camort*perslice"
 """
 
@@ -24,7 +24,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import torch
-from experiments.constrained_hard_03.probe_zero_shot_transfer import _load_head
+from experiments.constrained_hard_03.probes.probe_zero_shot_transfer import _load_head
 from experiments.constrained_hard_03.run import _chunked_eval_draw
 
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
@@ -44,7 +44,11 @@ def sweep(run_dir: Path, checkpoint: str, n_au_values, n_samples: int | None, de
     spec = BinaryExpansionSpec.from_json(cfg.ising.expansion_json)
     # cfg.ising.sigma is the 1200 K start of the temperature ladder; the cell
     # ends, and is evaluated, at the last stage (500 K).
-    sigma = cfg.curriculum.stages[-1].sigma if cfg.curriculum is not None else cfg.ising.sigma
+    sigma = (
+        cfg.curriculum.stages[-1].sigma
+        if cfg.curriculum is not None
+        else cfg.ising.sigma
+    )
     torch.manual_seed(cfg.train.seed)
     samples, log_weights, per_slice = [], [], {}
     for n_au in n_au_values:
@@ -63,11 +67,14 @@ def sweep(run_dir: Path, checkpoint: str, n_au_values, n_samples: int | None, de
         samples.append(slice_samples.cpu())
         log_weights.append(slice_log_w.cpu())
         per_slice[n_au] = {
-            "ess_fraction": ess_from_log_weights(slice_log_w).item() / slice_log_w.numel(),
+            "ess_fraction": ess_from_log_weights(slice_log_w).item()
+            / slice_log_w.numel(),
             "n_samples": int(slice_log_w.numel()),
             "seconds": round(time.time() - started, 1),
         }
-        print(f"{run_dir.name} n_Au={n_au:2d} ESS/N={per_slice[n_au]['ess_fraction']:.3f} {per_slice[n_au]['seconds']}s")
+        print(
+            f"{run_dir.name} n_Au={n_au:2d} ESS/N={per_slice[n_au]['ess_fraction']:.3f} {per_slice[n_au]['seconds']}s"
+        )
 
     out_dir = run_dir.with_name(run_dir.name + OUT_SUFFIX)
     (out_dir / "eval").mkdir(parents=True, exist_ok=True)
@@ -92,15 +99,32 @@ def main(argv=None):
     parser.add_argument("--run-dirs", nargs="+", required=True, help="glob patterns")
     parser.add_argument("--checkpoint", default="final.pt")
     parser.add_argument(
-        "--n-au", default=",".join(str(n) for n in range(1, D)),
+        "--n-au",
+        default=",".join(str(n) for n in range(1, D)),
         help="comma-separated up-counts; 0 and 16 are single-state slices with no swap pairs",
     )
-    parser.add_argument("--n-samples", type=int, default=None, help="per slice; default the cell's eval draw")
+    parser.add_argument(
+        "--n-samples",
+        type=int,
+        default=None,
+        help="per slice; default the cell's eval draw",
+    )
     args = parser.parse_args(argv)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    run_dirs = sorted(Path(r) for p in args.run_dirs for r in glob.glob(p) if not r.endswith(OUT_SUFFIX))
+    run_dirs = sorted(
+        Path(r)
+        for p in args.run_dirs
+        for r in glob.glob(p)
+        if not r.endswith(OUT_SUFFIX)
+    )
     for run_dir in run_dirs:
-        sweep(run_dir, args.checkpoint, [int(n) for n in args.n_au.split(",")], args.n_samples, device)
+        sweep(
+            run_dir,
+            args.checkpoint,
+            [int(n) for n in args.n_au.split(",")],
+            args.n_samples,
+            device,
+        )
 
 
 if __name__ == "__main__":

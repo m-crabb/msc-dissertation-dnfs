@@ -16,7 +16,7 @@ chains live under the untracked `results/` directory.
 
 The FCC JSON metadata credits the MetaDNS Cu–Au expansion (Du et al., 2026) and
 the original ECI fit by Damewood et al. (2022). The exporter is
-[export_binary_expansion.py](../experiments/alloy_ce/export_binary_expansion.py).
+[export_binary_expansion.py](../experiments/alloy_ce/probes/export_binary_expansion.py).
 Recreating those exports requires the upstream ECI/structure files and CLEASE;
 the committed JSON can be consumed directly by the PyTorch target.
 

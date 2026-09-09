@@ -16,8 +16,10 @@ double-counted adjacency); these tests pin every link against the exact
 
 import numpy as np
 import pytest
-from experiments.constrained_hard_03.gate_4x4 import on_slice_free_energy_reference
-from experiments.constrained_hard_03.slice_ti import (
+from experiments.constrained_hard_03.probes.gate_4x4 import (
+    on_slice_free_energy_reference,
+)
+from experiments.constrained_hard_03.probes.slice_ti import (
     composite_simpson,
     lattice_energy_double_counted,
     quadrature_error,

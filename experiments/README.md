@@ -90,11 +90,14 @@ records their trajectory selection and the separate free-energy figure inputs.
 
 ## Organisation and compatibility
 
-`analysis/` contains report tables and figures. Some older diagnostics remain
-beside their experiment's trainer, and Cu–Au utilities remain in `alloy_ce/tools/`.
-The family guides link these entrypoints where they currently live. Their paths
-are shared by tests, launchers and archived commands; historical filenames,
-config IDs and checkpoint paths remain part of the reproduction record.
+Each experiment directory keeps only its trainer, configuration registry and
+Modal app at the top level. `analysis/` holds the scripts that read archived
+runs and emit report tables and figures; `probes/` holds everything that spends
+compute without being a training run: exact-enumeration gates, reference
+chains, benches, profilers and compile gates. The Cu–Au launch and pull
+wrappers live in `alloy_ce/launchers/`. Historical filenames, config IDs and
+checkpoint paths remain part of the reproduction record; the launchers under
+`slurm/` were updated to the current module paths when the layout changed.
 
 Retained experimental variants include negative controls, unsuccessful campaigns
 and earlier architectures. Their presence does not imply a recommendation to run

@@ -10,7 +10,7 @@ import torch
 
 pytest.importorskip("icet")
 
-from experiments.constrained_hard_03.kawasaki_4x4 import (
+from experiments.constrained_hard_03.probes.kawasaki_4x4 import (
     ising_cluster_expansion,
     run_chain,
     site_index_map,

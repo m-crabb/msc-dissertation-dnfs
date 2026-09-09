@@ -13,7 +13,7 @@ diverges and the mismatch is caught structurally.
 import pytest
 import torch
 from experiments.constrained_hard_03.configs import CONFIGS, build_swap_head
-from experiments.constrained_hard_03.profile_swap import build_head_and_target
+from experiments.constrained_hard_03.probes.profile_swap import build_head_and_target
 
 # Bench --head_kind -> the cell whose cost it claims to measure. The cfg
 # contributes head knobs, not dimensions (the backbone is shared), so the
@@ -118,7 +118,7 @@ def test_reported_peak_memory_excludes_the_resident_baseline():
     """
     import inspect
 
-    from experiments.constrained_hard_03 import profile_swap
+    from experiments.constrained_hard_03.probes import profile_swap
 
     src = inspect.getsource(profile_swap._report)
     assert "baseline_bytes" in inspect.signature(profile_swap._report).parameters
@@ -161,7 +161,7 @@ def test_compiled_configs_reset_dynamo_before_compiling():
     """
     import inspect
 
-    from experiments.constrained_hard_03 import profile_swap
+    from experiments.constrained_hard_03.probes import profile_swap
 
     src = inspect.getsource(profile_swap.main)
     reset = src.index("torch._dynamo.reset()")
@@ -172,7 +172,7 @@ def test_compiled_configs_reset_dynamo_before_compiling():
 def test_compile_gave_up_watch_arms_once_and_rearms():
     import logging
 
-    from experiments.constrained_hard_03.profile_swap import _COMPILE_WATCH
+    from experiments.constrained_hard_03.probes.profile_swap import _COMPILE_WATCH
 
     logger = logging.getLogger("torch._dynamo")
     before = list(logger.handlers)

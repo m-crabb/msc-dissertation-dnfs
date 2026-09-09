@@ -176,7 +176,7 @@ def test_measurement_curriculum_is_truncated_to_the_horizon():
     The harness hands the trainer only the stages the horizon can reach, which
     for every valid horizon is the first stage."""
     from experiments.constrained_hard_03.configs import CONFIGS
-    from experiments.constrained_hard_03.measure_training_flops import (
+    from experiments.constrained_hard_03.probes.measure_training_flops import (
         curriculum_within,
     )
 

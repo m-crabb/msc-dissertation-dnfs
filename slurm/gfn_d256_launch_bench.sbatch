@@ -23,4 +23,4 @@ echo "node=$(hostname)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 "$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.gfn_launch_bench --rung d256
+    experiments.constrained_hard_03.probes.gfn_launch_bench --rung d256

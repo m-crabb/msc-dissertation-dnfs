@@ -536,7 +536,7 @@ def test_log_variance_loss_is_near_zero_at_the_exact_conditional():
 
 
 def test_ema_shadow_tracks_and_swaps():
-    from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
+    from experiments.constrained_hard_03.probes.mdns_budget_gate_4x4 import (
         ExponentialMovingAverage,
     )
 
@@ -560,7 +560,7 @@ def test_ema_warmup_forgets_init_where_plain_shadow_cannot():
     schedule effective_decay = min(decay, (1+t)/(10+t)) makes the init
     weight prod_{t<=k}(1+t)/(10+t) = 10!(k+1)!/(10+k)! — already ~1e-17 at
     k=200 — while still capping at the requested decay for t >= 9e4."""
-    from experiments.constrained_hard_03.mdns_budget_gate_4x4 import (
+    from experiments.constrained_hard_03.probes.mdns_budget_gate_4x4 import (
         ExponentialMovingAverage,
     )
 

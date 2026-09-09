@@ -65,6 +65,6 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 for RUN in "$KEYSTONE" "$NE512"; do
     echo "=== transport decomposition: $RUN"
     "$PIXI" run --frozen -e cuda python -m \
-        experiments.constrained_hard_03.analysis_transport_decomposition \
+        experiments.constrained_hard_03.probes.transport_decomposition \
         "$RUN" --n-samples 512
 done

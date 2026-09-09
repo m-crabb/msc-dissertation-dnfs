@@ -43,7 +43,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 echo "=== compile parity gate + bench at d400 $(date -Is) ==="
 GATE_LOG=$(mktemp)
 "$PIXI" run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.gfn_launch_bench --rung d400 | tee "$GATE_LOG"
+    experiments.constrained_hard_03.probes.gfn_launch_bench --rung d400 | tee "$GATE_LOG"
 grep -q "GATE PASSED" "$GATE_LOG" || { echo "GATE DID NOT PASS -- wave not run"; exit 1; }
 
 for CELL in "$@"; do

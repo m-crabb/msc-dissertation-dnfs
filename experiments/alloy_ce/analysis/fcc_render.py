@@ -11,7 +11,7 @@ draw from the patch-head cell at 500 K (ordered: on an L1_2 variant), and two
 c=0.5 draws from the same recipe (a typical multi-domain state and the
 top-weight draw).
 
-Usage: pixi run -e dev python -m experiments.alloy_ce.tools.fcc_render \\
+Usage: pixi run -e dev python -m experiments.alloy_ce.analysis.fcc_render \\
            --c25 <run dir> --c50 <run dir> --out assets/cuau64_fcc_renders.pdf
        ... --structures --out assets/cuau_ordered_structures.pdf
            (sphere renders of Cu3Au (L1_2) and CuAu (L1_0) in a 2x2x2 conventional cube)
@@ -22,7 +22,7 @@ import itertools
 
 import matplotlib.pyplot as plt
 import torch
-from experiments.alloy_ce.tools.patch_reach_probe import ordered_states
+from experiments.alloy_ce.probes.patch_reach_probe import ordered_states
 
 from discrete_flow_sampler.diagnostics.figure_style import (
     FONT_SIZE_ANNOTATION,

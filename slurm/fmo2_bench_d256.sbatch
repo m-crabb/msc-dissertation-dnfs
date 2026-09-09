@@ -48,7 +48,7 @@ echo "node=$(hostname)"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 RUN="$PIXI run --frozen -e cuda python -m \
-    experiments.constrained_hard_03.profile_swap --mode head --d 256 --sdpa"
+    experiments.constrained_hard_03.probes.profile_swap --mode head --d 256 --sdpa"
 
 echo "### control: masked_attention must reproduce ~94 ms / 5.0 GB"
 $RUN --head-kind masked_attention --batch 32

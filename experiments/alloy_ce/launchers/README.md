@@ -1,24 +1,6 @@
-# Cu–Au analysis and campaign tools
+# Cu–Au launch and transfer wrappers
 
 [Alloy experiment](../README.md) · [All experiments](../../README.md)
-
-## Figures and diagnostics
-
-| Task | Tool |
-| --- | --- |
-| Exact 16-site composition/free-energy exhibit | [cuau16_figure.py](cuau16_figure.py) |
-| FCC configurations and ordered structures | [fcc_render.py](fcc_render.py) |
-| Composition histograms | [composition_histograms.py](composition_histograms.py) |
-| Flow versus uniform-slice statistics | [static_flow_report.py](static_flow_report.py), [samples_vs_static.py](samples_vs_static.py) |
-| Training history and curriculum comparisons | [train_ess_trajectory.py](train_ess_trajectory.py), [compare_training_logs.py](compare_training_logs.py) |
-| Exact curriculum slice statistics | [ladder_desk_stats.py](ladder_desk_stats.py) |
-| Two-hole patch reach regression | [patch_reach_probe.py](patch_reach_probe.py) |
-
-The cell-scoring scripts live one directory up: [16-site](../judge_16site_cells.py) and
-[64-site](../judge_64site_cells.py). Several tools enumerate states, fit models,
-or inspect run files on execution or import; read the source before using them.
-The retained composition-amortised exhibit selects corrected-tagged
-`*camort*perslice` outputs. Older `*camort*fc` examples select pooled predecessors.
 
 ## Historical launch and transfer wrappers
 

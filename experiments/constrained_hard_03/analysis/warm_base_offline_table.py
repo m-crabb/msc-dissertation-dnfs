@@ -53,7 +53,7 @@ from warm_base_reference import (
     torus_adjacency,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 D256_SET = REPO_ROOT / "results/kawasaki_ref_d256_sc_s223"
 D64_SET = REPO_ROOT / "results/kawasaki_probe/reference/sc"
 

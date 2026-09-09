@@ -15,7 +15,7 @@ Bars:
     asks "is no slice dead"; quality is the d64 cells' question).
 A miss on either bar on any slice fails the gate.
 
-    pixi run -e dev python -m experiments.constrained_hard_03.gate_camort_4x4
+    pixi run -e dev python -m experiments.constrained_hard_03.probes.gate_camort_4x4
 """
 
 import argparse
@@ -23,7 +23,7 @@ import json
 from pathlib import Path
 
 import torch
-from experiments.constrained_hard_03.gate_4x4 import (
+from experiments.constrained_hard_03.probes.gate_4x4 import (
     _categorical_energy_bins,
     _energy,
     energy_marginal_tv,

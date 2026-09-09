@@ -65,15 +65,15 @@ current code; they do not establish bit-for-bit historical training reproduction
 | Workflow | Entrypoints |
 | --- | --- |
 | Main comparison tables | [4×4](analysis/house_table_4x4.py), [8×8](analysis/house_table_8x8.py), [16×16](analysis/house_table_16x16.py), [20×20](analysis/house_table_20x20.py), [24×24](analysis/house_table_24x24.py) |
-| Training and sample exhibits | [training_curves_hard.py](analysis/training_curves_hard.py), [hard_results_cell.py](analysis/hard_results_cell.py), [sample montages](analysis_sample_montages.py) |
+| Training and sample exhibits | [training_curves_hard.py](analysis/training_curves_hard.py), [hard_results_cell.py](analysis/hard_results_cell.py), [sample montages](analysis/sample_montages.py) |
 | Learned swap rates | [rate_field_rows.py](analysis/rate_field_rows.py), [rate_field_strip.py](analysis/rate_field_strip.py), [retained manifest](../../assets/hard_rate_field_runs.json) |
-| Composition transfer and free energy | [composition_transfer_figure.py](analysis/composition_transfer_figure.py), [fc_surface.py](analysis/fc_surface.py), [zero_shot_tables.py](analysis/zero_shot_tables.py), [slice_ti.py](slice_ti.py) |
-| Exact small-system checks | [gate_4x4.py](gate_4x4.py), [gate_camort_4x4.py](gate_camort_4x4.py), [demo_4x4.py](demo_4x4.py) |
-| Kawasaki comparison and reference | [probe_kawasaki_8x8.py](probe_kawasaki_8x8.py), [probe_analysis_8x8.py](probe_analysis_8x8.py), [plot_probe_8x8.py](plot_probe_8x8.py), [generate_kawasaki_reference_d256.py](generate_kawasaki_reference_d256.py) |
-| Transport and local-field diagnostics | [analysis_transport_decomposition.py](analysis_transport_decomposition.py), [analysis_local_field_regression.py](analysis_local_field_regression.py) |
-| Compute measurements | [measure_training_flops.py](measure_training_flops.py), [compile_gate.py](compile_gate.py) |
-| Warm-base experiments | [warm_base_reference.py](warm_base_reference.py), [warm_base_offline_table.py](warm_base_offline_table.py), [warm_base_t_grid.py](warm_base_t_grid.py) |
-| Neural comparators | [run_gfn.py](run_gfn.py), [mdns_vs_dnfs_4x4.py](mdns_vs_dnfs_4x4.py), [mdns_budget_gate_4x4.py](mdns_budget_gate_4x4.py) |
+| Composition transfer and free energy | [composition_transfer_figure.py](analysis/composition_transfer_figure.py), [fc_surface.py](analysis/fc_surface.py), [zero_shot_tables.py](analysis/zero_shot_tables.py), [slice_ti.py](probes/slice_ti.py) |
+| Exact small-system checks | [gate_4x4.py](probes/gate_4x4.py), [gate_camort_4x4.py](probes/gate_camort_4x4.py), [demo_4x4.py](analysis/demo_4x4.py) |
+| Kawasaki comparison and reference | [probe_kawasaki_8x8.py](probes/probe_kawasaki_8x8.py), [probe_analysis_8x8.py](analysis/probe_analysis_8x8.py), [plot_probe_8x8.py](analysis/plot_probe_8x8.py), [generate_kawasaki_reference_d256.py](probes/generate_kawasaki_reference_d256.py) |
+| Transport and local-field diagnostics | [analysis_transport_decomposition.py](probes/transport_decomposition.py), [analysis_local_field_regression.py](analysis/local_field_regression.py) |
+| Compute measurements | [measure_training_flops.py](probes/measure_training_flops.py), [compile_gate.py](probes/compile_gate.py) |
+| Warm-base experiments | [warm_base_reference.py](probes/warm_base_reference.py), [warm_base_offline_table.py](analysis/warm_base_offline_table.py), [warm_base_t_grid.py](probes/warm_base_t_grid.py) |
+| Neural comparators | [run_gfn.py](run_gfn.py), [mdns_vs_dnfs_4x4.py](analysis/mdns_vs_dnfs_4x4.py), [mdns_budget_gate_4x4.py](probes/mdns_budget_gate_4x4.py) |
 
 House tables have their own frozen seed/tag/reference selections and raw/EMA
 defaults. The README now uses the bundled EMA model's

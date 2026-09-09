@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from experiments.constrained_hard_03.configs import CONFIGS
-from experiments.constrained_hard_03.gate_4x4 import (
+from experiments.constrained_hard_03.probes.gate_4x4 import (
     _energy,
     latest_run_dir,
     load_run,

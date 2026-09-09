@@ -65,7 +65,7 @@ cd "$REPO"
 echo "node=$(hostname) seed=$SEED run_dir=$RUN_DIR"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-"$PIXI" run --frozen -e cuda python -m experiments.constrained_hard_03.probe_zero_shot_transfer \
+"$PIXI" run --frozen -e cuda python -m experiments.constrained_hard_03.probes.probe_zero_shot_transfer \
     --run-dir "$RUN_DIR" \
     --checkpoint final_ema.pt \
     --compositions "$COMPOSITIONS" \

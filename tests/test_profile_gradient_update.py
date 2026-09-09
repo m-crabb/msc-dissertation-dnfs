@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from experiments.constrained_hard_03 import profile_swap, run_gfn
+from experiments.constrained_hard_03 import run_gfn
+from experiments.constrained_hard_03.probes import profile_swap
 
 
 @pytest.mark.parametrize(

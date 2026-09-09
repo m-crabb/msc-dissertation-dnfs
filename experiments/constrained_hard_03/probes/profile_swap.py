@@ -19,7 +19,7 @@ the total allocated peak. `--profile` wraps one call in torch.profiler and
 prints the top ops by self time (CPU table locally, CUDA table on GPU).
 
 Usage (local CPU):
-    pixi run -e dev python -m experiments.constrained_hard_03.profile_swap \\
+    pixi run -e dev python -m experiments.constrained_hard_03.probes.profile_swap \\
         --mode eval --d 64 --batch 32 --n-euler-steps 16 --repeats 3
 
 On the Modal L4 (see modal_app.bench):

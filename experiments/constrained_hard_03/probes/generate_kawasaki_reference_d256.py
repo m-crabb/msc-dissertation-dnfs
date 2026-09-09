@@ -44,7 +44,7 @@ non-local unlike-pair swap chain, the deliberately strong practitioner baseline,
 not the slow-mixing local variant); observables and diagnostics from
 discrete_flow_sampler.diagnostics.metrics.
 
-Run:  pixi run -e default python -m experiments.constrained_hard_03.generate_kawasaki_reference_d256
+Run:  pixi run -e default python -m experiments.constrained_hard_03.probes.generate_kawasaki_reference_d256
       (add --sigma / --out-dir to generate a sigma-matched twin elsewhere)
 """
 

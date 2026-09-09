@@ -35,7 +35,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from experiments.constrained_hard_03.gate_4x4 import load_run
+from experiments.constrained_hard_03.probes.gate_4x4 import load_run
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 
 from discrete_flow_sampler.diagnostics.figure_style import (
