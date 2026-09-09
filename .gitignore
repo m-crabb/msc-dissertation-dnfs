@@ -1,4 +1,4 @@
-# MC experimental data (for time being at least)
+# Untracked mchammer trajectories written by the icet notebook
 monte_carlo_data/
 monte-carlo*
 assets/ising_phases_states.pt
@@ -74,7 +74,6 @@ instance/
 .scrapy
 
 # Sphinx documentation
-docs/_build/
 
 # PyBuilder
 .pybuilder/
@@ -208,9 +207,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-# pixi environments
-.pixi/*
-!.pixi/config.toml
 
 # Project-specific
 results/*
@@ -218,7 +214,6 @@ results/*
 data/*.pt
 data/*.pkl
 data/*.npy
-papers/*
 wandb/
 
 # OS

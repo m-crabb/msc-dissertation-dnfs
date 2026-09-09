@@ -90,6 +90,12 @@ def wolff_sample(
     in_cluster = np.zeros(n_sites, dtype=bool)
 
     def flip_one_cluster() -> None:
+        """Grow one Wolff cluster from a random seed site and flip it.
+
+        Breadth-first over the torus neighbour table: each aligned, not yet
+        included neighbour joins with probability p_add = 1 - exp(-4 sigma),
+        which makes the cluster flip rejection-free at zero field.
+        """
         seed_site = rng.integers(n_sites)
         cluster_spin = spins[seed_site]
         in_cluster[:] = False

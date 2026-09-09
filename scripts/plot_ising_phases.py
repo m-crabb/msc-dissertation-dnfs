@@ -56,15 +56,21 @@ PANELS = [
 ]
 
 
-def snapshot(sigma: float, n_sweeps: int, aligned_init: bool, seed: int) -> torch.Tensor:
+def snapshot(
+    sigma: float, n_sweeps: int, aligned_init: bool, seed: int
+) -> torch.Tensor:
     target = IsingTarget(D=D, sigma=sigma)
     if sigma == SIGMA_C:
         # Wolff for the critical panel (see module docstring); 2000 cluster
         # flips is generous burn-in even at D = 64.
-        return wolff_sample(target, n_samples=1, burn_in_clusters=2000, seed=seed).reshape(D, D)
+        return wolff_sample(
+            target, n_samples=1, burn_in_clusters=2000, seed=seed
+        ).reshape(D, D)
     generator = torch.Generator().manual_seed(seed)
     x_init = torch.ones(1, target.d) if aligned_init else None
-    spins = gibbs_sample(target, n_chains=1, n_sweeps=n_sweeps, x_init=x_init, generator=generator)
+    spins = gibbs_sample(
+        target, n_chains=1, n_sweeps=n_sweeps, x_init=x_init, generator=generator
+    )
     return spins.reshape(D, D)
 
 
@@ -83,7 +89,9 @@ def main() -> None:
     grids = load_grids()
     fig, axes = plt.subplots(1, len(PANELS), figsize=(3 * len(PANELS), 3.2))
     for ax, (label, sigma, _n_sweeps, _aligned_init) in zip(axes, PANELS):
-        ax.imshow((grids[label] + 1) * 0.5, cmap=CMAP, vmin=0, vmax=1, interpolation="nearest")
+        ax.imshow(
+            (grids[label] + 1) * 0.5, cmap=CMAP, vmin=0, vmax=1, interpolation="nearest"
+        )
         ax.set_title(f"{label}\n$\\sigma = {sigma:g}$", fontsize=11)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -94,7 +102,9 @@ def main() -> None:
     ]
     # Reserve a band at the bottom so the legend clears the panels.
     fig.tight_layout(rect=(0, 0.10, 1, 1))
-    fig.legend(handles=legend_handles, loc="lower center", ncol=2, frameon=False, fontsize=11)
+    fig.legend(
+        handles=legend_handles, loc="lower center", ncol=2, frameon=False, fontsize=11
+    )
     fig.savefig(OUT, dpi=200)
     print(f"saved {OUT}")
 

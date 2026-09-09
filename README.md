@@ -137,8 +137,8 @@ experiments/     Configurations, trainers, analysis and experiment guides
 scripts/         Shared baselines, comparisons and figure tools
 slurm/           Historical cluster launchers and campaign index
 assets/          Small retained figure inputs and README visuals
-checkpoints/     Four pretrained examples, saved configs and checksum manifests
-data/           Exported cluster expansions and reference database
+checkpoints/     Five pretrained examples, saved configs and checksum manifests
+data/            Exported cluster expansions and reference database
 icet-ce/         Cluster-expansion fitting and energy-prediction workflow
 notebooks/       Familiarisation and cross-check notebooks
 tests/           Correctness and regression checks

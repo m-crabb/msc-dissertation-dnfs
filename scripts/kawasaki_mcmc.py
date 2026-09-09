@@ -8,6 +8,7 @@ composition trace to monitor — instead a hard assert verifies conservation.
 Example:
     pixi run python scripts/kawasaki_mcmc.py --D 16 --sigma 0.3 --n_chains 4
 """
+
 import argparse
 import json
 import time
@@ -49,7 +50,7 @@ def run_config(D, sigma, c_target, n_steps, n_burn, thin, n_chains, seed):
         energy_chains.append(energy_trace[n_burn::thin])
         finals.append(x_final.copy())
         accepts.append(n_accept / n_steps)
-        print(f"[chain {chain}] acc={accepts[-1]:.3f} elapsed={time.time()-t0:.1f}s")
+        print(f"[chain {chain}] acc={accepts[-1]:.3f} elapsed={time.time() - t0:.1f}s")
     E = np.stack(energy_chains)
     tau = np.array([integrated_autocorr(E[i]) for i in range(n_chains)]) * thin
     ess = (n_steps - n_burn) / np.where(tau > 0, tau, np.inf)
@@ -70,12 +71,20 @@ def main():
     p.add_argument("--out", type=str, default="results/kawasaki")
     args = p.parse_args()
 
-    out_dir = Path(args.out) / f"D{args.D}_s{args.sigma}_c{args.c_target}_seed{args.seed}"
+    out_dir = (
+        Path(args.out) / f"D{args.D}_s{args.sigma}_c{args.c_target}_seed{args.seed}"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     E, finals, accepts, tau, ess, rhat = run_config(
-        args.D, args.sigma, args.c_target, args.n_steps,
-        args.n_burn, args.thin, args.n_chains, args.seed,
+        args.D,
+        args.sigma,
+        args.c_target,
+        args.n_steps,
+        args.n_burn,
+        args.thin,
+        args.n_chains,
+        args.seed,
     )
     summary = {
         "config": vars(args),
@@ -98,8 +107,10 @@ def main():
     ax[1].set_xlabel("log_prob_ising")
     ax[1].set_ylabel("density")
     ax[1].set_title("pooled energy (post-burn-in)")
-    fig.suptitle(f"Kawasaki  D={args.D}, σ={args.sigma}, c={args.c_target}  "
-                 f"τ_int≈{tau.mean():.0f}  ESS≈{ess.mean():.0f}")
+    fig.suptitle(
+        f"Kawasaki  D={args.D}, σ={args.sigma}, c={args.c_target}  "
+        f"τ_int≈{tau.mean():.0f}  ESS≈{ess.mean():.0f}"
+    )
     fig.tight_layout()
     fig.savefig(out_dir / "diagnostics.png", dpi=120)
     print(f"wrote {out_dir}")

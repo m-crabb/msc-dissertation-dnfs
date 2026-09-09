@@ -19,18 +19,15 @@ log-density. Soft panels vary composition (c = 0.50, 0.80) at a single coupling;
 hard and unconstrained panels vary coupling (sigma = 0.1, sigma_c). Panel titles
 and the caption distinguish these axes.
 """
+
 import argparse
 import importlib
-import sys
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
 
 # Load each paradigm's panel provider through the shared interface.
 ROWS = (
@@ -42,18 +39,27 @@ ROWS = (
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, required=True,
-                        help="output PNG path (the Overleaf assets file)")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="output PNG path (the Overleaf assets file)",
+    )
     args = parser.parse_args(argv)
 
     # Render at the printed width (6.3 in) to preserve label sizes.
-    plt.rcParams.update({"font.size": 9, "axes.labelsize": 9,
-                         "xtick.labelsize": 8, "ytick.labelsize": 8,
-                         "legend.fontsize": 7})
+    plt.rcParams.update(
+        {
+            "font.size": 9,
+            "axes.labelsize": 9,
+            "xtick.labelsize": 8,
+            "ytick.labelsize": 8,
+            "legend.fontsize": 7,
+        }
+    )
     fig, axes = plt.subplots(3, 2, figsize=(6.3, 6.15))
 
-    rows = [(name, importlib.import_module(path).panel_series())
-            for name, path in ROWS]
+    rows = [(name, importlib.import_module(path).panel_series()) for name, path in ROWS]
 
     # Shared limits keep the same scale across all six panels.
     #
@@ -61,8 +67,13 @@ def main(argv=None):
     # hard panels set theirs from the full enumerated support, whose
     # low-probability tail is never drawn, and that alone stretched the
     # sigma_c panel to -25 against a cloud ending near -15.
-    finite = [t for _, panels in rows for panel in panels
-              for _l, _c, x, y in panel["series"] for t in (x, y)]
+    finite = [
+        t
+        for _, panels in rows
+        for panel in panels
+        for _l, _c, x, y in panel["series"]
+        for t in (x, y)
+    ]
     lo = min(float(t.min()) for t in finite) - 0.3
     hi = max(float(t.max()) for t in finite) + 0.3
     shared_lims = (lo, hi)
@@ -71,8 +82,16 @@ def main(argv=None):
         for col, panel in enumerate(panels):
             ax = axes[row, col]
             for label, colour, x, y in panel["series"]:
-                ax.scatter(x, y, s=3, alpha=0.25, lw=0, color=colour,
-                           label=label, rasterized=True)
+                ax.scatter(
+                    x,
+                    y,
+                    s=3,
+                    alpha=0.25,
+                    lw=0,
+                    color=colour,
+                    label=label,
+                    rasterized=True,
+                )
             ax.plot(shared_lims, shared_lims, color="black", lw=0.8, zorder=0)
             ax.set_xlim(shared_lims)
             ax.set_ylim(shared_lims)
@@ -81,11 +100,11 @@ def main(argv=None):
         # Label each row on the left; the shared quantity uses fig.supylabel.
         axes[row, 0].set_ylabel(row_name, fontweight="bold", labelpad=2)
         if len(panels[0]["series"]) > 1:
-            axes[row, 0].legend(loc="upper left", frameon=False,
-                                handletextpad=0.1, borderpad=0.1)
+            axes[row, 0].legend(
+                loc="upper left", frameon=False, handletextpad=0.1, borderpad=0.1
+            )
 
-    fig.supylabel(r"estimated $\log \hat q(x)$ (offset removed)", fontsize=9,
-                  x=0.005)
+    fig.supylabel(r"estimated $\log \hat q(x)$ (offset removed)", fontsize=9, x=0.005)
     fig.tight_layout(h_pad=0.8, w_pad=1.0, rect=(0.02, 0, 1, 1))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=300)

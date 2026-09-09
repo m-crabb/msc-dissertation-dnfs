@@ -44,7 +44,8 @@ quoted as an eval; output goes to `transport_decomposition.json`, never
 
 Run remotely:  modal run modal_app.py::transport_decomposition_remote \
                    --run-dir-name <dir>
-Run locally:   python analysis_transport_decomposition.py <run_dir>
+Run locally:   python -m \
+    experiments.constrained_hard_03.probes.transport_decomposition <run_dir>
 """
 
 from __future__ import annotations

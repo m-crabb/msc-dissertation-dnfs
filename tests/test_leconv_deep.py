@@ -3,7 +3,7 @@
 Reference: Holderrieth, Albergo & Jaakkola (2025), LEAPS, Section 9 +
 Figure 3.
 
-Three structural pillars (mirrors test_leconv.py) plus the architecture-
+Three structural pillars (mirrors test_lemlp.py) plus the architecture-
 specific concern that hollow-ness must hold *through depth* of the
 data-dependent-weight stacking trick.
 
@@ -115,7 +115,7 @@ def test_translation_equivariant_body_at_depth():
 def test_accepts_both_spin_and_index_input():
     """Forward output identical for ±1 float spins and 0/1 Long indices.
 
-    Same regression pattern as test_leconv.py — ctmc.py:191 produces
+    Same regression pattern as test_lemlp.py — ctmc.py:191 produces
     ±1 floats from torch.where(...,-state,state); leMLP/leConv handle
     via ((x+1)/2).long() conversion. leconv_deep must too.
     """

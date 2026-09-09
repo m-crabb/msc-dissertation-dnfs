@@ -57,19 +57,18 @@ from discrete_flow_sampler.mcmc.kawasaki import (
     run_chain,
     run_chain_order_param,
 )
+from discrete_flow_sampler.targets.ising import SIGMA_C
 
 OUT = Path("results/kawasaki/figures")
 OUT.mkdir(parents=True, exist_ok=True)
 CURVE_CACHE = OUT / "failure_curves_data.json"
 
 SIGMA_OPERATING = 0.10  # DNFS paper operating point (subcritical)
-from discrete_flow_sampler.targets.ising import SIGMA_C
-
 SIGMA_CRITICAL = SIGMA_C  # exact = log(1+sqrt(2))/4 = 0.220343
 CURVE_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26]  # monotonic τ_int regime
 ERGO_SIGMAS = [0.05, 0.10, 0.16, 0.20, SIGMA_CRITICAL, 0.26, 0.32, 0.40]
 TRAINED_D = [8, 16, 24]  # the lattices this thesis trains a neural sampler at
-EXTRAPOLATED_D = [32]    # never trained at: the classical chain run on alone
+EXTRAPOLATED_D = [32]  # never trained at: the classical chain run on alone
 DEMO_D = TRAINED_D + EXTRAPOLATED_D
 ERGO_D = 24
 # R̂ is a between-chain statistic, so a band on it repeats the whole 4-chain
@@ -85,8 +84,8 @@ CHAIN_SEED = 100
 # Per-site budget: one sweep = d = D² swap attempts. 30k sweeps is ≳400 τ_int
 # even at the slowest cell measured (32×32 at σ=0.26, τ_int ≈ 70 sweeps).
 MEASURE_SWEEPS = 30_000
-BURN_SWEEPS = 3_000       # also the dwell per rung of the annealing ladder
-RECORDS_PER_SWEEP = 5     # thinning: d // 5 raw steps between recorded energies
+BURN_SWEEPS = 3_000  # also the dwell per rung of the annealing ladder
+RECORDS_PER_SWEEP = 5  # thinning: d // 5 raw steps between recorded energies
 
 
 def _measure_cell(D, sigma, init_kind):
@@ -121,10 +120,12 @@ def _measure_cell(D, sigma, init_kind):
         taus.append(integrated_autocorr(kept) * thin / d)
         acceptances.append(n_accept / n_steps)
     taus = np.array(taus)
-    print(f"  D={D:2d} sigma={sigma:.6f} {init_kind:8s}: "
-          f"tau_int={taus.mean():7.3f} sweeps "
-          f"[{taus.min():.3f}, {taus.max():.3f}]  "
-          f"acc={np.mean(acceptances):.4f}")
+    print(
+        f"  D={D:2d} sigma={sigma:.6f} {init_kind:8s}: "
+        f"tau_int={taus.mean():7.3f} sweeps "
+        f"[{taus.min():.3f}, {taus.max():.3f}]  "
+        f"acc={np.mean(acceptances):.4f}"
+    )
     return taus, float(np.mean(acceptances))
 
 
@@ -138,8 +139,7 @@ def curve_data():
     rows = []
     for D in DEMO_D:
         for sigma in CURVE_SIGMAS:
-            cell = {"D": D, "sigma": sigma,
-                    "trained_at": D in TRAINED_D}
+            cell = {"D": D, "sigma": sigma, "trained_at": D in TRAINED_D}
             for init_kind in ("cold", "annealed"):
                 taus, acceptance = _measure_cell(D, sigma, init_kind)
                 cell[init_kind] = {
@@ -173,14 +173,22 @@ def _sigma_guides(ax, label=True):
     the legend, which already carries four sizes plus the marker grammar.
     Labels are the bare symbol and sit along the bottom of the tau panel, the
     one strip both the curves and the two legends leave empty."""
-    for sigma, text in [(SIGMA_OPERATING, r"$\sigma_\mathrm{op}$"),
-                        (SIGMA_CRITICAL, r"$\sigma_c$")]:
-        ax.axvline(sigma, color=fs.ANALYTIC_GUIDE, ls=(0, (4, 3)), lw=0.8,
-                   zorder=1)
+    for sigma, text in [
+        (SIGMA_OPERATING, r"$\sigma_\mathrm{op}$"),
+        (SIGMA_CRITICAL, r"$\sigma_c$"),
+    ]:
+        ax.axvline(sigma, color=fs.ANALYTIC_GUIDE, ls=(0, (4, 3)), lw=0.8, zorder=1)
         if label:
-            ax.text(sigma, 0.015, text, transform=ax.get_xaxis_transform(),
-                    ha="center", va="bottom",
-                    fontsize=fs.FONT_SIZE_ANNOTATION, color=fs.ANALYTIC_GUIDE)
+            ax.text(
+                sigma,
+                0.015,
+                text,
+                transform=ax.get_xaxis_transform(),
+                ha="center",
+                va="bottom",
+                fontsize=fs.FONT_SIZE_ANNOTATION,
+                color=fs.ANALYTIC_GUIDE,
+            )
 
 
 def failure_curves(payload=None):
@@ -202,14 +210,19 @@ def failure_curves(payload=None):
     n_chains = payload["protocol"]["n_chains"]
     # Blue and gold keep 8 and 16 on the hues the previous version of this
     # figure used for them; purple and red extend the set for 24 and 32.
-    colours = dict(zip(DEMO_D, [fs.SAMPLER_HUE, fs.CLASSICAL_HUE,
-                                fs.CLASSICAL_ALT_HUE, fs.HARD_DELTA_HUE]))
+    colours = dict(
+        zip(
+            DEMO_D,
+            [fs.SAMPLER_HUE, fs.CLASSICAL_HUE, fs.CLASSICAL_ALT_HUE, fs.HARD_DELTA_HUE],
+        )
+    )
 
     fs.use_house_style()
     # Aspect 12:4.5 = 2.667 at the house print width (6.3 in = \textwidth),
     # so the text is set at a true 9 pt.
-    fig, ax = plt.subplots(1, 2, figsize=(fs.FULL_WIDTH_IN,
-                                          fs.FULL_WIDTH_IN * 4.5 / 12.0))
+    fig, ax = plt.subplots(
+        1, 2, figsize=(fs.FULL_WIDTH_IN, fs.FULL_WIDTH_IN * 4.5 / 12.0)
+    )
     size_entries = []
     for D in DEMO_D:
         cells = [rows[(D, round(s, 6))] for s in CURVE_SIGMAS]
@@ -218,19 +231,48 @@ def failure_curves(payload=None):
         style = "-" if trained else (0, (1.6, 1.6))
         for index, key in ((0, "tau_int_sweeps"), (1, "ess_per_sweep")):
             panel = ax[index]
-            cold = np.array([c["cold"][key] for c in cells])   # (n_sigma, n_chain)
+            cold = np.array([c["cold"][key] for c in cells])  # (n_sigma, n_chain)
             annealed = np.array([c["annealed"][key] for c in cells]).mean(axis=1)
-            panel.fill_between(CURVE_SIGMAS, cold.min(axis=1), cold.max(axis=1),
-                               color=colour, alpha=0.18, linewidth=0, zorder=2)
-            panel.plot(CURVE_SIGMAS, cold.mean(axis=1), linestyle=style,
-                       color=colour, linewidth=1.5, marker="o", markersize=2.6,
-                       zorder=3)
-            panel.plot(CURVE_SIGMAS, annealed, linestyle="none", marker="o",
-                       markersize=5, markerfacecolor="none",
-                       markeredgecolor=colour, markeredgewidth=0.8, zorder=4)
+            panel.fill_between(
+                CURVE_SIGMAS,
+                cold.min(axis=1),
+                cold.max(axis=1),
+                color=colour,
+                alpha=0.18,
+                linewidth=0,
+                zorder=2,
+            )
+            panel.plot(
+                CURVE_SIGMAS,
+                cold.mean(axis=1),
+                linestyle=style,
+                color=colour,
+                linewidth=1.5,
+                marker="o",
+                markersize=2.6,
+                zorder=3,
+            )
+            panel.plot(
+                CURVE_SIGMAS,
+                annealed,
+                linestyle="none",
+                marker="o",
+                markersize=5,
+                markerfacecolor="none",
+                markeredgecolor=colour,
+                markeredgewidth=0.8,
+                zorder=4,
+            )
         size_entries.append(
-            Line2D([0], [0], color=colour, lw=1.5, ls=style,
-                   label=rf"$D={D}$" if trained else rf"$D={D}$ (untrained)"))
+            Line2D(
+                [0],
+                [0],
+                color=colour,
+                lw=1.5,
+                ls=style,
+                label=rf"$D={D}$" if trained else rf"$D={D}$ (untrained)",
+            )
+        )
 
     for panel in ax:
         _sigma_guides(panel, label=panel is ax[0])
@@ -245,25 +287,48 @@ def failure_curves(payload=None):
     ax[1].set_title("sampling efficiency collapse")
 
     grammar_entries = [
-        Line2D([0], [0], marker="o", linestyle="none", markersize=5,
-               markerfacecolor="none", markeredgecolor=fs.ANALYTIC_GUIDE,
-               label="annealed start"),
-        Patch(facecolor=fs.ANALYTIC_GUIDE, alpha=0.18,
-              label=f"min-max, {n_chains} chains"),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            markersize=5,
+            markerfacecolor="none",
+            markeredgecolor=fs.ANALYTIC_GUIDE,
+            label="annealed start",
+        ),
+        Patch(
+            facecolor=fs.ANALYTIC_GUIDE, alpha=0.18, label=f"min-max, {n_chains} chains"
+        ),
     ]
     # Two small legends, each in a corner its own panel leaves empty: the sizes
     # in the tau panel's upper left, the marker grammar in the ESS panel's
     # lower left.
-    size_legend = ax[0].legend(handles=size_entries, loc="upper left",
-                               handlelength=1.9, labelspacing=0.25,
-                               borderpad=0.3, borderaxespad=0.3,
-                               handletextpad=0.5, facecolor="white",
-                               edgecolor="none", framealpha=0.92)
+    size_legend = ax[0].legend(
+        handles=size_entries,
+        loc="upper left",
+        handlelength=1.9,
+        labelspacing=0.25,
+        borderpad=0.3,
+        borderaxespad=0.3,
+        handletextpad=0.5,
+        facecolor="white",
+        edgecolor="none",
+        framealpha=0.92,
+    )
     ax[0].add_artist(size_legend)
-    ax[1].legend(handles=grammar_entries, loc="lower left", handlelength=1.4,
-                 labelspacing=0.25, borderpad=0.3, borderaxespad=0.3,
-                 handletextpad=0.5, facecolor="white", edgecolor="none",
-                 framealpha=0.92)
+    ax[1].legend(
+        handles=grammar_entries,
+        loc="lower left",
+        handlelength=1.4,
+        labelspacing=0.25,
+        borderpad=0.3,
+        borderaxespad=0.3,
+        handletextpad=0.5,
+        facecolor="white",
+        edgecolor="none",
+        framealpha=0.92,
+    )
     fig.tight_layout()
     fig.savefig(OUT / "failure_curves.png", dpi=fs.SAVEFIG_DPI)
     plt.close(fig)
@@ -418,7 +483,7 @@ def mode_coverage():
 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"
-    if mode == "replot":          # restyle without recomputing any chain
+    if mode == "replot":  # restyle without recomputing any chain
         failure_curves()
     elif mode == "curves":
         failure_curves(curve_data())

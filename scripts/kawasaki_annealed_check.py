@@ -30,6 +30,7 @@ accelerate the neural sampler, so it belongs to neither side.
 Run:  pixi run python -m scripts.kawasaki_annealed_check
       pixi run python -m scripts.kawasaki_annealed_check full_curve
 """
+
 import json
 import sys
 from pathlib import Path
@@ -45,11 +46,10 @@ from discrete_flow_sampler.mcmc.kawasaki import (
     run_chain,
     run_chain_order_param,
 )
+from discrete_flow_sampler.targets.ising import SIGMA_C
 
 OUT = Path("results/kawasaki/annealed_check")
 OUT.mkdir(parents=True, exist_ok=True)
-
-from discrete_flow_sampler.targets.ising import SIGMA_C
 
 SIGMA_CRITICAL = SIGMA_C  # the exact critical coupling
 # The training curriculum's rungs, then <=0.04 extensions past sigma_c.
@@ -115,21 +115,27 @@ def _tau_row(D, sigma, init_kind):
         taus.append(integrated_autocorr(kept) * TAU_THIN / d)
     taus = np.array(taus)  # in sweeps, as printed in hard.tex
     row = {
-        "D": D, "sigma": sigma, "init": init_kind,
+        "D": D,
+        "sigma": sigma,
+        "init": init_kind,
         "tau_int_sweeps_mean": float(taus.mean()),
         "tau_int_sweeps_std": float(taus.std(ddof=1)),
     }
-    print(f"[tau] D={D} sigma={sigma} {init_kind}: "
-          f"{taus.mean():.2f} +/- {taus.std(ddof=1):.2f} sweeps")
+    print(
+        f"[tau] D={D} sigma={sigma} {init_kind}: "
+        f"{taus.mean():.2f} +/- {taus.std(ddof=1):.2f} sweeps"
+    )
     return row
 
 
 def tau_arm():
     """Cold vs annealed tau_int under the identical measurement."""
-    return [_tau_row(D, sigma, init_kind)
-            for D in TAU_D
-            for sigma in TAU_SIGMAS
-            for init_kind in ("cold", "annealed")]
+    return [
+        _tau_row(D, sigma, init_kind)
+        for D in TAU_D
+        for sigma in TAU_SIGMAS
+        for init_kind in ("cold", "annealed")
+    ]
 
 
 def full_curve_arm():
@@ -147,6 +153,7 @@ def full_curve_arm():
             if row["init"] == "annealed":
                 prior[(row["D"], round(row["sigma"], 5))] = row
     from scripts.kawasaki_sweep import CURVE_SIGMAS  # the figure's sigma grid
+
     rows = []
     for D in TAU_D:
         for sigma in CURVE_SIGMAS:
@@ -179,23 +186,28 @@ def ergodicity_arm():
                 phi, x_final, _ = run_chain_order_param(
                     x, ERGO_D, sigma, ERGO_STEPS, seed, ERGO_THIN
                 )
-                post = phi[ERGO_BURN // ERGO_THIN:]
+                post = phi[ERGO_BURN // ERGO_THIN :]
                 post_traces.append(post)
                 # Which mode the chain occupies, and whether it ever crosses:
                 # fraction of post-burn samples on the positive-phi side.
                 signs.append(float((post > 0).mean()))
             rhats.append(float(gelman_rubin(np.stack(post_traces))))
             mode_signs.append(signs)
-            print(f"[ergo] sigma={sigma} seed={base_seed}: "
-                  f"R-hat={rhats[-1]:.2f} positive-side fractions={signs}")
-        rows.append({
-            "D": ERGO_D, "sigma": sigma,
-            "rhat_mean": float(np.mean(rhats)),
-            "rhat_std": float(np.std(rhats, ddof=1)),
-            "rhat_by_seed": rhats,
-            # ~0 or ~1 = chain pinned in one mode; ~0.5 = genuine crossing.
-            "positive_side_fraction_by_seed_chain": mode_signs,
-        })
+            print(
+                f"[ergo] sigma={sigma} seed={base_seed}: "
+                f"R-hat={rhats[-1]:.2f} positive-side fractions={signs}"
+            )
+        rows.append(
+            {
+                "D": ERGO_D,
+                "sigma": sigma,
+                "rhat_mean": float(np.mean(rhats)),
+                "rhat_std": float(np.std(rhats, ddof=1)),
+                "rhat_by_seed": rhats,
+                # ~0 or ~1 = chain pinned in one mode; ~0.5 = genuine crossing.
+                "positive_side_fraction_by_seed_chain": mode_signs,
+            }
+        )
     return rows
 
 
@@ -206,8 +218,9 @@ def main():
     summary = {
         "design": "annealed-start robustness check for the section 5.1 demos",
         "dwell_steps_per_rung": DWELL_STEPS,
-        "ladders": {str(s): anneal_ladder(s)
-                    for s in set(TAU_SIGMAS) | set(ERGO_SIGMAS)},
+        "ladders": {
+            str(s): anneal_ladder(s) for s in set(TAU_SIGMAS) | set(ERGO_SIGMAS)
+        },
         "tau_arm": tau_arm(),
         "ergodicity_arm": ergodicity_arm(),
     }

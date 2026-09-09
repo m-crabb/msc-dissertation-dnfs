@@ -45,8 +45,8 @@ test = "pytest tests/ -q -n auto --dist worksteal"
 # Serial escape hatch: use when you need pdb, live output, or to rule out a
 # cross-test interaction that only appears under parallelism.
 test-serial = "pytest tests/ -v"
-lint = "ruff check src/ experiments/ tests/"
-format = "ruff format src/ experiments/ tests/"
+lint = "ruff check src/ experiments/ tests/ scripts/"
+format = "ruff format src/ experiments/ tests/ scripts/"
 jupyter = "jupyter lab"
 
 [tool.pixi.dependencies]
@@ -58,10 +58,7 @@ ase = ">=3.28.0,<4"
 jupyter = ">=1.1.1,<2"
 ipykernel = ">=7.2.0,<8"
 pandas = ">=3.0.2,<4"
-tqdm = ">=4.67.3,<5"
 pytorch = ">=2.10.0,<3"
-torchvision = ">=0.26.0,<0.27"
-einops = ">=0.8,<1"
 
 [tool.pixi.feature.dev.dependencies]
 pytest = "*"

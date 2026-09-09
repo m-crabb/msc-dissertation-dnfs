@@ -10,7 +10,7 @@ from the experiment guides.
 | --- | --- |
 | Recorded swap animation | [animate_recorded_swap.py](animate_recorded_swap.py) — stored arrays only |
 | Pretrained sampling | [sample_checkpoint.py](sample_checkpoint.py) — bundled configs and weights; [commands](../checkpoints/README.md) |
-| Record a swap trajectory | [record_swap_trajectory.py](record_swap_trajectory.py) — one raw checkpoint draw and anchor rates |
+| Record a rate-strip trajectory | [record_swap_trajectory.py](record_swap_trajectory.py) — one raw checkpoint draw and anchor rates; [record_flip_trajectory.py](record_flip_trajectory.py) — flip-family analogue (baseline or soft) |
 | Ising phase illustration | [plot_ising_phases.py](plot_ising_phases.py) |
 | Configuration calibration | [configuration_calibration_4x4.py](configuration_calibration_4x4.py), [plot_configuration_calibration_4x4.py](plot_configuration_calibration_4x4.py), [Modal producer](modal_configuration_calibration_4x4.py) |
 | Historical scatter comparison | [plot_logp_scatters_combined.py](plot_logp_scatters_combined.py) |
@@ -18,6 +18,7 @@ from the experiment guides.
 | Mchammer and VC-SGC validation | [mchammer_baselines.py](mchammer_baselines.py), [vcsgc_mcmc_validation.py](vcsgc_mcmc_validation.py) |
 | Euler-grid resolution | [n_euler_resolution_sweep.py](n_euler_resolution_sweep.py) |
 | Swap-head transfer | [warm_start_swap_head.py](warm_start_swap_head.py) |
+| Reference diagnostics | [thesis_reference_diagnostics.py](thesis_reference_diagnostics.py) — iid floors and split uncertainty from stored reference chains, no training |
 
 Read each script's inputs and output defaults before running it. A figure script
 may generate its own samples; a baseline script may run a long chain. The

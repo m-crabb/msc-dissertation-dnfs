@@ -9,7 +9,9 @@ The seven Cu–Au launch/pull wrappers are indexed separately in the
 
 ## Execution context
 
-The Slurm scripts contain Imperial DoC paths, GPU requests, environment setup,
+The Slurm scripts contain Imperial DoC paths (`/vol/bitbucket/mc625/.pixi/bin/pixi`
+for the pixi binary, and the repo and cache roots under `/vol/bitbucket/mc625/` in
+`env_probe.sbatch`), GPU requests, environment setup,
 config selections, tags and sometimes warm-start parents. Inspect the selected
 file and its Python entrypoint before adapting it to a new environment. A shell
 exit status or existing metrics file does not certify complete artifacts;

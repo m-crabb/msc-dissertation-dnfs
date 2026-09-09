@@ -33,18 +33,19 @@ Usage:
     python -m scripts.n_euler_resolution_sweep --run-dir <dir> \
         --n-euler 128,256,512 --n-draws 512
 """
+
 import argparse
 import json
 from dataclasses import replace
 from pathlib import Path
 
 import torch
+from experiments.constrained_hard_03.configs import CONFIGS
+from experiments.constrained_hard_03.run import build_target_and_head
 
 from discrete_flow_sampler.diagnostics.metrics import ess_from_log_weights
 from discrete_flow_sampler.samplers.swap_ctmc import sample_swap_ctmc
 from discrete_flow_sampler.seeding import seed_everything
-from experiments.constrained_hard_03.configs import CONFIGS
-from experiments.constrained_hard_03.run import build_target_and_head
 
 
 def draw_log_weights(head, target, cfg, n_draws, n_euler, chunk, device):
@@ -63,8 +64,12 @@ def draw_log_weights(head, target, cfg, n_draws, n_euler, chunk, device):
         x_initial = target.sample_base(batch, device=device)
         with torch.no_grad():
             _, log_weights = sample_swap_ctmc(
-                head, x_initial, t_grid, return_log_weights=True,
-                target=target, multi_event=multi_event,
+                head,
+                x_initial,
+                t_grid,
+                return_log_weights=True,
+                target=target,
+                multi_event=multi_event,
             )
         collected.append(log_weights.detach().cpu())
         drawn += batch
@@ -74,12 +79,19 @@ def draw_log_weights(head, target, cfg, n_draws, n_euler, chunk, device):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--n-euler", default="128,256,512",
-                        help="comma-separated resolutions to compare")
-    parser.add_argument("--n-draws", type=int, default=512,
-                        help="Var[log w] is a variance of a near-Gaussian, "
-                             "so it estimates well from far fewer draws "
-                             "than ESS needs")
+    parser.add_argument(
+        "--n-euler",
+        default="128,256,512",
+        help="comma-separated resolutions to compare",
+    )
+    parser.add_argument(
+        "--n-draws",
+        type=int,
+        default=512,
+        help="Var[log w] is a variance of a near-Gaussian, "
+        "so it estimates well from far fewer draws "
+        "than ESS needs",
+    )
     parser.add_argument("--chunk", type=int, default=32)
     parser.add_argument("--seed", type=int, default=1042)
     parser.add_argument("--out", default=None)
@@ -89,52 +101,71 @@ def main():
     saved = json.loads((run_dir / "config.json").read_text())
     cfg = CONFIGS[saved["name"]]
     cfg = replace(cfg, head_kind=saved["head_kind"])
-    device = ("cuda" if torch.cuda.is_available()
-              else "mps" if torch.backends.mps.is_available() else "cpu")
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
 
     seed_everything(args.seed)
     target, head = build_target_and_head(cfg, device)
-    head.load_state_dict(torch.load(
-        run_dir / "checkpoints" / "final.pt",
-        map_location=device, weights_only=True,
-    ))
+    head.load_state_dict(
+        torch.load(
+            run_dir / "checkpoints" / "final.pt",
+            map_location=device,
+            weights_only=True,
+        )
+    )
     head.eval()
 
     d = int(cfg.ising.D) ** 2
-    print(f"run={run_dir.name} d={d} device={device} "
-          f"as-run n_euler={cfg.ctmc.n_euler_steps} "
-          f"multi_event={cfg.ctmc.use_matching_step}", flush=True)
-    print(f"{'n_euler':>8} {'Var[log w]':>11} {'Var/site':>10} "
-          f"{'exp(-Var)':>11} {'SN-ESS frac':>12} {'n':>6}", flush=True)
+    print(
+        f"run={run_dir.name} d={d} device={device} "
+        f"as-run n_euler={cfg.ctmc.n_euler_steps} "
+        f"multi_event={cfg.ctmc.use_matching_step}",
+        flush=True,
+    )
+    print(
+        f"{'n_euler':>8} {'Var[log w]':>11} {'Var/site':>10} "
+        f"{'exp(-Var)':>11} {'SN-ESS frac':>12} {'n':>6}",
+        flush=True,
+    )
 
     rows = []
     for n_euler in (int(v) for v in args.n_euler.split(",")):
-        seed_everything(args.seed)          # same base draws across arms
+        seed_everything(args.seed)  # same base draws across arms
         log_weights = draw_log_weights(
             head, target, cfg, args.n_draws, n_euler, args.chunk, device
         )
         var = float(log_weights.var().item())
-        ess_frac = float(
-            ess_from_log_weights(log_weights).item() / len(log_weights)
-        )
-        row = {"n_euler": n_euler, "var_log_w": var, "var_per_site": var / d,
-               "exp_neg_var": float(torch.tensor(-var).exp().item()),
-               "sn_ess_fraction": ess_frac, "n_draws": len(log_weights)}
+        ess_frac = float(ess_from_log_weights(log_weights).item() / len(log_weights))
+        row = {
+            "n_euler": n_euler,
+            "var_log_w": var,
+            "var_per_site": var / d,
+            "exp_neg_var": float(torch.tensor(-var).exp().item()),
+            "sn_ess_fraction": ess_frac,
+            "n_draws": len(log_weights),
+        }
         rows.append(row)
-        print(f"{n_euler:>8} {var:>11.4f} {var / d:>10.5f} "
-              f"{row['exp_neg_var']:>11.3e} {ess_frac:>12.5f} "
-              f"{len(log_weights):>6}", flush=True)
+        print(
+            f"{n_euler:>8} {var:>11.4f} {var / d:>10.5f} "
+            f"{row['exp_neg_var']:>11.3e} {ess_frac:>12.5f} "
+            f"{len(log_weights):>6}",
+            flush=True,
+        )
 
     if len(rows) > 1:
         base = rows[0]["var_log_w"]
         print("\nVar[log w] relative to the coarsest arm:")
         for row in rows:
-            print(f"  n_euler {row['n_euler']:>5}: "
-                  f"{row['var_log_w'] / base:.3f}x")
+            print(f"  n_euler {row['n_euler']:>5}: {row['var_log_w'] / base:.3f}x")
     if args.out:
-        Path(args.out).write_text(json.dumps(
-            {"run": run_dir.name, "d": d, "rows": rows}, indent=2
-        ))
+        Path(args.out).write_text(
+            json.dumps({"run": run_dir.name, "d": d, "rows": rows}, indent=2)
+        )
 
 
 if __name__ == "__main__":

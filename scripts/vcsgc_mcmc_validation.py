@@ -24,9 +24,11 @@ import numpy as np
 
 try:
     from numba import njit
+
     HAS_NUMBA = True
 except ImportError:
     HAS_NUMBA = False
+
     def njit(*args, **kwargs):
         if len(args) == 1 and callable(args[0]):
             return args[0]
@@ -38,9 +40,9 @@ def neighbour_sum(x, i, D):
     """Sum of x over the 4 nearest neighbours of site i on a DxD torus."""
     r = i // D
     c = i % D
-    up    = ((r - 1) % D) * D + c
-    down  = ((r + 1) % D) * D + c
-    left  = r * D + (c - 1) % D
+    up = ((r - 1) % D) * D + c
+    down = ((r + 1) % D) * D + c
+    left = r * D + (c - 1) % D
     right = r * D + (c + 1) % D
     return x[up] + x[down] + x[left] + x[right]
 
@@ -53,7 +55,7 @@ def initial_ising_energy(x, D, sigma):
         for c in range(D):
             i = r * D + c
             right = r * D + (c + 1) % D
-            down  = ((r + 1) % D) * D + c
+            down = ((r + 1) % D) * D + c
             E -= sigma * x[i] * x[right]
             E -= sigma * x[i] * x[down]
     return E
@@ -153,7 +155,9 @@ def init_random_at_composition(d, c_target, rng):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--D", type=int, default=10, help="grid side length; d = D*D")
-    p.add_argument("--sigma", type=float, default=0.1, help="Ising coupling (DNFS convention)")
+    p.add_argument(
+        "--sigma", type=float, default=0.1, help="Ising coupling (DNFS convention)"
+    )
     p.add_argument("--lam", type=float, default=50.0, help="soft-constraint strength")
     p.add_argument("--c_target", type=float, default=0.3)
     p.add_argument("--n_steps", type=int, default=1_000_000)
@@ -171,22 +175,29 @@ def main():
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"VCSGC-Metropolis: D={args.D} (d={d}), sigma={args.sigma}, "
-          f"lambda={args.lam}, c_target={args.c_target}")
-    print(f"  n_steps={args.n_steps}, n_burn={args.n_burn}, "
-          f"thin={args.thin}, n_chains={args.n_chains}, seed={args.seed}")
+    print(
+        f"VCSGC-Metropolis: D={args.D} (d={d}), sigma={args.sigma}, "
+        f"lambda={args.lam}, c_target={args.c_target}"
+    )
+    print(
+        f"  n_steps={args.n_steps}, n_burn={args.n_burn}, "
+        f"thin={args.thin}, n_chains={args.n_chains}, seed={args.seed}"
+    )
     print(f"  numba: {'on' if HAS_NUMBA else 'OFF (pure-python fallback, slow)'}")
 
     if not args.skip_sanity:
-        print("\n[sanity] lambda=0 short run (n=50_000) — expect |m| ≈ 0 at "
-              f"sigma={args.sigma} < sigma_c≈0.22 (paramagnetic).")
+        print(
+            "\n[sanity] lambda=0 short run (n=50_000) — expect |m| ≈ 0 at "
+            f"sigma={args.sigma} < sigma_c≈0.22 (paramagnetic)."
+        )
         rng_s = np.random.default_rng(args.seed + 999)
         x_san = init_random_at_composition(d, 0.5, rng_s)
         t0 = time.time()
-        _, m_san, _, _ = run_chain(x_san, args.D, args.sigma, 0.0, 0.5, 50_000,
-                                   args.seed + 999)
+        _, m_san, _, _ = run_chain(
+            x_san, args.D, args.sigma, 0.0, 0.5, 50_000, args.seed + 999
+        )
         m_sanity = m_san[10_000:].mean()
-        msg = f"[sanity] mean m = {m_sanity:+.4f}  (elapsed {time.time()-t0:.1f}s)"
+        msg = f"[sanity] mean m = {m_sanity:+.4f}  (elapsed {time.time() - t0:.1f}s)"
         if abs(m_sanity) > 0.3:
             print(msg + "  WARNING: |m| > 0.3, suspect sign-convention bug.")
         else:
@@ -208,8 +219,7 @@ def main():
         E_chains.append(E_tr[post])
         m_chains.append(m_tr[post])
         c_chains.append(c_tr[post])
-        print(f"[chain {chain}] seed={seed_c}  acc={acc:.3f}  "
-              f"elapsed={elapsed:.1f}s")
+        print(f"[chain {chain}] seed={seed_c}  acc={acc:.3f}  elapsed={elapsed:.1f}s")
 
     E_arr = np.stack(E_chains)
     m_arr = np.stack(m_chains)
@@ -219,8 +229,14 @@ def main():
     np.save(out_dir / "composition.npy", c_arr)
 
     # τ_int on the thinned trace, then multiply by `thin` to get raw-step units.
-    tau_E = np.array([integrated_autocorr(E_arr[i]) for i in range(args.n_chains)]) * args.thin
-    tau_m = np.array([integrated_autocorr(m_arr[i]) for i in range(args.n_chains)]) * args.thin
+    tau_E = (
+        np.array([integrated_autocorr(E_arr[i]) for i in range(args.n_chains)])
+        * args.thin
+    )
+    tau_m = (
+        np.array([integrated_autocorr(m_arr[i]) for i in range(args.n_chains)])
+        * args.thin
+    )
     n_post = args.n_steps - args.n_burn
     ess_E = n_post / np.where(tau_E > 0, tau_E, np.inf)
     ess_m = n_post / np.where(tau_m > 0, tau_m, np.inf)
@@ -231,17 +247,20 @@ def main():
         "acceptance_rate_mean": float(np.mean(accept_rates)),
         "acceptance_per_chain": [float(a) for a in accept_rates],
         "E_ising": {
-            "mean": float(E_flat.mean()), "std": float(E_flat.std()),
+            "mean": float(E_flat.mean()),
+            "std": float(E_flat.std()),
             "tau_int_raw_steps": tau_E.tolist(),
             "ess_per_chain": ess_E.tolist(),
         },
         "magnetisation": {
-            "mean": float(m_flat.mean()), "std": float(m_flat.std()),
+            "mean": float(m_flat.mean()),
+            "std": float(m_flat.std()),
             "tau_int_raw_steps": tau_m.tolist(),
             "ess_per_chain": ess_m.tolist(),
         },
         "composition": {
-            "mean": float(c_flat.mean()), "std": float(c_flat.std()),
+            "mean": float(c_flat.mean()),
+            "std": float(c_flat.std()),
         },
     }
     with open(out_dir / "summary.json", "w") as f:
@@ -249,21 +268,23 @@ def main():
 
     print("\n=== Summary (pooled across chains, post-burn-in, thinned) ===")
     print(f"acceptance rate : {summary['acceptance_rate_mean']:.3f}")
-    print(f"E_ising         : mean={summary['E_ising']['mean']:+.4f}  "
-          f"std={summary['E_ising']['std']:.4f}")
-    print(f"                  τ_int (raw steps): "
-          f"{[f'{t:.0f}' for t in tau_E]}")
-    print(f"                  ESS              : "
-          f"{[f'{e:.0f}' for e in ess_E]}")
-    print(f"magnetisation   : mean={summary['magnetisation']['mean']:+.4f}  "
-          f"std={summary['magnetisation']['std']:.4f}")
-    print(f"                  τ_int (raw steps): "
-          f"{[f'{t:.0f}' for t in tau_m]}")
-    print(f"                  ESS              : "
-          f"{[f'{e:.0f}' for e in ess_m]}")
-    print(f"composition     : mean={summary['composition']['mean']:.4f}  "
-          f"std={summary['composition']['std']:.4f}  "
-          f"(c_target={args.c_target})")
+    print(
+        f"E_ising         : mean={summary['E_ising']['mean']:+.4f}  "
+        f"std={summary['E_ising']['std']:.4f}"
+    )
+    print(f"                  τ_int (raw steps): {[f'{t:.0f}' for t in tau_E]}")
+    print(f"                  ESS              : {[f'{e:.0f}' for e in ess_E]}")
+    print(
+        f"magnetisation   : mean={summary['magnetisation']['mean']:+.4f}  "
+        f"std={summary['magnetisation']['std']:.4f}"
+    )
+    print(f"                  τ_int (raw steps): {[f'{t:.0f}' for t in tau_m]}")
+    print(f"                  ESS              : {[f'{e:.0f}' for e in ess_m]}")
+    print(
+        f"composition     : mean={summary['composition']['mean']:.4f}  "
+        f"std={summary['composition']['std']:.4f}  "
+        f"(c_target={args.c_target})"
+    )
 
     n_kept = c_arr.shape[1]
     stride = max(1, n_kept // 5000)
@@ -273,8 +294,9 @@ def main():
 
     for i in range(args.n_chains):
         axes[0, 0].plot(xs, c_arr[i, ::stride], alpha=0.7, lw=0.8, label=f"chain {i}")
-    axes[0, 0].axhline(args.c_target, color="k", ls="--", lw=1,
-                       label=f"c_target={args.c_target}")
+    axes[0, 0].axhline(
+        args.c_target, color="k", ls="--", lw=1, label=f"c_target={args.c_target}"
+    )
     axes[0, 0].set_xlabel("MCMC step")
     axes[0, 0].set_ylabel("composition c(x)")
     axes[0, 0].set_title("composition trace")
@@ -287,16 +309,22 @@ def main():
     axes[0, 1].set_title("Ising energy trace")
 
     axes[1, 0].hist(m_flat, bins=60, density=True, alpha=0.85)
-    axes[1, 0].axvline(2 * args.c_target - 1, color="k", ls="--", lw=1,
-                       label=f"m at c_target = {2*args.c_target-1:+.2f}")
+    axes[1, 0].axvline(
+        2 * args.c_target - 1,
+        color="k",
+        ls="--",
+        lw=1,
+        label=f"m at c_target = {2 * args.c_target - 1:+.2f}",
+    )
     axes[1, 0].set_xlabel("magnetisation m(x)")
     axes[1, 0].set_ylabel("density")
     axes[1, 0].set_title("magnetisation (pooled, post-burn-in)")
     axes[1, 0].legend(fontsize=8)
 
     axes[1, 1].hist(c_flat, bins=60, density=True, alpha=0.85)
-    axes[1, 1].axvline(args.c_target, color="k", ls="--", lw=1,
-                       label=f"c_target = {args.c_target}")
+    axes[1, 1].axvline(
+        args.c_target, color="k", ls="--", lw=1, label=f"c_target = {args.c_target}"
+    )
     axes[1, 1].set_xlabel("composition c(x)")
     axes[1, 1].set_ylabel("density")
     axes[1, 1].set_title("composition (pooled, post-burn-in)")

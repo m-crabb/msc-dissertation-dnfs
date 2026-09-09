@@ -44,12 +44,12 @@ Usage:
         --target_cfg H2_d256_smoke12k_warm \
         --out results/03_hard/warm_start_d64_to_d256.pt
 """
+
 import argparse
 from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-
 from experiments.constrained_hard_03.configs import CONFIGS
 from experiments.constrained_hard_03.run import build_target_and_head
 
@@ -85,16 +85,18 @@ def _resize_grid_rows(rows: torch.Tensor, d_src: int, d_tgt: int) -> torch.Tenso
     assertion below catches only a non-square row count, not a mis-sliced
     one.
     """
-    side_src, side_tgt = int(round(d_src ** 0.5)), int(round(d_tgt ** 0.5))
-    assert side_src ** 2 == d_src and side_tgt ** 2 == d_tgt, "non-square grid"
+    side_src, side_tgt = int(round(d_src**0.5)), int(round(d_tgt**0.5))
+    assert side_src**2 == d_src and side_tgt**2 == d_tgt, "non-square grid"
     if side_src == side_tgt:
         return rows
     grid = rows.reshape(side_src, side_src, -1).permute(2, 0, 1).unsqueeze(0)
     tiled = grid.repeat(1, 1, 3, 3)
     resized = F.interpolate(
-        tiled, size=(3 * side_tgt, 3 * side_tgt), mode="bicubic",
+        tiled,
+        size=(3 * side_tgt, 3 * side_tgt),
+        mode="bicubic",
         align_corners=False,
-    )[:, :, side_tgt:2 * side_tgt, side_tgt:2 * side_tgt]
+    )[:, :, side_tgt : 2 * side_tgt, side_tgt : 2 * side_tgt]
     return resized.squeeze(0).permute(1, 2, 0).reshape(d_tgt, -1)
 
 
@@ -127,60 +129,74 @@ def build_transfer(
         if src.shape == tgt_shape:
             transfer[key] = src.clone()
         elif (
-            src.dim() == 2 and src.shape[1] == tgt_shape[1]
+            src.dim() == 2
+            and src.shape[1] == tgt_shape[1]
             and src.shape[0] in (d_src, d_src + 1)
             and tgt_shape[0] - src.shape[0] == d_tgt - d_src
         ):
             has_cond_row = src.shape[0] == d_src + 1
             grid_rows = src[1:] if has_cond_row else src
             resized = _resize_grid_rows(grid_rows, d_src, d_tgt)
-            transfer[key] = (
-                torch.cat([src[:1], resized]) if has_cond_row else resized
-            )
+            transfer[key] = torch.cat([src[:1], resized]) if has_cond_row else resized
             interpolated.append(key)
         else:
-            skipped.append((key, f"unhandled shape {tuple(src.shape)} -> "
-                                 f"{tuple(tgt_shape)}"))
+            skipped.append(
+                (key, f"unhandled shape {tuple(src.shape)} -> {tuple(tgt_shape)}")
+            )
     return transfer, interpolated, skipped
 
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument("--source", type=Path, required=True)
     p.add_argument("--source_cfg", required=True, choices=list(CONFIGS))
     p.add_argument("--target_cfg", required=True, choices=list(CONFIGS))
     p.add_argument("--out", type=Path, required=True)
     p.add_argument(
-        "--skip-prefix", action="append", default=[], metavar="PREFIX",
+        "--skip-prefix",
+        action="append",
+        default=[],
+        metavar="PREFIX",
         help="Leave every parameter under PREFIX at fresh init (repeatable). "
-             "Default: transfer everything that fits.",
+        "Default: transfer everything that fits.",
     )
     args = p.parse_args()
 
     src_cfg, tgt_cfg = CONFIGS[args.source_cfg], CONFIGS[args.target_cfg]
-    d_src, d_tgt = src_cfg.ising.D ** 2, tgt_cfg.ising.D ** 2
+    d_src, d_tgt = src_cfg.ising.D**2, tgt_cfg.ising.D**2
     _, tgt_head = build_target_and_head(tgt_cfg, "cpu")
     source_sd = torch.load(args.source, map_location="cpu", weights_only=True)
     target_sd = tgt_head.state_dict()
 
     skip_prefixes = tuple(args.skip_prefix)
     transfer, interpolated, skipped = build_transfer(
-        source_sd, target_sd, d_src, d_tgt, skip_prefixes=skip_prefixes,
+        source_sd,
+        target_sd,
+        d_src,
+        d_tgt,
+        skip_prefixes=skip_prefixes,
     )
     # The transfer must be loadable and must leave nothing accidentally
     # fresh: every target key is either transferred or knowingly skipped.
-    unaccounted = set(target_sd) - set(transfer) - {
-        k for k in target_sd if any(k.startswith(p) for p in skip_prefixes)
-    }
+    unaccounted = (
+        set(target_sd)
+        - set(transfer)
+        - {k for k in target_sd if any(k.startswith(p) for p in skip_prefixes)}
+    )
     if unaccounted:
-        raise SystemExit(f"target keys neither transferred nor knowingly "
-                         f"skipped: {sorted(unaccounted)}")
+        raise SystemExit(
+            f"target keys neither transferred nor knowingly "
+            f"skipped: {sorted(unaccounted)}"
+        )
 
     print(f"copied {len(transfer) - len(interpolated)} shape-identical keys")
     for key in interpolated:
-        print(f"interpolated {key}: {tuple(source_sd[key].shape)} -> "
-              f"{tuple(target_sd[key].shape)}")
+        print(
+            f"interpolated {key}: {tuple(source_sd[key].shape)} -> "
+            f"{tuple(target_sd[key].shape)}"
+        )
     for key, why in skipped:
         print(f"skipped {key}: {why}")
     args.out.parent.mkdir(parents=True, exist_ok=True)

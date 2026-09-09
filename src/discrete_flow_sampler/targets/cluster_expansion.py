@@ -73,6 +73,7 @@ class BinaryExpansionSpec:
 
     @classmethod
     def from_json(cls, path: str | Path) -> BinaryExpansionSpec:
+        """Load an expansion exported by icet-ce/ (see data/README.md)."""
         raw = json.loads(Path(path).read_text())
         return cls(
             n_sites=raw["n_sites"],

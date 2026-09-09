@@ -55,10 +55,10 @@ These draws can include off-composition states. See the
 | Acceptance and computational cost | [reject_off_soft.py](analysis/reject_off_soft.py), [cost_vs_quality.py](analysis/cost_vs_quality.py), [machinery_cost_repricing.py](analysis/machinery_cost_repricing.py) |
 | Local-field diagnostic | [local_field_regression.py](analysis/local_field_regression.py) |
 | Archived log-probability scatter | [plot_logp_scatter_4x4.py](analysis/plot_logp_scatter_4x4.py) |
+| Residual decomposition and filter-baseline pricing | [clamp_sensitivity_probe.py](analysis/clamp_sensitivity_probe.py), [filter_row_comparator.py](analysis/filter_row_comparator.py) |
 | D=4 compile-parity gate | [compile_gate.py](probes/compile_gate.py) |
 
-Additional diagnostic entrypoints live in [analysis/](analysis/). Free-energy
-figures distinguish the soft target, slice-mass correction and canonical hard
+Free-energy figures distinguish the soft target, slice-mass correction and canonical hard
 target. Reflected compositions reuse the original draws and are not independent
 seeds. Historical 10×10 VC-SGC reference names also differ from later naming;
 use the consumer's explicit selection rather than renaming the archive.

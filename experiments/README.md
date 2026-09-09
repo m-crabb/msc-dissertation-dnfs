@@ -23,7 +23,7 @@ for the actual geometry, coupling, composition, curriculum and head.
 
 ## Start with training or sampling
 
-The [checkpoint guide](../checkpoints/README.md) provides four bundled pretrained
+The [checkpoint guide](../checkpoints/README.md) provides five bundled pretrained
 models and copy-paste sampling commands, including the 24×24 README model.
 For example:
 

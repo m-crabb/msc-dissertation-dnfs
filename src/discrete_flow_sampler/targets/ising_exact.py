@@ -65,6 +65,11 @@ def log_partition_torus(n_rows: int, n_cols: int, bond_coupling: float) -> float
     cosh_term = math.cosh(2 * K) / math.tanh(2 * K)  # cosh 2K coth 2K
 
     def gamma(mode_index: int) -> float:
+        """Kaufman's gamma_k: cosh gamma_k = cosh 2K coth 2K - cos(pi k / n).
+
+        gamma_0 is the signed branch 2K + log tanh K, which changes sign at
+        the critical coupling; every other gamma_k is the positive acosh.
+        """
         if mode_index == 0:
             return 2 * K + math.log(math.tanh(K))  # signed
         return math.acosh(cosh_term - math.cos(math.pi * mode_index / n))
@@ -76,6 +81,11 @@ def log_partition_torus(n_rows: int, n_cols: int, bond_coupling: float) -> float
     log_z3 = sum(_log_2cosh(m * g / 2) for g in even_angles)
 
     def signed_log_prod_sinh(angles):
+        """(log |prod_k 2 sinh(m gamma_k / 2)|, sign) as a stable sum of logs.
+
+        Only the even product can go negative (through gamma_0), and the four
+        partial products are combined by a signed logsumexp below.
+        """
         log_mag, sign = 0.0, 1.0
         for g in angles:
             piece_log, piece_sign = _log_abs_2sinh(m * g / 2)

@@ -1,3 +1,12 @@
+"""Desk probe: windowed training-log means for the Cu-Au 16-site cells.
+
+Prints per-window means of loss, ESS, estimator variance and clamp fraction
+for the seed-42 hard/soft/free cells, so the anneal-step collapses (windows
+bracket the 2500/5000/7500 temperature steps) can be compared across cells.
+
+Run: python -m experiments.alloy_ce.analysis.compare_training_logs
+"""
+
 import glob
 
 import pandas as pd

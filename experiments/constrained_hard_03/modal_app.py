@@ -399,7 +399,7 @@ def transport_decomposition_remote(run_dir_name: str, n_samples: int = 0):
     """Split a run's bond-correlation transport into gross vs net.
 
     Separate small swap effects (targeting) from effects that undo each other
-    (cancellation); see analysis_transport_decomposition.py for the method.
+    (cancellation); see probes/transport_decomposition.py for the method.
     `return_all_states=True` withholds importance weights, so this diagnostic
     writes transport_decomposition.json beside the run and leaves eval/ intact.
     """
