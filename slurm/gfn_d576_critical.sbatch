@@ -28,7 +28,8 @@ SEED=${SLURM_ARRAY_TASK_ID:?submit as a seed array}
 cd "$REPO"
 echo "node=$(hostname) cfg=$CFG seed=$SEED tag=$TAG"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
-sha256sum experiments/constrained_hard_03/{gfn_configs,gfn_launch_bench,run_gfn}.py \
+sha256sum experiments/constrained_hard_03/{gfn_configs,run_gfn}.py \
+    experiments/constrained_hard_03/probes/gfn_launch_bench.py \
     src/discrete_flow_sampler/models/raster_gfn_policy.py
 
 GATE_LOG=$(mktemp)

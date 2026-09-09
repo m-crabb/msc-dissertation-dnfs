@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Experiment guide](../experiments/README.md)
 
-This index covers all 97 retained shell launchers in this directory. They record
+This index covers all 96 retained shell launchers in this directory. They record
 specific campaigns, including unsuccessful, cancelled and superseded experiments.
 The seven Cu–Au launch/pull wrappers are indexed separately in the
 [alloy launcher guide](../experiments/alloy_ce/launchers/README.md#historical-launch-and-transfer-wrappers).

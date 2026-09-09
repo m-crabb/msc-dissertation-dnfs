@@ -42,13 +42,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+from experiments.constrained_soft_02.configs import CONFIGS
 from experiments.dnfs_baseline_01.run import _build_model, train
 
 from discrete_flow_sampler.samplers.kolmogorov import loss as kolmogorov_loss
 from discrete_flow_sampler.seeding import seed_everything
 from discrete_flow_sampler.targets.ising import IsingTarget
-
-from .configs import CONFIGS
 
 GATE_CFG = CONFIGS["S2_d4_c05_l50_letf_house_gate"]
 EAGER_CFG = CONFIGS["S2_d4_c05_l50_letf_house_gate_eager"]

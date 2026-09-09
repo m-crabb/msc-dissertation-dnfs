@@ -36,7 +36,8 @@ The quantities:
 All variances are population variances under the stated law (ddof = 0),
 which is what the identities above refer to.
 
-Run:  pixi run -e default python warm_base_offline_table.py [--sigma 0.223]
+Run:  pixi run -e dev python -m \\
+      experiments.constrained_hard_03.analysis.warm_base_offline_table [--sigma 0.223]
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from warm_base_reference import (
+from experiments.constrained_hard_03.probes.warm_base_reference import (
     BlockOccupancyBase,
     UniformSliceBase,
     quadratic_form,

@@ -50,6 +50,7 @@ This uses the run's configured evaluation sample count. The
 | Classical reference pool and cross-check | [wolff_reference_pool.py](analysis/wolff_reference_pool.py), [reference_crosscheck.py](analysis/reference_crosscheck.py) |
 | Composition acceptance | [composition_acceptance_10x10.py](analysis/composition_acceptance_10x10.py) |
 | Archived log-probability scatter | [plot_logp_scatter_4x4.py](analysis/plot_logp_scatter_4x4.py) |
+| Compile bench | [compile_bench.py](probes/compile_bench.py) |
 
 The shared trainer also provides saved-run evaluation and composition sweeps for
 soft runs. Those operations write evaluation artifacts; see the

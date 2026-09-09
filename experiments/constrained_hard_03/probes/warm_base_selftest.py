@@ -18,7 +18,8 @@ invariance of the K = b^2 mixture, agreement of the adjacency with the
 library's, positivity on the whole slice, and the degenerate-tiling identity
 b = D  =>  uniform on the slice.
 
-Run:  pixi run -e default python warm_base_selftest.py
+Run:  pixi run -e dev python -m \\
+      experiments.constrained_hard_03.probes.warm_base_selftest
 """
 
 from __future__ import annotations
@@ -26,14 +27,14 @@ from __future__ import annotations
 import itertools
 
 import numpy as np
-from scipy.special import logsumexp
-from scipy.stats import chisquare
-from warm_base_reference import (
+from experiments.constrained_hard_03.probes.warm_base_reference import (
     BlockOccupancyBase,
     UniformSliceBase,
     nn_correlation,
     torus_adjacency,
 )
+from scipy.special import logsumexp
+from scipy.stats import chisquare
 
 PASS, FAIL = "PASS", "FAIL"
 results: list[tuple[str, str, str]] = []

@@ -31,6 +31,8 @@ pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_soft_4x4 \
   --n-samples 64 --batch-size 8 --seed 0 --out results/demo-soft-4x4
 pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_hard_4x4 \
   --n-samples 64 --batch-size 8 --seed 0 --out results/demo-hard-4x4
+pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_hard_16x16 \
+  --n-samples 8 --batch-size 1 --seed 0 --out results/demo-hard-16x16
 pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_hard_24x24 \
   --n-samples 8 --batch-size 1 --seed 0 --out results/demo-hard-24x24
 ```

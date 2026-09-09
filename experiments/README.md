@@ -90,8 +90,10 @@ records their trajectory selection and the separate free-energy figure inputs.
 
 ## Organisation and compatibility
 
-Each experiment directory keeps only its trainer, configuration registry and
-Modal app at the top level. `analysis/` holds the scripts that read archived
+Each numbered experiment directory keeps its trainer, configuration registry
+and Modal app at the top level (the hard experiment also keeps its GFlowNet
+trainer and registry there); `alloy_ce/` has no trainer of its own and reuses
+the soft and hard ones. `analysis/` holds the scripts that read archived
 runs and emit report tables and figures; `probes/` holds everything that spends
 compute without being a training run: exact-enumeration gates, reference
 chains, benches, profilers and compile gates. The Cu–Au launch and pull

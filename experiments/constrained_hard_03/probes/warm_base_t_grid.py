@@ -66,7 +66,8 @@ swap destroys 7.61 / 9.39 edge-units, so an achieved +3.44 captures 65.8% (d64)
 / 53.8% (d256) of the random-to-oracle range -- a capture that falls with
 lattice size.
 
-Run:  pixi run -e default python warm_base_t_grid.py [--side 8] [--steps 6000]
+Run:  pixi run -e dev python -m \\
+      experiments.constrained_hard_03.probes.warm_base_t_grid [--side 8] [--steps 6000]
 """
 
 from __future__ import annotations
@@ -77,8 +78,11 @@ import time
 from pathlib import Path
 
 import numpy as np
-from warm_base_offline_table import load_d64, load_d256
-from warm_base_reference import (
+from experiments.constrained_hard_03.analysis.warm_base_offline_table import (
+    load_d64,
+    load_d256,
+)
+from experiments.constrained_hard_03.probes.warm_base_reference import (
     BlockOccupancyBase,
     UniformSliceBase,
     quadratic_form,

@@ -78,8 +78,9 @@ locality, exact composition and checkpoint/resume behaviour.
 
 ## Sample from pretrained checkpoints
 
-Four small [checkpoint bundles](checkpoints/README.md) are included in Git:
-unconstrained, soft and hard 4×4 Ising models, plus the hard 24×24 model above.
+Five small [checkpoint bundles](checkpoints/README.md) are included in Git:
+unconstrained, soft and hard 4×4 Ising models, a hard 16×16 model, plus the
+hard 24×24 model above.
 Each includes its saved configuration, original weights and SHA-256 manifest.
 From the repository root, after setup:
 
@@ -96,7 +97,7 @@ pixi run -e dev python -m scripts.sample_checkpoint checkpoints/ising_hard_24x24
 Each command creates `samples.pt`, `log_weights.pt` and `metadata.json` in a new
 output directory. These are raw proposal draws; use the importance weights for
 target expectations. The [checkpoint guide](checkpoints/README.md) includes a
-weighted-estimate example, all four sampling commands and animation reproduction.
+weighted-estimate example, a sampling command per bundle and animation reproduction.
 
 ## Train a sampler
 

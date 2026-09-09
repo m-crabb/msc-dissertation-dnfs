@@ -53,8 +53,9 @@ These draws can include off-composition states. See the
 | Classical free-energy reference | [fc_mchammer_reference.py](analysis/fc_mchammer_reference.py) |
 | Amortised versus specialist sampling | [amortised_vs_specialist.py](analysis/amortised_vs_specialist.py) |
 | Acceptance and computational cost | [reject_off_soft.py](analysis/reject_off_soft.py), [cost_vs_quality.py](analysis/cost_vs_quality.py), [machinery_cost_repricing.py](analysis/machinery_cost_repricing.py) |
-| Local-field diagnostic | [analysis_local_field_regression.py](analysis/local_field_regression.py) |
+| Local-field diagnostic | [local_field_regression.py](analysis/local_field_regression.py) |
 | Archived log-probability scatter | [plot_logp_scatter_4x4.py](analysis/plot_logp_scatter_4x4.py) |
+| D=4 compile-parity gate | [compile_gate.py](probes/compile_gate.py) |
 
 Additional diagnostic entrypoints live in [analysis/](analysis/). Free-energy
 figures distinguish the soft target, slice-mass correction and canonical hard
