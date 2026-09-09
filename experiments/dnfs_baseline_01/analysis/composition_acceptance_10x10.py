@@ -37,16 +37,14 @@ row-to-row ordering at sigma_c should not be over-read.
 import argparse
 import json
 import math
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
+from experiments.constrained_hard_03.analysis.rejection_rows import kept_draws
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
 
-from experiments.constrained_hard_03.analysis.rejection_rows import kept_draws
 
 RESULTS = REPO_ROOT / "results" / "01_baseline"
 N_SITES = 100  # D=10 -> d = 100

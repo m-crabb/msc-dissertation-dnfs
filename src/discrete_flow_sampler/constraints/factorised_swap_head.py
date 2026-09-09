@@ -197,7 +197,8 @@ class FactorisedSwapHead(nn.Module):
                 )
         if interior_band not in (None, "prefix", "attention"):
             raise ValueError(
-                f"interior_band must be None, 'prefix' or 'attention'; got {interior_band!r}"
+                "interior_band must be None, 'prefix' or 'attention'; "
+                f"got {interior_band!r}"
             )
 
         if global_bond_features and interior_band is None:

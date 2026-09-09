@@ -786,7 +786,8 @@ def markdown_tables(point_result):
             "",
             f"- Z2 balance (weighted mass phi>0 vs phi<0): "
             f"{cov['neural_balance_mean']:.4f} "
-            f"(per-replicate {['%.3f' % b for b in cov['neural_balance_per_replicate']]})",
+            "(per-replicate "
+            f"{[f'{b:.3f}' for b in cov['neural_balance_per_replicate']]})",
             f"- phi second moment: weighted {cov['neural_phi_sq_weighted_mean']:.5f} "
             f"/ unweighted {cov['neural_phi_sq_unweighted_mean']:.5f} "
             f"vs reference Var[phi] {cov['reference_phi_var']:.5f}",

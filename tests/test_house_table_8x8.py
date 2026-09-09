@@ -493,7 +493,8 @@ def test_gfn_rows_stay_outside_the_bold_comparison():
         "gfn_tb_s010": entry(0.99, 1.0e6),  # best ESS and best FLOP/es
     }
     body = latex_table(table)
-    gfn_line = next(l for l in body.splitlines() if "trajectory balance" in l)
-    mo_line = next(l for l in body.splitlines() if "mask-one" in l)
+    lines = body.splitlines()
+    gfn_line = next(line for line in lines if "trajectory balance" in line)
+    mo_line = next(line for line in lines if "mask-one" in line)
     assert "mathbf" not in gfn_line
     assert "mathbf" in mo_line

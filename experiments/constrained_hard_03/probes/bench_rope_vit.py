@@ -77,10 +77,13 @@ def bench(lattice_side: int, batch: int, repeats: int):
     x = (torch.randint(0, 2, (batch, d)) * 2 - 1).float()
     t = torch.rand(batch)
     print(
-        f"\n=== {lattice_side}x{lattice_side} (d={d}), batch {batch}, CPU threads {torch.get_num_threads()} ==="
+        f"\n=== {lattice_side}x{lattice_side} (d={d}), batch {batch}, "
+        f"CPU threads {torch.get_num_threads()} ==="
     )
     print(
-        f"{'arm':10s} {'backbone params':>16s} {'head total':>11s} {'stack GFLOP/sample':>19s} {'head GFLOP/sample':>18s} {'attn GFLOP analytic':>20s} {'ms/sample':>10s}"
+        f"{'arm':10s} {'backbone params':>16s} {'head total':>11s} "
+        f"{'stack GFLOP/sample':>19s} {'head GFLOP/sample':>18s} "
+        f"{'attn GFLOP analytic':>20s} {'ms/sample':>10s}"
     )
     for name, backbone, head in _arms(lattice_side):
         backbone_params = sum(p.numel() for p in backbone.parameters())

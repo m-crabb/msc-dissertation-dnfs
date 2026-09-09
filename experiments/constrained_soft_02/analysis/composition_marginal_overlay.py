@@ -123,7 +123,8 @@ def gibbs_reference_pmf(
     if cache.exists():
         samples = torch.load(cache, weights_only=True)
         print(
-            f"  gibbs reference (lam={lam:g}): loaded {samples.shape[0]} cached samples from {cache}"
+            f"  gibbs reference (lam={lam:g}): loaded {samples.shape[0]} "
+            f"cached samples from {cache}"
         )
     else:
         target = IsingTarget(
@@ -139,9 +140,11 @@ def gibbs_reference_pmf(
         )
         m = trace.mean(dim=-1)
         print(
-            f"  gibbs reference (lam={lam:g}): ran {n_chains} chains x {n_sweeps} sweeps; "
+            f"  gibbs reference (lam={lam:g}): ran {n_chains} chains "
+            f"x {n_sweeps} sweeps; "
             f"chain-mean log p at sweeps [0, mid, end]: "
-            f"{m[0].item():.1f}, {m[len(m) // 2].item():.1f}, {m[-1].item():.1f} (plateau check)"
+            f"{m[0].item():.1f}, {m[len(m) // 2].item():.1f}, {m[-1].item():.1f} "
+            "(plateau check)"
         )
         cache.parent.mkdir(parents=True, exist_ok=True)
         torch.save(samples, cache)
@@ -177,7 +180,8 @@ def main() -> None:
         "--mode",
         choices=("single", "lambda-pair"),
         default="single",
-        help="single: original d=4 figure (default); lambda-pair: D=10 weak-vs-strong lambda figure",
+        help="single: original d=4 figure (default); "
+        "lambda-pair: D=10 weak-vs-strong lambda figure",
     )
     p.add_argument(
         "--run_dirs",
@@ -209,7 +213,8 @@ def main() -> None:
         "--window_sites",
         type=int,
         default=10,
-        help="[lambda-pair] half-window around c_target in lattice sites (lam=10 reaches 9 off-slice)",
+        help="[lambda-pair] half-window around c_target in lattice sites "
+        "(lam=10 reaches 9 off-slice)",
     )
     p.add_argument(
         "--gibbs_chains",
@@ -286,10 +291,12 @@ def run_single(args: argparse.Namespace) -> None:
     print(f"  off-slice (violating) mass: {off_slice:.4f}  <-- the inexactness")
     print(f"  analytic 1/sqrt(2*lam*d)  : sigma = {sigma_analytic:.4f} (temp-indep)")
     print(
-        f"  violating mass at lam={args.weak_lambda:g}    : {off_slice_weak:.4f} (weak end of the trade)"
+        f"  violating mass at lam={args.weak_lambda:g}    : {off_slice_weak:.4f} "
+        "(weak end of the trade)"
     )
 
-    # --- Figure: (a) grouped bars near c_target (linear-y), (b) violating mass vs lambda ---
+    # --- Figure: (a) grouped bars near c_target (linear-y),
+    # (b) violating mass vs lambda ---
     # Hue carries the role per the house palette: ink is the exact-enumeration
     # reference, blue is our sampler, red is the hard-constraint limit. Lambda
     # never gets a hue of its own -- on panel (b) the two operating points share
@@ -498,7 +505,8 @@ def run_lambda_pair(args: argparse.Namespace) -> None:
         - soft_composition_pmf(cfg4, lam_s, states_f)[round(c_target * N_SITES)].item()
     )
     print(
-        f"  violating mass (exact, d=4): {off_w4:.1%} at lam={lam_w:g}, {off_s4:.1%} at lam={lam_s:g}"
+        f"  violating mass (exact, d=4): {off_w4:.1%} at lam={lam_w:g}, "
+        f"{off_s4:.1%} at lam={lam_s:g}"
     )
 
     # --- Figure: the D=10 composition marginals, weak vs strong lambda ---

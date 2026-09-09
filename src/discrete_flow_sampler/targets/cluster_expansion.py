@@ -21,7 +21,8 @@ energy units (eV per site for the alloy files).
 Flipping site i negates every product containing i, so
 
     Delta E_flip(i)   = -2 E_i,           E_i  := sum_{T ∋ i} c_T prod_T s,         (2)
-    Delta E_swap(i,j) = -2 E_i - 2 E_j + 4 E_ij,   E_ij := sum_{T ∋ i,j} c_T prod_T s, (3)
+    Delta E_swap(i,j) = -2 E_i - 2 E_j + 4 E_ij,
+                        E_ij := sum_{T ∋ i,j} c_T prod_T s,                       (3)
 
 for s_i != s_j (a like-spin swap is the identity): flipping both negates the
 products containing exactly one of the two sites and leaves those containing
@@ -118,7 +119,8 @@ class BinaryExpansionSpec:
         return site
 
     def pair_energies(self, x: Tensor) -> Tensor:
-        """E_ij of (3): the summed weight of tuples containing both i and j, (B, d, d)."""
+        """E_ij of (3): the summed weight of tuples containing both i and j,
+        (B, d, d)."""
         d = self.n_sites
         flat = torch.zeros(x.shape[0], d * d, dtype=x.dtype, device=x.device)
         for tuples, products in self._class_products(x):
@@ -132,7 +134,8 @@ class BinaryExpansionSpec:
         return -2.0 * self.site_energies(x)
 
     def swap_energy_change(self, x: Tensor) -> Tensor:
-        """Delta E for swapping each unlike pair, (B, d, d), Eq. (3); 0 for like pairs."""
+        """Delta E for swapping each unlike pair, (B, d, d), Eq. (3);
+        0 for like pairs."""
         site = self.site_energies(x)
         delta = (
             -2.0 * site[:, :, None]

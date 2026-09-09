@@ -60,11 +60,6 @@ from pathlib import Path
 
 import numpy as np
 import torch
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
-
-# The lattice-generic half of the 8x8 fill, imported rather than restated.
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
     _sci,
     aggregate,
@@ -91,6 +86,11 @@ from discrete_flow_sampler.diagnostics.metrics import (
     integrated_autocorr,
     magnetisation_profile_error,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# The lattice-generic half of the 8x8 fill, imported rather than restated.
+
 
 L = 16
 D_SITES = L * L

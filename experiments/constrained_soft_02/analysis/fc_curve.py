@@ -175,7 +175,10 @@ def main() -> None:
         if has_exact:
             line += f" {F_exact:>13.4f}" if F_exact is not None else f" {'-':>13}"
             line += f" {bias_mean:>+12.4f}" if bias_mean is not None else f" {'-':>12}"
-        seed_of = lambda r: r["name"].split("_seed")[1].split("_")[0]
+
+        def seed_of(r):
+            return r["name"].split("_seed")[1].split("_")[0]
+
         line += "  " + ",".join(f"{seed_of(r)}:{r['ess_frac']:.2f}" for r in excluded)
         print(line)
         curve.append((c_t, F_mean, F_sd, len(gated), F_exact, bias_mean))

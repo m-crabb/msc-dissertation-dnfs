@@ -125,7 +125,7 @@ def test_external_anchor_gates_on_lattice_side_as_well_as_sigma():
     the d256 anchor: it could fail certification spuriously, or pass narrowly
     and record an external cross-check that was never valid. An earlier
     version of the check keyed on sigma alone."""
-    from experiments.constrained_hard_03.probes.generate_kawasaki_reference_d256 import (
+    from experiments.constrained_hard_03.probes.generate_kawasaki_reference_d256 import (  # noqa: E501
         CERTIFICATION_NN_TARGET,
         external_nn_anchor,
     )

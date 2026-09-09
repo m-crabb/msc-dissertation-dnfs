@@ -76,7 +76,9 @@ class ExactFieldFlipModel(nn.Module):
 
         G(i | x) <- G_model(i | x) + gain(t) * Delta_i(x),
         Delta_i  = x_i * [ -4 sigma h_i + 2 lambda (c_null_i - c*) + lambda/d ],
-        h = x A  (Ising; an expansion supplies -beta Delta E_i instead),  c_null_i = c(x) - (x_i + 1)/(2d),  gain(t) = g0 + g1 t.
+        h = x A  (Ising; an expansion supplies -beta Delta E_i instead),
+        c_null_i = c(x) - (x_i + 1)/(2d),
+        gain(t) = g0 + g1 t.
 
     The opt-in amortised correction adds a composition-dependent gain
 

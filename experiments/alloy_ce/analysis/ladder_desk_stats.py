@@ -44,14 +44,17 @@ def stats(mask, T):
 
 
 print(
-    f"{'slice':8s} {'T':>5s} {'M':>6s} {'effN':>8s} {'staticESS':>9s} {'top1':>6s} {'top4':>6s} {'top16':>6s} {'Var[bE]':>8s}"
+    f"{'slice':8s} {'T':>5s} {'M':>6s} {'effN':>8s} {'staticESS':>9s} "
+    f"{'top1':>6s} {'top4':>6s} {'top16':>6s} {'Var[bE]':>8s}"
 )
 prev = {}
 for name, mask in sel.items():
     for T in temps:
         s = stats(mask, T)
         print(
-            f"{name:8s} {T:5d} {s['M']:6d} {s['effN']:8.1f} {s['static_ess']:9.4f} {s['top1']:6.3f} {s['top4']:6.3f} {s['top16']:6.3f} {s['var_static']:8.2f}"
+            f"{name:8s} {T:5d} {s['M']:6d} {s['effN']:8.1f} {s['static_ess']:9.4f} "
+            f"{s['top1']:6.3f} {s['top4']:6.3f} {s['top16']:6.3f} "
+            f"{s['var_static']:8.2f}"
         )
     # KL between consecutive ladder temperatures on this support
     for Ta, Tb in zip(temps[:-1], temps[1:]):
@@ -62,9 +65,12 @@ for name, mask in sel.items():
         # ESS fraction if the proposal were exact p_Ta and the target p_Tb
         ess = 1 / (pa * (pb / pa) ** 2).sum().item() / 1.0
         print(
-            f"   {name} {Ta}->{Tb}: KL(hot||cold) {kl_ab:.2f}  KL(cold||hot) {kl_ba:.2f}  ESS_frac(prop=hot,target=cold) {1 / ((pb**2 / pa).sum().item()):.4f}"
+            f"   {name} {Ta}->{Tb}: KL(hot||cold) {kl_ab:.2f}  "
+            f"KL(cold||hot) {kl_ba:.2f}  "
+            f"ESS_frac(prop=hot,target=cold) {1 / ((pb**2 / pa).sum().item()):.4f}"
         )
-# swap energy changes on each slice at 800 K under the target: how stiff is the landscape
+# swap energy changes on each slice at 800 K under the target: how stiff is the
+# landscape
 for name in ("c=0.25", "c=0.5"):
     mask = sel[name]
     x = states[mask]
@@ -76,5 +82,7 @@ for name in ("c=0.25", "c=0.5"):
     valid = xi[:, :, None] != xi[:, None, :]
     q = (beta * dE[valid]).abs()
     print(
-        f"{name} 800K target-weighted |beta dE_swap| over valid swaps: median {q.median():.2f} p90 {q.quantile(0.9):.2f} max {q.max():.2f}; frac downhill {(beta * dE[valid] < 0).float().mean():.3f}"
+        f"{name} 800K target-weighted |beta dE_swap| over valid swaps: "
+        f"median {q.median():.2f} p90 {q.quantile(0.9):.2f} max {q.max():.2f}; "
+        f"frac downhill {(beta * dE[valid] < 0).float().mean():.3f}"
     )

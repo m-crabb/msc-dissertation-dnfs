@@ -7,7 +7,8 @@ importance weight at grid time t is the path estimator of log Z_t. One draw per
 composition therefore prices the free energy at every coupling between zero and
 the trained one:
 
-    F(c, t sigma) / d = -[ E_q log w_t + (1 - t) log C(d, N_A) ] / d      (Jensen: a bound from above)
+    F(c, t sigma) / d = -[ E_q log w_t + (1 - t) log C(d, N_A) ] / d
+                                                    (Jensen: a bound from above)
 
 The classical toolchain needs one thermodynamic-integration ladder per (c, T)
 point (icet ThermodynamicIntegrationEnsemble) or one chain per (phi, T) in
@@ -584,7 +585,8 @@ def main(argv=None):
     )
 
     print(
-        f"{'c':>7} {'sig/sig_c':>9} {'F/d mean':>10} {'seed sd':>8} {'ESS':>6} {'TI truth':>10} {'resid':>8}"
+        f"{'c':>7} {'sig/sig_c':>9} {'F/d mean':>10} {'seed sd':>8} {'ESS':>6} "
+        f"{'TI truth':>10} {'resid':>8}"
     )
     table = []
     for c, k in sorted(surface, key=lambda ck: (ck[1], ck[0])):

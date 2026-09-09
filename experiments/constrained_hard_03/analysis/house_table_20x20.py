@@ -66,11 +66,6 @@ import sys
 from pathlib import Path
 
 import torch
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
-
-# Shared reference statistics and FLOP provenance.
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
     _sci,
     aggregate,
@@ -99,6 +94,11 @@ from discrete_flow_sampler.diagnostics.metrics import (
     magnetisation_profile_error,
 )
 from discrete_flow_sampler.targets.ising import SIGMA_C
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Shared reference statistics and FLOP provenance.
+
 
 L = 20
 D_SITES = L * L

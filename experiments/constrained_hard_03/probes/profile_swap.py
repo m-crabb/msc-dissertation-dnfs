@@ -685,7 +685,8 @@ def main(argv=None):
         head.compile()
     print(
         f"mode={args.mode} head_kind={args.head_kind} "
-        f"exterior_combiner={args.exterior_combiner} interior_band={args.interior_band} "
+        f"exterior_combiner={args.exterior_combiner} "
+        f"interior_band={args.interior_band} "
         f"site_orderings={args.site_orderings} patch_radius={args.patch_radius} "
         f"d={args.d} batch={args.batch} "
         f"anchor_chunk={args.anchor_chunk} n_euler_steps={args.n_euler_steps} "

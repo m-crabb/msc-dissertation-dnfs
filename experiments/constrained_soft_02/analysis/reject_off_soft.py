@@ -37,23 +37,20 @@ at the centre, both couplings, seeds 42-45, raw final weights.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
+from experiments.constrained_hard_03.analysis.rejection_rows import SEEDS, kept_draws
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "experiments" / "constrained_hard_03" / "analysis"))
-
-from rejection_rows import SEEDS, kept_draws  # noqa: E402
-
-from discrete_flow_sampler.diagnostics.flops import (  # noqa: E402
+from discrete_flow_sampler.diagnostics.flops import (
     measured_forward_flops,
     neural_sampling_flops_per_sample,
     per_effective_sample,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 RESULTS = REPO_ROOT / "results" / "02_constrained_soft"
 LAMBDA = 50.0
@@ -68,9 +65,15 @@ def run_glob(n_sites, coupling, c_target):
     sc = "_sc" if coupling == "s220" else ""
     c_tag = f"c{int(round(c_target * 1000)):04d}"
     if n_sites == 16:
-        return f"S2_d4_{c_tag}_10k_l50_letf_house{sc}_seed{{seed}}_20260902-softhouse-d16-10k"
+        return (
+            f"S2_d4_{c_tag}_10k_l50_letf_house{sc}_seed{{seed}}"
+            "_20260902-softhouse-d16-10k"
+        )
     if c_target == 0.5:
-        return f"S2_d8_{c_tag}_l50_letf_ne128_house{sc}_seed{{seed}}_20260831-softhouse-d64"
+        return (
+            f"S2_d8_{c_tag}_l50_letf_ne128_house{sc}_seed{{seed}}"
+            "_20260831-softhouse-d64"
+        )
     return f"S2_d8_{c_tag}_l50_letf_ne128_house_mb{sc}_seed{{seed}}_20260831-softmb-d64"
 
 
@@ -136,7 +139,8 @@ def flop_cell(value):
 
 
 def latex_rows(table, n_sites):
-    """One row per window: measured acceptance, envelope prediction, ESS, FLOP/es, both couplings."""
+    """One row per window: measured acceptance, envelope prediction, ESS, FLOP/es,
+    both couplings."""
     lines = []
     for c_target in WINDOWS:
         cells = []
@@ -175,9 +179,12 @@ def main(argv=None):
                 if cell is not None:
                     table[f"soft_{n_sites}_{coupling}_c{c_target}"] = cell
                     print(
-                        f"{n_sites:3d} {coupling} c={c_target:<5} acc {cell['acceptance'][0]:.3f}"
-                        f" (env {cell['envelope_prediction']:.3f})  ESS {cell['ESS'][0]:.3f}"
-                        f"  FLOP/es {cell['FLOP/es'][0]:.2e}  kept {cell['n_kept_per_seed']}"
+                        f"{n_sites:3d} {coupling} c={c_target:<5} "
+                        f"acc {cell['acceptance'][0]:.3f}"
+                        f" (env {cell['envelope_prediction']:.3f})"
+                        f"  ESS {cell['ESS'][0]:.3f}"
+                        f"  FLOP/es {cell['FLOP/es'][0]:.2e}"
+                        f"  kept {cell['n_kept_per_seed']}"
                     )
     args.out.write_text(json.dumps(table, indent=2))
     print(f"wrote {args.out}")

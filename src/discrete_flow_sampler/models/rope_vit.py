@@ -7,7 +7,8 @@ positions enter through rotary embeddings whose phases are integer multiples
 of 2 pi / L, so every attention logit is a function of the signed lattice
 offset (delta_row, delta_col) mod L only --
 
-    q_s . k_s' -> R(theta_s)^T q_s . R(theta_s') k_s' = q_s . R(theta_s' - theta_s) k_s',
+    q_s . k_s' -> R(theta_s)^T q_s . R(theta_s') k_s'
+                = q_s . R(theta_s' - theta_s) k_s',
     theta_s = 2 pi m (row_s, col_s) / L,   m integer,                          (1)
 
 invariant under (row, col) -> (row + v) mod L for every integer v. Signed

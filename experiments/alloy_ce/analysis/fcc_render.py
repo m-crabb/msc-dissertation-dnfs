@@ -64,7 +64,8 @@ JMOL = {
 
 
 def rotation(degrees_x, degrees_y, degrees_z):
-    """Rotation matrix for successive rotations about x, y, z (degrees), as ASE's 'ax,by,cz' strings."""
+    """Rotation matrix for successive rotations about x, y, z (degrees), as ASE's
+    'ax,by,cz' strings."""
     import math
 
     def about(axis, angle):
@@ -78,7 +79,8 @@ def rotation(degrees_x, degrees_y, degrees_z):
 
 
 def sphere_sprite(colour, n=192):
-    """RGBA image of a lit sphere in `colour` (Lambert + a highlight), transparent outside."""
+    """RGBA image of a lit sphere in `colour` (Lambert + a highlight), transparent
+    outside."""
     import numpy as np
 
     y, x = np.mgrid[-1 : 1 : n * 1j, -1 : 1 : n * 1j]
@@ -99,8 +101,8 @@ def sphere_sprite(colour, n=192):
 def draw_structure(
     ax, positions, symbols, cell, rotate=(-65.0, -25.0, 0.0), radius=0.64
 ):
-    """Orthographic lit-sphere render of an Atoms-like (positions A, symbols, cell) with the
-    cell outline; spheres drawn back to front so nearer atoms occlude farther ones.
+    """Orthographic lit-sphere render of an Atoms-like (positions A, symbols, cell) with
+    the cell outline; spheres drawn back to front so nearer atoms occlude farther ones.
 
     Radius is a display choice shared by both species, not a fitted atomic
     radius. Cell edges are clipped against the visible sphere surfaces in
@@ -154,7 +156,8 @@ def draw_structure(
 
 
 def conventional_cell(tiled, state):
-    """The 14-atom conventional fcc cell (corners + face centres) coloured from a periodic state."""
+    """The 14-atom conventional fcc cell (corners + face centres) coloured from a
+    periodic state."""
     import numpy as np
 
     points = [(x, y, z) for x in (0, 2) for y in (0, 2) for z in (0, 2)] + [

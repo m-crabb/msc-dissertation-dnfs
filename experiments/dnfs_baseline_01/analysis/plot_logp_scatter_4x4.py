@@ -40,20 +40,19 @@ couplings in one comparison.
 """
 
 import argparse
-import sys
 from pathlib import Path
 
 import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
-
 from discrete_flow_sampler.diagnostics.metrics import enumerate_states, exact_log_probs
 from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
+
+matplotlib.use("Agg")
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 L = 4
 D_SITES = L * L

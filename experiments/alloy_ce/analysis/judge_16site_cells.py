@@ -34,7 +34,8 @@ n_au = ((states + 1) / 2).sum(1)
 
 
 def exact_at(T):
-    """Exact free-ensemble F, per-slice F(c) and the composition marginal at temperature T (cached)."""
+    """Exact free-ensemble F, per-slice F(c) and the composition marginal at temperature
+    T (cached)."""
     beta = 1.0 / (K_B_EV * T)
     log_w_exact = -beta * energy
     p_exact = torch.softmax(log_w_exact, 0)
@@ -54,7 +55,8 @@ def cell_temperature(run):
 
 _, F_free_exact, F_slice_exact, marg_exact = exact_at(500.0)
 print(
-    f"exact at 500 K: F_free {F_free_exact:.4f} eV/site; F_slice(0.25) {F_slice_exact[0.25]:.4f}, "
+    f"exact at 500 K: F_free {F_free_exact:.4f} eV/site; "
+    f"F_slice(0.25) {F_slice_exact[0.25]:.4f}, "
     f"F_slice(0.5) {F_slice_exact[0.5]:.4f}; free marginal mass at n_Au=4,8: "
     f"{marg_exact[4]:.3f} {marg_exact[8]:.3f}"
 )
@@ -137,7 +139,8 @@ for run in sorted(glob.glob("results/*/*cuau16*")):
         rows.append(row)
 
 print(
-    f"{'cell':62s} {'flav':8s} {'ESS':>6s} {'F_lb':>8s} {'F_is':>8s} {'F_ex':>8s} {'dlb':>5s} {'dis':>5s} {'<c>':>6s}  m4_w m8_w | m4_raw m8_raw"
+    f"{'cell':62s} {'flav':8s} {'ESS':>6s} {'F_lb':>8s} {'F_is':>8s} {'F_ex':>8s} "
+    f"{'dlb':>5s} {'dis':>5s} {'<c>':>6s}  m4_w m8_w | m4_raw m8_raw"
 )
 for r in rows:
     extra = ""
@@ -146,7 +149,9 @@ for r in rows:
             f"  {r['m4_w']:.3f} {r['m8_w']:.3f} | {r['m4_raw']:.3f} {r['m8_raw']:.3f}"
         )
     print(
-        f"{r['cell']:62s} {r['flavour']:8s} {r['ess']:6.3f} {r['F_lb']:8.4f} {r['F_is']:8.4f} {r['F_exact']:8.4f} "
-        f"{1e3 * (r['F_lb'] - r['F_exact']):5.1f} {1e3 * (r['F_is'] - r['F_exact']):5.1f} {r['c_mean']:6.3f}{extra}"
+        f"{r['cell']:62s} {r['flavour']:8s} {r['ess']:6.3f} {r['F_lb']:8.4f} "
+        f"{r['F_is']:8.4f} {r['F_exact']:8.4f} "
+        f"{1e3 * (r['F_lb'] - r['F_exact']):5.1f} "
+        f"{1e3 * (r['F_is'] - r['F_exact']):5.1f} {r['c_mean']:6.3f}{extra}"
     )
 print("(dlb, dis = F_lb - exact, F_is - exact in meV/site)")

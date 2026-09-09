@@ -185,8 +185,10 @@ def main(argv=None):
     pairs = upper_tri_pairs(spec.n_sites, train_states.device)
     held_delta, held_unlike = unlike_pair_targets(target, held_out_states, pairs)
     print(
-        f"{args.spec}: {spec.n_sites} sites, c={args.composition}, T={args.temperature} K, states={args.states}, "
-        f"held-out Delta std {held_delta[held_unlike].std():.3f} over {int(held_unlike.sum())} unlike pairs"
+        f"{args.spec}: {spec.n_sites} sites, c={args.composition}, "
+        f"T={args.temperature} K, states={args.states}, "
+        f"held-out Delta std {held_delta[held_unlike].std():.3f} "
+        f"over {int(held_unlike.sum())} unlike pairs"
     )
 
     results = {}
@@ -206,7 +208,8 @@ def main(argv=None):
             backbone, geometry=geometry, feature_dim=args.feature_dim
         )
         print(
-            f"  shells={shells}: window {head.n_patch} sites, pooled balls {geometry.level_sizes}"
+            f"  shells={shells}: window {head.n_patch} sites, "
+            f"pooled balls {geometry.level_sizes}"
         )
         results[shells] = fit_head(
             head,

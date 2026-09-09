@@ -232,8 +232,9 @@ def test_gfn_rows_stay_outside_the_bold_comparison():
         "gfn_tb_s010": entry(0.99, 1.0e6),
     }  # best ESS and FLOP/es
     body = h16.latex_table(table)
-    gfn_line = next(l for l in body.splitlines() if "trajectory balance" in l)
-    thp_line = next(l for l in body.splitlines() if "two-hole patch head" in l)
+    lines = body.splitlines()
+    gfn_line = next(line for line in lines if "trajectory balance" in line)
+    thp_line = next(line for line in lines if "two-hole patch head" in line)
     assert "mathbf" not in gfn_line
     assert "mathbf" in thp_line
 

@@ -14,7 +14,11 @@ Tests pinned here:
 
 import torch
 
-from discrete_flow_sampler.samplers.kolmogorov import loss, residual_general
+from discrete_flow_sampler.samplers.kolmogorov import (
+    loss,
+    residual_general,
+    residual_lenet,
+)
 from discrete_flow_sampler.targets.ising import IsingTarget
 
 
@@ -92,9 +96,6 @@ def test_loss_is_mean_squared_residual():
     expected = residual_general(x, t, dt_log_Zt, model, target).pow(2).mean()
     got = loss(x, t, dt_log_Zt, model, target)
     torch.testing.assert_close(got, expected)
-
-
-from discrete_flow_sampler.samplers.kolmogorov import residual_lenet
 
 
 class AnalyticLERateModel:

@@ -124,7 +124,8 @@ def main() -> None:
         )
         verdicts = [k for k in ("agree_E", "agree_absM", "agree_tv") if not row[k]]
         print(
-            f"  verdict: {'AGREE' if not verdicts else 'DISAGREE on ' + ', '.join(verdicts)}"
+            "  verdict: "
+            f"{'AGREE' if not verdicts else 'DISAGREE on ' + ', '.join(verdicts)}"
         )
 
     out = RESULTS / "reference_crosscheck.json"

@@ -342,7 +342,8 @@ def main() -> None:
     )
     if len(n_eulers) > 1:
         print(
-            f"[warn] mixed n_euler {n_eulers}: discretisation bias differs across windows."
+            f"[warn] mixed n_euler {n_eulers}: "
+            "discretisation bias differs across windows."
         )
 
     # --- canonical reference curve + its slope/curvature ----------------

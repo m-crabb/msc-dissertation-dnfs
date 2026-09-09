@@ -156,7 +156,8 @@ def load_vcsgc_reference(penalty_strength, c_target):
         chains += 1
     if not frames:
         raise FileNotFoundError(
-            f"no VC-SGC reference with spins.npy for lambda={penalty_strength} c={c_target}"
+            f"no VC-SGC reference with spins.npy for lambda={penalty_strength} "
+            f"c={c_target}"
         )
     pooled = torch.cat(frames)
     tau_int = max(sum(tau_ints) / len(tau_ints), 1.0)
@@ -186,7 +187,8 @@ def specialist_flops_per_forward(run_dir: Path) -> int:
 
 
 def reference_floor(reference, seed=0):
-    """Block bootstrap: N_EVAL-frame replicates of the reference scored against all of it."""
+    """Block bootstrap: N_EVAL-frame replicates of the reference scored against all
+    of it."""
     generator = torch.Generator().manual_seed(seed)
     n_blocks = reference.shape[0] // BLOCK
     by_block = reference[: n_blocks * BLOCK].view(n_blocks, BLOCK, -1)
@@ -267,7 +269,8 @@ def main():
             },
         }
         print(
-            f"\n== lambda={penalty_strength} c={c_target} ({n_chains} reference chains, {reference.shape[0]} frames)"
+            f"\n== lambda={penalty_strength} c={c_target} "
+            f"({n_chains} reference chains, {reference.shape[0]} frames)"
         )
         print(
             "  reference floor:",
@@ -290,7 +293,8 @@ def main():
                 if summary[rule]:
                     print(
                         f"  [{family}] {rule:5s} mean +- SD "
-                        f"({summary['n_pass']}/{summary['n_total']} clear {ESS_FLOOR}):",
+                        f"({summary['n_pass']}/{summary['n_total']} "
+                        f"clear {ESS_FLOOR}):",
                         {
                             k: f"{m:.4g} +- {sd:.2g}"
                             for k, (m, sd) in summary[rule].items()

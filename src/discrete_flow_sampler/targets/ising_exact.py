@@ -64,10 +64,10 @@ def log_partition_torus(n_rows: int, n_cols: int, bond_coupling: float) -> float
 
     cosh_term = math.cosh(2 * K) / math.tanh(2 * K)  # cosh 2K coth 2K
 
-    def gamma(l: int) -> float:
-        if l == 0:
+    def gamma(mode_index: int) -> float:
+        if mode_index == 0:
             return 2 * K + math.log(math.tanh(K))  # signed
-        return math.acosh(cosh_term - math.cos(math.pi * l / n))
+        return math.acosh(cosh_term - math.cos(math.pi * mode_index / n))
 
     odd_angles = [gamma(2 * r + 1) for r in range(n)]
     even_angles = [gamma(2 * r) for r in range(n)]

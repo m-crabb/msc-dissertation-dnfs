@@ -241,12 +241,14 @@ def main(argv=None):
             for t_value in args.t:
                 rows.append(analyse(run_dir, t_value))
 
+    def column_label(column):
+        return column.replace("r2_", "").replace(
+            "nonlocal_share_explained_by_B", "res~B"
+        )
+
     header = (
         f"{'run':58s} {'t':>4s}"
-        + "".join(
-            f" {c.replace('r2_', '').replace('nonlocal_share_explained_by_B', 'res~B'):>12s}"
-            for c in COLUMNS
-        )
+        + "".join(f" {column_label(c):>12s}" for c in COLUMNS)
         + f" {'chan_wt':>8s}"
     )
     print(header)

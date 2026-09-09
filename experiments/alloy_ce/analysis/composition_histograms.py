@@ -1,9 +1,11 @@
-"""Au-concentration distributions of the free-ensemble 64-site Cu-Au cell against the reference chain.
+"""Au-concentration distributions of the free-ensemble 64-site Cu-Au cell against the
+reference chain.
 
-The like-for-like exhibit with MetaDNS Fig. 5(c-e): at each temperature the free sampler's
-draws (one histogram per seed, raw draws) beside the single-flip Metropolis chain
-(reference_chain.py, filled). Composition is discrete, n_Au / 64, so the bins are the sites.
-Missing cells or chains leave their panel annotated rather than failing the figure.
+The like-for-like exhibit with MetaDNS Fig. 5(c-e): at each temperature the free
+sampler's draws (one histogram per seed, raw draws) beside the single-flip Metropolis
+chain (reference_chain.py, filled). Composition is discrete, n_Au / 64, so the bins are
+the sites. Missing cells or chains leave their panel annotated rather than failing the
+figure.
 
 Usage: pixi run -e dev python -m experiments.alloy_ce.analysis.composition_histograms \\
            --cells "results/02_constrained_soft/A1_cuau64_T1200*grid" \\

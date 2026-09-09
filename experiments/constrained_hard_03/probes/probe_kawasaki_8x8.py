@@ -52,7 +52,8 @@ Smoke mode (--smoke): D = 4, 2_000 sweeps, 2 chains per seeding mode,
 2 workers, output routed to <out>/smoke/ — end-to-end plumbing test only.
 
 Example:
-    pixi run -e default python -m experiments.constrained_hard_03.probes.probe_kawasaki_8x8 \\
+    pixi run -e default python -m \\
+        experiments.constrained_hard_03.probes.probe_kawasaki_8x8 \\
         --stage reference --smoke
 """
 

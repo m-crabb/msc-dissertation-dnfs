@@ -13,7 +13,8 @@ from each term by construction:
 
     H_ij = P_ij - P_ji,     P_ij = rho( LN( z_ij ) ),
     z_ij = W_first C_i^{(-j)} + W_second C_j^{(-i)} + e(j - i) + tau(t),
-    C_i^{(-j)} = f_i^{(-j)} + sum_l c^l_i{(-j)}   [context of hole i with hole j removed]
+    C_i^{(-j)} = f_i^{(-j)} + sum_l c^l_i{(-j)}
+                                  [context of hole i with hole j removed]
 
   f   = hollow patch feature with the partner zeroed,
   c^l = pooled level l with both holes subtracted,
@@ -276,7 +277,8 @@ def bravais_patch_geometry(
     shell_of = torch.bucketize(distance, shell_radii - tolerance)  # (d, d): 0 = centre
     if patch_shells > len(shell_radii):
         raise ValueError(
-            f"patch_shells {patch_shells} exceeds the {len(shell_radii)} shells of the cell"
+            f"patch_shells {patch_shells} exceeds the {len(shell_radii)} "
+            "shells of the cell"
         )
     window_classes = [
         k
@@ -287,7 +289,8 @@ def bravais_patch_geometry(
     if aliased:
         raise ValueError(
             f"window sites {aliased} alias: reached through several images of the "
-            f"supercell at their minimum distance (cell too small for {patch_shells} shell(s))"
+            "supercell at their minimum distance (cell too small for "
+            f"{patch_shells} shell(s))"
         )
     neighbour_site = torch.stack(
         [(pair_displacement == k).float().argmax(dim=1) for k in window_classes], dim=1

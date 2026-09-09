@@ -402,7 +402,8 @@ def batch_seeds(cfg_name: str, seeds: str = "42", tag: str = ""):
     for seed in seed_list:
         train_remote.spawn(cfg_name=cfg_name, seed=seed, tag=tag)
     print(
-        f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list} tag={tag or '<timestamp>'}"
+        f"spawned {len(seed_list)} jobs for {cfg_name}: seeds={seed_list} "
+        f"tag={tag or '<timestamp>'}"
     )
 
 

@@ -5,8 +5,8 @@ evaluation ESS fraction over the 100k-step sigma_c curriculum at 16x16 for the t
 that decide the family -- the two-hole patch head (R=2, the record) and the masked-
 attention band with one sweep (dead 3/3 at sigma_c). Three seeds each as the house
 seed-band grammar; the two families share one role (our sampler) so they take a
-``parameter_ramp`` on the sampler hue -- dark = the head the chapter carries, light = the
-head it retires at this size.
+``parameter_ramp`` on the sampler hue -- dark = the head the chapter carries, light =
+the head it retires at this size.
 
 The curriculum ramp (stages before the final sigma_c stage) is shaded as in the sibling
 panels: until the final stage begins the diagnostic reads against the current stage's

@@ -181,7 +181,8 @@ def clease_oracle(eci_file, structure_file, size):
         energy,
         cutoffs,
         {
-            "source": "MetaDNS Cu-Au cluster expansion (Du et al. 2026, arXiv 2605.21722), "
+            "source": "MetaDNS Cu-Au cluster expansion "
+            "(Du et al. 2026, arXiv 2605.21722), "
             "ECIs fitted by Damewood et al. 2022; CLEASE 1.1.0 CEBulk fcc a=3.8, "
             "max_cluster_dia [6.0, 4.5, 4.5]",
             "eci_file": str(eci_file),
@@ -212,11 +213,13 @@ def icet_oracle(ce_file, side):
         energy,
         cutoffs,
         {
-            "source": "icet-ce/cluster_expansion.ce (square-grid Cu/Au toy, EMT-fitted, "
+            "source": "icet-ce/cluster_expansion.ce "
+            "(square-grid Cu/Au toy, EMT-fitted, "
             "pairs + triplets, cutoffs 3.6/3.6 A, a = 2.5 A); evaluated here on a "
             f"PERIODIC {side}x{side} cell with no vacancy padding",
             "ce_file": str(ce_file),
-            "energy_units": "eV, ClusterExpansionCalculator.calculate_total on the periodic cell",
+            "energy_units": "eV, ClusterExpansionCalculator.calculate_total "
+            "on the periodic cell",
         },
     )
 

@@ -152,7 +152,8 @@ class IntervalSwapHead(nn.Module):
         super().__init__()
         if exterior_combiner not in ("mlp", "bilinear"):
             raise ValueError(
-                f"exterior_combiner must be 'mlp' or 'bilinear'; got {exterior_combiner!r}"
+                "exterior_combiner must be 'mlp' or 'bilinear'; "
+                f"got {exterior_combiner!r}"
             )
         # The bilinear exterior reads the row ordering's prefix/suffix only
         # (`_ordering_exterior_rows` runs on the "mlp" branch alone), so an

@@ -280,7 +280,7 @@ def test_d144_bracket_is_the_rescue_recipe_with_volume_the_only_mechanism_change
     assert rebuilt == rescue
 
 
-def test_d256_fmo2_ladder_is_the_rescue_recipe_with_head_family_the_only_mechanism_change():
+def test_d256_fmo2_ladder_is_rescue_recipe_with_head_family_only_mechanism_change():
     """The cold fmo2 ladder at 16x16 must be the archived MA naive-rescue
     recipe with the head family — and its two riding conventions,
     EMA shadow and dual site orderings — the only

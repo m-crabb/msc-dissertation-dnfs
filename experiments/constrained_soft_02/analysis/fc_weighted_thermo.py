@@ -271,7 +271,8 @@ def main() -> None:
     )
     print(f"analytic composition width 1/sqrt(2*lambda*d) = {analytic_cstd:.4f}")
     print(
-        f"vcSGC: {len(args.vcsgc_seeds)} seeds x {args.vcsgc_steps} steps, burn-in 1/3\n"
+        f"vcSGC: {len(args.vcsgc_seeds)} seeds x {args.vcsgc_steps} steps, "
+        "burn-in 1/3\n"
     )
 
     by_c: dict[float, list[dict]] = {}

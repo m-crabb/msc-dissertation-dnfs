@@ -263,9 +263,7 @@ def load_point(run_dirs: list[Path]) -> dict:
     # frozen eval is at the final stage's coupling, which keys the pool.
     sigma = final_sigma(config)
     target = IsingTarget(D=ising_cfg["D"], sigma=sigma, bias=ising_cfg["bias"])
-    pool = torch.load(
-        RESULTS / f"wolff_ref_d10_sigma{sigma:g}.pt", weights_only=True
-    )
+    pool = torch.load(RESULTS / f"wolff_ref_d10_sigma{sigma:g}.pt", weights_only=True)
     return {
         "target": target,
         "sigma": sigma,

@@ -605,7 +605,8 @@ def correlation_profile_error(
     L: int,
     reference_weights: Tensor | None = None,
 ) -> float:
-    """dCorr of MDNS Eq. (28): (1/L^2) sum_{k,l} |C_row - C_row_pi| + |C_col - C_col_pi|.
+    """dCorr of MDNS Eq. (28):
+    (1/L^2) sum_{k,l} |C_row - C_row_pi| + |C_col - C_col_pi|.
 
     The (k,l) sum runs over all L^2 ordered row pairs including k = l (where the
     connected correlation is a variance), as Eq. (28) is written. Unlike dMag

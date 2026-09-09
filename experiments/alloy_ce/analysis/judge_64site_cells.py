@@ -1,26 +1,33 @@
 """Score the 64-site Cu-Au cells without a reference chain.
 
-At 64 sites the fixed-composition slice cannot be enumerated (C(64,32) ~ 1.8e18); this
-script reads what the sampler's own artefacts can certify:
+At 64 sites the fixed-composition slice cannot be enumerated (C(64,32) ~ 1.8e18);
+this script reads what the sampler's own artefacts can certify:
 
   ESS            raw and EMA eval ESS (5000 draws), the headline;
-  E/site (meV)   mean, min and IS-weighted (self-normalised log weights) sample energy against
-                 the ground state of the slice: L1_0 at c=0.5 (-36.23 meV/site), L1_2 at c=0.25
-                 (-32.88); kT at 500 K is 43 meV for the whole cell, so an ordered sampler sits within
+  E/site (meV)   mean, min and IS-weighted (self-normalised log weights) sample
+                 energy against the ground state of the slice: L1_0 at c=0.5
+                 (-36.23 meV/site), L1_2 at c=0.25 (-32.88); kT at 500 K is
+                 43 meV for the whole cell, so an ordered sampler sits within
                  ~1 meV/site of it and every wrong swap costs ~7 kT;
-  swaps          unlike-pair swaps from each sample to its nearest ordered variant (all translates
-                 and axis choices), i.e. half the Hamming distance; the uniform slice sits ~13.4
-                 (c50) so ~0 means ordered, ~10 means multi-domain;
-  loss/static    end-of-stage training loss over the static-flow (identity) loss of that stage,
-                 Var_uniform[beta_stage E] estimated on 4096 uniform slice states: ~0 = the flow
-                 moves the slice, ~1 = it has given up (c50 patch cells: 0.12 -> 1.0);
-  E_ref          the reference chain's energy per site at the cell's final temperature when
-                 results/alloy_ref/cuau64_chain_<c25|c50|free>_T<T>.json exists (reference_chain.py).
+  swaps          unlike-pair swaps from each sample to its nearest ordered
+                 variant (all translates and axis choices), i.e. half the
+                 Hamming distance; the uniform slice sits ~13.4 (c50) so ~0
+                 means ordered, ~10 means multi-domain;
+  loss/static    end-of-stage training loss over the static-flow (identity)
+                 loss of that stage, Var_uniform[beta_stage E] estimated on
+                 4096 uniform slice states: ~0 = the flow moves the slice,
+                 ~1 = it has given up (c50 patch cells: 0.12 -> 1.0);
+  E_ref          the reference chain's energy per site at the cell's final
+                 temperature when
+                 results/alloy_ref/cuau64_chain_<c25|c50|free>_T<T>.json
+                 exists (reference_chain.py).
 
-Free-ensemble cells (A1_*) have no slice: E_ground, swaps and the static variance use the
-uniform free ensemble at the sampled composition, and the sample composition is printed.
+Free-ensemble cells (A1_*) have no slice: E_ground, swaps and the static
+variance use the uniform free ensemble at the sampled composition, and the
+sample composition is printed.
 
-Usage:  pixi run -e dev python -m experiments.alloy_ce.analysis.judge_64site_cells "results/03_hard/*cuau64* results/02_constrained_soft/*cuau64*"
+Usage:  pixi run -e dev python -m experiments.alloy_ce.analysis.judge_64site_cells \\
+            "results/03_hard/*cuau64* results/02_constrained_soft/*cuau64*"
 """
 
 import glob
@@ -43,7 +50,10 @@ MEV = 1000.0
 
 
 def swaps_to_nearest_ordered(samples, refs):
-    """Half the minimum Hamming distance to any ordered variant: one unlike swap flips two sites."""
+    """Half the minimum Hamming distance to any ordered variant.
+
+    One unlike swap flips two sites.
+    """
     hamming = (samples[:, None, :] != refs[None, :, :]).sum(-1)  # (n_samples, n_refs)
     return hamming.min(1).values / 2.0
 
@@ -83,7 +93,10 @@ def main(pattern):
         n_sites = len(spec.positions)
         c = cfg["ising"].get("target_composition")
         free = run.split("/")[-1].startswith("A1_")
-        beta_of_sigma = lambda sigma: 2.0 * sigma  # sigma = beta/2 on the alloy cells
+
+        def beta_of_sigma(sigma):
+            return 2.0 * sigma  # sigma = beta/2 on the alloy cells
+
         beta_final = beta_of_sigma(cfg["curriculum"]["stages"][-1]["sigma"])
         T_final = round(1.0 / (K_B * beta_final))
         if free:

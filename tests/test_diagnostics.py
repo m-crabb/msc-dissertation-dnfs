@@ -7,6 +7,10 @@ in the 2026-05 metric refactor (TVD, KL, 1-D Wasserstein, log_prob_w1) were
 deleted with the function definitions.
 """
 
+# ---------------------------------------------------------------------------
+# ESS (already-implemented; pinning behaviour during the refactor)
+# ---------------------------------------------------------------------------
+import numpy as np
 import pytest
 import torch
 
@@ -22,16 +26,14 @@ from discrete_flow_sampler.diagnostics.metrics import (
     exact_internal_energy,
     exact_log_probs,
     free_energy_lb_estimate,
+    gelman_rubin,
+    integrated_autocorr,
     internal_energy_estimate,
     magnetisation,
     nn_correlation,
     z2_asymmetry_from_samples,
 )
 from discrete_flow_sampler.targets.ising import IsingTarget
-
-# ---------------------------------------------------------------------------
-# ESS (already-implemented; pinning behaviour during the refactor)
-# ---------------------------------------------------------------------------
 
 
 def test_ess_equals_n_for_uniform_weights():
@@ -303,12 +305,6 @@ def test_exact_internal_energy_matches_pi_weighted_neg_log_p_tilde():
 
 
 # --- MCMC-trace diagnostics (integrated autocorrelation time, R-hat) ---------
-import numpy as np
-
-from discrete_flow_sampler.diagnostics.metrics import (
-    gelman_rubin,
-    integrated_autocorr,
-)
 
 
 def test_integrated_autocorr_white_noise_is_one():

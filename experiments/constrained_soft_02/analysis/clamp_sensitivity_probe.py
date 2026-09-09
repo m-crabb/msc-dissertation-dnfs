@@ -163,7 +163,7 @@ def main():
 
     achieved, rows = probe(args.run_dir, args.ceilings, args.n_states, args.composition)
     lam_hint = (
-        "requested c=%s" % args.composition if args.composition else "unconditioned"
+        f"requested c={args.composition}" if args.composition else "unconditioned"
     )
     print(f"\n{args.run_dir.name}\n  {lam_hint}, achieved <c> = {achieved:.4f}")
     # dt_log_p̃ and dt_log_Z_t are printed separately, not just their

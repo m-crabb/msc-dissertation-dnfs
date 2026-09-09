@@ -20,8 +20,9 @@ the ladder; \\midrule separates rungs.
 
 Run from the Overleaf tree:
   python body_tables_from_full.py --tex appendix.tex --label tab:eval-hard-8x8-full
-  python body_tables_from_full.py --tex appendix.tex --ladder tab:eval-hard-16x16-full \\
-      tab:eval-hard-20x20-full tab:eval-hard-24x24-full
+  python body_tables_from_full.py --tex appendix.tex \\
+      --ladder tab:eval-hard-16x16-full tab:eval-hard-20x20-full \\
+      tab:eval-hard-24x24-full
 """
 
 import argparse
@@ -83,10 +84,16 @@ def project(tex, label):
 # collapsed) but retains all three seeds at sigma_c, so its mark has no
 # referent once that half is gone. The prefix-sum two-sweep dagger is a
 # sigma_c exclusion and stays.
-DROPPED_DAGGERS = {"masked-attention band, one sweep$^{\\dagger}$": "masked-attention band, one sweep"}
+DROPPED_DAGGERS = {
+    "masked-attention band, one sweep$^{\\dagger}$": "masked-attention band, one sweep"
+}
 # The ladder has no \resizebox and the reference label set its width (23.9pt over
 # the text width at \tabcolsep 4pt); the appendix tables keep the full label.
-RELABELS = {"Kawasaki (thesis engine), certified reference": "Kawasaki reference (thesis engine)"}
+RELABELS = {
+    "Kawasaki (thesis engine), certified reference": (
+        "Kawasaki reference (thesis engine)"
+    )
+}
 
 
 def ladder(tex, labels, headings):
@@ -113,7 +120,8 @@ def main():
         print(project(tex, args.label))
     if args.ladder:
         headings = args.headings or [
-            re.search(r"(\d+)x(\d+)", l).group(0).replace("x", r"\times") for l in args.ladder
+            re.search(r"(\d+)x(\d+)", rung).group(0).replace("x", r"\times")
+            for rung in args.ladder
         ]
         print(ladder(tex, args.ladder, [f"${h}$" for h in headings]))
 

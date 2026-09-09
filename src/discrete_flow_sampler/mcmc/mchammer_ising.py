@@ -230,9 +230,10 @@ def run_vcsgc(
     wall_seconds_setup = time.perf_counter() - setup_start
 
     n_sites = len(supercell)
-    read_spins = lambda: atoms_to_spins(
-        ensemble.structure.get_chemical_symbols()
-    ).astype(np.int8)
+
+    def read_spins():
+        return atoms_to_spins(ensemble.structure.get_chemical_symbols()).astype(np.int8)
+
     run_start = time.perf_counter()
     if record_spins:
         # Frame k = the state at trial step k * interval, matching row k of the
@@ -332,9 +333,10 @@ def run_sgc(
     wall_seconds_setup = time.perf_counter() - setup_start
 
     n_sites = len(supercell)
-    read_spins = lambda: atoms_to_spins(
-        ensemble.structure.get_chemical_symbols()
-    ).astype(np.int8)
+
+    def read_spins():
+        return atoms_to_spins(ensemble.structure.get_chemical_symbols()).astype(np.int8)
+
     run_start = time.perf_counter()
     if record_spins:
         spin_frames = np.empty((n_steps // data_write_interval + 1, n_sites), np.int8)

@@ -1,4 +1,5 @@
-"""Report the CPU desk-check cells: train-ESS trajectory, eval ESS, samples vs the static (identity-flow) reference."""
+"""Report the CPU desk-check cells: train-ESS trajectory, eval ESS, samples vs the
+static (identity-flow) reference."""
 
 import glob
 import itertools
@@ -39,5 +40,9 @@ for run in sorted(glob.glob(root)):
         " ".join(f"{int(k)}:{int(v)}" for k, v in ess.items() if k % 500 == 0),
     )
     print(
-        f"   eval ESS {m['ess_fraction']:.3f}  jumps/site {m['jumps_per_site_state_changing']:.3f}  <bE> samples {e_s.mean():.2f} vs uniform {e_ref.mean():.2f} target {(p * e_ref).sum():.2f}  Var(logw) {lw.var():.2f} vs static {e_ref.var():.2f}  unique {len(torch.unique(s, dim=0))}"
+        f"   eval ESS {m['ess_fraction']:.3f}  "
+        f"jumps/site {m['jumps_per_site_state_changing']:.3f}  "
+        f"<bE> samples {e_s.mean():.2f} vs uniform {e_ref.mean():.2f} "
+        f"target {(p * e_ref).sum():.2f}  Var(logw) {lw.var():.2f} "
+        f"vs static {e_ref.var():.2f}  unique {len(torch.unique(s, dim=0))}"
     )

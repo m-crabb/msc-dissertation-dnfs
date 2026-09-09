@@ -598,9 +598,7 @@ def test_d576_critical_policy_matches_house_capacity_and_curriculum():
     n_params = sum(p.numel() for p in policy.parameters())
     assert n_params == 184_834
     for arm in ("thp3", "thp4"):
-        house = CONFIGS[
-            f"H2_d576_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w5bf16"
-        ]
+        house = CONFIGS[f"H2_d576_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w5bf16"]
         _, head = build_target_and_head(house, "cpu")
         anchor = sum(p.numel() for p in head.parameters())
         assert abs(n_params - anchor) / anchor < 0.03

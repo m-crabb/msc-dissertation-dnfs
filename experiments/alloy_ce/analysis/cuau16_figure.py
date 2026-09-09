@@ -1,31 +1,34 @@
-"""The 16-site Cu-Au exhibit: ordered structures, composition histograms and the canonical F(c),
-every reading against exact truth.
+"""The 16-site Cu-Au exhibit: ordered structures, composition histograms and the
+canonical F(c), every reading against exact truth.
 
 Layout (MetaDNS Fig. 5 as the model, exact enumeration where they have a chain):
   (a,b)   Cu3Au (L1_2) and CuAu (L1_0) conventional cells, lit-sphere renders;
-  (c,d,e) Au-concentration marginal of the free ensemble at 1200 / 680 / 500 K: exact bars
-          (all 2^16 states weighted by exp(-beta E)) under the free cell's raw draws, mean
-          step over seeds with a min-max band (house seed grammar, n in the legend);
-  (f)     canonical free energy per site F(c) = -log Z_c / (beta d) at 500 K over every slice
-          n_Au = 0..16 (ink, a discrete curve: one value per slice), with the specialist cells
-          (one per composition) and the composition-amortised cell (one checkpoint, its draws
-          split by slice) as importance-sampling estimates, mean over seeds;
-  (g)     the residual F_IS - F_exact of the same points in meV/site, min-max over seeds,
-          where the result actually lives: on (f) every point sits on the curve.
+  (c,d,e) Au-concentration marginal of the free ensemble at 1200 / 680 / 500 K: exact
+          bars (all 2^16 states weighted by exp(-beta E)) under the free cell's raw
+          draws, mean step over seeds with a min-max band (house seed grammar, n in the
+          legend);
+  (f)     canonical free energy per site F(c) = -log Z_c / (beta d) at 500 K over every
+          slice n_Au = 0..16 (ink, a discrete curve: one value per slice), with the
+          specialist cells (one per composition) and the composition-amortised cell (one
+          checkpoint, its draws split by slice) as importance-sampling estimates, mean
+          over seeds;
+  (g)     the residual F_IS - F_exact of the same points in meV/site, min-max over
+          seeds, where the result actually lives: on (f) every point sits on the curve.
 
-The histograms show what the sampler itself produces (the MetaDNS panels are KDEs of raw x_Au);
-the free energy is by definition the IS normaliser read off the weights (paper Eq. 37 gives the
-bound; -logmeanexp is the estimate). Units are absolute meV/site to match the table's dF column,
-where -41 meV/site at CuAu is a reading an alloy reader can use.
+The histograms show what the sampler itself produces (the MetaDNS panels are KDEs of raw
+x_Au); the free energy is by definition the IS normaliser read off the weights (paper
+Eq. 37 gives the bound; -logmeanexp is the estimate). Units are absolute meV/site to
+match the table's dF column, where -41 meV/site at CuAu is a reading an alloy reader can
+use.
 
 Usage: pixi run -e dev python -m experiments.alloy_ce.analysis.cuau16_figure \\
-           --free "results/02_constrained_soft/A1_cuau16_T1200*fc" \\
-                  "results/02_constrained_soft/A1_cuau16_T680*fc" \\
-                  "results/02_constrained_soft/A1_cuau16_T500_letf_50k_house_seed*free" \\
-           --temperatures 1200 680 500 \\
-           --specialists "results/03_hard/H2_cuau16_c[234]*_T500_mask_one_50k_house_seed*fc" \\
-                         "results/03_hard/H2_cuau16_c50_T500_mask_one_50k_house_seed*house" \\
-           --amortised "results/03_hard/H2_cuau16_camort*fc" --out assets/cuau16_exhibit.pdf
+    --free "results/02_constrained_soft/A1_cuau16_T1200*fc" \\
+           "results/02_constrained_soft/A1_cuau16_T680*fc" \\
+           "results/02_constrained_soft/A1_cuau16_T500_letf_50k_house_seed*free" \\
+    --temperatures 1200 680 500 \\
+    --specialists "results/03_hard/H2_cuau16_c[234]*_T500_mask_one_50k_house_seed*fc" \\
+                  "results/03_hard/H2_cuau16_c50_T500_mask_one_50k_house_seed*house" \\
+    --amortised "results/03_hard/H2_cuau16_camort*fc" --out assets/cuau16_exhibit.pdf
 """
 
 import argparse
@@ -73,7 +76,8 @@ STATES = torch.tensor(
 ENERGY = SPEC.energy(STATES)
 N_AU = ((STATES + 1) / 2).sum(1).long()
 COMPOSITIONS = np.arange(D + 1) / D
-DODGE = 0.009  # in c, so the specialist and amortised markers at one slice both stay visible
+# in c, so the specialist and amortised markers at one slice both stay visible
+DODGE = 0.009
 MEV = 1e3
 
 
@@ -213,9 +217,10 @@ def draw_histogram(ax, runs, T):
 
 
 def slice_estimates(runs, beta, split_by_slice):
-    """{composition: [F_IS per seed]} in meV/site. A specialist is one composition per run; the
-    amortised run mixes five slices and each slice's rows alone are that slice's importance sample
-    (each row's weight is exact against its own slice's base density, so no selection correction)."""
+    """{composition: [F_IS per seed]} in meV/site. A specialist is one composition per
+    run; the amortised run mixes five slices and each slice's rows alone are that
+    slice's importance sample (each row's weight is exact against its own slice's base
+    density, so no selection correction)."""
     by_c = {}
     for run in runs:
         counts, log_w = (

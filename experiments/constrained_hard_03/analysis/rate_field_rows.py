@@ -1,10 +1,11 @@
-"""Rows for tab:rate-field from the trainers' own telemetry (no checkpoint forward needed).
+"""Rows for tab:rate-field from the trainers' own telemetry (no checkpoint forward
+needed).
 
 Every swap run logs, at each in-training evaluation, the mean one-way rate over all
 (state, pair) entries of the training minibatch (`rate_pair_mean`), the 99th
-percentile of the one-event product Lambda dt (`lambda_dt_p99`), the fraction of states whose
-Lambda dt exceeds one (`lambda_dt_clipped_frac`, a hypothetical one-event diagnostic
-when matching is used)
+percentile of the one-event product Lambda dt (`lambda_dt_p99`), the fraction of states
+whose Lambda dt exceeds one (`lambda_dt_clipped_frac`, a hypothetical one-event
+diagnostic when matching is used)
 and, under the matching step, the fired swaps per site per Euler step
 (`events_per_site_per_step`). The total escape rate is
     Lambda = rate_pair_mean * d (d - 1) / 2,
@@ -121,7 +122,8 @@ def main():
         if args.tail is None:
             tail = manifest["tail"]
     print(
-        f"{'cell':<28}{'d':>5}{'n':>3}{'Lambda':>14}{'p99 Ldt':>10}{'clip':>8}{'ev/site':>10}"
+        f"{'cell':<28}{'d':>5}{'n':>3}{'Lambda':>14}{'p99 Ldt':>10}{'clip':>8}"
+        f"{'ev/site':>10}"
     )
     for label, *dirs in cells:
         run_dirs = [Path(d) for d in dirs]

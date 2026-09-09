@@ -29,7 +29,8 @@ refs = {
     "c50": ref(n == 8),
 }
 print(
-    f"{'cell':26s} {'<bE>samp':>9s} {'<bE>unif':>9s} {'<bE>targ':>9s} {'Var(logw)':>9s} {'Var_static':>10s} {'uniq':>5s}"
+    f"{'cell':26s} {'<bE>samp':>9s} {'<bE>unif':>9s} {'<bE>targ':>9s} "
+    f"{'Var(logw)':>9s} {'Var_static':>10s} {'uniq':>5s}"
 )
 for r in sorted(glob.glob("results/0*/*cuau16*")):
     s = torch.load(r + "/eval/samples.pt").double()
@@ -41,5 +42,6 @@ for r in sorted(glob.glob("results/0*/*cuau16*")):
         "_20260902-cuau16", ""
     )
     print(
-        f"{name:26s} {e.mean():9.2f} {u:9.2f} {t:9.2f} {lw.var():9.2f} {v:10.2f} {len(torch.unique(s, dim=0)):5d}"
+        f"{name:26s} {e.mean():9.2f} {u:9.2f} {t:9.2f} {lw.var():9.2f} {v:10.2f} "
+        f"{len(torch.unique(s, dim=0)):5d}"
     )

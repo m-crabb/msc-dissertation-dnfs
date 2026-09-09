@@ -13,6 +13,9 @@ import pytest
 import torch
 
 from discrete_flow_sampler.constraints.interval_swap_head import IntervalSwapHead
+from discrete_flow_sampler.constraints.masked_attention_swap_head import (
+    MaskedAttentionSwapHead,
+)
 from discrete_flow_sampler.constraints.swap_readout import _masked_body, swap2
 from discrete_flow_sampler.models.letf import LeTFRateMatrix
 from discrete_flow_sampler.samplers._swap_neighbours import (
@@ -161,7 +164,8 @@ def test_blindness_probe_has_teeth():
 @torch.no_grad()
 @pytest.mark.parametrize("d,offsets", [(9, (1, 3)), (16, (1, 4))])
 def test_antisymmetric_at_init(d, offsets):
-    """Antisymmetry: G(i,j|x) = -G(i,j|Swap2(x,i,j)) at random init, all active pairs."""
+    """Antisymmetry: G(i,j|x) = -G(i,j|Swap2(x,i,j)) at random init, all active
+    pairs."""
     head = _head(d=d, offsets=offsets)
     x = _state(d=d)
     t = torch.rand(1)
@@ -255,9 +259,6 @@ def test_head_parameters_receive_grad():
 # head; the bilinear head keeps blindness and exact index antisymmetry for
 # both band aggregators; its MLP input is the band and positions only; the
 # factor maps receive gradient.
-from discrete_flow_sampler.constraints.masked_attention_swap_head import (
-    MaskedAttentionSwapHead,
-)
 
 
 def _combiner_head(head_cls, exterior_combiner, d=9, seed=42):

@@ -58,8 +58,6 @@ import json
 from pathlib import Path
 
 import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -72,10 +70,6 @@ from experiments.constrained_hard_03.analysis.probe_analysis_8x8 import (
     tv_noise_floor,
 )
 
-from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
-
-torch.set_num_threads(2)  # the 16x16 reference chain owns the Mac's cores
-
 from discrete_flow_sampler.diagnostics.figure_style import (
     CLASSICAL_ALT_HUE as KAWASAKI_LOCAL_HUE,
 )
@@ -85,6 +79,13 @@ from discrete_flow_sampler.diagnostics.figure_style import (
 from discrete_flow_sampler.diagnostics.figure_style import MUTED
 from discrete_flow_sampler.diagnostics.figure_style import REFERENCE_INK as INK
 from discrete_flow_sampler.diagnostics.figure_style import SAMPLER_HUE as NEURAL_HUE
+from discrete_flow_sampler.targets.ising import FixedCompositionIsingTarget
+
+matplotlib.use("Agg")
+
+
+torch.set_num_threads(2)  # the 16x16 reference chain owns the Mac's cores
+
 
 SWEEPS_PER_CHAIN = 1_000_000
 NEURAL_SECONDS_PER_REPLICATE = 92.4  # A30; mtime-delta method, see module docstring

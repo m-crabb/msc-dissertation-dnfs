@@ -1,20 +1,21 @@
-"""The ladder figure for the hard chapter: ESS and cost against lattice size, at sigma_c.
+"""The ladder figure for the hard chapter: ESS and cost against lattice size, at
+sigma_c.
 
 Two panels over the five rungs the chapter prints. (a) Frozen ESS fraction at the exact
-critical coupling for selected heads that have a cell at that rung, plus the GFlowNet (TB)
-comparator; (b) FLOP per effective sample at sigma_c, with the certified Kawasaki chain as
-the classical line. The chapter's central trend -- the patch head's ESS falling slowly
-with size while the causal-stream bands need a second sweep to survive -- is otherwise
-spread across four tables.
+critical coupling for selected heads that have a cell at that rung, plus the GFlowNet
+(TB) comparator; (b) FLOP per effective sample at sigma_c, with the certified Kawasaki
+chain as the classical line. The chapter's central trend -- the patch head's ESS falling
+slowly with size while the causal-stream bands need a second sweep to survive -- is
+otherwise spread across four tables.
 
 VALUES ARE THE PRINTED HOUSE-TABLE CELLS (tab:eval-hard-{4x4,8x8,16x16,20x20,24x24}),
 each of which is itself the output of its emitter and was re-verified cell by cell on
 2026-09-03 (24x24 added 2026-09-06 from house_table_24x24.py; the GFlowNet TB 20x20
 point added 2026-09-07 from house_table_20x20.py, tag 20260904-gfn-d400-tb; its 24x24
 point 2026-09-08 from house_table_24x24.py, tag 20260906-gfn-d576-sc). The read
-convention follows the tables: raw at 4x4 and 8x8, averaged (EMA) at 16x16 and above; the
-marker fill encodes which. The 24x24 rung is sigma_c only, two patch radii. Update this
-dict when a table changes.
+convention follows the tables: raw at 4x4 and 8x8, averaged (EMA) at 16x16 and above;
+the marker fill encodes which. The 24x24 rung is sigma_c only, two patch radii. Update
+this dict when a table changes.
 """
 
 import argparse

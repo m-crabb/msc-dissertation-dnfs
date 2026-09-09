@@ -73,7 +73,8 @@ def sweep(run_dir: Path, checkpoint: str, n_au_values, n_samples: int | None, de
             "seconds": round(time.time() - started, 1),
         }
         print(
-            f"{run_dir.name} n_Au={n_au:2d} ESS/N={per_slice[n_au]['ess_fraction']:.3f} {per_slice[n_au]['seconds']}s"
+            f"{run_dir.name} n_Au={n_au:2d} "
+            f"ESS/N={per_slice[n_au]['ess_fraction']:.3f} {per_slice[n_au]['seconds']}s"
         )
 
     out_dir = run_dir.with_name(run_dir.name + OUT_SUFFIX)
@@ -101,7 +102,10 @@ def main(argv=None):
     parser.add_argument(
         "--n-au",
         default=",".join(str(n) for n in range(1, D)),
-        help="comma-separated up-counts; 0 and 16 are single-state slices with no swap pairs",
+        help=(
+            "comma-separated up-counts; "
+            "0 and 16 are single-state slices with no swap pairs"
+        ),
     )
     parser.add_argument(
         "--n-samples",

@@ -37,6 +37,7 @@ sigma_c runs pair with the sigma_c pool, legacy with legacy.
 """
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -59,10 +60,6 @@ from discrete_flow_sampler.diagnostics.metrics import (
 from discrete_flow_sampler.targets.ising import SIGMA_C, IsingTarget
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-# Support experiments-package imports when invoked by file path.
-import sys
-
-sys.path.insert(0, str(REPO_ROOT))
 RESULTS = REPO_ROOT / "results" / "01_baseline"
 L = 10
 OPERATING_POINTS = {
@@ -89,7 +86,9 @@ SGC_CHAINS = {
 
 
 def observable_errors(x, weights, reference, target):
-    energy_per_site = lambda s: -target.log_prob(s) / (2 * target.sigma * target.d)
+    def energy_per_site(s):
+        return -target.log_prob(s) / (2 * target.sigma * target.d)
+
     return {
         "dMag": magnetisation_profile_error(x, weights, reference, L),
         "dCorr": correlation_profile_error(x, weights, reference, L),
@@ -251,7 +250,8 @@ def score_sgc_row():
             {k: f"{m:.4g} +- {sd:.2g}" for k, (m, sd) in aggregate.items()},
         )
         print(
-            f"  pooled tau_int {pooled_tau_int:.4g} frames -> FLOP/es {pooled_flops_per_es:.2g}"
+            f"  pooled tau_int {pooled_tau_int:.4g} frames"
+            f" -> FLOP/es {pooled_flops_per_es:.2g}"
         )
 
     out = RESULTS / "house_table_unconstrained_10x10_sgc.json"
@@ -311,9 +311,13 @@ def main():
 
         print(f"\n== {point} (sigma={spec['sigma']}, {len(per_seed)} seeds)")
         print("  reference floor:", {k: f"{v:.2e}" for k, v in floor.items()})
+        reference_cell = (
+            "(recount sidecar missing)"
+            if ref_flops_per_es is None
+            else f"{ref_flops_per_es:.2g}"
+        )
         print(
-            f"  reference FLOP/es: "
-            f"{'(recount sidecar missing)' if ref_flops_per_es is None else f'{ref_flops_per_es:.2g}'}"
+            f"  reference FLOP/es: {reference_cell}"
             f"   DNFS forward: {per_forward:.3g} FLOPs"
         )
         for name, s in per_seed.items():

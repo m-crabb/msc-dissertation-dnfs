@@ -20,7 +20,8 @@ with
 
     delta_t(x; R^θ)
         = dt log p_t(x)
-          + Σ_{i: y_i != x_i} [ R^θ(y_i, i | x)  -  R^θ(x_i, i | y) * p_t(y) / p_t(x) ]   (Eq. 7)
+          + Σ_{i: y_i != x_i} [ R^θ(y_i, i | x)  -  R^θ(x_i, i | y) * p_t(y) / p_t(x) ]
+                                                                                (Eq. 7)
 
 specialised to single-site flips (Eq. 6): Σ_{y != x} collapses to Σ_i over
 the d single-flip neighbours y(i). Eq. (7) does not require the one-way

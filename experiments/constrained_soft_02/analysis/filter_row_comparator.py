@@ -242,11 +242,20 @@ def main():
             )
             n_requested = round(0.30 * sites)
             c_at_side = n_requested / sites
+            soft_filter_ess = soft_filter_ess_fraction(
+                marginal_at_side, c_target=c_at_side, lam=args.lam, d=sites
+            )
+            unconstrained_rejection = hard_filter_acceptance(
+                marginal_at_side, c_target=c_at_side, d=sites
+            )
+            reject_off_soft = soft_target_slice_acceptance(
+                D=side, sigma=args.sigma, c_target=c_at_side, lam=args.lam
+            )
             print(
                 f"  d={sites:3d}  c={c_at_side:.4f}  "
-                f"soft-filter ESS {soft_filter_ess_fraction(marginal_at_side, c_target=c_at_side, lam=args.lam, d=sites):.4g}"
-                f"  unconstrained-rejection {hard_filter_acceptance(marginal_at_side, c_target=c_at_side, d=sites):.4g}"
-                f"  reject-off-soft {soft_target_slice_acceptance(D=side, sigma=args.sigma, c_target=c_at_side, lam=args.lam):.4g}"
+                f"soft-filter ESS {soft_filter_ess:.4g}"
+                f"  unconstrained-rejection {unconstrained_rejection:.4g}"
+                f"  reject-off-soft {reject_off_soft:.4g}"
             )
 
     if args.out:

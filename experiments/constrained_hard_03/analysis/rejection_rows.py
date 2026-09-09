@@ -91,14 +91,10 @@ are re-evals of trained checkpoints, not retrains.
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
 
 from discrete_flow_sampler.diagnostics.flops import (
     measured_forward_flops,
@@ -110,6 +106,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
     energy_wasserstein2,
     magnetisation_profile_error,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 # (paradigm, rung, coupling) -> run-dir glob, or None where no run exists.
 # Rungs are named by site count to match the hard chapter (d16 = 4x4,
@@ -318,7 +317,10 @@ def references_for(rung, sigma_label, results_dir):
 
         cfg = CONFIGS[f"H2_d16_c50_{sigma_label}_letf_mo_10k_w2"]
         target, _head, states, probs = h4.exact_reference(cfg)
-        energy_of = lambda x: h4.energy_per_site(target, x)
+
+        def energy_of(x):
+            return h4.energy_per_site(target, x)
+
         return states, energy_of(states), energy_of, probs
 
     from experiments.constrained_hard_03.analysis import house_table_8x8 as h8
@@ -335,7 +337,10 @@ def references_for(rung, sigma_label, results_dir):
         0.2,
     )
     reference = torch.cat(chains)
-    energy_of = lambda x: h8.energy_per_site(target, x)
+
+    def energy_of(x):
+        return h8.energy_per_site(target, x)
+
     return reference, energy_of(reference), energy_of, None
 
 

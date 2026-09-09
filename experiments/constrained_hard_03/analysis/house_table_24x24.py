@@ -38,10 +38,6 @@ import sys
 from pathlib import Path
 
 import torch
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
-
 from experiments.constrained_hard_03.analysis.house_table_8x8 import (
     _sci,
     aggregate,
@@ -67,6 +63,9 @@ from discrete_flow_sampler.diagnostics.flops import (
     measured_forward_flops,
 )
 from discrete_flow_sampler.targets.ising import SIGMA_C
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 L = 24
 D_SITES = L * L
@@ -280,12 +279,13 @@ def main(argv=None):
             continue
         gfn_cfg = gfn_registry_config_for(run_dirs[0])
         assert abs(gfn_cfg.sigma - target.sigma) < 1e-9, (
-            f"{name}: trains at sigma={gfn_cfg.sigma} against the reference's {target.sigma}"
+            f"{name}: trains at sigma={gfn_cfg.sigma} "
+            f"against the reference's {target.sigma}"
         )
         _, policy = build_target_and_policy(gfn_cfg, "cpu")
-        flops_per_raw = measured_forward_flops(policy.sample, (1,)) + ising_energy_eval_flops(
-            D_SITES
-        )
+        flops_per_raw = measured_forward_flops(
+            policy.sample, (1,)
+        ) + ising_energy_eval_flops(D_SITES)
         rows = [
             neural_cell(
                 d,

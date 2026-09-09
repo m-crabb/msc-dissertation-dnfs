@@ -501,7 +501,7 @@ def test_cuau64_temperature_grid_cells_stop_their_ladder_at_the_row_temperature(
         )
 
 
-def test_cuau16_composition_sweep_cells_differ_from_the_house_cell_only_by_composition():
+def test_cuau16_composition_sweep_cells_differ_from_house_cell_only_by_composition():
     from experiments.constrained_hard_03.configs import CONFIGS
 
     house = CONFIGS["H2_cuau16_c50_T500_mask_one_50k_house"]

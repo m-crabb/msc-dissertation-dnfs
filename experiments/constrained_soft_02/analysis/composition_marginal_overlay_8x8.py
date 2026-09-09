@@ -26,8 +26,8 @@ resampled reference frames against the full pool. This is conditional on the
 empirical pool, not a hard lower bound or a test of statistical equivalence.
 
 Example:
-    python -m experiments.constrained_soft_02.analysis.composition_marginal_overlay_8x8 \
-        --coupling sc --matched-base
+  python -m experiments.constrained_soft_02.analysis.composition_marginal_overlay_8x8 \
+      --coupling sc --matched-base
 """
 
 import argparse
@@ -213,12 +213,18 @@ def main():
     panel_labels = iter("abcdef")
     for col, c_target in enumerate(TRAINED_COMPOSITIONS):
         family = "house_mb" if args.matched_base and c_target != 0.5 else "house"
-        config = f"S2_d8_c{int(round(c_target * 1000)):04d}_l50_letf_ne128_{family}{config_suffix}"
+        config = (
+            f"S2_d8_c{int(round(c_target * 1000)):04d}_l50_letf_ne128_"
+            f"{family}{config_suffix}"
+        )
         reference = load_reference(sigma, c_target, target)
         runs = load_seed_runs(config, args.eval_dir)
         uniform = torch.full((reference.shape[0],), 1.0 / reference.shape[0])
         for row, (key, pmf_of, support, xlabel) in enumerate(rows):
-            marginal = lambda x, w, _f=pmf_of: _f(target, x, w)
+
+            def marginal(x, w, _f=pmf_of):
+                return _f(target, x, w)
+
             ref_pmf = marginal(reference, uniform)
             seed_pmfs = [marginal(x, w) for x, w in runs]
             tv = float(np.mean([marginal_tvd(pmf, ref_pmf) for pmf in seed_pmfs]))

@@ -2957,8 +2957,12 @@ _RASTER_LADDER_PARENTS = {
     # fails (archived sigma_c row EMA ESS 0.0035/0.0422/0.0002). It anchors on
     # the archived dense `ma` sigma_c cell (separable scores are an exact
     # rewrite); the floor `ma` anchor is retrained as the `masep` cell below.
-    "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3": "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3",
-    "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3",
+    "H2_d256_c50_s220_letf_{arm}_100k_curr_b512_ne128_cv2_w3": (
+        "H2_d256_c50_s220_letf_ma_100k_curr_b512_ne128_cv2_w3"
+    ),
+    "H2_d256_c50_s010_letf_{arm}_50k_b512_ne128_cv2_w3": (
+        "H2_d256_c50_s010_letf_ma_50k_b512_ne128_cv2_w3"
+    ),
 }
 
 # The floor rung runs separable, as every new masked-attention cell does from
@@ -3047,7 +3051,8 @@ CONFIGS.update(
 
 # ---------------------------------------------------------------------------
 # Cu-Au alloy rungs: the canonical sampler on the MetaDNS/Damewood Cu-Au fcc
-# cluster expansion in data/ce/ (experiments/alloy_ce/probes/export_binary_expansion.py).
+# cluster expansion in data/ce/
+# (experiments/alloy_ce/probes/export_binary_expansion.py).
 # `sigma` = beta/2 = 1/(2 k_B T) in 1/eV; the curriculum cools 1200 K -> 500 K
 # into the L1_2 (x_Au = 0.25) / L1_0 (x_Au = 0.5) ordered regime. Head =
 # mask_one, the one swap head with no 2D-torus assumption (fcc adjacency, not a
@@ -3109,7 +3114,9 @@ def _cuau_hard_cell(
         ising=replace(
             cell.ising,
             target_composition=composition,
-            expansion_json=f"data/ce/cuau_fcc_{'2x2x4' if sites == 16 else '4x4x4'}.json",
+            expansion_json=(
+                f"data/ce/cuau_fcc_{'2x2x4' if sites == 16 else '4x4x4'}.json"
+            ),
         ),
         model=replace(cell.model, hidden_dim=hidden_dim, n_layers=n_layers),
         target_kind="cluster_expansion",

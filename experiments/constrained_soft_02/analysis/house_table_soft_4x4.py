@@ -198,7 +198,8 @@ def score_family(
             + ": "
             + f"ESS={s['ESS']:.3f} "
             + " ".join(f"{k}={s[k] * 100:.1f}" for k in ("dMag", "dCorr", "EW2"))
-            + f" FLOP/es={s['FLOPes']:.2g} std_c={s['std_c']:.4f} dF={s['dF_site']:+.3f}"
+            + f" FLOP/es={s['FLOPes']:.2g} std_c={s['std_c']:.4f} "
+            f"dF={s['dF_site']:+.3f}"
         )
     m = summary
     print(
@@ -227,7 +228,8 @@ def main():
             run_dirs = sorted(SOFT_RESULTS.glob(glob.format(sc=suffix)))
             if not run_dirs:
                 print(
-                    f"== {sigma_label} {key}: SKIPPED (no runs match {glob.format(sc=suffix)})"
+                    f"== {sigma_label} {key}: SKIPPED "
+                    f"(no runs match {glob.format(sc=suffix)})"
                 )
                 continue
             target = IsingTarget(
@@ -265,7 +267,8 @@ def main():
             ]
             if not cond_dirs:
                 print(
-                    f"== {sigma_label} {key} conditioned: SKIPPED (no sweep frames at c={c_target})"
+                    f"== {sigma_label} {key} conditioned: SKIPPED "
+                    f"(no sweep frames at c={c_target})"
                 )
                 continue
             table[f"{sigma_label}_{key}_conditioned"] = score_family(

@@ -63,15 +63,11 @@ Per-site energy follows the chapter's convention E/d = -log p~(x) /
 
 import argparse
 import json
-import sys
 from dataclasses import asdict, replace
 from pathlib import Path
 
 import numpy as np
 import torch
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT))
 
 from discrete_flow_sampler.diagnostics.flops import (
     chain_per_effective_sample,
@@ -86,6 +82,9 @@ from discrete_flow_sampler.diagnostics.metrics import (
     integrated_autocorr,
     magnetisation_profile_error,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 L = 8
 D_SITES = L * L
@@ -264,7 +263,10 @@ def reference_standard_error(
     for _ in range(n_splits):
         order = torch.randperm(n_chains, generator=generator).tolist()
         left, right = order[:half], order[half:]
-        pack = lambda idx, src: torch.cat([src[i] for i in idx])
+
+        def pack(idx, src):
+            return torch.cat([src[i] for i in idx])
+
         energies = (
             (pack(left, chain_energies), pack(right, chain_energies))
             if chain_energies is not None
