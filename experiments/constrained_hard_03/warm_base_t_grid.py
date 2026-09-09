@@ -1,6 +1,9 @@
 """Shape of the drive variance along the annealing path, and the conditional
 per-swap ceiling.
 
+Part of the warm-base line, retained as a record but not carried forward
+(see warm_base_reference.py).
+
 The warm-base design measures Var[D] only at t = 1 (reference draws) and t = 0
 (base draws), which gives the integral
 

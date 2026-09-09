@@ -1,5 +1,8 @@
 """Self-checks for `warm_base_reference.py`, run before any number is believed.
 
+Part of the warm-base line, retained as a record but not carried forward
+(see warm_base_reference.py).
+
 The two that gate every downstream number:
   (i)  logsumexp of the log-density over ALL slice states at D = 4 equals 0
        -- i.e. the closed form really is exactly normalised on the slice, which

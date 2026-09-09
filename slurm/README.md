@@ -2,7 +2,7 @@
 
 [Project overview](../README.md) · [Experiment guide](../experiments/README.md)
 
-This index covers all 98 retained shell launchers in this directory. They record
+This index covers all 97 retained shell launchers in this directory. They record
 specific campaigns, including unsuccessful, cancelled and superseded experiments.
 The seven Cu–Au launch/pull wrappers are indexed separately in the
 [alloy tools guide](../experiments/alloy_ce/tools/README.md#historical-launch-and-transfer-wrappers).
@@ -51,7 +51,6 @@ existing archives; keep original outputs and verify each entrypoint's contract.
 | [amort_d4_validate.sbatch](amort_d4_validate.sbatch) | 4×4 soft amortisation validation |
 | [amort_d10.sbatch](amort_d10.sbatch) | 10×10 soft amortisation |
 | [softcamort_d8.sbatch](softcamort_d8.sbatch) | 8×8 soft composition amortisation |
-| [obedience_probe.sbatch](obedience_probe.sbatch) | Soft-penalty obedience probe |
 | [efc_lambda_sweep.sbatch](efc_lambda_sweep.sbatch) | Exact-field-channel penalty sweep |
 | [d10_sc_hardrecipe_pair.sbatch](d10_sc_hardrecipe_pair.sbatch) | 10×10 hard-recipe flip controls |
 | [d16_unconstrained_control.sbatch](d16_unconstrained_control.sbatch) | 16×16 unconstrained control |

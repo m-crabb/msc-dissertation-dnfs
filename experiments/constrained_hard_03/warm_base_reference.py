@@ -1,5 +1,9 @@
 """The block-occupancy base B(b, w) of the warm-base design, §2.2.
 
+Retained as a record of a research line that was not carried forward: the
+warm-base design was reviewed but never trained at any lattice size, and
+nothing in the thesis depends on these files.
+
 A probability law on the fixed-composition slice
     S(d, N_A) = { x in {-1,+1}^d : #{i : x_i = +1} = N_A }
 of the D x D torus (d = D^2) that is (i) exactly samplable, (ii) exactly

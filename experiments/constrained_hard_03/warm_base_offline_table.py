@@ -1,6 +1,9 @@
 """Offline characterisation of a warm (spatially ordered) base for the
 fixed-composition sampler, from archived Kawasaki reference draws.
 
+Part of the warm-base line, retained as a record but not carried forward
+(see warm_base_reference.py).
+
 The current base is uniform on the c = N_A/d slice, so log eta is constant
 on the reachable set and its nearest-neighbour correlation is exactly
 -1/(d-1) by exchangeability.  A warm base moves that value positive, which

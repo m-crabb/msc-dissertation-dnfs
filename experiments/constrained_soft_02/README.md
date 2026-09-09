@@ -51,7 +51,7 @@ These draws can include off-composition states. See the
 | Learned flip rates | [record_flip_trajectory.py](../../scripts/record_flip_trajectory.py) records one draw with per-site rates and the closed-form response; the report's `fig:soft-rate-strip` is [soft_rate_field_strip_8x8.npz](../../assets/soft_rate_field_strip_8x8.npz) (house matched-base 8×8 cell, seed 20260910 chosen for visual clarity among six), rendered by the hard [strip renderer](../constrained_hard_03/analysis/rate_field_strip.py) with `--recorded-frames 0 32 64 96 127` |
 | Free energy versus composition | [fc_curve.py](analysis/fc_curve.py), [fc_weighted_thermo.py](analysis/fc_weighted_thermo.py), [soft/hard comparison](analysis/fc_compare.py) |
 | Classical free-energy reference | [fc_mchammer_reference.py](analysis/fc_mchammer_reference.py) |
-| Amortised versus specialist sampling | [amortised_vs_specialist.py](analysis/amortised_vs_specialist.py), [amort_table_4x4.py](analysis/amort_table_4x4.py) |
+| Amortised versus specialist sampling | [amortised_vs_specialist.py](analysis/amortised_vs_specialist.py) |
 | Acceptance and computational cost | [reject_off_soft.py](analysis/reject_off_soft.py), [cost_vs_quality.py](analysis/cost_vs_quality.py), [machinery_cost_repricing.py](analysis/machinery_cost_repricing.py) |
 | Local-field diagnostic | [analysis_local_field_regression.py](analysis_local_field_regression.py) |
 | Archived log-probability scatter | [plot_logp_scatter_4x4.py](analysis/plot_logp_scatter_4x4.py) |
